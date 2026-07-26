@@ -216,7 +216,9 @@ export class OcxInstaller {
     try {
       const manifestPath = path.join(this.extensionsDir, extensionName, 'manifest.json');
       if (!fs.existsSync(manifestPath)) return null;
-      return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const validation = validateManifest(parsed);
+      return validation.valid ? parsed as OcxManifest : null;
     } catch {
       return null;
     }

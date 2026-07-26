@@ -5,7 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { UpdateBanner } from './components/UpdateBanner';
 import { UpdateNotification } from './components/UpdateNotification';
-import { AppLogoMark } from './components/AppIcons';
+import { AppLogoMark, ChatIcon, OverviewIcon } from './components/AppIcons';
 import { LoginPage } from './pages/Login';
 import { ChatPage } from './pages/Chat';
 import { TasksPage } from './pages/Tasks';
@@ -21,6 +21,8 @@ import { CostDashboardPage } from './pages/CostDashboard';
 import { AffiliatePage } from './pages/Affiliate';
 import { ModelConnectionsPage } from './pages/ModelConnections';
 import { AutoPostPage } from './pages/AutoPost';
+import { MarketingRoomPage } from './pages/MarketingRoom';
+import { CustomerMarketingRoomPage } from './pages/CustomerMarketingRoom';
 import KnowledgeUniversePage from './pages/KnowledgeUniverse';
 import { ScheduledSessionsPage } from './pages/ScheduledSessions';
 import { useAgentWorkspaceStore } from './store/agentWorkspace';
@@ -42,6 +44,8 @@ type Page =
   | 'connections'
   | 'autopost'
   | 'scheduled-sessions'
+  | 'marketing'
+  | 'customer-marketing'
   | 'affiliate';
 
 const DEV_USER = {
@@ -344,6 +348,10 @@ export function App() {
         return <ModelConnectionsPage />;
       case 'autopost':
         return <AutoPostPage />;
+      case 'marketing':
+        return <MarketingRoomPage />;
+      case 'customer-marketing':
+        return <CustomerMarketingRoomPage />;
       case 'affiliate':
         return <AffiliatePage />;
       default:
@@ -397,6 +405,24 @@ export function App() {
             }
           }}
         />
+        <nav className="app-mobile-nav" aria-label="Primary navigation">
+          <button
+            type="button"
+            className={currentPage === 'chat' ? 'is-active' : ''}
+            onClick={() => setCurrentPage('chat')}
+          >
+            <ChatIcon className="app-mobile-nav__icon" />
+            <span>Chat</span>
+          </button>
+          <button
+            type="button"
+            className={currentPage === 'customer-marketing' ? 'is-active' : ''}
+            onClick={() => setCurrentPage('customer-marketing')}
+          >
+            <OverviewIcon className="app-mobile-nav__icon" />
+            <span>AI Marketing</span>
+          </button>
+        </nav>
         <main className="main-content" role="main" aria-label="Noi dung chinh">
           <UpdateBanner
             updaterState={updaterState}

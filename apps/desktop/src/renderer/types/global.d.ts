@@ -1,6 +1,51 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
 import type { BranchClassification } from './graph-workspace';
 import type { UniverseNodeDetail } from '../../shared/universe-adapter';
+import type {
+  MarketingPathSelectionResult,
+  MarketingWorkspaceSnapshot,
+} from '../../shared/marketing-types';
+import type {
+  CustomerDirectorInput,
+  CustomerGoalInput,
+  CustomerMarketingSnapshot,
+  CustomerMarketingAnalyticsResult,
+  CustomerMarketingAnalyticsWindow,
+  CustomerMarketingCalendarInput,
+  CustomerMarketingResourceArchiveInput,
+  CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceCreateInput,
+  CustomerMarketingResourceKind,
+  CustomerMarketingResourceListResult,
+  CustomerMarketingResourceMutationResult,
+  CustomerMarketingResourceReviewInput,
+  CustomerMarketingResourceUpdateInput,
+  CustomerMarketingWorkflowListResult,
+  CustomerMarketingWorkflowMutationResult,
+  CustomerMarketingWorkflowPrepareRequest,
+  CustomerMarketingWorkflowReviewRequest,
+  CustomerMarketingWorkflowSourceListResult,
+  CustomerMarketingWorkflowTarget,
+  CustomerMediaPreviewInput,
+  CustomerMediaProjectSelectionResult,
+  CustomerMutationResult,
+  CustomerOnboardingInput,
+  CustomerReviewInput,
+  CustomerWorkspaceMemberRoleInput,
+  CustomerWorkspaceMembersResult,
+  CustomerWorkspaceInvitationAcceptanceResult,
+  CustomerWorkspaceInvitationInput,
+  CustomerWorkspaceInvitationResult,
+} from '../../shared/customer-marketing-types';
+import type {
+  CustomerMarketingCredentialListResult,
+  CustomerMarketingCredentialRevokeInput,
+  CustomerMarketingCredentialRevokeResult,
+} from '../../shared/customer-marketing-credential-types';
+import type {
+  CustomerMarketingActionGateRequest,
+  CustomerMarketingActionGateResult,
+} from '../../shared/customer-marketing-action-gate-types';
 
 export {};
 
@@ -102,6 +147,46 @@ declare global {
     openWeb: () => Promise<{ ok: boolean; url?: string }>;
   }
 
+  interface ElectronMarketingApi {
+    getSnapshot: () => Promise<MarketingWorkspaceSnapshot>;
+    selectWorkspace: () => Promise<MarketingPathSelectionResult>;
+    selectVideoTemplate: () => Promise<MarketingPathSelectionResult>;
+    openPath: (relativePath: string) => Promise<{ ok: boolean; error?: string }>;
+  }
+
+  interface ElectronCustomerMarketingApi {
+    getSnapshot: () => Promise<CustomerMarketingSnapshot>;
+    listIntegrationCredentials: () => Promise<CustomerMarketingCredentialListResult>;
+    revokeIntegrationCredential: (
+      input: CustomerMarketingCredentialRevokeInput,
+    ) => Promise<CustomerMarketingCredentialRevokeResult>;
+    listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
+    listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
+    getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;
+    listMarketingWorkflowSources: (target: CustomerMarketingWorkflowTarget) => Promise<CustomerMarketingWorkflowSourceListResult>;
+    listMarketingWorkflows: (target: CustomerMarketingWorkflowTarget) => Promise<CustomerMarketingWorkflowListResult>;
+    prepareMarketingWorkflow: (input: CustomerMarketingWorkflowPrepareRequest) => Promise<CustomerMarketingWorkflowMutationResult>;
+    reviewMarketingWorkflow: (input: CustomerMarketingWorkflowReviewRequest) => Promise<CustomerMarketingWorkflowMutationResult>;
+    checkExternalActionGate: (input: CustomerMarketingActionGateRequest) => Promise<CustomerMarketingActionGateResult>;
+    createMarketingResource: (input: CustomerMarketingResourceCreateInput) => Promise<CustomerMarketingResourceMutationResult>;
+    updateMarketingResource: (input: CustomerMarketingResourceUpdateInput) => Promise<CustomerMarketingResourceMutationResult>;
+    reviewMarketingResource: (input: CustomerMarketingResourceReviewInput) => Promise<CustomerMarketingResourceMutationResult>;
+    archiveMarketingResource: (input: CustomerMarketingResourceArchiveInput) => Promise<CustomerMarketingResourceArchiveResult>;
+    listWorkspaceMembers: () => Promise<CustomerWorkspaceMembersResult>;
+    updateWorkspaceMemberRole: (input: CustomerWorkspaceMemberRoleInput) => Promise<CustomerWorkspaceMembersResult>;
+    createWorkspaceInvitation: (input: CustomerWorkspaceInvitationInput) => Promise<CustomerWorkspaceInvitationResult>;
+    retryWorkspaceInvitationCopy: () => Promise<CustomerWorkspaceInvitationResult>;
+    consumeWorkspaceInvitationStatus: () => Promise<CustomerWorkspaceInvitationAcceptanceResult | null>;
+    onWorkspaceInvitationStatus: (
+      listener: (result: CustomerWorkspaceInvitationAcceptanceResult) => void,
+    ) => () => void;
+    saveOnboarding: (input: CustomerOnboardingInput) => Promise<CustomerMutationResult>;
+    createGoal: (input: CustomerGoalInput) => Promise<CustomerMutationResult>;
+    askDirector: (input: CustomerDirectorInput) => Promise<CustomerMutationResult>;
+    selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
+    runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;
+    reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
+  }
   /**
    * The renderer view of the preload `electronAPI`. The new graph/memory
    * namespaces are typed precisely from the shared models (Req 7.4); all other
@@ -114,6 +199,8 @@ declare global {
     graphAgent?: ElectronGraphAgentApi;
     izziAgent?: ElectronIzziAgentApi;
     affiliate?: ElectronAffiliateApi;
+    marketing?: ElectronMarketingApi;
+    customerMarketing?: ElectronCustomerMarketingApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }

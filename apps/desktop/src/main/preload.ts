@@ -36,6 +36,51 @@ import type {
   WithdrawInput,
   MutationResult,
 } from './affiliate/affiliate-client';
+import type {
+  MarketingPathSelectionResult,
+  MarketingWorkspaceSnapshot,
+} from '../shared/marketing-types';
+import type {
+  CustomerDirectorInput,
+  CustomerGoalInput,
+  CustomerMarketingSnapshot,
+  CustomerMarketingAnalyticsResult,
+  CustomerMarketingAnalyticsWindow,
+  CustomerMarketingCalendarInput,
+  CustomerMarketingResourceArchiveInput,
+  CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceCreateInput,
+  CustomerMarketingResourceKind,
+  CustomerMarketingResourceListResult,
+  CustomerMarketingResourceMutationResult,
+  CustomerMarketingWorkflowListResult,
+  CustomerMarketingWorkflowMutationResult,
+  CustomerMarketingWorkflowPrepareRequest,
+  CustomerMarketingWorkflowReviewRequest,
+  CustomerMarketingWorkflowSourceListResult,
+  CustomerMarketingWorkflowTarget,
+  CustomerMarketingResourceReviewInput,
+  CustomerMarketingResourceUpdateInput,
+  CustomerMediaPreviewInput,
+  CustomerMediaProjectSelectionResult,
+  CustomerMutationResult,
+  CustomerOnboardingInput,
+  CustomerReviewInput,
+  CustomerWorkspaceMemberRoleInput,
+  CustomerWorkspaceMembersResult,
+  CustomerWorkspaceInvitationAcceptanceResult,
+  CustomerWorkspaceInvitationInput,
+  CustomerWorkspaceInvitationResult,
+} from '../shared/customer-marketing-types';
+import type {
+  CustomerMarketingCredentialListResult,
+  CustomerMarketingCredentialRevokeInput,
+  CustomerMarketingCredentialRevokeResult,
+} from '../shared/customer-marketing-credential-types';
+import type {
+  CustomerMarketingActionGateRequest,
+  CustomerMarketingActionGateResult,
+} from '../shared/customer-marketing-action-gate-types';
 
 const electronAPI = {
   window: {
@@ -54,7 +99,6 @@ const electronAPI = {
     logout: () => ipcRenderer.invoke('auth:logout'),
     getUser: () => ipcRenderer.invoke('auth:getUser'),
     isAuthenticated: () => ipcRenderer.invoke('auth:isAuthenticated'),
-    getApiKey: () => ipcRenderer.invoke('auth:getApiKey'),
     refreshProfile: () => ipcRenderer.invoke('auth:refreshProfile'),
     onProfileRefreshed: (listener: (user: any) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: any) => listener(data);
@@ -219,6 +263,7 @@ const electronAPI = {
       baseUrl: string;
       authType: 'bearer' | 'x-api-key';
       selectedModel: string;
+      reasoningEffort?: string;
       apiKey?: string;
     }) => ipcRenderer.invoke('customProvider:saveConfig', input),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke('customProvider:setEnabled', enabled),
@@ -234,6 +279,7 @@ const electronAPI = {
       history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
       turnId?: string;
       images?: string[];
+      reasoningEffort?: string;
     }): Promise<{ reply?: string; error?: string }> =>
       ipcRenderer.invoke('customProvider:chat', payload),
     abort: (turnId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('customProvider:abort', turnId),
@@ -474,6 +520,86 @@ const electronAPI = {
       ipcRenderer.invoke('gatewaySessions:save', session),
     delete: (id: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('gatewaySessions:delete', id),
+  },
+
+  marketing: {
+    getSnapshot: (): Promise<MarketingWorkspaceSnapshot> =>
+      ipcRenderer.invoke('marketing:getSnapshot'),
+    selectWorkspace: (): Promise<MarketingPathSelectionResult> =>
+      ipcRenderer.invoke('marketing:selectWorkspace'),
+    selectVideoTemplate: (): Promise<MarketingPathSelectionResult> =>
+      ipcRenderer.invoke('marketing:selectVideoTemplate'),
+    openPath: (relativePath: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('marketing:openPath', relativePath),
+  },
+
+  customerMarketing: {
+    getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
+      ipcRenderer.invoke('customerMarketing:getSnapshot'),
+    listIntegrationCredentials: (): Promise<CustomerMarketingCredentialListResult> =>
+      ipcRenderer.invoke('customerMarketing:listIntegrationCredentials'),
+    revokeIntegrationCredential: (
+      input: CustomerMarketingCredentialRevokeInput,
+    ): Promise<CustomerMarketingCredentialRevokeResult> =>
+      ipcRenderer.invoke('customerMarketing:revokeIntegrationCredential', input),
+    listMarketingResources: (kind: CustomerMarketingResourceKind): Promise<CustomerMarketingResourceListResult> =>
+      ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
+    listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>
+      ipcRenderer.invoke('customerMarketing:listMarketingCalendar', input),
+    getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow): Promise<CustomerMarketingAnalyticsResult> =>
+      ipcRenderer.invoke('customerMarketing:getMarketingAnalytics', input),
+    listMarketingWorkflowSources: (target: CustomerMarketingWorkflowTarget): Promise<CustomerMarketingWorkflowSourceListResult> =>
+      ipcRenderer.invoke('customerMarketing:listMarketingWorkflowSources', target),
+    listMarketingWorkflows: (target: CustomerMarketingWorkflowTarget): Promise<CustomerMarketingWorkflowListResult> =>
+      ipcRenderer.invoke('customerMarketing:listMarketingWorkflows', target),
+    prepareMarketingWorkflow: (input: CustomerMarketingWorkflowPrepareRequest): Promise<CustomerMarketingWorkflowMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:prepareMarketingWorkflow', input),
+    reviewMarketingWorkflow: (input: CustomerMarketingWorkflowReviewRequest): Promise<CustomerMarketingWorkflowMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:reviewMarketingWorkflow', input),
+    checkExternalActionGate: (input: CustomerMarketingActionGateRequest): Promise<CustomerMarketingActionGateResult> =>
+      ipcRenderer.invoke('customerMarketing:checkExternalActionGate', input),
+    createMarketingResource: (input: CustomerMarketingResourceCreateInput): Promise<CustomerMarketingResourceMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:createMarketingResource', input),
+    updateMarketingResource: (input: CustomerMarketingResourceUpdateInput): Promise<CustomerMarketingResourceMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:updateMarketingResource', input),
+    reviewMarketingResource: (input: CustomerMarketingResourceReviewInput): Promise<CustomerMarketingResourceMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:reviewMarketingResource', input),
+    archiveMarketingResource: (input: CustomerMarketingResourceArchiveInput): Promise<CustomerMarketingResourceArchiveResult> =>
+      ipcRenderer.invoke('customerMarketing:archiveMarketingResource', input),
+    listWorkspaceMembers: (): Promise<CustomerWorkspaceMembersResult> =>
+      ipcRenderer.invoke('customerMarketing:listWorkspaceMembers'),
+    updateWorkspaceMemberRole: (input: CustomerWorkspaceMemberRoleInput): Promise<CustomerWorkspaceMembersResult> =>
+      ipcRenderer.invoke('customerMarketing:updateWorkspaceMemberRole', input),
+    createWorkspaceInvitation: (input: CustomerWorkspaceInvitationInput): Promise<CustomerWorkspaceInvitationResult> =>
+      ipcRenderer.invoke('customerMarketing:createWorkspaceInvitation', input),
+    retryWorkspaceInvitationCopy: (): Promise<CustomerWorkspaceInvitationResult> =>
+      ipcRenderer.invoke('customerMarketing:retryWorkspaceInvitationCopy'),
+    consumeWorkspaceInvitationStatus: (): Promise<CustomerWorkspaceInvitationAcceptanceResult | null> =>
+      ipcRenderer.invoke('customerMarketing:consumeWorkspaceInvitationStatus'),
+    onWorkspaceInvitationStatus: (
+      listener: (result: CustomerWorkspaceInvitationAcceptanceResult) => void,
+    ) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        result: CustomerWorkspaceInvitationAcceptanceResult,
+      ) => listener(result);
+      ipcRenderer.on('customerMarketing:invitationStatus', handler);
+      return () => {
+        ipcRenderer.removeListener('customerMarketing:invitationStatus', handler);
+      };
+    },
+    saveOnboarding: (input: CustomerOnboardingInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:saveOnboarding', input),
+    createGoal: (input: CustomerGoalInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:createGoal', input),
+    askDirector: (input: CustomerDirectorInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:askDirector', input),
+    selectMediaProject: (): Promise<CustomerMediaProjectSelectionResult> =>
+      ipcRenderer.invoke('customerMarketing:selectMediaProject'),
+    runMediaPreview: (input: CustomerMediaPreviewInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:runMediaPreview', input),
+    reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:reviewApproval', input),
   },
 
   affiliate: {

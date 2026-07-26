@@ -22,6 +22,7 @@ const appSource = readFileSync(appPath, 'utf8');
  * "Memory graph" tab) was intentionally removed from navigation so there is a
  * single graph surface ('knowledge' → shared MyGraphView). GraphWorkspace.tsx
  * is kept in the tree for future chat/branch work but is no longer routed.
+ * 'marketing' is the customer-facing AI Marketing Room product surface.
  */
 const BASELINE_PAGES = [
   'chat',
@@ -37,6 +38,7 @@ const BASELINE_PAGES = [
   'costs',
   'knowledge',
   'connections',
+  'marketing',
   'autopost',
   'affiliate',
 ] as const;

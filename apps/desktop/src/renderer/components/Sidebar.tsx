@@ -38,10 +38,15 @@ const WORKSPACE_ITEMS = [
   { id: 'costs', icon: CostIcon, label: 'Chi phí' },
 ];
 
+const CUSTOMER_ITEMS = [
+  { id: 'customer-marketing', icon: OverviewIcon, label: 'AI Marketing', badge: 'Customer', prominent: true },
+];
+
 const EXPLORE_ITEMS = [
   { id: 'agents', icon: AgentHubIcon, label: 'Agent hub', badge: 'v2' },
   { id: 'connections', icon: SetupIcon, label: 'Kết nối Model' },
   { id: 'autopost', icon: AutoPostIcon, label: 'Auto-Post', badge: 'New' },
+  { id: 'marketing', icon: OverviewIcon, label: 'Phòng Marketing', badge: 'IzziAPI', prominent: true },
   { id: 'marketplace', icon: MarketplaceIcon, label: 'Knowleadmarket', badge: 'Hot', prominent: true },
   { id: 'affiliate', icon: AffiliateIcon, label: 'Affiliate', badge: '20%', prominent: true },
   { id: 'extensions', icon: ExtensionIcon, label: 'Workflow imports' },
@@ -102,6 +107,9 @@ export function Sidebar({ currentPage, onNavigate, user, updateCount = 0, appUpd
       <nav className="sidebar__nav" aria-label="Menu chinh">
         <div className="sidebar__section-title">Memory core</div>
         {WORKSPACE_ITEMS.map(renderItem)}
+
+        <div className="sidebar__section-title">Customer workspace</div>
+        {CUSTOMER_ITEMS.map(renderItem)}
 
         <div className="sidebar__section-title">Operational surface</div>
         {EXPLORE_ITEMS.map(renderItem)}

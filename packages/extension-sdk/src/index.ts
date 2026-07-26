@@ -176,6 +176,32 @@ export function useExtensionEvent(
 
 // ── Manifest types (for programmatic manifest creation) ──
 
+export interface OcxCustomerMarketingCapability {
+  id: string;
+  category:
+    | 'strategy'
+    | 'content'
+    | 'social'
+    | 'creative'
+    | 'analytics'
+    | 'automation'
+    | 'research'
+    | 'customer_support';
+  role: string;
+  automationModes: Array<'copilot' | 'semi_autonomous' | 'guardrailed_autonomous'>;
+  requiredIntegrations: string[];
+  minimumPlan: 'free' | 'starter' | 'pro' | 'max' | 'ultra';
+  permission: 'view' | 'edit' | 'execute' | 'approve' | 'manage';
+  stability: 'stable' | 'beta' | 'preview';
+  creditEstimate: {
+    minimum: number;
+    maximum: number;
+    unit: 'credits_per_run';
+  };
+  inputs: string[];
+  outputs: string[];
+}
+
 export interface OcxManifest {
   name: string;
   version: string;
@@ -209,6 +235,8 @@ export interface OcxManifest {
   };
   icon?: string;
   private?: boolean;
+  customerMarketing?: boolean;
+  customerMarketingCapability?: OcxCustomerMarketingCapability;
 }
 
 // ── Permission IDs (constants for type-safe permission declarations) ──

@@ -1,9 +1,10 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as net from 'node:net';
 import { execFile } from 'child_process';
 
 /**
@@ -14,6 +15,7 @@ import { execFile } from 'child_process';
 const BUNDLED_OCX: Record<string, string> = {
   'ext-social-auto-poster': 'social-auto-poster-0.3.0.ocx',
   'ext-voice-studio': 'voice-studio-0.1.0.ocx',
+  'ext-github-trending-fb': 'github-trending-fb-1.0.0.ocx',
 };
 import { AuthManager } from './auth/auth-manager';
 import { DatabaseManager } from './db/database';
@@ -32,7 +34,11 @@ import { installFromMarketplace } from './extensions/marketplace-download';
 import { ExtensionUpdateChecker } from './extensions/update-checker';
 import { LocalServiceManager } from './extensions/local-service-manager';
 import { AgentService } from './agent/agent-service';
-import { ProviderSettingsStore } from './agent/provider-settings-store';
+import {
+  DEFAULT_CODEX_LB_MODEL,
+  ProviderSettingsStore,
+  normalizeCustomProviderConfig,
+} from './agent/provider-settings-store';
 import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
 import { runHostAgentTurn } from './agent/host-agent';
@@ -53,7 +59,20 @@ import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
 import { IzziLlmProxy } from './agents/izzi-llm-proxy';
 import { AgentSessionCapturer } from './agents/agent-session-graph';
 import { SessionRecorder } from './agents/agent-session-recorder';
+import { registerMarketingIpc } from './marketing/marketing-ipc';
+import { MarketingWorkspaceService } from './marketing/marketing-workspace';
+import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
+import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
+import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
+import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
+import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
+import {
+  CustomerVideoStudioService,
+  type CustomerF5TtsStatus,
+} from './customer-marketing/customer-video-studio-service';
 import { createStreamCollector } from '../shared/agent-turn-events';
+import { registerBudgetHandlers } from './setup/budget-ipc-handlers';
+import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
 
 let mainWindow: BrowserWindow | null = null;
 let authManager: AuthManager;
@@ -77,6 +96,10 @@ let setupWizardService: SetupWizardService;
 // user's Izzi smart router. The Izzi credential stays in main (never in a container).
 let izziLlmProxy: IzziLlmProxy;
 let dockerAgentService: DockerAgentService;
+let customerMarketingService: CustomerMarketingService;
+let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
+let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
+const queuedProtocolUrls: string[] = [];
 
 /**
  * Resolve the Izzi credential for the LLM proxy, never logged / never sent to the
@@ -178,6 +201,7 @@ function createWindow() {
 
   // Register Agent Bundle IPC handlers (Agent Marketplace)
   registerAgentIpcHandlers(mainWindow);
+  registerBudgetHandlers(mainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -202,7 +226,63 @@ function findOpenClawCli(): Promise<string | null> {
   });
 }
 
+function probeLoopbackService(rawUrl: string): Promise<boolean> {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(rawUrl);
+  } catch {
+    return Promise.resolve(false);
+  }
+  const hostname = endpoint.hostname.toLowerCase();
+  if (endpoint.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)) {
+    return Promise.resolve(false);
+  }
+  const port = Number(endpoint.port || '80');
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: hostname.replace(/^\[(.*)\]$/, '$1'), port });
+    let settled = false;
+    const finish = (running: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(running);
+    };
+    socket.setTimeout(1_200);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+  });
+}
+
+async function inspectConfiguredF5Tts(): Promise<CustomerF5TtsStatus> {
+  const installRoot = process.env.STARIZZI_F5_TTS_INSTALL_ROOT?.trim();
+  const pythonPath = process.env.STARIZZI_F5_TTS_PYTHON?.trim();
+  const modelPath = process.env.STARIZZI_F5_TTS_MODEL_PATH?.trim();
+  const endpoint = process.env.STARIZZI_F5_TTS_URL?.trim();
+  const installed = Boolean(
+    installRoot
+      && pythonPath
+      && modelPath
+      && fs.existsSync(installRoot)
+      && fs.existsSync(pythonPath)
+      && fs.existsSync(modelPath),
+  );
+  return {
+    installed,
+    running: Boolean(installed && endpoint && await probeLoopbackService(endpoint)),
+    version: process.env.STARIZZI_F5_TTS_VERSION?.trim() || undefined,
+  };
+}
+
 function setupIPC() {
+  const marketingWorkspace = new MarketingWorkspaceService(
+    path.join(app.getPath('userData'), 'marketing-room.json'),
+    app.getAppPath(),
+  );
+  registerMarketingIpc(marketingWorkspace);
+
   // ── Window controls ──
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
@@ -217,15 +297,24 @@ function setupIPC() {
 
   // ── Auth (Supabase) ──
   ipcMain.handle('auth:login', async (_event, credentials: { email: string; password: string }) => {
-    return authManager.login(credentials.email, credentials.password);
+    const result = await authManager.login(credentials.email, credentials.password);
+    if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
+    return result;
   });
   ipcMain.handle('auth:loginWithGoogle', async () => {
-    return authManager.loginWithGoogle();
+    const result = await authManager.loginWithGoogle();
+    if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
+    return result;
   });
   ipcMain.handle('auth:signup', async (_event, data: { email: string; password: string; name: string }) => {
-    return authManager.signup(data.email, data.password, data.name);
+    const result = await authManager.signup(data.email, data.password, data.name);
+    if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
+    return result;
   });
   ipcMain.handle('auth:logout', async () => {
+    customerMarketingService.clearPendingWorkspaceInvitationCopy();
+    customerMarketingInvitationCoordinator?.clearPending();
+    bufferedCustomerMarketingInvitationStatus = null;
     return authManager.logout();
   });
   ipcMain.handle('auth:getUser', async () => {
@@ -233,9 +322,6 @@ function setupIPC() {
   });
   ipcMain.handle('auth:isAuthenticated', async () => {
     return authManager.isAuthenticated();
-  });
-  ipcMain.handle('auth:getApiKey', async () => {
-    return authManager.getApiKey();
   });
   ipcMain.handle('auth:refreshProfile', async () => {
     return authManager.refreshProfile();
@@ -302,6 +388,67 @@ function setupIPC() {
       extensionLoader.executeCommand(extensionId, commandId, ...args),
   });
   registerIzziAgentIpc(izziAgent, sessionRecorder);
+
+  const customerVideoStudio = new CustomerVideoStudioService({
+    rootPath: path.join(app.getPath('userData'), 'customer-marketing-media'),
+    appRoot: app.getAppPath(),
+    getF5TtsStatus: inspectConfiguredF5Tts,
+    getVoiceStudioStatus: () => {
+      const voiceStudio = (extensionLoader?.getAllExtensions() || [])
+        .find((extension) => extension.id === 'ext-voice-studio' || extension.name === 'voice-studio');
+      return {
+        installed: Boolean(voiceStudio),
+        running: voiceStudio?.state === 'running',
+        version: voiceStudio?.manifest.version,
+      };
+    },
+  });
+  const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
+  const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
+  // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
+  customerMarketingService = new CustomerMarketingService(
+    dbManager,
+    () => {
+      const user = authManager.getCurrentUser();
+      return user
+        ? { id: user.id, name: user.name, plan: user.plan, balance: user.balance }
+        : null;
+    },
+    () => (extensionLoader?.getAllExtensions() || []).map((extension) => ({
+      id: extension.id,
+      name: extension.name,
+      manifest: {
+        displayName: extension.manifest.displayName,
+        description: extension.manifest.description,
+        private: extension.manifest.private === true,
+        customerMarketing: extension.manifest.customerMarketing === true,
+        customerMarketingCapability: extension.manifest.customerMarketingCapability,
+      },
+      state: extension.state,
+    })),
+    (payload) => izziAgent.chat(payload),
+    customerVideoStudio,
+    customerMarketingWorkspaceClient,
+    (value) => clipboard.writeText(value),
+    customerMarketingCredentialVault,
+  );
+  customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
+    isAuthenticated: async () => authManager.isAuthenticated(),
+    acceptInvitation: (token) => customerMarketingService.acceptWorkspaceInvitation(token),
+    notify: (result) => {
+      bufferedCustomerMarketingInvitationStatus = result;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('customerMarketing:invitationStatus', result);
+      }
+    },
+  });
+  registerCustomerMarketingIpc(customerMarketingService, {
+    consumeInvitationStatus: () => {
+      const result = bufferedCustomerMarketingInvitationStatus;
+      bufferedCustomerMarketingInvitationStatus = null;
+      return result;
+    },
+  });
 
   // ── Extensions (basic) ──
   ipcMain.handle('extensions:list', async () => {
@@ -716,7 +863,13 @@ function setupIPC() {
     'customProvider:saveConfig',
     async (
       _event,
-      input: { baseUrl: string; authType: 'bearer' | 'x-api-key'; selectedModel: any; apiKey?: string },
+      input: {
+        baseUrl: string;
+        authType: 'bearer' | 'x-api-key';
+        selectedModel: any;
+        reasoningEffort?: any;
+        apiKey?: string;
+      },
     ) => {
       return agentService.saveProviderConfig(input);
     },
@@ -742,7 +895,7 @@ function setupIPC() {
 
   // One-click local connection ("Kết nối nhanh codex-lb"): read the codex-lb key
   // from the environment (CODEX_LB_API_KEY) in the MAIN process and wire the app
-  // to the local codex-lb router (127.0.0.1:2455, gpt-5.6-sol) + enable it. Explicit
+  // to the local codex-lb router (127.0.0.1:2455, gpt-5.5) + enable it. Explicit
   // user action from the "Kết nối Model" tab; the key stays in main, never returned.
   ipcMain.handle(
     'customProvider:autoConnectLocal',
@@ -755,7 +908,8 @@ function setupIPC() {
         settings.saveConfig({
           baseUrl: 'http://127.0.0.1:2455/v1',
           authType: 'bearer',
-          selectedModel: 'gpt-5.6-sol',
+          selectedModel: DEFAULT_CODEX_LB_MODEL,
+          reasoningEffort: 'xhigh',
         });
         secrets.setKey(envKey);
         settings.setEnabled(true);
@@ -911,6 +1065,7 @@ function setupIPC() {
         history?: { role: string; content: string }[];
         turnId?: string;
         images?: string[];
+        reasoningEffort?: string;
       },
     ): Promise<{ reply?: string; error?: string }> => {
       const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
@@ -918,6 +1073,8 @@ function setupIPC() {
       const images = Array.isArray(payload?.images)
         ? payload.images.filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
         : [];
+      const reasoningEffort =
+        typeof payload?.reasoningEffort === 'string' ? payload.reasoningEffort.trim() : undefined;
       if (!message && images.length === 0) return { error: 'empty' };
 
       const settings = new ProviderSettingsStore(dbManager);
@@ -926,6 +1083,9 @@ function setupIPC() {
       const cfg = settings.getConfig();
       const key = secrets.getKey();
       if (!cfg || !key) return { error: 'not-configured' };
+      const effectiveCfg = normalizeCustomProviderConfig(
+        reasoningEffort ? { ...cfg, reasoningEffort: reasoningEffort as any } : cfg,
+      );
 
       const history = Array.isArray(payload?.history)
         ? payload.history
@@ -954,11 +1114,12 @@ function setupIPC() {
         const control = { controller, queue: [] as string[] };
         if (turnId) activeAgentTurns.set(turnId, control);
         const result = await runHostAgentTurn({
-          config: cfg,
+          config: effectiveCfg,
           apiKey: key,
           message,
           history,
           images,
+          reasoningEffort,
           mode: permMode,
           workingDir: permStore.getWorkingDir(),
           turnId,
@@ -1021,7 +1182,7 @@ function setupIPC() {
         return result.error ? { error: result.error } : { reply: result.reply };
       }
 
-      const provider = new CustomOpenAIProvider(cfg, key, (t) => secrets.redact(t));
+      const provider = new CustomOpenAIProvider(effectiveCfg, key, (t) => secrets.redact(t));
       let reply = '';
       try {
         for await (const chunk of provider.streamChat({ sessionId: '', message, history, images })) {
@@ -1109,6 +1270,17 @@ function setupIPC() {
  * Only an enabled local :2455 config is disabled; config/key are preserved and
  * every hosted/custom endpoint is untouched. Generic agents then use the Izzi
  * SmartRouter path. Manual local Codex-LB connection remains available in UI.
+ * Zero-config local model connection. If the machine exposes a codex-lb key in
+ * the environment (CODEX_LB_API_KEY — the same var the Codex CLI uses) AND no
+ * model connection is currently enabled, wire the app's custom provider to the
+ * local codex-lb router (127.0.0.1:2455, gpt-5.5) and enable it, so the gateway's
+ * non-izzi agents chat through it out of the box — no manual setup.
+ *
+ * Fires whenever nothing is enabled (not just first run) so it also repairs a
+ * half-configured state — e.g. a connection that was saved by "Kiểm tra kết nối"
+ * but never enabled, which otherwise leaves chat falling through to the empty
+ * Hermes reply. An already-enabled connection is respected and left untouched;
+ * the key value is only referenced by name (never logged).
  */
 function migrateLegacyCodexLbConnection(db: DatabaseManager): void {
   try {
@@ -1122,6 +1294,8 @@ function migrateLegacyCodexLbConnection(db: DatabaseManager): void {
       });
       console.log('[OpenClaw] Migrated legacy local Codex-LB route to Izzi SmartRouter default');
     }
+    // Respect an active connection the user has enabled — don't clobber it.
+    // But if nothing is enabled, chat can't reach any model, so wire local codex-lb.
   } catch {
     // Best-effort: a failure here must never block startup.
   }
@@ -1267,12 +1441,54 @@ async function initServices() {
 // Handle OAuth callback from custom protocol
 function handleOAuthCallback(url: string) {
   if (url.startsWith('openclaw://auth/callback')) {
-    authManager.handleOAuthCallback(url).then((result) => {
+    authManager.handleOAuthCallback(url).then(async (result) => {
+      if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
       if (result.success && mainWindow) {
         mainWindow.webContents.send('auth:oauthSuccess', result.user);
       }
     });
   }
+}
+
+function isSupportedProtocolUrl(url: string): boolean {
+  return url.startsWith('openclaw://auth/callback')
+    || url.startsWith('openclaw://customer-marketing/invitations/accept?token=');
+}
+
+function queueProtocolUrl(url: string): void {
+  if (!isSupportedProtocolUrl(url) || url.length > 8_192) return;
+  if (url.startsWith('openclaw://customer-marketing/')) {
+    const existing = queuedProtocolUrls.findIndex((item) => item.startsWith('openclaw://customer-marketing/'));
+    if (existing >= 0) queuedProtocolUrls.splice(existing, 1);
+  }
+  if (!queuedProtocolUrls.includes(url)) queuedProtocolUrls.push(url);
+  if (queuedProtocolUrls.length > 8) queuedProtocolUrls.shift();
+}
+
+function handleProtocolUrl(url: string): void {
+  if (!isSupportedProtocolUrl(url)) return;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoadingMainFrame()) {
+    queueProtocolUrl(url);
+    return;
+  }
+  if (url.startsWith('openclaw://auth/callback')) {
+    if (!authManager) {
+      queueProtocolUrl(url);
+      return;
+    }
+    handleOAuthCallback(url);
+    return;
+  }
+  if (!customerMarketingInvitationCoordinator) {
+    queueProtocolUrl(url);
+    return;
+  }
+  void customerMarketingInvitationCoordinator.handleLink(url);
+}
+
+function flushQueuedProtocolUrls(): void {
+  const urls = queuedProtocolUrls.splice(0, queuedProtocolUrls.length);
+  for (const url of urls) handleProtocolUrl(url);
 }
 
 // Single instance lock
@@ -1290,7 +1506,7 @@ if (!gotTheLock) {
 
     // Handle protocol URL on Windows
     const url = commandLine.find(arg => arg.startsWith('openclaw://'));
-    if (url) handleOAuthCallback(url);
+    if (url) handleProtocolUrl(url);
 
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -1298,6 +1514,12 @@ if (!gotTheLock) {
     }
   });
 }
+
+// macOS can deliver a protocol URL before services or the renderer are ready.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
 
 app.whenReady().then(async () => {
   await initServices();
@@ -1313,6 +1535,14 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+  const initialUrl = process.argv.find((arg) => arg.startsWith('openclaw://'));
+  if (initialUrl) queueProtocolUrl(initialUrl);
+  const readyWindow = mainWindow;
+  if (readyWindow?.webContents.isLoadingMainFrame()) {
+    readyWindow.webContents.once('did-finish-load', flushQueuedProtocolUrls);
+  } else {
+    flushQueuedProtocolUrls();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -1335,10 +1565,6 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Handle protocol URL on macOS
-  app.on('open-url', (_event, url) => {
-    handleOAuthCallback(url);
-  });
 });
 
 app.on('window-all-closed', () => {

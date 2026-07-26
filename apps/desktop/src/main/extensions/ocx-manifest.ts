@@ -13,6 +13,11 @@
  *   README.md        — description (optional)
  */
 
+import {
+  parseCustomerExtensionCapabilityDefinition,
+  type CustomerExtensionCapabilityDefinition,
+} from '../../shared/customer-marketing-capability-manifest';
+
 export interface OcxManifest {
   // Required fields
   name: string;           // kebab-case identifier (e.g., "smart-seo-scanner")
@@ -46,6 +51,8 @@ export interface OcxManifest {
   repository?: string;
   homepage?: string;
   license?: string;
+  customerMarketing?: boolean;
+  customerMarketingCapability?: CustomerExtensionCapabilityDefinition;
 
   // Pricing
   pricing?: {
@@ -230,6 +237,23 @@ export function validateManifest(manifest: any): ValidationResult {
     if (manifest.pricing.model !== 'free' && !manifest.pricing.price?.monthly) {
       warnings.push('Paid extension should specify `pricing.price.monthly`');
     }
+  }
+
+  if (manifest.private !== undefined && typeof manifest.private !== 'boolean') {
+    errors.push('`private` must be a strict boolean');
+  }
+  if (manifest.customerMarketing !== undefined && typeof manifest.customerMarketing !== 'boolean') {
+    errors.push('`customerMarketing` must be a strict boolean');
+  }
+  if (manifest.customerMarketing === true) {
+    if (manifest.private === true) {
+      errors.push('Private extensions cannot opt in to Customer Marketing');
+    }
+    if (!parseCustomerExtensionCapabilityDefinition(manifest.customerMarketingCapability)) {
+      errors.push('`customerMarketingCapability` must contain the complete exact public metadata contract');
+    }
+  } else if (manifest.customerMarketingCapability !== undefined) {
+    errors.push('`customerMarketingCapability` requires `customerMarketing: true`');
   }
 
   // Managed local service (optional)

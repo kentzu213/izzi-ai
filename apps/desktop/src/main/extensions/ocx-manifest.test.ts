@@ -101,12 +101,28 @@ describe('validateServiceSpec', () => {
   });
 });
 
-describe('validateManifest with service block', () => {
+describe('validateManifest', () => {
   function baseManifest() {
     return {
       ...generateManifestTemplate('social-auto-poster'),
       permissions: ['net.http', 'ui.panel'],
       activationEvents: ['onStartup'],
+    };
+  }
+
+  function customerCapability() {
+    return {
+      id: 'social-publisher',
+      category: 'social',
+      role: 'Social Media Agent',
+      automationModes: ['copilot', 'semi_autonomous'],
+      requiredIntegrations: ['facebook'],
+      minimumPlan: 'starter',
+      permission: 'execute',
+      stability: 'beta',
+      creditEstimate: { minimum: 1, maximum: 3, unit: 'credits_per_run' },
+      inputs: ['approved_content'],
+      outputs: ['publish_preview'],
     };
   }
 
@@ -123,5 +139,59 @@ describe('validateManifest with service block', () => {
     const r = validateManifest({ ...baseManifest(), service: { ...validService(), projectName: 'bad' } });
     expect(r.valid).toBe(false);
     expect(r.errors.some((e) => e.includes('projectName'))).toBe(true);
+  });
+
+  it('accepts a complete Customer Marketing opt-in declaration', () => {
+    const r = validateManifest({
+      ...baseManifest(),
+      customerMarketing: true,
+      customerMarketingCapability: customerCapability(),
+    });
+
+    expect(r.valid).toBe(true);
+  });
+
+  it.each(['true', 1, {}, []])('rejects non-boolean customerMarketing value %#', (value) => {
+    const r = validateManifest({ ...baseManifest(), customerMarketing: value });
+
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((error) => error.includes('strict boolean'))).toBe(true);
+  });
+
+  it.each(['true', 1, {}, []])('rejects non-boolean private value %#', (value) => {
+    const r = validateManifest({ ...baseManifest(), private: value });
+
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((error) => error.includes('private'))).toBe(true);
+  });
+
+  it('requires exact complete metadata for an opted-in extension', () => {
+    const missing = customerCapability() as Record<string, unknown>;
+    delete missing.outputs;
+    const extra = { ...customerCapability(), internalPrompt: 'do not expose' };
+
+    expect(validateManifest({
+      ...baseManifest(),
+      customerMarketing: true,
+      customerMarketingCapability: missing,
+    }).valid).toBe(false);
+    expect(validateManifest({
+      ...baseManifest(),
+      customerMarketing: true,
+      customerMarketingCapability: extra,
+    }).valid).toBe(false);
+  });
+
+  it('rejects private opt-in and metadata without explicit opt-in', () => {
+    expect(validateManifest({
+      ...baseManifest(),
+      private: true,
+      customerMarketing: true,
+      customerMarketingCapability: customerCapability(),
+    }).valid).toBe(false);
+    expect(validateManifest({
+      ...baseManifest(),
+      customerMarketingCapability: customerCapability(),
+    }).valid).toBe(false);
   });
 });
