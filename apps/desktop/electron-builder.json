@@ -105,11 +105,9 @@
     "icon": "build/icons",
     "category": "Development",
     "desktop": {
-      "entry": {
-        "Name": "Izzi OpenClaw",
-        "Comment": "Smart AI assistant for every platform",
-        "Terminal": "false"
-      }
+      "Name": "Izzi OpenClaw",
+      "Comment": "Smart AI assistant for every platform",
+      "Terminal": "false"
     },
     "synopsis": "AI-powered assistant desktop app"
   },
