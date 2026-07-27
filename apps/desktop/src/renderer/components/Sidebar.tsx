@@ -34,6 +34,7 @@ const WORKSPACE_ITEMS = [
   { id: 'memory', icon: MemoryIcon, label: 'Recall library' },
   { id: 'status', icon: StatusIcon, label: 'Guardrails' },
   { id: 'dashboard', icon: OverviewIcon, label: 'Operations' },
+  { id: 'scheduled-sessions', icon: TasksIcon, label: 'Phiên đặt lịch', badge: 'New' },
   { id: 'costs', icon: CostIcon, label: 'Chi phí' },
 ];
 

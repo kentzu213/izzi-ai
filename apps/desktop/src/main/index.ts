@@ -20,6 +20,8 @@ import { DatabaseManager } from './db/database';
 import { SyncEngine } from './sync/sync-engine';
 import { GraphClient } from './graph/graph-client';
 import { registerGraphIpc, registerGraphAgentIpc } from './graph/graph-ipc';
+import { ScheduleService, handleScheduledRunArgv } from './scheduler/schedule-service';
+import { registerScheduleIpc } from './scheduler/schedule-ipc';
 import { GraphAgent } from './graph/graph-agent';
 import { AffiliateClient } from './affiliate/affiliate-client';
 import { registerAffiliateIpc } from './affiliate/affiliate-ipc';
@@ -56,6 +58,10 @@ import { createStreamCollector } from '../shared/agent-turn-events';
 let mainWindow: BrowserWindow | null = null;
 let authManager: AuthManager;
 let dbManager: DatabaseManager;
+// Scheduled Sessions service. Module-scoped because both the headless `--run-session=<id>` launch
+// and the `second-instance` path (app already open) need to reach the same instance — two processes
+// must never run the same schedule at once (Requirement R2.5).
+let scheduleService: ScheduleService | null = null;
 let syncEngine: SyncEngine;
 let extensionManager: ExtensionManager;
 let extensionLoader: ExtensionLoader;
@@ -246,6 +252,12 @@ function setupIPC() {
   // ── Graph & Memory (shared backend /api/aibase/*; token stays in main) ──
   const graphClient = new GraphClient(authManager, dbManager);
   registerGraphIpc(graphClient);
+
+  // ── Scheduled Sessions (spec: scheduled-sessions) ──
+  // The app owns the schedule definition + run history; the OS scheduler owns the trigger and
+  // launches this executable with `--run-session=<id>` (handled in `main()` before any window).
+  scheduleService = new ScheduleService(dbManager);
+  registerScheduleIpc(scheduleService);
 
   // Agent-side write loop: record each finished agent turn into the unified
   // surfaces — my-graph (knowledge) + Replay tasks (daily work board).
@@ -1269,6 +1281,13 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, commandLine) => {
+    // A scheduled task fired while the app is already open: run it inside THIS instance instead of
+    // stealing focus. Running it here also keeps a single writer on the SQLite file (R2.5).
+    if (commandLine.some((arg) => arg.startsWith('--run-session='))) {
+      if (scheduleService) void handleScheduledRunArgv(commandLine, scheduleService);
+      return;
+    }
+
     // Handle protocol URL on Windows
     const url = commandLine.find(arg => arg.startsWith('openclaw://'));
     if (url) handleOAuthCallback(url);
@@ -1283,6 +1302,16 @@ if (!gotTheLock) {
 app.whenReady().then(async () => {
   await initServices();
   setupIPC();
+
+  // Headless path for the OS scheduler: run the playbook, then exit without ever showing a window.
+  // Only reached when this process holds the single-instance lock (otherwise `second-instance`
+  // hands the run to the already-running app).
+  if (scheduleService && process.argv.some((arg) => arg.startsWith('--run-session='))) {
+    await handleScheduledRunArgv(process.argv, scheduleService);
+    app.quit();
+    return;
+  }
+
   createWindow();
 
   app.on('activate', () => {

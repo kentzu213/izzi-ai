@@ -147,6 +147,33 @@ export function ensureSqliteSchema(db: Database.Database): void {
       FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
     );
 
+    -- Scheduled Sessions (spec: scheduled-sessions). A schedule is the app-side definition; the OS
+    -- scheduler holds the trigger. Runs are kept so a failure stays legible after the fact (R2.4).
+    CREATE TABLE IF NOT EXISTS scheduled_sessions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      playbook_id TEXT NOT NULL,
+      working_dir TEXT NOT NULL,
+      time_of_day TEXT NOT NULL,
+      recurrence TEXT NOT NULL,
+      machine_policy TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scheduled_session_runs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      failed_step_id TEXT,
+      steps TEXT NOT NULL DEFAULT '[]',
+      diagnosis TEXT,
+      FOREIGN KEY (session_id) REFERENCES scheduled_sessions(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS offline_queue (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
       op_type TEXT NOT NULL,
@@ -158,6 +185,7 @@ export function ensureSqliteSchema(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE INDEX IF NOT EXISTS idx_scheduled_session_runs_session ON scheduled_session_runs(session_id, started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_user_data_type ON user_data(type);
     CREATE INDEX IF NOT EXISTS idx_installed_extensions_display_name ON installed_extensions(display_name);
     CREATE INDEX IF NOT EXISTS idx_diagnostic_events_timestamp ON diagnostic_events(timestamp DESC);

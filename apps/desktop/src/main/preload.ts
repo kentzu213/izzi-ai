@@ -488,6 +488,26 @@ const electronAPI = {
       ipcRenderer.invoke('affiliate:openWeb'),
   },
 
+  // Scheduled Sessions (spec: scheduled-sessions). The renderer picks a playbook by id plus a time;
+  // it never passes a command, so this bridge cannot be used to run arbitrary shell input (R5.1).
+  schedule: {
+    playbooks: (): Promise<unknown[]> => ipcRenderer.invoke('schedule:playbooks'),
+    list: (): Promise<unknown[]> => ipcRenderer.invoke('schedule:list'),
+    create: (input: unknown): Promise<{ ok: boolean; session?: unknown; error?: string }> =>
+      ipcRenderer.invoke('schedule:create', input),
+    setEnabled: (id: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('schedule:setEnabled', id, enabled),
+    remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('schedule:remove', id),
+    runNow: (id: string): Promise<{ ok: boolean; runId?: string; error?: string }> =>
+      ipcRenderer.invoke('schedule:runNow', id),
+    runs: (id: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('schedule:runs', id, limit),
+    profileHealth: (): Promise<unknown[]> => ipcRenderer.invoke('schedule:profileHealth'),
+    openProfile: (profileDir: string, url?: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('schedule:openProfile', profileDir, url),
+  },
+
   platform: {
     isElectron: true,
     os: process.platform,

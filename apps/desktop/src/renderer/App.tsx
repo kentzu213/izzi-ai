@@ -22,6 +22,7 @@ import { AffiliatePage } from './pages/Affiliate';
 import { ModelConnectionsPage } from './pages/ModelConnections';
 import { AutoPostPage } from './pages/AutoPost';
 import KnowledgeUniversePage from './pages/KnowledgeUniverse';
+import { ScheduledSessionsPage } from './pages/ScheduledSessions';
 import { useAgentWorkspaceStore } from './store/agentWorkspace';
 import { vi } from './i18n/vi';
 
@@ -40,6 +41,7 @@ type Page =
   | 'knowledge'
   | 'connections'
   | 'autopost'
+  | 'scheduled-sessions'
   | 'affiliate';
 
 const DEV_USER = {
@@ -291,6 +293,8 @@ export function App() {
         );
       case 'tasks':
         return <TasksPage />;
+      case 'scheduled-sessions':
+        return <ScheduledSessionsPage />;
       case 'memory':
         return <MemoryPage />;
       case 'status':

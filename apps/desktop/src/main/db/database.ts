@@ -118,6 +118,34 @@ interface InstalledExtensionRow {
   updated_at: string;
 }
 
+export interface ScheduledSessionRow {
+  id: string;
+  name: string;
+  playbook_id: string;
+  working_dir: string;
+  time_of_day: string;
+  /** JSON: ScheduleRecurrence */
+  recurrence: string;
+  /** JSON: MachinePolicy */
+  machine_policy: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduledSessionRunRow {
+  id: string;
+  session_id: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  failed_step_id: string | null;
+  /** JSON: RunStepResult[] */
+  steps: string;
+  /** JSON: SessionDiagnosis | null */
+  diagnosis: string | null;
+}
+
 interface OfflineQueueRow {
   seq: number;
   op_type: QueueOp['opType'];
@@ -293,6 +321,122 @@ export class DatabaseManager {
   removeExtension(id: string): void {
     this.db.prepare('DELETE FROM extension_settings WHERE extension_id = ?').run(id);
     this.db.prepare('DELETE FROM installed_extensions WHERE id = ?').run(id);
+  }
+
+  // ── Scheduled Sessions (spec: scheduled-sessions) ──
+  // Stored as rows here; the OS scheduler owns the trigger. Recurrence / machine policy / step
+  // results are JSON columns because they are read and written as whole objects.
+
+  upsertScheduledSession(row: ScheduledSessionRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO scheduled_sessions
+           (id, name, playbook_id, working_dir, time_of_day, recurrence, machine_policy, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           playbook_id = excluded.playbook_id,
+           working_dir = excluded.working_dir,
+           time_of_day = excluded.time_of_day,
+           recurrence = excluded.recurrence,
+           machine_policy = excluded.machine_policy,
+           enabled = excluded.enabled,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        row.id,
+        row.name,
+        row.playbook_id,
+        row.working_dir,
+        row.time_of_day,
+        row.recurrence,
+        row.machine_policy,
+        row.enabled,
+        row.created_at,
+        row.updated_at,
+      );
+  }
+
+  listScheduledSessions(): ScheduledSessionRow[] {
+    return this.db
+      .prepare<[], ScheduledSessionRow>(
+        `SELECT id, name, playbook_id, working_dir, time_of_day, recurrence, machine_policy, enabled, created_at, updated_at
+         FROM scheduled_sessions
+         ORDER BY time_of_day ASC, name ASC`,
+      )
+      .all();
+  }
+
+  getScheduledSession(id: string): ScheduledSessionRow | null {
+    return (
+      this.db
+        .prepare<[string], ScheduledSessionRow>(
+          `SELECT id, name, playbook_id, working_dir, time_of_day, recurrence, machine_policy, enabled, created_at, updated_at
+           FROM scheduled_sessions WHERE id = ?`,
+        )
+        .get(id) ?? null
+    );
+  }
+
+  deleteScheduledSession(id: string): void {
+    this.db.prepare('DELETE FROM scheduled_session_runs WHERE session_id = ?').run(id);
+    this.db.prepare('DELETE FROM scheduled_sessions WHERE id = ?').run(id);
+  }
+
+  setScheduledSessionEnabled(id: string, enabled: boolean, updatedAt: string): void {
+    this.db
+      .prepare('UPDATE scheduled_sessions SET enabled = ?, updated_at = ? WHERE id = ?')
+      .run(enabled ? 1 : 0, updatedAt, id);
+  }
+
+  insertScheduledSessionRun(row: ScheduledSessionRunRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO scheduled_session_runs (id, session_id, status, started_at, ended_at, failed_step_id, steps, diagnosis)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.session_id,
+        row.status,
+        row.started_at,
+        row.ended_at,
+        row.failed_step_id,
+        row.steps,
+        row.diagnosis,
+      );
+  }
+
+  updateScheduledSessionRun(row: ScheduledSessionRunRow): void {
+    this.db
+      .prepare(
+        `UPDATE scheduled_session_runs
+         SET status = ?, ended_at = ?, failed_step_id = ?, steps = ?, diagnosis = ?
+         WHERE id = ?`,
+      )
+      .run(row.status, row.ended_at, row.failed_step_id, row.steps, row.diagnosis, row.id);
+  }
+
+  listScheduledSessionRuns(sessionId: string, limit = 20): ScheduledSessionRunRow[] {
+    return this.db
+      .prepare<[string, number], ScheduledSessionRunRow>(
+        `SELECT id, session_id, status, started_at, ended_at, failed_step_id, steps, diagnosis
+         FROM scheduled_session_runs
+         WHERE session_id = ?
+         ORDER BY started_at DESC
+         LIMIT ?`,
+      )
+      .all(sessionId, limit);
+  }
+
+  /** True when a run of this schedule is still marked running — used to refuse overlap (R2.5). */
+  hasRunningScheduledSessionRun(sessionId: string): boolean {
+    const row = this.db
+      .prepare<[string], { n: number }>(
+        `SELECT COUNT(*) AS n FROM scheduled_session_runs WHERE session_id = ? AND status = 'running'`,
+      )
+      .get(sessionId);
+    return (row?.n ?? 0) > 0;
   }
 
   appendDiagnosticEvent(event: {
