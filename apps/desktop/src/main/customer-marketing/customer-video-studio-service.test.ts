@@ -223,3 +223,154 @@ describe('CustomerVideoStudioService import boundary', () => {
     await expect(service.importProject('../other-tenant', source)).rejects.toThrow('workspace ID');
   });
 });
+
+// CMR-007: the commercial voice gate must be provider-agnostic. Voice Studio (VieNeu-TTS,
+// Apache-2.0 chain) can satisfy it without F5, but only with complete audited evidence.
+describe('CustomerVideoStudioService commercial voice provider boundary', () => {
+  const voiceStudioEvidence = {
+    installed: true,
+    running: true,
+    version: '1.0.0',
+    provider: 'VieNeu-TTS',
+    modelId: 'pnnbao-ump/VieNeu-TTS-v3-Turbo@9f2c1ab7d4e35608',
+    modelHash: 'd'.repeat(64),
+    license: 'Apache-2.0',
+    licenseSource: 'https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo',
+    commercialUseAllowed: true,
+  } as const;
+
+  async function readyRuntime(): Promise<{ root: string; appRoot: string }> {
+    const root = await makeRoot();
+    const appRoot = await createReadyAppRuntime(root);
+    vi.stubEnv('STARIZZI_HYPERFRAMES_NODE', process.execPath);
+    vi.stubEnv('STARIZZI_FFMPEG_BIN', process.execPath);
+    vi.stubEnv('STARIZZI_FFPROBE_BIN', process.execPath);
+    return { root, appRoot };
+  }
+
+  it('enables commercial render from Voice Studio evidence alone when the verifier approves', async () => {
+    const { root, appRoot } = await readyRuntime();
+    const verifier = vi.fn(() => true);
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      getVoiceStudioStatus: () => voiceStudioEvidence,
+      // Pinned absent so the assertion proves the gate opens from Voice Studio alone,
+      // independent of any F5 configuration present in the host environment.
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: verifier,
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.commercialRenderAvailable).toBe(true);
+    expect(toolchain.voiceStudio.status).toBe('ready');
+    expect(toolchain.voiceStudio.detail).toContain('đã xác minh');
+    expect(toolchain.f5Tts.status).toBe('needs_setup');
+    expect(verifier).toHaveBeenCalledWith({
+      provider: 'VieNeu-TTS',
+      modelId: 'pnnbao-ump/VieNeu-TTS-v3-Turbo@9f2c1ab7d4e35608',
+      modelHash: 'd'.repeat(64),
+      license: 'Apache-2.0',
+      licenseSource: 'https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo',
+    });
+  });
+
+  it('keeps the gate closed when Voice Studio serves a non-commercial model', async () => {
+    const { root, appRoot } = await readyRuntime();
+    const verifier = vi.fn(() => true);
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      getVoiceStudioStatus: () => ({ ...voiceStudioEvidence, license: 'CC-BY-NC-SA-4.0' }),
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: verifier,
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.commercialRenderAvailable).toBe(false);
+    expect(toolchain.voiceStudio.status).toBe('ready');
+    expect(verifier).not.toHaveBeenCalled();
+  });
+
+  it('keeps the gate closed without a declared commercial intent, without evidence, or without a verifier', async () => {
+    const { root, appRoot } = await readyRuntime();
+
+    const undeclared = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime-undeclared'),
+      appRoot,
+      getVoiceStudioStatus: () => ({ ...voiceStudioEvidence, commercialUseAllowed: false }),
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: () => true,
+    });
+    expect((await undeclared.getToolchain()).commercialRenderAvailable).toBe(false);
+
+    const incomplete = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime-incomplete'),
+      appRoot,
+      getVoiceStudioStatus: () => ({ ...voiceStudioEvidence, modelHash: undefined }),
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: () => true,
+    });
+    expect((await incomplete.getToolchain()).commercialRenderAvailable).toBe(false);
+
+    const unverified = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime-unverified'),
+      appRoot,
+      getVoiceStudioStatus: () => voiceStudioEvidence,
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+    });
+    expect((await unverified.getToolchain()).commercialRenderAvailable).toBe(false);
+  });
+
+  // Socrates CMR-007 finding C2: readiness is resolved asynchronously (the caller probes the
+  // local TTS backend). A failing probe must fail closed, not throw or open the gate.
+  it('keeps the gate closed when the asynchronous readiness lookup rejects', async () => {
+    const { root, appRoot } = await readyRuntime();
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      getVoiceStudioStatus: async () => {
+        throw new Error('backend unreachable');
+      },
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: () => true,
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.commercialRenderAvailable).toBe(false);
+    expect(toolchain.voiceStudio.status).toBe('needs_setup');
+    expect(toolchain.voiceStudio.detail).toContain('chưa được cài');
+  });
+
+  it('accepts an asynchronous readiness lookup that resolves ready', async () => {
+    const { root, appRoot } = await readyRuntime();
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      getVoiceStudioStatus: async () => voiceStudioEvidence,
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: () => true,
+    });
+
+    expect((await service.getToolchain()).commercialRenderAvailable).toBe(true);
+  });
+
+  it('keeps the gate closed while Voice Studio is installed but not running', async () => {
+    const { root, appRoot } = await readyRuntime();
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      getVoiceStudioStatus: () => ({ ...voiceStudioEvidence, running: false }),
+      getF5TtsStatus: () => ({ installed: false, running: false }),
+      verifyCommercialVoiceLicense: () => true,
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.commercialRenderAvailable).toBe(false);
+    expect(toolchain.voiceStudio.status).toBe('needs_setup');
+  });
+});

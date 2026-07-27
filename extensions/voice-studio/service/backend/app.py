@@ -71,10 +71,22 @@ def live():
     return {"status": "ok"}
 
 
+def _sdk_version() -> str | None:
+    """Installed `vieneu` version — the pin that determines which checkpoint is default."""
+    try:
+        from importlib.metadata import version
+
+        return version("vieneu")
+    except Exception:  # noqa: BLE001 — version reporting must never break readiness
+        return None
+
+
 @app.get("/health/ready")
 def ready():
     if _ready and _tts is not None:
-        return {"status": "ready"}
+        # CMR-007: report the SDK pin so the host can cross-check the operator's declared
+        # checkpoint against the runtime that actually loaded. No secrets, no local paths.
+        return {"status": "ready", "sdk": "vieneu", "sdk_version": _sdk_version()}
     return JSONResponse({"status": "loading", "error": _load_error}, status_code=503)
 
 

@@ -53,6 +53,14 @@ export interface CustomerVoiceStudioStatus {
   installed: boolean;
   running: boolean;
   version?: string;
+  // CMR-007: Voice Studio may also carry a commercially usable license chain. The evidence
+  // shape matches the F5 slot so the commercial gate stays provider-agnostic and fail-closed.
+  provider?: string;
+  modelId?: string;
+  modelHash?: string;
+  license?: string;
+  licenseSource?: string;
+  commercialUseAllowed?: boolean;
 }
 
 export interface CustomerF5TtsStatus {
@@ -99,7 +107,7 @@ export interface CustomerMediaPreviewResult {
 export interface CustomerVideoStudioOptions {
   rootPath: string;
   appRoot: string;
-  getVoiceStudioStatus?: () => CustomerVoiceStudioStatus;
+  getVoiceStudioStatus?: () => CustomerVoiceStudioStatus | Promise<CustomerVoiceStudioStatus>;
   getF5TtsStatus?: () => CustomerF5TtsStatus | Promise<CustomerF5TtsStatus>;
   verifyCommercialVoiceLicense?: (evidence: {
     provider: string;
@@ -524,7 +532,14 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         f5Runtime = { installed: false, running: false };
       }
     }
-    const voiceStudio = this.options.getVoiceStudioStatus?.() || { installed: false, running: false };
+    let voiceStudio: CustomerVoiceStudioStatus = { installed: false, running: false };
+    if (this.options.getVoiceStudioStatus) {
+      try {
+        voiceStudio = await this.options.getVoiceStudioStatus();
+      } catch {
+        voiceStudio = { installed: false, running: false };
+      }
+    }
     const f5Evidence = {
       provider: textValue(f5Runtime.provider, 120)
         || textValue(process.env.STARIZZI_F5_TTS_PROVIDER, 120)
@@ -552,6 +567,25 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       && Boolean(f5Evidence.modelHash && f5Evidence.licenseSource && f5Evidence.license)
       && !isNonCommercialLicense(f5Evidence.license || '')
       && this.options.verifyCommercialVoiceLicense?.(f5Evidence) === true;
+
+    // CMR-007: the commercial voice gate is provider-agnostic. Voice Studio (VieNeu-TTS,
+    // Apache-2.0 chain) must clear the same bar as the F5 slot: the caller reports `running`
+    // only after the TTS backend itself answers readiness (not merely the extension host),
+    // plus declared commercial intent, full evidence, no non-commercial marker, and an audited
+    // license chain confirmed by the injected verifier.
+    const voiceStudioEvidence = {
+      provider: textValue(voiceStudio.provider, 120) || 'voice-studio',
+      modelId: textValue(voiceStudio.modelId, 160) || undefined,
+      modelHash: textValue(voiceStudio.modelHash, 128) || undefined,
+      license: textValue(voiceStudio.license, 160) || undefined,
+      licenseSource: textValue(voiceStudio.licenseSource, 500) || undefined,
+    };
+    const voiceStudioCommercial = voiceStudio.installed
+      && voiceStudio.running
+      && voiceStudio.commercialUseAllowed === true
+      && Boolean(voiceStudioEvidence.modelId && voiceStudioEvidence.modelHash && voiceStudioEvidence.licenseSource && voiceStudioEvidence.license)
+      && !isNonCommercialLicense(voiceStudioEvidence.license || '')
+      && this.options.verifyCommercialVoiceLicense?.(voiceStudioEvidence) === true;
 
     const f5Version = publicRuntimeVersion(f5Runtime.version);
     let f5Tts: CustomerMediaToolchain['f5Tts'];
@@ -601,12 +635,20 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         : { status: 'needs_setup', detail: 'Cần cấu hình FFmpeg và FFprobe trước khi render.' },
       f5Tts,
       voiceStudio: voiceStudio.running
-        ? { status: 'ready', version: voiceStudio.version, detail: 'Voice Studio local đang chạy.' }
+        ? {
+          status: 'ready',
+          version: publicRuntimeVersion(voiceStudio.version),
+          detail: voiceStudioCommercial
+            ? 'Voice Studio local đang chạy với model có bằng chứng license thương mại đã xác minh.'
+            : 'Voice Studio local đang chạy nhưng chưa có đủ bằng chứng license thương mại đã xác minh.',
+        }
         : voiceStudio.installed
-          ? { status: 'needs_setup', version: voiceStudio.version, detail: 'Voice Studio đã cài nhưng chưa chạy.' }
+          ? { status: 'needs_setup', version: publicRuntimeVersion(voiceStudio.version), detail: 'Voice Studio đã cài nhưng chưa chạy.' }
           : { status: 'needs_setup', detail: 'Voice Studio chưa được cài.' },
       previewAvailable: Boolean(hyperframesCliPath && nodeReady),
-      commercialRenderAvailable: Boolean(hyperframesCliPath && nodeReady && ffmpegPath && ffprobePath && f5Commercial),
+      commercialRenderAvailable: Boolean(
+        hyperframesCliPath && nodeReady && ffmpegPath && ffprobePath && (f5Commercial || voiceStudioCommercial),
+      ),
     };
     const value: RuntimeInspection = {
       toolchain,

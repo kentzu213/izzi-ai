@@ -70,6 +70,10 @@ import {
   CustomerVideoStudioService,
   type CustomerF5TtsStatus,
 } from './customer-marketing/customer-video-studio-service';
+import {
+  readVoiceStudioLicenseEvidence,
+  verifyCommercialVoiceLicense,
+} from './customer-marketing/commercial-voice-license';
 import { createStreamCollector } from '../shared/agent-turn-events';
 import { registerBudgetHandlers } from './setup/budget-ipc-handlers';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
@@ -393,15 +397,33 @@ function setupIPC() {
     rootPath: path.join(app.getPath('userData'), 'customer-marketing-media'),
     appRoot: app.getAppPath(),
     getF5TtsStatus: inspectConfiguredF5Tts,
-    getVoiceStudioStatus: () => {
+    getVoiceStudioStatus: async () => {
       const voiceStudio = (extensionLoader?.getAllExtensions() || [])
         .find((extension) => extension.id === 'ext-voice-studio' || extension.name === 'voice-studio');
+      // CMR-007: the operator declares which checkpoint Voice Studio serves; the verifier then
+      // checks that declaration against the audited registry. Missing evidence keeps the
+      // commercial gate closed (fail-closed) — Voice Studio still works for preview.
+      // `running` uses the managed-service health signal, not the extension host state: it
+      // performs the manifest `healthPath` (/health/ready) check against the port actually
+      // allocated for the container, so a stranger holding a fixed port cannot look "ready"
+      // and a model that is still loading (503) does not count as serving.
+      let serving = false;
+      if (voiceStudio && extensionLoader) {
+        try {
+          const service = await extensionLoader.getServiceStatus(voiceStudio.id);
+          serving = service.hasService === true && service.running === true && service.healthy === true;
+        } catch {
+          serving = false;
+        }
+      }
       return {
         installed: Boolean(voiceStudio),
-        running: voiceStudio?.state === 'running',
+        running: serving,
         version: voiceStudio?.manifest.version,
+        ...readVoiceStudioLicenseEvidence(process.env),
       };
     },
+    verifyCommercialVoiceLicense,
   });
   const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
