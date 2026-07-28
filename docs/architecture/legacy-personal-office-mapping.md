@@ -185,7 +185,7 @@ The legacy turn-event stream and run-entry log are the natural source of the PO
 | " | `crashed` | `failed` | High | no | map | Loop 11 |
 | " | `disabled` | `released` (+`disabled` flag) | Med | yes | map+field | Loop 11 |
 | `AgentRuntimeStatus` | `idle`/`connecting`/`running`/`error` | `pending`/`provisioning`/`ready`/`failed` | Med | no | map | Loop 11 |
-| `CustomerMediaRuntimeState` | `ready`/`needs_setup`/`blocked` | `ready`/`pending`/`failed`* | Med | yes | map (*`blocked`→see §3.4) | Loop 12 |
+| `CustomerMediaRuntimeState` | `ready`/`needs_setup`/`blocked` | runtime provisioning health: `ready`/`pending`/`failed`; an associated active WorkRun blocked by that runtime maps separately to `waiting_external` | Med | yes | split runtime health from run state (see §3.4) | Loop 12 |
 | `MarketingHealth` | `ready`/`attention`/`blocked`/`unknown` | workspace **health signal**, not provisioning | Blocked | yes | map+field (proposed `WorkspaceInstance.health`) | Loop 08 (§3.5) |
 | `SessionIssueKind` | (5) | diagnosis metadata on a `failed`/`paused` run event | High | no | map to event payload | Loop 03 |
 
@@ -236,22 +236,22 @@ Run/Task/Event adapters **ignore** them. Two design carry-overs, no migration ro
 Each records: **evidence**, **decision**, **missing info** (if Blocked), **safe
 fallback**, **required test before migration**.
 
-### 3.1 `blocked` → `paused` or `failed`?
+### 3.1 AgentRun stuck/guardrail `blocked` → `paused` or `failed`?
 - **Evidence.** `host-agent.ts:67` instructs the model to mark a task `"blocked" if
   stuck` — i.e. temporarily cannot proceed, not a hard error. The action-gate sets
   `blocked` when guardrail words/unsafe instructions are present
   (`customer-marketing-service.ts:769`) — a recoverable "needs revision" outcome.
-  `CustomerRunStatus` lists `blocked` **separately from** `awaiting_approval` and has
-  **no** `failed`, so its `blocked` is the catch-all "cannot proceed now". No legacy
-  path treats `blocked` as terminal.
-- **Decision (evidence-backed).** Run-level `blocked` → **`paused`**, never `failed`.
-  `paused` is recoverable and re-enterable (`paused → running`), matching "stuck".
-- **Missing info.** *Why* it is paused (stuck vs guardrail vs waiting_external) is lost
-  in a single `paused` value.
-- **Safe fallback.** `paused` with a *proposed additive* `pausedReason` (see §3.4);
-  until that field exists, `paused` alone — never `failed` (never fabricate failure).
-- **Required test.** No legacy `blocked` ever produces PO `failed`; every `blocked`
-  produces a re-enterable `paused`.
+- **Decision (evidence-backed).** AgentRun/task “stuck” and guardrail `blocked` →
+  **`paused`**, never `failed`. `paused` is recoverable and re-enterable
+  (`paused → running`), matching those causes.
+- **Reason detail.** Set `pausedReason='stuck'|'guardrail'` as applicable. External
+  integration/runtime/media dependency blocks are intentionally excluded and map
+  to first-class `waiting_external` under §3.4.
+- **Safe fallback.** When the AgentRun cause cannot be distinguished, use `paused`
+  without fabricating a reason; never fabricate `failed`.
+- **Required test.** AgentRun stuck/guardrail blocks produce a re-enterable `paused`;
+  customer/runtime/media dependency blocks produce `waiting_external`; neither
+  produces `failed`.
 
 ### 3.2 `refused` → `canceled` or `failed`?
 - **Evidence.** The scheduler models `refused` **distinctly from** `failed`

@@ -87,9 +87,11 @@ are recorded as Blocked in that doc's §3 and are **not** asserted as final).
 
 Decided (with source evidence):
 
-- **Run-level `blocked` → `paused`, never `failed`.** `host-agent.ts:67` defines
-  `blocked` as "stuck", and the action-gate uses it for recoverable guardrail
-  refusals (`customer-marketing-service.ts:769`). It is always re-enterable.
+- **AgentRun stuck/guardrail `blocked` → `paused`, never `failed`.**
+  `host-agent.ts:67` defines that block as “stuck”, and the action-gate uses it for
+  recoverable guardrail refusals (`customer-marketing-service.ts:769`). External
+  customer/runtime/media dependency blocks are a different concern and map to
+  first-class `waiting_external`.
 - **Scheduler `refused` → `canceled`, not `failed`.** The scheduler separates
   `refused` (OS declined to start; no work ran) from `failed` (a step failed —
   `schedule-service.ts:223`).
@@ -113,7 +115,10 @@ W0 resolved the remaining run-contract questions:
   lineage is fabricated.
 - `failed` is terminal. Retry creates a new run rather than reopening a failed row.
 
-Contract impact is additive at schema v1: `pausedReason`, `canceledReason`,
-`archivedAt`, `legacyStatusRaw`, lineage fields, deterministic canonical payloads,
-and immutable approval bindings. `PERSONAL_OFFICE_SCHEMA_VERSION` remains the only
-version authority; the superseded draft's `WORK_SCHEMA_VERSION` must not land.
+Contract impact is recorded at schema v1 before any shipped persistence:
+`waiting_external` becomes first-class, `pausedReason` is narrowed to
+`stuck|guardrail`, and `canceledReason`, `archivedAt`, `legacyStatusRaw`, lineage
+fields, deterministic canonical payloads, and immutable approval bindings are
+added. No migration is needed for this unshipped contract.
+`PERSONAL_OFFICE_SCHEMA_VERSION` remains the only version authority; the
+superseded draft's `WORK_SCHEMA_VERSION` must not land.
