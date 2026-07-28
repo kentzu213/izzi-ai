@@ -150,7 +150,7 @@ export function agentNeedsApiServer(agentId: string): boolean {
 export function buildHermesConfigYaml(config: HermesModelConfig): string {
   const q = (s: string) => JSON.stringify(String(s));
   return [
-    '# Managed by Izzi OpenClaw — routes this agent through your Izzi smart router.',
+    '# Managed by Izzi AI — routes this agent through your Izzi smart router.',
     '# Regenerated on each start (the local proxy port/token may change).',
     'model:',
     '  provider: custom',

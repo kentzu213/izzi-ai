@@ -1,5 +1,5 @@
 # ══════════════════════════════════════════════════════════════
-# Izzi OpenClaw Desktop — Production Dockerfile
+# Izzi AI Desktop — Production Dockerfile
 # Multi-stage build for cross-platform consistency
 # ══════════════════════════════════════════════════════════════
 

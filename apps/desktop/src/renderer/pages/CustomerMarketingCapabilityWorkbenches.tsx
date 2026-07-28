@@ -270,7 +270,7 @@ function CreativeStudioView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Creative Studio requires Starizzi Desktop.');
+      setError('Creative Studio requires Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -600,7 +600,7 @@ function AnalyticsCopilotView({
     if (!api) {
       setReport(null);
       setStatus('unavailable');
-      setError('Analytics Copilot requires Starizzi Desktop.');
+      setError('Analytics Copilot requires Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -888,7 +888,7 @@ function BrandGuardianView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Brand Guardian requires Starizzi Desktop.');
+      setError('Brand Guardian requires Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -1146,7 +1146,7 @@ function AutomationBuilderView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Automation Builder requires Starizzi Desktop.');
+      setError('Automation Builder requires Izzi AI Desktop.');
       setLoading(false);
       return;
     }

@@ -199,7 +199,7 @@ export function DeveloperUploadPage({ onBack }: { onBack: () => void }) {
       <div className="page-header">
         <h1 className="page-header__title">🚀 Đăng tải tiện ích</h1>
         <p className="page-header__subtitle">
-          Xuất bản tiện ích mở rộng lên Izzi OpenClaw Marketplace
+          Xuất bản tiện ích mở rộng lên Izzi AI Marketplace
         </p>
       </div>
 

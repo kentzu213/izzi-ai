@@ -1,7 +1,7 @@
 /**
  * Auto-Post agent tools (autopost-unification, Phase 2).
  *
- * Exposes the Auto-Post Tool's capabilities to the Starizzi agent as OpenAI
+ * Exposes the Auto-Post Tool's capabilities to the Izzi AI agent as OpenAI
  * function tools, executed via the REST `AutopostClient`. Mirrors the shape of
  * `agent-tools.ts` (schemas + risk classification + executor) so the host-agent
  * loop can treat them uniformly.

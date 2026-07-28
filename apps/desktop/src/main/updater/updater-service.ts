@@ -134,7 +134,7 @@ export class UpdaterService extends EventEmitter {
     }
 
     if (this.state.state === 'downloaded') {
-      this.adapter?.quitAndInstall(false, true);
+      this.adapter?.quitAndInstall(true, true);
     }
   }
 

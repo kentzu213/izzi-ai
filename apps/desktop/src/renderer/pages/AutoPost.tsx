@@ -166,7 +166,7 @@ export function AutoPostPage() {
   if (!api) {
     return (
       <div className="ap-page">
-        <p className="ap-note ap-note--warn">Trang Auto-Post cần chạy trong ứng dụng Starizzi (Electron).</p>
+        <p className="ap-note ap-note--warn">Trang Auto-Post cần chạy trong ứng dụng Izzi AI (Electron).</p>
       </div>
     );
   }
@@ -204,7 +204,7 @@ export function AutoPostPage() {
             {connected
               ? `${status?.backendUrl}${status?.workspaceId ? ` · workspace ${status.workspaceId}` : ''}`
               : enabled
-                ? 'Hãy đăng nhập izzi trong Starizzi để cấp quyền cho Auto-Post.'
+                ? 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
                 : 'Bật để agent và extension đăng bài qua Auto-Post Tool.'}
           </span>
         </div>

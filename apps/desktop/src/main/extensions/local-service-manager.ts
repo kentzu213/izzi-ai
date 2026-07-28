@@ -345,7 +345,7 @@ export class LocalServiceManager {
     const envPath = path.join(dir, '.env');
     const existing = this.readEnv(envPath);
 
-    const lines = ['# Managed by Izzi OpenClaw — generated locally. Do not commit.', 'IZZI_BIND=127.0.0.1'];
+    const lines = ['# Managed by Izzi AI — generated locally. Do not commit.', 'IZZI_BIND=127.0.0.1'];
     for (const [name, hostPort] of Object.entries(ports)) {
       lines.push(`IZZI_PORT_${name.toUpperCase()}=${hostPort}`);
     }

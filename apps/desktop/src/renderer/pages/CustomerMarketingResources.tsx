@@ -656,7 +656,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     const api = customerApi();
     if (!api) {
       setBridgeStatus('unavailable');
-      setError('Customer Marketing resources cần chạy trong Starizzi Desktop.');
+      setError('Customer Marketing resources cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }

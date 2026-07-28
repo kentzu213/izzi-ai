@@ -18,7 +18,7 @@ export function ChatEmptyState({
   return (
     <div className="chat-empty-state glass-panel">
       <div className="chat-empty-state__eyebrow">Managed Runner</div>
-      <h2 className="chat-empty-state__title">Giao việc cho Izzi OpenClaw agent</h2>
+      <h2 className="chat-empty-state__title">Giao việc cho Izzi AI agent</h2>
       <p className="chat-empty-state__description">
         Bắt đầu bằng một mục tiêu rõ ràng. Agent sẽ stream phản hồi theo tiến trình, tạo tasks và memory,
         và lưu lại lịch sử cục bộ ngay trên desktop app.

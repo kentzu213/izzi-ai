@@ -625,8 +625,8 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
 
     const toolchain: CustomerMediaToolchain = {
       hyperframes: hyperframesCliPath
-        ? { status: 'ready', version: hyperframesVersion, detail: 'HyperFrames được pin trong Starizzi.' }
-        : { status: 'needs_setup', detail: 'Chưa tìm thấy HyperFrames runtime trong Starizzi.' },
+        ? { status: 'ready', version: hyperframesVersion, detail: 'HyperFrames được pin trong Izzi AI.' }
+        : { status: 'needs_setup', detail: 'Chưa tìm thấy HyperFrames runtime trong Izzi AI.' },
       node: nodeReady
         ? { status: 'ready', version: nodeVersion, detail: 'Node đáp ứng yêu cầu HyperFrames.' }
         : { status: 'blocked', version: nodeVersion, detail: 'HyperFrames cần Node 22 trở lên.' },

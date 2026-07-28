@@ -5,7 +5,7 @@
 export const vi = {
   // ── App-wide ──
   app: {
-    name: 'Izzi OpenClaw',
+    name: 'Izzi AI',
     tagline: 'Trợ lý AI thông minh cho mọi nền tảng',
     loading: 'Đang tải...',
     error: 'Đã xảy ra lỗi',
@@ -56,7 +56,7 @@ export const vi = {
   // ── Dashboard ──
   dashboard: {
     title: 'Trang chủ',
-    welcome: 'Chào mừng bạn đến với Izzi OpenClaw!',
+    welcome: 'Chào mừng bạn đến với Izzi AI!',
     agentStatus: 'Trạng thái Agent',
     quickActions: 'Thao tác nhanh',
     openChat: 'Mở Chat',

@@ -1,4 +1,4 @@
-/** Credit eligibility shown by Starizzi for models billed through Izzi API. */
+/** Credit eligibility shown by Izzi AI for models billed through Izzi API. */
 export type ModelCreditPolicy =
   | 'standard'
   | 'paid-balance-required'

@@ -167,7 +167,7 @@ export class AgentSessionCapturer {
 
     const created = await this.graph.createNode({
       title,
-      content: `Tổng hợp các phiên làm việc của agent ${agentName} (Tool Starizzi tự động ghi lại).`,
+      content: `Tổng hợp các phiên làm việc của agent ${agentName} (Tool Izzi AI tự động ghi lại).`,
       nodeType: 'topic',
       color: HUB_COLOR,
       metadata: { kind: 'agent-hub', agentId },

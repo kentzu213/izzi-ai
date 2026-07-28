@@ -92,7 +92,7 @@ const RECOMMENDATION_LABELS: Record<string, string> = {
 
 const HUMAN_GATE_TITLES: Record<string, string> = {
   case_study_4_review: 'Case Study 4 · Approval-gated publishing',
-  seo_06_review: 'SEO 06 · Starizzi Auto-Post workflow',
+  seo_06_review: 'SEO 06 · Izzi AI Auto-Post workflow',
   weekly_spend_close: 'Weekly spend close · 13-19/07/2026',
 };
 
@@ -728,7 +728,7 @@ function AnalyticsTab({ snapshot, openPath, busy, analyticsApi }: AnalyticsTabPr
     if (!analyticsApi) {
       setReport(null);
       setAnalyticsStatus('local');
-      setAnalyticsError('Analytics đồng bộ chỉ khả dụng trong Starizzi Desktop.');
+      setAnalyticsError('Analytics đồng bộ chỉ khả dụng trong Izzi AI Desktop.');
       setAnalyticsLoading(false);
       return;
     }
@@ -1112,7 +1112,7 @@ export function MarketingRoomPage() {
 
   const refresh = useCallback(async () => {
     if (!api) {
-      setError('Marketing Room chỉ khả dụng trong ứng dụng Starizzi Desktop.');
+      setError('Marketing Room chỉ khả dụng trong ứng dụng Izzi AI Desktop.');
       setLoading(false);
       return;
     }

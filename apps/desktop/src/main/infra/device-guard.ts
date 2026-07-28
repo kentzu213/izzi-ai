@@ -1,5 +1,5 @@
 // ── Device Guard Service ──
-// Hardware fingerprinting and session security for Izzi OpenClaw.
+// Hardware fingerprinting and session security for Izzi AI.
 // Ported from tuanminhhole/openclaw-setup infra/device-guard.ts
 
 import * as os from 'os';

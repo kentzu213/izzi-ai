@@ -98,8 +98,8 @@ export function Sidebar({ currentPage, onNavigate, user, updateCount = 0, appUpd
 
   return (
     <aside className="sidebar glass-panel" role="complementary" aria-label="Thanh dieu huong">
-      <div className="sidebar__brand-panel" aria-label="IzziAI Memory Universe">
-        <span className="sidebar__brand-kicker">IzziAI Memory Universe</span>
+      <div className="sidebar__brand-panel" aria-label="Izzi AI Memory Universe">
+        <span className="sidebar__brand-kicker">Izzi AI Memory Universe</span>
         <strong>Recall routes for repeat work.</strong>
         <span className="sidebar__brand-flow">Capture / Structure / Recall / Replay</span>
       </div>

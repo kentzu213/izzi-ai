@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// ── Build Script for Izzi OpenClaw Desktop ──
+// ── Build Script for Izzi AI Desktop ──
 // Usage:
 //   node scripts/build.js [platform] [--sign]
 //
@@ -18,7 +18,7 @@ const shouldSign = args.includes('--sign');
 
 console.log(`
 ╔══════════════════════════════════════╗
-║   Izzi OpenClaw Desktop Builder     ║
+║   Izzi AI Desktop Builder     ║
 ║   Platform: ${platform.padEnd(25)}║
 ║   Sign: ${(shouldSign ? 'YES' : 'NO').padEnd(28)}║
 ╚══════════════════════════════════════╝

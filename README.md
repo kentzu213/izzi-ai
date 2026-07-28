@@ -1,16 +1,16 @@
 <div align="center">
 
-# 🌟 Starizzi — Multi-Agent Gateway
+# 🌟 Izzi AI — Multi-Agent Gateway
 
 **Desktop AI Agent Hub for Windows & macOS** · powered by [IzziAPI](https://izziapi.com)
 
 Run, chat with, and orchestrate top open-source AI agents — **OpenClaw, Hermes, AutoGPT, Dify, CrewAI, n8n** — from one beautiful liquid-glass desktop app. One API key, every model.
 
-[![Download](https://img.shields.io/github/v/release/kentzu213/starizzi-app?label=Download&style=for-the-badge&logo=github)](https://github.com/kentzu213/starizzi-app/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/kentzu213/starizzi-app/releases/latest)
+[![Download](https://img.shields.io/github/v/release/kentzu213/izzi-ai?label=Download&style=for-the-badge&logo=github)](https://github.com/kentzu213/izzi-ai/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/kentzu213/izzi-ai/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-lightgrey?style=for-the-badge)](#-license--giấy-phép)
 
-[**⬇️ Download / Tải về**](https://github.com/kentzu213/starizzi-app/releases/latest) · [English](#-english) · [Tiếng Việt](#-tiếng-việt)
+[**⬇️ Download / Tải về**](https://github.com/kentzu213/izzi-ai/releases/latest) · [English](#-english) · [Tiếng Việt](#-tiếng-việt)
 
 </div>
 
@@ -18,9 +18,9 @@ Run, chat with, and orchestrate top open-source AI agents — **OpenClaw, Hermes
 
 ## 🇬🇧 English
 
-### What is Starizzi?
+### What is Izzi AI?
 
-**Starizzi** (Izzi OpenClaw) is a cross-platform **desktop AI agent gateway**. Install, configure, and chat with multiple autonomous AI agents through a single frameless, glassmorphic interface — no terminal required. It connects to [izziapi.com](https://izziapi.com) so one API key unlocks GPT, Claude, Gemini and 200+ models with smart routing and budget control.
+**Izzi AI** is a cross-platform **desktop AI agent gateway**. Install, configure, and chat with multiple autonomous AI agents through a single frameless, glassmorphic interface — no terminal required. It connects to [izziapi.com](https://izziapi.com) so one API key unlocks GPT, Claude, Gemini and 200+ models with smart routing and budget control.
 
 > Keywords: AI agent desktop app, multi-agent gateway, OpenClaw, Hermes agent, AutoGPT desktop, Telegram AI bot, Zalo AI bot, Electron AI app, IzziAPI, LLM router, GPT Claude Gemini one key.
 
@@ -34,14 +34,14 @@ Run, chat with, and orchestrate top open-source AI agents — **OpenClaw, Hermes
 - 🏪 **Marketplace & Extensions** — Discover, install (SHA-256 verified), and manage `.ocx` extensions and agent bundles.
 - 💰 **Cost Dashboard** — Track spend per day/week/month, per-model breakdown, budget alerts and subscription advice.
 - 🎨 **iOS-26 Liquid-Glass UI** — Token-driven glassmorphism design system, dark-only, frameless custom titlebar.
-- 🔄 **Auto-Update** — Built-in updater publishes from this repo's [Releases](https://github.com/kentzu213/starizzi-app/releases).
+- 🔄 **Auto-Update** — Built-in updater publishes from this repo's [Releases](https://github.com/kentzu213/izzi-ai/releases).
 
 ### ⬇️ Installation
 
-1. Go to **[Releases](https://github.com/kentzu213/starizzi-app/releases/latest)**.
+1. Go to **[Releases](https://github.com/kentzu213/izzi-ai/releases/latest)**.
 2. Download the installer for your OS:
-   - **Windows** → `Izzi-OpenClaw-Setup-x.y.z.exe`
-   - **macOS** → `Izzi-OpenClaw-x.y.z.dmg` (Intel & Apple Silicon)
+   - **Windows** → `Izzi-AI-x.y.z-win-x64.exe`
+   - **macOS** → `Izzi-AI-x.y.z-mac-{x64|arm64}.dmg` (Intel & Apple Silicon)
 3. Run it, sign in with your [IzziAPI](https://izziapi.com) account, and follow the Setup Wizard.
 
 No terminal, no Node, no Docker required for the Express path (Docker only needed for container-based agents like Hermes / AutoGPT).
@@ -57,8 +57,8 @@ No terminal, no Node, no Docker required for the Express path (Docker only neede
 
 ```bash
 # Requires Node >= 20 and pnpm >= 9
-git clone https://github.com/kentzu213/starizzi-app.git
-cd starizzi-app
+git clone https://github.com/kentzu213/izzi-ai.git
+cd izzi-ai
 
 pnpm install          # install workspace deps
 pnpm dev              # run desktop app (Vite renderer + Electron main)
@@ -71,7 +71,7 @@ Tech stack: **Electron 34 + React 19 + Vite 6 + TypeScript 5 + Zustand + better-
 ### 📦 Releases & Auto-Update
 
 All installers and the auto-update feed are published **only** to this repository:
-👉 **https://github.com/kentzu213/starizzi-app/releases**
+👉 **https://github.com/kentzu213/izzi-ai/releases**
 
 Releases are produced by the GitHub Actions workflow on every `v*` tag (Windows + macOS) via `electron-builder --publish always`.
 
@@ -79,9 +79,9 @@ Releases are produced by the GitHub Actions workflow on every `v*` tag (Windows 
 
 ## 🇻🇳 Tiếng Việt
 
-### Starizzi là gì?
+### Izzi AI là gì?
 
-**Starizzi** (Izzi OpenClaw) là **ứng dụng desktop cổng AI agent** đa nền tảng. Cài đặt, cấu hình và trò chuyện với nhiều AI agent tự trị qua một giao diện kính (glassmorphism) liền mạch — **không cần dùng terminal**. App kết nối tới [izziapi.com](https://izziapi.com): chỉ **một API key** là dùng được GPT, Claude, Gemini và hơn 200 model với định tuyến thông minh và kiểm soát chi phí.
+**Izzi AI** là **ứng dụng desktop cổng AI agent** đa nền tảng. Cài đặt, cấu hình và trò chuyện với nhiều AI agent tự trị qua một giao diện kính (glassmorphism) liền mạch — **không cần dùng terminal**. App kết nối tới [izziapi.com](https://izziapi.com): chỉ **một API key** là dùng được GPT, Claude, Gemini và hơn 200 model với định tuyến thông minh và kiểm soát chi phí.
 
 > Từ khóa: ứng dụng AI agent desktop, multi-agent gateway, OpenClaw, Hermes agent, AutoGPT, bot AI Telegram, bot AI Zalo, app Electron AI, IzziAPI, định tuyến LLM, một key dùng GPT Claude Gemini.
 
@@ -95,14 +95,14 @@ Releases are produced by the GitHub Actions workflow on every `v*` tag (Windows 
 - 🏪 **Marketplace & Tiện ích** — Khám phá, cài đặt (xác minh SHA-256) và quản lý tiện ích `.ocx` cùng agent bundle.
 - 💰 **Bảng chi phí** — Theo dõi chi tiêu theo ngày/tuần/tháng, bóc tách theo model, cảnh báo ngân sách và gợi ý gói.
 - 🎨 **Giao diện kính iOS-26** — Hệ design token glassmorphism, dark-only, thanh tiêu đề tuỳ chỉnh không khung.
-- 🔄 **Tự động cập nhật** — Updater tích hợp, phát hành từ [Releases](https://github.com/kentzu213/starizzi-app/releases) của chính repo này.
+- 🔄 **Tự động cập nhật** — Updater tích hợp, phát hành từ [Releases](https://github.com/kentzu213/izzi-ai/releases) của chính repo này.
 
 ### ⬇️ Cài đặt
 
-1. Vào **[Releases](https://github.com/kentzu213/starizzi-app/releases/latest)**.
+1. Vào **[Releases](https://github.com/kentzu213/izzi-ai/releases/latest)**.
 2. Tải bộ cài theo hệ điều hành:
-   - **Windows** → `Izzi-OpenClaw-Setup-x.y.z.exe`
-   - **macOS** → `Izzi-OpenClaw-x.y.z.dmg` (Intel & Apple Silicon)
+   - **Windows** → `Izzi-AI-x.y.z-win-x64.exe`
+   - **macOS** → `Izzi-AI-x.y.z-mac-{x64|arm64}.dmg` (Intel & Apple Silicon)
 3. Chạy file, đăng nhập tài khoản [IzziAPI](https://izziapi.com) và làm theo Trình cài đặt.
 
 Không cần terminal, Node hay Docker cho luồng Express (chỉ cần Docker cho agent dạng container như Hermes / AutoGPT).
@@ -118,8 +118,8 @@ Không cần terminal, Node hay Docker cho luồng Express (chỉ cần Docker c
 
 ```bash
 # Cần Node >= 20 và pnpm >= 9
-git clone https://github.com/kentzu213/starizzi-app.git
-cd starizzi-app
+git clone https://github.com/kentzu213/izzi-ai.git
+cd izzi-ai
 
 pnpm install          # cài dependency cho workspace
 pnpm dev              # chạy app desktop (Vite renderer + Electron main)
@@ -132,7 +132,7 @@ Công nghệ: **Electron 34 + React 19 + Vite 6 + TypeScript 5 + Zustand + bette
 ### 📦 Phát hành & Tự cập nhật
 
 Toàn bộ bộ cài và kênh auto-update **chỉ** phát hành tại repo này:
-👉 **https://github.com/kentzu213/starizzi-app/releases**
+👉 **https://github.com/kentzu213/izzi-ai/releases**
 
 Bản phát hành được tạo bởi GitHub Actions mỗi khi đẩy tag `v*` (Windows + macOS) qua `electron-builder --publish always`.
 
@@ -151,11 +151,11 @@ Bản phát hành được tạo bởi GitHub Actions mỗi khi đẩy tag `v*` 
 
 ## 📄 License / Giấy phép
 
-Proprietary © Starizzi Technologies / kentzu213. All rights reserved.
-Bản quyền thuộc Starizzi Technologies / kentzu213. Mọi quyền được bảo lưu.
+Proprietary © Izzi AI / kentzu213. All rights reserved.
+Bản quyền thuộc Izzi AI / kentzu213. Mọi quyền được bảo lưu.
 
 ## 🔗 Links / Liên kết
 
 - 🌐 Website / API: [izziapi.com](https://izziapi.com)
-- ⬇️ Downloads / Tải về: [Releases](https://github.com/kentzu213/starizzi-app/releases)
-- 🐛 Issues / Báo lỗi: [GitHub Issues](https://github.com/kentzu213/starizzi-app/issues)
+- ⬇️ Downloads / Tải về: [Releases](https://github.com/kentzu213/izzi-ai/releases)
+- 🐛 Issues / Báo lỗi: [GitHub Issues](https://github.com/kentzu213/izzi-ai/issues)

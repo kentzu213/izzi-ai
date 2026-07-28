@@ -2,7 +2,7 @@
  * Auto-Post auth bridge (autopost-unification, Phase 1).
  *
  * Mints a local Auto-Post Tool JWT from the user's EXISTING izzi/Supabase session
- * (already unified with izziapi.com), so the Starizzi agent and the Social Auto
+ * (already unified with izziapi.com), so the Izzi AI agent and the Social Auto
  * Poster extension use Auto-Post with NO separate login — the "1-click → works"
  * requirement.
  *

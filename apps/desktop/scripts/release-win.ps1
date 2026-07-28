@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Starizzi Desktop — Windows Build & Release (PowerShell)
+  Izzi AI Desktop — Windows Build & Release (PowerShell)
 .DESCRIPTION
   Double-click or run from terminal. Sets GH_TOKEN env var to publish.
   Without GH_TOKEN, builds local installer only.
@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "===== Starizzi Desktop Release (Windows) =====" -ForegroundColor Cyan
+Write-Host "===== Izzi AI Desktop Release (Windows) =====" -ForegroundColor Cyan
 Write-Host ""
 
 # Navigate to desktop app root
@@ -88,7 +88,7 @@ if (Test-Path "release") {
 
 if ($publishMode -eq "always") {
     Write-Host ""
-    Write-Host "[PUBLISHED] https://github.com/kentzu213/starizzi-app/releases" -ForegroundColor Green
+    Write-Host "[PUBLISHED] https://github.com/kentzu213/izzi-ai/releases" -ForegroundColor Green
 }
 
 Write-Host ""

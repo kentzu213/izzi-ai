@@ -218,7 +218,7 @@ export function ExtensionsPage({
           <div>
             <h1 className="page-header__title">🧩 Tiện ích mở rộng</h1>
             <p className="page-header__subtitle">
-              Quản lý các tiện ích đã cài đặt trên Izzi OpenClaw
+              Quản lý các tiện ích đã cài đặt trên Izzi AI
               {totalCount > 0 && (
                 <span className="extensions-running-count">
                   {runningCount}/{totalCount} đang chạy

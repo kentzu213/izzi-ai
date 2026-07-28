@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Starizzi Desktop — Windows Build ^& Release Script
+REM  Izzi AI Desktop — Windows Build ^& Release Script
 REM  
 REM  Usage:
 REM    1. Double-click to BUILD LOCAL only (no publish)
@@ -12,7 +12,7 @@ REM  Output: apps\desktop\release\
 REM ============================================================
 
 echo.
-echo ===== Starizzi Desktop Release (Windows) =====
+echo ===== Izzi AI Desktop Release (Windows) =====
 echo.
 
 REM — Navigate to desktop app root
@@ -72,7 +72,7 @@ echo.
 REM — Check if GH_TOKEN is set for publishing
 if defined GH_TOKEN (
     echo [4/5] GH_TOKEN detected — will BUILD and PUBLISH to GitHub.
-    echo       Repo: kentzu213/starizzi-app
+    echo       Repo: kentzu213/izzi-ai
     echo.
     set PUBLISH_MODE=1
 ) else (
@@ -114,7 +114,7 @@ if exist "release" (
 )
 
 if !PUBLISH_MODE!==1 (
-    echo [PUBLISHED] Release uploaded to GitHub: https://github.com/kentzu213/starizzi-app/releases
+    echo [PUBLISHED] Release uploaded to GitHub: https://github.com/kentzu213/izzi-ai/releases
 ) else (
     echo [LOCAL ONLY] Install the .exe from release\ folder.
     echo To publish later: set GH_TOKEN=... and re-run this script.

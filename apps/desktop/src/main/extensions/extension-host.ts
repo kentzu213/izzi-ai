@@ -431,7 +431,7 @@ export class ExtensionHost extends EventEmitter {
    * Immediately terminate the host child with SIGKILL (no graceful deactivate).
    * Used on app quit: the forked runner runs as the Electron binary
    * (ELECTRON_RUN_AS_NODE), so if it's left orphaned it lingers as an extra
-   * "Izzi OpenClaw.exe" process and blocks the NSIS updater ("app cannot be
+   * "Izzi AI.exe" process and blocks the NSIS updater ("app cannot be
    * closed"). Sets state to 'stopping' FIRST so the exit handler does not
    * auto-restart the extension. Synchronous + best-effort — never throws.
    */

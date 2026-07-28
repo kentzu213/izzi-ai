@@ -1,4 +1,4 @@
-# Changelog — Izzi OpenClaw Desktop
+# Changelog — Izzi AI Desktop
 
 ## 1.12.1
 

@@ -4,7 +4,7 @@
 export const en = {
   // ── App-wide ──
   app: {
-    name: 'Izzi OpenClaw',
+    name: 'Izzi AI',
     tagline: 'Smart AI assistant for every platform',
     loading: 'Loading...',
     error: 'An error occurred',
@@ -55,7 +55,7 @@ export const en = {
   // ── Dashboard ──
   dashboard: {
     title: 'Dashboard',
-    welcome: 'Welcome to Izzi OpenClaw!',
+    welcome: 'Welcome to Izzi AI!',
     agentStatus: 'Agent Status',
     quickActions: 'Quick Actions',
     openChat: 'Open Chat',

@@ -546,7 +546,7 @@ function WelcomeScreen({
       <div className="izzi-setup__hero">
         <div className="izzi-setup__hero-badge">SETUP CENTER</div>
         <h1 className="izzi-setup__hero-title">
-          <span className="izzi-setup__hero-gradient">Izzi OpenClaw</span>
+          <span className="izzi-setup__hero-gradient">Izzi AI</span>
         </h1>
         <p className="izzi-setup__hero-subtitle">
           Cài đặt & quản lý AI bot chưa bao giờ dễ hơn

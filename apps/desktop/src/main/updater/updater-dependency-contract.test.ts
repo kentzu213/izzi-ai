@@ -161,7 +161,7 @@ describe('CMR-404 auto-update dependency contract', () => {
     const origin = {
       protocol: 'https:',
       hostname: 'api.github.com',
-      path: '/repos/kentzu213/starizzi-app/releases',
+      path: '/repos/kentzu213/izzi-ai/releases',
       headers: {
         'PRIVATE-TOKEN': 'must-not-leak',
         Authorization: 'Bearer must-not-leak',
@@ -208,7 +208,7 @@ describe('CMR-404 auto-update dependency contract', () => {
     const { DigestTransform } = requireFromUpdater('builder-util-runtime') as {
       DigestTransform: new (expected: string, algorithm?: string, encoding?: string) => NodeJS.ReadWriteStream;
     };
-    const payload = Buffer.from('izzi-openclaw-update-artifact');
+    const payload = Buffer.from('izzi-ai-update-artifact');
     const expected = createHash('sha512').update(payload).digest('base64');
 
     const drain = (stream: NodeJS.ReadWriteStream): Promise<void> => new Promise((resolve, reject) => {
@@ -244,10 +244,10 @@ describe('CMR-404 auto-update dependency contract', () => {
     const manifest = yaml.load([
       'version: 1.12.0',
       'files:',
-      '  - url: Izzi-OpenClaw-Setup-1.12.0.exe',
+      '  - url: Izzi-AI-Setup-1.12.0.exe',
       '    sha512: 3q2+7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
       '    size: 123456789',
-      'path: Izzi-OpenClaw-Setup-1.12.0.exe',
+      'path: Izzi-AI-Setup-1.12.0.exe',
       'sha512: 3q2+7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
       'releaseDate: 2026-07-27T00:00:00.000Z',
       '',
@@ -259,9 +259,9 @@ describe('CMR-404 auto-update dependency contract', () => {
     };
 
     expect(manifest.version).toBe('1.12.0');
-    expect(manifest.path).toBe('Izzi-OpenClaw-Setup-1.12.0.exe');
+    expect(manifest.path).toBe('Izzi-AI-Setup-1.12.0.exe');
     expect(manifest.files).toHaveLength(1);
-    expect(manifest.files[0].url).toBe('Izzi-OpenClaw-Setup-1.12.0.exe');
+    expect(manifest.files[0].url).toBe('Izzi-AI-Setup-1.12.0.exe');
     expect(manifest.files[0].size).toBe(123456789);
     // The digest must survive parsing byte-for-byte: this is what the download is verified against.
     expect(manifest.files[0].sha512).toBe(manifest.sha512);

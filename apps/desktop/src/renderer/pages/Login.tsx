@@ -92,8 +92,8 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
 
   return (
     <div className="login-page">
-      <section className="login-hero-panel" aria-label="IzziAI Memory Universe overview">
-        <div className="login-hero-panel__kicker">IzziAI Memory Universe</div>
+      <section className="login-hero-panel" aria-label="Izzi AI Memory Universe overview">
+        <div className="login-hero-panel__kicker">Izzi AI Memory Universe</div>
         <h2>Remember how your agents work.</h2>
         <p>
           Store task loops, prompts, click paths and reviewed workflows. When similar work returns,
@@ -114,7 +114,7 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
           <div className="login-card__logo-icon">
             <AppLogoMark />
           </div>
-          <h1>IzziAI OpenClaw</h1>
+          <h1>Izzi AI</h1>
           <p>
             {mode === 'login'
               ? 'Kết nối với IzziAPI.com để bắt đầu'

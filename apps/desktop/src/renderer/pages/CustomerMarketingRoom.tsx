@@ -2201,7 +2201,7 @@ export function CustomerMarketingRoomPage() {
   const loadSnapshot = useCallback(async () => {
     const api = getCustomerApi();
     if (!api) {
-      setError('Customer AI Marketing Room cần chạy trong Starizzi Desktop để kết nối workspace thật.');
+      setError('Customer AI Marketing Room cần chạy trong Izzi AI Desktop để kết nối workspace thật.');
       setLoading(false);
       return;
     }

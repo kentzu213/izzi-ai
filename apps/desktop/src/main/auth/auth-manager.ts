@@ -651,7 +651,7 @@ export class AuthManager {
       const res = await fetch(`${IZZI_API_BASE}/api/keys`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Izzi OpenClaw Desktop' }),
+        body: JSON.stringify({ name: 'Izzi AI Desktop' }),
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { key?: unknown };

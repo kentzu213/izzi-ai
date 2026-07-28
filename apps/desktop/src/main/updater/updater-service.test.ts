@@ -5,6 +5,7 @@ import { UpdaterService } from './updater-service';
 class FakeUpdaterAdapter extends EventEmitter {
   autoDownload = false;
   currentVersion = { version: '0.1.0' };
+  quitAndInstallCalls: Array<[boolean | undefined, boolean | undefined]> = [];
 
   async checkForUpdates(): Promise<void> {
     this.emit('checking-for-update');
@@ -16,7 +17,8 @@ class FakeUpdaterAdapter extends EventEmitter {
     this.emit('update-downloaded', { version: '0.1.1' });
   }
 
-  quitAndInstall(): void {
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void {
+    this.quitAndInstallCalls.push([isSilent, isForceRunAfter]);
     this.emit('quit-and-install');
   }
 }
@@ -66,5 +68,21 @@ describe('UpdaterService', () => {
       availableVersion: '0.4.1',
       progress: 100,
     });
+  });
+
+  it('installs a downloaded update silently and relaunches the app', async () => {
+    const adapter = new FakeUpdaterAdapter();
+    const service = new UpdaterService({
+      adapter,
+      appVersion: '0.1.0',
+      packaged: true,
+      mockMode: false,
+    });
+
+    await service.check();
+    await service.download();
+    service.quitAndInstall();
+
+    expect(adapter.quitAndInstallCalls).toEqual([[true, true]]);
   });
 });

@@ -117,7 +117,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const load = useCallback(async () => {
     const api = window.electronAPI?.customerMarketing;
     if (!api) {
-      setError('Kênh marketing cần chạy trong Starizzi Desktop.');
+      setError('Kênh marketing cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -164,7 +164,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     const api = window.electronAPI?.customerMarketing;
     if (!api) {
       setCredentialLoading(false);
-      setCredentialError('Kênh marketing cần chạy trong Starizzi Desktop.');
+      setCredentialError('Kênh marketing cần chạy trong Izzi AI Desktop.');
       return;
     }
     setCredentialLoading(true);

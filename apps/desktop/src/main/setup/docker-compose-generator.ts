@@ -32,7 +32,7 @@ export function generateDockerCompose(
   const ollamaModel = options.ollamaModel || 'gemma4:e2b';
 
   const lines: string[] = [
-    '# Izzi OpenClaw — Docker Compose',
+    '# Izzi AI — Docker Compose',
     `# Generated: ${new Date().toISOString()}`,
     `# Channel: ${config.channel}`,
     `# Provider: ${config.provider}`,

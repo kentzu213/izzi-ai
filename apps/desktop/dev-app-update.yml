@@ -1,4 +1,4 @@
 provider: github
 owner: kentzu213
-repo: starizzi-app
-updaterCacheDirName: starizzi-app-updater
+repo: izzi-ai
+updaterCacheDirName: izzi-ai-updater

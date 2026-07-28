@@ -448,7 +448,7 @@ export class SetupWizardService {
       const batContent = [
         '@echo off',
         'echo ========================================',
-        'echo   Izzi OpenClaw - Startup',
+        'echo   Izzi AI - Startup',
         'echo ========================================',
         `echo Channel: ${config.channel}`,
         `echo Provider: ${config.provider}`,
@@ -466,11 +466,11 @@ export class SetupWizardService {
 
       // PowerShell startup
       const ps1Content = [
-        '# Izzi OpenClaw Startup Script',
+        '# Izzi AI Startup Script',
         '$ErrorActionPreference = "Continue"',
         '',
         'Write-Host "========================================" -ForegroundColor Cyan',
-        'Write-Host "  Izzi OpenClaw - Starting up..." -ForegroundColor Green',
+        'Write-Host "  Izzi AI - Starting up..." -ForegroundColor Green',
         'Write-Host "========================================" -ForegroundColor Cyan',
         '',
         config.installMode === 'docker'
@@ -484,10 +484,10 @@ export class SetupWizardService {
       // Unix shell script
       const shContent = [
         '#!/bin/bash',
-        '# Izzi OpenClaw Startup Script',
+        '# Izzi AI Startup Script',
         '',
         'echo "========================================"',
-        'echo "  Izzi OpenClaw - Starting up..."',
+        'echo "  Izzi AI - Starting up..."',
         'echo "========================================"',
         '',
         config.installMode === 'docker'

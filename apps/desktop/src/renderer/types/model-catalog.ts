@@ -1,7 +1,7 @@
 import type { AIProvider, ModelProviderConfig } from './agent-registry';
 
 /**
- * Model-selection standard (Starizzi):
+ * Model-selection standard (Izzi AI):
  *  - ONE picker lists model groups per backend.
  *  - Izzi API group is static (personas + izzi cloud).
  *  - Local connections (codex-lb / any OpenAI-compatible) are DISCOVERED live from

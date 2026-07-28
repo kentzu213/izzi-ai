@@ -1,13 +1,13 @@
 {
   "name": "@openclaw/desktop",
-  "version": "1.14.0-beta.1",
+  "version": "1.14.0-beta.2",
   "private": true,
-  "description": "Izzi OpenClaw Desktop App - Electron",
+  "description": "Izzi AI Desktop App - Electron",
   "author": "kentzu213",
   "homepage": "https://izziapi.com/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kentzu213/starizzi-app.git"
+    "url": "https://github.com/kentzu213/izzi-ai.git"
   },
   "main": "dist/main/index.js",
   "scripts": {

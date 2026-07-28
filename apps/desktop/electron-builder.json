@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.izziapi.openclaw",
-  "productName": "Izzi OpenClaw",
-  "copyright": "Copyright © 2024-2026 Starizzi Technologies",
+  "productName": "Izzi AI",
+  "copyright": "Copyright © 2024-2026 Izzi AI",
   "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
 
   "directories": {
@@ -46,7 +46,7 @@
     ],
     "icon": "build/icon.ico",
     "requestedExecutionLevel": "asInvoker",
-    "signAndEditExecutable": false
+    "signAndEditExecutable": true
   },
 
   "nsis": {
@@ -58,7 +58,7 @@
     "installerHeaderIcon": "build/icon.ico",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Izzi OpenClaw",
+    "shortcutName": "Izzi AI",
     "deleteAppDataOnUninstall": false,
     "installerLanguages": ["en_US", "vi_VN"],
     "language": 1066
@@ -105,7 +105,7 @@
     "icon": "build/icons",
     "category": "Development",
     "desktop": {
-      "Name": "Izzi OpenClaw",
+      "Name": "Izzi AI",
       "Comment": "Smart AI assistant for every platform",
       "Terminal": "false"
     },
@@ -115,7 +115,7 @@
   "publish": {
     "provider": "github",
     "owner": "kentzu213",
-    "repo": "starizzi-app",
+    "repo": "izzi-ai",
     "releaseType": "release",
     "vPrefixedTagName": true
   },

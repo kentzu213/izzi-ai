@@ -533,7 +533,7 @@ export class MarketingWorkspaceService {
       f5ModelLicense: license,
       commercialRenderAllowed,
       blockingReason: !ffmpegConfigured
-        ? 'Chưa cấu hình FFmpeg/FFprobe cho tiến trình Starizzi.'
+        ? 'Chưa cấu hình FFmpeg/FFprobe cho tiến trình Izzi AI.'
         : !f5Configured
           ? 'Chưa kết nối F5 video template.'
           : !commercialRenderAllowed
