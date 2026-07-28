@@ -110,6 +110,67 @@ export function resolveInjectAll(
   return out;
 }
 
+const COMPOSE_CONTROL_ENV_KEYS = new Set([
+  'COMPOSE_FILE',
+  'COMPOSE_PROJECT_NAME',
+  'COMPOSE_PROFILES',
+  'COMPOSE_ENV_FILES',
+  'COMPOSE_PATH_SEPARATOR',
+  'COMPOSE_CONVERT_WINDOWS_PATHS',
+  'COMPOSE_IGNORE_ORPHANS',
+  'COMPOSE_REMOVE_ORPHANS',
+  'COMPOSE_PARALLEL_LIMIT',
+]);
+const REMOTE_DOCKER_ENV_KEYS = new Set([
+  'DOCKER_HOST',
+  'DOCKER_CONTEXT',
+  'DOCKER_TLS_VERIFY',
+  'DOCKER_CERT_PATH',
+  'DOCKER_CONFIG',
+]);
+const PROCESS_LAUNCH_ENV_KEYS = new Set([
+  'PATH',
+  'PATHEXT',
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+]);
+
+/**
+ * Docker Compose gives the parent process environment precedence over
+ * `--env-file`. Remove every host-managed key plus Compose control variables so
+ * the generated service env remains authoritative. Managed services are local
+ * by contract, so inherited remote Docker connection variables are removed too.
+ */
+export function buildManagedComposeProcessEnv(
+  source: NodeJS.ProcessEnv,
+  managedKeys: Iterable<string>,
+): NodeJS.ProcessEnv {
+  const blocked = new Set([...managedKeys].map((key) => key.toUpperCase()));
+  for (const key of COMPOSE_CONTROL_ENV_KEYS) blocked.add(key);
+
+  const out: NodeJS.ProcessEnv = { ...source };
+  for (const key of Object.keys(out)) {
+    const upper = key.toUpperCase();
+    if (
+      (blocked.has(upper) && !PROCESS_LAUNCH_ENV_KEYS.has(upper)) ||
+      REMOTE_DOCKER_ENV_KEYS.has(upper) ||
+      upper === 'IZZI_BIND' ||
+      upper.startsWith('IZZI_PORT_')
+    ) {
+      delete out[key];
+    }
+  }
+  return out;
+}
+
 /** True when a port can be bound on the given loopback host (i.e. it is free). */
 export function checkPortFree(port: number, host = '127.0.0.1'): Promise<boolean> {
   return new Promise((resolve) => {
@@ -148,7 +209,11 @@ export class LocalServiceManager {
 
   /** True when `docker compose` is usable. */
   async isDockerAvailable(): Promise<boolean> {
-    const { code } = await this.exec(['compose', 'version'], 10_000);
+    const { code } = await this.exec(
+      ['compose', 'version'],
+      10_000,
+      buildManagedComposeProcessEnv(process.env, []),
+    );
     return code === 0;
   }
 
@@ -196,6 +261,7 @@ export class LocalServiceManager {
     const up = await this.composeStream(
       buildComposeUpArgs(service.projectName, composePath, envFile),
       onLog,
+      this.composeProcessEnv(envFile),
     );
     if (!up.ok) return { ok: false, reason: 'compose-failed', error: up.error };
 
@@ -203,7 +269,11 @@ export class LocalServiceManager {
     const healthPath = primary.healthPath || '/health';
     const healthUrl = `http://127.0.0.1:${ports[primary.name]}${healthPath}`;
     onLog?.(`… chờ ${healthUrl}`);
-    const healthy = await this.waitHealthy(healthUrl, service.readyTimeoutMs || DEFAULT_READY_TIMEOUT);
+    const healthy = await this.waitHealthy(
+      healthUrl,
+      service.readyTimeoutMs || DEFAULT_READY_TIMEOUT,
+      service.readyContract,
+    );
     if (!healthy) {
       return { ok: false, reason: 'unhealthy', error: `service không healthy trong thời gian chờ (${healthUrl})` };
     }
@@ -226,6 +296,7 @@ export class LocalServiceManager {
     const { code, stderr } = await this.exec(
       buildComposeDownArgs(service.projectName, composePath, envFile),
       DEFAULT_EXEC_TIMEOUT,
+      this.composeProcessEnv(envFile),
     );
     this.running.delete(service.projectName);
     if (code !== 0) return { ok: false, error: summarizeDockerError(stderr) };
@@ -242,6 +313,7 @@ export class LocalServiceManager {
     const { code, stdout } = await this.exec(
       ['compose', '-p', service.projectName, '-f', composePath, '--env-file', envFile, 'ps', '--format', 'json'],
       DEFAULT_EXEC_TIMEOUT,
+      this.composeProcessEnv(envFile),
     );
     if (code !== 0) return { running: false };
     const running = parseComposePsRunning(stdout);
@@ -263,6 +335,7 @@ export class LocalServiceManager {
     const { stdout } = await this.exec(
       ['compose', '-p', ctx.service.projectName, '-f', composePath, '--env-file', envFile, 'logs', '--no-color', '--tail', String(tail)],
       DEFAULT_EXEC_TIMEOUT,
+      this.composeProcessEnv(envFile),
     );
     return stdout;
   }
@@ -272,7 +345,11 @@ export class LocalServiceManager {
     const entries = [...this.running.entries()];
     for (const [projectName, info] of entries) {
       try {
-        await this.exec(['compose', '-p', projectName, '-f', info.composePath, '--env-file', info.envFile, 'down'], DEFAULT_EXEC_TIMEOUT);
+        await this.exec(
+          ['compose', '-p', projectName, '-f', info.composePath, '--env-file', info.envFile, 'down'],
+          DEFAULT_EXEC_TIMEOUT,
+          this.composeProcessEnv(info.envFile),
+        );
       } catch {
         // best-effort on quit
       }
@@ -292,6 +369,7 @@ export class LocalServiceManager {
           detached: true,
           stdio: 'ignore',
           windowsHide: true,
+          env: this.composeProcessEnv(info.envFile),
         });
         child.unref();
       } catch {
@@ -357,6 +435,10 @@ export class LocalServiceManager {
     return envPath;
   }
 
+  private composeProcessEnv(envPath: string): NodeJS.ProcessEnv {
+    return buildManagedComposeProcessEnv(process.env, Object.keys(this.readEnv(envPath)));
+  }
+
   /** Ensure an .env exists for down/status/logs (regenerate ports if missing). */
   private ensureEnvFile(service: OcxServiceSpec): string {
     const envPath = path.join(this.serviceDataDir(service.projectName), '.env');
@@ -367,26 +449,37 @@ export class LocalServiceManager {
   }
 
   /** Poll a health URL from MAIN (no CORS) until 200 or timeout. */
-  private async waitHealthy(url: string, timeoutMs: number): Promise<boolean> {
+  private async waitHealthy(
+    url: string,
+    timeoutMs: number,
+    readyContract?: Record<string, string>,
+  ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (await this.probeOnce(url)) return true;
+      if (await this.probeOnce(url, readyContract)) return true;
       await delay(HEALTH_POLL_INTERVAL);
     }
     return false;
   }
 
-  private async probeOnce(url: string): Promise<boolean> {
+  private async probeOnce(url: string, readyContract?: Record<string, string>): Promise<boolean> {
     try {
       const res = await axios.get(url, { timeout: 4000, validateStatus: () => true });
-      return res.status >= 200 && res.status < 300;
+      if (res.status < 200 || res.status >= 300) return false;
+      if (!readyContract) return true;
+      if (!res.data || typeof res.data !== 'object' || Array.isArray(res.data)) return false;
+      return Object.entries(readyContract).every(([key, value]) => res.data[key] === value);
     } catch {
       return false;
     }
   }
 
   /** Stream a `docker compose` command, forwarding each line to onLog. */
-  private composeStream(args: string[], onLog?: (line: string) => void): Promise<{ ok: boolean; error?: string }> {
+  private composeStream(
+    args: string[],
+    onLog?: (line: string) => void,
+    env: NodeJS.ProcessEnv = process.env,
+  ): Promise<{ ok: boolean; error?: string }> {
     return new Promise((resolve) => {
       let stderrTail = '';
       let settled = false;
@@ -399,7 +492,7 @@ export class LocalServiceManager {
 
       let child;
       try {
-        child = spawn('docker', args, { windowsHide: true });
+        child = spawn('docker', args, { windowsHide: true, env });
       } catch (err: any) {
         finish({ ok: false, error: `Không gọi được docker: ${err?.message ?? 'unknown'}` });
         return;
@@ -434,9 +527,13 @@ export class LocalServiceManager {
   }
 
   /** Run a `docker` command (non-streaming) and capture the result. */
-  private exec(args: string[], timeout: number): Promise<{ code: number; stdout: string; stderr: string }> {
+  private exec(
+    args: string[],
+    timeout: number,
+    env: NodeJS.ProcessEnv = process.env,
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
-      execFile('docker', args, { timeout, windowsHide: true, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+      execFile('docker', args, { timeout, windowsHide: true, maxBuffer: 10 * 1024 * 1024, env }, (error, stdout, stderr) => {
         if (error) {
           const code = typeof (error as any).code === 'number' ? (error as any).code : 1;
           resolve({ code, stdout: stdout?.toString() ?? '', stderr: stderr?.toString() ?? error.message });

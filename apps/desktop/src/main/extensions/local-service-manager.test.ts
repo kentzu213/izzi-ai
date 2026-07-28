@@ -6,6 +6,7 @@ import {
   resolveInjectAll,
   buildComposeUpArgs,
   buildComposeDownArgs,
+  buildManagedComposeProcessEnv,
   parseComposePsRunning,
   checkPortFree,
   findFreePort,
@@ -65,6 +66,36 @@ describe('compose args (array-form, no shell interpolation)', () => {
     expect(args).toContain('down');
     expect(args).not.toContain('-v');
     expect(args).not.toContain('--volumes');
+  });
+});
+
+describe('managed compose environment', () => {
+  it('keeps the generated env authoritative over ambient host overrides', () => {
+    const env = buildManagedComposeProcessEnv(
+      {
+        PATH: 'docker-path',
+        IZZI_PORT_API: '59999',
+        IZZI_PORT_WEB: '59998',
+        IZZI_BIND: '0.0.0.0',
+        jwt_secret: 'ambient-secret',
+        COMPOSE_FILE: 'attacker.yml',
+        COMPOSE_PROJECT_NAME: 'attacker',
+        DOCKER_HOST: 'tcp://example.invalid:2376',
+        DOCKER_CONTEXT: 'remote',
+        DOCKER_TLS_VERIFY: '1',
+        DOCKER_CERT_PATH: 'C:\\docker-certs',
+      },
+      ['IZZI_PORT_API', 'JWT_SECRET', 'PATH'],
+    );
+
+    expect(env).toEqual({
+      PATH: 'docker-path',
+    });
+  });
+
+  it('preserves process launch variables even if a malformed caller marks them managed', () => {
+    const env = buildManagedComposeProcessEnv({ PATH: 'docker-path', TEMP: 'temp-path' }, ['PATH', 'TEMP']);
+    expect(env).toEqual({ PATH: 'docker-path', TEMP: 'temp-path' });
   });
 });
 

@@ -1,12 +1,12 @@
 {
   "name": "voice-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "Voice Studio (VieNeu-TTS)",
-  "description": "Text-to-speech + clone giọng tiếng Việt/Anh, chạy CỤC BỘ trên máy (VieNeu-TTS, CPU/ONNX, offline sau khi tải model). Mở tiện ích là tự khởi động backend localhost. Nâng cấp cho OmniVoice.",
+  "description": "Tạo bản nghe thử text-to-speech tiếng Việt/Anh hoàn toàn cục bộ bằng VieNeu-TTS. Không tải nội dung lên dịch vụ hosted và không hỗ trợ clone giọng.",
   "main": "dist/index.js",
   "engine": ">=0.1.0",
   "author": {
-    "name": "Starizzi Team",
+    "name": "Izzi AI Team",
     "url": "https://izziapi.com"
   },
   "permissions": [
@@ -16,7 +16,6 @@
     "net.http"
   ],
   "activationEvents": [
-    "onStartup",
     "onCommand:voice-studio.status",
     "onCommand:voice-studio.listVoices",
     "onCommand:voice-studio.tts"
@@ -30,13 +29,10 @@
     "panels": [
       { "id": "voice-studio.dashboard", "title": "Voice Studio", "entry": "panel" }
     ],
-    "settings": [
-      { "id": "backendUrl", "title": "Backend URL", "description": "API VieNeu-TTS cục bộ (Starizzi tự điền khi mở; mặc định http://127.0.0.1:5111).", "type": "string", "default": "http://127.0.0.1:5111" },
-      { "id": "defaultVoice", "title": "Giọng mặc định", "description": "Giọng mặc định khi không chỉ định (chạy listVoices để xem).", "type": "string", "default": "" }
-    ]
+    "settings": []
   },
   "categories": ["Voice", "Content"],
-  "tags": ["tts", "voice-clone", "vietnamese", "on-device", "voice", "offline"],
+  "tags": ["tts", "vietnamese", "on-device", "voice", "offline"],
   "homepage": "https://izziapi.com",
   "pricing": { "model": "free" },
   "service": {
@@ -47,9 +43,18 @@
       { "name": "api", "container": 5111, "healthPath": "/health/ready", "bind": "127.0.0.1" }
     ],
     "readyTimeoutMs": 600000,
+    "readyContract": {
+      "status": "ready",
+      "sdk": "vieneu",
+      "sdk_version": "3.2.3",
+      "model_repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+      "model_revision": "75ff82a72f54d55ed389e1eeb12041d3c4bac7d4",
+      "codec_repo": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+      "codec_revision": "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae",
+      "preset_catalog_sha256": "13f17165586ec132efd35076f46ec8de7f7e474a344e262c6360d89726eeb8d9"
+    },
     "inject": { "backendUrl": "http://127.0.0.1:${port.api}" },
-    "requires": { "docker": true },
-    "fallback": { "remoteEnvVar": "VOICE_BACKEND_URL" }
+    "requires": { "docker": true }
   },
   "license": "SEE LICENSE"
 }
