@@ -518,6 +518,22 @@ The handoff uses only the current lineage. The schema correction remains at
 `4cf77f3`; W0 must review the final implementation commit `0eacbc5`, which adds
 the approved run-state amendment on top of that correction.
 
+### Independent inventory correction
+
+Independent verification challenged the ownership inventory because a diff from
+the accepted Loop 00 ancestor `0cbf888` also shows three W0 coordinator files.
+Those files were introduced by `aa96a8f`/`d711fd9` before W1 replay and are not W1
+ownership:
+
+- `docs/handoffs/personal-office/integration-ledger.json`
+- `docs/handoffs/personal-office/planning/loops-01-04-provisional-plan.md`
+- `docs/handoffs/personal-office/planning/wave-dispatch-w1-w4.md`
+
+The producer record now states its inventory basis explicitly:
+`d711fd9..producer tip`. It also lists the three inherited W0 paths separately
+and includes the producer handoff itself in `filesChangedFromBase`. No ownership
+was transferred or broadened.
+
 ### Skill and agent audit
 
 - **Socrates — USED:** approved preservation-only first, then required W0
