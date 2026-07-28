@@ -47,8 +47,20 @@
       "artifacts": [
         { "path": "docs/architecture/source-of-truth-baseline.md", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3", "bytes": 20824 },
         { "path": "docs/architecture/source-of-truth-baseline.json", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a", "bytes": 33668 },
-        { "path": "worklogs/personal-office-loop-00.md", "sha256": "d4b692c5a83beef21b0dce349b5cc8411ae2adc4a6f3a0b30a23f156687642a1", "bytes": 21127 }
+        { "path": "worklogs/personal-office-loop-00.md", "sha256": "a0ab149a31e38b5ff55299f26271a14f8bc0c3e23277903047d7be8d794b6dc2", "bytes": 27160 },
+        { "path": "docs/handoffs/personal-office/loop-00.json", "sha256": "f682572471cbf6381717ea51eeffa03c104b691c4d36c774e03059a823835d9f", "bytes": 17653 },
+        { "path": "docs/handoffs/personal-office/leases.json", "sha256": "a3a4228af20788f90eb5c94b733b61bb971a92ce1cf46ac7cb7bfa07aaad3a2c", "bytes": 6693 }
       ],
+      "roadmapAcceptance": {
+        "unmetCount": 2,
+        "unmet": [
+          "pnpm lint:ci / current lint gate must run — unmeetable at canonical via BF-03 + BF-04; resolution path is PQ-01 which needs the package-manifest lease",
+          "roadmap step-7 sub-requirement that GitNexus FTS work — unavailable offline (W-03); the corresponding acceptance criterion, queries returning results, IS met"
+        ],
+        "note": "Both are pre-existing conditions of the canonical tree, not products of this loop. Recorded rather than reported green.",
+        "canonicalOverride": "The roadmap targets v1.14.0-beta.2; the Constitution supersedes it with v1.14.0-beta.3 / 84a57b3. Override followed and justified in loop-00.json roadmapReconciliation."
+      },
+      "detectChanges": { "changedSymbols": 0, "affectedProcesses": 0, "risk": "NONE", "evidence": "gitnexus detect-changes --scope compare --base-ref 84a57b3 returned 'No changes detected.' — all six files are docs/JSON, so no indexed code symbol was touched." },
       "hashPolicy": "Hashes are measured on the working-tree bytes at the FINAL Loop 00 commit. An earlier revision of this ledger recorded the worklog at 5c32d22c…/11175 B, which the constitution-mandated skill-audit append then superseded. Consumers must verify against the values above; if a hash disagrees, re-hash from the ref before treating it as tampering. Note also that .gitattributes may normalise LF to CRLF on a fresh checkout, which changes file bytes and therefore hashes — compare working-tree to working-tree, not working-tree to a fresh clone.",
       "verificationSummary": "Build pass (tsc + vite, exit 0). Tests 900/901 with one known pre-existing flake. Lint NOT runnable at canonical (BF-03/BF-04) so no lint claim is made. git diff --check clean. Ownership audit clean: zero tracked files modified.",
       "openGates": ["PQ-08 reconciliation must be ruled on before Loop 01 writes domain contracts"],

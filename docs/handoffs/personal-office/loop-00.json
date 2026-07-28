@@ -112,8 +112,17 @@
         "note": "Probe query only, to prove the index answers graph questions. Loop 00 changed no symbol, so no impact analysis was required for its own edits."
       }
     ],
+    "detectChanges": {
+      "command": "gitnexus detect-changes --scope compare --base-ref 84a57b38117ee7544691115be5aca7a141af1abf --repo \"F:\\Ai Tools\\_wt-starizzi-personal-office-baseline\"",
+      "result": "No changes detected.",
+      "changedSymbols": 0,
+      "affectedProcesses": 0,
+      "affectedModules": 0,
+      "risk": "NONE",
+      "interpretation": "Correct rather than a tooling miss: all six committed files are Markdown and JSON, so no indexed code symbol was touched. Independently corroborates the ownership audit and the byte-identical build assets."
+    },
     "limitations": [
-      "Full-text/BM25 search unavailable (LadybugDB FTS extension needs network); vector search unavailable on this platform. Graph traversal works and returns exact results.",
+      "Full-text/BM25 search unavailable (LadybugDB FTS extension needs network); vector search unavailable on this platform. Graph traversal works and returns exact results. The roadmap's step-7 sub-requirement that FTS be working is therefore NOT met; the acceptance criterion, which requires only that queries return results, is met.",
       "The bare repository name is ambiguous on this host — three registered repos are named izzi-ai. Every query must pass --repo with the absolute worktree path.",
       "gitnexus analyze rewrites its managed doc blocks in 8 tracked files. W0 reverted all 8 to canonical; only W0 may mutate the index or those blocks."
     ]
@@ -156,6 +165,45 @@
     "PQ-09": "agentGateway.ts is on the Loop 01 required-reading list AND is modified-uncommitted in the dirty worktree, so the canonical copy is not the copy in flight. Canonical additionally contains agentGateway-routing.ts plus its test, which the old branch lacks. Diff three ways before treating any version as source of truth.",
     "canonicalIsAhead": "Canonical beta.3 is ahead of the old feature branch on every subsystem. Only one file is net-new on the old branch: eslint.config.mjs. Do NOT port the old package.json wholesale — it would revert the izzi-ai rebrand, downgrade desktop 1.14.0-beta.3 to 1.12.0, downgrade axios, loosen exact security pins to carets, and drop the ws/sharp/adm-zip pins.",
     "securityNoteForLoop03Owner": "The already-wired work-model migration in database.ts logs and proceeds on error instead of failing closed, justified in-comment only because v1 is purely additive. That justification expires the moment a destructive migration step is added."
+  },
+  "roadmapReconciliation": {
+    "roadmapSection": "LOOP 00 — Release và source-of-truth reconciliation",
+    "canonicalOverride": {
+      "roadmapTarget": "v1.14.0-beta.2",
+      "constitutionTarget": "v1.14.0-beta.3 / 84a57b38117ee7544691115be5aca7a141af1abf",
+      "followed": "constitution",
+      "rationale": "The Constitution and orchestration doc are later and more specific, and name the exact commit. The choice is also defensible on evidence: beta.2 is a verified ancestor of beta.3 so nothing is lost; beta.3 carries the Voice Studio hotfix and the exact security pins; and origin/main points at beta.3, so building on beta.2 would fork off the shared line immediately.",
+      "recordedNotSilent": true
+    },
+    "beta2ShaApparentConflictResolved": {
+      "roadmapValue": "6db5e9937bbdf0955884140aaf602ed78caf7a44",
+      "baselineValue": "824e2e50b2de08458138f823802c2268546c930f",
+      "explanation": "Both correct. git cat-file -t reports 6db5e993 as type 'tag' — it is the annotated tag OBJECT — while 824e2e5 is the COMMIT it points at (feat(brand): rename desktop app to Izzi AI). No correction required; recorded so a later loop does not 'fix' a non-bug."
+    },
+    "installedReferenceVerifiedEmpirically": {
+      "path": "F:\\Ai Tools\\Teset izzi tool\\Izzi AI",
+      "binary": "Izzi AI.exe",
+      "fileVersion": "1.14.0-beta.2",
+      "productName": "Izzi AI",
+      "conclusion": "Confirms the two-role split the baseline asserts: beta.2 is the installed reference, beta.3 is the canonical build base."
+    },
+    "thirdWitnessForBF04": "worklogs/izzi-current-state.md at canonical records CMR-404 as 'PARTIAL — audit 74 -> 20; ESLint still absent'. Combined with the git ls-tree scan and the ESLint 9 exit-2 failure, the missing lint config is corroborated three independent ways.",
+    "unmetAcceptanceCriteria": [
+      {
+        "criterion": "pnpm lint:ci or the current lint gate runs and its result is recorded",
+        "status": "NOT MET — unmeetable at canonical",
+        "cause": "BF-03 (no lint:ci script) and BF-04 (no ESLint config anywhere), so ESLint 9 exits 2 before linting a file.",
+        "resolutionPath": "PQ-01, which requires the package-manifest/lockfile lease.",
+        "note": "The result is recorded as a gate that cannot run. No pass was fabricated."
+      },
+      {
+        "criterion": "roadmap step 7 sub-requirement that GitNexus FTS be working",
+        "status": "NOT MET",
+        "cause": "LadybugDB FTS extension requires network and is unavailable offline; vector search unavailable on this platform.",
+        "note": "The corresponding acceptance criterion — index at correct HEAD and queries returning results — IS met. Tracked as W-03."
+      }
+    ],
+    "statement": "Two roadmap acceptance criteria are unmet. Both are pre-existing conditions of the canonical tree rather than products of this loop, and both are reported rather than presented as green."
   },
   "blockers": [],
   "residualRisks": [

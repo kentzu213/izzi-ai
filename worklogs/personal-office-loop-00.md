@@ -317,3 +317,98 @@ one: roughly 190 KB of implementation plus five test files exist in no commit an
 
 No worktree was created for Loop 02 or Loop 03 — they wait on Loop 01 acceptance. Stopping here;
 W0 does not run the next loop and does not merge.
+
+---
+
+# Roadmap reconciliation and loop closure (Loop 00 Card)
+
+The formally issued Loop 00 Card required reading the roadmap section *"LOOP 00 — Release và
+source-of-truth reconciliation"*. I had worked from the orchestration doc and the task brief but
+not from that section. Reading it closed two real gaps and resolved one apparent contradiction.
+
+## Gap 1 — the mandated closing step had not been run
+
+The roadmap's KẾT THÚC LOOP requires a GitNexus `detect_changes` over the loop's changes, with
+affected processes and risk recorded here. Run scoped to this worktree and compared against
+canonical:
+
+```
+gitnexus detect-changes --scope compare --base-ref 84a57b3 --repo "F:\Ai Tools\_wt-starizzi-personal-office-baseline"
+→ No changes detected.
+```
+
+| Metric | Result |
+| --- | --- |
+| Changed symbols | 0 |
+| Affected execution flows | 0 |
+| Affected modules | 0 |
+| Risk | **NONE** |
+
+That is the correct outcome rather than a tooling miss: all six committed files are Markdown and
+JSON, so no indexed code symbol was touched. It independently corroborates the ownership audit —
+Loop 00 changed documentation only, and the byte-identical build assets say the same thing from
+the other direction.
+
+## Gap 2 — two required-reading files I had not opened
+
+`apps/desktop/CHANGELOG.md` at canonical opens with `1.14.0-beta.3` (the Voice Studio
+extensionless-runtime hotfix), consistent with the canonical tag.
+
+`worklogs/izzi-current-state.md` turned out to be a **third independent witness for BF-04**. Its
+gate table records CMR-404 as *"PARTIAL — audit 74 → 20; ESLint still absent"*. So the missing
+lint config is corroborated by the roadmap-era record, by my own `git ls-tree` scan at canonical,
+and by the ESLint 9 failure itself. That raises confidence that BF-04 is a real programme-level
+gap and not an artefact of how I invoked the tool.
+
+## Resolved — the beta.2 SHA that looked like a contradiction
+
+The roadmap records `v1.14.0-beta.2` as `6db5e9937bbdf0955884140aaf602ed78caf7a44`; I had
+recorded `824e2e50b2de08458138f823802c2268546c930f`. Both are right.
+`git cat-file -t 6db5e993…` returns **tag**, i.e. that is the annotated *tag object*, while
+`824e2e5` is the *commit* it points at (`feat(brand): rename desktop app to Izzi AI`). No
+correction needed; noted so a later loop does not "fix" a non-bug.
+
+## Verified — the installed reference app really is beta.2
+
+The roadmap names a second source: the installed app at `F:\Ai Tools\Teset izzi tool\Izzi AI`.
+It exists, and `Izzi AI.exe` reports `FileVersion 1.14.0-beta.2` / `ProductName Izzi AI`. That
+confirms empirically what the baseline asserts — beta.2 is the *installed* reference, and beta.3
+is the canonical *build* base. The two-role split is correct.
+
+## Canonical choice — an explicit override, recorded rather than silent
+
+The roadmap's stated objective is a baseline matching **v1.14.0-beta.2**, the release in use. The
+Common Session Constitution and the orchestration doc supersede this: canonical is
+**v1.14.0-beta.3 / 84a57b3**, with beta.2 demoted to installed/migration reference. I followed the
+Constitution, since it is the later and more specific instruction and names the exact commit.
+
+The choice is also defensible on evidence: beta.2 is a verified ancestor of beta.3, so nothing is
+lost; beta.3 carries the Voice Studio hotfix and the exact security pins; and `origin/main` points
+at beta.3, so building on beta.2 would fork away from the shared line immediately. Recorded here
+because a divergence between roadmap and constitution should be visible, not buried.
+
+## Roadmap acceptance criteria — honest status
+
+| Criterion | Status |
+| --- | --- |
+| Clean integration worktree, old worktree unchanged | **PASS** — W0 wrote nothing to quarantine; its HEAD is still `959e2d2`. See the concurrent-writer caveat above. |
+| Canonical commit/tag recorded with a reason | **PASS** — plus the override rationale immediately above. |
+| Build desktop pass | **PASS** — exit 0, and re-run post-commit with byte-identical assets. |
+| Most realistic test suite pass, baseline failures separated from regressions | **PASS** — 900/901, the one failure classified as pre-existing flake BF-02 with isolation proof. |
+| **`pnpm lint:ci` or the current lint gate runs, result recorded** | **NOT MET — and unmeetable at canonical.** No `lint:ci` script (BF-03) and no ESLint config anywhere (BF-04), so ESLint 9 exits 2 before linting a file. The result *is* recorded, but as a gate that cannot run. Closing it needs PQ-01, which needs the package-manifest lease. I did not fabricate a pass. |
+| GitNexus index no longer 13 commits stale, queries return results | **PASS** — index `lastCommit` equals canonical HEAD; `impact ensureSqliteSchema` returned exact results. |
+| — its step-7 sub-requirement "FTS hoạt động" | **NOT MET** — the LadybugDB FTS extension needs network and is unavailable offline; vector search is unavailable on this platform. Graph traversal works, which is what the acceptance criterion actually requires. Tracked as W-03. |
+| Port matrix by commit/subsystem | **PASS** — nine entries across four verdicts. |
+| `git diff --check` clean | **PASS** — exit 0. |
+| No secret value in logs or docs | **PASS** — secret-shaped-literal scan clean across all six artifacts; the token appears by variable name only. |
+
+Two criteria are unmet and both are pre-existing conditions of the canonical tree, not products of
+this loop. I am flagging them rather than reporting a green board.
+
+## Loop 00 Card special gates
+
+Canonical `v1.14.0-beta.3` / `84a57b3` verified. Quarantine preserved read-only. PQ-08 and PQ-09
+recorded in the baseline port queue, with PQ-08 also raised to a CRITICAL programme gate in the
+ledger. BF-01 through BF-04 recorded in both baseline artifacts. All six outputs hashed. Committed
+by exact path, and `ACCEPTED` set only after post-commit verification. GitNexus mutation ownership
+retained by W0 and written into `leases.json` as a permanent reservation.
