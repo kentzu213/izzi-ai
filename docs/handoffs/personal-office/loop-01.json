@@ -10,7 +10,7 @@
   },
   "baseCommit": "d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258",
   "acceptedLoop00Ancestor": "0cbf88863180b761dae1366eefe99c8338b4aad0",
-  "implementationCommit": "4cf77f34d28bc6a377d691ee2db2df6a4064239d",
+  "implementationCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
   "preservation": {
     "rollbackCommit": "94fbdc6908b64ac07d498327a890f337738a6d24",
     "rollbackBranch": "backup/personal-office-loop-01-draft-20260728",
@@ -18,7 +18,7 @@
     "oldWorklogPath": "worklogs/personal-office-loop-01-provisional.md",
     "oldWorklogSha256": "a26a7359f4d6ff187713c85eb838811ee3293ce156dd2d80d4591f45dc335811",
     "newWorklogPath": "worklogs/personal-office-loop-01.md",
-    "newWorklogSha256": "dac12fbb9f82c2de140b7d894e659b7666898f66bced041b68675c8718f85509"
+    "newWorklogSha256": "c29629efecf2e6bba043e62470d1f53888097035f49de6a8605dd8a09dc7556d"
   },
   "reviewHistory": [
     {
@@ -29,6 +29,19 @@
     {
       "correctiveImplementationCommit": "4cf77f34d28bc6a377d691ee2db2df6a4064239d",
       "resolution": "Versioned generic constraints plus fail-closed validation of the upgraded aggregate; two regression tests"
+    },
+    {
+      "contractAmendmentCommit": "0eacbc51cc8c9cdde6e659f2d9ccf7ebbf47db61",
+      "resolution": "PO-RUNSTATE-CONTRACT-GAP closed with first-class waiting_external, explicit transitions, mapping updates, and two regression tests"
+    },
+    {
+      "documentationCorrectionCommit": "0b5645651db263cfb06a49c77fb72cf6a873737f",
+      "resolution": "Socrates finding closed: AgentRun stuck/guardrail pause semantics are separated from external dependency waits, and runtime provisioning health is separated from associated WorkRun state"
+    },
+    {
+      "finalDocumentationCorrectionCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+      "resolution": "Socrates final findings closed: only health placement remains Blocked; W0 rulings are represented as resolved; W1 owns canonical fields while Loop 03 owns adapters and storage",
+      "reviewVerdict": "ACCEPT"
     }
   ],
   "coordinatorRebase": {
@@ -96,15 +109,33 @@
     "shared/personal-office is the governance/catalog contract of record; Loop 03 execution imports it",
     "PERSONAL_OFFICE_SCHEMA_VERSION is the sole Personal Office version authority",
     "failed is terminal; retry/fork creates a new run with explicit lineage",
-    "blocked maps to recoverable paused, never failed",
+    "AgentRun stuck blocked maps to paused; customer/runtime/media dependency blocked maps to waiting_external; neither maps to failed",
     "archived derives a terminal from evidence; inconclusive archives map to canceled with legacy_archived_outcome_unknown",
-    "canonical JSON and immutable approval action binding are shared dependency-free contracts"
+    "canonical JSON and immutable approval action binding are shared dependency-free contracts",
+    "waiting_external is a first-class RunState (not a pausedReason) per gate PO-RUNSTATE-CONTRACT-GAP"
+  ],
+  "contractChanges": [
+    {
+      "id": "PO-RUNSTATE-CONTRACT-GAP",
+      "type": "breaking",
+      "shipped": false,
+      "change": "Added waiting_external as a first-class RunState. Transitions: running -> waiting_external, and waiting_external -> running | canceled (mirrors paused). Removed 'waiting_external' from RunPauseReason, which now covers only 'stuck' | 'guardrail'.",
+      "reason": "Roadmap Loop 03 §4 minimum state machine requires it, and Loop 02 §3 Today lanes (Active work / Waiting for me / Delivered) need a modelled state for integration/runtime blocks; a primary always-visible lane cannot be built on an optional field. Accepted W0 -> W1 contract change request; W1 mapping §3.4 migration-scoped rejection did not weigh these product requirements.",
+      "versionImpact": "PERSONAL_OFFICE_SCHEMA_VERSION stays 1 (single authority, gate PO-VERSION-COLLISION). No shipped build carries v1, so this is a version note, NOT a migration.",
+      "sequencing": "Must land before Loop 03 persists anything and together with PO-VERSION-COLLISION, else the version stops being a reliable discriminator.",
+      "consumers": [
+        "Loop 03 / W3 work engine (imports RunState; must handle waiting_external in transitions and adapters)",
+        "Loop 02 / W2 Today shell (Waiting-for-me vs blocked lanes render off this state)",
+        "Loop 12 / W2 customer marketing (CustomerRunStatus 'blocked' -> waiting_external)"
+      ],
+      "tests": "state-machine.test.ts adds valid (running->waiting_external->running|canceled) and invalid (waiting_external->paused|completed|failed; created/awaiting_approval->waiting_external) coverage. 45/45 pass."
+    }
   ],
   "verification": [
     {
       "check": "isolated Vitest",
       "result": "PASS",
-      "evidence": "4 files, 43/43 tests; cache disabled; clean Loop 00 toolchain"
+      "evidence": "4 files, 45/45 tests (added 2 waiting_external transition tests); cache disabled; clean Loop 00 toolchain"
     },
     {
       "check": "isolated TypeScript main profile",
@@ -157,23 +188,27 @@
     },
     {
       "path": "apps/desktop/src/shared/personal-office/entities.ts",
-      "sha256": "29850185232645c0391369a22eb6485b4285ab0339e958746f3e66a2786c6a24"
+      "sha256": "35ac2b90572f10cb5736ffcbce98d82a444689c0a2aee2038e42bdb7b2a340bb"
     },
     {
       "path": "apps/desktop/src/shared/personal-office/state-machine.ts",
-      "sha256": "2ddfdc4469d8cbd4859269c90bb51f5a8689c8d5b792794fcd4ff3528023fb25"
+      "sha256": "3e85165421b50a938fa94156417e5fd982decbe4be6bfb7c896f9aaaecdc23eb"
     },
     {
       "path": "apps/desktop/src/shared/personal-office/serialization.ts",
       "sha256": "3a7ae873acb872c40c84e56e7c1f445921cc6c99173e5ae43d8423c40dba662c"
     },
     {
+      "path": "docs/architecture/adr/ADR-PO-002-unified-work-model.md",
+      "sha256": "af3c60fca17c00665fbfa18fa43d878adce099accc3f541617c9a9a57969a5fe"
+    },
+    {
       "path": "docs/architecture/legacy-personal-office-mapping.md",
-      "sha256": "7925aa3f17ae1f9d0d8f5cbcfa72d41956f439db6dfdfb3b8d8ee4b20b73944a"
+      "sha256": "5963cb24be0c099d54cdb2cfb8ca0b86f81d962500ed64e1d3689dee925b9909"
     },
     {
       "path": "docs/architecture/personal-office-os.md",
-      "sha256": "6f9312322815d013a57952bb8aaeecbf710985f28ef3efd67fbd2482055eb837"
+      "sha256": "949fd87173d74516346d90f9005235c817fa1666fb27aba78cdec2bc644f5e3d"
     }
   ],
   "blockers": [],
@@ -181,12 +216,12 @@
     "PQ-01 remains open: canonical lint is not runnable",
     "Loop 03 must retire WORK_SCHEMA_VERSION before any persistence",
     "Loop 03 owns and must test exactly-one archived migration event emission",
-    "Loop 04 cannot start implementation until W0 rules PO-VAULT-OWNERSHIP"
+    "Loop 04 must remain inside the resolved W4 vault/live/wikilink/graph ownership boundary"
   ],
   "nextConsumers": [
     "W0 review/integration and acceptance/loop-01.json",
     "W2 Loop 02 shell after Loop 01 acceptance",
     "W3 Loop 03 execution core after Loop 01 acceptance",
-    "W4 Loop 04 context/vault after Loop 01 acceptance plus PO-VAULT-OWNERSHIP"
+    "W4 Loop 04 context/vault after Loop 01 acceptance under resolved PO-VAULT-OWNERSHIP"
   ]
 }

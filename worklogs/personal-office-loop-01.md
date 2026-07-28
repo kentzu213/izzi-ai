@@ -6,7 +6,7 @@
 |---|---|
 | Operational worktree | `F:\Ai Tools\_wt-starizzi-personal-office-loop01` |
 | Branch | `feature/personal-office-loop-01-20260728` |
-| Implementation commit | `4cf77f33a292bf2c2a2f5c0d2adbe50bc1e9556e` (rebased equivalent of reviewer correction) |
+| Implementation tip | `830a12ca75bba6d78f0e3ba8fea8353c84353d71` (`0eacbc5` run-state amendment plus Socrates corrections `0b56456` and `830a12c`) |
 | Replay base | `d711fd9` (includes W0 planning-only commits; accepted Loop 00 commit `0cbf888` remains an ancestor) |
 | Rollback commit / branch | `94fbdc6908b64ac07d498327a890f337738a6d24` / `backup/personal-office-loop-01-draft-20260728` |
 | Managing repo | `F:\Ai Tools\Tool Starizzi - B2C - Openclaw` |
@@ -441,7 +441,9 @@ needs.
   `shared/work-model.ts` as a parallel contract.
 - `PERSONAL_OFFICE_SCHEMA_VERSION` remains the only Personal Office version
   authority. The superseded `WORK_SCHEMA_VERSION` must be retired by Loop 03.
-- Run-level `blocked` maps to recoverable `paused`, never `failed`.
+- AgentRun “stuck” `blocked` maps to recoverable `paused`; customer/runtime/media
+  dependency `blocked` maps to first-class `waiting_external`. Neither maps to
+  `failed`.
 - Legacy `archived` derives a terminal only from conclusive entries. An
   inconclusive archive maps to `canceled` with
   `canceledReason='legacy_archived_outcome_unknown'`; `archivedAt` and
@@ -461,12 +463,12 @@ Its `node_modules` junction targeted the clean Loop 00 worktree, not quarantine.
 
 | Check | Result |
 |---|---|
-| Vitest, Personal Office contracts | PASS — 4 files, 43/43 tests |
+| Vitest, Personal Office contracts | PASS — 4 files, 45/45 tests |
 | TypeScript main profile (CommonJS/ES2022/no DOM) | PASS — exit 0 |
 | TypeScript renderer profile (ESNext/bundler/DOM/isolatedModules) | PASS — exit 0 |
 | `git diff --check` | PASS |
 | Ownership | PASS — only `shared/personal-office/**`, architecture docs, and this worklog |
-| GitNexus detect changes | LOW — 11 changed files at final delta, 0 indexed symbols/processes because the contract files are new |
+| GitNexus detect changes | LOW — 8 changed files in the producer delta, 0 indexed symbols/processes because the contract files are new |
 | Secret scan | PASS — no secret-shaped addition |
 | Lint | NOT RUNNABLE — inherited PQ-01/BF-03/BF-04; no green lint claim |
 
@@ -512,8 +514,9 @@ file content but rewrote the producer SHAs:
 | `89d7743` | `4cf77f3` |
 | `7956503` | `4890a0a` |
 
-The handoff uses only the current lineage. Contract/output hashes and verification
-results remain unchanged; W0 must accept `4cf77f3`, not the orphaned pre-rebase SHA.
+The handoff uses only the current lineage. The schema correction remains at
+`4cf77f3`; W0 must review the final implementation commit `0eacbc5`, which adds
+the approved run-state amendment on top of that correction.
 
 ### Skill and agent audit
 
@@ -549,3 +552,72 @@ W0 must review and integrate the implementation commit, then create
 `docs/handoffs/personal-office/acceptance/loop-01.json`. Loop 02/03/04
 implementation worktrees remain blocked until that acceptance record is
 committed. Loop 04 also requires the `PO-VAULT-OWNERSHIP` ruling.
+
+---
+
+## Contract change — waiting_external (gate PO-RUNSTATE-CONTRACT-GAP)
+
+**Trigger.** W0 → W1 contract change request after re-sync onto integration
+`d711fd9` (gate landed at `aa96a8f`). My Loop 01B mapping §3.4 had declined a
+top-level `waiting_external` state on migration-scoped evidence. W0 correctly
+distinguished the *product* requirement: Loop 03 §4 calls its state list a
+**minimum** (a floor, measured at acceptance), and Loop 02 §3 renders Today as
+Active work / Waiting for me / Delivered — a run blocked on an integration or
+runtime is none of those three, and a primary always-visible lane cannot be built
+on an optional `pausedReason` field the state machine does not enforce. Accepted.
+
+**Change (code).**
+- `state-machine.ts`: `RunState` gains `waiting_external`. `RUN_TRANSITIONS`:
+  `running → waiting_external` added; `waiting_external → running | canceled` added
+  (mirrors `paused`). No other edge changed. Terminal set unchanged
+  `{completed, failed, canceled}`.
+- `entities.ts`: `RunPauseReason` narrowed to `'stuck' | 'guardrail'` —
+  `waiting_external` is now a state, not a pause reason.
+- `state-machine.test.ts`: +2 tests — valid detour and invalid targets
+  (`waiting_external → paused|completed|failed`, `created|awaiting_approval →
+  waiting_external`), plus non-terminal assertion.
+
+**Docs aligned in the same implementation series.** `personal-office-os.md` §6.3,
+`legacy-personal-office-mapping.md` §3.1/§3.4 plus the runtime and
+Customer/runtime/media `blocked` rows, and ADR-PO-002 now distinguish AgentRun
+stuck/guardrail pauses from external dependency waits. Runtime provisioning health
+is explicitly separate from an associated WorkRun's state.
+
+**Version.** `PERSONAL_OFFICE_SCHEMA_VERSION` stays **1** — sole authority
+(PO-VERSION-COLLISION). Breaking change to an **unshipped** contract, so the cost is
+this version note, not a migration. Must precede any Loop 03 persistence.
+
+**Verification.** vitest 45/45; tsc main profile exit 0; tsc renderer profile
+(contract files) exit 0; `git diff --check` clean. Lint NOT run — canonical lint
+gate unrunnable (PQ-01 / BF-03 / BF-04); no lint claim made.
+
+**Consumers notified via handoff contractChanges:** Loop 03 (W3), Loop 02 (W2),
+Loop 12 (W2).
+
+### Agent footer (this iteration)
+- **Socrates:** Rejected the first `0eacbc5` pass because §3.1/ADR still said
+  “all blocked → paused” and the runtime table mixed provisioning health with
+  WorkRun state. `0b56456` fixed those points. A second review found the §5 blocked
+  summary and §4 ownership matrix stale; `830a12c` closed both. Final verdict:
+  **ACCEPT**, with no remaining PO-RUNSTATE-CONTRACT-GAP or Loop 01 ownership
+  blocker.
+- **Orchestrator:** Scope held to the single state addition + its reason-enum
+  cleanup + tests + the three directly affected architecture documents.
+- **Builder:** Implemented the 3 code edits and 3 architecture updates; verified
+  compile + tests; updated the producer record separately.
+
+### Skill Audit (this iteration)
+- **/search-first — USED:** located every `waiting_external` mapping before the
+  amendment and restricted edits to the six affected contract/architecture files.
+- **/context-gatherer — USED:** read the ledger gate, plan §1, and current
+  state-machine/entities/version/test/handoff before any edit.
+- **/understand-codebase — USED:** confirmed no other consumer references
+  `RunPauseReason`'s `waiting_external` member (tsc both profiles clean).
+- **/backend-patterns — USED:** state-machine transition-table design (mirror paused).
+- **/verification-loop — USED:** vitest 45/45, tsc ×2, git diff --check; lint N/A per PQ-01.
+- **/security-review — USED:** no secret/PII surface; the change is a pure enum/table
+  addition; approval action-binding + redaction untouched.
+- **/quick-spec — N/A:** the gate already specified the exact transitions.
+- **/frontend-patterns, Design (#design), /gpt-taste, /design-taste-frontend,
+  /stitch-design-taste — N/A:** contracts-only; no UI.
+- **/deployment-patterns — N/A:** no deploy/release/package action.
