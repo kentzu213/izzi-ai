@@ -103,7 +103,11 @@ export type WorkRunOrigin =
   | 'manual';
 
 export type WorkRunLineageKind = 'original' | 'retry' | 'fork';
-export type RunPauseReason = 'stuck' | 'waiting_external' | 'guardrail';
+/**
+ * Reasons for the `paused` state only. `waiting_external` is NOT here: under gate
+ * PO-RUNSTATE-CONTRACT-GAP it is a first-class RunState, not a pause reason.
+ */
+export type RunPauseReason = 'stuck' | 'guardrail';
 export type RunCanceledReason = 'system_refused' | 'legacy_archived_outcome_unknown';
 
 export interface WorkRun extends Timestamps {

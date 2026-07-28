@@ -107,6 +107,8 @@ W0 resolved the remaining run-contract questions:
 - Legacy `archived` derives a terminal from entries when conclusive; otherwise it
   becomes `canceled` with `legacy_archived_outcome_unknown`. The adapter always
   preserves `archivedAt`/`legacyStatusRaw` and emits exactly one audit migration event.
+- Integration/runtime dependency waits use first-class `waiting_external`;
+  `pausedReason` is reserved for `stuck|guardrail`.
 - Future retry/fork lineage is explicit. Legacy rows remain roots; no heuristic
   lineage is fabricated.
 - `failed` is terminal. Retry creates a new run rather than reopening a failed row.

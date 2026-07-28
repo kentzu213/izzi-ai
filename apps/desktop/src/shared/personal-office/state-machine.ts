@@ -28,11 +28,19 @@ export type ProvisioningState =
   | 'released';
 
 // ── Run lifecycle ──
+// `waiting_external` was added post-freeze under gate PO-RUNSTATE-CONTRACT-GAP
+// (contract change request W0 → W1). It is a distinct, first-class state — not a
+// `pausedReason` — because Loop 02's Today page renders "Waiting for me" vs blocked
+// -on-integration/runtime as separate always-visible lanes, and a primary lane
+// cannot be built on an optional field the state machine does not model. This is a
+// breaking change to an UNSHIPPED contract, so the cost is this version note, not a
+// migration; PERSONAL_OFFICE_SCHEMA_VERSION stays the single authority (=1).
 export type RunState =
   | 'created'
   | 'queued'
   | 'running'
   | 'awaiting_approval'
+  | 'waiting_external'
   | 'paused'
   | 'completed'
   | 'failed'
@@ -63,8 +71,9 @@ export const PROVISIONING_TRANSITIONS: TransitionTable<ProvisioningState> = Obje
 export const RUN_TRANSITIONS: TransitionTable<RunState> = Object.freeze({
   created: ['queued', 'canceled'],
   queued: ['running', 'canceled'],
-  running: ['awaiting_approval', 'paused', 'completed', 'failed', 'canceled'],
+  running: ['awaiting_approval', 'waiting_external', 'paused', 'completed', 'failed', 'canceled'],
   awaiting_approval: ['running', 'canceled'], // approved → running, rejected/abort → canceled
+  waiting_external: ['running', 'canceled'], // blocked on integration/runtime; mirrors paused
   paused: ['running', 'canceled'],
   failed: [], // terminal; retry creates a new WorkRun with lineageKind='retry'
   completed: [], // terminal

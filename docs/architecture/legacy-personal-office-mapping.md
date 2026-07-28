@@ -119,7 +119,7 @@ by the concern each one actually expresses.
 | `CustomerRunStatus` | `awaiting_approval` | `awaiting_approval` | High | no | map | — | Loop 12 |
 | `CustomerRunStatus` | `ready` | `running` | Med | yes | map (or `awaiting_approval` if an open publish Approval) | — | Loop 12 (§3.3) |
 | `CustomerRunStatus` | `completed` | `completed` | High | no | map | — | Loop 12 |
-| `CustomerRunStatus` | `blocked` | `paused` | Med | yes (reason) | map+field `pausedReason='waiting_external'` | — | Loop 12 (§3.1, §3.4) |
+| `CustomerRunStatus` | `blocked` | `waiting_external` | Med | no | map | — | Loop 12 (§3.4) |
 | `RunStatus` (sched.) | `running` | `running` | High | no | map | — | Loop 03 |
 | `RunStatus` (sched.) | `success` | `completed` | High | no | map | — | Loop 03 |
 | `RunStatus` (sched.) | `failed` | `failed` | High | no | map | — | Loop 03 |
@@ -224,7 +224,7 @@ Run/Task/Event adapters **ignore** them. Two design carry-overs, no migration ro
 | `CustomerMediaJobStatus` | `checking` | `WorkStep in_progress` | Med | no | map | Loop 12 |
 | " | `preview_ready` | `WorkStep done` + `Artifact` | Med | no | derive | Loop 12 |
 | " | `awaiting_preview_approval` | run `awaiting_approval` + `Approval(kind=media_preview)` | High | no | derive | Loop 12 |
-| " | `blocked` | `paused` (`pausedReason='waiting_external'`) | Med | yes | map+field | Loop 12 (§3.4) |
+| " | `blocked` | `waiting_external` | Med | no | map | Loop 12 (§3.4) |
 | " | `failed` | `failed` | High | no | map | Loop 12 |
 | `CustomerMediaArtifactKind` | (3) | `Artifact` metadata | High | no | map | Loop 12 |
 | `ResourceLifecycleStatus` | `draft`/`in_review`/`approved`/`rejected`/`archived` | resource metadata, not Run state | High | no | drop from Run adapter | Loop 04 |
@@ -275,22 +275,21 @@ fallback**, **required test before migration**.
 - **Required test.** `CustomerRunStatus.awaiting_approval` ↔ PO `awaiting_approval`,
   and a matching `Approval` is present.
 
-### 3.4 waiting-on-integration/runtime → `waiting_external`?
+### 3.4 waiting-on-integration/runtime → `waiting_external`
 - **Evidence.** `CustomerMediaRuntimeState` has `needs_setup`/`blocked` (:57),
   `MarketingHealth` has `attention`/`blocked`, `CustomerMediaJobStatus` has `blocked`
   — all "waiting on an external dependency (integration/runtime/setup)", distinct from
   a human decision.
-- **Decision (partially Blocked).** PO has no top-level `waiting_external` state, and
-  Loop 01 froze `RunState` without one. Do **not** add a new top-level state on
-  evidence this thin. Instead: map these to `paused` and record the cause in a
-  *proposed additive* discriminator **`pausedReason: 'stuck' | 'waiting_external' |
-  'guardrail'`** on `WorkRun` — owned by the implementing loop, not Loop 01.
-- **Missing info.** Whether product wants `waiting_external` surfaced as a distinct
-  Run state (UI filter) or as a reason attribute. Owner: **Loop 03** (Run adapter)
-  with Loop 12 input.
-- **Safe fallback.** `paused` (no reason) — recoverable, never `failed`.
-- **Required test.** Once `pausedReason` exists: integration/runtime waits carry
-  `waiting_external`; guardrail carries `guardrail`; generic stuck carries `stuck`.
+- **Decision (W0 PO-RUNSTATE-CONTRACT-GAP ruling).** `waiting_external` is a
+  first-class `RunState`, because an integration/runtime dependency is neither
+  “waiting for me” nor a generic operator pause. Legal edges are
+  `running → waiting_external → running|canceled`.
+- **Reason detail.** `pausedReason` remains additive for the genuinely
+  reason-shaped cases `stuck|guardrail`; it no longer carries
+  `waiting_external`.
+- **Required tests.** Customer/runtime/media blocked maps to
+  `waiting_external`; AgentRun “stuck” blocked remains `paused`; neither maps to
+  `failed`.
 
 ### 3.5 partial success / degraded workspace
 - **Evidence.** **No** legacy run-level "partial"/"degraded" value exists (grep: no

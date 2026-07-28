@@ -66,6 +66,22 @@ describe('run lifecycle', () => {
     expect(canTransitionRun('failed', 'queued')).toBe(false);
   });
 
+  it('supports the waiting_external detour running → waiting_external → running | canceled', () => {
+    // gate PO-RUNSTATE-CONTRACT-GAP: first-class state, mirrors paused.
+    expect(canTransitionRun('running', 'waiting_external')).toBe(true);
+    expect(canTransitionRun('waiting_external', 'running')).toBe(true);
+    expect(canTransitionRun('waiting_external', 'canceled')).toBe(true);
+  });
+
+  it('rejects invalid waiting_external transitions', () => {
+    expect(canTransitionRun('waiting_external', 'paused')).toBe(false); // only running|canceled
+    expect(canTransitionRun('waiting_external', 'completed')).toBe(false);
+    expect(canTransitionRun('waiting_external', 'failed')).toBe(false);
+    expect(canTransitionRun('created', 'waiting_external')).toBe(false); // only running enters it
+    expect(canTransitionRun('awaiting_approval', 'waiting_external')).toBe(false);
+    expect(isTerminal(RUN_TRANSITIONS, 'waiting_external')).toBe(false);
+  });
+
   it('rejects invalid transitions', () => {
     expect(canTransitionRun('created', 'running')).toBe(false); // must queue first
     expect(canTransitionRun('completed', 'running')).toBe(false); // terminal

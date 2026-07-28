@@ -188,11 +188,12 @@ pending ─▶ provisioning ─▶ ready ─▶ deprovisioning ─▶ released (
 ```
 created ─▶ queued ─▶ running ─▶ completed (terminal)
                        │  ▲├────▶ failed (terminal)
-                       │  ││
-                       │  │└────▶ paused ─▶ running
-                       │  └─────  awaiting_approval ─▶ running   (approved)
-                       │                            └─▶ canceled (rejected/abort)
-   (created|queued|running|awaiting_approval|paused) ─▶ canceled (terminal)
+                       │  │├────▶ paused ─▶ running
+                       │  │├────▶ waiting_external ─▶ running
+                       │  │└────▶ awaiting_approval ─▶ running   (approved)
+                       │  │                           └─▶ canceled (rejected/abort)
+   (created|queued|running|awaiting_approval|waiting_external|paused)
+                       └────────────────────────────▶ canceled (terminal)
 ```
 Terminal set is exactly `{ completed, failed, canceled }`. Retry/fork creates a
 new `WorkRun` with `parentRunId`, stable `rootRunId`, lineage kind, and incremented
@@ -222,7 +223,7 @@ model; adapters land in later loops.
 | `agentWorkspace` store | `renderer/store/agentWorkspace.ts` | `WorkRun`, `WorkStep`, `AgentDefinition` view models | PO → renderer (selector adapter) | Store stays as-is; a selector projects PO aggregates into its existing shapes. |
 | `agentGateway` store | `renderer/store/agentGateway.ts` | chat origin reference on `WorkRun.originChatSessionId` | one-way | Gateway remains chat/runtime UI; it never becomes the Run's truth. |
 | `agent_tasks` | `sqlite-schema.ts` | `WorkStep` | legacy → PO | status `todo/in_progress/blocked/done` == `WorkStepStatus` exactly. |
-| Customer Marketing runs/approvals | `shared/customer-marketing-types.ts` | `WorkRun` / `Approval` | legacy → PO | `CustomerRunStatus` → `RunState` mapping (`awaiting_approval`→`awaiting_approval`, `blocked`→`paused`, `ready`→`running`, `completed`→`completed`). `CustomerApprovalStatus pending/approved/rejected` ⊂ `ApprovalState`. |
+| Customer Marketing runs/approvals | `shared/customer-marketing-types.ts` | `WorkRun` / `Approval` | legacy → PO | `CustomerRunStatus` → `RunState` mapping (`awaiting_approval`→`awaiting_approval`, `blocked`→`waiting_external`, `ready`→`running`, `completed`→`completed`). `CustomerApprovalStatus pending/approved/rejected` ⊂ `ApprovalState`. |
 | Extensions (`.ocx`) / agent bundles (`.oab`) | `main/extensions/ocx-manifest.ts`, `packages/agent-bundle/src/manifest.ts` | `SkillPackage` + `ToolDefinition` + `IntegrationGrant` + `RuntimeInstance` | manifest → PO | `OcxServiceSpec` (`izzi-svc-` + loopback) becomes a `RuntimeInstance` with `serviceProject`; `SecretDef`/`OcxServiceSecret` become `SecretRef` (never inlined). |
 
 Migration mechanics: `serialization.ts::MIGRATIONS` (empty at v1). A future
