@@ -249,6 +249,49 @@ package, and they stay open by decision.
 All three are DoS or path-traversal classes in build/CLI tooling or an unmounted surface. None is
 remote code execution and none sits on the auto-update path this hotfix exists to fix.
 
+## Review pass — findings, including one correction to method
+
+The independent reviewer agent was unavailable (returned empty once, then failed twice under
+load), so the review checklist was executed directly. Four things came out of it.
+
+**1. A methodological correction worth keeping.** "Was `ed188f2` cherry-picked?" was first tested
+with `git merge-base --is-ancestor ed188f2 HEAD`, which answers **yes** — and that answer is
+misleading. `ed188f2` sits inside the release lineage itself (`ed188f2` → … → `4669e28` reverts it
+→ `6b70dae` v1.13.0 → `c35c8ff` v1.13.1), so it is an ancestor of anything built on the release,
+and its revert is an ancestor too. Ancestry is the wrong instrument. The right question is whether
+its changes are present in the **tree**, checked by content:
+
+| `ed188f2` marker | In the tree at HEAD |
+|---|---|
+| `electron ^39.8.1`, `electron-builder ^26` | absent |
+| `react-router-dom ^7.15`, `vite ^6.4.3` | absent |
+| `linux.desktop` `entry: {}` wrapper (eb-26 schema) | absent |
+| `brace-expansion`, `@xmldom/xmldom`, `tar`, `tmp`, `@babel/core` overrides | absent |
+| `@hono/node-server ^2` major | absent |
+
+All absent, and `4669e28` (the revert) is still in history — the release's decision to stay on
+Electron 34 is intact.
+
+**2. The new test is a CI gate on push/PR, but not on the mac release job.** `desktop-ci.yml`
+runs `pnpm --filter @openclaw/desktop test` on **both** `windows-latest` and `macos-latest`, so the
+contract test gates there. But in `release-desktop.yml` the Windows job runs `pnpm test` and the
+**macOS job does not** — it goes `pnpm build` → `electron-builder --mac --publish always`. That
+asymmetry is pre-existing and not introduced here, but it means the release workflow alone would
+publish a mac artifact without ever running this security gate. Hence the condition below:
+`desktop-ci.yml` must be green **on the exact commit being tagged**.
+
+**3. No test code ships.** The packaged `app.asar` holds 4281 entries and **zero** `*.test.js`
+files; `updater-dependency-contract` is not among them. The gate costs nothing at runtime and
+leaks nothing into the shipped app.
+
+**4. Honest limit of the `AUDITED_OVERRIDES` allowlist.** It does stop *silent* drift: remove the
+`pnpm.overrides` entry and electron-updater's exact `9.5.1` pin returns, which the ≥9.7.0 floor
+catches; bump to an unvetted `9.8.0` or `10.x` and the range check rejects it (the test asserts
+both of those rejections explicitly, so the mechanism cannot quietly decay into "anything goes").
+What it cannot prevent is someone deliberately **editing the allowlist** to add a version. That is
+a review-process control, not a technical one, and it is only as strong as the requirement to
+re-run this suite and the packaging smoke when the list changes.
+
 ## What is *not* behaviourally asserted (stated, not glossed)
 
 - **fast-uri**: version floor only. A behavioural assertion was attempted and abandoned rather than
