@@ -175,3 +175,145 @@ the `core.pager` I had set while debugging empty `git diff` output. Net tracked-
 **Open items parked (not blocking Loop 00):** no `packageManager` field pins pnpm (drift risk);
 W-01 bundle-size debt is a sweeper concern; `@hono/node-server ^1.19.13` exists only on the old
 branch and needs an independent decision.
+
+---
+
+# W0 acceptance pass — Control Tower
+
+**Date:** 2026-07-28 · **Window:** W0 (Control Tower / Integration) · **Status:** ACCEPTED
+
+Second pass on this loop, run under the Common Session Constitution. The first pass produced the
+baseline; this pass verified it, built the Control Tower, and accepted Loop 00.
+
+## Session probe (HARD SAFETY RULE 1)
+
+The session's own repo root resolved to the **quarantined dirty worktree**
+(`F:\Ai Tools\Tool Starizzi - B2C - Openclaw`, `feature/aibase-my-graph-ui-sync` @ `959e2d2`).
+Under RULE 2 that means **no file writes there**. Every write in this pass was directed by
+absolute path into W0's granted worktree
+(`F:\Ai Tools\_wt-starizzi-personal-office-baseline`), and every shell call that touched the
+quarantine was read-only. `git worktree list --porcelain` also revealed that W0 had already
+provisioned a Loop 01 worktree, which changed the entry gate: Loop 01 had to be inspected before
+the ledger could be written honestly.
+
+## Agent conclusions
+
+**Socrates — entry gate.** All five W0 conditions passed with evidence: three artifacts present,
+JSON parsing, `HEAD == 84a57b3` carrying tag `v1.14.0-beta.3`, `git diff --check` exit 0, and an
+ownership audit showing zero tracked files modified. Two things the gate surfaced that the brief
+did not mention:
+
+- Loop 01 (W1) already holds provisional work — 13 files under `shared/personal-office/`, four
+  ADRs, two architecture docs, a worklog — all correctly inside its own ownership. I verified the
+  one thing that could have blocked a later merge: whether W1 also writes
+  `source-of-truth-baseline.*`. It does not, so `docs/architecture/` merges cleanly.
+- The quarantine kept growing (83 → 113 → 118 entries) while HEAD stayed at `959e2d2`.
+
+Neither blocks Loop 00, because Loop 00's output depends on canonical git objects, not on the
+quarantine. Recorded as `QUARANTINE-DRIFT` rather than waved through.
+
+**orchestrator — plan and ownership.** Loop 00 owns baseline artifacts plus the coordinator
+ledger/leases/handoff; feature source is forbidden. Six exact paths, no hot file, therefore no
+lease required. Verification plan set before writing: JSON parse, ledger status assertion,
+`diff --check`, secret scan, staged-path ownership diff, then post-commit re-verification
+including a fresh integration build. Two-phase status was mandated by the brief and honoured:
+`READY_FOR_REVIEW` written before the commit, `ACCEPTED` only after post-commit checks passed.
+
+**builder — implementation.** Wrote the three coordinator artifacts, committed six exact owned
+paths, verified, then flipped status. Encoded §8.1's ownership order into `leases.json` so a later
+loop cannot quietly claim a hot file, and marked the seven hot files that are *already*
+modified-uncommitted in the quarantine so no consumer mistakes that copy for canonical.
+
+**Socrates — pre-handoff re-challenge.** This caught a real defect. The ledger recorded
+`integrationHead: bb23185` and told W1 to `git rebase bb231856…` — but writing the acceptance
+status is *itself* a commit, so HEAD had already moved to `83c89b5`. Following that instruction
+would have rebased W1 onto a commit that excluded the acceptance record. Any SHA a coordinator
+artifact records is one commit stale by construction. Fixed by pointing consumers at the
+integration **ref** and keeping the SHAs as history only. Verified afterwards that no
+`rebase <sha>` string survives anywhere in the coordinator artifacts.
+
+## Commits
+
+| SHA | Purpose |
+| --- | --- |
+| `bb23185` | Baseline + Control Tower, 6 owned paths, Loop 00 `READY_FOR_REVIEW` |
+| `83c89b5` | Loop 00 → `ACCEPTED` after post-commit verification |
+| `c26ea0e` | Fix the stale-SHA rebase target; consumers follow the ref |
+
+Integration ref: `feature/personal-office-baseline-20260728`. Canonical `84a57b3` remains an
+ancestor; `git diff --name-status 84a57b3..HEAD` shows exactly the six owned additions and no
+feature source.
+
+## Verification
+
+Pre-commit: three coordinator JSON parse at schemaVersion 1; ledger asserts Loop 00 =
+`READY_FOR_REVIEW`; `git diff --check` exit 0; secret-shaped-literal scan across all six
+artifacts clean; `NODE_AUTH_TOKEN` appears twice, by name only, documenting W-02; staged set
+diffed against the ownership list — exactly 6, zero outside.
+
+Post-commit: `git diff --name-status 84a57b3..HEAD` = 6 owned additions, no `apps/`, `packages/`,
+manifest, `AGENTS.md`, `CLAUDE.md` or `.claude/` path; canonical confirmed ancestor; tree clean;
+`diff --check` exit 0; the three baseline hashes re-verified byte-identical after commit; and
+`pnpm --filter @openclaw/desktop build` re-run at the new commit exit 0 in 12.31s emitting
+`index-Dm-6l7bQ.css` and `index-B7j3vZGB.js` — the *same content hashes* as the canonical build,
+which is the actual proof that the commit changed no source.
+
+Not claimed: lint. `BF-03`/`BF-04` mean no ESLint config and no `lint:ci` exist at canonical, so
+the gate cannot run and no warning-budget claim is made for this loop.
+
+## SECURITY GATE
+
+**Surfaces:** A (secret & config), E (dependencies & supply chain).
+
+**Risks checked:** reading `.npmrc` could expose a GitHub Packages token; `pnpm install` executes
+lifecycle scripts for five packages; baseline artifacts could leak secret values while
+documenting configuration.
+
+**Controls:** the token was referenced by variable **name** only and redacted at the point of
+read — no value printed, copied, logged, or committed; install ran from the lockfile committed at
+the release tag, preserving provenance; a secret-shaped-literal scan over all six artifacts came
+back clean; no push, deploy, merge, publish, or production account was touched.
+
+**Residual risk:** no MSVC toolchain locally, so native `better-sqlite3` cannot be exercised here
+and CI stays authoritative (`BF-01`); the quarantine is under concurrent write and is not a stable
+reference for any consumer.
+
+**Carried to whoever owns the Loop 03 code:** the already-wired work-model migration in
+`database.ts` logs and proceeds on error instead of failing closed, justified in-comment only
+because v1 is purely additive. That justification expires the moment a destructive step is added.
+
+**Decision:** pass.
+
+## Skill Audit
+
+| Skill | Status | Where it landed |
+| --- | --- | --- |
+| `/search-first` | **USED** | Searched git history across all branches and all six worktrees before asserting anything was missing. This is what produced the port-matrix reversal — that canonical is ahead and only `eslint.config.mjs` is net-new — and what found the uncommitted `work-model.ts` behind PQ-08. |
+| `/context-gatherer` | **USED** | Gathered four refs, six worktrees, both mandatory orchestration docs, and the Loop 01 worktree state before writing the ledger. The Loop 01 inspection changed what the ledger says. |
+| `/understand-codebase` | **USED** | Produced §8 of the baseline: 16 SQLite tables, the finding that `agent_tasks` keys off a chat session (so chat is today's run spine), that `agent_run_entries` has no sequence or idempotency key while `offline_queue` already models the wanted pattern, and that `graph-types.ts` documents the two-plane split in code. |
+| `/quick-spec` | **USED** | The two coordinator formats are specified in-artifact at `schemaVersion` 1; the carry-forward constraints and ranked `nextActionsForW0` act as the spec Loop 01 consumes. |
+| `/backend-patterns` | **N/A** | Loop 00 wrote no server, API, or data-layer code. Main-process and DB files were read for the domain-surface inventory only; reading is not applying the skill. |
+| `/frontend-patterns` | **N/A** | No renderer code written. Loop 00 owns documentation and coordinator JSON only. |
+| `/deployment-patterns` | **USED** | Analysed `desktop-ci.yml` (install → `build:all` → test, and confirmed **no lint step** at canonical), verified release lineage and tag identity, checked lockfile provenance at the tag, and set the rule that CI is authoritative for native builds given `BF-01`. |
+| `/security-review` | **USED** | Gate A and Gate E above, plus the migration fail-open finding carried to the Loop 03 owner and the PQ-06 finding that porting the old manifest would loosen exact security pins and drop the `ws`/`sharp`/`adm-zip` pins. |
+| `/verification-loop` | **USED** | Ran pre-commit and post-commit, including the re-run integration build whose byte-identical asset hashes are the proof of no source drift. Also the discipline that refused to claim lint. |
+| `Design (#design)` | **N/A** | Loop 00 produced no UI surface. Design ownership begins at Loop 02 (W2). |
+| `/gpt-taste` | **N/A** | No UI in this loop. Also landing/portfolio-oriented: per the constitution its AIDA/hero/scroll-hijack patterns must not be applied to desktop product UI even when UI work does arrive. |
+| `/design-taste-frontend` | **N/A** | Same as above — no UI surface, and read-for-audit only when Loop 02 begins. |
+| `/stitch-design-taste` | **N/A** | No app surface produced in this loop; it is a primary reference for Loop 02/12, not for a coordination loop. |
+
+## Handoff to W1
+
+Integration ref `feature/personal-office-baseline-20260728` (tip `c26ea0e`). Baseline hashes:
+MD `097d0c01…`, JSON `8fd106c1…`, worklog `5c32d22c…`. No hot-file lease is held by anyone; the
+GitNexus index and its managed blocks stay reserved to W0.
+
+W1 must commit its own owned paths **before** rebasing, because its Loop 01 work is uncommitted
+and a rebase on a dirty tree either refuses or risks it. Then rebase onto the ref, not a SHA.
+
+The blocking item is PQ-08, and it outranks design discussion because it is the only irreversible
+one: roughly 190 KB of implementation plus five test files exist in no commit anywhere, and a
+`git clean` in the quarantine destroys them. Preserve first, rule second.
+
+No worktree was created for Loop 02 or Loop 03 — they wait on Loop 01 acceptance. Stopping here;
+W0 does not run the next loop and does not merge.
