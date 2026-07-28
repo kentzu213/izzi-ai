@@ -15,9 +15,12 @@
   },
   "integrationBranch": "feature/personal-office-baseline-20260728",
   "integrationWorktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
-  "integrationHead": "bb231856343e59e492d6d25701e171844f459d34",
-  "integrationHeadShort": "bb23185",
-  "integrationHeadNote": "Loop 00 accepted. This is the commit every consumer loop must branch from or rebase onto. Canonical 84a57b3 remains its ancestor.",
+  "integrationRef": "feature/personal-office-baseline-20260728",
+  "integrationRefIsAuthoritative": true,
+  "integrationHeadNote": "Consumers must rebase onto the integration REF, not onto a SHA copied out of this file. Any SHA recorded here is one commit stale by construction: writing the acceptance status into this ledger is itself a commit that advances the branch tip. The ref always points at the true tip.",
+  "loop00FeatureCommit": "bb231856343e59e492d6d25701e171844f459d34",
+  "loop00AcceptanceCommit": "83c89b5065b42a48a49b2741ec9f1c5e6646cb58",
+  "canonicalAncestor": "84a57b38117ee7544691115be5aca7a141af1abf",
 
   "validStatuses": ["PROVISIONAL", "READY_FOR_REVIEW", "ACCEPTED", "BLOCKED_GATE", "REJECTED"],
 
@@ -72,16 +75,17 @@
       "commitSha": null,
       "handoff": null,
       "dependsOn": ["00"],
-      "dependencyStatus": "SATISFIED — Loop 00 is ACCEPTED at bb231856343e59e492d6d25701e171844f459d34",
-      "branchIsBehindIntegrationBy": 1,
+      "dependencyStatus": "SATISFIED — Loop 00 is ACCEPTED on ref feature/personal-office-baseline-20260728",
+      "branchIsBehindIntegrationBy": 2,
       "safeSyncInstruction": {
-        "note": "W1's branch sits at canonical 84a57b3 and is now exactly one commit behind integration. Its Loop 01 work is UNCOMMITTED, so W1 must commit its own owned paths BEFORE syncing, otherwise a rebase will refuse to run or put the work at risk.",
+        "note": "W1's branch sits at canonical 84a57b3 and is behind integration. Its Loop 01 work is UNCOMMITTED, so W1 must commit its own owned paths BEFORE syncing, otherwise the rebase will refuse to run or put the work at risk. Rebase onto the REF, never onto a SHA copied from this file — see integrationHeadNote.",
         "steps": [
           "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"",
           "git status --porcelain   # confirm only Loop 01 owned paths are dirty",
           "git add -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
           "git commit -m \"<message>\" -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
-          "git rebase bb231856343e59e492d6d25701e171844f459d34"
+          "git rebase feature/personal-office-baseline-20260728",
+          "git log --oneline -3   # confirm the two Loop 00 commits are now ancestors"
         ],
         "conflictExpectation": "No file-level conflict is expected. Loop 00 adds docs/architecture/source-of-truth-baseline.{md,json}; Loop 01 adds docs/architecture/personal-office-os.md, legacy-personal-office-mapping.md and adr/ADR-PO-001..004. Verified: no filename overlap.",
         "prohibited": ["merge to main", "push", "force-push", "reset --hard", "any write to the quarantined dirty worktree"]

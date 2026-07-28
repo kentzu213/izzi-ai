@@ -180,6 +180,7 @@
   "commitSha": "bb231856343e59e492d6d25701e171844f459d34",
   "commitShaShort": "bb23185",
   "integrationHead": "bb231856343e59e492d6d25701e171844f459d34",
-  "w1SyncCommand": "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"  →  commit Loop 01 owned paths first  →  git rebase bb231856343e59e492d6d25701e171844f459d34",
+  "w1SyncCommand": "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"  →  commit Loop 01 owned paths first  →  git rebase feature/personal-office-baseline-20260728",
+  "w1SyncNote": "Rebase onto the integration REF, not onto a SHA copied from this file. The acceptance write is itself a commit, so any SHA recorded in a coordinator artifact is one commit stale by construction. The ref always points at the true tip.",
   "leaseStatusAtHandoff": "No hot-file lease is held by any window. All hot files are unclaimed except the GitNexus index and its managed doc blocks, which are permanently reserved to W0."
 }
