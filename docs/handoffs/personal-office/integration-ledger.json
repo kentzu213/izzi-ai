@@ -125,6 +125,7 @@
         "promotedIntoW1Scope": "The superseded draft's WorkRunLineageKind ('original'|'retry'|'fork'), WorkRunOrigin, canonicalJson and action-hash binding are to be promoted into shared/personal-office/ by W1 under a contract change request. Note this partially answers W1's own mapping §3.9, which had declared lineage Blocked as 'a design decision, not a migration one' — the draft had already made that design."
       },
       "remainingConditionsBeforeAcceptance": [
+        "Add waiting_external as a first-class RunState per gate PO-RUNSTATE-CONTRACT-GAP, or record a reasoned rejection that specifically addresses the Loop 02 'Waiting for me' lane argument. Without this, Loop 03 cannot meet its own acceptance criteria.",
         "Update legacy-personal-office-mapping.md §3.6 to the AMENDED archived ruling: derive the terminal from agent_run_entries where conclusive, else map to canceled with canceledReason='legacy_archived_outcome_unknown' — NOT completed. Always set archivedAt and preserve legacyStatusRaw. See acceptance/loop-00.json → mappingRulings → MAP-ARCHIVED.",
         "Absorb the promoted lineage/canonicalJson/action-hash content under a contract change request, or record a reasoned rejection.",
         "Commit Loop 01's owned paths — the work is currently uncommitted.",
@@ -215,10 +216,35 @@
     {
       "id": "PO-VAULT-OWNERSHIP",
       "severity": "LOW",
-      "status": "OPEN",
+      "status": "RESOLVED",
+      "resolvedAt": "2026-07-28T09:40:00Z",
       "title": "vault-ops / vault-types / wikilink have no assigned owner",
-      "detail": "Six uncommitted files in the quarantine cover vault and wikilink concerns. The §8.2 ownership table points Live/profile concerns at Loop 04, not Loop 02, so they do not clearly belong to the shell salvage.",
-      "requiredAction": "W0 ownership ruling before any producer claims them. Recorded as HOLD_PENDING_OWNERSHIP in quarantine/loop-02-dirty-salvage.json.",
+      "resolution": "Assigned to Loop 04 / W4. The roadmap's Loop 04 PHẢI ĐỌC list names shared/vault-types.ts, shared/vault-ops.ts, shared/wikilink.ts and renderer/components/vault/* directly, so these are Loop 04 INPUTS rather than Loop 02 shell salvage.",
+      "followUp": "Amend quarantine/loop-02-dirty-salvage.json from HOLD_PENDING_OWNERSHIP to Loop 04 ownership at the next registry write.",
+      "blocks": []
+    },
+    {
+      "id": "PO-RUNSTATE-CONTRACT-GAP",
+      "severity": "CRITICAL",
+      "status": "OPEN",
+      "title": "Loop 03's mandated run state machine contradicts Loop 01's frozen contract",
+      "detail": "Roadmap Loop 03 §4 specifies a MINIMUM ('tối thiểu') run state machine: draft, queued, running, waiting_user, waiting_external, paused, succeeded, failed, cancelled. W1's frozen RunState is: created, queued, running, awaiting_approval, paused, completed, failed, canceled. Four differences are naming only, but waiting_external is genuinely ABSENT and W1's mapping §3.4 explicitly declined to add it.",
+      "analysis": "W1's reasoning was sound for the question it asked — which legacy values force a new state — but that is a migration question, not a product requirement. Two pieces of evidence W1 did not weigh: (1) the roadmap calls the list a minimum, so Loop 03's acceptance is measured against it; (2) Loop 02 §3 requires the Today page to show Active work / Waiting for me / Delivered as distinct lanes, and a run blocked on an integration or runtime is none of those three. Under W1's model that run is 'paused' plus an OPTIONAL pausedReason, and a primary always-visible product lane cannot be built reliably on an optional field — any writer that omits it silently misfiles the run, and the state machine cannot enforce legal transitions on a field it does not model.",
+      "ruling": "CONTRACT CHANGE REQUEST W0 → W1. Add waiting_external as a first-class RunState with transitions running → waiting_external and waiting_external → running | canceled, mirroring paused. Keep pausedReason as an additive detail for the genuinely reason-shaped causes (stuck, guardrail). Keep W1's identifiers for the other four differences: awaiting_approval (W1 §3.3 rejected the rename with evidence), completed/canceled (US spelling matches the codebase), created (W1 §3.7 establishes draft as a WORKSPACE state, and two entities using draft for different lifecycles would be worse).",
+      "cost": "A version note plus W1 re-running its own tests. This is a breaking change to an UNSHIPPED contract, so there is no migration cost — today.",
+      "consequenceIfDeferred": "Loop 03 either violates its own acceptance criteria or forks the state machine, which is precisely the failure PQ-08 was raised to prevent.",
+      "sequencingConstraint": "Must be resolved TOGETHER WITH PO-VERSION-COLLISION and before Loop 03 persists anything. If waiting_external lands after PERSONAL_OFFICE_SCHEMA_VERSION has tagged persisted rows, the version stops being a reliable discriminator.",
+      "discoveredBy": "W0 provisional research, docs/handoffs/personal-office/planning/loops-01-04-provisional-plan.md §1",
+      "blocks": ["01", "03"]
+    },
+    {
+      "id": "PO-LOOP04-DEPENDENCY",
+      "severity": "LOW",
+      "status": "OPEN",
+      "title": "Loop 04's dependency on Loop 03 is understated in the DAG",
+      "detail": "This ledger records Loop 04 as dependsOn ['01']. The roadmap's Loop 04 PHẢI ĐỌC list includes 'unified work model Loop 03', so the true edge is 01 → 03 → 04.",
+      "impact": "Scheduling only. Loop 04 is NOT a free parallel sibling of Loop 02 and Loop 03.",
+      "requiredAction": "Treat Loop 04 as gated on Loop 03 acceptance when planning waves.",
       "blocks": []
     },
     {
