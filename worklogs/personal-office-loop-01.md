@@ -1,16 +1,24 @@
-# Worklog — Personal Office OS, Loop 01 (PROVISIONAL)
+# Worklog — Personal Office OS, Loop 01 (READY FOR REVIEW)
 
-**Status:** `PROVISIONAL — pinned to v1.14.0-beta.3 / 84a57b3; requires Loop 00 revalidation before integration.`
+**Status:** `READY_FOR_REVIEW — replayed on accepted Loop 00 integration ref 0cbf888; W0 rulings applied.`
 
 | Field | Value |
 |---|---|
 | Operational worktree | `F:\Ai Tools\_wt-starizzi-personal-office-loop01` |
 | Branch | `feature/personal-office-loop-01-20260728` |
-| HEAD | `84a57b38117ee7544691115be5aca7a141af1abf` (unchanged — nothing committed) |
-| Canonical base | `84a57b3` = tag `v1.14.0-beta.3` |
+| Implementation commit | `a72d29d57e05fc1fcbda839eb059f08da88f6cc0` |
+| Accepted integration base | `0cbf88863180b761dae1366eefe99c8338b4aad0` |
+| Rollback commit / branch | `94fbdc6908b64ac07d498327a890f337738a6d24` / `backup/personal-office-loop-01-draft-20260728` |
 | Managing repo | `F:\Ai Tools\Tool Starizzi - B2C - Openclaw` |
 | Loop 00 worktree | `F:\Ai Tools\_wt-starizzi-personal-office-baseline` (**not touched**) |
 | Date | 2026-07-28 |
+
+> **Recovery correction.** Sections below preserve the original provisional
+> investigation as historical evidence. The old claim that the two
+> `node_modules` junctions were "read-only" was incorrect: they point into the
+> quarantined dirty source repo and are writable. No recovery verification ran
+> through either junction. Tests and type checks ran from an isolated copy using
+> the clean Loop 00 toolchain, with Vitest cache disabled.
 
 ## 1. Worktree provenance
 
@@ -409,3 +417,105 @@ Scope note: did not read `run-repository.ts`/`work-migration.ts`/`work-service.t
 by line — those are execution-plane implementation owned by Loop 03/W3, out of W1's
 contract-reconciliation scope. Model + redaction + adapters are the contract surface W1
 needs.
+
+---
+
+## Final recovery pass — accepted Loop 00 replay
+
+### Preservation and replay
+
+1. Exact W1-owned draft paths were committed at
+   `94fbdc6908b64ac07d498327a890f337738a6d24`.
+2. Backup branch `backup/personal-office-loop-01-draft-20260728` permanently
+   retains that pre-replay commit.
+3. The working branch rebased cleanly onto
+   `feature/personal-office-baseline-20260728` at `0cbf888`; replayed draft commit:
+   `b81da77c3c48f014966e54972ab8bd73379649c4`.
+4. No blind cherry-pick, quarantine write, reset, clean, stash, or hot-file edit
+   occurred.
+
+### W0 rulings applied
+
+- W1 `shared/personal-office/**` is the governance/catalog contract of record.
+  Loop 03's execution core must import it and must not land
+  `shared/work-model.ts` as a parallel contract.
+- `PERSONAL_OFFICE_SCHEMA_VERSION` remains the only Personal Office version
+  authority. The superseded `WORK_SCHEMA_VERSION` must be retired by Loop 03.
+- Run-level `blocked` maps to recoverable `paused`, never `failed`.
+- Legacy `archived` derives a terminal only from conclusive entries. An
+  inconclusive archive maps to `canceled` with
+  `canceledReason='legacy_archived_outcome_unknown'`; `archivedAt` and
+  `legacyStatusRaw='archived'` are preserved, and Loop 03 emits exactly one
+  `audit_events` migration event.
+- `failed` is terminal. Retry/fork creates a new run with
+  `lineageKind`, `parentRunId`, stable `rootRunId`, and incremented `attempt`.
+- Deterministic `canonicalJson` and immutable approval action binding now live
+  in the dependency-free shared contract. Cryptographic hashing remains on the
+  execution plane.
+
+### Verification evidence
+
+Verification ran from:
+`F:\Ai Tools\Kiro\.tmp-w1-contract-verify-019fa826`.
+Its `node_modules` junction targeted the clean Loop 00 worktree, not quarantine.
+
+| Check | Result |
+|---|---|
+| Vitest, Personal Office contracts | PASS — 4 files, 41/41 tests |
+| TypeScript main profile (CommonJS/ES2022/no DOM) | PASS — exit 0 |
+| TypeScript renderer profile (ESNext/bundler/DOM/isolatedModules) | PASS — exit 0 |
+| `git diff --check` | PASS |
+| Ownership | PASS — only `shared/personal-office/**`, architecture docs, and this worklog |
+| GitNexus detect changes | LOW — 11 changed files at final delta, 0 indexed symbols/processes because the contract files are new |
+| Secret scan | PASS — no secret-shaped addition |
+| Lint | NOT RUNNABLE — inherited PQ-01/BF-03/BF-04; no green lint claim |
+
+### SECURITY GATE
+
+- **Junction writeback:** avoided; no package/test/build command ran in W1.
+- **DB migration:** no DB or migration implementation changed in Loop 01.
+- **Schema collision:** contract authority fixed; Loop 03 must remove
+  `WORK_SCHEMA_VERSION` before persistence.
+- **False-completed archive:** prohibited by the amended mapping.
+- **Approval replay/TOCTOU:** action binding includes target, redacted input,
+  artifact/version, estimated side effect, idempotency key, expiry, plan hash,
+  and context snapshot.
+- **Hot-file leases:** none used or required.
+
+Decision: **PASS for W0 review**, with PQ-01 carried as a pre-existing
+non-blocking verification limitation.
+
+### Skill and agent audit
+
+- **Socrates — USED:** approved preservation-only first, then required W0
+  mapping/version/lineage rulings before integration.
+- **orchestrator — USED in-process:** fixed ownership, replay order, isolated
+  verification, two-phase handoff, and downstream gates. The spawned helper was
+  interrupted after failing to return promptly.
+- **builder — USED:** contract implementation was bounded to W1-owned paths;
+  no UI/main/DB/toolchain mutation.
+- **/search-first — USED:** found and consumed the existing hashed quarantine
+  model rather than inventing another abstraction.
+- **/context-gatherer — USED:** reconciled Loop 00 acceptance, ledger, leases,
+  salvage manifests, W1 draft, and legacy mapping.
+- **/understand-codebase — USED:** traced contract versus execution-plane
+  ownership and legacy status sources.
+- **/quick-spec — USED:** W0 two-layer and mapping rulings were treated as the
+  implementation spec.
+- **/backend-patterns — USED:** preserved dependency direction, terminal-state
+  semantics, idempotency, version authority, and adapter ownership.
+- **/security-review — USED:** junction, migration, false-success, secret,
+  action-binding, and lease gates reviewed.
+- **/verification-loop — USED:** targeted tests, dual-profile typecheck,
+  diff/ownership/security checks.
+- **/frontend-patterns, Design (#design), /gpt-taste,
+  /design-taste-frontend, /stitch-design-taste — N/A:** Loop 01 owns no UI.
+- **/deployment-patterns — N/A:** no deploy, release, package, or production
+  action in this loop.
+
+### Next gate
+
+W0 must review and integrate the implementation commit, then create
+`docs/handoffs/personal-office/acceptance/loop-01.json`. Loop 02/03/04
+implementation worktrees remain blocked until that acceptance record is
+committed. Loop 04 also requires the `PO-VAULT-OWNERSHIP` ruling.
