@@ -6,7 +6,7 @@
 |---|---|
 | Operational worktree | `F:\Ai Tools\_wt-starizzi-personal-office-loop01` |
 | Branch | `feature/personal-office-loop-01-20260728` |
-| Implementation commit | `a72d29d57e05fc1fcbda839eb059f08da88f6cc0` |
+| Implementation commit | `89d77435e5bc7bb3535ed0815fe3af470ebda03a` (includes reviewer correction) |
 | Accepted integration base | `0cbf88863180b761dae1366eefe99c8338b4aad0` |
 | Rollback commit / branch | `94fbdc6908b64ac07d498327a890f337738a6d24` / `backup/personal-office-loop-01-draft-20260728` |
 | Managing repo | `F:\Ai Tools\Tool Starizzi - B2C - Openclaw` |
@@ -461,7 +461,7 @@ Its `node_modules` junction targeted the clean Loop 00 worktree, not quarantine.
 
 | Check | Result |
 |---|---|
-| Vitest, Personal Office contracts | PASS — 4 files, 41/41 tests |
+| Vitest, Personal Office contracts | PASS — 4 files, 43/43 tests |
 | TypeScript main profile (CommonJS/ES2022/no DOM) | PASS — exit 0 |
 | TypeScript renderer profile (ESNext/bundler/DOM/isolatedModules) | PASS — exit 0 |
 | `git diff --check` | PASS |
@@ -484,6 +484,19 @@ Its `node_modules` junction targeted the clean Loop 00 worktree, not quarantine.
 
 Decision: **PASS for W0 review**, with PQ-01 carried as a pre-existing
 non-blocking verification limitation.
+
+### Independent review correction
+
+The first submitted handoff (`15ab877`) was rejected before integration because
+`decode()` validated only the envelope version. A current envelope could therefore
+carry an aggregate with a stale/missing inner `schemaVersion`.
+
+Corrective implementation `89d77435e5bc7bb3535ed0815fe3af470ebda03a`
+makes `Envelope`, `encode`, `serialize`, `decode`, and `roundTrip` accept only
+`Versioned` aggregates; `decode()` now validates both the envelope and upgraded
+aggregate. Two regression tests cover a stale inner version and a missing inner
+version. Isolated verification was rerun: 43/43 tests and both TypeScript profiles
+pass. The rejected handoff was never integrated.
 
 ### Skill and agent audit
 
