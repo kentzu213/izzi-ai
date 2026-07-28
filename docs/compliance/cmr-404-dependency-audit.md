@@ -46,7 +46,7 @@ Raw evidence retained outside the repo as `audit-before.json` / `audit-after.jso
 
 | # | Advisory / security property | Package & version | File changed | Test that protects it | Packaging risk |
 |---|---|---|---|---|---|
-| 1 | **GHSA-p2f4-r6v6-j797** (high, CWE-200): cross-origin redirect forwards `PRIVATE-TOKEN` and mixed-case `Authorization`. Reachable — `electron-builder.json` publishes via `provider: github` and the release workflow carries `GH_TOKEN` | `builder-util-runtime` pinned **exactly** `9.7.0` (override; `electron-updater@6.8.3` pins `9.5.1` exactly, so an override is the only route) | `package.json`, `pnpm-workspace.yaml` | `updater-dependency-contract.test.ts` — asserts the **behaviour** (`HttpExecutor.prepareRedirectUrlOptions` strips both headers cross-origin, keeps `Authorization` same-origin, keeps `accept`), plus the ≥9.7.0 floor, the declared-range guard, and all 20 exports electron-updater imports | Override also reaches electron-builder's own `builder-util`/`app-builder-lib` chain (was `9.2.10`). Proven by the packaging runs below |
+| 1 | **GHSA-p2f4-r6v6-j797** (high, CWE-200): cross-origin redirect forwards `PRIVATE-TOKEN` and mixed-case `Authorization`. Reachable — `electron-builder.json` publishes via `provider: github` and the release workflow carries `GH_TOKEN` | `builder-util-runtime` pinned **exactly** `9.7.0` (override; `electron-updater@6.8.3` pins `9.5.1` exactly, so an override is the only route) | `package.json`, `pnpm-workspace.yaml` | `updater-dependency-contract.test.ts` — asserts the **behaviour** (`HttpExecutor.prepareRedirectUrlOptions` strips both headers cross-origin, keeps `Authorization` same-origin, keeps `accept`), plus the ≥9.7.0 floor, the declared-range guard, and all 20 exports electron-updater imports | Crosses **five** exact pins, not one — see "Blast radius of the global override" |
 | 2 | **GHSA-52cp-r559-cp3m** (high): js-yaml <4.3.0 — chained YAML merge keys force quadratic CPU. This is the parser `AppUpdater` runs on `latest.yml`, i.e. remote content | `js-yaml` override `4.2.0 → 4.3.0` (inside electron-updater's declared `^4.1.0`; no exemption needed) | `package.json`, `pnpm-workspace.yaml` | same file — ≥4.3.0 floor + a realistic `latest.yml` parse whose `sha512` must survive byte-for-byte | none: same major, same declared range |
 | 3 | **GHSA-v2hh-gcrm-f6hx** + **GHSA-4c8g-83qw-93j6** (high ×2): fast-uri host confusion (literal backslash authority, failed IDN canonicalisation) | `fast-uri` override `3.1.2 → 3.1.4` | `package.json`, `pnpm-workspace.yaml` | Floor only — see "What is *not* behaviourally asserted" | none: patch bump. Reached via `electron-store > conf > ajv` (JSON-schema validation of the local config file), not a remote-host trust boundary |
 | 4 | **GHSA-r5fr-rjxr-66jc** (high, `_.template` code injection) + **GHSA-f23m-r3pf-42rh** (moderate, prototype pollution in `_.unset`/`_.omit`) | `lodash` override `4.18.1` (new) | `package.json`, `pnpm-workspace.yaml` | Archiver smoke: `archiver-utils@5.0.2` declares `^4.17.15`, resolves `4.18.1` (**inside** the range — a floor, not an exemption), and `archiver@7.0.1` produces a valid zip | Only path is `packages/cli > archiver > archiver-utils`; that is the `.ocx` CLI, not desktop runtime. Desktop's own `.ocx` bundling uses system `tar` (`scripts/before-pack.cjs`), so it is untouched |
@@ -85,6 +85,68 @@ Consequences, stated rather than assumed:
 - The **high** CORS advisory (GHSA-88fw-hqm2-52qc) fires when `origin` defaults to the wildcard;
   `src/index.ts` passes an explicit origin allowlist, so it was not reachable either. Fixed anyway —
   the floor was free.
+
+## The advisory and the fix, read at source level
+
+Not inferred from version numbers. Both tarballs were fetched and their
+`out/httpExecutor.js` compared (`npm pack builder-util-runtime@9.5.1` / `@9.7.0`):
+
+**9.5.1 — vulnerable, and for two independent reasons.** The strip logic is gated on
+`headers?.authorization`, i.e. only the **lowercase** key, so a mixed-case `Authorization`
+never enters the branch at all. And when it does run it executes exactly
+`delete headers.authorization` — `PRIVATE-TOKEN` is never considered. Scanning 9.5.1 for
+any notion of the header confirms it: the only matches are a comment about
+`PrivateGitHubProvider`, a comment about hostname comparison, and `safeStringifyJson`'s
+log redaction. None of them touches redirect headers.
+
+**9.7.0 — fixed generically.** It drops the single-key special case and instead iterates
+every header key, normalising each name (lowercase, separators stripped) against
+
+```
+SENSITIVE_REDIRECT_HEADERS = { authorization, proxyauthorization, privatetoken,
+  xapikey, xauthtoken, xaccesstoken, xgitlabtoken, cookie, xcsrftoken }
+```
+
+so `PRIVATE-TOKEN`, `Authorization`, `authorization` and hyphen/case variants are all
+covered. `reconstructOriginalUrl` / `isCrossOriginRedirect` are unchanged between the two,
+so the origin comparison itself is not what moved.
+
+This is what makes the two base failures explicable rather than mysterious: the leaked
+`PRIVATE-TOKEN` and the leaked mixed-case `Authorization` are each a direct consequence of
+the 9.5.1 code above.
+
+## Blast radius of the global override — measured, then justified
+
+The override is workspace-wide, so it crosses **five** exact pins, not one:
+
+| Consumer | Declares | Symbols it imports from builder-util-runtime | Missing in 9.7.0 |
+|---|---|---:|---|
+| `electron-updater@6.8.3` | `9.5.1` | 20 | none |
+| `app-builder-lib@25.1.8` | `9.2.10` | 14 | none |
+| `builder-util@25.1.7` | `9.2.10` | 4 | none |
+| `electron-publish@25.1.7` | `9.2.10` | 4 | none |
+| `dmg-builder@25.1.8` | `9.2.10` | **0** | none |
+
+Method: resolve `builder-util-runtime` from the installed tree, enumerate `Object.keys()`
+(32 exports), then scan each consumer's compiled `out/**/*.js` for
+`builder_util_runtime_N.<symbol>` and `require("builder-util-runtime").<symbol>`.
+Result: **no missing symbols anywhere**.
+
+Three things follow, and they decided the design:
+
+1. A narrower `electron-updater>builder-util-runtime` override was considered and
+   **rejected on evidence**, not preference. The API surface holds for all five consumers,
+   and the wide form additionally patches `electron-publish` — the package that uploads
+   release assets with `GH_TOKEN` in `release-desktop.yml`. That is a second token-bearing
+   redirect path, so the wide override closes a build-time leak the narrow one would leave
+   open.
+2. `app-builder-lib`, `builder-util` and `electron-publish` were all exercised by the full
+   `electron-builder --win --publish never` run below (exit 0), so the four packaging pins
+   are not merely API-checked, they ran.
+3. `dmg-builder` — the macOS-only package, and the one path that cannot run on this Windows
+   host — imports **zero** symbols from `builder-util-runtime`. So the macOS-specific delta
+   introduced by this override is nil; what still needs the macOS runner is the ordinary
+   `dmg`/`zip` build, not anything this change touches.
 
 ## Red → green evidence
 
@@ -144,6 +206,38 @@ releaseDate: '…'
 Same electron-updater v6 shape the contract test parses: `version`, `files[].{url,sha512,size}`,
 `path`, `sha512`, `releaseDate`. `version: 1.13.1` because this loop does **not** bump the version.
 
+## Clean-checkout reproduction — isolated pnpm store
+
+Everything above was measured in the worktree where the change was authored, so it was
+re-run from a **second, detached worktree** checked out at the hotfix commit, installed
+into an **isolated store** (`--store-dir`) so nothing could be inherited from the shared
+pnpm store or from the main checkout's 82 dirty files:
+
+| Step | Result |
+|---|---|
+| `pnpm install --frozen-lockfile --ignore-scripts --store-dir <isolated>` | exit 0, "Lockfile is up to date" |
+| Resolution count per overridden package | **exactly one each**: `builder-util-runtime@9.7.0`, `js-yaml@4.3.0`, `fast-uri@3.1.4`, `lodash@4.18.1`, `hono@4.12.32`, `@hono/node-server@1.19.17`, `uuid@11.1.1` |
+| Electron toolchain | `electron@34.5.8`, `electron-builder@25.1.8`, `electron-updater@6.8.3` — no 39, no 26 |
+| `pnpm audit --prod` | **3** findings, byte-identical to the authoring worktree |
+| Updater dependency contract | **10/10 pass** |
+
+One tooling artifact, stated rather than hidden: in this isolated install
+`updater-service.test.ts` fails to *import*, with
+`Electron failed to install correctly` — `--ignore-scripts` skips Electron's
+`postinstall`, so the binary was never downloaded. It is not a code failure; the same file
+passes in the authoring worktree where install scripts ran (54/54 files, 473/473 tests).
+`--ignore-scripts` was used deliberately to isolate the lockfile question from native
+toolchain noise.
+
+### Why no `brace-expansion` override — observed, not assumed
+
+The clean install resolves **three coexisting majors**: `brace-expansion@1.1.13`,
+`@2.0.3` and `@5.0.5`, because four `minimatch` majors in the tree need incompatible
+lines (`minimatch@3` requires the v1 export shape). A single workspace-wide pin cannot
+satisfy all of them, which is the recorded cause of ESLint dying with
+`TypeError: expand is not a function`. Two of the three remaining findings are this
+package, and they stay open by decision.
+
 ## Remaining 3 — triaged, not silenced
 
 | Severity | Package | Patched | Path | Why deferred |
@@ -169,6 +263,10 @@ remote code execution and none sits on the auto-update path this hotfix exists t
   notarisation require the `macos-latest` runner. `desktop-ci.yml` covers macOS for
   install + `build:all` + desktop tests, but **packaging** for macOS only runs in
   `release-desktop.yml`. It must go green there before the tag. Not claimed as verified here.
+  Scoped honestly: this is a *pre-existing* gate, not a risk this change adds — `dmg-builder`
+  imports zero symbols from the one package the override moves, and `latest-mac.yml` is generated
+  by the same unchanged `app-builder-lib@25.1.8` from the same unchanged `electron-builder.json`
+  that produced the verified `latest.yml`.
 - **End-to-end `checkForUpdates()`** against a published release: needs a signed artifact on a real
   GitHub release, i.e. a release action, not a local test.
 
