@@ -34,11 +34,7 @@ import { installFromMarketplace } from './extensions/marketplace-download';
 import { ExtensionUpdateChecker } from './extensions/update-checker';
 import { LocalServiceManager } from './extensions/local-service-manager';
 import { AgentService } from './agent/agent-service';
-import {
-  DEFAULT_CODEX_LB_MODEL,
-  ProviderSettingsStore,
-  normalizeCustomProviderConfig,
-} from './agent/provider-settings-store';
+import { ProviderSettingsStore } from './agent/provider-settings-store';
 import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
 import { runHostAgentTurn } from './agent/host-agent';
@@ -75,7 +71,6 @@ import {
   verifyCommercialVoiceLicense,
 } from './customer-marketing/commercial-voice-license';
 import { createStreamCollector } from '../shared/agent-turn-events';
-import { registerBudgetHandlers } from './setup/budget-ipc-handlers';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -205,7 +200,6 @@ function createWindow() {
 
   // Register Agent Bundle IPC handlers (Agent Marketplace)
   registerAgentIpcHandlers(mainWindow);
-  registerBudgetHandlers(mainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -930,8 +924,7 @@ function setupIPC() {
         settings.saveConfig({
           baseUrl: 'http://127.0.0.1:2455/v1',
           authType: 'bearer',
-          selectedModel: DEFAULT_CODEX_LB_MODEL,
-          reasoningEffort: 'xhigh',
+          selectedModel: 'gpt-5.6-sol',
         });
         secrets.setKey(envKey);
         settings.setEnabled(true);
@@ -1087,7 +1080,6 @@ function setupIPC() {
         history?: { role: string; content: string }[];
         turnId?: string;
         images?: string[];
-        reasoningEffort?: string;
       },
     ): Promise<{ reply?: string; error?: string }> => {
       const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
@@ -1095,8 +1087,6 @@ function setupIPC() {
       const images = Array.isArray(payload?.images)
         ? payload.images.filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
         : [];
-      const reasoningEffort =
-        typeof payload?.reasoningEffort === 'string' ? payload.reasoningEffort.trim() : undefined;
       if (!message && images.length === 0) return { error: 'empty' };
 
       const settings = new ProviderSettingsStore(dbManager);
@@ -1105,9 +1095,6 @@ function setupIPC() {
       const cfg = settings.getConfig();
       const key = secrets.getKey();
       if (!cfg || !key) return { error: 'not-configured' };
-      const effectiveCfg = normalizeCustomProviderConfig(
-        reasoningEffort ? { ...cfg, reasoningEffort: reasoningEffort as any } : cfg,
-      );
 
       const history = Array.isArray(payload?.history)
         ? payload.history
@@ -1136,12 +1123,11 @@ function setupIPC() {
         const control = { controller, queue: [] as string[] };
         if (turnId) activeAgentTurns.set(turnId, control);
         const result = await runHostAgentTurn({
-          config: effectiveCfg,
+          config: cfg,
           apiKey: key,
           message,
           history,
           images,
-          reasoningEffort,
           mode: permMode,
           workingDir: permStore.getWorkingDir(),
           turnId,
@@ -1204,7 +1190,7 @@ function setupIPC() {
         return result.error ? { error: result.error } : { reply: result.reply };
       }
 
-      const provider = new CustomOpenAIProvider(effectiveCfg, key, (t) => secrets.redact(t));
+      const provider = new CustomOpenAIProvider(cfg, key, (t) => secrets.redact(t));
       let reply = '';
       try {
         for await (const chunk of provider.streamChat({ sessionId: '', message, history, images })) {

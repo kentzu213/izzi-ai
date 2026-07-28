@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/desktop",
-  "version": "1.13.1",
+  "version": "1.14.0-beta.1",
   "private": true,
   "description": "Izzi OpenClaw Desktop App - Electron",
   "author": "kentzu213",
@@ -34,6 +34,7 @@
     "better-sqlite3": "^11.7.0",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.8.3",
+    "hyperframes": "0.7.57",
     "react-force-graph-2d": "1.29.1",
     "zustand": "^5.0.3"
   },
