@@ -55,6 +55,9 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 21. [x] Connect Starizzi to the authenticated remote workspace through a main-process-only client and synchronize workspace ID, role, plan, and quota.
 22. [x] Reserve one authoritative credit before an AI Marketing Director model call, use `director:<runId>` idempotency, and fail closed when the enabled backend cannot confirm permission or quota.
 23. [x] Restore CodeGraph and GitNexus direct MCP health; keep shell and direct-index fallbacks available when semantic FTS is unavailable.
+24. [x] Rename the product and canonical repository to Izzi AI, publish Windows
+    `v1.14.0-beta.4`, and verify the installed title, shortcuts, profile continuity, and official
+    cyan `S` icon.
 
 ## Verification evidence
 
@@ -74,6 +77,15 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - Latest Starizzi verification before the current role-administration wave: 450 tests passed; main/renderer production build passed.
 - Customer runtime smoke passed with no route overflow or error; Internal Marketing Room smoke passed 12/12.
 - GitNexus dependency-cycle check reported 0 cycles. Direct context, impact, and change-detection MCP calls are healthy; optional FTS repair is unavailable on this machine.
+- Branding release `v1.14.0-beta.4`: clean release worktree, branding tests 3/3, full desktop
+  tests 904/904, production build and NSIS package passed. Installed executable metadata is
+  `Izzi AI` / `1.14.0-beta.4`; installed and packaged executable hashes match; executable icon
+  comparison is `0/1024` pixels different from the source asset.
+- Repository and updater artifacts now use `kentzu213/izzi-ai`. The installed app has one uninstall
+  entry and retains `%APPDATA%\@openclaw` unchanged across the final install.
+- Release-session GitNexus note: the MCP transport closed and the clean release worktree had no
+  local CLI index. Prior branding impact evidence remained `LOW` with zero affected flows; shell
+  diff, tests, production build, and artifact verification were used as the release fallback.
 
 ## Next phases
 
@@ -88,6 +100,11 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
 10. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
 11. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
+12. [ ] Finish the production Voice Studio image and managed runtime: resolve the `perth`
+    dependency, preserve Docker connection variables, rebuild, publish, and run end-to-end TTS
+    smoke tests.
+13. [ ] Restore persistent GitNexus MCP connectivity and index the active Voice worktree while
+    retaining shell/CLI fallback.
 
 ## Explicitly not claimed complete
 

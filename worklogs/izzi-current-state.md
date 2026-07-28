@@ -1,6 +1,45 @@
-# Izzi / Starizzi — current state
+# Izzi AI — current state
 
-Timestamp: **2026-07-27 15:40 ICT**
+Timestamp: **2026-07-28 17:42 ICT**
+Canonical GitHub repo: `kentzu213/izzi-ai`
+Released desktop version: `v1.14.0-beta.4`
+Release commit: `fc60923` (`fix(brand): pin Izzi AI Windows identity and icon`)
+Installed Windows app: `F:\IzziAI\Izzi AI.exe`
+Local profile retained at: `%APPDATA%\@openclaw`
+
+## 2026-07-28 branding and repository release (COMPLETE)
+
+- Renamed the GitHub repository from `kentzu213/starizzi-app` to `kentzu213/izzi-ai`.
+- Renamed the visible Windows product, installer, shortcuts, and window title to `Izzi AI`.
+- Kept `com.izziapi.openclaw` as the stable AppUserModelID so upgrades reuse the existing
+  `%APPDATA%\@openclaw` profile and updater identity.
+- Rebuilt the official cyan `S` Windows icon with 7 frames: 16, 24, 32, 48, 64, 128, and 256 px.
+- Verified the icon extracted from the packaged and installed executables differs from the source
+  `32x32.png` by `0/1024` pixels.
+- Verified the clean release worktree with branding tests **3/3**, full desktop tests **904/904**,
+  TypeScript/Vite production build, Electron native dependency rebuild, and NSIS packaging.
+- Published `v1.14.0-beta.4` with installer, blockmap, and `latest.yml`; remote SHA-256 values
+  match the locally built artifacts.
+- Installed and launched the release successfully. Windows has one uninstall entry, both shortcuts
+  point to `F:\IzziAI\Izzi AI.exe`, the window title is `Izzi AI`, and the process is responsive.
+- Profile preservation was measured before and after the final install:
+  **3276 files / 901672269 bytes** on both sides.
+- Voice Studio and Docker runtime work was intentionally excluded from the branding release.
+
+## Active follow-ups after beta.4
+
+- Voice Studio image build remains blocked by the `perth` package/runtime mismatch. The image must
+  use the package that provides `PerthImplicitWatermarker` and then pass a fresh runtime smoke test.
+- `LocalServiceManager` must retain Docker connection variables (`DOCKER_HOST`, `DOCKER_CONTEXT`,
+  and TLS variables) while scrubbing only Compose and managed-service overrides.
+- GitNexus MCP returned `Transport closed` during the release pass. The prior branding impact result
+  was `LOW` with `0` affected execution flows; current fallback verification used `git diff`,
+  focused/full tests, production build, and packaged artifact checks. Reconnect/re-index remains an
+  operational task.
+- The Windows installer is unsigned because no code-signing certificate is configured.
+
+## Previous 2026-07-27 baseline
+
 Repo: `F:\Ai Tools\Tool Starizzi - B2C - Openclaw`
 Branch: `feature/aibase-my-graph-ui-sync`
 HEAD before this session: `066b2d9` (feat(desktop): Customer AI Marketing Room + server-authoritative member roles)
@@ -126,7 +165,9 @@ runtime (events fired, real cwd, duplicate writers) before changing anything.
 
 ## Next action
 
-1. Build out ESLint 9 flat config across the workspace, then re-run `lint` (CMR-404 remainder).
-2. `pnpm.overrides` for the leaf transitive advisories + packaging smoke.
-3. Repair the session-memory hook against the verified Kiro hook runtime.
-4. CMR-406 needs the four items above from the owner; CMR-407 follows it.
+1. Fix the Voice Studio `perth` dependency/runtime contract and rebuild the pinned image.
+2. Correct Docker environment scrubbing in `LocalServiceManager`, then run focused and full tests.
+3. Restore persistent GitNexus MCP health and index the active Voice worktree.
+4. Resume the Customer AI Marketing Room phases in `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`.
+5. Continue CMR-404 (ESLint and transitive overrides), then repair the session-memory hook.
+6. CMR-406 still needs the documented staging inputs from the owner; CMR-407 follows it.
