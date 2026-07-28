@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "hot-file-lease-registry",
+  "owner": "W0 Control Tower",
+  "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
+  "updatedAt": "2026-07-28T08:58:32Z",
+  "updatedBy": "W0",
+  "integrationCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No hot-file lease is held by any window as of this integration commit. Every hot file below is unclaimed and available for W0 to grant.",
+
+  "pendingRequests": [],
+
+  "hotFiles": [
+    {
+      "path": "apps/desktop/src/renderer/App.tsx",
+      "ownerOrder": ["02", "12"],
+      "currentLease": null,
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the quarantined dirty worktree by the concurrent Loop 03 draft. Loop 02 must treat the canonical copy as the base and salvage selectively; it must not assume the dirty copy is authoritative."
+    },
+    {
+      "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
+      "ownerOrder": ["02", "12"],
+      "currentLease": null
+    },
+    {
+      "path": "apps/desktop/src/main/db/sqlite-schema.ts",
+      "ownerOrder": ["03"],
+      "currentLease": null
+    },
+    {
+      "path": "apps/desktop/src/main/db/database.ts",
+      "ownerOrder": ["03"],
+      "currentLease": null,
+      "laterLoopsRequireChangeRequest": true,
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree: the Loop 03 draft wired runWorkModelMigration, backupSqliteFile, WorkService and a workEventSink into it. Security review must cover the log-and-proceed migration error path before this is accepted."
+    },
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "ownerOrder": ["03", "10", "11"],
+      "currentLease": null,
+      "note": "Loops 10 and 11 may write only under an explicit lease. ALREADY MODIFIED-UNCOMMITTED in the dirty worktree."
+    },
+    {
+      "path": "apps/desktop/src/main/preload.ts",
+      "ownerOrder": ["03", "10", "11", "12"],
+      "currentLease": null,
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree."
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/agentGateway.ts",
+      "ownerOrder": ["06"],
+      "currentLease": null,
+      "otherLoopsReadOnly": true,
+      "note": "PQ-09. Modified-uncommitted in the dirty worktree AND on the Loop 01 required-reading list, so the canonical copy is not the copy in flight. Canonical also has agentGateway-routing.ts plus its test, which the old branch lacks."
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/agentWorkspace.ts",
+      "ownerOrder": ["02"],
+      "currentLease": null,
+      "compatibilityReadOnlyFor": "02",
+      "semanticChangesRequireChangeRequest": true
+    },
+    {
+      "path": "apps/desktop/src/main/agent/agent-service.ts",
+      "ownerOrder": ["05", "06"],
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree."
+    },
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.ts",
+      "ownerOrder": ["05", "06"],
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree."
+    },
+    {
+      "path": "apps/desktop/src/main/agent/agent-tools.ts",
+      "ownerOrder": ["05", "07", "11"],
+      "currentLease": null
+    },
+    {
+      "path": "extension manifests / manager / permissions",
+      "resolvedPaths": [
+        "apps/desktop/src/main/extensions/ocx-manifest.ts",
+        "apps/desktop/src/main/extensions/manager.ts",
+        "apps/desktop/src/main/extensions/permissions.ts",
+        "packages/agent-bundle/src/manifest.ts"
+      ],
+      "ownerOrder": ["07", "09", "11"],
+      "currentLease": null
+    },
+    {
+      "path": "Marketplace UI / API",
+      "resolvedPaths": ["apps/marketplace-api/**", "apps/desktop/src/renderer/pages/Marketplace.tsx"],
+      "ownerOrder": ["09"],
+      "currentLease": null
+    },
+    {
+      "path": "Graph workspace / pages / store",
+      "resolvedPaths": [
+        "apps/desktop/src/renderer/pages/GraphWorkspace.tsx",
+        "apps/desktop/src/renderer/pages/KnowledgeUniverse.tsx",
+        "apps/desktop/src/renderer/store/graphWorkspace.ts"
+      ],
+      "ownerOrder": ["04"],
+      "currentLease": null,
+      "note": "All three are modified-uncommitted in the dirty worktree."
+    },
+    {
+      "path": "Customer Marketing broad migration",
+      "resolvedPaths": ["apps/desktop/src/main/customer-marketing/**", "apps/desktop/src/shared/customer-marketing-*.ts"],
+      "ownerOrder": ["12"],
+      "currentLease": null,
+      "note": "Loops 03, 08 and 11 may only add adapters or new files, or request a lease."
+    },
+    {
+      "path": "package manifests / lockfile",
+      "resolvedPaths": ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "apps/desktop/package.json"],
+      "ownerOrder": ["lease-only"],
+      "currentLease": null,
+      "singleOwnerAtATime": true,
+      "note": "PQ-01 will need this lease to add the root eslint devDependencies and the lint scripts. Grant it to exactly one loop at a time."
+    },
+    {
+      "path": "GitNexus index and managed doc blocks",
+      "resolvedPaths": [".gitnexus/**", "AGENTS.md", "CLAUDE.md", ".claude/skills/gitnexus/**"],
+      "ownerOrder": ["W0"],
+      "currentLease": "W0 (permanent)",
+      "note": "Reserved to W0 permanently. gitnexus analyze rewrites the managed blocks in 8 tracked files; W0 reverts them so producer diffs stay honest. No producer may commit those rewrites."
+    }
+  ],
+
+  "quarantine": {
+    "path": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+    "branch": "feature/aibase-my-graph-ui-sync",
+    "head": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+    "mode": "READ-ONLY for the entire programme",
+    "prohibited": ["reset", "stash", "clean", "overwriting checkout", "move", "delete", "commit", "continuing implementation"],
+    "unstable": true,
+    "observedGrowth": [
+      { "at": "Loop 00 start", "entries": 83, "modifiedTracked": 31, "untracked": 52 },
+      { "at": "Loop 00 end", "entries": 113, "modifiedTracked": 35, "untracked": 78 },
+      { "at": "Loop 00 acceptance", "entries": 118, "modifiedTracked": 36, "untracked": 82 }
+    ],
+    "warning": "A session outside W0 control is still writing here. Any consumer that diffs against this worktree must re-snapshot immediately before use; a stale snapshot is wrong within minutes.",
+    "salvageRule": "No blind cherry-pick. Salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code."
+  }
+}
