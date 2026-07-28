@@ -1,5 +1,14 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.3
+
+Cross-platform Voice Studio runtime hotfix.
+
+- Resolve extensionless bundled executables such as the macOS Node runtime as
+  files instead of directories.
+- Add regression coverage for extensionless runtime files and dotted directory
+  names before publishing the desktop patch.
+
 ## 1.12.1
 
 Starizzi SmartRouter/direct-routing hotfix.
