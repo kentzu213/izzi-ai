@@ -19,7 +19,7 @@ import {
 } from './version';
 
 /** A versioned wrapper around any aggregate payload. */
-export interface Envelope<T> {
+export interface Envelope<T extends Versioned> {
   readonly schemaVersion: SchemaVersion;
   /** Discriminator, e.g. "WorkRun" — lets a reader route to the right decoder. */
   readonly kind: string;
@@ -27,12 +27,12 @@ export interface Envelope<T> {
 }
 
 /** Wrap a payload in a current-version envelope. */
-export function encode<T>(kind: string, data: T): Envelope<T> {
+export function encode<T extends Versioned>(kind: string, data: T): Envelope<T> {
   return { schemaVersion: PERSONAL_OFFICE_SCHEMA_VERSION, kind, data };
 }
 
 /** Serialize an envelope to a JSON string. */
-export function serialize<T>(kind: string, data: T): string {
+export function serialize<T extends Versioned>(kind: string, data: T): string {
   return JSON.stringify(encode(kind, data));
 }
 
@@ -72,8 +72,12 @@ function upgrade(rawVersion: number, data: unknown): { version: number; data: un
  * → return the payload. Throws `SchemaVersionError` when no migration path
  * reaches the current version. `kind` is validated when provided.
  */
-export function decode<T>(json: string, expectedKind?: string): T {
-  const parsed = JSON.parse(json) as Partial<Envelope<unknown>>;
+export function decode<T extends Versioned>(json: string, expectedKind?: string): T {
+  const parsed = JSON.parse(json) as Partial<{
+    schemaVersion: unknown;
+    kind: unknown;
+    data: unknown;
+  }>;
   if (typeof parsed !== 'object' || parsed === null || typeof parsed.kind !== 'string') {
     throw new SchemaVersionError((parsed as { schemaVersion?: unknown })?.schemaVersion);
   }
@@ -88,10 +92,14 @@ export function decode<T>(json: string, expectedKind?: string): T {
     data: upgraded.data,
   };
   assertSchemaVersion(candidate);
+  // The envelope and aggregate are independently versioned. A current envelope
+  // carrying a stale/foreign aggregate must fail closed instead of laundering
+  // that payload through the envelope's valid version.
+  assertSchemaVersion(upgraded.data);
   return upgraded.data as T;
 }
 
 /** Round-trip helper used by tests: encode then decode, asserting identity. */
-export function roundTrip<T>(kind: string, data: T): T {
+export function roundTrip<T extends Versioned>(kind: string, data: T): T {
   return decode<T>(serialize(kind, data), kind);
 }

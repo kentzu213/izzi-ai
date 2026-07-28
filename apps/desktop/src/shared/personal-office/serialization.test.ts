@@ -81,6 +81,25 @@ describe('decode', () => {
     expect(() => decode(json, 'WorkRun')).toThrow(SchemaVersionError);
   });
 
+  it('rejects stale aggregate data inside a current envelope', () => {
+    const json = JSON.stringify({
+      schemaVersion: PERSONAL_OFFICE_SCHEMA_VERSION,
+      kind: 'WorkRun',
+      data: { ...sampleRun(), schemaVersion: 999 },
+    });
+    expect(() => decode<WorkRun>(json, 'WorkRun')).toThrow(SchemaVersionError);
+  });
+
+  it('rejects aggregate data without its own schema version', () => {
+    const { schemaVersion: _removed, ...unversioned } = sampleRun();
+    const json = JSON.stringify({
+      schemaVersion: PERSONAL_OFFICE_SCHEMA_VERSION,
+      kind: 'WorkRun',
+      data: unversioned,
+    });
+    expect(() => decode<WorkRun>(json, 'WorkRun')).toThrow(SchemaVersionError);
+  });
+
   it('rejects a malformed envelope', () => {
     expect(() => decode('{"nope":true}', 'WorkRun')).toThrow(SchemaVersionError);
   });
