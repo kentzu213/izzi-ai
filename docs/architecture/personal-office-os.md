@@ -1,7 +1,7 @@
 # Starizzi Personal Office OS — Domain Model & Contracts (Loop 01)
 
-> **Status: PROVISIONAL** — pinned to `v1.14.0-beta.3` / `84a57b3`; requires Loop 00
-> revalidation before integration.
+> **Status: READY FOR REVIEW** — replayed on accepted Loop 00 integration ref
+> `0cbf888`; PQ-08 two-layer contract ruling applied.
 > **Scope:** this loop chốt (freezes) the domain model, data classification, trust
 > boundaries, high-level state machines, and the minimal versioned TypeScript
 > contracts. It does **not** change navigation, UI, orchestration, or migrate any
@@ -187,15 +187,16 @@ pending ─▶ provisioning ─▶ ready ─▶ deprovisioning ─▶ released (
 ### 6.3 Run lifecycle (`WorkRun.state`)
 ```
 created ─▶ queued ─▶ running ─▶ completed (terminal)
-                       │  ▲├────▶ failed ─▶ queued (retry)
+                       │  ▲├────▶ failed (terminal)
                        │  ││
                        │  │└────▶ paused ─▶ running
                        │  └─────  awaiting_approval ─▶ running   (approved)
                        │                            └─▶ canceled (rejected/abort)
    (created|queued|running|awaiting_approval|paused) ─▶ canceled (terminal)
 ```
-Terminal set is exactly `{ completed, canceled }`. `failed` is non-terminal only
-via retry to `queued`.
+Terminal set is exactly `{ completed, failed, canceled }`. Retry/fork creates a
+new `WorkRun` with `parentRunId`, stable `rootRunId`, lineage kind, and incremented
+attempt; a terminal row never reopens.
 
 ### 6.4 Approval lifecycle (`Approval.state`)
 ```
@@ -217,11 +218,11 @@ model; adapters land in later loops.
 
 | Legacy surface | Location | Maps onto | Adapter direction | Notes |
 |---|---|---|---|---|
-| `AgentRun` / `AgentRunEntry` | `main/agent/types.ts`, `agent_runs`/`agent_run_entries` | `WorkRun` + `WorkEvent` | legacy → PO (read adapter) | `stage` (free-form) becomes run metadata; entries → events. `status` values `active/done/blocked/archived` map to `running/completed/failed→paused/…` (documented per-value in the adapter). |
+| `AgentRun` / `AgentRunEntry` | `main/agent/types.ts`, `agent_runs`/`agent_run_entries` | `WorkRun` + `WorkEvent` | legacy → PO (read adapter) | `stage` (free-form) becomes run metadata; entries → events. `blocked` is recoverable `paused`. `archived` derives a terminal from entries; inconclusive rows become `canceled` with archival metadata and exactly one audit migration event. |
 | `agentWorkspace` store | `renderer/store/agentWorkspace.ts` | `WorkRun`, `WorkStep`, `AgentDefinition` view models | PO → renderer (selector adapter) | Store stays as-is; a selector projects PO aggregates into its existing shapes. |
 | `agentGateway` store | `renderer/store/agentGateway.ts` | chat origin reference on `WorkRun.originChatSessionId` | one-way | Gateway remains chat/runtime UI; it never becomes the Run's truth. |
 | `agent_tasks` | `sqlite-schema.ts` | `WorkStep` | legacy → PO | status `todo/in_progress/blocked/done` == `WorkStepStatus` exactly. |
-| Customer Marketing runs/approvals | `shared/customer-marketing-types.ts` | `WorkRun` / `Approval` | legacy → PO | `CustomerRunStatus` → `RunState` mapping (`awaiting_approval`→`awaiting_approval`, `blocked`→`failed`/`paused`, `ready/completed`→`completed`). `CustomerApprovalStatus pending/approved/rejected` ⊂ `ApprovalState`. |
+| Customer Marketing runs/approvals | `shared/customer-marketing-types.ts` | `WorkRun` / `Approval` | legacy → PO | `CustomerRunStatus` → `RunState` mapping (`awaiting_approval`→`awaiting_approval`, `blocked`→`paused`, `ready`→`running`, `completed`→`completed`). `CustomerApprovalStatus pending/approved/rejected` ⊂ `ApprovalState`. |
 | Extensions (`.ocx`) / agent bundles (`.oab`) | `main/extensions/ocx-manifest.ts`, `packages/agent-bundle/src/manifest.ts` | `SkillPackage` + `ToolDefinition` + `IntegrationGrant` + `RuntimeInstance` | manifest → PO | `OcxServiceSpec` (`izzi-svc-` + loopback) becomes a `RuntimeInstance` with `serviceProject`; `SecretDef`/`OcxServiceSecret` become `SecretRef` (never inlined). |
 
 Migration mechanics: `serialization.ts::MIGRATIONS` (empty at v1). A future

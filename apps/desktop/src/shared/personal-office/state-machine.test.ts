@@ -60,10 +60,10 @@ describe('run lifecycle', () => {
     expect(canTransitionRun('awaiting_approval', 'canceled')).toBe(true);
   });
 
-  it('supports pause/resume and retry-from-failed', () => {
+  it('supports pause/resume and keeps failed terminal', () => {
     expect(canTransitionRun('running', 'paused')).toBe(true);
     expect(canTransitionRun('paused', 'running')).toBe(true);
-    expect(canTransitionRun('failed', 'queued')).toBe(true);
+    expect(canTransitionRun('failed', 'queued')).toBe(false);
   });
 
   it('rejects invalid transitions', () => {
@@ -73,11 +73,11 @@ describe('run lifecycle', () => {
     expect(canTransitionRun('awaiting_approval', 'completed')).toBe(false);
   });
 
-  it('has exactly completed + canceled as terminal', () => {
+  it('has exactly completed + failed + canceled as terminal', () => {
     const terminal = (Object.keys(RUN_TRANSITIONS) as RunState[]).filter((s) =>
       isTerminal(RUN_TRANSITIONS, s),
     );
-    expect(terminal.sort()).toEqual(['canceled', 'completed']);
+    expect(terminal.sort()).toEqual(['canceled', 'completed', 'failed']);
   });
 });
 

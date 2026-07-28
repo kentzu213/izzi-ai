@@ -22,6 +22,12 @@ function sampleRun(): WorkRun {
     workspaceInstanceId: asId<'WorkspaceInstanceId'>('ws_1') as WorkspaceInstanceId,
     goal: 'Draft the launch plan',
     state: 'queued',
+    origin: 'manual',
+    rootRunId: asId<'WorkRunId'>('run_1') as WorkRunId,
+    lineageKind: 'original',
+    attempt: 1,
+    planVersion: 1,
+    planHash: 'plan-sha256',
     appliedEventSequence: 0,
     createdAt: '2026-07-28T00:00:00.000Z',
     updatedAt: '2026-07-28T00:00:00.000Z',
@@ -34,6 +40,27 @@ describe('envelope encode/serialize', () => {
     expect(env.schemaVersion).toBe(PERSONAL_OFFICE_SCHEMA_VERSION);
     expect(env.kind).toBe('WorkRun');
     expect(env.data.goal).toBe('Draft the launch plan');
+  });
+});
+
+describe('run lineage contract', () => {
+  it('models retry as a new run rather than reopening failed', () => {
+    const failed = { ...sampleRun(), state: 'failed' as const };
+    const retryId = asId<'WorkRunId'>('run_2') as WorkRunId;
+    const retry: WorkRun = {
+      ...failed,
+      id: retryId,
+      state: 'created',
+      parentRunId: failed.id,
+      rootRunId: failed.rootRunId,
+      lineageKind: 'retry',
+      attempt: failed.attempt + 1,
+    };
+
+    expect(retry.id).not.toBe(failed.id);
+    expect(retry.parentRunId).toBe(failed.id);
+    expect(retry.rootRunId).toBe(failed.rootRunId);
+    expect(retry.attempt).toBe(2);
   });
 });
 

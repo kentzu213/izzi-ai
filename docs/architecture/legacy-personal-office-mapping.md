@@ -1,7 +1,7 @@
 # Legacy → Personal Office OS — Compatibility Mapping (Loop 01B)
 
-> **Status: PROVISIONAL** — pinned to `v1.14.0-beta.3` / `84a57b3`; requires Loop 00
-> revalidation before integration.
+> **Status: READY FOR REVIEW** — replayed on accepted Loop 00 integration ref
+> `0cbf888`; W0 PQ-08 and MAP-ARCHIVED rulings applied.
 > **Type:** research/design extension of Loop 01. **No adapter is implemented here**
 > and **no production source is modified.** This document resolves the unresolved
 > compatibility decisions from `worklogs/personal-office-loop-01-provisional.md` §5.
@@ -113,7 +113,7 @@ by the concern each one actually expresses.
 | `AgentRunStatus` | `active` | `running` | High | no | map | — | Loop 03 |
 | `AgentRunStatus` | `done` | `completed` | High | no | map | — | Loop 03 |
 | `AgentRunStatus` | `blocked` | `paused` | Med | yes (reason) | map+field `pausedReason='stuck'` | — | Loop 03 (§3.1) |
-| `AgentRunStatus` | `archived` | `completed` (+`archivedAt`) | Blocked | yes | derive from entries; else `completed`+tombstone | — | Loop 03 (§3.6) |
+| `AgentRunStatus` | `archived` | terminal derived from entries; else `canceled` | Med | yes | always set `archivedAt` + `legacyStatusRaw='archived'`; inconclusive → `canceledReason='legacy_archived_outcome_unknown'`; emit exactly one audit migration event | — | Loop 03 (§3.6) |
 | `CustomerRunStatus` | `queued` | `queued` | High | no | map | — | Loop 12 |
 | `CustomerRunStatus` | `in_progress` | `running` | High | no | map | — | Loop 12 |
 | `CustomerRunStatus` | `awaiting_approval` | `awaiting_approval` | High | no | map | — | Loop 12 |
@@ -313,15 +313,20 @@ fallback**, **required test before migration**.
   equivalent (PO run terminals are `completed`/`canceled`; archival is a
   `WorkspaceState`). Legacy `archived` = soft-hidden run; the *pre-archive* outcome is
   not stored on the run row.
-- **Decision (Blocked).** Map `archived` → terminal **`completed`** plus a *proposed
-  additive* `archivedAt` tombstone. Do **not** invent `failed`. If the run's entries
-  clearly show an incomplete/failed run, the adapter **may** `derive` a more accurate
-  terminal — that requires reading `agent_run_entries`.
-- **Missing info.** The true pre-archive outcome for runs archived while not `done`.
-  Owner: **Loop 03**.
-- **Safe fallback.** `completed` + `archivedAt`; never fabricate `failed`.
-- **Required test.** Every `archived` run becomes a **terminal** PO state with
-  `archivedAt` set; none becomes `failed` unless entries prove failure.
+- **Decision (W0 MAP-ARCHIVED ruling).** Read `agent_run_entries` and derive the
+  terminal only when the evidence is conclusive. If it is inconclusive, map to
+  **`canceled`** with
+  `canceledReason='legacy_archived_outcome_unknown'` — never default to
+  `completed` or `failed`.
+- **Required metadata.** Always set `archivedAt`, preserve
+  `legacyStatusRaw='archived'`, and emit exactly one
+  `migration.archived_status` `WorkEvent` classified as `audit_events`.
+- **Why this is fail-safe.** A false `completed` silently claims that work and
+  artifacts exist. A conservative `canceled` invites review without fabricating
+  success. `failed` is valid only when entries conclusively prove failure.
+- **Required tests.** Conclusive completion → `completed`; conclusive failure →
+  `failed`; inconclusive → `canceled` with the reason above. Every result is
+  terminal, preserves archival metadata, and emits exactly one audit event.
 
 ### 3.7 `queued` vs `draft`
 - **Evidence.** `CustomerRunStatus.queued` = a run created and waiting to start. PO
@@ -354,15 +359,17 @@ fallback**, **required test before migration**.
 - **Evidence.** **No** lineage fields exist in legacy (grep: no `parentRunId`,
   `retryOf`, `retriedFrom`, `fork`, `lineage` anywhere). Legacy retries (e.g. scheduler
   re-runs) create independent `scheduled_session_runs` rows with no parent pointer.
-- **Decision (Blocked).** Lineage **cannot be reconstructed** from legacy data. Each
-  migrated run is imported as a **root** (no parent). Whether to add
-  `WorkRun.parentRunId` / `forkOf` for *future* runs is a design decision, not a
-  migration one.
-- **Missing info.** Whether product needs retry/fork lineage at all, and if so its
-  shape. Owner: **Loop 03** (proposal) → later loop (implementation).
-- **Safe fallback.** No lineage edges for migrated runs; never heuristically link.
-- **Required test.** Every migrated run has null lineage; the adapter fabricates no
-  parent/fork edges.
+- **Decision (W0 PQ-08 ruling).** Lineage still **cannot be reconstructed** from
+  legacy data, so every migrated run is a root. Future runs use
+  `lineageKind='original'|'retry'|'fork'`, `parentRunId`, `rootRunId`, and
+  monotonic `attempt`.
+- **Retry rule.** `failed` is terminal. A retry creates a **new** `WorkRun`
+  (`lineageKind='retry'`) rather than transitioning the failed row back to queued.
+  A fork likewise creates a new run and retains the same root.
+- **Safe fallback.** Never heuristically link legacy rows. Imported roots use
+  `lineageKind='original'`, no parent, `rootRunId=id`, and `attempt=1`.
+- **Required tests.** Migrated rows fabricate no parent/fork edge; retry/fork ids
+  differ from the source id while preserving root lineage and increasing attempt.
 
 ---
 

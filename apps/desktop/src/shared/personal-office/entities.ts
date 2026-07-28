@@ -93,12 +93,40 @@ export interface WorkspaceInstance extends Timestamps {
 }
 
 /** ── WorkRun ────────────────────────────────────────────────────────────── */
+export type WorkRunOrigin =
+  | 'chat'
+  | 'agent_task'
+  | 'agent_run'
+  | 'gateway'
+  | 'schedule'
+  | 'customer_marketing'
+  | 'manual';
+
+export type WorkRunLineageKind = 'original' | 'retry' | 'fork';
+export type RunPauseReason = 'stuck' | 'waiting_external' | 'guardrail';
+export type RunCanceledReason = 'system_refused' | 'legacy_archived_outcome_unknown';
+
 export interface WorkRun extends Timestamps {
   readonly schemaVersion: SchemaVersion;
   readonly id: WorkRunId;
   readonly workspaceInstanceId: WorkspaceInstanceId;
   readonly goal: string;
   readonly state: RunState;
+  /** Origin and lineage are explicit for future runs; migrated runs are roots. */
+  readonly origin: WorkRunOrigin;
+  readonly originRef?: string;
+  readonly parentRunId?: WorkRunId;
+  readonly rootRunId: WorkRunId;
+  readonly lineageKind: WorkRunLineageKind;
+  readonly attempt: number;
+  /** A retry/fork creates a new WorkRun; terminal runs never transition again. */
+  readonly planVersion: number;
+  readonly planHash: string;
+  readonly pausedReason?: RunPauseReason;
+  readonly canceledReason?: RunCanceledReason;
+  /** Legacy archival is metadata, never a fabricated successful state. */
+  readonly archivedAt?: string;
+  readonly legacyStatusRaw?: string;
   /** Monotonic count of events applied — the run is rebuilt from its WorkEvents. */
   readonly appliedEventSequence: number;
   /** Optional chat session that DROVE the run — reference only, never the source of truth. */
@@ -139,6 +167,21 @@ export interface Artifact extends Timestamps {
 }
 
 /** ── Approval ───────────────────────────────────────────────────────────── */
+export interface ApprovalActionBinding {
+  /** Redacted account/resource the effect will target. */
+  readonly target: string;
+  /** Redacted action input; secrets are represented only by SecretRef elsewhere. */
+  readonly input: unknown;
+  readonly artifactId: ArtifactId | null;
+  readonly artifactVersion: number | null;
+  readonly estimatedSideEffect: string;
+  /** Reused on retries so one approval cannot duplicate an external effect. */
+  readonly idempotencyKey: string;
+  readonly expiresAt: string;
+  readonly planHash: string;
+  readonly contextSnapshotId: ContextSnapshotId | null;
+}
+
 export interface Approval extends Timestamps {
   readonly schemaVersion: SchemaVersion;
   readonly id: ApprovalId;
@@ -148,6 +191,10 @@ export interface Approval extends Timestamps {
   readonly summary: string;
   readonly risk: 'low' | 'medium' | 'high';
   readonly state: ApprovalState;
+  /** sha256 of canonicalActionPayload(binding), minted on the execution plane. */
+  readonly actionHash: string;
+  readonly binding: ApprovalActionBinding;
+  readonly expiresAt: string;
   /** Digest of the exact evidence the decision was made against (tamper-evident). */
   readonly evidenceDigest?: string;
   readonly reviewedBy?: OwnerId;

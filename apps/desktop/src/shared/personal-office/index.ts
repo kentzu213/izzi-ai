@@ -5,8 +5,8 @@
  * types + pure helpers are the versioned source of truth for the unified work
  * model, importable from BOTH the Electron main process and the React renderer.
  *
- * PROVISIONAL — pinned to v1.14.0-beta.3 / 84a57b3; requires Loop 00
- * revalidation before integration.
+ * Contract of record after the W0 PQ-08 two-layer ruling, replayed on the
+ * accepted Loop 00 integration ref at 0cbf888.
  *
  * Guarantees (see the ADRs under docs/architecture/adr/):
  *   - no renderer, provider, or legacy-store imports;
@@ -98,10 +98,15 @@ export type {
   WorkspaceBlueprint,
   WorkspaceInstance,
   WorkRun,
+  WorkRunOrigin,
+  WorkRunLineageKind,
+  RunPauseReason,
+  RunCanceledReason,
   WorkStep,
   WorkStepStatus,
   Artifact,
   Approval,
+  ApprovalActionBinding,
   Checkpoint,
   ContextSnapshot,
   LiveProfile,
@@ -112,6 +117,9 @@ export type {
   RuntimeInstance,
   RuntimeKind,
 } from './entities';
+
+// Canonical hash inputs (hashing itself stays on the execution plane)
+export { canonicalJson, canonicalActionPayload, canonicalPlanPayload } from './canonical';
 
 // Serialization & migration
 export { encode, serialize, decode, roundTrip, MIGRATIONS } from './serialization';

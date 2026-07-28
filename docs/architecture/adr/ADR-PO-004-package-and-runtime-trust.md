@@ -1,6 +1,6 @@
 # ADR-PO-004 — Package and runtime trust (SkillPackage / Tool / IntegrationGrant / RuntimeInstance)
 
-- **Status:** Accepted (PROVISIONAL — pinned to `v1.14.0-beta.3` / `84a57b3`; requires Loop 00 revalidation).
+- **Status:** Ready for review — replayed on accepted Loop 00 integration ref `0cbf888`.
 - **Date:** 2026-07-28
 - **Loop:** Personal Office OS — Loop 01
 - **Deciders:** Loop 01 (domain model)

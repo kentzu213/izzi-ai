@@ -66,7 +66,7 @@ export const RUN_TRANSITIONS: TransitionTable<RunState> = Object.freeze({
   running: ['awaiting_approval', 'paused', 'completed', 'failed', 'canceled'],
   awaiting_approval: ['running', 'canceled'], // approved → running, rejected/abort → canceled
   paused: ['running', 'canceled'],
-  failed: ['queued'], // retry only; otherwise terminal
+  failed: [], // terminal; retry creates a new WorkRun with lineageKind='retry'
   completed: [], // terminal
   canceled: [], // terminal
 });
