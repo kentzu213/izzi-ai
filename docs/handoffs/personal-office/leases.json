@@ -11,6 +11,25 @@
   "activeLeaseCount": 0,
   "statement": "No hot-file lease is held by any window as of this integration commit. Every hot file below is unclaimed and available for W0 to grant.",
 
+  "preApprovedOnLoop01Acceptance": {
+    "note": "Consequences of the PQ-08 two-layer ruling. These are NOT active leases — each still requires an explicit W0 grant, and none may be granted before Loop 01 is ACCEPTED. Listed so producers can plan and so no one claims a hot file by assuming.",
+    "queue": [
+      { "loop": "03", "window": "W3", "paths": ["apps/desktop/src/main/db/database.ts", "apps/desktop/src/main/index.ts", "apps/desktop/src/main/preload.ts"], "reason": "Wire the adopted execution core. The quarantine draft already modified all three WITHOUT a lease; that must not be replicated.", "blockedBy": ["Loop 01 ACCEPTED", "retire WORK_SCHEMA_VERSION in favour of PERSONAL_OFFICE_SCHEMA_VERSION"] },
+      { "loop": "02", "window": "W2", "paths": ["apps/desktop/src/renderer/App.tsx", "apps/desktop/src/renderer/components/Sidebar.tsx"], "reason": "Mount the salvaged Personal Office shell behind the izzi.shell.personalOffice flag.", "blockedBy": ["Loop 01 ACCEPTED"], "note": "Loop 02 is first owner of App.tsx under §8.1, so W3 must NOT take it even though the quarantine draft modified it." },
+      { "loop": "TBD", "window": "TBD", "paths": ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"], "reason": "Close PQ-01 by porting eslint.config.mjs and the lint scripts, then re-measure the warning ceiling on canonical.", "constraint": "Single owner at a time. Grant to exactly one loop." }
+    ]
+  },
+
+  "contestedFileResolution": {
+    "note": "PQ-08 resolved by layering rather than by picking a winner. Recorded here because it changes who may write which shared path.",
+    "rulings": [
+      { "path": "apps/desktop/src/shared/personal-office/**", "owner": "W1 / Loop 01", "role": "contract of record — governance/catalog layer", "otherLoops": "read-only; changes via contract change request" },
+      { "path": "apps/desktop/src/main/work/**", "owner": "W3 / Loop 03", "role": "execution core", "constraint": "must import contracts from shared/personal-office/, never define a parallel model" },
+      { "path": "apps/desktop/src/shared/work-model.ts", "owner": "none — SUPERSEDED", "role": "salvage content only", "instruction": "Do not land as a second contract. Promote its lineage types, canonicalJson and action-hash binding into shared/personal-office/ under a W1 contract change request." },
+      { "path": "apps/desktop/src/shared/{vault-ops,vault-types,wikilink}.ts", "owner": "UNRESOLVED", "role": "vault / Live-profile adjacent", "instruction": "Ownership table points Live/profile concerns at Loop 04, not Loop 02. Held pending a W0 ownership ruling; no producer may claim these yet." }
+    ]
+  },
+
   "pendingRequests": [],
 
   "hotFiles": [
@@ -145,6 +164,10 @@
       { "at": "Loop 00 acceptance", "entries": 118, "modifiedTracked": 36, "untracked": 82 }
     ],
     "warning": "A session outside W0 control is still writing here. Any consumer that diffs against this worktree must re-snapshot immediately before use; a stale snapshot is wrong within minutes.",
-    "salvageRule": "No blind cherry-pick. Salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code."
+    "salvageRule": "No blind cherry-pick. Salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code.",
+    "preserved": true,
+    "preservationRecord": "docs/handoffs/personal-office/quarantine/dirty-state.json",
+    "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728",
+    "preservationNote": "Content is now copied out-of-repo and hashed, so a git clean in quarantine no longer destroys the draft. Per-file manifests: quarantine/loop-02-dirty-salvage.json and quarantine/loop-03-dirty-salvage.json."
   }
 }

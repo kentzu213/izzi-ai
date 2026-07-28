@@ -118,7 +118,35 @@
         "collisionCheck": "No filename collision with Loop 00 artifacts: Loop 01 does not write source-of-truth-baseline.md or .json. The shared docs/architecture/ directory merges cleanly.",
         "note": "Work is uncommitted. W0 has not verified its content and makes no claim about its correctness. Status stays PROVISIONAL until W1 commits and submits a handoff."
       },
-      "blockingGate": "PQ-08 — a second, more advanced domain model already exists uncommitted in the quarantined dirty worktree (shared/work-model.ts plus 13 modules under main/work/). Loop 01 must reconcile with it, not around it. W0 must rule on adopt vs supersede vs refactor before Loop 01 can move past PROVISIONAL."
+      "blockingGate": "RESOLVED — PQ-08 is ruled. Loop 01's shared/personal-office/** is confirmed as the contract of record under the two-layer model.",
+      "pq08Outcome": {
+        "verdict": "W1 layer UPHELD as contract of record",
+        "reason": "A contract layer must be dependency-free and importable from both the main process and the renderer. W1's modules meet that constraint; an execution engine cannot, because it depends on SQLite, IPC and the main process.",
+        "promotedIntoW1Scope": "The superseded draft's WorkRunLineageKind ('original'|'retry'|'fork'), WorkRunOrigin, canonicalJson and action-hash binding are to be promoted into shared/personal-office/ by W1 under a contract change request. Note this partially answers W1's own mapping §3.9, which had declared lineage Blocked as 'a design decision, not a migration one' — the draft had already made that design."
+      },
+      "remainingConditionsBeforeAcceptance": [
+        "Update legacy-personal-office-mapping.md §3.6 to the AMENDED archived ruling: derive the terminal from agent_run_entries where conclusive, else map to canceled with canceledReason='legacy_archived_outcome_unknown' — NOT completed. Always set archivedAt and preserve legacyStatusRaw. See acceptance/loop-00.json → mappingRulings → MAP-ARCHIVED.",
+        "Absorb the promoted lineage/canonicalJson/action-hash content under a contract change request, or record a reasoned rejection.",
+        "Commit Loop 01's owned paths — the work is currently uncommitted.",
+        "Submit docs/handoffs/personal-office/loop-01.json per the §10 schema.",
+        "Confirm PERSONAL_OFFICE_SCHEMA_VERSION remains the single version authority (see gate PO-VERSION-COLLISION)."
+      ],
+      "mappingRulingsForW1": {
+        "MAP-BLOCKED": "UPHELD as proposed — blocked → paused, never failed. pausedReason authorised as an additive discriminator.",
+        "MAP-ARCHIVED": "AMENDED — a contract change request is required before acceptance."
+      },
+      "inputHashesForW1": {
+        "note": "Verify these before implementation. A mismatch means the input drifted and the gate must be re-run.",
+        "artifacts": [
+          { "path": "docs/architecture/source-of-truth-baseline.md", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3" },
+          { "path": "docs/architecture/source-of-truth-baseline.json", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a" },
+          { "path": "docs/handoffs/personal-office/acceptance/loop-00.json", "sha256": "see quarantine/dirty-state.json sibling record; re-hash from the ref" }
+        ],
+        "quarantineSalvageInputs": [
+          { "path": "apps/desktop/src/shared/work-model.ts", "sha256": "5c32c894535d12326c26243154173becc7f6bbd547c63696add8ee87ee30186f", "role": "superseded contract, salvage content for promotion" },
+          { "path": "apps/desktop/src/shared/work-redaction.ts", "sha256": "0107e2da386a02c7eb16a99252300fd4d4787153913a964bebfe35561e10e87b", "role": "runtime redaction; reconcile against W1 classification.ts and secret-ref.ts" }
+        ]
+      }
     },
     { "loop": "02", "title": "Product shell and reference UX", "window": "W2", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true, "note": "Per the orchestration doc, no Loop 02 worktree may be created until Loop 01 is ACCEPTED. A draft shell already exists uncommitted in the quarantined worktree (renderer/shell/**, docs/product/personal-office-ia.md) and must be salvaged selectively, never cherry-picked blind." },
     { "loop": "03", "title": "Unified work engine", "window": "W3", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true, "note": "A substantial draft exists uncommitted in the quarantined worktree and is the subject of PQ-08. It is already wired into database.ts, index.ts, preload.ts and App.tsx there. Freeze and salvage; do not continue implementation in that worktree." },
@@ -137,7 +165,13 @@
     {
       "id": "PQ-08",
       "severity": "CRITICAL",
-      "status": "OPEN",
+      "status": "RULED",
+      "ruledAt": "2026-07-28T09:20:00Z",
+      "ruledBy": "W0",
+      "ruling": "Two-layer model. W1 owns the governance/catalog contract layer at shared/personal-office/**; W3 owns the execution core at main/work/**. shared/work-model.ts is SUPERSEDED as contract of record and demoted to salvage content whose lineage types, canonicalJson and action-hash binding are promoted upward under a W1 contract change request. Neither side is discarded.",
+      "rulingRecord": "docs/handoffs/personal-office/acceptance/loop-00.json → pq08Ruling",
+      "preservationClosed": "Content copied out-of-repo to F:\\Ai Tools\\_po-quarantine-snapshot-20260728 (422 KB) and hashed in quarantine/dirty-state.json. The unrecoverable-loss risk is closed.",
+      "remainingWork": "Loop 01 must update mapping §3.6 to the amended archived ruling; Loop 03 must retire WORK_SCHEMA_VERSION. Tracked as PO-VERSION-COLLISION below.",
       "title": "Two competing Personal Office domain models",
       "detail": "An uncommitted implementation in the quarantined dirty worktree (shared/work-model.ts with a run state machine, canonicalJson, action-hash binding and WORK_SCHEMA_VERSION=1; shared/work-redaction.ts; 13 modules under main/work/ totalling roughly 160 KB including work-service.ts at 31 KB and run-repository.ts at 38 KB; five test files) overlaps the contracts Loop 01 is producing at shared/personal-office/. Neither is committed anywhere.",
       "risks": [
@@ -168,9 +202,30 @@
       "blocks": []
     },
     {
+      "id": "PO-VERSION-COLLISION",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "title": "Two contracts declare schema version 1 for different shapes",
+      "detail": "W1 exports PERSONAL_OFFICE_SCHEMA_VERSION = 1 with SchemaVersion = 1; the quarantine draft exports WORK_SCHEMA_VERSION = 1. Any persisted record tagged 1 is ambiguous about which shape produced it. The draft's work-migration.ts is already wired into database.ts inside the quarantine, so a real migration there could persist rows under the ambiguous tag.",
+      "ruling": "PERSONAL_OFFICE_SCHEMA_VERSION is the single version authority. WORK_SCHEMA_VERSION is retired, not renumbered.",
+      "migrationCost": "ZERO today — no draft-carrying build has shipped and the only database touched is inside quarantine. If a draft build reaches a real user database first, this becomes a data-forensics problem instead.",
+      "requiredAction": "Loop 03 deletes WORK_SCHEMA_VERSION, imports PERSONAL_OFFICE_SCHEMA_VERSION, and adds a serialization test proving the engine's envelope passes W1's version guard while an unknown version is rejected rather than coerced. No quarantine-era database file may be promoted into a shipped build.",
+      "blocks": ["03"]
+    },
+    {
+      "id": "PO-VAULT-OWNERSHIP",
+      "severity": "LOW",
+      "status": "OPEN",
+      "title": "vault-ops / vault-types / wikilink have no assigned owner",
+      "detail": "Six uncommitted files in the quarantine cover vault and wikilink concerns. The §8.2 ownership table points Live/profile concerns at Loop 04, not Loop 02, so they do not clearly belong to the shell salvage.",
+      "requiredAction": "W0 ownership ruling before any producer claims them. Recorded as HOLD_PENDING_OWNERSHIP in quarantine/loop-02-dirty-salvage.json.",
+      "blocks": []
+    },
+    {
       "id": "QUARANTINE-DRIFT",
       "severity": "MEDIUM",
-      "status": "OPEN",
+      "status": "MITIGATED",
+      "mitigation": "Content preserved out-of-repo and hashed, so drift can now be detected by re-hashing against quarantine/loop-0{2,3}-dirty-salvage.json rather than merely suspected. The underlying concurrent session is still not under W0 control.",
       "title": "The quarantined worktree is under concurrent write",
       "detail": "A session outside W0 control continues to write to the dirty source worktree: 83 entries at Loop 00 start, 113 at Loop 00 end, 118 at Loop 00 acceptance. HEAD is unchanged at 959e2d2 and the PQ-08 drafts are intact.",
       "requiredAction": "Stop the concurrent session, or accept that the worktree is not a stable reference. Any consumer diffing against it must re-snapshot immediately before use.",
@@ -191,23 +246,38 @@
     }
   ],
 
+  "completedByW0": [
+    { "at": "2026-07-28T09:20:00Z", "action": "Preserved the PQ-08 draft out-of-repo (422 KB, hashed). The irreversible-loss risk is closed.", "record": "quarantine/dirty-state.json" },
+    { "at": "2026-07-28T09:20:00Z", "action": "Ruled PQ-08 as a two-layer model and assigned hot-file ownership for database.ts, index.ts, preload.ts (Loop 03) and App.tsx (Loop 02 first).", "record": "acceptance/loop-00.json → pq08Ruling" },
+    { "at": "2026-07-28T09:20:00Z", "action": "Ruled both escalated legacy mappings and recorded version/migration impact.", "record": "acceptance/loop-00.json → mappingRulings" }
+  ],
+
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Preserve the PQ-08 draft out of quarantine before anything else. Roughly 190 KB of implementation plus five test files exist in no commit anywhere; a git clean destroys them. This is the only irreversible item in the programme right now.",
-      "irreversibleIfSkipped": true
+      "action": "Stop or isolate the concurrent session still writing to the quarantined worktree. Drift is now detectable by re-hashing, but the worktree is still not a stable reference and the session could still overwrite draft files that the snapshot captured.",
+      "gate": "QUARANTINE-DRIFT"
     },
     {
       "priority": 2,
-      "action": "Rule on PQ-08: adopt, supersede, or refactor shared/work-model.ts relative to Loop 01's shared/personal-office/, and decide which loop owns database.ts, index.ts, preload.ts and App.tsx. Loop 01 cannot leave PROVISIONAL until this is settled."
+      "action": "Await W1's contract change request on mapping §3.6, then run the integration gate on Loop 01. Loop 01 acceptance is the key that unblocks Loop 02 and Loop 03 worktree creation.",
+      "gate": "PQ-08 follow-through"
     },
     {
       "priority": 3,
-      "action": "Stop or quarantine the concurrent session still writing to the dirty worktree (QUARANTINE-DRIFT), so consumers have a stable reference."
+      "action": "Grant the package-manifest/lockfile lease to exactly one loop to close PQ-01, then re-measure the lint warning ceiling on canonical rather than adopting the old 359 figure.",
+      "gate": "PQ-01"
     },
     {
       "priority": 4,
-      "action": "Grant the package-manifest/lockfile lease to exactly one loop to close PQ-01, then re-measure the lint warning ceiling on canonical rather than adopting the old 359 figure."
+      "action": "Rule ownership for vault-ops / vault-types / wikilink before any producer claims them.",
+      "gate": "PO-VAULT-OWNERSHIP"
     }
-  ]
+  ],
+
+  "worktreeCreationPolicy": {
+    "rule": "No Loop 02 or Loop 03 implementation worktree may be created until Loop 01 is ACCEPTED.",
+    "statusAtThisCommit": "Loop 01 is PROVISIONAL, so NO new implementation worktree was created by this pass.",
+    "existingWorktrees": ["baseline (W0, Loop 00)", "loop01 (W1, Loop 01)"]
+  }
 }

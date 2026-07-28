@@ -412,3 +412,155 @@ recorded in the baseline port queue, with PQ-08 also raised to a CRITICAL progra
 ledger. BF-01 through BF-04 recorded in both baseline artifacts. All six outputs hashed. Committed
 by exact path, and `ACCEPTED` set only after post-commit verification. GitNexus mutation ownership
 retained by W0 and written into `leases.json` as a permanent reservation.
+
+---
+
+# W0 pass 3 — quarantine preservation, PQ-08 ruling, mapping decisions
+
+**Date:** 2026-07-28 · **Window:** W0 · **Two-phase commit:** phase 1 `0dabeec` (artifacts), phase 2 below
+
+Input: W1 completed a read-only PQ-08 reconciliation but stayed PROVISIONAL / BLOCKED_GATE.
+
+## Agent conclusions
+
+**Socrates — PQ-08 examination.** I read W1's actual output before ruling, rather than ruling on
+the summary. It is strong work: `legacy-personal-office-mapping.md` inventories eight legacy status
+groups, gives every mapping a confidence and a lossiness flag, and attaches a required test to each
+decision. Two run-level mappings were escalated for an owner.
+
+The examination turned up something neither side had stated: **both contracts declare schema
+version 1 for different shapes.** W1 exports `PERSONAL_OFFICE_SCHEMA_VERSION = 1`; the draft
+exports `WORK_SCHEMA_VERSION = 1`. Since the draft's `work-migration.ts` is already wired into
+`database.ts` in the quarantine, a real migration there could persist rows tagged `1` in the
+draft's shape, which a reader using W1's guard would accept and misread. That is the concrete
+hazard behind the abstract "two competing models" worry, and it is closable at zero cost right
+now only because nothing has shipped.
+
+**orchestrator — plan.** Preserve before ruling, because preservation is the only irreversible
+step. Then rule, then update the registries, then hand off. Two-phase commit throughout so artifact
+bytes are hashed and immutable before any document asserts a status about them.
+
+**builder — what changed.** Four new artifacts in phase 1; leases, ledger and this worklog in
+phase 2. No feature source, no worktree created, nothing written to quarantine.
+
+## Preservation — the part that actually mattered
+
+PQ-08's second risk was that ~190 KB of implementation existed in no commit anywhere, so one
+`git clean` would destroy it. I had been recording hashes, which prove integrity but **preserve
+nothing**. Fixed:
+
+| Snapshot | Content |
+| --- | --- |
+| `dirty-tracked.patch` | 128,083 B — the 36 modified tracked files, via read-only `git diff` |
+| `untracked/` | 42 files a patch cannot represent, because git does not diff untracked content |
+| Total | 422,029 B at `F:\Ai Tools\_po-quarantine-snapshot-20260728` |
+
+The snapshot lives **outside any git repo** deliberately. Loop 00 owns documentation and coordinator
+JSON, so committing ~420 KB of feature source — even as a patch — would breach its own ownership
+rule. Bytes out-of-repo, hashes in-repo satisfies both. Every file is hashed individually in the two
+salvage manifests, so drift is now *detectable* rather than merely suspected.
+
+A finding from doing the inventory properly: **Loop 02's shell is far larger than PQ-08 estimated**
+— 19 files, ~106 KB, including a shell container, five routed pages, a command palette, a delegate
+composer, a work lane, its own state/adapter layer, and a feature flag with a rollback path. That is
+a near-complete shell, not a sketch.
+
+## PQ-08 ruling — two layers, no winner
+
+I did not pick a winner, because the two artifacts were never rivals at the same level. They are a
+contract and an engine written without knowledge of each other.
+
+- **W1 governance/catalog** — `shared/personal-office/**` is the **contract of record**. The
+  deciding argument is a constraint, not a preference: a contract layer must be dependency-free and
+  importable from both the Electron main process and the renderer. W1's modules are written to that
+  constraint. An execution engine *cannot* hold that role, because it necessarily depends on SQLite,
+  IPC and the main process.
+- **W3 execution core** — `main/work/**` is adopted wholesale (13 modules, 5 test files) and must
+  import its types from W1 rather than define a parallel model.
+- `shared/work-model.ts` is **superseded as a contract**, not deleted. Its lineage types
+  (`'original' | 'retry' | 'fork'`), `WorkRunOrigin`, `canonicalJson` and action-hash binding are
+  promoted *upward* into W1's contract under a change request.
+
+That last point is worth noting: W1's mapping §3.9 had declared lineage **Blocked** — "cannot be
+reconstructed from legacy data… whether to add it is a design decision, not a migration one". The
+draft had already made that design. Layering recovers the answer instead of re-deriving it.
+
+## Mapping rulings
+
+**MAP-BLOCKED — upheld as proposed.** `blocked` → `paused`, never `failed`. W1's evidence is
+sufficient on its own: `host-agent.ts` instructs the model to mark a task blocked "if stuck",
+the action gate uses it for recoverable guardrail hits, `CustomerRunStatus` has no `failed` at all,
+and no legacy path treats `blocked` as terminal. `pausedReason` authorised as additive.
+
+**MAP-ARCHIVED — amended.** W1 proposed `archived` → `completed` + `archivedAt`, with the rule
+"never fabricate `failed`". That prohibition is right, but the default is not: **mapping to
+`completed` fabricates success**, which in this product is the worse error. A Personal Office run is
+expected to yield artifacts; a false `completed` tells the operator work was delivered when it may
+never have finished, and it inflates any throughput reporting built on run state. The two errors are
+not symmetric — a false `canceled` invites a harmless second look, a false `completed` invites
+silent reliance on work that does not exist.
+
+Amended rule: derive the terminal from `agent_run_entries` where conclusive; where inconclusive map
+to `canceled` with `canceledReason='legacy_archived_outcome_unknown'`; always set `archivedAt` and
+preserve `legacyStatusRaw`; emit exactly one migration event classified `audit_events`. This follows
+W1's *own* precedent from mapping §3.8 (unknown status → non-fabricating state + raw preserved +
+migration event) and still satisfies its required test that every archived run reach a terminal
+state, since `canceled` is terminal.
+
+This amends an accepted decision in W1's document, so it needs a **contract change request** before
+Loop 01 acceptance. Consumers: Loop 03 (implementer), Loop 12 (reuses the pattern).
+
+## Version and migration impact
+
+`PERSONAL_OFFICE_SCHEMA_VERSION` is the single version authority; `WORK_SCHEMA_VERSION` is
+**retired, not renumbered**. Migration cost is **zero today** — nothing has shipped and the only
+database touched is inside quarantine. If a draft-carrying build reaches a real user database first,
+archived runs will already be recorded as `completed` and the false successes become
+indistinguishable from genuine ones without entry-level forensics.
+
+All five authorised additive fields (`pausedReason`, `canceledReason`, `archivedAt`,
+`legacyStatusRaw`, `WorkspaceInstance.health`) are **optional**, so adding them does not bump the
+schema version. Making any of them required later would be breaking.
+
+## SECURITY GATE
+
+**Surfaces:** D (data exposure — draft handling), B (authZ — hot-file lease discipline).
+
+**Risks checked:** the snapshot could copy secret material out of quarantine; the salvage manifests
+could leak credential values; the adopted migration could fail open.
+
+**Controls:** secret-shaped-literal scan clean across all six coordinator artifacts; the snapshot
+contains only source files and a diff of tracked source, with no `.env`, key or credential store
+copied; the fail-open migration path in `work-migration.ts` is recorded as
+`ADOPT_WITH_SECURITY_REVIEW` and carried into Loop 03's conditions; four hot files that the draft
+wired *without* a lease are marked `LEASE_REQUIRED` so the breach is not replicated.
+
+**Residual risk:** the concurrent session can still overwrite draft files the snapshot captured —
+drift is detectable but not prevented. **Decision:** pass.
+
+## Skill Audit
+
+| Skill | Status | Where it landed |
+| --- | --- | --- |
+| `/search-first` | **USED** | Read W1's actual mapping doc, state machine and version module before ruling, instead of ruling on the summary. That is what surfaced the version-1 collision and W1's own §3.8 precedent. |
+| `/context-gatherer` | **USED** | Inventoried both sides plus the quarantine at file-and-hash level; the Loop 02 shell turned out ~4× the PQ-08 estimate. |
+| `/understand-codebase` | **USED** | Compared `RUN_TRANSITIONS` against `WORK_RUN_TRANSITIONS` and both version constants to make the layering ruling concrete rather than stylistic. |
+| `/quick-spec` | **USED** | The acceptance record specifies the two-layer contract, the version authority and per-loop entry conditions. |
+| `/backend-patterns` | **USED** | The ruling is a backend layering decision: dependency direction one-way from engine to contract, migration versioning, fail-closed critique of the migration error path, and the BF-01 constraint that persistence stay unit-testable without a native binding. |
+| `/frontend-patterns` | **N/A** | No renderer code written. Shell files were inventoried and assigned, not modified; W2 applies frontend patterns when it salvages. |
+| `/deployment-patterns` | **USED** | Migration-cost-by-timing analysis (zero now, forensic later), the feature-flag rollback path recorded as high-value salvage, and the rule that no quarantine-era database be promoted into a shipped build. |
+| `/security-review` | **USED** | Gate above, plus flagging the fail-open migration and the four unleased hot-file writes. |
+| `/verification-loop` | **USED** | Parse, secret scan, ownership audit and `diff --check` before each of the two commits. |
+| `Design (#design)` | **N/A** | No UI produced. Design authority begins when W2 opens Loop 02. |
+| `/gpt-taste` | **N/A** | No UI, and its landing-page AIDA/hero/scroll patterns must not be applied to this desktop product UI regardless. |
+| `/design-taste-frontend` | **N/A** | No UI surface authored; relevant to W2 as an anti-slop audit later. |
+| `/stitch-design-taste` | **N/A** | No app surface authored in a coordination loop. |
+
+## Handoff
+
+Integration ref `feature/personal-office-baseline-20260728`. W1 receives the ref, the input hashes,
+the upheld MAP-BLOCKED ruling, the amended MAP-ARCHIVED ruling requiring a contract change request,
+and confirmation that its layer is the contract of record. No lease is held; the pre-approved lease
+queue is explicitly *not* active and unlocks only on Loop 01 acceptance.
+
+No Loop 02 or Loop 03 implementation worktree was created. Stopping here.
