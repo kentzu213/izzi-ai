@@ -1,5 +1,23 @@
 # Changelog — Izzi OpenClaw Desktop
 
+## 1.13.2
+
+Security hotfix on the auto-update channel. No feature changes, no Electron upgrade.
+
+- **Fixed a credential leak in the updater (GHSA-p2f4-r6v6-j797, high).** Before this
+  release, a cross-origin redirect while checking for or downloading an update forwarded
+  the `PRIVATE-TOKEN` and `Authorization` headers to the redirect target. This app updates
+  through the token-bearing GitHub provider, so the path was reachable. `builder-util-runtime`
+  is now pinned at `9.7.0`, which strips every credential header on a cross-origin redirect
+  while still authenticating same-origin ones.
+- Raised `js-yaml` to `4.3.0` (GHSA-52cp-r559-cp3m): the parser that reads `latest.yml`
+  could be forced into quadratic CPU use by chained YAML merge keys.
+- Raised `fast-uri` to `3.1.4` (host-confusion fixes) and `lodash` to `4.18.1`
+  (`_.template` code injection, prototype pollution via `_.unset`/`_.omit`).
+- Marketplace API: `hono` `^4.12.27`, `@hono/node-server` `^1.19.13`, `uuid` `^11.1.1`.
+- Electron stays on 34 and electron-builder on 25.1.8 — installer naming, `latest.yml`
+  and `latest-mac.yml` schemas are unchanged, so existing installs update normally.
+
 ## 1.12.1
 
 Starizzi SmartRouter/direct-routing hotfix.
