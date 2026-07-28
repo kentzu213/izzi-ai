@@ -1,5 +1,15 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.4
+
+Windows identity and icon patch.
+
+- Pin the visible title and Windows AppUserModelID to Izzi AI without changing
+  Electron's internal app name or the existing user-data location.
+- Generate a multi-resolution Windows ICO from the approved cyan `S` artwork
+  and use it for the executable, installer, shortcuts, and main window.
+- Rename the remaining in-app logo accessibility label from Starizzi to Izzi AI.
+
 ## 1.14.0-beta.3
 
 Cross-platform Voice Studio runtime hotfix.

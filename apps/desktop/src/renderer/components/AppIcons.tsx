@@ -80,7 +80,7 @@ const PH: Record<string, string> = {
 };
 
 /**
- * Starizzi Logo Mark — official brand icon (izzi cyan→violet gradient).
+ * Izzi AI logo mark — official brand icon (izzi cyan→violet gradient).
  */
 export function AppLogoMark({ className }: IconProps) {
   return (
@@ -89,7 +89,7 @@ export function AppLogoMark({ className }: IconProps) {
       viewBox="0 0 64 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Starizzi Logo"
+      aria-label="Izzi AI logo"
     >
       <defs>
         <filter id="izzi-glow" x="-30%" y="-30%" width="160%" height="160%">

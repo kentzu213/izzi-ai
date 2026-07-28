@@ -71,7 +71,12 @@ import {
   verifyCommercialVoiceLicense,
 } from './customer-marketing/commercial-voice-license';
 import { createStreamCollector } from '../shared/agent-turn-events';
+import { APP_ID, APP_NAME } from '../shared/app-branding';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_ID);
+}
 
 let mainWindow: BrowserWindow | null = null;
 let authManager: AuthManager;
@@ -175,6 +180,7 @@ function createWindow() {
     minHeight: 640,
     frame: false,
     titleBarStyle: 'hidden',
+    title: APP_NAME,
     backgroundColor: '#08090c',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
