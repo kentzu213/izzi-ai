@@ -1,13 +1,17 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type {
   CustomerMarketingAnalyticsReport,
   CustomerMarketingContentResource,
+  CustomerMarketingSnapshot,
   CustomerOnboardingInput,
 } from '../../shared/customer-marketing-types';
 import {
   analyticsWindowFromDates,
   buildAnalyticsInsights,
   buildCreativeBriefBody,
+  CustomerMarketingCapabilityWorkbench,
   currentMonthAnalyticsRange,
   scanBrandContent,
 } from './CustomerMarketingCapabilityWorkbenches';
@@ -136,6 +140,30 @@ function analyticsReport(
 }
 
 describe('Customer Marketing capability workbench helpers', () => {
+  it.each([
+    ['creative-studio', 'Create a content brief'],
+    ['analytics-copilot', 'Verified workspace report'],
+    ['brand-guardian', 'Current Brand Center'],
+    ['automation-builder', 'Prepare a local dry-run'],
+  ] as const)('renders %s as a real workbench surface', (id, marker) => {
+    const html = renderToStaticMarkup(createElement(
+      CustomerMarketingCapabilityWorkbench,
+      {
+        id,
+        snapshot: {
+          workspace: { role: 'owner' },
+          approvals: [],
+        } as unknown as CustomerMarketingSnapshot,
+        form,
+        onBack: () => undefined,
+        onOpen: () => undefined,
+        onDirector: async () => undefined,
+      },
+    ));
+
+    expect(html).toContain(marker);
+  });
+
   it('builds a persisted creative brief from user input and Brand Center data', () => {
     const body = buildCreativeBriefBody({
       title: 'Explainer',
