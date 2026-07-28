@@ -6,8 +6,8 @@
 |---|---|
 | Operational worktree | `F:\Ai Tools\_wt-starizzi-personal-office-loop01` |
 | Branch | `feature/personal-office-loop-01-20260728` |
-| Implementation commit | `89d77435e5bc7bb3535ed0815fe3af470ebda03a` (includes reviewer correction) |
-| Accepted integration base | `0cbf88863180b761dae1366eefe99c8338b4aad0` |
+| Implementation commit | `4cf77f33a292bf2c2a2f5c0d2adbe50bc1e9556e` (rebased equivalent of reviewer correction) |
+| Replay base | `d711fd9` (includes W0 planning-only commits; accepted Loop 00 commit `0cbf888` remains an ancestor) |
 | Rollback commit / branch | `94fbdc6908b64ac07d498327a890f337738a6d24` / `backup/personal-office-loop-01-draft-20260728` |
 | Managing repo | `F:\Ai Tools\Tool Starizzi - B2C - Openclaw` |
 | Loop 00 worktree | `F:\Ai Tools\_wt-starizzi-personal-office-baseline` (**not touched**) |
@@ -497,6 +497,23 @@ makes `Envelope`, `encode`, `serialize`, `decode`, and `roundTrip` accept only
 aggregate. Two regression tests cover a stale inner version and a missing inner
 version. Isolated verification was rerun: 43/43 tests and both TypeScript profiles
 pass. The rejected handoff was never integrated.
+
+### Coordinator rebase note
+
+Before W0 acceptance, a concurrent coordinator session added two documentation-only
+commits (`aa96a8f`, `d711fd9`) and rebased the W1 series onto them. Git preserved the
+file content but rewrote the producer SHAs:
+
+| Before rebase | Current equivalent |
+|---|---|
+| `b81da77` | `8592fd9` |
+| `a72d29d` | `5abafad` |
+| `15ab877` | `9d82ed0` |
+| `89d7743` | `4cf77f3` |
+| `7956503` | `4890a0a` |
+
+The handoff uses only the current lineage. Contract/output hashes and verification
+results remain unchanged; W0 must accept `4cf77f3`, not the orphaned pre-rebase SHA.
 
 ### Skill and agent audit
 
