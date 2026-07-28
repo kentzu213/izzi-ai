@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "00",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-28T09:20:00Z",
+  "authority": "Only W0 may set ACCEPTED, and only after integration verification. This record is the audit evidence for that decision, kept separate from the producer handoff so the reviewer's basis is not mixed with the producer's claim.",
+
+  "subject": {
+    "branch": "feature/personal-office-baseline-20260728",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "baseCanonicalCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+    "canonicalTag": "v1.14.0-beta.3",
+    "producerHandoff": "docs/handoffs/personal-office/loop-00.json",
+    "refIsAuthoritativeNotSha": "Any SHA recorded in a coordinator artifact is one commit stale by construction, because writing the record is itself a commit. Consumers must resolve the ref."
+  },
+
+  "twoPhaseCommit": {
+    "required": true,
+    "phase1": { "kind": "implementation/artifact", "scope": "baseline artifacts, quarantine snapshot manifests, this acceptance record" },
+    "phase2": { "kind": "handoff/worklog", "scope": "producer handoff, integration ledger, leases, worklog" },
+    "rationale": "Separating them means the artifact bytes are already immutable and hashed before any document asserts a status about them. A single squashed commit would let a status claim and the thing it describes land together, unverified."
+  },
+
+  "verificationBasis": [
+    { "check": "worktree/branch/HEAD match the issued Loop 00 Card", "result": "pass" },
+    { "check": "canonical tag at HEAD is v1.14.0-beta.3", "result": "pass" },
+    { "check": "canonical commit is an ancestor of the branch", "result": "pass" },
+    { "check": "git diff --check", "result": "pass (exit 0)" },
+    { "check": "ownership audit — every changed path inside Loop 00 ownership, zero feature source", "result": "pass" },
+    { "check": "all coordinator JSON parse at schemaVersion 1", "result": "pass" },
+    { "check": "SHA-256 recorded for every output", "result": "pass" },
+    { "check": "desktop build at the accepted commit", "result": "pass — exit 0, and the emitted asset content hashes are identical to the canonical build, which is the actual proof no source drifted" },
+    { "check": "desktop tests", "result": "pass-with-known-flake — 900/901; the one failure is BF-02, reproduced as a 5040ms-vs-5000ms timeout and shown green in isolation at 14/14" },
+    { "check": "lint gate", "result": "NOT RUNNABLE — BF-03 no lint:ci script, BF-04 no ESLint config anywhere at canonical. No lint claim was made and no pass was fabricated." },
+    { "check": "GitNexus index commit equals canonical HEAD, queries return results", "result": "pass — impact ensureSqliteSchema returned epistemic 'exact'" },
+    { "check": "detect_changes over the loop's diff", "result": "pass — 'No changes detected': 0 symbols, 0 execution flows, risk NONE, consistent with a documentation-only loop" },
+    { "check": "secret-shaped literal scan across all owned artifacts", "result": "pass — clean; the GitHub Packages token is referenced by variable NAME only" },
+    { "check": "quarantine not written by W0", "result": "pass — read-only plumbing only; HEAD unchanged at 959e2d2" }
+  ],
+
+  "unmetCriteriaAtAcceptance": [
+    { "criterion": "roadmap: lint gate must run and its result be recorded", "status": "NOT MET", "cause": "BF-03 + BF-04, both pre-existing at canonical", "resolutionOwner": "whichever loop receives the package-manifest lease via PQ-01", "acceptedAnyway": true, "justification": "The defect is in the canonical tree, not in Loop 00's output. Blocking Loop 00 on it would strand the whole programme behind a lint config while leaving the baseline unrecorded. It is tracked as an open gate instead." },
+    { "criterion": "roadmap step 7: GitNexus FTS working", "status": "NOT MET", "cause": "LadybugDB FTS extension requires network; vector search unavailable on this platform (W-03)", "acceptedAnyway": true, "justification": "The corresponding acceptance criterion requires only that the index match HEAD and that queries return results. Both hold. Graph traversal is the capability the programme actually needs." }
+  ],
+
+  "pq08Ruling": {
+    "gate": "PQ-08",
+    "question": "Two competing Personal Office domain models existed uncommitted. Does Loop 01's shared/personal-office/ or the quarantine draft's shared/work-model.ts become the model of record?",
+    "ruling": "NEITHER IS DISCARDED. Adopt a two-layer model: W1 owns the governance/catalog contract layer; W3 owns the execution core beneath it. The draft's shared/work-model.ts is SUPERSEDED as the contract of record and demoted to salvage content.",
+    "layers": {
+      "governanceCatalog": {
+        "window": "W1",
+        "loop": "01",
+        "path": "apps/desktop/src/shared/personal-office/**",
+        "isContractOfRecord": true,
+        "owns": [
+          "entity shapes (entities.ts)",
+          "the state machines and their legal transitions (state-machine.ts)",
+          "event contract (events.ts)",
+          "identifier rules (ids.ts)",
+          "data classification taxonomy (classification.ts)",
+          "secret reference discipline (secret-ref.ts)",
+          "trust and package/runtime boundaries (trust.ts)",
+          "serialization envelope and version guards (serialization.ts, version.ts)"
+        ],
+        "rationaleForPrimacy": "A contract layer must be dependency-free and importable from both the Electron main process and the renderer. W1's modules are written to that constraint. An execution engine cannot hold that role because it necessarily depends on SQLite, IPC and the main process."
+      },
+      "executionCore": {
+        "window": "W3",
+        "loop": "03",
+        "path": "apps/desktop/src/main/work/**",
+        "isContractOfRecord": false,
+        "owns": [
+          "run repository and persistence (run-repository.ts, work-sqlite.ts)",
+          "the work service and orchestration (work-service.ts)",
+          "legacy adapters (work-adapters.ts)",
+          "schema migration and pre-migration backup (work-migration.ts, work-backup.ts)",
+          "approval engine (work-approvals.ts)",
+          "action-hash binding (work-hash.ts)",
+          "IPC surface (work-ipc.ts)"
+        ],
+        "mustDependOn": "apps/desktop/src/shared/personal-office/** — never a parallel model"
+      }
+    },
+    "supersededArtifact": {
+      "path": "apps/desktop/src/shared/work-model.ts",
+      "status": "SUPERSEDED_AS_CONTRACT",
+      "contentToReconcileUpward": [
+        "WORK_RUN_TRANSITIONS — compare against W1's RUN_TRANSITIONS; W1's table lacks retry/lineage semantics the draft has",
+        "WorkRunLineageKind ('original' | 'retry' | 'fork') and WorkRunOrigin — W1 declared lineage Blocked in mapping §3.9 as 'a design decision, not a migration one'; the draft has already made that design. Promote it into W1's contract rather than losing it.",
+        "canonicalJson — deterministic serialization, needed for stable hashing",
+        "action-hash binding — required by the Constitution's rule that an approval binds to an immutable action hash"
+      ],
+      "instruction": "W3 must not keep this file as a second contract. Its valuable content is promoted into shared/personal-office/ by W1 under a contract change request, then W3 imports it from there."
+    },
+    "rationale": "The two artifacts are not rivals at the same level — they are a contract and an engine that were written without knowledge of each other. Forcing a winner would either discard a working engine with tests, or discard a dependency-free contract layer that the renderer can import. Layering them keeps both and makes the dependency direction explicit and one-way: engine depends on contract, never the reverse.",
+    "risksClosedByThisRuling": [
+      "Duplicate divergent models for the same entities — resolved by making one the contract and the other its consumer",
+      "Unrecoverable loss — resolved by the out-of-repo quarantine snapshot, hashed in quarantine/dirty-state.json",
+      "Contradictory instructions over the same files — resolved by the lease registry plus the condition lists in the two salvage manifests"
+    ],
+    "residualRisk": "The schema-version collision below must be closed before either layer ships. Until then, artifacts tagged version 1 are ambiguous."
+  },
+
+  "versionImpact": {
+    "collision": {
+      "severity": "HIGH",
+      "finding": "Both contracts independently declare version 1 for overlapping but structurally different shapes: W1 exports PERSONAL_OFFICE_SCHEMA_VERSION = 1 with SchemaVersion = 1, and the draft exports WORK_SCHEMA_VERSION = 1. Any persisted record tagged 1 is therefore ambiguous about which shape produced it.",
+      "whyItMatters": "The draft's work-migration.ts is already wired into database.ts in the quarantine, so a real SQLite migration could persist rows tagged version 1 in the draft's shape. A later reader using W1's guard would accept the tag and misread the payload.",
+      "ruling": "PERSONAL_OFFICE_SCHEMA_VERSION is the single version authority for Personal Office contracts. The draft's WORK_SCHEMA_VERSION is retired, not renumbered. Persisted envelopes must carry the contract version from shared/personal-office/version.ts and nothing else.",
+      "migrationRequirement": "Because no build carrying the draft has shipped and no migration has run outside the quarantine, no data exists in the wild under the ambiguous tag. This is closable now at zero migration cost. If the draft is ever run against a real user database before this is closed, the cost becomes a data-forensics problem instead.",
+      "requiredBeforeW3Implements": [
+        "Delete WORK_SCHEMA_VERSION; import PERSONAL_OFFICE_SCHEMA_VERSION.",
+        "Add a serialization test asserting that an envelope written by the engine is accepted by W1's version guard and that a foreign/unknown version is rejected rather than coerced.",
+        "Confirm no quarantine-era database file is promoted into a shipped build."
+      ]
+    },
+    "additiveFieldsAuthorised": {
+      "note": "W1's mapping proposed additive fields but correctly declined to add them in a contracts-only loop. W0 authorises them as ADDITIVE-ONLY, owned by the implementing loop, and they must not become required.",
+      "fields": [
+        { "field": "WorkRun.pausedReason", "type": "'stuck' | 'waiting_external' | 'guardrail'", "owner": "Loop 03", "required": false },
+        { "field": "WorkRun.canceledReason", "type": "string enum incl. 'system_refused' and 'legacy_archived_outcome_unknown'", "owner": "Loop 03", "required": false },
+        { "field": "WorkRun.archivedAt", "type": "ISO timestamp", "owner": "Loop 03", "required": false },
+        { "field": "WorkRun.legacyStatusRaw", "type": "string", "owner": "Loop 03", "required": false },
+        { "field": "WorkspaceInstance.health", "type": "'ok' | 'attention' | 'blocked' | 'unknown'", "owner": "Loop 08", "required": false, "note": "Deliberately separate from the lifecycle state machine — a health signal must never force a lifecycle transition." }
+      ],
+      "constraint": "Every field above is optional. Adding them does not bump PERSONAL_OFFICE_SCHEMA_VERSION, because an optional field is backward compatible. Removing or requiring any of them later would be breaking and needs a contract change request."
+    }
+  },
+
+  "mappingRulings": {
+    "context": "W1's legacy-personal-office-mapping.md left eight ambiguities, of which the two run-level ones about blocked and archived were escalated for an owner decision. W0 rules on both, records version/migration impact, and assigns implementation.",
+    "rulings": [
+      {
+        "id": "MAP-BLOCKED",
+        "source": "AgentRunStatus.blocked, CustomerRunStatus.blocked, CustomerMediaJobStatus.blocked, host-agent task 'blocked'",
+        "target": "WorkRun.state = 'paused'",
+        "decision": "UPHELD — W1's mapping is accepted as proposed",
+        "confidence": "high",
+        "evidenceAccepted": [
+          "host-agent.ts instructs the model to mark a task blocked 'if stuck' — temporarily cannot proceed, not a hard error",
+          "the action gate sets blocked on guardrail hits, which is a recoverable needs-revision outcome",
+          "CustomerRunStatus lists blocked separately from awaiting_approval and has no failed at all, so its blocked is the catch-all cannot-proceed-now",
+          "no legacy path treats blocked as terminal"
+        ],
+        "prohibition": "blocked must NEVER map to failed. Fabricating failure is a false negative that would misreport work the user can still recover.",
+        "lossHandling": "The reason is lost in a bare paused, so pausedReason is authorised as an additive discriminator. Until it exists, paused alone is correct.",
+        "stepLevelNote": "WorkStep.status already carries blocked as a first-class value, so step-level blocked is 1:1 and non-lossy. This ruling is strictly about run level.",
+        "implementer": "Loop 03 (work-adapters.ts)",
+        "requiredTest": "No legacy blocked ever produces failed; every blocked produces a re-enterable paused, and paused → running is legal in RUN_TRANSITIONS."
+      },
+      {
+        "id": "MAP-ARCHIVED",
+        "source": "AgentRunStatus.archived",
+        "target": "terminal state derived from evidence; archivedAt tombstone always set",
+        "decision": "AMENDED — W1's proposal of archived → completed is NOT accepted as the default",
+        "confidence": "medium",
+        "w1Proposal": "Map archived → completed plus an additive archivedAt, deriving a more accurate terminal from agent_run_entries where they prove otherwise. Never fabricate failed.",
+        "w0Amendment": {
+          "rule": "1) Derive the terminal from agent_run_entries where the entries are conclusive. 2) Where they are NOT conclusive, map to 'canceled' with canceledReason='legacy_archived_outcome_unknown' — NOT 'completed'. 3) Always set archivedAt and preserve legacyStatusRaw='archived'. 4) Emit exactly one migration WorkEvent classified as audit_events.",
+          "reasoning": "W1 correctly forbade fabricating failed, but defaulting to completed fabricates SUCCESS, which is the more damaging error in this product. A Personal Office run is expected to yield artifacts and deliverables; a false completed tells the operator work was delivered when it may never have finished, and it inflates any success or throughput reporting built on run state. canceled asserts only 'stopped without completing', which is true of every archived-incomplete run and is the weaker, safer claim. Note the asymmetry is not symmetric between the two errors: a false canceled invites a harmless second look, a false completed invites silent reliance on work that does not exist.",
+          "consistencyWithW1": "This follows W1's own precedent in mapping §3.8, where an unknown status maps to a non-fabricating state, preserves legacyStatusRaw, and emits a migration event. W0 applies the same discipline to archived. It also honours W1's required test that every archived run reach a terminal state — canceled is terminal."
+        },
+        "prohibition": "Never map archived to failed. Never default archived to completed without conclusive entry evidence.",
+        "implementer": "Loop 03 (work-adapters.ts)",
+        "requiredTests": [
+          "Every archived run reaches a terminal PO state with archivedAt set.",
+          "An archived run whose entries prove completion maps to completed.",
+          "An archived run with inconclusive entries maps to canceled with canceledReason='legacy_archived_outcome_unknown', never completed.",
+          "No archived run maps to failed unless entries prove failure.",
+          "legacyStatusRaw is preserved and exactly one migration event is emitted."
+        ],
+        "contractChangeRequestRequired": true,
+        "changeRequestNote": "This amends a decision recorded in W1's mapping document. W1 must update legacy-personal-office-mapping.md §3.6 to match before Loop 01 is submitted for acceptance. Consumers of that section: Loop 03 (implementer), Loop 12 (Customer Marketing adapter reuses the archived/blocked patterns)."
+      }
+    ],
+    "migrationImpact": {
+      "dataAtRisk": "none in the wild",
+      "reason": "No build carrying the draft migration has shipped, and the only database it has touched is inside the quarantined worktree. Both rulings are therefore free to implement now.",
+      "ifDeferred": "If a draft-carrying build reaches a real user database first, archived runs will already have been written as completed and the false-success records become indistinguishable from genuine completions without entry-level forensics.",
+      "schemaVersionBump": "none — all four supporting fields are optional and additive"
+    }
+  },
+
+  "conditionsCarriedForward": [
+    "Loop 01 cannot be ACCEPTED until W1 updates mapping §3.6 to the amended archived ruling and retargets nothing else.",
+    "Loop 03 must retire WORK_SCHEMA_VERSION and import PERSONAL_OFFICE_SCHEMA_VERSION before persisting anything.",
+    "No Loop 02 or Loop 03 implementation worktree may be created until Loop 01 is ACCEPTED.",
+    "Salvage is selective and producer-applied inside the producer's own worktree. No blind cherry-pick from quarantine.",
+    "Hot files require a W0 lease. The quarantine draft wired four of them without one; that must not be replicated."
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "quarantine-salvage-manifest",
+  "targetLoop": "03",
+  "targetWindow": "W3",
+  "layer": "execution core",
+  "owner": "W0 Control Tower (manifest) / W3 (salvage application)",
+  "capturedAt": "2026-07-28T09:20:00Z",
+  "sourceQuarantine": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+  "sourceHead": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+  "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728\\untracked",
+  "committedAnywhere": false,
+  "recoverableOnlyFromSnapshot": true,
+
+  "pq08Ruling": "ADOPT AS EXECUTION CORE, subordinate to W1 contracts. See docs/handoffs/personal-office/acceptance/loop-00.json → pq08Ruling.",
+
+  "sharedContracts": {
+    "note": "These sit in shared/ but overlap W1's governance layer. Per the PQ-08 ruling, work-model.ts is SUPERSEDED as the contract of record and becomes salvage input; its state machine, canonicalJson and action-hash binding must be reconciled INTO shared/personal-office/ rather than kept as a parallel model.",
+    "files": [
+      { "path": "apps/desktop/src/shared/work-model.ts", "sha256": "5c32c894535d12326c26243154173becc7f6bbd547c63696add8ee87ee30186f", "bytes": 16657, "verdict": "SUPERSEDED_AS_CONTRACT_SALVAGE_CONTENT", "carries": "WorkRunState, WORK_RUN_TRANSITIONS, WorkRunOrigin, WorkRunLineageKind ('original'|'retry'|'fork'), canonicalJson, action-hash binding, WORK_SCHEMA_VERSION = 1" },
+      { "path": "apps/desktop/src/shared/work-model.test.ts", "sha256": "fe8b86df3a16d9a42886b86a369017e0164591be22312506f3569291c65557f4", "bytes": 3315, "verdict": "SALVAGE_TESTS" },
+      { "path": "apps/desktop/src/shared/work-redaction.ts", "sha256": "0107e2da386a02c7eb16a99252300fd4d4787153913a964bebfe35561e10e87b", "bytes": 7465, "verdict": "HIGH_VALUE_SALVAGE", "carries": "secret-by-shape plus PII redaction, prototype-pollution safe", "note": "Overlaps W1 classification.ts / secret-ref.ts. Reconcile: W1 owns the classification taxonomy, this owns the runtime redaction implementation." },
+      { "path": "apps/desktop/src/shared/work-redaction.test.ts", "sha256": "06028d1a5f64d195decac53de634d147ca6a39b138adb49dfe7ccade8fc7ba34", "bytes": 2908, "verdict": "SALVAGE_TESTS" }
+    ]
+  },
+
+  "executionCore": {
+    "note": "main/work/** is W3's uncontested territory under the two-layer ruling. Adopt, then retarget its imports from work-model.ts to shared/personal-office/.",
+    "totalBytes": 160385,
+    "fileCount": 13,
+    "files": [
+      { "path": "apps/desktop/src/main/work/work-service.ts", "sha256": "3fa4e8cbc993d02f8788ee504ecfa3f87ab448dde4b96e04456a9b8405c41438", "bytes": 31149, "verdict": "ADOPT" },
+      { "path": "apps/desktop/src/main/work/work-service.test.ts", "sha256": "29b46fa517da6195d225e916f9d5a5f652530dac238cbaec993400da3a905873", "bytes": 15384, "verdict": "ADOPT" },
+      { "path": "apps/desktop/src/main/work/run-repository.ts", "sha256": "53d23c8ee8d99c124488f0fc0043310016459526a7b6282dc52e669efd755bb9", "bytes": 37864, "verdict": "ADOPT" },
+      { "path": "apps/desktop/src/main/work/work-adapters.ts", "sha256": "53c643360f5898717d3700d1982e63c4c21db4485e5994f322ff578ed5768d2d", "bytes": 12499, "verdict": "ADOPT", "note": "This is where the two legacy mapping rulings land — see acceptance/loop-00.json mappingRulings." },
+      { "path": "apps/desktop/src/main/work/work-adapters.test.ts", "sha256": "7bdd662bac48e99a4c03c5ef095bf05e85261e98cb7ffaa4fde3fba84662bbae", "bytes": 6103, "verdict": "ADOPT" },
+      { "path": "apps/desktop/src/main/work/work-migration.ts", "sha256": "2b15ff5113fa1bdab5d9703db12660ae134cba2620267305a45d59c661724c99", "bytes": 12086, "verdict": "ADOPT_WITH_SECURITY_REVIEW", "securityNote": "Owns the SQLite migration wired into database.ts. Its error path currently logs and proceeds rather than failing closed." },
+      { "path": "apps/desktop/src/main/work/work-migration.test.ts", "sha256": "c027e23dd41062b36e3d59f5e14beb4f66ed73470b33476d7f9e174fd40ee840", "bytes": 4625, "verdict": "ADOPT" },
+      { "path": "apps/desktop/src/main/work/work-ipc.ts", "sha256": "cccc11a3be8a2af6541512b3f17d87a78335678aa548d88fa62a6082382f8f8b", "bytes": 6261, "verdict": "ADOPT_REQUIRES_PRELOAD_LEASE" },
+      { "path": "apps/desktop/src/main/work/work-approvals.ts", "sha256": "068cd2eee884f1f025f1b9e78fefd22683b34effb5391bebdd837b41d38290ec", "bytes": 4377, "verdict": "ADOPT", "note": "Approval engine. W1's ADR-PO-002 and the shell's Loop-02-local ApprovalRequest both anticipated this." },
+      { "path": "apps/desktop/src/main/work/work-hash.ts", "sha256": "9f3b6a591f2848f2c9c7b466d40b7527083a3fc55ceb45feec279f1c218190e8", "bytes": 2147, "verdict": "ADOPT", "note": "Action-hash binding — required by the Constitution's approval rule that approval binds to an immutable action hash." },
+      { "path": "apps/desktop/src/main/work/work-backup.ts", "sha256": "705b08fcddac45339eadb0e89bc1f30bb9c6b5ac94779f4bd017378c2aa952b1", "bytes": 2825, "verdict": "ADOPT", "note": "Pre-migration snapshot. Good instinct; keep." },
+      { "path": "apps/desktop/src/main/work/work-sqlite.ts", "sha256": "1441aaf4ab11c7a72b6f7bd498901cc713f2f475d830f9d81478c9347be520bc", "bytes": 4116, "verdict": "ADOPT_TESTABILITY_CONSTRAINT", "note": "BF-01: native better-sqlite3 cannot be built on this host, so this must stay unit-testable without a live binding." },
+      { "path": "apps/desktop/src/main/work/test-support.ts", "sha256": "1ee5303a95e2c2db27ddf9f4fca0be44c8f854664ed73799a6533acb8268f140", "bytes": 1549, "verdict": "ADOPT" }
+    ]
+  },
+
+  "integrationWiring": {
+    "verdict": "DO_NOT_SALVAGE_AS_IS — requires hot-file leases and must be re-applied deliberately",
+    "reason": "These four tracked files are hot files with defined owner order. The draft wired them in the quarantine without a lease, which is exactly what the lease registry exists to prevent. W3 must request leases for database.ts, index.ts and preload.ts; App.tsx belongs to Loop 02 first and W3 must not take it.",
+    "paths": ["apps/desktop/src/main/db/database.ts", "apps/desktop/src/main/index.ts", "apps/desktop/src/main/preload.ts", "apps/desktop/src/renderer/App.tsx"],
+    "patchReference": { "file": "dirty-tracked.patch", "sha256": "b330acd70d6abd91f8965aefa003f1333bd92fe66056ae6d6e2b2b98a2db2ea4" }
+  },
+
+  "conditionsBeforeW3MayImplement": [
+    "Loop 01 must be ACCEPTED, because the execution core now depends on W1's contracts.",
+    "Retarget every import from shared/work-model.ts to shared/personal-office/ — do not reintroduce a parallel model.",
+    "Resolve the schema-version collision: both contracts currently declare version 1 for different shapes (see acceptance/loop-00.json versionImpact).",
+    "Request W0 leases for database.ts, index.ts and preload.ts before touching them. Do not take App.tsx.",
+    "Implement the two mapping rulings in work-adapters.ts with the tests W1 specified.",
+    "Keep work-sqlite.ts unit-testable without a live native binding (BF-01)."
+  ]
+}
