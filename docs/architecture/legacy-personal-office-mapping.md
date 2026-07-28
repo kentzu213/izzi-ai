@@ -374,18 +374,19 @@ fallback**, **required test before migration**.
 
 ## 4. Migration ownership matrix
 
-Which loop **implements** each adapter (Loop 01B only designs). "Proposed additive
-fields" from §2–§3 are created by the owning loop, not before.
+Which loop **implements** each adapter. Canonical entity fields are owned by the
+W1 shared contract; downstream loops consume them and own adapter/storage behavior,
+not parallel contract definitions.
 
-| Loop | Scope | Legacy sources it adapts | Proposed additive PO fields it introduces |
+| Loop | Scope | Legacy sources it adapts | Canonical fields consumed / adapter additions |
 |---|---|---|---|
-| **Loop 03** | Run / Task / Event adapters | A1,A3,A4,A5 (runs) · B1,B2 (tasks) · D1–D5 (events) · E6 (diagnosis) | `WorkRun.pausedReason`, `WorkRun.canceledReason`, `WorkRun.archivedAt`, `WorkRun.legacyStatusRaw` (+ lineage proposal §3.9) |
+| **Loop 03** | Run / Task / Event adapters | A1,A3,A4,A5 (runs) · B1,B2 (tasks) · D1–D5 (events) · E6 (diagnosis) | Consumes W1 `pausedReason`, `canceledReason`, `archivedAt`, `legacyStatusRaw`, and lineage fields; introduces no parallel contract. Owns evidence derivation, persistence adapter, and exactly-one migration audit event. |
 | **Loop 04** | Live.md / Graph mappings | H3 (resource lifecycle) · graph nodes/links → `ContextSnapshot`/`LiveProfile` | — |
 | **Loop 08** | Workspace lifecycle | workspace draft/active/suspended/archived semantics | `WorkspaceInstance.health` (§3.5) |
 | **Loop 09** | Provisioning | provisioning bring-up wiring | — |
 | **Loop 10** | Integration grants | F1,F2,F3 | `IntegrationGrant.lastErrorAt`, `invalid` re-auth flag |
 | **Loop 11** | Runtime / browser | E1,E2,E3 (extension host/loader/runtime) | `RuntimeInstance.disabled` flag |
-| **Loop 12** | Customer Marketing | A2 (runs) · B3 (steps) · C1–C4 (approvals) · E4 (media runtime) · H1,H2 (media jobs/artifacts) | reuses Loop 03 fields |
+| **Loop 12** | Customer Marketing | A2 (runs) · B3 (steps) · C1–C4 (approvals) · E4 (media runtime) · H1,H2 (media jobs/artifacts) | Reuses canonical W1 fields and Loop 03 adapter conventions |
 
 Groups **G1–G6** (sync/bridge/offline) are owned by the cloud-sync layer (ADR-PO-001),
 not by any Run/entity adapter loop.
@@ -396,15 +397,18 @@ not by any Run/entity adapter loop.
 
 - **Legacy statuses inventoried:** 31 enums across 6 concern groups (A–H).
 - **Mappings finalized (High/Med, actionable):** 41 value-level rows.
-- **Blocked decisions (need an owner call):** 4 — §3.5 (degraded/health), §3.6
-  (`archived` true outcome), §3.9 (lineage), and the `waiting_external` half of §3.4.
+- **Blocked decisions (need an owner call):** 1 — §3.5 (placement of degraded/health
+  on `WorkspaceInstance` versus `RuntimeInstance`).
 - **Evidence-decisive resolutions:** §3.1 (`blocked`→`paused`), §3.2
   (`refused`→`canceled`), §3.3 (keep `awaiting_approval`), §3.7 (`queued`≠`draft`),
   §3.8 (unknown→`paused`+raw).
+- **W0 rulings applied:** §3.4 external dependency blocks → `waiting_external`;
+  §3.6 archived derives terminal outcome from evidence with conservative canceled
+  fallback; §3.9 legacy rows remain roots while future retry/fork lineage is explicit.
 - **Key structural facts from source:** legacy has **no** cancel, no pause, no
-  fork/lineage, and no partial/degraded run outcome; `blocked` universally means
-  "stuck/recoverable"; the scheduler cleanly separates `failed` (work failed) from
-  `refused` (never started).
+  fork/lineage, and no partial/degraded run outcome; `blocked` is overloaded between
+  AgentRun stuck/guardrail pauses and external dependency waits; the scheduler
+  cleanly separates `failed` (work failed) from `refused` (never started).
 
 No adapter implemented. No production source changed. See ADR-PO-002 for the
 evidence-backed decisions folded into the unified work model.
