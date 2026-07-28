@@ -168,6 +168,8 @@ describe('Voice Studio local runtime contract', () => {
     );
     expect(dockerignore).toContain('__pycache__/');
     expect(dockerignore).toContain('*.py[cod]');
+    expect(publishWorkflow).toContain('Checkout source without submodules');
+    expect(publishWorkflow).not.toContain('actions/checkout@');
     expect(publishWorkflow).toContain('id: image_metadata');
     expect(publishWorkflow).toContain('backend_tree_sha256=');
     expect(publishWorkflow).toContain('SOURCE_REVISION=${{ github.sha }}');

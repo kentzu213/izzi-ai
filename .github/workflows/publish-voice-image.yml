@@ -23,9 +23,24 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
+      # The repository contains a deliberately URL-less private gitlink. The
+      # stock checkout action always probes submodules during auth cleanup, even
+      # with submodules:false, and therefore fails before the build starts.
+      - name: Checkout source without submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+            fetch --no-tags --no-recurse-submodules --depth=1 origin "$SOURCE_SHA"
+          unset auth GH_TOKEN
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 
       - name: Lowercase registry owner
         id: owner
