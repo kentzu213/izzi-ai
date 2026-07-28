@@ -15,8 +15,9 @@
   },
   "integrationBranch": "feature/personal-office-baseline-20260728",
   "integrationWorktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
-  "integrationHead": "84a57b38117ee7544691115be5aca7a141af1abf",
-  "integrationHeadNote": "Still at canonical at the time of writing. Updated to the Loop 00 commit SHA in the same post-commit pass that flips Loop 00 to ACCEPTED.",
+  "integrationHead": "bb231856343e59e492d6d25701e171844f459d34",
+  "integrationHeadShort": "bb23185",
+  "integrationHeadNote": "Loop 00 accepted. This is the commit every consumer loop must branch from or rebase onto. Canonical 84a57b3 remains its ancestor.",
 
   "validStatuses": ["PROVISIONAL", "READY_FOR_REVIEW", "ACCEPTED", "BLOCKED_GATE", "REJECTED"],
 
@@ -33,11 +34,11 @@
       "loop": "00",
       "title": "Canonical source-of-truth baseline",
       "window": "W0",
-      "status": "READY_FOR_REVIEW",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-baseline-20260728",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
       "baseCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
-      "commitSha": "recorded-post-commit",
+      "commitSha": "bb231856343e59e492d6d25701e171844f459d34",
       "handoff": "docs/handoffs/personal-office/loop-00.json",
       "dependsOn": [],
       "artifacts": [
@@ -48,7 +49,16 @@
       "verificationSummary": "Build pass (tsc + vite, exit 0). Tests 900/901 with one known pre-existing flake. Lint NOT runnable at canonical (BF-03/BF-04) so no lint claim is made. git diff --check clean. Ownership audit clean: zero tracked files modified.",
       "openGates": ["PQ-08 reconciliation must be ruled on before Loop 01 writes domain contracts"],
       "statusHistory": [
-        { "at": "2026-07-28T08:58:32Z", "status": "READY_FOR_REVIEW", "by": "W0", "note": "Artifacts verified, hashes recorded, entry gate passed on all five W0 conditions. Awaiting exact-path commit and post-commit verification." }
+        { "at": "2026-07-28T08:58:32Z", "status": "READY_FOR_REVIEW", "by": "W0", "note": "Artifacts verified, hashes recorded, entry gate passed on all five W0 conditions. Awaiting exact-path commit and post-commit verification." },
+        { "at": "2026-07-28T09:04:00Z", "status": "ACCEPTED", "by": "W0", "note": "Exact-path commit bb23185 created with 6 files, all inside Loop 00 ownership. Post-commit verification passed: git diff --name-status 84a57b3..HEAD shows exactly the 6 owned additions and zero feature source; canonical confirmed an ancestor; worktree clean; git diff --check exit 0; the three baseline artifact SHA-256 values re-verified unchanged after commit; integration build re-run at the new commit exit 0 with byte-identical asset hashes, proving no source drift." }
+      ],
+      "postCommitVerification": [
+        { "command": "git diff --name-status 84a57b3..HEAD", "status": "pass", "evidence": "6 additions, all owned: the 3 baseline artifacts plus integration-ledger.json, leases.json, loop-00.json. Zero paths under apps/, packages/, extensions/, and no package manifest, AGENTS.md, CLAUDE.md or .claude/ rewrite." },
+        { "command": "git merge-base --is-ancestor 84a57b3 HEAD", "status": "pass", "evidence": "exit 0" },
+        { "command": "git status --porcelain --untracked-files=all", "status": "pass", "evidence": "empty — nothing uncommitted" },
+        { "command": "git diff --check", "status": "pass", "evidence": "exit 0" },
+        { "command": "SHA-256 re-check of the 3 baseline artifacts after commit", "status": "pass", "evidence": "all three match the values recorded pre-commit" },
+        { "command": "pnpm --filter @openclaw/desktop build (at bb23185)", "status": "pass", "evidence": "exit 0, built in 12.31s, emitted index-Dm-6l7bQ.css and index-B7j3vZGB.js — identical content hashes to the canonical build, confirming the commit changed no source" }
       ]
     },
     {
@@ -62,6 +72,20 @@
       "commitSha": null,
       "handoff": null,
       "dependsOn": ["00"],
+      "dependencyStatus": "SATISFIED — Loop 00 is ACCEPTED at bb231856343e59e492d6d25701e171844f459d34",
+      "branchIsBehindIntegrationBy": 1,
+      "safeSyncInstruction": {
+        "note": "W1's branch sits at canonical 84a57b3 and is now exactly one commit behind integration. Its Loop 01 work is UNCOMMITTED, so W1 must commit its own owned paths BEFORE syncing, otherwise a rebase will refuse to run or put the work at risk.",
+        "steps": [
+          "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"",
+          "git status --porcelain   # confirm only Loop 01 owned paths are dirty",
+          "git add -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
+          "git commit -m \"<message>\" -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
+          "git rebase bb231856343e59e492d6d25701e171844f459d34"
+        ],
+        "conflictExpectation": "No file-level conflict is expected. Loop 00 adds docs/architecture/source-of-truth-baseline.{md,json}; Loop 01 adds docs/architecture/personal-office-os.md, legacy-personal-office-mapping.md and adr/ADR-PO-001..004. Verified: no filename overlap.",
+        "prohibited": ["merge to main", "push", "force-push", "reset --hard", "any write to the quarantined dirty worktree"]
+      },
       "observedByW0": {
         "at": "2026-07-28T08:58:32Z",
         "mode": "read-only inspection",
@@ -142,6 +166,31 @@
       "at": "2026-07-28T08:58:32Z",
       "by": "W0",
       "action": "Created the Control Tower: integration-ledger.json, leases.json and loop-00.json. Recorded Loop 00 as READY_FOR_REVIEW with artifact hashes. Recorded Loop 01 as PROVISIONAL from read-only inspection with a clean ownership audit. Opened gates PQ-08, PQ-01, BF-01 and QUARANTINE-DRIFT."
+    },
+    {
+      "at": "2026-07-28T09:04:00Z",
+      "by": "W0",
+      "action": "Committed 6 exact owned paths as bb231856343e59e492d6d25701e171844f459d34. Post-commit verification passed on all six checks including a re-run integration build with byte-identical assets. Flipped Loop 00 READY_FOR_REVIEW to ACCEPTED and advanced integrationHead to bb23185. Recorded W1's safe sync instruction. No worktree was created for Loop 02 or Loop 03, per the rule that they wait on Loop 01 acceptance."
+    }
+  ],
+
+  "nextActionsForW0": [
+    {
+      "priority": 1,
+      "action": "Preserve the PQ-08 draft out of quarantine before anything else. Roughly 190 KB of implementation plus five test files exist in no commit anywhere; a git clean destroys them. This is the only irreversible item in the programme right now.",
+      "irreversibleIfSkipped": true
+    },
+    {
+      "priority": 2,
+      "action": "Rule on PQ-08: adopt, supersede, or refactor shared/work-model.ts relative to Loop 01's shared/personal-office/, and decide which loop owns database.ts, index.ts, preload.ts and App.tsx. Loop 01 cannot leave PROVISIONAL until this is settled."
+    },
+    {
+      "priority": 3,
+      "action": "Stop or quarantine the concurrent session still writing to the dirty worktree (QUARANTINE-DRIFT), so consumers have a stable reference."
+    },
+    {
+      "priority": 4,
+      "action": "Grant the package-manifest/lockfile lease to exactly one loop to close PQ-01, then re-measure the lint warning ceiling on canonical rather than adopting the old 359 figure."
     }
   ]
 }

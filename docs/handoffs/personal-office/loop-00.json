@@ -1,7 +1,9 @@
 {
   "schemaVersion": 1,
   "loop": "00",
-  "status": "READY_FOR_REVIEW",
+  "status": "ACCEPTED",
+  "statusSetBy": "W0 after post-commit integration verification",
+  "statusSetAt": "2026-07-28T09:04:00Z",
   "title": "Canonical source-of-truth baseline for the Personal Office OS programme",
   "producer": {
     "window": "W0",
@@ -45,9 +47,9 @@
     { "path": "docs/architecture/source-of-truth-baseline.md", "change": "added", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3", "bytes": 20824 },
     { "path": "docs/architecture/source-of-truth-baseline.json", "change": "added", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a", "bytes": 33668 },
     { "path": "worklogs/personal-office-loop-00.md", "change": "added", "sha256": "5c32d22c6c50efdbcd7ffdcc168be18d5c2c750c38e232522a8b8308c6dcfa12", "bytes": 11175 },
-    { "path": "docs/handoffs/personal-office/integration-ledger.json", "change": "added", "sha256": "recorded-post-commit", "bytes": 0 },
-    { "path": "docs/handoffs/personal-office/leases.json", "change": "added", "sha256": "recorded-post-commit", "bytes": 0 },
-    { "path": "docs/handoffs/personal-office/loop-00.json", "change": "added", "sha256": "self", "bytes": 0 }
+    { "path": "docs/handoffs/personal-office/integration-ledger.json", "change": "added", "sha256": "a610ffd1269347639cd25ccbfaab89965f5722c90a5e4202708692fccc5936d9", "bytes": 12327, "hashNote": "measured at commit bb23185; the file was amended in the acceptance pass that followed, so re-hash before relying on it" },
+    { "path": "docs/handoffs/personal-office/leases.json", "change": "added", "sha256": "a3a4228af20788f90eb5c94b733b61bb971a92ce1cf46ac7cb7bfa07aaad3a2c", "bytes": 6693 },
+    { "path": "docs/handoffs/personal-office/loop-00.json", "change": "added", "sha256": "746279b8141c208967feb6a5ac7c57a0426384a02cbc9e7911fe5eb8185e19fd", "bytes": 12552, "hashNote": "self-referential; this is the hash at commit bb23185, before the acceptance amendment" }
   ],
   "contractChanges": {
     "schemaVersion": 1,
@@ -175,5 +177,9 @@
       ]
     }
   ],
-  "commitSha": "recorded-post-commit"
+  "commitSha": "bb231856343e59e492d6d25701e171844f459d34",
+  "commitShaShort": "bb23185",
+  "integrationHead": "bb231856343e59e492d6d25701e171844f459d34",
+  "w1SyncCommand": "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"  →  commit Loop 01 owned paths first  →  git rebase bb231856343e59e492d6d25701e171844f459d34",
+  "leaseStatusAtHandoff": "No hot-file lease is held by any window. All hot files are unclaimed except the GitNexus index and its managed doc blocks, which are permanently reserved to W0."
 }
