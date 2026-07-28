@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CustomerVideoStudioService } from './customer-video-studio-service';
+import {
+  CustomerVideoStudioService,
+  resolveConfiguredBinaryPath,
+} from './customer-video-studio-service';
 
 const temporaryRoots: string[] = [];
 
@@ -65,6 +68,27 @@ function stubF5Config(license: string, modelId: string): void {
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(temporaryRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+});
+
+describe('resolveConfiguredBinaryPath', () => {
+  it('accepts extensionless executable files and resolves binaries inside dotted directories', async () => {
+    const root = await makeRoot();
+    const extensionlessFile = path.join(root, 'node-runtime');
+    await fs.writeFile(extensionlessFile, '');
+
+    expect(await resolveConfiguredBinaryPath('node', extensionlessFile, 'darwin')).toBe(
+      path.resolve(extensionlessFile),
+    );
+
+    const dottedDirectory = path.join(root, 'runtime.dir');
+    const windowsBinary = path.join(dottedDirectory, 'node.exe');
+    await fs.mkdir(dottedDirectory);
+    await fs.writeFile(windowsBinary, '');
+
+    expect(await resolveConfiguredBinaryPath('node', dottedDirectory, 'win32')).toBe(
+      path.resolve(windowsBinary),
+    );
+  });
 });
 
 describe('CustomerVideoStudioService F5-TTS capability boundary', () => {

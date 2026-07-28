@@ -175,6 +175,28 @@ async function fileExists(candidate: string): Promise<boolean> {
   }
 }
 
+export async function resolveConfiguredBinaryPath(
+  name: string,
+  configured: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | undefined> {
+  const resolved = path.resolve(configured);
+  try {
+    const stat = await fs.stat(resolved);
+    if (stat.isFile()) return resolved;
+    if (!stat.isDirectory()) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  const candidate = path.join(resolved, platform === 'win32' ? name + '.exe' : name);
+  try {
+    return (await fs.stat(candidate)).isFile() ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readJson(candidate: string, maxBytes = 1024 * 1024): Promise<{ raw: string; data: Record<string, unknown> }> {
   const stat = await fs.stat(candidate);
   if (!stat.isFile() || stat.size > maxBytes) throw new Error('Manifest media không hợp lệ hoặc quá lớn.');
@@ -662,9 +684,8 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
 
   private async findBinary(name: string, configured?: string): Promise<string | undefined> {
     if (configured) {
-      const resolved = path.resolve(configured);
-      const candidate = path.extname(resolved) ? resolved : path.join(resolved, process.platform === 'win32' ? name + '.exe' : name);
-      if (await fileExists(candidate)) return candidate;
+      const candidate = await resolveConfiguredBinaryPath(name, configured);
+      if (candidate) return candidate;
     }
     try {
       const command = process.platform === 'win32' ? 'where.exe' : 'which';
