@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T14:27:56Z",
+  "updatedAt": "2026-07-29T14:40:00Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -508,16 +508,16 @@
       "title": "Marketing blueprint and final shell integration",
       "window": "W2",
       "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "branch": "feature/personal-office-loop-12-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop12",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/loop-12.json",
       "dependsOn": [
         "02",
         "11"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 02 and 11 are ACCEPTED. Loop 12 may start only after W0 issues its exact broad Customer Marketing and shell lease."
+      "dependencyStatus": "SATISFIED — Loops 02-11 are ACCEPTED. W0 issued dispatch-loop-12.md and LEASE-L12-MARKETING-REFERENCE-20260729; Codex is the only authorised producer."
     }
   ],
   "programmeGates": [
