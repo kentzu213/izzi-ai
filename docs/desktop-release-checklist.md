@@ -18,7 +18,13 @@
    - `STARIZZI_MOCK_INTEGRATIONS=true`
    - `STARIZZI_MOCK_UPDATER=true`
 4. Validate login, onboarding, chat stream, task creation, memory persistence, updater banner, and restart behavior.
-5. Create tag `vX.Y.Z-rc.N` and confirm draft artifacts upload from GitHub Actions.
+5. Create tag `vX.Y.Z-rc.N`.
+6. Manually dispatch `Release Desktop`, select `draft` or `prerelease`, and
+   confirm artifact upload. The workflow never runs from a tag push alone.
+7. Keep the `desktop-release` GitHub environment protected with required
+   reviewers and self-review disabled.
+8. Confirm the workflow checked out the requested tag and uploaded only a
+   draft/prerelease.
 
 ## Stable release gate
 
@@ -28,6 +34,8 @@
 - Tasks, Memory, Status, Overview, Marketplace, Extensions, and Settings all render.
 - Integration status refreshes after returning from browser flows.
 - Auto-update can progress from `available` to `downloaded` and present restart CTA.
+- Promoting a validated draft/prerelease to a stable GitHub release requires a
+  separate explicit admin approval; this workflow cannot create a stable release.
 
 ## Notes
 
@@ -35,3 +43,5 @@
 - The macOS release job fails closed when any signing/notarization secret is missing.
 - `electron-builder` uses hardened runtime plus built-in notarization; a real macOS CI artifact must still pass `codesign`, `stapler validate`, and `spctl --assess` before a stable release is approved.
 - Local Windows packaging must use `--publish never`. Creating a tag or publishing a release requires a separate explicit approval.
+- Pushing a `v*` tag does not trigger publishing. Release jobs require a manual
+  dispatch, an explicit confirmation input, and the `desktop-release` environment.

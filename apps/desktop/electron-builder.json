@@ -117,7 +117,7 @@
     "provider": "github",
     "owner": "kentzu213",
     "repo": "izzi-ai",
-    "releaseType": "release",
+    "releaseType": "draft",
     "vPrefixedTagName": true
   },
 
