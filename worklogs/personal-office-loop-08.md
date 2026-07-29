@@ -43,6 +43,13 @@ touched.
 - Lint: not runnable without resolving `@eslint/js`; no install or junction was
   created.
 
+## Provenance policy
+
+All 12 output SHA-256 hashes and byte counts in the producer handoff refer to
+the canonical Git blob bytes at implementation commit
+`e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7`. Windows CRLF working-tree bytes
+are not provenance authority.
+
 ## Commits
 
 - Initial implementation: `55c396b0e976d5f184092a19d726bc2f7eb11dea`

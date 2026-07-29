@@ -30,9 +30,9 @@
   "outputs": [
     {"path":"apps/desktop/src/main/workspace-blueprint/workspace-blueprint-planner.test.ts","sha256":"f79f3baaab174b9ff51f87dd1ea819d842b08667e5e55d3989cdfd5979e97d0c","bytes":1617},
     {"path":"apps/desktop/src/main/workspace-blueprint/workspace-blueprint-planner.ts","sha256":"ab3856c523e6079cc2a89f74dc2dd291c7f86dfac4df4d559b7c55de8a5a1da3","bytes":704},
-    {"path":"apps/desktop/src/shared/personal-office/entities.ts","sha256":"1fa928063914bb0d434a7495b239cbf8208a306d7a13396ca0ee3197609e9c4d","bytes":14273},
-    {"path":"apps/desktop/src/shared/personal-office/index.ts","sha256":"cfbcbac4eaeb3cdcfdd7302a086de9a93d280b9fec86cfb430101b94b8f0538e","bytes":3458},
-    {"path":"apps/desktop/src/shared/personal-office/serialization.test.ts","sha256":"47ebffe6ad5c311de247aa421459dd72510e3477ee3c1d560d31f4b91c704ad2","bytes":5870},
+    {"path":"apps/desktop/src/shared/personal-office/entities.ts","sha256":"fabdb9a36e6b743dc8bf016f894a6cc89c36e849dbc7952313c02519ca88e0ef","bytes":13967},
+    {"path":"apps/desktop/src/shared/personal-office/index.ts","sha256":"4b3de9c018ffa7f12488b045edd1f2c46eb1cdc9681c2c00783873f842b2b8ca","bytes":3334},
+    {"path":"apps/desktop/src/shared/personal-office/serialization.test.ts","sha256":"1e655dcdfbe0469de8d7e06bfa1823d4576af609518315b3cfa2e813842a6843","bytes":5731},
     {"path":"apps/desktop/src/shared/workspace-blueprint/index.ts","sha256":"dcfe712876ca464e020d9932da87d8c20adb95fecb8df1eb075a1db82454bbb1","bytes":931},
     {"path":"apps/desktop/src/shared/workspace-blueprint/provisioning-plan.test.ts","sha256":"4fd093f3b95031f02c3dfbeb829dd74bb81af9242d91ef8d4d7cfa5eb3c8cd9f","bytes":5666},
     {"path":"apps/desktop/src/shared/workspace-blueprint/provisioning-plan.ts","sha256":"47d92a34f692b2a2ee7d156eef2304f39b3bfb9073038e6e1e2b8c8c6547571c","bytes":9718},
@@ -41,6 +41,12 @@
     {"path":"apps/desktop/src/shared/workspace-blueprint/workspace-blueprint.test.ts","sha256":"a20f850e20e52977afdeb2b37fc8948fac54ab6c541508eabb98c13d6effc099","bytes":3071},
     {"path":"docs/product/personal-office-workspace-blueprints.md","sha256":"6b4ebe8935cb021f66b5b74c1dde149529b6243b4889292651edb0c2661bf1ef","bytes":3827}
   ],
+  "outputHashPolicy": {
+    "authority": "canonical Git blob bytes from implementationCommit",
+    "algorithm": "SHA-256",
+    "recordCount": 12,
+    "workingTreePolicy": "Windows CRLF working-tree bytes are not provenance authority."
+  },
   "twoPhaseCommit": {
     "phase1": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
     "phase2Scope": [
