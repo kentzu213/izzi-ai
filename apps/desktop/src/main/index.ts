@@ -453,6 +453,7 @@ function setupIPC() {
   const customerVideoStudio = new CustomerVideoStudioService({
     rootPath: path.join(app.getPath('userData'), 'customer-marketing-media'),
     appRoot: app.getAppPath(),
+    runtimeScratchParent: app.getPath('temp'),
     getF5TtsStatus: inspectConfiguredF5Tts,
     getVoiceStudioStatus: async () => {
       const voiceStudio = (extensionLoader?.getAllExtensions() || [])
