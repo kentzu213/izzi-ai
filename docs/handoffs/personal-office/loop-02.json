@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "02",
+  "status": "READY_FOR_REVIEW",
+  "producer": {
+    "window": "W2",
+    "branch": "feature/personal-office-loop-02-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02"
+  },
+  "baseCommit": "6063bc8ac8115382be14db04cc17d32a2f7471f6",
+  "lease": "LEASE-L02-SHELL-MOUNT-20260729",
+  "implementationCommits": [
+    "663de47d6d61bb245939f7e341bba13c93b7fac0",
+    "5512884"
+  ],
+  "artifactCommit": "04a2163dac88710da83bd6364d418550b7bd3c96",
+  "summary": "Personal Office reference shell, genuinely mounted from App.tsx behind izzi.shell.personalOffice, with the untouched classic layout retained as the rollback path.",
+  "ownedPaths": [
+    "apps/desktop/src/renderer/shell/**",
+    "apps/desktop/src/renderer/store/personalOffice.ts",
+    "apps/desktop/src/renderer/styles/personal-office.css",
+    "apps/desktop/src/renderer/App.tsx",
+    "docs/product/personal-office-ia.md",
+    "docs/handoffs/personal-office/loop-02.json",
+    "worklogs/personal-office-loop-02.md"
+  ],
+  "prohibitedPathsVerifiedClean": [
+    "apps/desktop/src/main/work/**",
+    "apps/desktop/src/main/db/**",
+    "apps/desktop/src/main/index.ts",
+    "apps/desktop/src/main/preload.ts",
+    "apps/desktop/src/shared/personal-office/**",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "apps/desktop/src/renderer/components/Sidebar.tsx"
+  ],
+  "deliverables": {
+    "codeAndStylesPathCount": 22,
+    "informationArchitecture": "docs/product/personal-office-ia.md",
+    "topLevelRoutes": [
+      "today",
+      "workspaces",
+      "mygraph",
+      "market",
+      "settings"
+    ],
+    "workspaceSurfaces": [
+      "brief",
+      "work",
+      "deliverables",
+      "approvals"
+    ],
+    "mount": {
+      "flag": "izzi.shell.personalOffice",
+      "entry": "apps/desktop/src/renderer/App.tsx",
+      "rollback": "The classic App.tsx layout and Sidebar.tsx remain intact; disabling the flag flips React state back to the classic layout without deleting legacy surfaces."
+    }
+  },
+  "verification": [
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "command": "pnpm --filter @openclaw/desktop build",
+      "evidence": "1167 modules transformed; tsc main profile and Vite build exited 0."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "command": "pnpm lint:ci",
+      "evidence": "358 warnings, 0 errors; inherited canonical ceiling was not raised."
+    },
+    {
+      "check": "desktop test suite",
+      "result": "PASS",
+      "command": "pnpm --filter @openclaw/desktop test",
+      "evidence": "74 files, 946/946 tests passed."
+    },
+    {
+      "check": "diff and ownership",
+      "result": "PASS",
+      "evidence": "git diff --check exited 0; implementation and IA changes are confined to the active Loop 02 lease."
+    },
+    {
+      "check": "rollback smoke",
+      "result": "PASS",
+      "evidence": "Classic desktop and mobile layouts were rendered from the unchanged legacy path after the flag was disabled."
+    },
+    {
+      "check": "Personal Office visual matrix",
+      "result": "PARTIAL",
+      "evidence": "The v2 shell was exercised during implementation, but no durable, hashed desktop/mobile screenshot bundle was committed. W0 must repeat a v2 desktop and mobile screenshot smoke before ACCEPTED."
+    }
+  ],
+  "securityGate": {
+    "decision": "PASS_WITH_REVIEW_CONDITION",
+    "controls": [
+      "No raw secret or SecretRef value is rendered by the shell.",
+      "Artifact local references are reduced to display-safe labels.",
+      "Messages are redacted before rendering.",
+      "No main-process, preload, database, contract, manifest, lockfile, or quarantine path changed.",
+      "Demo data is explicitly badged and off by default."
+    ],
+    "reviewCondition": "W0 must independently smoke the v2 shell at desktop and mobile sizes before acceptance."
+  },
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/renderer/App.tsx",
+      "sha256": "8f07e76b5def4c1efde73a0cae8bab6dfa49a014ce23ca2c9fbb03240617eeb8"
+    },
+    {
+      "path": "apps/desktop/src/renderer/styles/personal-office.css",
+      "sha256": "6fadd0c8ad319073bede164d513c1de1ab768fec27f7fbb916f82f047546b3e1"
+    },
+    {
+      "path": "docs/product/personal-office-ia.md",
+      "sha256": "88e75f7ef85eda22c2727862b06301016dcc21238c9b9881490f239f6acf8136"
+    }
+  ],
+  "residualRisks": [
+    "Loop 03 preload API is not integrated yet; Loop 02 deliberately uses a WorkDataSource seam and in-memory adapter.",
+    "CR-UX-02, CR-UX-03, CR-UX-04, CR-UX-05 and CR-UX-06 remain upstream contract or execution-plane requests.",
+    "W0 must capture and inspect v2 desktop/mobile screenshots before acceptance."
+  ],
+  "skillAudit": {
+    "/search-first": "USED",
+    "/context-gatherer": "USED",
+    "/quick-spec": "USED",
+    "/frontend-patterns": "USED",
+    "/security-review": "USED",
+    "/verification-loop": "USED",
+    "/understand-codebase": "USED",
+    "/backend-patterns": "READ_ONLY_DEPENDENCY_SEAM",
+    "/deployment-patterns": "N/A",
+    "Design": "USED",
+    "/gpt-taste": "USED",
+    "/design-taste-frontend": "USED",
+    "/stitch-design-taste": "USED"
+  },
+  "agentAudit": {
+    "Socrates": "Used for independent acceptance challenge and rollback/mount verification.",
+    "orchestrator": "Used for lease, dependency and handoff sequencing.",
+    "builder": "Used for bounded implementation and verification under the Loop 02 lease."
+  },
+  "blockers": [],
+  "nextAction": "W0 independently reviews commit range 6063bc8..04a2163, repeats v2 desktop/mobile smoke, integrates by exact commits if clean, then creates acceptance/loop-02.json and updates the ledger/lease registry."
+}
