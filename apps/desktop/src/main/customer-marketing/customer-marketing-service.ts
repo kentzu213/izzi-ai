@@ -123,7 +123,6 @@ export interface CustomerIdentity {
 export interface CustomerRuntimeExtension {
   id: string;
   name: string;
-  version?: string;
   manifest?: {
     displayName?: string;
     description?: string;
@@ -854,18 +853,13 @@ export class CustomerMarketingService {
 
     let record = this.readRecord(identity);
     const workspaceState = await this.resolveWorkspaceState(record);
-    if (
-      workspaceState.status === 'unavailable'
-      || (workspaceState.status === 'synced' && !workspaceState.workspace)
-    ) {
+    if (workspaceState.status !== 'synced' || !workspaceState.workspace) {
       return { ok: false, reason: 'workspace_unavailable' };
     }
-    if (workspaceState.workspace) {
-      record = this.applyRemoteWorkspace(record, workspaceState.workspace);
-    }
+    record = this.applyRemoteWorkspace(record, workspaceState.workspace);
 
     const extension = this.getRuntimeExtensions().find((candidate) => (
-      candidate.name === match[1] && candidate.version === match[2]
+      candidate.name === match[1] && candidate.manifest?.version === match[2]
     ));
     if (!extension) return { ok: false, reason: 'package_not_installed' };
     if (extension.manifest?.customerMarketing !== true) {
@@ -1912,6 +1906,12 @@ export class CustomerMarketingService {
 
   async saveOnboarding(input: CustomerOnboardingInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
+    if (this.hasMalformedRecordSource(identity)) {
+      return {
+        ok: false,
+        error: 'Không thể lưu vì dữ liệu Customer Marketing cũ đang bị lỗi. Dữ liệu gốc đã được giữ nguyên để khôi phục.',
+      };
+    }
     const normalized = this.normalizeOnboarding(input);
     if (!normalized.business.name || !normalized.business.industry || !normalized.business.offer) {
       return { ok: false, error: 'Cần nhập tên doanh nghiệp, lĩnh vực và sản phẩm/dịch vụ.' };
@@ -2915,7 +2915,23 @@ export class CustomerMarketingService {
     }
   }
 
+  private hasMalformedRecordSource(identity: CustomerIdentity): boolean {
+    const raw = this.db.getSetting(this.recordKey(identity));
+    if (!raw) return false;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return typeof parsed !== 'object' || parsed === null || Array.isArray(parsed);
+    } catch {
+      return true;
+    }
+  }
+
   private writeRecord(identity: CustomerIdentity, record: CustomerTenantRecord): void {
+    if (this.hasMalformedRecordSource(identity)) {
+      throw new Error(
+        'Không thể ghi đè dữ liệu Customer Marketing bị lỗi; dữ liệu gốc phải được giữ nguyên để khôi phục.',
+      );
+    }
     this.db.setSetting(this.recordKey(identity), JSON.stringify(record));
   }
 

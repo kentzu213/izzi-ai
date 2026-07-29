@@ -16,6 +16,34 @@ export const MARKETING_REFERENCE_SETUP_GROUPS = Object.freeze([
   { id: 'automation', label: 'Automation', description: 'Mode, approvals and runtime readiness' },
 ] as const);
 
+export interface DialogFocusable {
+  focus(): void;
+}
+
+export function trapDialogTabFocus(
+  event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'preventDefault'>,
+  focusable: readonly DialogFocusable[],
+  activeElement: unknown,
+): boolean {
+  if (event.key !== 'Tab') return false;
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return true;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const activeIndex = focusable.indexOf(activeElement as DialogFocusable);
+  const shouldWrap = activeIndex === -1
+    || (event.shiftKey && activeElement === first)
+    || (!event.shiftKey && activeElement === last);
+  if (!shouldWrap) return false;
+
+  event.preventDefault();
+  (event.shiftKey ? last : first).focus();
+  return true;
+}
+
 export function selectInstalledMarketingWorkspacePackage(
   catalog: MarketplaceCatalog | null,
   selectedPackageKey: string | null,

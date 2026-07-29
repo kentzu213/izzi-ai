@@ -60,6 +60,7 @@ import {
 import {
   MARKETING_REFERENCE_SETUP_GROUPS,
   MARKETING_REFERENCE_SURFACES,
+  trapDialogTabFocus,
 } from '../marketing-workspace/reference-contract';
 import '../styles/customer-marketing-room.css';
 
@@ -2074,7 +2075,13 @@ function ReferenceSetupDrawer({
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();
+        return;
       }
+      if (event.key !== 'Tab' || !panelRef.current) return;
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getClientRects().length > 0);
+      trapDialogTabFocus(event, focusable, document.activeElement);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
