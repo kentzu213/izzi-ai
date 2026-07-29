@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T17:45:00Z",
+  "updatedAt": "2026-07-29T17:55:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -940,6 +940,15 @@
     "reconciliationAcceptance": "docs/handoffs/personal-office/acceptance/release-gate-r-reconciliation.json",
     "reconciliationCandidate": "0246f19",
     "verificationSummary": "Full desktop 1359/1359; focused beta.9/Customer Marketing/R4 233/233; main TypeScript PASS; renderer production build PASS with existing size advisory; lint 0 errors/350 warnings below ceiling 358; release contract 5/5; independent R4 security PASS; secret, marker, diff and quarantine gates PASS.",
+    "postIntegrationVerification": {
+      "record": "docs/handoffs/personal-office/acceptance/release-gate-r-reconciliation-post-integration.json",
+      "verifiedHead": "eb7bd07c93da20a28be8138206fe2fff723b88ce",
+      "integrationMethod": "FAST_FORWARD_ONLY",
+      "desktopTests": "1359/1359 PASS",
+      "lint": "0 errors / 350 warnings / ceiling 358",
+      "desktopBuild": "PASS with existing large-chunk advisory",
+      "gitNexusImpact": "CRITICAL — 186 changed symbols, 157 affected symbols, 49 indexed files; explicitly reviewed and covered by focused plus full canonical gates."
+    },
     "remainingPlatformGates": [
       "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled",
       "Windows install/launch/upgrade/uninstall and data-retention checks",

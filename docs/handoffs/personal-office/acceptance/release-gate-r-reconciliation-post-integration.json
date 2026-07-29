@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "post-integration-verification",
+  "gate": "R2-R4",
+  "decision": "PASS",
+  "verifiedBy": "W0 Control Tower / Codex",
+  "verifiedAt": "2026-07-29T17:55:00Z",
+  "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+  "verifiedHead": "eb7bd07c93da20a28be8138206fe2fff723b88ce",
+  "integrationMethod": "Fast-forward only from fa956cf after ancestry and clean-worktree checks.",
+  "checks": [
+    {
+      "check": "desktop tests",
+      "result": "PASS",
+      "evidence": "122/122 files, 1359/1359 tests."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors, 350 warnings, maximum 358."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS_WITH_SIZE_WARNING",
+      "evidence": "tsc main profile passed; Vite transformed 1176 modules and emitted production assets. Existing large-chunk advisory remains."
+    },
+    {
+      "check": "worktree integrity",
+      "result": "PASS",
+      "evidence": "Canonical worktree clean after fast-forward and verification; git diff --check passed."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 status entries."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "REVIEWED_CRITICAL",
+      "evidence": "Comparison with fa956cf reported 186 changed symbols, 157 affected symbols and 49 indexed files. Customer Marketing, setup IPC, updater, renderer and work/runtime trust flows were reviewed through focused security/correctness checks plus the full canonical test/build/lint gates."
+    }
+  ],
+  "stableReleaseAccepted": false,
+  "remainingPlatformGates": [
+    "Protected GitHub desktop-release environment.",
+    "Windows install, upgrade, uninstall and data-retention validation.",
+    "Signed/notarized macOS x64 and arm64 artifacts plus codesign, stapler and Gatekeeper checks.",
+    "Approved RC platform run and separate admin promotion."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "push",
+    "tag creation",
+    "publish",
+    "stable promotion",
+    "deployment",
+    "installer execution",
+    "secret retrieval",
+    "GitHub environment mutation"
+  ]
+}
