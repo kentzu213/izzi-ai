@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T17:55:00Z",
+  "updatedAt": "2026-07-29T18:55:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -966,5 +966,64 @@
       "secret retrieval"
     ],
     "decidedAt": "2026-07-29T17:45:00Z"
+  },
+  "releaseGateR5": {
+    "decision": "ACCEPTED_IN_LOCAL_RECONCILIATION",
+    "stableReleaseAccepted": false,
+    "sourceCommit": "bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8",
+    "sourceVersionLineage": "v1.14.0-beta.10",
+    "producerImplementationCommit": "f8df559f002d9ff4d8535854bc38fd781807e99e",
+    "producerHandoffCommit": "8c827584a499da7f488cbcb3dc1c8becbc81a733",
+    "canonicalImplementationCommit": "be252ca3f82246252a34e3ad06ec948259088949",
+    "canonicalHandoffCommit": "5d7b3cb407ab3e828c9516145785af0b32e7edee",
+    "handoff": "docs/handoffs/personal-office/release-gate-r5-beta10.json",
+    "acceptanceRecord": "docs/handoffs/personal-office/acceptance/release-gate-r5-beta10.json",
+    "lease": "LEASE-R5-BETA10-RECONCILIATION-20260729",
+    "integrationMethod": "Exact-path replay of six beta.10 blobs plus one reviewed main/index.ts constructor option; no blind merge or cherry-pick.",
+    "verificationSummary": "Focused HyperFrames 32/32; full desktop 1359/1359; main TypeScript PASS; canonical production build PASS with existing size advisory; lint 0 errors/350 warnings below ceiling 358; six source blobs and exact index hunk verified; ownership, conflict, secret and scratch gates PASS. External source-worktree drift has zero R5 path overlap; local acceptance remains anchored to immutable bc0d5d6 objects and committed canonical provenance.",
+    "quarantineIsolation": {
+      "head": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+      "entries": 119,
+      "statusDigest": "b4850d68cb264c51ba7ae519c0faf4131b5316280b912dc3ed9e62dc76d27be0",
+      "method": "SHA-256 of standard git status --porcelain=v1 bytes with the single trailing LF removed."
+    },
+    "sourceIsolation": {
+      "pinnedSourceCommit": "bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8",
+      "initialStatusEntries": 7,
+      "initialStatusDigest": "9a8d3964a9e12fb4b7b55944e15e65636986334cff2b09667451e704268500f0",
+      "externalDriftDetected": true,
+      "mutableWorktreeExcludedAfterDrift": true,
+      "lastObservedHead": "28722d75cb6cab7896c7148cd64472722274994a",
+      "finalMutableStatusClaim": null,
+      "successorDraftVersion": "1.14.0-beta.11",
+      "workingOwnedPathOverlapAtAcceptance": 4,
+      "overlappingPaths": [
+        "apps/desktop/CHANGELOG.md",
+        "apps/desktop/package.json",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts"
+      ],
+      "successorDraftDisposition": "EXCLUDED_FROM_R5",
+      "driftResolution": "The source worktree continued changing externally during governance and contains an uncommitted beta.11 successor draft, so no final digest is claimed and no mutable worktree byte is an R5 input. R5 provenance remains anchored to immutable tagged bc0d5d6 Git objects. The successor requires a separate pinned reconciliation gate after commit and review."
+    },
+    "remainingPlatformGates": [
+      "protected GitHub desktop-release environment",
+      "Windows install/launch/upgrade/uninstall and data-retention validation",
+      "real signed/notarized macOS x64 and arm64 artifacts and platform checks",
+      "approved RC platform run",
+      "separate explicit admin promotion"
+    ],
+    "prohibitedUntilSeparateApproval": [
+      "push",
+      "tag creation",
+      "publish",
+      "stable promotion",
+      "deployment",
+      "installer execution",
+      "secret retrieval",
+      "GitHub environment mutation",
+      "browser automation enablement"
+    ],
+    "decidedAt": "2026-07-29T18:55:00Z"
   }
 }

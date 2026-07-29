@@ -3,44 +3,23 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T18:20:00Z",
+  "updatedAt": "2026-07-29T18:55:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "d23c33e",
-  "activeLeases": [
+  "integrationCommit": "5d7b3cb407ab3e828c9516145785af0b32e7edee",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No writer lease is active. Loops 00-12 and the local R5 beta.10 reconciliation are accepted. Stable release, push, tag, publish, deployment, installer execution, package installation, GitHub environment mutation, browser automation enablement and secret retrieval remain unauthorised. Current quarantine/source read-only drift is recorded in the R5 acceptance record and does not reopen writer ownership.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R5-BETA10-RECONCILIATION-20260729",
       "gate": "R5",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T18:10:00Z",
-      "baseRef": "feature/personal-office-baseline-20260728",
-      "baseCommit": "177b6a902b340feff4d67678f90c76dfdc512a54",
-      "sourceRef": "origin/main",
-      "sourceCommit": "bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8",
-      "branch": "feature/personal-office-beta10-reconcile-20260729",
-      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-beta10-reconcile",
-      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r5-beta10-reconciliation.md",
-      "ownedPaths": [
-        "apps/desktop/CHANGELOG.md",
-        "apps/desktop/package.json",
-        "apps/desktop/scripts/run-cmr210-packaged-smoke.ps1",
-        "apps/desktop/scripts/verify-managed-hyperframes-preview.cjs",
-        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
-        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts",
-        "apps/desktop/src/main/index.ts",
-        "docs/handoffs/personal-office/release-gate-r5-beta10.json",
-        "worklogs/personal-office-release-gate-r5-beta10.md"
-      ],
-      "constraints": [
-        "Restore the six non-conflicting tracked source blobs from bc0d5d6. Preserve canonical main/index.ts and port only runtimeScratchParent: app.getPath('temp'); whole-file replacement is prohibited. Untracked packaging directories are not inputs.",
-        "Preserve all accepted Personal Office and R2-R4 reconciliation behavior.",
-        "No package installation, lockfile, DB/schema, browser automation enablement, push, tag, publish, deploy, installer execution, secret retrieval, GitHub environment mutation or quarantine/source-worktree mutation."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "R5 is the only active writer lease and reconciles the beta.10 HyperFrames short-path patch onto the accepted Personal Office plus R2-R4 canonical line. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution, package installation, GitHub environment mutation and secret retrieval remain unauthorised.",
-  "leaseHistory": [
+      "revokedAt": "2026-07-29T18:55:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "reason": "The beta.10 HyperFrames short-path patch was reconciled through exact-path replay, passed canonical focused/full tests, TypeScript, production build, lint, ownership, provenance, secret and scratch gates, and was accepted at acceptance/release-gate-r5-beta10.json. External read-only drift in the quarantine/source worktrees was recorded there without reopening the lease."
+    },
     {
       "leaseId": "LEASE-R4-IPC-SENDER-TRUST-20260729",
       "gate": "R4",
