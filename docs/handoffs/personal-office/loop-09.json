@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "09",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This producer handoff grants no lease and authorizes no catalog bridge, download, install, permission grant, runtime activation or provisioning.",
+  "title": "Trustworthy Marketplace catalog and deterministic install planning",
+  "producer": {
+    "window": "W4",
+    "role": "Marketplace catalog, trust review and plan-only install intent",
+    "branch": "feature/personal-office-loop-09-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop09",
+    "lease": "LEASE-L09-MARKETPLACE-UI-20260729"
+  },
+  "canonicalBase": "68f823853dec4919f6f9ccf0d01413c51db44d32",
+  "dispatchCommit": "68f823853dec4919f6f9ccf0d01413c51db44d32",
+  "leaseAmendmentCommit": "aa5884811dee055510967162854d1fdc8a84041d",
+  "leaseAmendmentNote": "W0 added apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts before producer commit. The control-plane commit remains outside this producer branch and is cited from the canonical integration ref, not copied.",
+  "leaseAmendmentEvidence": [
+    {
+      "ref": "aa5884811dee055510967162854d1fdc8a84041d:docs/handoffs/personal-office/leases.json",
+      "lease": "LEASE-L09-MARKETPLACE-UI-20260729",
+      "path": "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
+      "evidence": "exclusiveWritePaths contains the exact test path"
+    },
+    {
+      "ref": "aa5884811dee055510967162854d1fdc8a84041d:docs/handoffs/personal-office/dispatch-loop-09.md",
+      "path": "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
+      "evidence": "Loop 09 ownership list contains the exact test path"
+    }
+  ],
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "8634172d5c9bf0ba27959ecb642a151c6b5bd78c",
+      "phase": "implementation",
+      "subject": "feat(personal-office): add marketplace install planning",
+      "scope": "strict catalog and plan contracts, audited Loop 07 projection, explicit demo/offline/installed/incompatible states, responsive trust-review UI, deterministic plan-only receipt, tests and product documentation"
+    }
+  ],
+  "handoffCommitNote": "The second producer commit contains only this JSON and worklogs/personal-office-loop-09.md.",
+  "ownedPaths": [
+    "apps/desktop/src/shared/marketplace/**",
+    "apps/desktop/src/main/marketplace/**",
+    "apps/desktop/src/renderer/components/marketplace/**",
+    "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
+    "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
+    "apps/desktop/src/renderer/pages/Marketplace.tsx",
+    "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
+    "docs/product/personal-office-marketplace.md",
+    "docs/handoffs/personal-office/loop-09.json",
+    "worklogs/personal-office-loop-09.md"
+  ],
+  "implementationFiles": {
+    "count": 18,
+    "range": "68f823853dec4919f6f9ccf0d01413c51db44d32..8634172d5c9bf0ba27959ecb642a151c6b5bd78c",
+    "tree": "12c9b262aa088621dac990fb3bc4f6246f79795a",
+    "diff": "4879 insertions, 648 deletions",
+    "hashMethod": "SHA-256 over the exact Git blob bytes at 8634172d5c9bf0ba27959ecb642a151c6b5bd78c:path; byte count is the same blob length",
+    "allInsideAmendedLease": true,
+    "prohibitedPathChanges": 0
+  },
+  "contractCompliance": [
+    "Loop 07 capability registry contracts and policies remain read-only and authoritative.",
+    "Public catalog metadata cannot declare permissions, trust zones, classifications, side effects, grants, commands, environment, download locations, activation or provisioning state.",
+    "Only a registry snapshot that passes verifyCapabilityRegistryAudit can project a host-validated remote or cached catalog.",
+    "Current runtime has no leased host-validated Electron bridge, so it intentionally displays visibly labelled non-confirmable demo data even when Marketplace health is online.",
+    "Confirmation creates a deterministic effect: plan_only object and no operational side effect."
+  ],
+  "securityGate": {
+    "surface": "untrusted catalog metadata, capability authority, exact install scope, publisher identity, serialized plans and fabricated install success",
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "Strict plain-object, exact-key, versioned metadata, catalog, scope and plan parsers.",
+      "Credential-shaped public metadata and exact-scope values are rejected.",
+      "Stable package identity is reconstructed from source kind, package name and semantic version.",
+      "Remote metadata is display-only; authority-bearing fields come from an audited Loop 07 registry projection.",
+      "Unsigned, unaudited, incompatible, installed, demo and otherwise unverified packages cannot create a plan.",
+      "Tenant, user and workspace ids must be exact, non-wildcard and non-secret-shaped.",
+      "Plan parser re-derives plan id, package id, permissions, classifications, side effects and approval requirement from reviewed capabilities, rejecting internally inconsistent serialized plans.",
+      "Plan schema accepts no command, environment, download, execution, grant, activation, provisioning or success field.",
+      "Renderer copy states that no download, execution, grant, activation, account mutation or provisioning occurred."
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused Marketplace tests",
+      "result": "PASS",
+      "evidence": "5 files, 23/23 tests after exact installed-key correction; W0 correction-specific install-plan regression rerun passed 7/7"
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "90 files, 1100/1100 tests with --no-cache"
+    },
+    {
+      "check": "main/shared TypeScript",
+      "result": "PASS",
+      "evidence": "full profile passed before final hardening; post-hardening leased production graph passed with no emit"
+    },
+    {
+      "check": "renderer TypeScript",
+      "result": "PASS",
+      "evidence": "full profile passed before final hardening; post-hardening Marketplace production graph passed with no emit"
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "zero findings after final plan-parser hardening"
+    },
+    {
+      "check": "full lint ratchet",
+      "result": "PASS",
+      "evidence": "0 errors, 349 warnings; repository ceiling 358"
+    },
+    {
+      "check": "desktop renderer production build",
+      "result": "PASS",
+      "evidence": "1184 modules transformed; existing greater-than-500-kB chunk warning only"
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "18/18 implementation files inside the W0-amended lease; no manifest, lockfile, DB/schema, Electron main/index/preload, extension runtime, provider routing, Marketplace API or quarantine change"
+    },
+    {
+      "check": "production secret, execution and fabricated-success scans",
+      "result": "PASS",
+      "evidence": "no credential material, process/download/install call, or install-success claim outside negative tests and explanatory product text"
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS",
+      "evidence": "implementation diff clean after removing five Markdown hard-break spaces"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "PASS_WITH_INDEX_LIMIT",
+      "evidence": "compare 68f8238..8634172 reports 18 changed files, four tracked legacy Marketplace symbols and five replaced legacy processes at medium risk; new Loop 09 files are absent from the baseline index"
+    },
+    {
+      "check": "browser smoke and accessibility",
+      "result": "PASS",
+      "evidence": "desktop and mobile have no overflow; visible 2px focus; dialog traps Tab and Shift+Tab; Escape restores invoking-button focus; disabled demo actions are skipped; exact scope produces plan_only with no install-success claim"
+    }
+  ],
+  "visualEvidence": [
+    {
+      "viewport": "1440x900",
+      "path": "C:\\temp\\pw-mcp\\loop09-marketplace-1440x900-full.png",
+      "sha256": "8a0fc7ba139afe7199e48aabae2b99007de609df1b1ac8bd97dea5502cb8ac2d",
+      "bytes": 368670
+    },
+    {
+      "viewport": "390x844",
+      "path": "C:\\temp\\pw-mcp\\loop09-marketplace-390x844-full.png",
+      "sha256": "1e720cd55c71894f74d39f3df04089f758507fb941edc2f12bcaa5c218ef639d",
+      "bytes": 202238
+    }
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/marketplace/catalog-adapter.test.ts",
+      "sha256": "2470669f7cdc6bb009f929176d98db3b416b28e7d3cfcd6c86ef8e709e76c8cf",
+      "bytes": 5217
+    },
+    {
+      "path": "apps/desktop/src/main/marketplace/catalog-adapter.ts",
+      "sha256": "e3a85320b541abf7236d781b502cbdcca63a9af78154ab3531c39e97f3db04c2",
+      "bytes": 6098
+    },
+    {
+      "path": "apps/desktop/src/main/marketplace/index.ts",
+      "sha256": "a080cb1b3b4b2d8ad7ed430f73cbc00eebce39b93561b015ca9108c84421784c",
+      "bytes": 236
+    },
+    {
+      "path": "apps/desktop/src/renderer/components/marketplace/MarketplacePageView.test.ts",
+      "sha256": "f68ef44e231e67ff6d19ea719117a0b8a4abfa65730ecb9421ab2ce316429d71",
+      "bytes": 6540
+    },
+    {
+      "path": "apps/desktop/src/renderer/components/marketplace/MarketplacePageView.tsx",
+      "sha256": "efb27911ca1ca58ce3af15e2baf32aeff5993c5fd0723cef1c433529e5da338d",
+      "bytes": 23474
+    },
+    {
+      "path": "apps/desktop/src/renderer/components/marketplace/index.ts",
+      "sha256": "72cf108f303d381eef8df318df4a90a046c56551daffa58ed4140f886e72bbb7",
+      "bytes": 165
+    },
+    {
+      "path": "apps/desktop/src/renderer/pages/Marketplace.tsx",
+      "sha256": "de1fd1c8b81f348a9ce8552a7172c5e7381e1a106cb65309140b3d9a43b4adec",
+      "bytes": 2669
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
+      "sha256": "c1ce0419451286761b3fbaca6cef6c89a47f681912c14ec6b68fa68246bffee2",
+      "bytes": 3570
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
+      "sha256": "6e6b27509b33c3daeb22e0091d6215be2e21ec835ce7ad38d960c72930a78c75",
+      "bytes": 6839
+    },
+    {
+      "path": "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
+      "sha256": "d3128d6ad76c7f8ce50a2f8cc704ff287a9289427055827b9d6d2e0ae439c659",
+      "bytes": 20747
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/demo.ts",
+      "sha256": "eb1cd0d6823535f9e8a686bc3b402a11ea1d303085044d7f162528db895efb58",
+      "bytes": 7890
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/index.ts",
+      "sha256": "2cbc80e9c6c633b616a961abec06eb863f122cefaed67fb0264c7662985d7a0d",
+      "bytes": 1330
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/install-plan.test.ts",
+      "sha256": "9cb193123fb82955f08fb53360310037a5b522547aa214c750dcbe2bef890bb4",
+      "bytes": 8089
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/install-plan.ts",
+      "sha256": "81ef10bdd0831a9e2f9e9b46539baaf35ee4541ac9f0d492b495fc306baae9a5",
+      "bytes": 4341
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/types.ts",
+      "sha256": "a987c16722e505e18e6d7034821cb71d038a29aaf0152bd05f4a1b0605a41164",
+      "bytes": 5991
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/validation.test.ts",
+      "sha256": "847267dcfc5c109d3adce8b484789bc452f1750e8d691a10a7e9babfbdf7a61e",
+      "bytes": 2683
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/validation.ts",
+      "sha256": "e6c9ae49fbfc0b61abc197858a095727323deea2fa6e091b43b08e43754a30fd",
+      "bytes": 33992
+    },
+    {
+      "path": "docs/product/personal-office-marketplace.md",
+      "sha256": "4e5a1494dde55b8375eade00598b7f7ac5e09944ab6cc505aff747b529aa9d17",
+      "bytes": 9343
+    }
+  ],
+  "toolingNotes": [
+    "CodeGraph is unavailable because this linked worktree is not initialized; .codegraph/** is W0-prohibited and was not created.",
+    "GitNexus used the accepted baseline index plus the explicit Loop 09 worktree. The index understands the replaced tracked Marketplace page but not newly added Loop 09 symbols.",
+    "A final Socrates role spawn returned agent thread limit reached. The equivalent in-process challenge found and resolved serialized-plan self-consistency before handoff; W0 independent Socrates/design/security review remains pending.",
+    "Temporary path-specific Vitest, TypeScript and Vite configs lived only under C:\\temp and were deleted after verification.",
+    "No dependency install, junction, manifest, lockfile, Electron seam, runtime installer or quarantine write occurred.",
+    "The browser console showed only the expected localhost:8788 connection refusal from read-only Marketplace health probing. The development server is stopped."
+  ],
+  "agentAudit": {
+    "builder": "Loop 09 producer implemented, hardened and verified only leased Marketplace/product-documentation paths.",
+    "orchestrator": "W0 dispatch and the producer T2 understand-plan-build-verify route kept implementation within the bounded lease and two-phase handoff contract.",
+    "socrates": "Role spawn remained blocked by the thread limit. The in-process provenance challenge verified the direct 68f8238 parent, corrected implementation 8634172, Git tree 12c9b262, exact 18-file diff and canonical W0 lease amendment evidence. The earlier implementation challenge remains resolved, with corrected focused tests at 23/23.",
+    "designReviewer": "A producer design-review child was interrupted to preserve producer capacity. W0 will run independent design/security review after READY_FOR_REVIEW.",
+    "decisionAuthority": "W0 only"
+  },
+  "skillAudit": [
+    {
+      "skill": "/search-first",
+      "status": "USED"
+    },
+    {
+      "skill": "/context-gatherer",
+      "status": "USED"
+    },
+    {
+      "skill": "/quick-spec",
+      "status": "USED"
+    },
+    {
+      "skill": "/backend-patterns",
+      "status": "USED"
+    },
+    {
+      "skill": "/frontend-patterns",
+      "status": "USED"
+    },
+    {
+      "skill": "/deployment-patterns",
+      "status": "APPLIED_AS_NO_DEPLOY_INSTALL_OR_RUNTIME_MUTATION_GUARD"
+    },
+    {
+      "skill": "/security-review",
+      "status": "USED"
+    },
+    {
+      "skill": "/verification-loop",
+      "status": "USED"
+    },
+    {
+      "skill": "/understand-codebase",
+      "status": "USED"
+    },
+    {
+      "skill": "Design",
+      "status": "USED"
+    },
+    {
+      "skill": "/gpt-taste",
+      "status": "USED"
+    },
+    {
+      "skill": "/design-taste-frontend",
+      "status": "USED"
+    },
+    {
+      "skill": "/stitch-design-taste",
+      "status": "USED"
+    }
+  ],
+  "provenanceRepairAudit": {
+    "roles": {
+      "socrates": "CUSTOM_AGENT_UNAVAILABLE_THREAD_LIMIT; applied in-process to challenge commit ancestry, lease evidence, diff statistics and every blob hash before editing.",
+      "orchestrator": "APPLIED_IN_PROCESS; sequenced read-only evidence, exact two-file patch, fail-closed verification and docs-only amend.",
+      "builder": "APPLIED_IN_PROCESS; changed only docs/handoffs/personal-office/loop-09.json and worklogs/personal-office-loop-09.md."
+    },
+    "skills": [
+      {
+        "skill": "/search-first",
+        "status": "USED_FOR_REPO_AND_CANONICAL_CONTROL_PLANE_EVIDENCE"
+      },
+      {
+        "skill": "/context-gatherer",
+        "status": "USED_READ_ONLY"
+      },
+      {
+        "skill": "/quick-spec",
+        "status": "USED_TO_FREEZE_TWO_FILE_SCOPE_AND_ACCEPTANCE_CHECKS"
+      },
+      {
+        "skill": "/backend-patterns",
+        "status": "NOT_APPLICABLE_NO_BACKEND_CHANGE"
+      },
+      {
+        "skill": "/frontend-patterns",
+        "status": "NOT_APPLICABLE_NO_FRONTEND_CHANGE"
+      },
+      {
+        "skill": "/deployment-patterns",
+        "status": "APPLIED_AS_NO_DEPLOY_INSTALL_RUNTIME_OR_PRODUCTION_MUTATION_GUARD"
+      },
+      {
+        "skill": "/security-review",
+        "status": "USED_FOR_SECRET_PROHIBITED_PATH_AND_AUTHORITY_CLAIM_AUDIT"
+      },
+      {
+        "skill": "/verification-loop",
+        "status": "USED_FOR_JSON_HASH_DIFF_OWNERSHIP_PROHIBITED_SECRET_AND_CLEAN_TREE_GATES"
+      },
+      {
+        "skill": "/understand-codebase",
+        "status": "USED_ONLY_FOR_COMMIT_AND_CONTROL_PLANE_PROVENANCE"
+      },
+      {
+        "skill": "Design",
+        "status": "NOT_APPLICABLE_NO_UI_OR_VISUAL_ARTIFACT_CHANGE"
+      },
+      {
+        "skill": "/gpt-taste",
+        "status": "NOT_APPLICABLE_NO_UI_GENERATION"
+      },
+      {
+        "skill": "/design-taste-frontend",
+        "status": "NOT_APPLICABLE_DOC_ONLY_PROVENANCE_REPAIR"
+      },
+      {
+        "skill": "/stitch-design-taste",
+        "status": "NOT_APPLICABLE_NO_DESIGN_MD_OR_STITCH_OUTPUT"
+      }
+    ]
+  },
+  "residualRisks": [
+    "No leased main/preload/index bridge exists, so live remote or cached host-validated catalogs cannot reach the renderer yet. Current demo-only behavior is intentional and non-confirmable.",
+    "Publisher signatureDigest is trusted registry metadata. Cryptographic package-byte and publisher-signature verification remains an execution-plane responsibility.",
+    "Installer execution, exact accepted IntegrationGrant resolution and Loop 03 approval consumption remain outside this lease.",
+    "Marketplace health probing may log a localhost:8788 connection refusal while the service is offline; it does not promote demo data or change state."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Independently review 8634172d5c9bf0ba27959ecb642a151c6b5bd78c plus this handoff commit, verify hashes/screenshots and rerun focused/full tests, type/lint/build and design/security probes before ACCEPTED."
+    },
+    {
+      "owner": "future catalog bridge owner",
+      "action": "Request an exact W0 lease for main/index/preload seams, build and audit the complete Loop 07 registry in main, project only validated remote/cached metadata, and expose no install execution through the catalog read call."
+    },
+    {
+      "owner": "future installer owner",
+      "action": "Request a separate execution lease, consume an unchanged validated plan, verify bytes and publisher signatures, resolve accepted exact-scope grants, route side effects through Loop 03 approvals, and report operational outcomes truthfully."
+    }
+  ]
+}
