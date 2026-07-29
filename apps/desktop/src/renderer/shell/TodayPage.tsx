@@ -96,9 +96,11 @@ export function TodayPage({
               </h2>
               <ul className="po-lane__list">
                 {snapshot.attention.map((item) => (
-                  <li key={item.id}>
-                    <WorkItemCard item={item} onOpenWorkspace={onOpenWorkspace} />
-                  </li>
+                  <WorkItemCard
+                    key={item.id}
+                    item={item}
+                    onOpenWorkspace={onOpenWorkspace}
+                  />
                 ))}
               </ul>
             </section>
@@ -110,15 +112,9 @@ export function TodayPage({
               count={snapshot.active.length}
               emptyHint="Nothing running right now."
             >
-              {snapshot.active.length > 0 && (
-                <ul className="po-lane__list">
-                  {snapshot.active.map((item) => (
-                    <li key={item.id}>
-                      <WorkItemCard item={item} onOpenWorkspace={onOpenWorkspace} />
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {snapshot.active.map((item) => (
+                <WorkItemCard key={item.id} item={item} onOpenWorkspace={onOpenWorkspace} />
+              ))}
             </WorkLane>
 
             <WorkLane
@@ -127,49 +123,34 @@ export function TodayPage({
               tone={snapshot.approvals.length > 0 ? 'attention' : 'neutral'}
               emptyHint="Nothing is blocked on you."
             >
-              {(snapshot.approvals.length > 0 || snapshot.needsMe.length > 0) && (
-                <ul className="po-lane__list">
-                  {snapshot.approvals.map((approval) => (
-                    <li key={approval.id}>
-                      <ApprovalCard
-                        approval={approval}
-                        disabledReason={
-                          snapshot.isOffline
-                            ? 'Decisions are unavailable while you are offline.'
-                            : 'Deciding arrives with the work engine.'
-                        }
-                      />
-                    </li>
-                  ))}
-                  {snapshot.needsMe.map((item) => (
-                    <li key={item.id}>
-                      <WorkItemCard item={item} onOpenWorkspace={onOpenWorkspace} />
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {snapshot.approvals.map((approval) => (
+                <ApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  disabledReason={
+                    snapshot.isOffline
+                      ? 'Decisions are unavailable while you are offline.'
+                      : 'Deciding arrives with the work engine.'
+                  }
+                />
+              ))}
+              {snapshot.needsMe.map((item) => (
+                <WorkItemCard key={item.id} item={item} onOpenWorkspace={onOpenWorkspace} />
+              ))}
             </WorkLane>
 
             <WorkLane
               title="Delivered"
-              count={snapshot.delivered.length}
+              count={snapshot.deliverables.length + snapshot.delivered.length}
               tone="done"
               emptyHint="Finished work lands here."
             >
-              {(snapshot.deliverables.length > 0 || snapshot.delivered.length > 0) && (
-                <ul className="po-lane__list">
-                  {snapshot.deliverables.map((item) => (
-                    <li key={item.id}>
-                      <DeliverableCard item={item} />
-                    </li>
-                  ))}
-                  {snapshot.delivered.map((item) => (
-                    <li key={item.id}>
-                      <WorkItemCard item={item} onOpenWorkspace={onOpenWorkspace} />
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {snapshot.deliverables.map((item) => (
+                <DeliverableCard key={item.id} item={item} />
+              ))}
+              {snapshot.delivered.map((item) => (
+                <WorkItemCard key={item.id} item={item} onOpenWorkspace={onOpenWorkspace} />
+              ))}
             </WorkLane>
           </div>
         </>
