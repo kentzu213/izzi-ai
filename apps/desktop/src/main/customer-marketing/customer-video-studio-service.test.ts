@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   CustomerVideoStudioService,
+  deriveImportedSourceIdentity,
   resolveConfiguredBinaryPath,
   supportsManagedHyperframesPreview,
 } from './customer-video-studio-service';
@@ -256,6 +257,19 @@ describe('CustomerVideoStudioService F5-TTS capability boundary', () => {
 });
 
 describe('CustomerVideoStudioService import boundary', () => {
+  it('does not collapse distinct canonical paths that differ only by case', () => {
+    const upper = deriveImportedSourceIdentity(
+      'customer-abcdef123456',
+      'C:\\workspace\\Project',
+    );
+    const lower = deriveImportedSourceIdentity(
+      'customer-abcdef123456',
+      'C:\\workspace\\project',
+    );
+
+    expect(upper).not.toBe(lower);
+  });
+
   it('copies only the project surface into a tenant root and returns no source path', async () => {
     const root = await makeRoot();
     const source = await createProject(root);
@@ -271,6 +285,7 @@ describe('CustomerVideoStudioService import boundary', () => {
 
     expect(imported).toEqual(expect.objectContaining({
       projectId: 'izziapi-walkthrough',
+      sourceIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
       width: 1080,
       height: 1920,
       sceneCount: 2,
@@ -294,8 +309,11 @@ describe('CustomerVideoStudioService import boundary', () => {
     const first = await service.importProject('customer-abcdef123456', source);
     await fs.writeFile(path.join(source, 'assets', 'logo.txt'), 'changed', 'utf8');
     const second = await service.importProject('customer-abcdef123456', source);
+    const otherWorkspace = await service.importProject('customer-fedcba654321', source);
 
     expect(first.evidenceDigest).not.toBe(second.evidenceDigest);
+    expect(first.sourceIdentity).toBe(second.sourceIdentity);
+    expect(otherWorkspace.sourceIdentity).not.toBe(first.sourceIdentity);
   });
 
   it('rejects secret files nested in copied project directories', async () => {

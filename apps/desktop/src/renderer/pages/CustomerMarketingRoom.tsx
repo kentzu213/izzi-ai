@@ -3602,7 +3602,7 @@ export function CustomerMarketingRoomPage() {
       const selection = await api.selectMediaProject();
       if (selection.canceled) return;
       if (selection.result?.snapshot) setSnapshot(selection.result.snapshot);
-      if (selection.result?.ok) setNotice('Đã import project và tạo approval cho local preview.');
+      if (selection.result?.ok) setNotice(selection.result.reply || 'Đã import project và tạo approval cho local preview.');
       else setError(selection.result?.error || selection.error || 'Không import được media project.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Không mở được media project.');

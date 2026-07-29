@@ -1,5 +1,18 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.11
+
+Customer Marketing safe project refresh patch.
+
+- Replace the prior media job, manifest artifact, and preview approval only
+  when the runtime confirms the same workspace-bound source identity.
+- Discard preview success or failure results that finish after their media job
+  was replaced, preventing stale artifacts and states from being restored.
+- Ignore manifest-declared aliases as replacement authority. A renamed project
+  updates in place only when it comes from the same canonical source folder.
+- Show the service-provided import/update result in the Customer Marketing
+  workspace.
+
 ## 1.14.0-beta.10
 
 Customer Marketing long-path snapshot patch.
