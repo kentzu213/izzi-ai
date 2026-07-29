@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59.950Z",
+  "updatedAt": "2026-07-29T23:59:59.975Z",
   "updatedBy": "W0 Control Tower / Codex",
   "integrationCommit": "ae1fd77293e85da822674aedb48020d06f37376a",
   "activeLeases": [
@@ -27,8 +27,11 @@
         "apps/desktop/src/main/runtime/operational-evidence-store.ts",
         "apps/desktop/src/main/runtime/operational-evidence-store.test.ts",
         "apps/desktop/src/main/runtime/operational-runtime-e2e.test.ts",
+        "apps/desktop/src/main/runtime/operational-runtime-gate.test.ts",
         "apps/desktop/src/main/runtime/authoritative-operation-receipts.ts",
-        "apps/desktop/src/main/runtime/authoritative-operation-receipts.test.ts"
+        "apps/desktop/src/main/runtime/authoritative-operation-receipts.test.ts",
+        "apps/desktop/src/shared/marketplace/operation.ts",
+        "apps/desktop/src/shared/marketplace/operation.test.ts"
       ],
       "constraints": [
         "Output hooks may observe only receipts returned by the accepted main-authoritative services.",
