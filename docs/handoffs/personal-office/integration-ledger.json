@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T21:00:00Z",
+  "updatedAt": "2026-07-29T21:30:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -830,31 +830,31 @@
       "at": "2026-07-29T20:35:00Z",
       "action": "Reconciled stale programme governance after Loops 03-12 and R6 acceptance: closed PO-VERSION-COLLISION and PO-LOOP04-DEPENDENCY from their acceptance evidence, completed the vault/wiki ownership manifest follow-up, and closed the historical PQ-01 lease violation as a documented nonconformance without inventing retroactive compliance.",
       "record": "integration-ledger.json"
+    },
+    {
+      "at": "2026-07-29T21:30:00Z",
+      "action": "Verified and ACCEPTED Loop 13 after exact-path integration, main-authoritative workspace security review, 1370/1370 tests, both TypeScript gates, production build, lint ceiling, provenance and quarantine isolation checks.",
+      "record": "acceptance/loop-13.json"
     }
   ],
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Open Loop 13 in an isolated worktree: connect the Personal Office shell to the existing authorized Work preload API and implement a truthful first-workspace bootstrap so Today can create and observe a durable run.",
-      "gate": "PO-PRODUCT-REAL-WORK-BRIDGE"
-    },
-    {
-      "priority": 2,
       "action": "Open Loop 14 after Loop 13: wire Live profile/context compilation into an authenticated workspace-bound agent turn with trusted safety-prompt and raw-request binding.",
       "gate": "PO-PRODUCT-CONTEXT-RUNTIME"
     },
     {
-      "priority": 3,
+      "priority": 2,
       "action": "Open Loop 15: replace the non-installable demo Marketplace path with a host-validated catalog and approval-bound install/provisioning orchestrator.",
       "gate": "PO-PRODUCT-MARKETPLACE-OPERATION"
     },
     {
-      "priority": 4,
+      "priority": 3,
       "action": "Open Loop 16: operationalize izziapi account scope, OAuth/connect/revoke and IntegrationGrant persistence through SecretRef-only vault boundaries.",
       "gate": "PO-PRODUCT-ACCOUNT-GRANTS"
     },
     {
-      "priority": 5,
+      "priority": 4,
       "action": "Open Loop 17: register attested local/browser runtime adapters and verify the complete install-to-open-to-delegate-to-artifact path before platform release gates.",
       "gate": "PO-PRODUCT-RUNTIME-E2E"
     }
@@ -888,10 +888,10 @@
       "deterministic context and model routing foundations",
       "capability, provisioning, marketplace, grant and runtime foundations",
       "Marketing reference workspace",
-      "R6 local build and security baseline"
+      "R6 local build and security baseline",
+      "real shell-to-Work data source and first-workspace bootstrap"
     ],
     "notYetOperational": [
-      "real shell-to-Work data source and first-workspace bootstrap",
       "Live context in authenticated production agent turns",
       "host-validated Marketplace catalog and install execution",
       "account/OAuth and persistent IntegrationGrant operation",
@@ -910,13 +910,18 @@
     {
       "loop": "13",
       "title": "Real shell-to-Work bridge and first workspace",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "gate": "PO-PRODUCT-REAL-WORK-BRIDGE",
       "branch": "feature/personal-office-loop-13-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop13",
       "baseCommit": "03a2397911b5a6e81103f148ab76d52d034bd11e",
       "lease": "LEASE-L13-REAL-WORK-BRIDGE-20260729",
       "changeRequest": "docs/handoffs/personal-office/change-request-loop-13-real-work-bridge.md",
+      "producerImplementation": "25c6a945b5b1c3178b46a14b2d374c54f021226e",
+      "producerHandoff": "abd9d6bd4a4cba209dfa038c5279004947ff0466",
+      "integrationImplementation": "fa930f96dddbf00a3dfcd3663b72c36ae1cfbe29",
+      "integrationHandoff": "f2c14d19aea04e6d261fb7c2f16dc5e66f46a3a1",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-13.json",
       "dependsOn": [
         "02",
         "03"
