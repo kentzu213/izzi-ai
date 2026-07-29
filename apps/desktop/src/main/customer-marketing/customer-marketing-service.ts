@@ -2677,15 +2677,42 @@ export class CustomerMarketingService {
         jobId,
         ...imported.artifact,
       };
+      const latestRecord = this.readRecord(identity);
+      const replacementProjectIds = new Set([
+        imported.projectId,
+        ...(imported.legacyProjectIds || []),
+      ]);
+      const replacedJobIds = new Set(
+        latestRecord.mediaJobs
+          .filter((item) => replacementProjectIds.has(item.projectId))
+          .map((item) => item.id),
+      );
       const next: CustomerTenantRecord = {
-        ...record,
-        mediaJobs: [job, ...record.mediaJobs].slice(0, 20),
-        mediaArtifacts: [artifact, ...record.mediaArtifacts].slice(0, 200),
-        approvals: [approval, ...record.approvals].slice(0, 60),
+        ...latestRecord,
+        mediaJobs: [
+          job,
+          ...latestRecord.mediaJobs.filter((item) => !replacedJobIds.has(item.id)),
+        ].slice(0, 20),
+        mediaArtifacts: [
+          artifact,
+          ...latestRecord.mediaArtifacts.filter((item) => !replacedJobIds.has(item.jobId)),
+        ].slice(0, 200),
+        approvals: [
+          approval,
+          ...latestRecord.approvals.filter((item) => (
+            !item.mediaJobId || !replacedJobIds.has(item.mediaJobId)
+          )),
+        ].slice(0, 60),
         updatedAt: now,
       };
       this.writeRecord(identity, next);
-      return { ok: true, snapshot: await this.snapshot(identity, next, false, workspaceState) };
+      return {
+        ok: true,
+        reply: replacedJobIds.size > 0
+          ? 'Đã cập nhật project “' + imported.title + '” và tạo approval mới cho local preview.'
+          : 'Đã import project “' + imported.title + '” và tạo approval cho local preview.',
+        snapshot: await this.snapshot(identity, next, false, workspaceState),
+      };
     } catch (error) {
       return {
         ok: false,
@@ -2735,6 +2762,15 @@ export class CustomerMarketingService {
       updatedAt: startedAt,
     };
     this.writeRecord(identity, checking);
+    const stalePreviewError = 'Project đã được cập nhật trong lúc preview chạy; kết quả cũ đã được bỏ qua.';
+    const currentPreviewJob = (latest: CustomerTenantRecord): CustomerMediaJobRecord | undefined => (
+      latest.mediaJobs.find((item) => (
+        item.id === job.id
+        && item.runtimeProjectId === job.runtimeProjectId
+        && item.evidenceDigest === job.evidenceDigest
+        && item.status === 'checking'
+      ))
+    );
 
     try {
       const preview = await this.mediaRuntime.runPreview(
@@ -2742,6 +2778,14 @@ export class CustomerMarketingService {
         job.runtimeProjectId,
         job.evidenceDigest,
       );
+      const latest = this.readRecord(identity);
+      if (!currentPreviewJob(latest)) {
+        return {
+          ok: false,
+          error: stalePreviewError,
+          snapshot: await this.snapshot(identity, latest),
+        };
+      }
       const completedAt = preview.receipt.checkedAt;
       const artifacts = preview.artifacts.map((artifact): CustomerMediaArtifact => ({
         id: 'artifact-' + randomUUID(),
@@ -2749,20 +2793,28 @@ export class CustomerMarketingService {
         ...artifact,
       }));
       const next: CustomerTenantRecord = {
-        ...checking,
-        mediaJobs: checking.mediaJobs.map((item) => item.id === job.id
+        ...latest,
+        mediaJobs: latest.mediaJobs.map((item) => item.id === job.id
           ? { ...item, status: 'preview_ready' as const, preview: preview.receipt, error: undefined, updatedAt: completedAt }
           : item),
-        mediaArtifacts: [...artifacts, ...checking.mediaArtifacts].slice(0, 200),
+        mediaArtifacts: [...artifacts, ...latest.mediaArtifacts].slice(0, 200),
         updatedAt: completedAt,
       };
       this.writeRecord(identity, next);
       return { ok: true, snapshot: await this.snapshot(identity, next) };
     } catch {
+      const latest = this.readRecord(identity);
+      if (!currentPreviewJob(latest)) {
+        return {
+          ok: false,
+          error: stalePreviewError,
+          snapshot: await this.snapshot(identity, latest),
+        };
+      }
       const failedAt = new Date().toISOString();
       const next: CustomerTenantRecord = {
-        ...checking,
-        mediaJobs: checking.mediaJobs.map((item) => item.id === job.id
+        ...latest,
+        mediaJobs: latest.mediaJobs.map((item) => item.id === job.id
           ? { ...item, status: 'failed' as const, error: 'HyperFrames preview thất bại hoặc bị chặn bởi safety gate.', updatedAt: failedAt }
           : item),
         updatedAt: failedAt,

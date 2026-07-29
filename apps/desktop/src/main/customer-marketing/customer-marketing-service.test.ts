@@ -26,7 +26,10 @@ import {
   type CustomerIdentity,
   type CustomerRuntimeExtension,
 } from './customer-marketing-service';
-import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
+import type {
+  CustomerMediaImportedProject,
+  CustomerVideoStudioRuntime,
+} from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
 import type {
   CustomerMarketingWorkspaceGateway,
@@ -1714,6 +1717,409 @@ describe('Customer Marketing Video Studio', () => {
 
     context.setIdentity({ id: 'tenant-b', name: 'Owner B', plan: 'pro', balance: 10 });
     expect((await context.service.getSnapshot()).media.jobs).toEqual([]);
+  });
+
+  it('refreshes the current media chain when the same canonical project is re-imported', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    vi.mocked(mediaRuntime.importProject)
+      .mockResolvedValueOnce({
+        runtimeProjectId: '11111111-1111-4111-8111-111111111111',
+        projectId: 'izziapi-demo',
+        title: 'IzziAPI demo v1',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        durationSeconds: 45,
+        sceneCount: 7,
+        voice: {
+          provider: 'f5-tts',
+          license: 'CC-BY-NC-SA-4.0',
+          commercialUseAllowed: false,
+          referenceVoiceConsent: true,
+        },
+        evidenceDigest: 'a'.repeat(64),
+        importedAt: '2026-07-19T10:00:00.000Z',
+        artifact: {
+          kind: 'project_manifest',
+          name: 'video-workflow.json',
+          sha256: 'a'.repeat(64),
+          sizeBytes: 512,
+          createdAt: '2026-07-19T10:00:00.000Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        runtimeProjectId: '33333333-3333-4333-8333-333333333333',
+        projectId: 'izziapi-demo',
+        title: 'IzziAPI demo refreshed',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        durationSeconds: 50,
+        sceneCount: 8,
+        voice: {
+          provider: 'f5-tts',
+          license: 'CC-BY-NC-SA-4.0',
+          commercialUseAllowed: false,
+          referenceVoiceConsent: true,
+        },
+        evidenceDigest: 'c'.repeat(64),
+        importedAt: '2026-07-29T10:00:00.000Z',
+        artifact: {
+          kind: 'project_manifest',
+          name: 'video-workflow.json',
+          sha256: 'c'.repeat(64),
+          sizeBytes: 640,
+          createdAt: '2026-07-29T10:00:00.000Z',
+        },
+      });
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+
+    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
+    const oldJobId = first.snapshot!.media.jobs[0].id;
+    const oldApprovalId = first.snapshot!.approvals[0].id;
+    await context.service.reviewApproval({ approvalId: oldApprovalId, decision: 'approved' });
+    const previewed = await context.service.runMediaPreview({ jobId: oldJobId });
+    expect(previewed.ok).toBe(true);
+
+    const [recordKey, rawRecord] = Array.from(context.db.values.entries())[0];
+    const record = JSON.parse(rawRecord);
+    const oldArtifactIds = record.mediaArtifacts
+      .filter((artifact: { jobId: string }) => artifact.jobId === oldJobId)
+      .map((artifact: { id: string }) => artifact.id);
+    const unrelatedJobId = 'media-unrelated';
+    const unrelatedApprovalId = 'approval-unrelated';
+    const unrelatedArtifactId = 'artifact-unrelated';
+    record.mediaJobs.push({
+      ...record.mediaJobs[0],
+      id: unrelatedJobId,
+      runtimeProjectId: '22222222-2222-4222-8222-222222222222',
+      evidenceDigest: 'd'.repeat(64),
+      previewApprovalId: unrelatedApprovalId,
+      projectId: 'unrelated-project',
+      title: 'Unrelated project',
+    });
+    record.approvals.push({
+      ...record.approvals[0],
+      id: unrelatedApprovalId,
+      runId: 'media-run-' + unrelatedJobId,
+      mediaJobId: unrelatedJobId,
+      evidenceDigest: 'd'.repeat(64),
+    });
+    record.mediaArtifacts.push({
+      ...record.mediaArtifacts[0],
+      id: unrelatedArtifactId,
+      jobId: unrelatedJobId,
+      sha256: 'd'.repeat(64),
+    });
+    context.db.values.set(recordKey, JSON.stringify(record));
+
+    const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
+    const currentJobs = refreshed.snapshot!.media.jobs.filter((job) => job.projectId === 'izziapi-demo');
+    const currentJob = currentJobs[0];
+    const currentApproval = refreshed.snapshot!.approvals.find((approval) => approval.mediaJobId === currentJob.id);
+    const currentArtifacts = refreshed.snapshot!.media.artifacts.filter((artifact) => artifact.jobId === currentJob.id);
+
+    expect(refreshed.ok).toBe(true);
+    expect(currentJobs).toHaveLength(1);
+    expect(currentJob).toEqual(expect.objectContaining({
+      title: 'IzziAPI demo refreshed',
+      status: 'awaiting_preview_approval',
+      durationSeconds: 50,
+      sceneCount: 8,
+      gates: expect.objectContaining({ previewApproved: false, renderApproved: false, publishApproved: false }),
+    }));
+    expect(currentJob.id).not.toBe(oldJobId);
+    expect(currentApproval).toEqual(expect.objectContaining({
+      evidenceDigest: 'c'.repeat(64),
+      status: 'pending',
+    }));
+    expect(currentApproval?.id).not.toBe(oldApprovalId);
+    expect(currentArtifacts).toEqual([
+      expect.objectContaining({
+        kind: 'project_manifest',
+        sha256: 'c'.repeat(64),
+        sizeBytes: 640,
+      }),
+    ]);
+    expect(refreshed.snapshot!.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
+    expect(refreshed.snapshot!.approvals.some((approval) => approval.id === oldApprovalId)).toBe(false);
+    expect(refreshed.snapshot!.media.artifacts.some((artifact) => oldArtifactIds.includes(artifact.id))).toBe(false);
+    expect(refreshed.snapshot!.media.jobs.some((job) => job.id === unrelatedJobId)).toBe(true);
+    expect(refreshed.snapshot!.approvals.some((approval) => approval.id === unrelatedApprovalId)).toBe(true);
+    expect(refreshed.snapshot!.media.artifacts.some((artifact) => artifact.id === unrelatedArtifactId)).toBe(true);
+
+    const persisted = JSON.parse(context.db.values.get(recordKey)!);
+    expect(persisted.mediaJobs.find((job: { id: string }) => job.id === currentJob.id).runtimeProjectId)
+      .toBe('33333333-3333-4333-8333-333333333333');
+    expect(JSON.stringify(refreshed.snapshot)).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(JSON.stringify(refreshed.snapshot)).not.toContain('33333333-3333-4333-8333-333333333333');
+    expect(JSON.stringify(refreshed.snapshot)).not.toContain('C:\\private\\izziapi-video-project-v2');
+  });
+
+  it('preserves an unrelated import when a concurrent refresh finishes last', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
+    const oldJobId = first.snapshot!.media.jobs[0].id;
+
+    let finishRefresh!: (value: CustomerMediaImportedProject) => void;
+    let finishUnrelated!: (value: CustomerMediaImportedProject) => void;
+    const refreshImport = new Promise<CustomerMediaImportedProject>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const unrelatedImport = new Promise<CustomerMediaImportedProject>((resolve) => {
+      finishUnrelated = resolve;
+    });
+    vi.mocked(mediaRuntime.importProject)
+      .mockReturnValueOnce(refreshImport)
+      .mockReturnValueOnce(unrelatedImport);
+
+    const refreshRequest = context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
+    const unrelatedRequest = context.service.importMediaProject('C:\\private\\unrelated-project');
+    await vi.waitFor(() => expect(mediaRuntime.importProject).toHaveBeenCalledTimes(3));
+
+    finishUnrelated({
+      runtimeProjectId: '66666666-6666-4666-8666-666666666666',
+      projectId: 'unrelated-project',
+      title: 'Unrelated project',
+      width: 1920,
+      height: 1080,
+      fps: 24,
+      durationSeconds: 30,
+      sceneCount: 4,
+      voice: {
+        provider: 'local-voice',
+        license: 'Apache-2.0',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: false,
+      },
+      evidenceDigest: '6'.repeat(64),
+      importedAt: '2026-07-29T14:00:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: '6'.repeat(64),
+        sizeBytes: 600,
+        createdAt: '2026-07-29T14:00:00.000Z',
+      },
+    });
+    const unrelated = await unrelatedRequest;
+    expect(unrelated.ok).toBe(true);
+
+    finishRefresh({
+      runtimeProjectId: '77777777-7777-4777-8777-777777777777',
+      projectId: 'izziapi-demo',
+      title: 'IzziAPI demo refreshed last',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 60,
+      sceneCount: 8,
+      voice: {
+        provider: 'f5-tts',
+        license: 'CC-BY-NC-SA-4.0',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: true,
+      },
+      evidenceDigest: '7'.repeat(64),
+      importedAt: '2026-07-29T14:01:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: '7'.repeat(64),
+        sizeBytes: 700,
+        createdAt: '2026-07-29T14:01:00.000Z',
+      },
+    });
+    const refreshed = await refreshRequest;
+    expect(refreshed.ok).toBe(true);
+
+    const finalSnapshot = await context.service.getSnapshot();
+    expect(finalSnapshot.media.jobs).toHaveLength(2);
+    expect(finalSnapshot.media.jobs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        projectId: 'izziapi-demo',
+        title: 'IzziAPI demo refreshed last',
+        status: 'awaiting_preview_approval',
+      }),
+      expect.objectContaining({
+        projectId: 'unrelated-project',
+        title: 'Unrelated project',
+        status: 'awaiting_preview_approval',
+      }),
+    ]));
+    expect(finalSnapshot.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
+    expect(finalSnapshot.approvals.filter((approval) => approval.kind === 'media_preview')).toHaveLength(2);
+    expect(finalSnapshot.media.artifacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sha256: '6'.repeat(64) }),
+      expect.objectContaining({ sha256: '7'.repeat(64) }),
+    ]));
+  });
+
+  it('replaces a legacy project id when a renamed project declares its lineage', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
+      runtimeProjectId: '22222222-2222-4222-8222-222222222222',
+      projectId: 'izziapi-starizzi-howto',
+      title: 'IzziAPI + Starizzi walkthrough',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 60,
+      sceneCount: 8,
+      voice: {
+        provider: 'f5-tts-vietnamese-vivoice',
+        license: 'CC-BY-NC-SA-4.0',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: false,
+      },
+      evidenceDigest: 'd'.repeat(64),
+      importedAt: '2026-07-19T12:00:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: 'd'.repeat(64),
+        sizeBytes: 700,
+        createdAt: '2026-07-19T12:00:00.000Z',
+      },
+    });
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const first = await context.service.importMediaProject('C:\\private\\izziapi-starizzi-howto');
+    const oldJobId = first.snapshot!.media.jobs[0].id;
+    const oldApprovalId = first.snapshot!.approvals.find((item) => item.mediaJobId === oldJobId)!.id;
+
+    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
+      runtimeProjectId: '44444444-4444-4444-8444-444444444444',
+      projectId: 'izziapi-izzi-ai-howto',
+      legacyProjectIds: ['izziapi-starizzi-howto'],
+      title: 'IzziAPI + Izzi AI walkthrough',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 60,
+      sceneCount: 8,
+      voice: {
+        provider: 'f5-tts-vietnamese-vivoice',
+        license: 'CC-BY-NC-SA-4.0',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: false,
+      },
+      evidenceDigest: 'e'.repeat(64),
+      importedAt: '2026-07-29T12:00:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: 'e'.repeat(64),
+        sizeBytes: 768,
+        createdAt: '2026-07-29T12:00:00.000Z',
+      },
+    });
+
+    const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-izzi-ai-howto');
+    const currentJob = refreshed.snapshot!.media.jobs[0];
+    const currentApproval = refreshed.snapshot!.approvals.find((item) => item.mediaJobId === currentJob.id);
+
+    expect(refreshed.ok).toBe(true);
+    expect(refreshed.reply).toContain('Đã cập nhật project');
+    expect(refreshed.snapshot!.media.jobs).toHaveLength(1);
+    expect(currentJob).toEqual(expect.objectContaining({
+      projectId: 'izziapi-izzi-ai-howto',
+      title: 'IzziAPI + Izzi AI walkthrough',
+      status: 'awaiting_preview_approval',
+    }));
+    expect(currentJob.id).not.toBe(oldJobId);
+    expect(refreshed.snapshot!.approvals.some((item) => item.id === oldApprovalId)).toBe(false);
+    expect(currentApproval).toEqual(expect.objectContaining({
+      evidenceDigest: 'e'.repeat(64),
+      status: 'pending',
+    }));
+    expect(refreshed.snapshot!.media.artifacts).toEqual([
+      expect.objectContaining({
+        jobId: currentJob.id,
+        sha256: 'e'.repeat(64),
+      }),
+    ]);
+  });
+
+  it('does not let an in-flight preview restore a project after re-import', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    let finishPreview!: (
+      value: Awaited<ReturnType<CustomerVideoStudioRuntime['runPreview']>>,
+    ) => void;
+    const deferredPreview = new Promise<
+      Awaited<ReturnType<CustomerVideoStudioRuntime['runPreview']>>
+    >((resolve) => {
+      finishPreview = resolve;
+    });
+    vi.mocked(mediaRuntime.runPreview).mockReturnValueOnce(deferredPreview);
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
+    const oldJobId = first.snapshot!.media.jobs[0].id;
+    const approvalId = first.snapshot!.approvals.find((item) => item.mediaJobId === oldJobId)!.id;
+    await context.service.reviewApproval({ approvalId, decision: 'approved' });
+
+    const stalePreviewPromise = context.service.runMediaPreview({ jobId: oldJobId });
+    await vi.waitFor(() => expect(mediaRuntime.runPreview).toHaveBeenCalledTimes(1));
+    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
+      runtimeProjectId: '55555555-5555-4555-8555-555555555555',
+      projectId: 'izziapi-demo',
+      title: 'IzziAPI demo current',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 60,
+      sceneCount: 8,
+      voice: {
+        provider: 'f5-tts',
+        license: 'CC-BY-NC-SA-4.0',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: true,
+      },
+      evidenceDigest: 'f'.repeat(64),
+      importedAt: '2026-07-29T13:00:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: 'f'.repeat(64),
+        sizeBytes: 896,
+        createdAt: '2026-07-29T13:00:00.000Z',
+      },
+    });
+    const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
+    const currentJobId = refreshed.snapshot!.media.jobs[0].id;
+
+    finishPreview({
+      receipt: {
+        checkedAt: '2026-07-29T13:01:00.000Z',
+        passed: true,
+        summary: 'Stale preview result.',
+        snapshotCount: 1,
+      },
+      artifacts: [{
+        kind: 'snapshot',
+        name: 'stale-frame.png',
+        sha256: '9'.repeat(64),
+        sizeBytes: 128,
+        createdAt: '2026-07-29T13:01:00.000Z',
+      }],
+    });
+    const stalePreview = await stalePreviewPromise;
+    const finalSnapshot = await context.service.getSnapshot();
+
+    expect(stalePreview.ok).toBe(false);
+    expect(stalePreview.error).toContain('đã được cập nhật');
+    expect(finalSnapshot.media.jobs).toHaveLength(1);
+    expect(finalSnapshot.media.jobs[0]).toEqual(expect.objectContaining({
+      id: currentJobId,
+      title: 'IzziAPI demo current',
+      status: 'awaiting_preview_approval',
+    }));
+    expect(finalSnapshot.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
+    expect(finalSnapshot.media.artifacts.some((artifact) => artifact.name === 'stale-frame.png')).toBe(false);
   });
 
   it.each([
