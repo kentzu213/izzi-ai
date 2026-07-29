@@ -910,7 +910,7 @@
       ]
     },
     "r3Merge": {
-      "status": "ACTIVE",
+      "status": "READY_PENDING_R4_SECURITY_CORRECTION",
       "lease": "LEASE-R3-CUSTOMER-MARKETING-MERGE-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-reconciled-20260729",
       "conflictPaths": [
@@ -919,7 +919,21 @@
         "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
         "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx"
       ],
-      "rule": "Both feature families must survive; no ours/theirs wholesale resolution."
+      "rule": "Both feature families must survive; no ours/theirs wholesale resolution.",
+      "verification": "Conflict markers 0; focused Customer Marketing 163/163 PASS; independent correctness review PASS.",
+      "securityReview": "The four resolved files preserve their authority boundaries, but candidate acceptance is blocked by missing trusted-renderer checks in separate work/runtime IPC modules."
+    },
+    "r4Security": {
+      "status": "ACTIVE",
+      "lease": "LEASE-R4-IPC-SENDER-TRUST-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r4-ipc-sender-trust.md",
+      "ownedPaths": [
+        "apps/desktop/src/main/work/work-ipc.ts",
+        "apps/desktop/src/main/work/work-ipc-authz.test.ts",
+        "apps/desktop/src/main/runtime/runtime-ipc.ts",
+        "apps/desktop/src/main/runtime/runtime-ipc.test.ts"
+      ],
+      "blockingFinding": "work:* and runtime:* invoke handlers do not reject untrusted renderer or child-frame senders before authorization/data access."
     },
     "remainingPlatformGates": [
       "Reconcile the accepted Gate R hardening onto current origin/main without losing beta.8 changes",
