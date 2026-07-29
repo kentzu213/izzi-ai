@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T11:30:03Z",
+  "updatedAt": "2026-07-29T11:36:19Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -384,16 +384,17 @@
       "loop": "08",
       "title": "Workspace blueprint and provisioning",
       "window": "W4",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-08-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop08",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/dispatch-loop-08.md",
       "dependsOn": [
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 04 is ACCEPTED. Scheduling waits for an available producer slot."
+      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Isolated worktree and LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 are authorised.",
+      "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729"
     },
     {
       "loop": "09",
@@ -649,6 +650,11 @@
       "at": "2026-07-29T11:30:03Z",
       "by": "W0",
       "action": "Exact-path integrated and ACCEPTED Loop 09. Implementation commit f47601d contains the reviewed 18 leased Marketplace paths; handoff commit 60452ea contains only loop-09.json and the worklog. Independent security and design reviews PASS. Integration verification: targeted 23/23, full desktop 1140/1140, main TypeScript, Vite production build, lint 349 warnings/0 errors, exact blob hashes, ownership, prohibited paths, scope, secret and plan-only boundaries PASS. Revoked LEASE-L09-MARKETPLACE-UI-20260729."
+    },
+    {
+      "at": "2026-07-29T11:36:19Z",
+      "by": "W0",
+      "action": "Opened the second producer slot for Loop 08 after Loop 09 acceptance. Granted LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 for isolated blueprint, plan-only provisioning and the exact optional WorkspaceInstance.health contract amendment. Kiro/provider writers remain disabled; Codex is the only authorised producer."
     }
   ],
   "completedByW0": [

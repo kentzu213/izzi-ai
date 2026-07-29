@@ -3,10 +3,63 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T11:30:03Z",
+  "updatedAt": "2026-07-29T11:36:19Z",
   "updatedBy": "W0",
-  "integrationCommit": "60452ea05b669aba6a27b794bde440faa68b584e",
+  "integrationCommit": "58278c1491fd7f2214f55ece4fa82d50db53e998",
   "activeLeases": [
+    {
+      "leaseId": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+      "loop": "08",
+      "window": "W4",
+      "grantedAt": "2026-07-29T11:36:19Z",
+      "grantedBy": "W0",
+      "scope": "Deterministic workspace blueprints, scoped plan-only provisioning and optional workspace health signal",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/shared/workspace-blueprint/**",
+        "apps/desktop/src/main/workspace-blueprint/**",
+        "apps/desktop/src/renderer/components/workspace-blueprint/**",
+        "apps/desktop/src/renderer/store/workspaceBlueprint.ts",
+        "apps/desktop/src/renderer/store/workspaceBlueprint.test.ts",
+        "apps/desktop/src/shared/personal-office/entities.ts",
+        "apps/desktop/src/shared/personal-office/index.ts",
+        "apps/desktop/src/shared/personal-office/serialization.test.ts",
+        "docs/product/personal-office-workspace-blueprints.md"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/personal-office/** except the three exact leased files",
+        "apps/desktop/src/shared/live-profile.ts",
+        "apps/desktop/src/main/live/**",
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/shared/marketplace/**",
+        "apps/desktop/src/shared/capabilities/**",
+        "apps/desktop/src/renderer/shell/**",
+        "apps/desktop/src/renderer/store/personalOffice.ts"
+      ],
+      "prohibitedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/main/agent/**",
+        "apps/desktop/src/main/extensions/**",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx",
+        "apps/desktop/src/renderer/shell/**",
+        "F:/Ai Tools/Tool Starizzi - B2C - Openclaw/**"
+      ],
+      "conditions": [
+        "WorkspaceInstance.health is optional, additive-only and independent from workspace/provisioning lifecycle transitions.",
+        "PERSONAL_OFFICE_SCHEMA_VERSION remains the sole version authority and must not be bumped for the optional health field.",
+        "Every blueprint and plan is bound to exact tenant, user, workspace, blueprint and version identifiers.",
+        "Provisioning output is effect: plan_only; no download, install, process, grant, activation, account mutation, persistence or success side effect.",
+        "Demo/offline/unavailable state is explicit and never presented as remote-verified, installed or provisioned.",
+        "Request a new exact seam lease before any mount, IPC, persistence, runtime, integration or package change."
+      ],
+      "expiresOn": "Loop 08 acceptance or W0 revocation"
+    },
     {
       "leaseId": "LEASE-L05-CONTEXT-KERNEL-20260729",
       "loop": "05",
@@ -61,8 +114,8 @@
       "expiresOn": "Loop 05 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 05 is the only active producer lease. Loop 09 is ACCEPTED and its lease is revoked. One producer slot is available for Loop 08 or Loop 10 after an explicit W0 dispatch. Package manifests, DB/schema, provider routing and installer execution seams remain unleased.",
+  "activeLeaseCount": 2,
+  "statement": "Loops 05 and 08 are the only active producer leases. Loop 09 is ACCEPTED and revoked. Loop 10 remains dependency-unblocked but unleased until a producer slot opens. Package manifests, DB/schema, provider routing and operational provisioning/installer seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
