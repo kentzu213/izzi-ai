@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T11:54:00Z",
+  "updatedAt": "2026-07-29T12:01:24Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -353,7 +353,7 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "READY_TO_START",
+      "status": "PROVISIONAL",
       "branch": "feature/personal-office-loop-06-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop06",
       "commitSha": null,
@@ -393,14 +393,26 @@
       "status": "READY_TO_START",
       "branch": "feature/personal-office-loop-08-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop08",
-      "commitSha": null,
-      "handoff": "docs/handoffs/personal-office/dispatch-loop-08.md",
+      "commitSha": "fd35f97049f4c64f9064994a78fef3632561d29c",
+      "handoff": "docs/handoffs/personal-office/loop-08.json",
       "dependsOn": [
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Isolated worktree and LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 are authorised.",
-      "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729"
+      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Producer submitted READY_FOR_REVIEW, but independent Socrates review returned SEND-BACK; the lease remains active for exact-scope corrections.",
+      "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+      "reviewGate": {
+        "status": "SEND_BACK",
+        "reviewedAt": "2026-07-29T12:01:24Z",
+        "reviewedCommit": "fd35f97049f4c64f9064994a78fef3632561d29c",
+        "blockingFindings": [
+          "Direct runtime WorkspaceBlueprintDescriptor input can bypass strict parsing and provenance validation.",
+          "Plan identity does not bind evidenceDigest and all material derived blueprint contents.",
+          "Semantic-version validation accepts leading-zero core versions and empty prerelease identifiers.",
+          "Credential-shaped identifiers such as AWS access-key forms are not rejected."
+        ],
+        "nextAction": "The sole Loop 08 producer must correct all four findings, add regressions, issue new two-phase commits and resubmit READY_FOR_REVIEW."
+      }
     },
     {
       "loop": "09",
@@ -671,6 +683,11 @@
       "at": "2026-07-29T11:54:00Z",
       "by": "W0",
       "action": "Dispatched Loop 06 from the accepted Loop 05 integration ref and granted LEASE-L06-MODEL-GATEWAY-20260729. Scope is deterministic managed/custom routing, same-route retry and secret-free decisions. Cross-provider/model fallback, host-context edits, package/DB/schema/renderer changes and real network tests are prohibited. Codex remains the sole writer while Kiro/provider routing is unavailable."
+    },
+    {
+      "at": "2026-07-29T12:01:24Z",
+      "by": "W0",
+      "action": "Reconciled Loop 08 producer handoff fd35f97, then held status at PROVISIONAL after independent Socrates SEND-BACK. Four blocking trust-boundary findings were returned to the sole producer: parser/provenance bypass, incomplete plan identity binding, non-strict SemVer, and credential-shaped ID acceptance. No Loop 08 byte was integrated; the exact lease remains active only for corrections."
     }
   ],
   "completedByW0": [
