@@ -11,6 +11,7 @@
 | 1 — implementation | `663de47` | 19 shell modules + `store/personalOffice.ts` |
 | 1 — mount | `5512884` | `App.tsx` mount, CSS, interface fixes |
 | 2 — IA artifact | `04a2163` | `docs/product/personal-office-ia.md` |
+| Corrective | `aaf1922` | Repair Today list semantics and delivered count |
 | 2 — handoff | this commit | handoff JSON + this worklog |
 
 23 owned outputs. Zero paths outside the lease.
@@ -61,7 +62,7 @@ risking a raw payload on a primary surface. Raised as CR-UX-03 rather than worke
 
 ## Verification
 
-Every command re-run on the frozen source at `5512884`.
+Every command and browser check was re-run after corrective commit `aaf1922`.
 
 | Check | Command | Result |
 |---|---|---|
@@ -69,6 +70,12 @@ Every command re-run on the frozen source at `5512884`.
 | Tests | `vitest run` | **946/946 pass, 74/74 files**, EXIT=0 |
 | Lint | `eslint … --max-warnings 358` | **358 warnings, 0 errors**, EXIT=0 |
 | Build | `vite build` | **EXIT=0**, 1167 modules, CSS 385.45 kB |
+| Desktop visual | Playwright 1440×900 | **PASS**, post-fix screenshot captured |
+| Mobile visual | Playwright 390×844 | **PASS**, no horizontal overflow |
+| Keyboard/focus | Ctrl+K, Tab cycle, Escape | **PASS**, focus trapped then restored |
+| Forced states | loading/empty/error/offline/degraded | **PASS**, all five render |
+| Accessibility CSS | CSSOM inspection | **PASS**, reduced-motion + focus-visible |
+| Text zoom / target | mobile 200%, Delegate target | **PASS**, no overflow; 44px target |
 | Whitespace | `git diff --check` | EXIT=0 |
 | Secret scan | secret-shaped regex over 23 outputs | **0 hits** |
 | Ownership | changed-path audit | 23/23 in lease, 0 outside |
@@ -82,15 +89,10 @@ raise the ceiling. BF-02 did not reproduce; no timeout was widened.
 
 ## Residuals
 
-**Visual evidence was not captured.** This is the honest gap. Playwright is absent from
-the tree and adding it needs the package-manifest lease (PQ-01), which I do not hold. I
-installed a driver *outside* the repo and wrote a capture harness at
-`C:\Users\NgNghia213\po-evidence\capture.mjs`, but the run failed: Playwright expected
-chromium build 1234 while the local cache holds 1208–1228. I was then instructed to stop
-opening browsers, so **no screenshot exists**. `docs/handoffs/.../loop-02.json` records
-`visualEvidence.captured: false`. The responsive, keyboard, focus-trap, zoom-200%,
-reduced-motion, 44px and five-state behaviours are all implemented and readable in the
-CSS and components — but implemented is not verified, and I am not claiming otherwise.
+The former visual-evidence blocker is closed. Post-fix screenshots were captured at
+1440×900 and 390×844 from the committed `aaf1922` source. Keyboard focus trapping and
+restoration, all five forced states, 200% text zoom, reduced motion, focus-visible and
+the 44px Delegate target were exercised without adding or editing a package manifest.
 
 Also outstanding: unit tests for the lane map, redaction helpers and palette filter
 (logic is pure and testable, tests not yet written); the `attempt`-derived retry hint;

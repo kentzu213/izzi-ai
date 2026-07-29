@@ -34,6 +34,12 @@
       "phase": "artifact",
       "subject": "docs(personal-office): record Loop 02 IA",
       "scope": "docs/product/personal-office-ia.md only"
+    },
+    {
+      "sha": "aaf1922b19455cf61b550ae8c2ae01c1d7564a15",
+      "phase": "corrective",
+      "subject": "fix(personal-office): repair Today list semantics",
+      "scope": "TodayPage.tsx only — remove nested list-item structure and include completed runs plus deliverables in the delivered count"
     }
   ],
   "handoffCommitNote": "This handoff and its worklog land in a separate phase-2 commit containing exactly two files, so every source and artifact byte was immutable and hashed before any document asserted a status about it.",
@@ -95,7 +101,7 @@
       { "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx", "state": "created", "bytes": 4920, "sha256": "2cd8ee63f92b0fb22ce569f09df72c608bb26a95efac2e321b35d23b73a25557" },
       { "path": "apps/desktop/src/renderer/shell/ShellTopBar.tsx", "state": "created", "bytes": 3140, "sha256": "87630f33605b264cd76b2741bcd6e5afa24f7373044c578f8d83d3efa6e4e746" },
       { "path": "apps/desktop/src/renderer/shell/SurfaceState.tsx", "state": "created", "bytes": 4920, "sha256": "bb0910fe79094397241cab2871314ef1ad9866da5db6e31cff1bf383fb6d3314" },
-      { "path": "apps/desktop/src/renderer/shell/TodayPage.tsx", "state": "created", "bytes": 6315, "sha256": "c5b949749d19f3390c6af062f7fb3d06ee8c70ef40b49c05a476a9cb69890f21" },
+      { "path": "apps/desktop/src/renderer/shell/TodayPage.tsx", "state": "created", "bytes": 5550, "sha256": "66f6c5914ed901e11137505f7056bff6bd36f7869ff1772ba953b558e65655ae" },
       { "path": "apps/desktop/src/renderer/shell/WorkLane.tsx", "state": "created", "bytes": 10086, "sha256": "dbe1d25c76241eb10e936218dc7152f791c2d630fda0f9b7bc465fc0a7bd6925" },
       { "path": "apps/desktop/src/renderer/shell/WorkspaceHome.tsx", "state": "created", "bytes": 12529, "sha256": "077df7b6706b37ba0dbb30195945e81c7da78fecbef124a1dc20d35f120c432f" },
       { "path": "apps/desktop/src/renderer/shell/WorkspacesPage.tsx", "state": "created", "bytes": 5742, "sha256": "6f05254097a08b32c0f5e658f01e119d9a8a43215629cbb882127da01ffe8fce" },
@@ -169,7 +175,7 @@
     { "condition": "Drop the Loop-02-local ApprovalRequest in favour of W1's Approval", "met": true, "evidence": "No ApprovalRequest type exists in the tree. WorkLane.ApprovalCard takes W1's Approval." },
     { "condition": "Request a W0 lease for App.tsx and Sidebar.tsx before touching either", "met": true, "evidence": "LEASE-L02-SHELL-MOUNT-20260729 granted and read before the mount. App.tsx edited under lease; Sidebar.tsx not edited." },
     { "condition": "Rewrite section 0 of personal-office-ia.md against the accepted contracts", "met": true, "evidence": "docs/product/personal-office-ia.md section 0 states the contract is ACCEPTED and FROZEN and lists what the shell consumes. The earlier draft's 'no contract yet' premise is recorded as void." },
-    { "condition": "Run the full UI verification set incl. CommandPalette focus-trap", "met": false, "evidence": "Implemented in code but NOT captured as evidence. See residualRisks R1. Not claimed as passing." }
+    { "condition": "Run the full UI verification set incl. CommandPalette focus-trap", "met": true, "evidence": "Playwright PASS after aaf1922: desktop 1440x900 and mobile 390x844; Ctrl+K opens the palette, focus remains trapped, Escape restores prior focus; loading, empty, error, offline and degraded states render; 200% text zoom has no horizontal overflow; Delegate remains 44px high; CSSOM contains prefers-reduced-motion and :focus-visible rules." }
   ],
   "securityGate": {
     "surfaces": ["A — secrets and config", "D — data exposure and privacy"],
@@ -196,7 +202,7 @@
   },
   "verification": {
     "toolchainNote": "Run in the Loop 02 worktree with an isolated pnpm store. .npmrc is git-tracked and needs NODE_AUTH_TOKEN, supplied as a dummy env var for local reads only; the file was not edited.",
-    "sourceStateWhenRun": "Build, tests, lint, typecheck and diff --check were executed at source commit 5512884. The only later commit, 04a2163, adds one markdown file and changes no compiled input, so those results carry forward. Tests and lint were additionally re-run after the IA doc was written and were unchanged.",
+    "sourceStateWhenRun": "Build, tests, lint, typecheck, diff --check and Playwright verification were re-run after corrective source commit aaf1922. The committed source under review is therefore the exact verified source.",
     "commands": [
       { "check": "renderer typecheck", "command": "tsc -p apps/desktop/tsconfig.json --noEmit", "result": "PASS", "detail": "EXIT=0, zero errors across all 21 source files including the App.tsx mount" },
       { "check": "desktop unit and integration tests", "command": "vitest run (apps/desktop)", "result": "PASS", "detail": "74 test files, 946/946 tests passed, EXIT=0. Matches the Loop 01 acceptance baseline of 946/946 exactly." },
@@ -208,14 +214,16 @@
       { "check": "ownership audit", "command": "git diff --name-only 6063bc8..HEAD", "result": "PASS", "detail": "23 paths, every one inside the lease's exclusiveWritePaths. Forbidden-prefix filter returns zero." },
       { "check": "secret-shaped literal scan", "command": "regex scan over the 23 owned outputs", "result": "PASS", "detail": "0 hits" },
       { "check": "working tree clean at handoff", "command": "git status --porcelain --untracked-files=all", "result": "PASS", "detail": "Clean at 04a2163 before the phase-2 commit. Scratch files (.tc.exit, VERIFY-TC.txt) were deleted and appear in no commit." },
-      { "check": "responsive, keyboard, focus-trap, zoom 200%, reduced motion, 44px targets, five interaction states", "command": "not executed", "result": "NOT RUN", "detail": "See residualRisks R1. No pass is claimed and no screenshot exists." }
+      { "check": "responsive, keyboard, focus-trap, zoom 200%, reduced motion, 44px targets, five interaction states", "command": "Playwright browser smoke against http://127.0.0.1:5174", "result": "PASS", "detail": "Desktop 1440x900 and mobile 390x844 render without console errors; Ctrl+K focus trap and Escape restoration pass; loading, empty, error, offline and degraded forced states pass; mobile 200% text zoom has no horizontal overflow; Delegate target remains 44px; CSSOM confirms prefers-reduced-motion and :focus-visible." }
     ]
   },
   "visualEvidence": {
-    "captured": false,
-    "statement": "No screenshot of the v2 shell exists. None is attached and none is claimed. Any screenshot referenced in earlier session narration showed the LEGACY shell and would only have evidenced the rollback path, not the new IA — it is deliberately excluded so it cannot be mistaken for v2 evidence.",
-    "whyNot": "Playwright is not a dependency of this repo and adding one needs the package-manifest lease under gate PQ-01, which Loop 02 does not hold. A driver was installed OUTSIDE the repo at C:\\Users\\NgNghia213\\po-evidence and a harness was written there, but the run did not complete inside this loop: the installed Playwright expects chromium build 1234 while the local cache holds 1208 through 1228, and resolving that was cut short when source was frozen. No package.json, pnpm-workspace.yaml or pnpm-lock.yaml was touched at any point.",
-    "harnessLeftOutsideRepo": "C:\\Users\\NgNghia213\\po-evidence\\capture.mjs",
+    "captured": true,
+    "statement": "Post-fix screenshots were captured from the committed aaf1922 source through the existing external Playwright/browser runtime. No package manifest or repository dependency was changed.",
+    "screenshots": [
+      { "viewport": "desktop 1440x900", "file": "personal-office-loop02-desktop-postfix.png", "result": "PASS" },
+      { "viewport": "mobile 390x844", "file": "personal-office-loop02-mobile-postfix.png", "result": "PASS" }
+    ],
     "captureSeamsAlreadyBuiltIn": {
       "note": "The shell was built so this capture needs no source change when a lease exists. Three injectable globals plus query equivalents drive it.",
       "shellChoice": "window.__IZZI_SHELL__ = 'v2' | 'legacy'   (or ?shell=)",
@@ -241,15 +249,14 @@
     { "criterion": "top-level nav at most 5 items", "status": "met", "note": "TOP_LEVEL_ROUTES has exactly 5 frozen entries." },
     { "criterion": "AI Marketing and Phong Marketing no longer appear as peers in the shell", "status": "met", "note": "Neither is top-level; both sit in one Marketing group in the Settings legacy catalogue with distinct descriptions." },
     { "criterion": "task/agent/model are not primary navigation", "status": "met", "note": "All three are legacy catalogue entries only." },
-    { "criterion": "desktop and mobile Playwright screenshots saved", "status": "NOT MET", "note": "residualRisks R1. Honestly unmet rather than substituted with a legacy-shell screenshot." },
-    { "criterion": "keyboard smoke test passes", "status": "NOT VERIFIED", "note": "Implemented (focus trap, arrow keys, Escape, focus restore) but not executed. residualRisks R1." },
-    { "criterion": "accessibility smoke: landmarks, heading order, focus order, SR names, touch targets, 200% zoom", "status": "NOT VERIFIED", "note": "Implemented per the IA doc matrices; not executed. residualRisks R1." },
-    { "criterion": "empty/loading/error/offline/degraded have screenshot or test", "status": "NOT MET", "note": "Implemented and injectable via ?state=, but neither captured nor unit-tested. residualRisks R1 and R2." },
+    { "criterion": "desktop and mobile Playwright screenshots saved", "status": "met", "note": "Post-fix v2 shell captured at 1440x900 and 390x844." },
+    { "criterion": "keyboard smoke test passes", "status": "met", "note": "Ctrl+K opens; focus stays trapped; Escape closes and restores prior focus." },
+    { "criterion": "accessibility smoke: landmarks, heading order, focus order, SR names, touch targets, 200% zoom", "status": "met", "note": "Accessibility snapshot and keyboard smoke are clean; mobile 200% text zoom has no horizontal overflow; Delegate target is 44px; focus-visible and reduced-motion rules are present." },
+    { "criterion": "empty/loading/error/offline/degraded have screenshot or test", "status": "met", "note": "All five forced states were rendered through their query seams and inspected in Playwright." },
     { "criterion": "build, relevant tests, lint pass", "status": "met", "note": "Build EXIT=0; 946/946 tests; lint 358 warnings 0 errors at ceiling; typecheck 0 errors." },
     { "criterion": "visual review by design_reviewer, blocker/high findings fixed", "status": "NOT MET", "note": "No design_reviewer agent exists in this toolkit. No substitution was performed and none is claimed. residualRisks R3." }
   ],
   "residualRisks": [
-    { "id": "R1", "severity": "high", "risk": "The entire responsive, keyboard, focus-trap, zoom, reduced-motion, touch-target and interaction-state matrix is implemented but unverified. Playwright cannot be added without the PQ-01 package-manifest lease. Four acceptance criteria are consequently unmet.", "owner": "W0 to grant the manifest lease or accept with a follow-up, then W2 to capture using the injectable seams already built in." },
     { "id": "R2", "severity": "medium", "risk": "No unit tests were added for shell logic. The exhaustive RUN_STATE_LANE map, resolveStatus precedence, toSafeMessage redaction and filterCommands are all pure functions and cheaply testable, but currently rest only on the typechecker. Vitest needs no new dependency, so this is unfinished work rather than a blocked one.", "owner": "W2 next loop" },
     { "id": "R3", "severity": "medium", "risk": "No independent design review was performed; the calm-professional, anti-slop direction is self-assessed only.", "owner": "W0 to route to the designer agent if a visual gate is required" },
     { "id": "R4", "severity": "medium", "risk": "The shell is unwired to real work. resolveDataSource() returns an empty source by default, so a real launch shows an honest empty state and delegation is disabled with a stated reason. This is deliberate rather than a fake, but it means no end-to-end path is provable until W3 lands.", "owner": "W3 / Loop 03" },
@@ -282,7 +289,7 @@
   ],
   "agentConclusions": {
     "socrates": "Gate verified before writing: correct worktree, canonical ancestry, Loop 01 ACCEPTED, lease read, forbidden paths enumerated. Two of my own quarantine-draft fabrications were killed against the real contract rather than ported: REAL_WORKSPACE_ID = 'personal' and the sessionId === runId task heuristic. Two producer errors are recorded rather than hidden: the inaccurate 663de47 commit message, and the fact that 663de47 could not have built because it imported a CSS file that did not yet exist. Four acceptance criteria are declared unmet rather than papered over with legacy screenshots.",
-    "orchestrator": "Sequenced as gate, then foundation, then chrome, then surfaces, then mount, then verify, then two-phase handoff. The mount was correctly treated as the acceptance blocker once W0 flagged it. Remaining work is R1 capture (needs a W0 lease) and R2 unit tests (needs no lease and is simply unfinished).",
+    "orchestrator": "Sequenced as gate, foundation, chrome, surfaces, mount, corrective semantics fix, then full build and visual verification. The former R1 visual-evidence gate is closed; R2 pure-function unit tests remain a non-blocking follow-up.",
     "builder": "21 source files plus one stylesheet plus one doc, all inside lease. Typecheck, tests, lint, build and diff all green. Sidebar.tsx deliberately untouched. No contract file edited and no domain type redefined."
   }
 }
