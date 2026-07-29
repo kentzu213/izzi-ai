@@ -3,46 +3,22 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T13:17:16Z",
+  "updatedAt": "2026-07-29T14:27:56Z",
   "updatedBy": "W0",
-  "integrationCommit": "1b6215052e06d85a6b77bf140519d1d38583f85b",
-  "activeLeases": [
+  "integrationCommit": "7baef283fba7fbf8662e788f5f1738d3158c46b3",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "Loop 11 is ACCEPTED and its lease is revoked. No producer lease is active. Loop 12 is dependency-ready but must not write until W0 grants its exact broad Customer Marketing and shell lease.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L11-RUNTIME-BROWSER-20260729",
       "loop": "11",
       "window": "W3",
-      "status": "ACTIVE",
-      "grantedAt": "2026-07-29T13:17:16Z",
-      "grantedBy": "W0",
-      "branch": "feature/personal-office-loop-11-20260729",
-      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop11",
-      "baseCommit": "1b6215052e06d85a6b77bf140519d1d38583f85b",
-      "changeRequest": "docs/handoffs/personal-office/dispatch-loop-11.md",
-      "ownedPaths": [
-        "apps/desktop/src/shared/runtime/**",
-        "apps/desktop/src/main/runtime/**",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts",
-        "apps/desktop/src/renderer/types/global.d.ts",
-        "apps/desktop/src/renderer/shell/RuntimeHealthPanel.tsx",
-        "apps/desktop/src/renderer/shell/RuntimeHealthPanel.test.tsx",
-        "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx",
-        "docs/architecture/local-and-browser-runtime.md",
-        "worklogs/personal-office-loop-11.md",
-        "docs/handoffs/personal-office/loop-11.json"
-      ],
-      "constraints": [
-        "Kiro has no writer authority; one Codex builder is the only producer",
-        "No package/lockfile, database/schema or customer-marketing edits",
-        "LocalServiceManager and WorkService are read-only dependencies",
-        "main/index.ts and preload.ts changes are additive runtime wiring only",
-        "No production automation, host profile attachment or real external effect"
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 11 is the only active producer under LEASE-L11-RUNTIME-BROWSER-20260729. Kiro has no writer authority. Loop 12 remains blocked until Loop 11 is accepted.",
-  "leaseHistory": [
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T14:27:56Z",
+      "revokedBy": "W0",
+      "reason": "Loop 11 accepted at docs/handoffs/personal-office/acceptance/loop-11.json after independent security and Socrates PASS plus full canonical integration verification."
+    },
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
       "loop": "02",
@@ -250,8 +226,8 @@
         "10",
         "11"
       ],
-      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
-      "note": "Loop 11 may add runtime construction and IPC registration only. Quarantine remains read-only.",
+      "currentLease": null,
+      "note": "Loop 11 accepted and lease revoked. Any later main/index.ts edit requires a new W0 change request and lease.",
       "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
@@ -262,8 +238,8 @@
         "11",
         "12"
       ],
-      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
-      "note": "Loop 11 may add an additive runtime namespace only. Quarantine remains read-only.",
+      "currentLease": null,
+      "note": "Loop 11 accepted and lease revoked. Loop 12 or any later preload edit requires a new W0 change request and lease.",
       "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
@@ -273,8 +249,8 @@
         "11",
         "12"
       ],
-      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
-      "note": "Loop 11 may mount RuntimeHealthPanel only; broader shell changes remain forbidden.",
+      "currentLease": null,
+      "note": "Loop 11 accepted and lease revoked. Loop 12 or any later shell change requires a new W0 change request and lease.",
       "leasedAt": "2026-07-29T13:17:16Z"
     },
     {

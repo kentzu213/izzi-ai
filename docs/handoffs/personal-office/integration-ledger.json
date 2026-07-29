@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T13:17:16Z",
+  "updatedAt": "2026-07-29T14:27:56Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -481,10 +481,10 @@
       "loop": "11",
       "title": "Runtime manager and browser isolation",
       "window": "W3",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-11-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop11",
-      "commitSha": null,
+      "commitSha": "36f0f6e3cafd9a7260499cba66c372aeeebf1850",
       "handoff": "docs/handoffs/personal-office/loop-11.json",
       "dependsOn": [
         "03",
@@ -494,7 +494,14 @@
         "10"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 03, 06, 07, 09 and 10 are ACCEPTED. W0 issued dispatch-loop-11.md and LEASE-L11-RUNTIME-BROWSER-20260729; Codex is the only authorised producer."
+      "dependencyStatus": "SATISFIED — Loops 03, 06, 07, 09 and 10 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-11.json",
+      "producerImplementationCommit": "d1a1d152597bec8a1d172075c18145aea91fea4d",
+      "producerHandoffCommit": "78f033b",
+      "integrationImplementationCommit": "36f0f6e3cafd9a7260499cba66c372aeeebf1850",
+      "integrationHandoffCommit": "5c1717d22fed8958ea1fdfa5c29149c4ab46f87d",
+      "integrationNormalizationCommit": "7baef283fba7fbf8662e788f5f1738d3158c46b3",
+      "verificationSummary": "Independent security and Socrates PASS; targeted 51/51 and full desktop 1268/1268 tests PASS; main and renderer TypeScript, production build, lint 350 warnings/0 errors, 33/33 canonical Git blobs, ownership, prohibited-path, secret and quarantine gates PASS."
     },
     {
       "loop": "12",
@@ -509,8 +516,8 @@
         "02",
         "11"
       ],
-      "worktreeCreationBlocked": true,
-      "dependencyStatus": "BLOCKED — Loop 02 is ACCEPTED, but Loop 11 must be ACCEPTED before the final shell/reference integration starts."
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loops 02 and 11 are ACCEPTED. Loop 12 may start only after W0 issues its exact broad Customer Marketing and shell lease."
     }
   ],
   "programmeGates": [

@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "11",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T14:27:56Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent security and Socrates PASS plus full canonical verification.",
+  "subject": {
+    "title": "Fail-closed local runtime and isolated browser foundation",
+    "producerBranch": "feature/personal-office-loop-11-20260729",
+    "producerImplementation": "d1a1d152597bec8a1d172075c18145aea91fea4d",
+    "producerHandoff": "78f033b",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "7baef283fba7fbf8662e788f5f1738d3158c46b3"
+  },
+  "integration": {
+    "method": "W0 restored exactly 33 reviewed implementation paths from producer commit d1a1d15 and committed them as 36f0f6e, then restored only loop-11.json and the Loop 11 worklog and committed them as 5c1717d. A docs-only normalization commit 7baef28 removed four Markdown trailing-space defects. No merge, blind cherry-pick, package/lockfile edit, DB/schema edit, Customer Marketing edit or quarantine byte was used.",
+    "implementationCommit": "36f0f6e3cafd9a7260499cba66c372aeeebf1850",
+    "handoffCommit": "5c1717d22fed8958ea1fdfa5c29149c4ab46f87d",
+    "normalizationCommit": "7baef283fba7fbf8662e788f5f1738d3158c46b3"
+  },
+  "independentReview": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "reviewedCommit": "d1a1d152597bec8a1d172075c18145aea91fea4d",
+    "closedFindings": [
+      "Trusted main-process resolvers provide package trust and live exact grant evidence.",
+      "Browser preparation and execution authorize before driver open and before effect claim.",
+      "Runtime state identity binds tenant, user, workspace, package, integration, grant and storage-state reference.",
+      "Persisted approved projection is the only external-effect body; caller substitution and reserved-key tampering are rejected.",
+      "Health IPC filters exact tenant, user and workspace scope.",
+      "Production RuntimeManager has zero adapters, deny-all execution authorization and no browser automation enablement."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted runtime tests",
+      "result": "PASS",
+      "evidence": "10 files, 51/51 tests on canonical with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "117 files, 1268/1268 tests on canonical with --no-cache."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and renderer tsconfig.json both passed with --noEmit."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1175 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 350 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 33 implementation paths matched the handoff and active lease. Zero package, lockfile, DB/schema, Customer Marketing, LocalServiceManager or main/work changes."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All 33 canonical Git blobs match producer commit d1a1d15, including declared SHA-256 hashes and byte counts."
+    },
+    {
+      "check": "security and secret scan",
+      "result": "PASS",
+      "evidence": "22 changed production source files scanned with zero private-key, provider-key, AWS-key or assigned-secret findings."
+    },
+    {
+      "check": "GitNexus",
+      "result": "PASS_AFTER_CRITICAL_SCOPE_REVIEW",
+      "evidence": "Compare found 10 changed indexed symbols and 19 affected processes across setupIPC, initServices, preload and ShellSettingsPanel. Full canonical tests, typechecks, build, lint and independent reviews passed."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 459 status entries."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-11",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-12",
+      "before": "BLOCKED_GATE",
+      "after": "READY_FOR_DISPATCH"
+    }
+  ],
+  "residualRisks": [
+    "No production runtime adapter, browser driver, package trust resolver, live grant resolver or real external effect is enabled.",
+    "Future runtime enablement requires a new exact lease, authenticated authority scope and independent security review.",
+    "The production bundle retains the pre-existing large-chunk warning."
+  ]
+}
