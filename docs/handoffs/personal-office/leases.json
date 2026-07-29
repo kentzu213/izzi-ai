@@ -204,8 +204,8 @@
         "grantedAt": "2026-07-29T04:20:00Z"
       },
       {
-        "loop": "TBD",
-        "window": "TBD",
+        "loop": "W0-HISTORICAL",
+        "window": "W0",
         "paths": [
           "package.json",
           "pnpm-workspace.yaml",
@@ -214,7 +214,8 @@
         "reason": "Close PQ-01 by porting eslint.config.mjs and the lint scripts, then re-measure the warning ceiling on canonical.",
         "constraint": "Single owner at a time. Grant to exactly one loop.",
         "granted": false,
-        "note": "STILL UNGRANTED. A concurrent session is already writing package.json, pnpm-lock.yaml, eslint.config.mjs and .github/workflows/desktop-ci.yml in the integration worktree without this lease. See gate PO-LEASE-VIOLATION-PQ01."
+        "status": "CLOSED_WITH_NONCONFORMANCE",
+        "note": "No retroactive lease was invented. The historical unleased write is preserved under gate PO-LEASE-VIOLATION-PQ01; canonical is clean, PQ-01 technical work is verified, and all later package/lockfile changes require lease-first ordering."
       }
     ]
   },
@@ -453,8 +454,9 @@
           "eslint.config.mjs (untracked, 7261 bytes)",
           ".github/workflows/desktop-ci.yml (modified)"
         ],
-        "detail": "PQ-01 work is being performed in the integration worktree with no lease granted. W0 did NOT commit these files; the acceptance and ledger commits used explicit pathspecs so they remain unstaged.",
-        "requiredAction": "Identify the actor, then either grant the lease formally or revert. Do not let unleased manifest changes ride along on an integration commit."
+        "detail": "Historical PQ-01 work appeared in the integration worktree with no lease granted. It was later isolated, verified and committed as ed437c6; the process-order violation remains documented.",
+        "status": "CLOSED_WITH_NONCONFORMANCE",
+        "requiredAction": "Do not invent retroactive compliance. Require a new W0 change request and explicit single-owner lease before every future package manifest or lockfile write."
       }
     },
     {

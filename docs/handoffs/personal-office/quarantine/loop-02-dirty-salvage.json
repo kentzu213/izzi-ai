@@ -41,15 +41,18 @@
   },
 
   "vaultAndWiki": {
-    "note": "Adjacent drafts found in shared/. Ownership is NOT clearly Loop 02 — vault/Live-profile concerns map to Loop 04 in the ownership table. W0 flags this for an ownership ruling rather than assigning it here.",
-    "ownershipUnresolved": true,
+    "note": "Historical adjacent drafts found in shared/. Ownership was formally assigned to Loop 04 / W4 by gate PO-VAULT-OWNERSHIP. Loop 04 implemented and accepted the canonical vault/wiki contracts; these snapshot hashes remain provenance only and are not a source for later replay.",
+    "ownershipUnresolved": false,
+    "resolvedOwner": "Loop 04 / W4",
+    "resolutionRecord": "docs/handoffs/personal-office/acceptance/loop-04.json",
+    "canonicalDisposition": "IMPLEMENTED_AND_ACCEPTED_BY_LOOP_04",
     "files": [
-      { "path": "apps/desktop/src/shared/vault-types.ts", "sha256": "da8296d91a0c54387841416f6362b9d5607ae142b182bb8358f94ea4610e5534", "bytes": 4751, "verdict": "HOLD_PENDING_OWNERSHIP" },
-      { "path": "apps/desktop/src/shared/vault-types.test.ts", "sha256": "6ca87824b1b5aaddb9813b128c978582daf3b52383b1b27dcf1feb3b05d158f7", "bytes": 2174, "verdict": "HOLD_PENDING_OWNERSHIP" },
-      { "path": "apps/desktop/src/shared/vault-ops.ts", "sha256": "10657d70892d09fa9ee5ff2a0d0144228de5fa80aa7ff948cb5becf7d57b40ab", "bytes": 2891, "verdict": "HOLD_PENDING_OWNERSHIP" },
-      { "path": "apps/desktop/src/shared/vault-ops.test.ts", "sha256": "09c50a4fbc6f4b6ca66814f9e4a5b17c770fa9c7bf7064411e856092f3d73f85", "bytes": 1903, "verdict": "HOLD_PENDING_OWNERSHIP" },
-      { "path": "apps/desktop/src/shared/wikilink.ts", "sha256": "31c365752d31b95aa581ccf41e65417c2bf18bd3b74dcb119db58ca930b13516", "bytes": 4740, "verdict": "HOLD_PENDING_OWNERSHIP" },
-      { "path": "apps/desktop/src/shared/wikilink.test.ts", "sha256": "cf718a01762b90600d0d09e45a8efe10ddc60611618a3e366a4437856feb46c3", "bytes": 1852, "verdict": "HOLD_PENDING_OWNERSHIP" }
+      { "path": "apps/desktop/src/shared/vault-types.ts", "sha256": "da8296d91a0c54387841416f6362b9d5607ae142b182bb8358f94ea4610e5534", "bytes": 4751, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-types.test.ts", "sha256": "6ca87824b1b5aaddb9813b128c978582daf3b52383b1b27dcf1feb3b05d158f7", "bytes": 2174, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-ops.ts", "sha256": "10657d70892d09fa9ee5ff2a0d0144228de5fa80aa7ff948cb5becf7d57b40ab", "bytes": 2891, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-ops.test.ts", "sha256": "09c50a4fbc6f4b6ca66814f9e4a5b17c770fa9c7bf7064411e856092f3d73f85", "bytes": 1903, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/wikilink.ts", "sha256": "31c365752d31b95aa581ccf41e65417c2bf18bd3b74dcb119db58ca930b13516", "bytes": 4740, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/wikilink.test.ts", "sha256": "cf718a01762b90600d0d09e45a8efe10ddc60611618a3e366a4437856feb46c3", "bytes": 1852, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" }
     ]
   },
 
