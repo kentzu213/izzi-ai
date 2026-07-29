@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T09:28:26Z",
+  "updatedAt": "2026-07-29T09:36:13Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -332,16 +332,18 @@
       "title": "Context compiler and agent kernel",
       "window": "W3",
       "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "branch": "feature/personal-office-loop-05-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop05",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/dispatch-loop-05.md",
       "dependsOn": [
         "03",
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 03 and Loop 04 are ACCEPTED. W0 may dispatch one isolated producer lane."
+      "dependencyStatus": "SATISFIED — Loop 03 and Loop 04 are ACCEPTED. Lease LEASE-L05-CONTEXT-KERNEL-20260729 granted as the second and final active producer lane.",
+      "dispatchStatus": "READY_TO_START",
+      "dispatchBase": "feature/personal-office-baseline-20260728 at 37afbc291688736056f9dc346ba63d5425ab231e"
     },
     {
       "loop": "06",

@@ -18,6 +18,7 @@ provision a workspace without a later exact seam lease.
 - `apps/desktop/src/main/marketplace/**`
 - `apps/desktop/src/renderer/components/marketplace/**`
 - `apps/desktop/src/renderer/store/marketplacePersonalOffice.ts`
+- `apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts`
 - `apps/desktop/src/renderer/pages/Marketplace.tsx`
 - `apps/desktop/src/renderer/styles/marketplace-personal-office.css`
 - `docs/product/personal-office-marketplace.md`

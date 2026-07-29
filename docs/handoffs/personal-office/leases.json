@@ -3,9 +3,9 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T09:28:26Z",
+  "updatedAt": "2026-07-29T09:36:13Z",
   "updatedBy": "W0",
-  "integrationCommit": "5750c4b6f5929db347c0466e2773950121d99dcf",
+  "integrationCommit": "37afbc291688736056f9dc346ba63d5425ab231e",
   "activeLeases": [
     {
       "leaseId": "LEASE-L09-MARKETPLACE-UI-20260729",
@@ -19,6 +19,7 @@
         "apps/desktop/src/main/marketplace/**",
         "apps/desktop/src/renderer/components/marketplace/**",
         "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
+        "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
         "apps/desktop/src/renderer/pages/Marketplace.tsx",
         "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
         "docs/product/personal-office-marketplace.md"
@@ -55,10 +56,63 @@
         "Request a new exact seam lease before any main/index/preload/extensions/marketplace-api change."
       ],
       "expiresOn": "Loop 09 acceptance or W0 revocation"
+    },
+    {
+      "leaseId": "LEASE-L05-CONTEXT-KERNEL-20260729",
+      "loop": "05",
+      "window": "W3",
+      "grantedAt": "2026-07-29T09:34:36Z",
+      "grantedBy": "W0",
+      "scope": "Deterministic workspace context compiler and bounded agent-kernel injection seam",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/shared/context/**",
+        "apps/desktop/src/main/context/**",
+        "apps/desktop/src/main/agent/host-agent.ts",
+        "apps/desktop/src/main/agent/host-agent.context.test.ts",
+        "apps/desktop/src/main/agent/agent-service.ts",
+        "apps/desktop/src/main/agent/agent-service.context.test.ts",
+        "docs/product/personal-office-context-kernel.md"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/live-profile.ts",
+        "apps/desktop/src/shared/personal-office/**",
+        "apps/desktop/src/main/live/**",
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/agent/agent-tools.ts",
+        "apps/desktop/src/main/agent/provider-*.ts",
+        "apps/desktop/src/main/agent/*provider*.ts",
+        "apps/desktop/src/main/db/**"
+      ],
+      "prohibitedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/main/agent/agent-tools.ts",
+        "apps/desktop/src/main/agent/provider-*.ts",
+        "apps/desktop/src/main/agent/*provider*.ts",
+        "apps/desktop/src/renderer/**",
+        "F:/Ai Tools/Tool Starizzi - B2C - Openclaw/**"
+      ],
+      "conditions": [
+        "Consume accepted Loop 03 and Loop 04 contracts read-only; do not define a parallel context, run or Live Profile model.",
+        "Require explicit workspace and owner scope; missing or mismatched scope fails closed and never defaults to another workspace.",
+        "Use accepted precedence, consent, supersession and expiry behavior; do not parse Live.md through a second path.",
+        "Compiled context must be deterministic, canonical, provenance-bearing and bounded by explicit byte and item budgets.",
+        "SecretRef remains opaque; raw credentials must not enter compiled context, snapshots, logs or model messages.",
+        "Context may add only a bounded system segment. It cannot replace safety/system or move the current user request out of the user role.",
+        "No provider/model routing, tool permission, database/schema, IPC/preload, renderer, package or deployment change.",
+        "Request a new exact seam lease before any write outside these paths."
+      ],
+      "expiresOn": "Loop 05 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 04 is ACCEPTED and its lease is revoked. Loop 09 is the only active producer lease. Loop 05, Loop 08 and Loop 10 are dependency-unblocked but not yet leased. Package manifests and installer execution seams remain unleased.",
+  "activeLeaseCount": 2,
+  "statement": "Loops 05 and 09 are the only active producer leases. Loops 08 and 10 remain dependency-unblocked but unleased until a producer slot opens. Package manifests, DB/schema, provider routing and installer execution seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -262,7 +316,7 @@
         "05",
         "06"
       ],
-      "currentLease": null,
+      "currentLease": "LEASE-L05-CONTEXT-KERNEL-20260729",
       "note": "Modified-uncommitted in the dirty worktree."
     },
     {
@@ -271,7 +325,7 @@
         "05",
         "06"
       ],
-      "currentLease": null,
+      "currentLease": "LEASE-L05-CONTEXT-KERNEL-20260729",
       "note": "Modified-uncommitted in the dirty worktree."
     },
     {
