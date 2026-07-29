@@ -3,43 +3,23 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T16:06:25Z",
+  "updatedAt": "2026-07-29T16:33:50Z",
   "updatedBy": "W0",
-  "integrationCommit": "08a1c7b676e6e3eaf0354310dd06d942137f9320",
-  "activeLeases": [
+  "integrationCommit": "c98dd2a2064f07781d08900ed46ac16eaa938f3f",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. Loops 00-12 remain ACCEPTED. Release Gate R is READY_FOR_PLATFORM_VALIDATION; stable release, push, tag, publish and deployment remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R-DEPENDENCY-SIGNING-20260729",
       "loop": "R",
       "window": "W0",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T16:06:25Z",
-      "grantedBy": "W0",
-      "branch": "feature/personal-office-baseline-20260728",
-      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
-      "baseCommit": "08a1c7b676e6e3eaf0354310dd06d942137f9320",
-      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r-security.md",
-      "ownedPaths": [
-        "package.json",
-        "pnpm-lock.yaml",
-        "apps/desktop/electron-builder.json",
-        ".github/workflows/release-desktop.yml",
-        "docs/desktop-release-checklist.md",
-        "docs/handoffs/personal-office/release-gate-r.json",
-        "docs/handoffs/personal-office/acceptance/release-gate-r.json",
-        "worklogs/personal-office-release-gate-r.md"
-      ],
-      "constraints": [
-        "W0 is the only writer",
-        "No push, tag, publish, deployment, installer execution or production mutation",
-        "Never print or retrieve secret values",
-        "No database/schema, auth, updater runtime or product feature source edit",
-        "Mac stable acceptance requires evidence from a real signed and notarized macOS artifact"
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Release Gate R dependency/signing correction is the only active lease. Loops 00-12 remain ACCEPTED. Push, tag, publish and deployment remain unauthorised.",
-  "leaseHistory": [
+      "revokedAt": "2026-07-29T16:33:50Z",
+      "revokedBy": "W0",
+      "reason": "The bounded dependency/signing/publish-safety patch passed independent security and Socrates review at 1b82dc6 and was recorded at release-gate-r.json. The patch is accepted for platform validation only; stable release remains blocked."
+    },
     {
       "leaseId": "LEASE-L12-MARKETING-REFERENCE-20260729",
       "loop": "12",

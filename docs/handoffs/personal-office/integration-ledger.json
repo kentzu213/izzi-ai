@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T15:54:00Z",
+  "updatedAt": "2026-07-29T16:33:50Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -863,5 +863,42 @@
     ],
     "toolchainNote": "Each new worktree needs an isolated toolchain before any build or test command runs. node_modules must NOT be junctioned to the quarantined source repo — that was the BLOCKED_TOOLCHAIN condition, and the procedure that resolved it for loop01 is recorded in F:\\Ai Tools\\_starizzi-toolchain-evidence\\ISOLATED-TOOLCHAIN-EVIDENCE.md."
   },
-  "loop01AcceptanceCommit": "16f25b28820d829b3050981e8d60db433194059b"
+  "loop01AcceptanceCommit": "16f25b28820d829b3050981e8d60db433194059b",
+  "releaseGateR": {
+    "decision": "READY_FOR_PLATFORM_VALIDATION",
+    "stableReleaseAccepted": false,
+    "acceptedPatchCommits": [
+      "845d8da98204b214f2978525166e1abafe62e954",
+      "1b82dc6095b277b56decfe27230b1c45c4648200"
+    ],
+    "handoffCommit": "c98dd2a2064f07781d08900ed46ac16eaa938f3f",
+    "handoff": "docs/handoffs/personal-office/release-gate-r.json",
+    "acceptanceRecord": "docs/handoffs/personal-office/acceptance/release-gate-r.json",
+    "independentReview": {
+      "security": "PASS",
+      "socrates": "PASS_FOR_READY_FOR_PLATFORM_VALIDATION"
+    },
+    "closedSecurityFindings": [
+      "@hono/node-server vulnerable packaged resolution",
+      "macOS signing/notarization secret fail-open behavior",
+      "automatic stable publishing from v* tag pushes"
+    ],
+    "remainingPlatformGates": [
+      "GitHub desktop-release environment required-reviewer settings",
+      "Windows install/launch/upgrade/uninstall and data-retention checks",
+      "real macOS x64 and arm64 codesign/notarization/stapling/Gatekeeper evidence",
+      "approved RC tag platform run",
+      "separate explicit admin promotion of a validated draft/prerelease"
+    ],
+    "prohibitedUntilSeparateApproval": [
+      "push",
+      "tag creation",
+      "publish",
+      "stable promotion",
+      "deployment",
+      "installer execution",
+      "secret retrieval"
+    ],
+    "decidedAt": "2026-07-29T16:33:50Z"
+  }
 }
