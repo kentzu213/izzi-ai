@@ -86,6 +86,10 @@ import {
   type WorkPreloadApi,
 } from './work/work-preload-api';
 import type { WorkEvent } from './work/work-types';
+import {
+  RUNTIME_IPC_CHANNELS,
+  type RuntimePreloadApi,
+} from '../shared/runtime/ipc';
 
 /**
  * Published first-class preload shape for the unified work engine.
@@ -121,6 +125,10 @@ const workApi: WorkPreloadApi = {
       ipcRenderer.removeListener(WORK_IPC_CHANNELS.event, handler);
     };
   },
+};
+
+const runtimeApi: RuntimePreloadApi = {
+  listHealth: (input) => ipcRenderer.invoke(RUNTIME_IPC_CHANNELS.listHealth, input),
 };
 
 const electronAPI = {
@@ -676,6 +684,7 @@ const electronAPI = {
   },
 
   work: workApi,
+  runtime: runtimeApi,
 
   platform: {
     isElectron: true,
@@ -687,3 +696,4 @@ contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
 export type ElectronAPI = typeof electronAPI;
 export type { WorkPreloadApi } from './work/work-preload-api';
+export type { RuntimePreloadApi } from '../shared/runtime/ipc';

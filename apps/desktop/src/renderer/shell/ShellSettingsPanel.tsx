@@ -16,6 +16,7 @@
 import React from 'react';
 import { LEGACY_GROUPS, SETUP_GROUPS, type LegacyPageId } from './legacySurfaces';
 import { ChevronRightIcon } from './ShellIcons';
+import { RuntimeHealthPanel } from './RuntimeHealthPanel';
 
 interface ShellSettingsPanelProps {
   /**
@@ -59,6 +60,10 @@ export function ShellSettingsPanel({
           <button type="button" className="po-btn po-btn--quiet" onClick={onDisableShell}>
             Switch to the classic shell
           </button>
+        </section>
+
+        <section className="po-panel">
+          <RuntimeHealthPanel />
         </section>
 
         {SETUP_GROUPS.map((group) => (
