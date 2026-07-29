@@ -5,10 +5,34 @@
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
   "updatedAt": "2026-07-29T23:59:59.999Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "8434b735a62d39e8d13266ca28c4cda594960d18",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No producer lease is active. Loop 17 remains PROVISIONAL: package/lockfile changes, dependency installation, production driver or connector registration, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
+  "integrationCommit": "c8f616ed206d43ab79e90cf27c0034a46ef09f00",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-R7-PLATFORM-VALIDATION-20260729",
+      "gate": "RELEASE-GATE-R7-PLATFORM-VALIDATION",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T23:39:44.725Z",
+      "branch": "feature/release-gate-r7-platform-validation-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
+      "paths": [
+        ".github/workflows/desktop-platform-validation.yml",
+        "apps/desktop/scripts/platform-validation-harness.mjs",
+        "apps/desktop/scripts/platform-validation-harness.test.mjs",
+        "docs/desktop-platform-validation-playbook.md",
+        "docs/handoffs/personal-office/release-gate-r7-platform-validation.json",
+        "worklogs/personal-office-release-gate-r7-platform-validation.md"
+      ],
+      "constraints": [
+        "Non-publishing artifact validation and documentation only; no existing hot file is leased.",
+        "No package/lockfile, release-desktop workflow, electron-builder config, product source, DB/schema, auth, preload or renderer change.",
+        "No install, installer/application execution, secret retrieval, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Release Gate R7 holds one isolated exact-path lease for a non-publishing Windows/macOS artifact validation harness, tests, manual read-only workflow and playbook. Package/lockfile changes, dependency installation, existing release workflow/config changes, installer/application execution, secret retrieval, GitHub mutation, push, tag, publish, deployment, stable promotion and quarantine writes remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
