@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T23:59:40Z",
+  "updatedAt": "2026-07-29T23:59:58Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -845,18 +845,23 @@
       "at": "2026-07-29T23:59:30Z",
       "action": "Verified and ACCEPTED Loop 15 after exact-path integration, host-authoritative Marketplace scope and plan review, strict receipt and approval-binding corrections, 1388/1388 tests, both TypeScript gates, production build, lint ceiling, 17/17 producer blob equality and quarantine isolation checks.",
       "record": "acceptance/loop-15.json"
+    },
+    {
+      "at": "2026-07-29T23:59:57Z",
+      "action": "Verified and ACCEPTED Loop 16 account and IntegrationGrant operation boundary after exact-path integration, secret/authority/approval/compensation review, 1398/1398 tests, both TypeScript gates, production build, lint ceiling, 6/6 producer blob equality and quarantine isolation checks. Production adapters remain deferred to Loop 17.",
+      "record": "acceptance/loop-16.json"
     }
   ],
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Open Loop 16: operationalize izziapi account scope, OAuth/connect/revoke and IntegrationGrant persistence through SecretRef-only vault boundaries.",
-      "gate": "PO-PRODUCT-ACCOUNT-GRANTS"
+      "action": "Open Loop 17: register attested account/grant and local/browser runtime adapters, then verify the complete install-to-open-to-delegate-to-artifact path before platform release gates.",
+      "gate": "PO-PRODUCT-RUNTIME-E2E"
     },
     {
       "priority": 2,
-      "action": "Open Loop 17: register attested local/browser runtime adapters and verify the complete install-to-open-to-delegate-to-artifact path before platform release gates.",
-      "gate": "PO-PRODUCT-RUNTIME-E2E"
+      "action": "Repair or refresh the duplicate GitNexus repository labels in a W0-owned maintenance window without committing managed-block rewrites.",
+      "gate": "PO-GITNEXUS-MAINTENANCE"
     }
   ],
   "worktreeCreationPolicy": {
@@ -890,11 +895,12 @@
       "Marketing reference workspace",
       "R6 local build and security baseline",
       "real shell-to-Work data source and first-workspace bootstrap",
-      "authenticated Live.md context in host-agent turns"
+      "authenticated Live.md context in host-agent turns",
+      "main-only account and IntegrationGrant operation boundary"
     ],
     "notYetOperational": [
       "host-validated Marketplace catalog and install execution",
-      "account/OAuth and persistent IntegrationGrant operation",
+      "production account/OAuth adapters and persistent IntegrationGrant repository registration",
       "production Playwright/native/runtime adapters",
       "install-to-open-to-artifact end-to-end flow"
     ],
@@ -983,21 +989,38 @@
     {
       "loop": "16",
       "title": "Account, OAuth and IntegrationGrant operation",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
+      "gate": "PO-PRODUCT-INTEGRATION-GRANT-BOUNDARY",
+      "branch": "feature/personal-office-loop-16-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop16",
+      "baseCommit": "8fbb27fec5cc3a203fcfa659179a925b7187479e",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-16-integration-grant-operation.md",
+      "producerImplementationCommits": [
+        "22a8a089673d67183d6f93d9d310688da57482a3",
+        "40a8a3c077ea2e799913545322ada3bd4f56bb73",
+        "f992302aff3a07ecf00aeab0616550e0c9c57f1b"
+      ],
+      "producerHandoff": "fe71bb6151f210d0a5bc4730d9c714af86a4ff76",
+      "integrationImplementation": "d7bb1b70e00cf3b98cbeaf863cbc4e5a655bf1bd",
+      "integrationHandoff": "9f0fccabe80c88ca4f309148e4a589ff7967e9b0",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-16.json",
+      "acceptanceCommit": "bdc3e6d38885df6e0005c6a6865baed605acaf7f",
       "dependsOn": [
         "15"
       ],
-      "dependencyStatus": "SATISFIED — Loop 15 is ACCEPTED. No producer worktree or lease exists until W0 opens the loop."
+      "dependencyStatus": "SATISFIED — Loop 15 is ACCEPTED.",
+      "securityGate": "Main-derived exact scope, immutable approval binding, SecretRef-only connector output, GrantVault authority and truthful compensation/revocation receipts. Production adapters remain fail-closed and unregistered."
     },
     {
       "loop": "17",
       "title": "Production runtime adapters and operational E2E",
-      "status": "BLOCKED_GATE",
+      "status": "PROVISIONAL",
       "dependsOn": [
         "14",
         "15",
         "16"
-      ]
+      ],
+      "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED. Loop 17 is eligible for governed start."
     }
   ],
   "releaseGateR": {
