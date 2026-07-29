@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
   CustomerMediaArtifactKind,
@@ -99,6 +100,7 @@ interface HyperframesRuntimeProfile extends TrustedDirectory {
   appData: string;
   localAppData: string;
   temp: string;
+  snapshotRoot: string;
 }
 
 interface PreviewRunPaths extends TrustedDirectory {
@@ -179,6 +181,7 @@ export interface CustomerMediaPreviewResult {
 export interface CustomerVideoStudioOptions {
   rootPath: string;
   appRoot: string;
+  runtimeScratchParent?: string;
   managedElectronRuntime?: CustomerManagedElectronRuntime | null;
   managedBrowserPath?: string | null;
   hyperframesAttestation?: CustomerHyperframesAttestation | null;
@@ -640,6 +643,7 @@ export interface CustomerVideoStudioRuntime {
 export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
   private readonly rootPath: string;
   private readonly appRoot: string;
+  private readonly runtimeScratchParent: string;
   private readonly managedElectronRuntime?: CustomerManagedElectronRuntime;
   private readonly configuredBrowserPath?: string;
   private readonly hyperframesAttestation: CustomerHyperframesAttestation;
@@ -653,6 +657,9 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
   constructor(private readonly options: CustomerVideoStudioOptions) {
     this.rootPath = path.resolve(options.rootPath);
     this.appRoot = path.resolve(options.appRoot);
+    this.runtimeScratchParent = path.resolve(
+      textValue(options.runtimeScratchParent, 2_000) || os.tmpdir(),
+    );
     const processVersions = process.versions as NodeJS.ProcessVersions & { electron?: string };
     const managedRuntime = options.managedElectronRuntime === undefined
       ? processVersions.electron
@@ -822,7 +829,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       const checkedAt = new Date().toISOString();
       const runId = previewRunId(checkedAt);
       previewRun = await this.createPreviewRun(workspaceId, runtimeProjectId, runId);
-      runtimeProfile = await this.createRuntimeProfile(workspaceId, runId);
+      runtimeProfile = await this.createRuntimeProfile();
       const env = this.commandEnvironment(
         runtime.hyperframesRuntime,
         runtimeProfile,
@@ -840,7 +847,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         await this.runHyperframesSnapshot(
           runtime.hyperframesRuntime,
           realProjectRoot,
-          previewRun.snapshotRoot,
+          runtimeProfile.snapshotRoot,
           runtimeProfile.cwd,
           env,
         );
@@ -851,7 +858,25 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
 
       let snapshotFiles: Array<{ name: string; data: Buffer }>;
       try {
-        snapshotFiles = await this.readValidatedSnapshotOutputs(previewRun.snapshotRoot);
+        snapshotFiles = await this.readValidatedSnapshotOutputs(runtimeProfile.snapshotRoot);
+        for (const entry of snapshotFiles) {
+          await fs.writeFile(
+            path.join(previewRun.snapshotRoot, entry.name),
+            entry.data,
+            { flag: 'wx' },
+          );
+        }
+        const persistedSnapshots = await this.readValidatedSnapshotOutputs(previewRun.snapshotRoot);
+        if (
+          persistedSnapshots.length !== snapshotFiles.length
+          || persistedSnapshots.some((entry, index) => (
+            entry.name !== snapshotFiles[index]?.name
+            || !entry.data.equals(snapshotFiles[index]?.data)
+          ))
+        ) {
+          throw new Error('Snapshot output không khớp dữ liệu staging đã xác minh.');
+        }
+        snapshotFiles = persistedSnapshots;
       } catch (error) {
         await this.removeTrustedDirectory(previewRun.trustedBase, previewRun.path);
         throw error;
@@ -941,13 +966,17 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     return realProjectRoot;
   }
 
-  private async ensureTrustedDirectory(segments: string[], label: string): Promise<TrustedDirectory> {
-    await fs.mkdir(this.rootPath, { recursive: true });
-    const rootStat = await fs.lstat(this.rootPath);
+  private async ensureTrustedDirectoryFromRoot(
+    rootPath: string,
+    segments: string[],
+    label: string,
+  ): Promise<TrustedDirectory> {
+    await fs.mkdir(rootPath, { recursive: true });
+    const rootStat = await fs.lstat(rootPath);
     if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
       throw new Error(label + ' root không phải thư mục tin cậy.');
     }
-    const trustedBase = await fs.realpath(this.rootPath);
+    const trustedBase = await fs.realpath(rootPath);
     let current = trustedBase;
     for (const segment of segments) {
       if (
@@ -975,6 +1004,10 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       current = realCandidate;
     }
     return { trustedBase, path: current };
+  }
+
+  private async ensureTrustedDirectory(segments: string[], label: string): Promise<TrustedDirectory> {
+    return this.ensureTrustedDirectoryFromRoot(this.rootPath, segments, label);
   }
 
   private async createPreviewRun(
@@ -1006,32 +1039,51 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     };
   }
 
-  private async createRuntimeProfile(
-    workspaceId: string | null,
-    runId: string,
-  ): Promise<HyperframesRuntimeProfile> {
-    const prefix = workspaceId
-      ? [workspaceId, 'managed-hyperframes', 'runs']
-      : ['managed-hyperframes', 'probes'];
-    const runtimeBase = await this.ensureTrustedDirectory(prefix, 'HyperFrames runtime');
-    const root = await this.ensureTrustedDirectory([...prefix, runId], 'HyperFrames runtime');
-    const cwd = await this.ensureTrustedDirectory([...prefix, runId, 'cwd'], 'HyperFrames runtime');
-    const home = await this.ensureTrustedDirectory([...prefix, runId, 'home'], 'HyperFrames runtime');
-    const appData = await this.ensureTrustedDirectory([...prefix, runId, 'appdata'], 'HyperFrames runtime');
-    const localAppData = await this.ensureTrustedDirectory(
-      [...prefix, runId, 'localappdata'],
+  private async createRuntimeProfile(): Promise<HyperframesRuntimeProfile> {
+    const scratchParent = await this.ensureTrustedDirectoryFromRoot(
+      this.runtimeScratchParent,
+      [],
       'HyperFrames runtime',
     );
-    const temp = await this.ensureTrustedDirectory([...prefix, runId, 'temp'], 'HyperFrames runtime');
-    return {
-      trustedBase: runtimeBase.path,
-      path: root.path,
-      cwd: cwd.path,
-      home: home.path,
-      appData: appData.path,
-      localAppData: localAppData.path,
-      temp: temp.path,
-    };
+    const candidate = await fs.mkdtemp(path.join(scratchParent.path, 'izzi-ai-hf-'));
+    let runtimeRoot: string | undefined;
+    try {
+      const rootStat = await fs.lstat(candidate);
+      if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+        throw new Error('HyperFrames runtime không phải thư mục tạm tin cậy.');
+      }
+      runtimeRoot = await fs.realpath(candidate);
+      if (
+        runtimeRoot === scratchParent.path
+        || !isInside(scratchParent.path, runtimeRoot)
+      ) {
+        throw new Error('HyperFrames runtime chuyển hướng ra ngoài thư mục tạm tin cậy.');
+      }
+      const directory = (name: string): Promise<TrustedDirectory> => (
+        this.ensureTrustedDirectoryFromRoot(runtimeRoot as string, [name], 'HyperFrames runtime')
+      );
+      const cwd = await directory('cwd');
+      const home = await directory('home');
+      const appData = await directory('appdata');
+      const localAppData = await directory('localappdata');
+      const temp = await directory('temp');
+      const snapshotRoot = await directory('snapshots');
+      return {
+        trustedBase: scratchParent.path,
+        path: runtimeRoot,
+        cwd: cwd.path,
+        home: home.path,
+        appData: appData.path,
+        localAppData: localAppData.path,
+        temp: temp.path,
+        snapshotRoot: snapshotRoot.path,
+      };
+    } catch (error) {
+      if (runtimeRoot) {
+        await this.removeTrustedDirectory(scratchParent.path, runtimeRoot);
+      }
+      throw error;
+    }
   }
 
   private async removeTrustedDirectory(trustedBase: string, candidate: string): Promise<void> {
@@ -1584,7 +1636,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       browserPath,
       commercialEligible: false,
     };
-    const profile = await this.createRuntimeProfile(null, 'probe-' + randomUUID());
+    const profile = await this.createRuntimeProfile();
     try {
       const probe = await runCommand(runtime.executablePath, [runtime.cliPath, '--version'], {
         cwd: profile.cwd,
@@ -1614,7 +1666,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       : undefined;
     if (!executablePath) return {};
 
-    const profile = await this.createRuntimeProfile(null, 'probe-' + randomUUID());
+    const profile = await this.createRuntimeProfile();
     const runtime: HyperframesCommandRuntime = {
       executablePath,
       cliPath: hyperframesPackage.cliPath,

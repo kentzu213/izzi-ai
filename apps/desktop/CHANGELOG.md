@@ -1,5 +1,19 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.10
+
+Customer Marketing long-path snapshot patch.
+
+- Create each HyperFrames `HOME`, cache, temp, working directory, and snapshot
+  staging area under an atomic short-lived system-temp profile, avoiding nested
+  Chrome/fontconfig paths that can exceed the Windows legacy path boundary.
+- Validate staged PNG and contact-sheet bytes before copying them with
+  no-overwrite writes into the durable preview run, then validate the persisted
+  files again before returning artifact evidence.
+- Remove the short-lived staging directory after success or failure while
+  preserving the existing scrubbed environment, process-tree cleanup, and
+  commercial-render lock.
+
 ## 1.14.0-beta.9
 
 Customer Marketing managed HyperFrames preview patch.

@@ -271,6 +271,7 @@ $summary = [ordered]@{
   snapshotCount = if ($null -ne $receiptDetails) { $receiptDetails.snapshotCount } else { $null }
   snapshotFrames = if ($null -ne $receipt) { @($receipt.snapshotFrames | ForEach-Object { $_.name }) } else { @() }
   outputFileCount = if ($null -ne $receipt) { @($receipt.outputFiles).Count } else { 0 }
+  runtimeScratchClean = if ($null -ne $receipt) { $receipt.runtimeScratchClean } else { $null }
   commercialRenderAvailable = if ($null -ne $receipt) { $receipt.commercialRenderAvailable } else { $null }
   externalActionsPerformed = if ($null -ne $receipt) { $receipt.externalActionsPerformed } else { $null }
   hostPathEntries = if ($null -ne $receipt) { $receipt.hostPathEntries } else { $null }
@@ -294,6 +295,7 @@ if ($null -eq $receipt -or [string]$receipt.status -ne 'pass') {
 }
 if (
   [string]$receipt.appVersion -ne $ExpectedVersion -or
+  $receipt.runtimeScratchClean -ne $true -or
   $inputArtifactMutationCount -ne 0 -or
   $receiptArtifactMismatchCount -ne 0 -or
   $externalToolHits.Count -ne 0 -or

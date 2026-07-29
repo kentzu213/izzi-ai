@@ -603,11 +603,11 @@ process.exit(2);
     expect(toolchain.previewAvailable).toBe(false);
   });
 
-  it('runs only check and snapshot through the managed Electron runtime with a scrubbed environment', async () => {
+  it('runs only check and snapshot through the managed Electron runtime with scrubbed, short-lived staging', async () => {
     const root = await makeRoot();
     const source = await createProject(root);
-    const runtimePrefix = path.join(root, 'runtime-');
-    const runtimeRoot = runtimePrefix + 'x'.repeat(Math.max(0, 105 - runtimePrefix.length));
+    const runtimePrefix = path.join(root, 'runtime-đường-dẫn-có-dấu-');
+    const runtimeRoot = runtimePrefix + 'x'.repeat(Math.max(0, 130 - runtimePrefix.length));
     const workflowPath = path.join(source, 'video-workflow.json');
     const workflow = JSON.parse(await fs.readFile(workflowPath, 'utf8')) as Record<string, unknown>;
     workflow.project = {
@@ -652,11 +652,25 @@ fs.appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify({
   producerBrowser: process.env.PRODUCER_HEADLESS_SHELL_PATH,
 }) + '\\n');
 if (args[0] === 'check') {
+  const fontconfigCache = path.join(
+    process.env.HOME || '',
+    '.cache',
+    'fontconfig',
+    '12345678901234567890123456789012-le64.cache-11',
+  );
+  if (fontconfigCache.length >= 260) {
+    process.stderr.write('legacy runtime profile path is too long');
+    process.exit(74);
+  }
   process.stdout.write(${JSON.stringify(hyperframesCheckReport(true))});
 }
 if (args[0] === 'snapshot') {
   const outputIndex = args.indexOf('--output');
   const outputRoot = args[outputIndex + 1];
+  if (path.join(outputRoot, 'frame-02-at-56.5s.png').length >= 260) {
+    process.stderr.write('legacy snapshot path is too long');
+    process.exit(73);
+  }
   fs.mkdirSync(outputRoot, { recursive: true });
   fs.writeFileSync(path.join(outputRoot, 'frame-00.png'), Buffer.from(${JSON.stringify(PNG_SIGNATURE.toString('base64'))}, 'base64'));
   fs.writeFileSync(path.join(outputRoot, 'contact-sheet.jpg'), Buffer.from('/9j/4AAQ', 'base64'));
@@ -730,12 +744,15 @@ if (args[0] === 'snapshot') {
     expect(commands.every((entry) => entry.runAsNode === '1')).toBe(true);
     expect(commands.every((entry) => !entry.path.includes(untrustedPath))).toBe(true);
     expect(commands.every((entry) => !entry.args.includes('publish') && !entry.args.includes('render'))).toBe(true);
-    expect(commands.every((entry) => entry.cwd.includes('managed-hyperframes'))).toBe(true);
+    const scratchRoot = path.dirname(commands[0].cwd);
+    expect(path.basename(scratchRoot)).toMatch(/^izzi-ai-hf-[A-Za-z0-9]{6}$/);
+    expect(commands.every((entry) => entry.cwd.startsWith(scratchRoot + path.sep))).toBe(true);
+    expect(commands.every((entry) => !entry.cwd.includes(runtimeRoot))).toBe(true);
     expect(commands.every((entry) => !entry.cwd.includes(imported.runtimeProjectId))).toBe(true);
     expect(commands.every((entry) => entry.home === entry.userProfile)).toBe(true);
-    expect(commands.every((entry) => entry.appData.includes('managed-hyperframes'))).toBe(true);
-    expect(commands.every((entry) => entry.localAppData.includes('managed-hyperframes'))).toBe(true);
-    expect(commands.every((entry) => entry.temp.includes('managed-hyperframes'))).toBe(true);
+    expect(commands.every((entry) => entry.appData.startsWith(scratchRoot + path.sep))).toBe(true);
+    expect(commands.every((entry) => entry.localAppData.startsWith(scratchRoot + path.sep))).toBe(true);
+    expect(commands.every((entry) => entry.temp.startsWith(scratchRoot + path.sep))).toBe(true);
     expect(commands.every((entry) => entry.telemetry === '1' && entry.doNotTrack === '1')).toBe(true);
     expect(commands.every((entry) => entry.updateCheck === '1' && entry.autoInstall === '1')).toBe(true);
     expect(commands.every((entry) => entry.ci === '1')).toBe(true);
@@ -749,14 +766,29 @@ if (args[0] === 'snapshot') {
     expect(snapshotCommand?.args).not.toContain('--frames');
     const outputIndex = snapshotCommand?.args.indexOf('--output') ?? -1;
     const outputRoot = snapshotCommand?.args[outputIndex + 1] || '';
-    expect(outputRoot).toContain(`${path.sep}preview-runs${path.sep}`);
+    expect(outputRoot.startsWith(scratchRoot + path.sep)).toBe(true);
+    expect(path.dirname(outputRoot)).toBe(scratchRoot);
+    expect(outputRoot).not.toContain(`${path.sep}preview-runs${path.sep}`);
     expect(outputRoot).not.toContain(`${path.sep}projects${path.sep}`);
-    expect(path.basename(path.dirname(outputRoot))).toMatch(
-      /^\d{8}T\d{6}Z-[a-f0-9]{16}$/,
+    expect(path.join(outputRoot, 'frame-02-at-56.5s.png').length).toBeLessThan(260);
+
+    const previewRunBase = path.join(
+      runtimeRoot,
+      'customer-abcdef123456',
+      'preview-runs',
+      imported.runtimeProjectId,
     );
-    if (process.platform === 'win32') {
-      expect(path.join(outputRoot, 'frame-02-at-56.5s.png').length).toBeLessThan(260);
-    }
+    const [previewRunId] = await fs.readdir(previewRunBase);
+    expect(path.join(
+      previewRunBase,
+      previewRunId,
+      'snapshots',
+      'frame-02-at-56.5s.png',
+    ).length).toBeGreaterThanOrEqual(260);
+    await expect(fs.stat(
+      path.join(previewRunBase, previewRunId, 'snapshots', 'frame-00.png'),
+    )).resolves.toEqual(expect.objectContaining({ size: PNG_SIGNATURE.length }));
+    await expect(fs.stat(scratchRoot)).rejects.toThrow();
   });
 
   it('preserves a valid failed quality report and snapshots without treating it as a launcher error', async () => {
