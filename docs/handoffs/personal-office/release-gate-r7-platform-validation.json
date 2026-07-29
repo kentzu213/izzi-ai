@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "release-gate-producer-handoff",
+  "gate": "R7",
+  "status": "READY_FOR_REVIEW",
+  "title": "Non-publishing Windows/macOS platform validation harness",
+  "baseCommit": "e6f2f9eeeed4aac0adfd1321bf9d95d7f2effeb9",
+  "branch": "feature/release-gate-r7-platform-validation-20260729",
+  "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
+  "lease": "LEASE-R7-PLATFORM-VALIDATION-20260729",
+  "producerImplementationCommit": "a68efbf03925fa78993150f1b1ec7f843250c596",
+  "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
+  "implemented": [
+    "dependency-free artifact containment, identity, hash and size validation",
+    "traversal, symlink/junction and non-file denial",
+    "deterministic static-preflight evidence",
+    "signature target binding to an artifact already hashed by static preflight",
+    "fixed-command shell-free Authenticode, codesign, stapler and Gatekeeper verifier ports",
+    "manual-only contents-read platform preflight workflow",
+    "electron-builder packaging constrained to --publish never",
+    "no secret or token exposure to checkout, install, build, packaging or validation commands",
+    "Windows/macOS static versus signed versus stable-acceptance playbook"
+  ],
+  "verification": {
+    "focusedTests": "PASS — node --test apps/desktop/scripts/platform-validation-harness.test.mjs; 8/8 tests",
+    "syntax": "PASS — node --check on harness and test",
+    "workflowPolicy": "PASS — js-yaml parse; only workflow_dispatch, read-only permissions, two electron-builder commands both --publish never, no release action/token/secret reference",
+    "ownership": "PASS — six exact leased paths only; implementation commit contains four artifact paths",
+    "diffCheck": "PASS",
+    "secretScan": "PASS — no private-key, AWS, OpenAI or GitHub token patterns",
+    "lint": "NOT RUN in producer — isolated worktree has no node_modules and using the canonical eslint binary cannot resolve producer-local ESM config dependencies; no install or junction was authorized. Canonical lint is required after exact-path replay.",
+    "security": "PASS producer preflight — signature target is one validated artifact; fixed argv uses shell:false; evidence output is create-only; no package/lockfile, existing release workflow/config, installer execution, secrets, publishing or quarantine write"
+  },
+  "artifacts": [
+    {
+      "path": ".github/workflows/desktop-platform-validation.yml",
+      "sha256": "d0e788cb2eed0fd4941d297e37531c57d1f40ed13635b93de095ac50671e9ca0",
+      "bytes": 5223
+    },
+    {
+      "path": "apps/desktop/scripts/platform-validation-harness.mjs",
+      "sha256": "5e42c1c7edd069b1b61e52fb69306293321179928a6c1d9b7450f526c0590b82",
+      "bytes": 14373
+    },
+    {
+      "path": "apps/desktop/scripts/platform-validation-harness.test.mjs",
+      "sha256": "36b367fa0b91d698c3dfa7821ce9bd19af95ad0d7d0ec3c8c325a56ee7ea2b02",
+      "bytes": 8662
+    },
+    {
+      "path": "docs/desktop-platform-validation-playbook.md",
+      "sha256": "89e644bd6e3c0d86d2590a513ee26f94bbf754df02cb58b32df034f10fe11b76",
+      "bytes": 4747
+    }
+  ],
+  "stableReleaseAccepted": false,
+  "authorization": "No workflow execution, install, installer/application launch, secret retrieval, GitHub mutation, push, tag, publish, deploy or stable promotion is authorized."
+}
