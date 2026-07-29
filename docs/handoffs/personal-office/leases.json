@@ -3,71 +3,12 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T12:57:09Z",
+  "updatedAt": "2026-07-29T13:09:22Z",
   "updatedBy": "W0",
-  "integrationCommit": "9736e30c2cc23fe8d30676ef655dbc2a0f85cc46",
-  "activeLeases": [
-    {
-      "leaseId": "LEASE-L06-MODEL-GATEWAY-20260729",
-      "loop": "06",
-      "window": "W3",
-      "grantedAt": "2026-07-29T11:54:00Z",
-      "grantedBy": "W0",
-      "scope": "Deterministic managed/custom model routing, same-route retry and secret-free route decisions",
-      "exclusiveWritePaths": [
-        "apps/desktop/src/shared/model-gateway/**",
-        "apps/desktop/src/main/agent/chat-provider.ts",
-        "apps/desktop/src/main/agent/provider-resolver.ts",
-        "apps/desktop/src/main/agent/provider-settings-store.ts",
-        "apps/desktop/src/main/agent/custom-openai-provider.ts",
-        "apps/desktop/src/main/agent/managed-agent-provider.ts",
-        "apps/desktop/src/main/agent/izzi-request-headers.ts",
-        "apps/desktop/src/main/agent/agent-service.ts",
-        "apps/desktop/src/main/agent/custom-provider.test.ts",
-        "apps/desktop/src/main/agent/managed-agent-provider.test.ts",
-        "apps/desktop/src/main/agent/managed-agent-provider.production.test.ts",
-        "apps/desktop/src/main/agent/izzi-request-headers.test.ts",
-        "apps/desktop/src/main/agent/agent-service.routing.test.ts",
-        "docs/product/personal-office-model-gateway.md"
-      ],
-      "readOnlyPaths": [
-        "apps/desktop/src/main/agent/secret-store.ts",
-        "apps/desktop/src/main/agent/host-agent.ts",
-        "apps/desktop/src/main/agent/host-agent.context.test.ts",
-        "apps/desktop/src/main/agent/host-agent.streaming-fallback.test.ts",
-        "apps/desktop/src/main/agent/agent-permissions.ts",
-        "apps/desktop/src/main/agent/agent-tools.ts",
-        "apps/desktop/src/shared/context/**",
-        "apps/desktop/src/shared/model-credit-policy.ts",
-        "apps/desktop/src/main/db/**"
-      ],
-      "prohibitedPaths": [
-        "package.json",
-        "pnpm-workspace.yaml",
-        "pnpm-lock.yaml",
-        "apps/desktop/package.json",
-        "apps/desktop/src/main/db/**",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts",
-        "apps/desktop/src/main/agent/host-agent.ts",
-        "apps/desktop/src/main/agent/secret-store.ts",
-        "apps/desktop/src/main/agent/agent-tools.ts",
-        "apps/desktop/src/renderer/**",
-        "F:/Ai Tools/Tool Starizzi - B2C - Openclaw/**"
-      ],
-      "conditions": [
-        "Custom disabled routes explicitly to managed; custom enabled with invalid config or missing key fails closed and never silently falls back to managed.",
-        "Provider, endpoint and model are frozen for each request; runtime failure cannot trigger cross-provider or cross-model fallback.",
-        "Only the narrow recognised streaming incompatibility may retry once, non-streamed, on the same route/model/idempotency key.",
-        "Route decisions and diagnostics contain no raw secret, URL credential, query or fragment.",
-        "Loop 05 host/context bytes remain unchanged and no second context path is introduced.",
-        "No real network, account, billing, package, DB/schema, IPC, renderer or deployment side effect."
-      ],
-      "expiresOn": "Loop 06 acceptance or W0 revocation"
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 06 is the only active source-writer lease and is owned exclusively by Codex. All Kiro windows and other lanes are read-only outside W0 control records. Package manifests, DB/schema, host-context, renderer and operational OAuth/provisioning/runtime seams remain unleased.",
+  "integrationCommit": "85c0655dd0bf632ba765311ae1333f91cf86eeee",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No producer lease is active. Loop 06 is accepted and its lease is revoked. Loop 11 remains read-only until W0 creates an isolated worktree and grants an exact runtime/browser lease. Kiro has no writer authority.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -140,6 +81,15 @@
       "revokedAt": "2026-07-29T12:57:09Z",
       "revokedBy": "W0",
       "reason": "Loop 10 accepted at docs/handoffs/personal-office/acceptance/loop-10.json after independent security review, tenant/user authority-binding correction, exact-path integration and full verification."
+    },
+    {
+      "leaseId": "LEASE-L06-MODEL-GATEWAY-20260729",
+      "loop": "06",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T13:09:22Z",
+      "revokedBy": "W0",
+      "reason": "Loop 06 accepted at docs/handoffs/personal-office/acceptance/loop-06.json after independent Socrates review, exact-path integration, 18/18 Git-blob reconciliation and full verification."
     }
   ],
   "preApprovedOnLoop01Acceptance": {

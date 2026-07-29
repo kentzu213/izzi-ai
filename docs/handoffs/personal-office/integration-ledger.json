@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:57:09Z",
+  "updatedAt": "2026-07-29T13:09:22Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -353,17 +353,23 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-06-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop06",
-      "commitSha": null,
-      "handoff": "docs/handoffs/personal-office/dispatch-loop-06.md",
+      "commitSha": "85c0655dd0bf632ba765311ae1333f91cf86eeee",
+      "handoff": "docs/handoffs/personal-office/loop-06.json",
       "dependsOn": [
         "05"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 05 is ACCEPTED. Isolated worktree and LEASE-L06-MODEL-GATEWAY-20260729 are authorised.",
-      "lease": "LEASE-L06-MODEL-GATEWAY-20260729"
+      "dependencyStatus": "SATISFIED — Loops 05 and 06 are ACCEPTED.",
+      "lease": "LEASE-L06-MODEL-GATEWAY-20260729",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-06.json",
+      "acceptedProducerImplementation": "e36bb4a740a6626c8c58f55888419e0723a99e79",
+      "acceptedProducerHandoff": "10fa8c955fcdfa283b9ba67bd3671641fd888247",
+      "integrationImplementationCommit": "c9b13370d706475306c780881d2dc010c3bff3ba",
+      "integrationHandoffCommit": "85c0655dd0bf632ba765311ae1333f91cf86eeee",
+      "verificationSummary": "Independent Socrates PASS; targeted 90/90 and full desktop 1217/1217 tests PASS; main TypeScript, production build, lint 350 warnings/0 errors, 18/18 canonical Git-blob hashes, ownership, prohibited-path, strict routing and secret audits PASS."
     },
     {
       "loop": "07",
@@ -483,7 +489,8 @@
       "dependsOn": [
         "06"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 06 is ACCEPTED. W0 may create an isolated Loop 11 worktree and exact lease."
     },
     {
       "loop": "12",
