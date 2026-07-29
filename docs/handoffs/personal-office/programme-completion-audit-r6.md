@@ -2,8 +2,9 @@
 
 Status: `LOCAL_FOUNDATION_ACCEPTED_PRODUCT_INCOMPLETE`
 
-Audit time: 2026-07-29T20:45:00Z  
-Canonical ref: `feature/personal-office-baseline-20260728`  
+Audit time: 2026-07-29T20:45:00Z
+
+Canonical ref: `feature/personal-office-baseline-20260728`
 Audited head: `b2a67941ae476778cb26fd5e78f6af42fc9762bd`
 
 ## Verdict
