@@ -1,7 +1,16 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  dialog,
+  nativeImage,
+  clipboard,
+  safeStorage,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'node:net';
@@ -100,6 +109,10 @@ import {
   MarketplaceOperationService,
   registerMarketplaceIpc,
 } from './marketplace';
+import { SafeStorageRuntimeEncryptionProvider } from './runtime/safe-storage-encryption';
+import {
+  createOfflineOperationalRuntimeComposition,
+} from './runtime/operational-runtime-composition';
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
@@ -341,6 +354,14 @@ function setupIPC() {
     },
   };
   registerWorkIpc(workService, workIdentity);
+  const operationalRuntimeComposition = createOfflineOperationalRuntimeComposition({
+    rootDir: path.join(
+      app.getPath('userData'),
+      'personal-office',
+      'operational-runtime',
+    ),
+    encryption: new SafeStorageRuntimeEncryptionProvider(safeStorage),
+  });
   const marketplaceOperationService = new MarketplaceOperationService({
     // Loop 15 deliberately does not trust the legacy Marketplace API or
     // fallback extension catalog. Loop 16/17 will register these authorities
@@ -398,6 +419,8 @@ function setupIPC() {
         code: 'INSTALLER_NOT_REGISTERED',
       }),
     },
+    completedReceiptSink:
+      operationalRuntimeComposition.marketplaceCompletedReceiptSink,
   });
   registerMarketplaceIpc(marketplaceOperationService);
   const agentContextRuntime = new PersonalOfficeAgentContextRuntime({
