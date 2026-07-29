@@ -338,6 +338,24 @@ describe('Live.md precedence, proposals, and revisions', () => {
         now: '2026-07-29T08:04:00.000Z',
       }),
     ).toThrow(LiveProfileValidationError);
+    expect(() =>
+      decideLiveProposal(revoked, {
+        expectedRevision: 4,
+        actor: { kind: 'user', id: scope.ownerId },
+        proposalId: 'email-tone',
+        decision: 'accept',
+        now: '2026-07-29T08:05:00.000Z',
+      }),
+    ).toThrow(LiveProfileValidationError);
+    expect(
+      decideLiveProposal(revoked, {
+        expectedRevision: 4,
+        actor: { kind: 'user', id: scope.ownerId },
+        proposalId: 'email-tone',
+        decision: 'reject',
+        now: '2026-07-29T08:05:00.000Z',
+      }).proposals[0]?.status,
+    ).toBe('rejected');
   });
 
   it('excludes expired directives from effective truth at a requested time', () => {
@@ -387,6 +405,32 @@ describe('Live.md precedence, proposals, and revisions', () => {
         key: 'scope',
         value: 'This must not persist.',
         now: '2026-07-29T08:01:00.000Z',
+      }),
+    ).toThrow(LiveProfileValidationError);
+  });
+
+  it('rejects an invalid runtime proposal decision instead of accepting it', () => {
+    const proposed = proposeLiveDirective(
+      createLiveProfileDocument({ scope, documentRef: 'Live.md', now: at }),
+      {
+        expectedRevision: 1,
+        actor: { kind: 'agent', id: 'agent-editor' },
+        id: 'runtime-decision',
+        kind: 'preference',
+        key: 'format',
+        value: 'Use short sections.',
+        reason: 'Observed editing pattern.',
+        now: '2026-07-29T08:01:00.000Z',
+      },
+    );
+
+    expect(() =>
+      decideLiveProposal(proposed, {
+        expectedRevision: 2,
+        actor: { kind: 'user', id: scope.ownerId },
+        proposalId: 'runtime-decision',
+        decision: 'approve' as never,
+        now: '2026-07-29T08:02:00.000Z',
       }),
     ).toThrow(LiveProfileValidationError);
   });

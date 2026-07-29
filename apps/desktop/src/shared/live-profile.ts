@@ -896,6 +896,12 @@ export function decideLiveProposal(
   const validated = validateLiveProfileDocument(document);
   requireRevision(validated, input.expectedRevision);
   requireProfileOwner(validated, input.actor);
+  if (input.decision !== 'accept' && input.decision !== 'reject') {
+    throw new LiveProfileValidationError(
+      'invalid-decision',
+      'proposal.decision must be accept or reject.',
+    );
+  }
   const proposalIndex = validated.proposals.findIndex(
     (proposal) => proposal.id === input.proposalId,
   );
@@ -930,6 +936,12 @@ export function decideLiveProposal(
       updatedAt: now,
       proposals,
     });
+  }
+  if (proposal.sourceType !== undefined && !validated.learningConsent[proposal.sourceType]) {
+    throw new LiveProfileValidationError(
+      'learning-consent-required',
+      `Accepting a proposal learned from ${proposal.sourceType} requires current user consent.`,
+    );
   }
 
   const current = currentDirective(validated, proposal.kind, proposal.key);
