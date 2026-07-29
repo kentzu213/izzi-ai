@@ -1,6 +1,8 @@
 # CHANGE_REQUEST — Loop 17 offline production composition
 
-Status: `REQUESTED`
+Status: `GRANTED_OFFLINE_ONLY`
+
+Lease: `LEASE-L17-OFFLINE-COMPOSITION-20260729`
 
 Requester: Loop 17 / Codex control tower
 Decision authority: W0

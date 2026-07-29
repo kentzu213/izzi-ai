@@ -3,12 +3,34 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59.995Z",
+  "updatedAt": "2026-07-29T23:59:59.997Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "16e980e214b86bf7868f59434e4acdfcd61cab32",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No Personal Office producer lease is active. Loop 17's offline authoritative-receipt and isolated runtime dependency-closure checkpoint is integrated and reviewed, but production dependency, main composition, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
+  "integrationCommit": "ad605f7379a072081414285c65c2b4c5afefb02a",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
+      "loop": "17",
+      "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T23:59:59.996Z",
+      "branch": "feature/personal-office-loop-17-composition-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17-composition",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-offline-composition.md",
+      "paths": [
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/runtime/operational-runtime-composition.ts",
+        "apps/desktop/src/main/runtime/operational-runtime-composition.test.ts"
+      ],
+      "constraints": [
+        "Only Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition are authorised.",
+        "The composition must remain fail-closed when OS-backed encryption, catalog, grant, installer, driver or runtime authority is unavailable.",
+        "No package manifest, lockfile, dependency install, Playwright import, browser launch, network request, connector registration, preload, renderer, DB/schema, auth, secret retrieval or quarantine write is authorised."
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Loop 17 holds one exact-path offline production-composition lease for safeStorage-backed authority stores and Marketplace receipt-sink injection. Package/lockfile changes, dependency installation, main runtime driver registration, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
