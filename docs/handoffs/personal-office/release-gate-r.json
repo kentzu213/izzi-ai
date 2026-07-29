@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "release-gate-handoff",
+  "gate": "R",
+  "decision": "READY_FOR_PLATFORM_VALIDATION",
+  "decisionStatement": "Release Gate R implementation is READY_FOR_PLATFORM_VALIDATION, not stable-release accepted.",
+  "title": "Desktop dependency, signing, notarization and publish safety",
+  "owner": "W0 Control Tower",
+  "branch": "feature/personal-office-baseline-20260728",
+  "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
+  "lease": "LEASE-R-DEPENDENCY-SIGNING-20260729",
+  "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r-security.md",
+  "baseCommit": "3693288e6626ceeb73c99a9b5fd6f4bbd50a7824",
+  "implementationCommits": [
+    {
+      "sha": "845d8da98204b214f2978525166e1abafe62e954",
+      "subject": "fix(release): harden dependency and mac signing gate"
+    },
+    {
+      "sha": "1b82dc6095b277b56decfe27230b1c45c4648200",
+      "subject": "fix(release): require manual draft publishing",
+      "reason": "Closes the independent security finding that v* tag pushes could create stable GitHub releases automatically."
+    }
+  ],
+  "changeRequestDivergence": {
+    "declared": {
+      "@hono/node-server": "2.0.5",
+      "brace-expansion-2x": "2.1.2",
+      "brace-expansion-5x": "5.0.8"
+    },
+    "implemented": {
+      "@hono/node-server": "2.0.12",
+      "brace-expansion-2x": "2.1.3",
+      "brace-expansion-5x": "5.0.8"
+    },
+    "assessment": "The implemented Hono and 2.x brace-expansion versions are newer security-corrected releases. The 2.1.3 source contains the CVE-2026-14257 maxLength backport, although the registry advisory metadata still reports it as vulnerable."
+  },
+  "ownedOutputs": [
+    {
+      "path": ".github/workflows/release-desktop.yml",
+      "bytes": 5085,
+      "sha256": "090bb6cb59f3385793c569ab2a8ff52d70e4cc762881a1a8367df47d961c7bfb"
+    },
+    {
+      "path": "apps/desktop/electron-builder.json",
+      "bytes": 3302,
+      "sha256": "1c0546f915e304c5dd5384b64e4876b24eb61e480f478e2f0f321d05ef494b65"
+    },
+    {
+      "path": "docs/desktop-release-checklist.md",
+      "bytes": 2300,
+      "sha256": "d359b1aaca7bfaa826a0a2ee6dc997c1f4adffa70463ba01d15c3abe5e4aa851"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1870,
+      "sha256": "6b6e1434a09b47691cb193c98405b463607a0c108851680d0fe369fb72b1412d"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 248502,
+      "sha256": "2c62267a9fce6ae91b76a2ca5484463a1c6a1586d51d8ad7c964a33ea642013f"
+    }
+  ],
+  "controls": {
+    "dependencyResolution": [
+      "@hono/node-server resolves to 2.0.12 for HyperFrames and the workspace.",
+      "brace-expansion resolves to 2.1.3 for the CLI production path and 5.0.8 for the prior 5.x resolution.",
+      "PERSONAL_OFFICE_SCHEMA_VERSION and database/schema paths were not changed."
+    ],
+    "macSigning": [
+      "hardenedRuntime remains enabled.",
+      "electron-builder notarization is enabled.",
+      "The macOS job fails when any required signing/notarization secret name is unconfigured.",
+      "Secret values are never printed or copied into repository files."
+    ],
+    "publishSafety": [
+      "The workflow is workflow_dispatch-only; pushing a v* tag cannot publish.",
+      "Manual dispatch requires release_tag, draft/prerelease selection and explicit confirmation.",
+      "The requested tag is validated and checked out exactly.",
+      "Root permissions are contents:read; contents:write is limited to the two release jobs.",
+      "Both release jobs reference the desktop-release environment.",
+      "electron-builder defaults to releaseType=draft and the workflow cannot create or promote a stable release.",
+      "Stable promotion remains a separate explicit admin action."
+    ]
+  },
+  "verification": [
+    {
+      "check": "desktop tests",
+      "result": "PASS",
+      "evidence": "119 files, 1288/1288 tests."
+    },
+    {
+      "check": "lint",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors, 347 warnings; below the recorded ceiling of 358."
+    },
+    {
+      "check": "workspace and package builds",
+      "result": "PASS",
+      "evidence": "pnpm build:all, Marketplace API build and CLI build passed."
+    },
+    {
+      "check": "frozen dependency install",
+      "result": "PASS",
+      "evidence": "Frozen lockfile install passed with lifecycle scripts disabled; no package manifest drift followed."
+    },
+    {
+      "check": "dependency audit",
+      "result": "CONDITIONAL_PASS_METADATA_EXCEPTION",
+      "evidence": "pnpm audit --prod exits 1 with one HIGH finding for brace-expansion@2.1.3. The exact installed 2.1.3 source contains EXPANSION_MAX_LENGTH=4000000 and maxLength guards, and a 128 MB heap test returned 13,333 outputs of maximum length 300 without OOM. This is not recorded as audit-clean."
+    },
+    {
+      "check": "Windows package",
+      "result": "PASS_UNSIGNED",
+      "evidence": "electron-builder NSIS packaging passed with --publish never. Windows signing is optional under the current policy."
+    },
+    {
+      "check": "packaged dependency inspection",
+      "result": "PASS",
+      "evidence": "app.asar has 9,114 entries, contains @hono/node-server@2.0.12, and contains no brace-expansion entry; app.asar.unpacked contains neither package."
+    },
+    {
+      "check": "packaged runtime smoke",
+      "result": "PASS_LOGIN_BOUNDARY",
+      "evidence": "win-unpacked Izzi AI.exe launched hidden with a temporary user-data directory and mock agent/integration/updater modes. CDP reported title Izzi AI, readyState complete, mounted root content and the fail-closed IzziAPI login page. No mock-auth bypass exists, so authenticated routes were not forged."
+    },
+    {
+      "check": "workflow and builder policy parse",
+      "result": "PASS",
+      "evidence": "YAML parsed with workflow_dispatch as the only trigger, three required inputs, read-only root permissions, job-scoped write permissions and desktop-release environment references. electron-builder JSON parsed with releaseType=draft, notarize=true and hardenedRuntime=true."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly five implementation paths changed from the lease base. No feature source, DB/schema, auth, updater runtime, secret file or package-workspace manifest changed. Diff-only secret scan found only secret-name references."
+    },
+    {
+      "check": "GitNexus",
+      "result": "LOW",
+      "evidence": "2 changed documentation symbols, 0 affected execution processes."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 status entries."
+    }
+  ],
+  "releaseArtifacts": [
+    {
+      "path": "apps/desktop/release/Izzi AI-1.14.0-beta.3-win-x64.exe",
+      "bytes": 184558405,
+      "sha256": "e790d3b6cf40949f20af713be7d036f0b4d660b245867b2ba36cea20386b2a5c",
+      "signed": false,
+      "published": false
+    },
+    {
+      "path": "apps/desktop/release/win-unpacked/resources/app.asar",
+      "bytes": 115004957,
+      "sha256": "4901ad4fd31dcb24160f5c0a585cde74fa678a6e70f401ca527816f536ab205d"
+    }
+  ],
+  "independentReview": {
+    "security": {
+      "decision": "PASS",
+      "reviewedCommit": "1b82dc6095b277b56decfe27230b1c45c4648200",
+      "note": "The initial accidental-publish blocker was corrected; manual draft/prerelease controls and least-privilege permissions passed re-review."
+    },
+    "socrates": {
+      "decision": "PASS_FOR_READY_FOR_PLATFORM_VALIDATION",
+      "reviewedCommit": "1b82dc6095b277b56decfe27230b1c45c4648200",
+      "note": "Stable ACCEPTED remains blocked. The workflow may upload only manually approved draft/prerelease artifacts and cannot promote a stable release."
+    }
+  },
+  "platformValidationRequired": [
+    "Verify in GitHub repository settings that desktop-release has required reviewers and self-review disabled.",
+    "Windows fresh install, launch, upgrade from the prior supported version and uninstall, including data-retention policy checks.",
+    "A real macOS CI run with signing/notarization secrets for x64 and arm64.",
+    "Run codesign --verify, stapler validate and spctl --assess against the produced macOS app/DMG.",
+    "Use an approved vX.Y.Z-rc.N tag for platform validation; the current beta.3 version is not accepted by the workflow tag validator.",
+    "Promote a validated draft/prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedActionsStillInForce": [
+    "push",
+    "tag creation",
+    "publish",
+    "stable promotion",
+    "deployment",
+    "installer execution",
+    "secret retrieval",
+    "quarantine mutation"
+  ],
+  "createdAt": "2026-07-29T16:32:09Z"
+}
