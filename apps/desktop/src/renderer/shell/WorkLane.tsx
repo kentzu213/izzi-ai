@@ -15,7 +15,7 @@
 import React, { useId, useState } from 'react';
 import type { Approval } from '../../shared/personal-office';
 import { needsMeKind, type DeliverableView, type WorkItemView } from './types';
-import { formatBytes, formatRelativeTime, formatRisk, formatState } from './format';
+import { formatBytes, formatRelativeTime, formatRisk, formatRunState } from './format';
 import { AlertIcon, CheckIcon, ChevronRightIcon } from './ShellIcons';
 
 /* ───────────────────────────── lane ───────────────────────────── */
@@ -79,7 +79,11 @@ const NEEDS_ME_COPY: Record<'approval' | 'external' | 'paused', string> = {
 
 interface WorkItemCardProps {
   readonly item: WorkItemView;
-  readonly onOpenWorkspace: (id: WorkItemView['workspaceId']) => void;
+  /**
+   * Omitted when the card is already inside the workspace it belongs to, where
+   * "open workspace" would navigate to the page you are on.
+   */
+  readonly onOpenWorkspace?: (id: WorkItemView['workspaceId']) => void;
 }
 
 export function WorkItemCard({ item, onOpenWorkspace }: WorkItemCardProps) {
@@ -95,7 +99,7 @@ export function WorkItemCard({ item, onOpenWorkspace }: WorkItemCardProps) {
           {/* L1: the operator's own words come first. */}
           <p className="po-card__goal">{item.goal}</p>
           <p className="po-card__meta">
-            <span className="po-card__state">{formatState(item.state)}</span>
+            <span className="po-card__state">{formatRunState(item.state)}</span>
             <span aria-hidden="true"> · </span>
             <span>{item.workspaceName}</span>
             <span aria-hidden="true"> · </span>
@@ -132,10 +136,17 @@ export function WorkItemCard({ item, onOpenWorkspace }: WorkItemCardProps) {
         {!item.detail && !item.failureSummary && (
           <p className="po-card__detail-line">No extra detail recorded yet.</p>
         )}
-        {/* L3: explicit, labelled navigation. */}
-        <button type="button" className="po-card__open" onClick={() => onOpenWorkspace(item.workspaceId)}>
-          Open workspace
-        </button>
+        {/* L3: explicit, labelled navigation. Omitted when the card is already
+            inside the workspace it would navigate to. */}
+        {onOpenWorkspace && (
+          <button
+            type="button"
+            className="po-card__open"
+            onClick={() => onOpenWorkspace(item.workspaceId)}
+          >
+            Open workspace
+          </button>
+        )}
       </div>
     </li>
   );
@@ -145,7 +156,13 @@ export function WorkItemCard({ item, onOpenWorkspace }: WorkItemCardProps) {
 
 interface ApprovalCardProps {
   readonly approval: Approval;
-  readonly onDecide: (id: Approval['id'], decision: 'approved' | 'rejected') => void;
+  /**
+   * Optional on purpose. Deciding an approval is an external effect that must go
+   * through the work engine (W3, Loop 03). Until that lands there is no handler,
+   * and the shell renders the reason instead of a button that cannot work — a
+   * disabled control with no explanation is worse than an honest sentence.
+   */
+  readonly onDecide?: (id: Approval['id'], decision: 'approved' | 'rejected') => void;
   readonly disabledReason?: string;
 }
 
@@ -188,25 +205,27 @@ export function ApprovalCard({ approval, onDecide, disabledReason }: ApprovalCar
           <dt>Effect</dt>
           <dd>{approval.binding.estimatedSideEffect}</dd>
         </dl>
-        <div className="po-approval__actions">
-          <button
-            type="button"
-            className="po-approval__approve"
-            onClick={() => onDecide(approval.id, 'approved')}
-            disabled={Boolean(disabledReason)}
-          >
-            <CheckIcon className="po-approval__icon" />
-            Approve
-          </button>
-          <button
-            type="button"
-            className="po-approval__reject"
-            onClick={() => onDecide(approval.id, 'rejected')}
-            disabled={Boolean(disabledReason)}
-          >
-            Decline
-          </button>
-        </div>
+        {onDecide && (
+          <div className="po-approval__actions">
+            <button
+              type="button"
+              className="po-approval__approve"
+              onClick={() => onDecide(approval.id, 'approved')}
+              disabled={Boolean(disabledReason)}
+            >
+              <CheckIcon className="po-approval__icon" />
+              Approve
+            </button>
+            <button
+              type="button"
+              className="po-approval__reject"
+              onClick={() => onDecide(approval.id, 'rejected')}
+              disabled={Boolean(disabledReason)}
+            >
+              Decline
+            </button>
+          </div>
+        )}
         {disabledReason && <p className="po-approval__blocked">{disabledReason}</p>}
       </div>
     </li>

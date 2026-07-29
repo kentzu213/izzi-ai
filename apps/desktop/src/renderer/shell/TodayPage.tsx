@@ -27,7 +27,7 @@ import type { WorkspaceInstanceId } from '../../shared/personal-office';
 interface TodayPageProps {
   readonly snapshot: WorkSnapshot;
   readonly isDelegating: boolean;
-  readonly onDelegate: (goal: string) => Promise<void>;
+  readonly onDelegate: (goal: string) => Promise<boolean>;
   readonly onRetry: () => void;
   readonly onOpenWorkspace: (id: WorkspaceInstanceId) => void;
 }

@@ -13,11 +13,12 @@
 
 import { create } from 'zustand';
 import type { WorkspaceInstanceId } from '../../shared/personal-office';
+import type { LegacyPageId } from '../shell/legacySurfaces';
 import {
   DEFAULT_ROUTE,
-  type ShellRoute,
+  FIRST_WORKSPACE_SURFACE,
+  type ShellView,
   type WorkspaceSurface,
-  WORKSPACE_SURFACES,
 } from '../shell/types';
 
 const LAST_WORKSPACE_KEY = 'izzi.shell.lastWorkspaceId';
@@ -40,19 +41,20 @@ function persistLastWorkspace(id: WorkspaceInstanceId): void {
 }
 
 export interface PersonalOfficeState {
-  route: ShellRoute;
+  /** Where the operator is. Includes the two non-nav destinations. */
+  view: ShellView;
   workspaceId: WorkspaceInstanceId | null;
   workspaceSurface: WorkspaceSurface;
-  /** Legacy page id currently hosted by the adapter route, if any. */
-  legacyPage: string | null;
+  /** Legacy page currently hosted by the adapter route, if any. */
+  legacyPage: LegacyPageId | null;
   isPaletteOpen: boolean;
   isNavSheetOpen: boolean;
   isSetupDrawerOpen: boolean;
 
-  navigate: (route: ShellRoute) => void;
+  navigate: (view: ShellView) => void;
   openWorkspace: (id: WorkspaceInstanceId, surface?: WorkspaceSurface) => void;
   setWorkspaceSurface: (surface: WorkspaceSurface) => void;
-  openLegacy: (page: string) => void;
+  openLegacy: (page: LegacyPageId) => void;
   setPaletteOpen: (open: boolean) => void;
   togglePalette: () => void;
   setNavSheetOpen: (open: boolean) => void;
@@ -61,30 +63,30 @@ export interface PersonalOfficeState {
 }
 
 export const usePersonalOfficeStore = create<PersonalOfficeState>((set, get) => ({
-  route: DEFAULT_ROUTE,
+  view: DEFAULT_ROUTE,
   workspaceId: readLastWorkspace(),
-  workspaceSurface: WORKSPACE_SURFACES[0],
+  workspaceSurface: FIRST_WORKSPACE_SURFACE,
   legacyPage: null,
   isPaletteOpen: false,
   isNavSheetOpen: false,
   isSetupDrawerOpen: false,
 
-  navigate: (route) =>
+  navigate: (view) =>
     set({
-      route,
-      // Leaving a workspace closes its drawer; overlays never survive a route change.
+      view,
+      // Overlays never survive a route change; the drawer belongs to a workspace.
       isNavSheetOpen: false,
       isPaletteOpen: false,
-      isSetupDrawerOpen: route === 'workspace' ? get().isSetupDrawerOpen : false,
-      legacyPage: route === 'legacy' ? get().legacyPage : null,
+      isSetupDrawerOpen: view === 'workspace' ? get().isSetupDrawerOpen : false,
+      legacyPage: view === 'legacy' ? get().legacyPage : null,
     }),
 
   openWorkspace: (id, surface) => {
     persistLastWorkspace(id);
     set({
-      route: 'workspace',
+      view: 'workspace',
       workspaceId: id,
-      workspaceSurface: surface ?? WORKSPACE_SURFACES[0],
+      workspaceSurface: surface ?? FIRST_WORKSPACE_SURFACE,
       isNavSheetOpen: false,
       isPaletteOpen: false,
     });
@@ -93,7 +95,7 @@ export const usePersonalOfficeStore = create<PersonalOfficeState>((set, get) => 
   setWorkspaceSurface: (surface) => set({ workspaceSurface: surface }),
 
   openLegacy: (page) =>
-    set({ route: 'legacy', legacyPage: page, isNavSheetOpen: false, isPaletteOpen: false }),
+    set({ view: 'legacy', legacyPage: page, isNavSheetOpen: false, isPaletteOpen: false }),
 
   setPaletteOpen: (open) => set({ isPaletteOpen: open }),
   togglePalette: () => set({ isPaletteOpen: !get().isPaletteOpen }),
@@ -102,8 +104,8 @@ export const usePersonalOfficeStore = create<PersonalOfficeState>((set, get) => 
 
   reset: () =>
     set({
-      route: DEFAULT_ROUTE,
-      workspaceSurface: WORKSPACE_SURFACES[0],
+      view: DEFAULT_ROUTE,
+      workspaceSurface: FIRST_WORKSPACE_SURFACE,
       legacyPage: null,
       isPaletteOpen: false,
       isNavSheetOpen: false,

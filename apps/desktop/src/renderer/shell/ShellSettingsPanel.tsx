@@ -14,20 +14,30 @@
  */
 
 import React from 'react';
-import { setPersonalOfficeShellEnabled } from './featureFlags';
-import { LEGACY_GROUPS, SETUP_GROUPS, type LegacySurface } from './legacySurfaces';
+import { LEGACY_GROUPS, SETUP_GROUPS, type LegacyPageId } from './legacySurfaces';
 import { ChevronRightIcon } from './ShellIcons';
 
 interface ShellSettingsPanelProps {
-  readonly onOpenLegacy: (surface: LegacySurface) => void;
+  /**
+   * Opens a legacy surface inside the shell. Takes the page id, not the whole
+   * descriptor: the store's `openLegacy` is keyed by `LegacyPageId`, so passing
+   * the id is the one typed API and needs no unwrapping at the call site.
+   */
+  readonly onOpenLegacy: (page: LegacyPageId) => void;
+  /**
+   * Rollback to the legacy sidebar shell. Owned by App.tsx, because only the
+   * mount point can clear the flag *and* re-render the old layout.
+   */
+  readonly onDisableShell: () => void;
+  /** The existing Settings page, rendered by App.tsx inside this panel. */
+  readonly children?: React.ReactNode;
 }
 
-export function ShellSettingsPanel({ onOpenLegacy }: ShellSettingsPanelProps) {
-  function handleRollback() {
-    setPersonalOfficeShellEnabled(false);
-    window.location.reload();
-  }
-
+export function ShellSettingsPanel({
+  onOpenLegacy,
+  onDisableShell,
+  children,
+}: ShellSettingsPanelProps) {
   return (
     <section className="po-surface" aria-labelledby="po-settings-heading">
       <header className="po-surface__head">
@@ -46,7 +56,7 @@ export function ShellSettingsPanel({ onOpenLegacy }: ShellSettingsPanelProps) {
             You are using the Personal Office shell. Switching back keeps every page and all your
             data — only the navigation changes.
           </p>
-          <button type="button" className="po-btn po-btn--quiet" onClick={handleRollback}>
+          <button type="button" className="po-btn po-btn--quiet" onClick={onDisableShell}>
             Switch to the classic shell
           </button>
         </section>
@@ -67,7 +77,7 @@ export function ShellSettingsPanel({ onOpenLegacy }: ShellSettingsPanelProps) {
                   <button
                     type="button"
                     className="po-link-row"
-                    onClick={() => onOpenLegacy(surface)}
+                    onClick={() => onOpenLegacy(surface.id)}
                   >
                     <span className="po-link-row__label">{surface.label}</span>
                     <span className="po-link-row__hint">{surface.description}</span>
@@ -95,7 +105,7 @@ export function ShellSettingsPanel({ onOpenLegacy }: ShellSettingsPanelProps) {
                   <button
                     type="button"
                     className="po-link-row"
-                    onClick={() => onOpenLegacy(surface)}
+                    onClick={() => onOpenLegacy(surface.id)}
                   >
                     <span className="po-link-row__label">{surface.label}</span>
                     <span className="po-link-row__hint">{surface.description}</span>
@@ -106,6 +116,15 @@ export function ShellSettingsPanel({ onOpenLegacy }: ShellSettingsPanelProps) {
             </ul>
           </section>
         ))}
+
+        {children && (
+          <section className="po-panel" aria-labelledby="po-settings-account">
+            <h2 id="po-settings-account" className="po-panel__title">
+              Account and preferences
+            </h2>
+            <div className="po-embed">{children}</div>
+          </section>
+        )}
       </div>
     </section>
   );
