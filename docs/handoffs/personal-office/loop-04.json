@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "04",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED.",
+  "title": "Workspace-scoped Live profile, vault, wikilinks and MyGraph projection",
+  "producer": {
+    "branch": "feature/personal-office-loop-04-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop04",
+    "lease": "LEASE-L04-LIVE-VAULT-GRAPH-20260729"
+  },
+  "canonicalBase": "4fa9e1dd62671097b833d2e3bdaa0c70c6b273b2",
+  "dispatchCommit": "8abf240947c43a0a7f4238a1dc46cf9e99c2db26",
+  "commits": [
+    {
+      "sha": "dd163762590881d00e834ac0c519121fc7216c9a",
+      "phase": "implementation"
+    },
+    {
+      "sha": "b2c65260e7778b9859cb80a09b3299813188bdfc",
+      "phase": "artifact_formatting"
+    },
+    {
+      "sha": "c2551f180dca9eb241f2ba79b5ae0c5d27a30c05",
+      "phase": "socrates_correction"
+    }
+  ],
+  "implementationFiles": {
+    "count": 13,
+    "allInsideLease": true
+  },
+  "securityGate": {
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "Exact workspace and owner scope.",
+      "Raw credential-shaped content rejected.",
+      "Agent proposals cannot directly mutate durable truth.",
+      "Current learning consent is required at proposal creation and acceptance.",
+      "Unknown decision values fail closed.",
+      "Local-files classification cannot project into MyGraph.",
+      "Vault paths and wikilink resolution remain scoped and traversal-safe.",
+      "No IPC, DB, preload, package, execution or deployment seam."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted tests",
+      "result": "PASS",
+      "evidence": "6 files, 40/40 tests with --no-cache"
+    },
+    {
+      "check": "full producer suite",
+      "result": "PASS",
+      "evidence": "87 files, 1091/1091 before the final focused correction"
+    },
+    {
+      "check": "isolated TypeScript",
+      "result": "PASS"
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "zero findings"
+    },
+    {
+      "check": "ownership, prohibited paths and diff",
+      "result": "PASS",
+      "evidence": "13/13 implementation paths leased; git diff --check clean"
+    },
+    {
+      "check": "independent Socrates",
+      "result": "PASS",
+      "evidence": "Two blocking findings corrected by c2551f1 and regression tested"
+    }
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/shared/live-profile.ts",
+      "bytes": 37610,
+      "sha256": "99517555ab158bbd57d78d56085198cbdd5e368ac4804fca0cd892e44a3ea540"
+    },
+    {
+      "path": "apps/desktop/src/shared/live-graph.ts",
+      "bytes": 8542,
+      "sha256": "d7068d034d2f8d0300fc012e5e2a6b2b21ba8502c573d139d3ab64a03d9540eb"
+    },
+    {
+      "path": "apps/desktop/src/shared/vault-types.ts",
+      "bytes": 8680,
+      "sha256": "aefcd86abedef40b15bf9e893769d31ff35c8e5429ad95eef1b81e5634090df8"
+    },
+    {
+      "path": "apps/desktop/src/shared/vault-ops.ts",
+      "bytes": 2790,
+      "sha256": "176ebb9c1f967243f69ce700f4b58fe7f389da2c9951a374a07b30106bed061d"
+    },
+    {
+      "path": "apps/desktop/src/shared/wikilink.ts",
+      "bytes": 4463,
+      "sha256": "9c6578fbf0b824490f8fd6e3d6dc3365e56412f0eeaafbb84205903aa26725dc"
+    },
+    {
+      "path": "apps/desktop/src/main/live/live-profile-service.ts",
+      "bytes": 7274,
+      "sha256": "62b82526e28402daebb370d79e1edb8768ee94a8a3440a57e0dbe4c28c27960b"
+    },
+    {
+      "path": "docs/product/personal-office-live-graph.md",
+      "bytes": 5017,
+      "sha256": "bdc97632c38e44fcb784db19cf3525a65746cb82621d13b4afa0a411f254344f"
+    }
+  ],
+  "socratesReview": {
+    "initial": "CHANGES_REQUIRED",
+    "final": "PASS",
+    "correction": "c2551f180dca9eb241f2ba79b5ae0c5d27a30c05"
+  },
+  "residualRisks": [
+    "Future arbitrary-root authorization must canonicalize symlinks.",
+    "Later runtime wiring needs stale-lock recovery.",
+    "Graph consumers must honor expiry metadata for historical facts."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify hashes, exact paths, tests/typecheck/lint/build on integration, then accept or return findings."
+    },
+    {
+      "owner": "Loop 05",
+      "action": "After W0 acceptance, consume precedence/effective directives read-only; do not bypass proposal or consent rules."
+    }
+  ],
+  "skillAudit": {
+    "search-first": "USED",
+    "context-gatherer": "USED",
+    "quick-spec": "USED",
+    "backend-patterns": "USED",
+    "frontend-patterns": "BOUNDARY_ONLY",
+    "deployment-patterns": "BOUNDARY_ONLY",
+    "security-review": "USED",
+    "verification-loop": "USED",
+    "understand-codebase": "USED",
+    "Design": "BOUNDARY_ONLY",
+    "gpt-taste": "BOUNDARY_ONLY",
+    "design-taste-frontend": "BOUNDARY_ONLY",
+    "stitch-design-taste": "BOUNDARY_ONLY"
+  }
+}
