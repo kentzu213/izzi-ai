@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R6",
+  "decision": "ACCEPTED_IN_LOCAL_RECONCILIATION",
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T20:15:00Z",
+  "authority": "This record accepts the beta.11 safe Customer Marketing re-import refresh into the local Personal Office integration ref. It does not authorize push, tag creation, publish, deployment, installer execution, secret retrieval, GitHub environment mutation, browser automation enablement, or stable promotion.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "fed388a8a825338238d6bf68ae437cff8bdfe46b",
+    "canonicalImplementationCommit": "973fe679b477e5ee932ba2583d2fef631a001691",
+    "canonicalHandoffCommit": "fed388a8a825338238d6bf68ae437cff8bdfe46b",
+    "producerImplementationCommit": "5e95aede3bce316d4d709bafa00ddfead2cdd66a",
+    "producerHandoffCommit": "5e6488ccf59c54d15eba62db2f2078c58e54696a",
+    "sourceVersionLineage": "v1.14.0-beta.11",
+    "lease": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r6-beta11-reconciliation.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r6-beta11.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "Seven leased source blobs were restored from the immutable reviewed producer implementation commit, followed by the two leased handoff artifacts from the producer handoff commit. No merge, blind cherry-pick, whole-worktree restore, mutable external-source byte, or quarantine byte was used.",
+    "changedSourcePaths": 7,
+    "sourceBlobMatches": 7,
+    "twoPhaseCommits": [
+      "973fe679b477e5ee932ba2583d2fef631a001691",
+      "fed388a8a825338238d6bf68ae437cff8bdfe46b"
+    ],
+    "securityDecision": "Replacement authority is a private runtime-derived sourceIdentity bound to the authenticated workspace and canonical real path. Manifest projectId, aliases and legacy_ids are not replacement authority."
+  },
+  "verification": [
+    {
+      "check": "focused Customer Marketing tests",
+      "result": "PASS",
+      "evidence": "2/2 files and 164/164 tests passed on canonical with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "122/122 files and 1364/1364 tests passed on canonical with --no-cache."
+    },
+    {
+      "check": "main TypeScript and production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "tsconfig.main.json completed with zero errors. The beta.11 production build transformed 1176 modules; the existing renderer chunk advisory above 500 kB remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Canonical lint completed with 0 errors and 350 warnings, below the ceiling of 358. This canonical result supersedes the producer handoff's earlier 297-warning observation."
+    },
+    {
+      "check": "ownership and provenance",
+      "result": "PASS",
+      "evidence": "Exactly seven leased source paths and two leased handoff paths changed. All seven canonical source files match the handoff SHA-256, byte count and Git blob."
+    },
+    {
+      "check": "re-import security invariants",
+      "result": "PASS",
+      "evidence": "Same-source replacement, rename-in-place continuity, forged projectId and legacyProjectIds isolation, case-only path separation, and stale preview success/failure discard are covered by the focused and full suites. sourceIdentity is absent from renderer paths and legacy manifest authority tokens are absent from production service code."
+    },
+    {
+      "check": "diff and secret audit",
+      "result": "PASS",
+      "evidence": "git diff --check, exact ownership, prohibited-path, conflict-marker and diff-only secret scans passed. pnpm-lock.yaml, IPC/preload, DB/schema and packaged release paths did not change."
+    },
+    {
+      "check": "external worktree isolation",
+      "result": "PASS",
+      "evidence": "Before and after verification, the mutable beta.11 source remained at ac0e17cd52e6252e3b0dbd2d3839f748f13843ba with 9 standard porcelain entries and CRLF digest 15d25878ff19a9d85fb8ca5dec875729a106c5eaefa1795c1b19d2a5dd169dfd. Quarantine remained at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 entries and CRLF digest 0d315707bb9230e9738c8f925a1bfa35a42f85b00382a83629f35d0f5e33fd44."
+    },
+    {
+      "check": "GitNexus impact and independent review",
+      "result": "REVIEWED_CRITICAL",
+      "evidence": "Producer analysis reported 10 changed indexed symbols and 139 affected processes. Independent Socrates review passed after path-case and rename-in-place corrections; critical scope is covered by focused/full tests, TypeScript, build, lint, provenance and security audits."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Run Windows fresh install, launch, prior-version upgrade and uninstall with data-retention checks.",
+    "Produce real signed/notarized macOS x64 and arm64 artifacts.",
+    "Pass codesign, notarization, stapling and Gatekeeper checks on the macOS deliverables.",
+    "Run an approved RC tag through platform validation.",
+    "Promote a validated draft or prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "push",
+    "tag creation",
+    "publish",
+    "stable promotion",
+    "deployment",
+    "installer execution",
+    "secret retrieval",
+    "GitHub environment mutation",
+    "browser automation enablement"
+  ]
+}

@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T18:55:00Z",
+  "updatedAt": "2026-07-29T20:15:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -1025,5 +1025,48 @@
       "browser automation enablement"
     ],
     "decidedAt": "2026-07-29T18:55:00Z"
+  },
+  "releaseGateR6": {
+    "decision": "ACCEPTED_IN_LOCAL_RECONCILIATION",
+    "stableReleaseAccepted": false,
+    "sourceVersionLineage": "v1.14.0-beta.11",
+    "producerImplementationCommit": "5e95aede3bce316d4d709bafa00ddfead2cdd66a",
+    "producerHandoffCommit": "5e6488ccf59c54d15eba62db2f2078c58e54696a",
+    "canonicalImplementationCommit": "973fe679b477e5ee932ba2583d2fef631a001691",
+    "canonicalHandoffCommit": "fed388a8a825338238d6bf68ae437cff8bdfe46b",
+    "handoff": "docs/handoffs/personal-office/release-gate-r6-beta11.json",
+    "acceptanceRecord": "docs/handoffs/personal-office/acceptance/release-gate-r6-beta11.json",
+    "lease": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
+    "integrationMethod": "Exact-path replay of seven reviewed producer source blobs plus two producer handoff artifacts; no merge, blind cherry-pick, mutable external source, or quarantine input.",
+    "securityDecision": "Private workspace-bound canonical-realpath sourceIdentity is the only replacement authority. Manifest projectId, aliases and legacy_ids cannot delete unrelated history.",
+    "verificationSummary": "Focused Customer Marketing 164/164; full desktop 1364/1364; main TypeScript PASS; beta.11 production build PASS with existing size advisory; lint 0 errors/350 warnings below ceiling 358; 7/7 source hashes and blobs verified; ownership, prohibited-path, renderer-exposure, legacy-authority, conflict and diff-only secret audits PASS; independent Socrates PASS.",
+    "externalIsolation": {
+      "beta11SourceHead": "ac0e17cd52e6252e3b0dbd2d3839f748f13843ba",
+      "beta11SourceEntries": 9,
+      "beta11SourceStatusDigest": "15d25878ff19a9d85fb8ca5dec875729a106c5eaefa1795c1b19d2a5dd169dfd",
+      "quarantineHead": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+      "quarantineEntries": 119,
+      "quarantineStatusDigest": "0d315707bb9230e9738c8f925a1bfa35a42f85b00382a83629f35d0f5e33fd44",
+      "digestMethod": "SHA-256 of standard git status --porcelain=v1 rendered with CRLF and a trailing CRLF."
+    },
+    "remainingPlatformGates": [
+      "protected GitHub desktop-release environment",
+      "Windows install/launch/upgrade/uninstall and data-retention validation",
+      "real signed/notarized macOS x64 and arm64 artifacts and platform checks",
+      "approved RC platform run",
+      "separate explicit admin promotion"
+    ],
+    "prohibitedUntilSeparateApproval": [
+      "push",
+      "tag creation",
+      "publish",
+      "stable promotion",
+      "deployment",
+      "installer execution",
+      "secret retrieval",
+      "GitHub environment mutation",
+      "browser automation enablement"
+    ],
+    "decidedAt": "2026-07-29T20:15:00Z"
   }
 }
