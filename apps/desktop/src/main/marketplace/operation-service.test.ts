@@ -93,6 +93,9 @@ function approvalPort(
 
 function setup(approvalState: 'pending' | 'approved' | 'rejected' = 'pending') {
   const approvals = approvalPort(approvalState);
+  const completedReceiptSink = {
+    recordCompleted: vi.fn().mockResolvedValue(undefined),
+  };
   const options: MarketplaceOperationServiceOptions = {
     catalogAuthority: {
       load: vi.fn(async () => ({
@@ -140,9 +143,15 @@ function setup(approvalState: 'pending' | 'approved' | 'rejected' = 'pending') {
         evidenceDigest: INSTALL_DIGEST,
       })),
     },
+    completedReceiptSink,
     now: () => new Date(NOW),
   };
-  return { service: new MarketplaceOperationService(options), options, approvals };
+  return {
+    service: new MarketplaceOperationService(options),
+    options,
+    approvals,
+    completedReceiptSink,
+  };
 }
 
 async function plan(service: MarketplaceOperationService): Promise<MarketplaceInstallPlan> {
@@ -166,7 +175,7 @@ describe('MarketplaceOperationService', () => {
   });
 
   it('returns approval-pending truth and executes no later port', async () => {
-    const { service, options } = setup('pending');
+    const { service, options, completedReceiptSink } = setup('pending');
     const receipt = await service.requestInstall(await plan(service));
     expect(receipt.status).toBe('awaiting_approval');
     expect(receipt.stages.map((item) => item.stage)).toEqual([
@@ -177,10 +186,11 @@ describe('MarketplaceOperationService', () => {
     expect(options.grants.resolve).not.toHaveBeenCalled();
     expect(options.provisioner.provision).not.toHaveBeenCalled();
     expect(options.installer.install).not.toHaveBeenCalled();
+    expect(completedReceiptSink.recordCompleted).not.toHaveBeenCalled();
   });
 
   it('resumes only after the exact approval binding is approved', async () => {
-    const { service, approvals, options } = setup('pending');
+    const { service, approvals, options, completedReceiptSink } = setup('pending');
     const installPlan = await plan(service);
     const first = await service.requestInstall(installPlan);
     approvals.state = 'approved';
@@ -192,6 +202,48 @@ describe('MarketplaceOperationService', () => {
     expect(options.grants.resolve).toHaveBeenCalledTimes(1);
     expect(options.provisioner.provision).toHaveBeenCalledTimes(1);
     expect(options.installer.install).toHaveBeenCalledTimes(1);
+    expect(completedReceiptSink.recordCompleted).toHaveBeenCalledOnce();
+    expect(completedReceiptSink.recordCompleted).toHaveBeenCalledWith(receipt);
+  });
+
+  it('keeps truthful installation evidence but blocks runtime when receipt recording fails', async () => {
+    const { service, completedReceiptSink, options } = setup('approved');
+    completedReceiptSink.recordCompleted.mockRejectedValueOnce(
+      new Error('encrypted evidence unavailable'),
+    );
+
+    const receipt = await service.requestInstall(await plan(service));
+
+    expect(receipt).toMatchObject({
+      status: 'blocked',
+      installedPackageKey: 'ocx_extension:reviewed-package@1.2.3',
+    });
+    expect(receipt.stages.at(-1)).toMatchObject({
+      stage: 'operational_evidence',
+      outcome: 'blocked',
+      code: 'AUTHORITATIVE_RECEIPT_UNAVAILABLE',
+    });
+    expect(completedReceiptSink.recordCompleted).toHaveBeenCalledOnce();
+    expect(options.installer.install).toHaveBeenCalledOnce();
+  });
+
+  it('does not install when no authoritative receipt sink is registered', async () => {
+    const { options } = setup('approved');
+    const service = new MarketplaceOperationService({
+      ...options,
+      completedReceiptSink: undefined,
+    });
+
+    const receipt = await service.requestInstall(await plan(service));
+
+    expect(receipt.status).toBe('blocked');
+    expect(receipt.stages.at(-1)).toMatchObject({
+      stage: 'workspace_provisioning',
+      outcome: 'blocked',
+      code: 'OPERATIONAL_EVIDENCE_SINK_UNAVAILABLE',
+    });
+    expect(options.provisioner.provision).not.toHaveBeenCalled();
+    expect(options.installer.install).not.toHaveBeenCalled();
   });
 
   it('rejects an approval record whose id does not match the resume request', async () => {

@@ -20,7 +20,8 @@ export type MarketplaceInstallOperationStage =
   | 'work_approval'
   | 'grant_resolution'
   | 'workspace_provisioning'
-  | 'package_installation';
+  | 'package_installation'
+  | 'operational_evidence';
 
 export type MarketplaceInstallStageOutcome =
   | 'passed'
@@ -99,6 +100,7 @@ const OPERATION_STAGES: readonly MarketplaceInstallOperationStage[] = [
   'grant_resolution',
   'workspace_provisioning',
   'package_installation',
+  'operational_evidence',
 ];
 const STAGE_OUTCOMES: readonly MarketplaceInstallStageOutcome[] = [
   'passed',
@@ -307,14 +309,14 @@ export function parseMarketplaceInstallOperationReceipt(
     root.status === 'completed'
     && (
       stages.length !== OPERATION_STAGES.length
-      || lastStage.stage !== 'package_installation'
+      || lastStage.stage !== 'operational_evidence'
       || lastStage.outcome !== 'passed'
     )
   ) {
     throw new MarketplaceValidationError([{
       code: 'INVALID_VALUE',
       path: 'receipt.status',
-      message: 'completed requires every operation stage and a passed installation',
+      message: 'completed requires every operation stage and authoritative evidence',
     }]);
   }
   if (
