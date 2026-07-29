@@ -4,9 +4,8 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-28T08:58:32Z",
+  "updatedAt": "2026-07-29T04:15:00Z",
   "updatedBy": "W0",
-
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
     "commit": "84a57b38117ee7544691115be5aca7a141af1abf",
@@ -21,17 +20,57 @@
   "loop00FeatureCommit": "bb231856343e59e492d6d25701e171844f459d34",
   "loop00AcceptanceCommit": "83c89b5065b42a48a49b2741ec9f1c5e6646cb58",
   "canonicalAncestor": "84a57b38117ee7544691115be5aca7a141af1abf",
-
-  "validStatuses": ["PROVISIONAL", "READY_FOR_REVIEW", "ACCEPTED", "BLOCKED_GATE", "REJECTED"],
-
+  "validStatuses": [
+    "PROVISIONAL",
+    "READY_FOR_REVIEW",
+    "ACCEPTED",
+    "BLOCKED_GATE",
+    "REJECTED"
+  ],
   "lanes": {
-    "W0": { "lane": "Control Tower / Integration", "loops": ["00"], "alsoOwns": ["every integration gate", "Release Gate R"] },
-    "W1": { "lane": "Contracts / Capability Registry", "loops": ["01", "07"] },
-    "W2": { "lane": "Product Shell / Reference UX", "loops": ["02", "12"] },
-    "W3": { "lane": "Work Engine / Agent / Model / Runtime", "loops": ["03", "05", "06", "11"] },
-    "W4": { "lane": "Context / Blueprint / Provisioning / Integrations", "loops": ["04", "08", "09", "10"] }
+    "W0": {
+      "lane": "Control Tower / Integration",
+      "loops": [
+        "00"
+      ],
+      "alsoOwns": [
+        "every integration gate",
+        "Release Gate R"
+      ]
+    },
+    "W1": {
+      "lane": "Contracts / Capability Registry",
+      "loops": [
+        "01",
+        "07"
+      ]
+    },
+    "W2": {
+      "lane": "Product Shell / Reference UX",
+      "loops": [
+        "02",
+        "12"
+      ]
+    },
+    "W3": {
+      "lane": "Work Engine / Agent / Model / Runtime",
+      "loops": [
+        "03",
+        "05",
+        "06",
+        "11"
+      ]
+    },
+    "W4": {
+      "lane": "Context / Blueprint / Provisioning / Integrations",
+      "loops": [
+        "04",
+        "08",
+        "09",
+        "10"
+      ]
+    }
   },
-
   "loops": [
     {
       "loop": "00",
@@ -45,11 +84,31 @@
       "handoff": "docs/handoffs/personal-office/loop-00.json",
       "dependsOn": [],
       "artifacts": [
-        { "path": "docs/architecture/source-of-truth-baseline.md", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3", "bytes": 20824 },
-        { "path": "docs/architecture/source-of-truth-baseline.json", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a", "bytes": 33668 },
-        { "path": "worklogs/personal-office-loop-00.md", "sha256": "a0ab149a31e38b5ff55299f26271a14f8bc0c3e23277903047d7be8d794b6dc2", "bytes": 27160 },
-        { "path": "docs/handoffs/personal-office/loop-00.json", "sha256": "f682572471cbf6381717ea51eeffa03c104b691c4d36c774e03059a823835d9f", "bytes": 17653 },
-        { "path": "docs/handoffs/personal-office/leases.json", "sha256": "a3a4228af20788f90eb5c94b733b61bb971a92ce1cf46ac7cb7bfa07aaad3a2c", "bytes": 6693 }
+        {
+          "path": "docs/architecture/source-of-truth-baseline.md",
+          "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3",
+          "bytes": 20824
+        },
+        {
+          "path": "docs/architecture/source-of-truth-baseline.json",
+          "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a",
+          "bytes": 33668
+        },
+        {
+          "path": "worklogs/personal-office-loop-00.md",
+          "sha256": "a0ab149a31e38b5ff55299f26271a14f8bc0c3e23277903047d7be8d794b6dc2",
+          "bytes": 27160
+        },
+        {
+          "path": "docs/handoffs/personal-office/loop-00.json",
+          "sha256": "f682572471cbf6381717ea51eeffa03c104b691c4d36c774e03059a823835d9f",
+          "bytes": 17653
+        },
+        {
+          "path": "docs/handoffs/personal-office/leases.json",
+          "sha256": "a3a4228af20788f90eb5c94b733b61bb971a92ce1cf46ac7cb7bfa07aaad3a2c",
+          "bytes": 6693
+        }
       ],
       "roadmapAcceptance": {
         "unmetCount": 2,
@@ -60,49 +119,78 @@
         "note": "Both are pre-existing conditions of the canonical tree, not products of this loop. Recorded rather than reported green.",
         "canonicalOverride": "The roadmap targets v1.14.0-beta.2; the Constitution supersedes it with v1.14.0-beta.3 / 84a57b3. Override followed and justified in loop-00.json roadmapReconciliation."
       },
-      "detectChanges": { "changedSymbols": 0, "affectedProcesses": 0, "risk": "NONE", "evidence": "gitnexus detect-changes --scope compare --base-ref 84a57b3 returned 'No changes detected.' — all six files are docs/JSON, so no indexed code symbol was touched." },
+      "detectChanges": {
+        "changedSymbols": 0,
+        "affectedProcesses": 0,
+        "risk": "NONE",
+        "evidence": "gitnexus detect-changes --scope compare --base-ref 84a57b3 returned 'No changes detected.' — all six files are docs/JSON, so no indexed code symbol was touched."
+      },
       "hashPolicy": "Hashes are measured on the working-tree bytes at the FINAL Loop 00 commit. An earlier revision of this ledger recorded the worklog at 5c32d22c…/11175 B, which the constitution-mandated skill-audit append then superseded. Consumers must verify against the values above; if a hash disagrees, re-hash from the ref before treating it as tampering. Note also that .gitattributes may normalise LF to CRLF on a fresh checkout, which changes file bytes and therefore hashes — compare working-tree to working-tree, not working-tree to a fresh clone.",
       "verificationSummary": "Build pass (tsc + vite, exit 0). Tests 900/901 with one known pre-existing flake. Lint NOT runnable at canonical (BF-03/BF-04) so no lint claim is made. git diff --check clean. Ownership audit clean: zero tracked files modified.",
-      "openGates": ["PQ-08 reconciliation must be ruled on before Loop 01 writes domain contracts"],
+      "openGates": [
+        "PQ-08 reconciliation must be ruled on before Loop 01 writes domain contracts"
+      ],
       "statusHistory": [
-        { "at": "2026-07-28T08:58:32Z", "status": "READY_FOR_REVIEW", "by": "W0", "note": "Artifacts verified, hashes recorded, entry gate passed on all five W0 conditions. Awaiting exact-path commit and post-commit verification." },
-        { "at": "2026-07-28T09:04:00Z", "status": "ACCEPTED", "by": "W0", "note": "Exact-path commit bb23185 created with 6 files, all inside Loop 00 ownership. Post-commit verification passed: git diff --name-status 84a57b3..HEAD shows exactly the 6 owned additions and zero feature source; canonical confirmed an ancestor; worktree clean; git diff --check exit 0; the three baseline artifact SHA-256 values re-verified unchanged after commit; integration build re-run at the new commit exit 0 with byte-identical asset hashes, proving no source drift." }
+        {
+          "at": "2026-07-28T08:58:32Z",
+          "status": "READY_FOR_REVIEW",
+          "by": "W0",
+          "note": "Artifacts verified, hashes recorded, entry gate passed on all five W0 conditions. Awaiting exact-path commit and post-commit verification."
+        },
+        {
+          "at": "2026-07-28T09:04:00Z",
+          "status": "ACCEPTED",
+          "by": "W0",
+          "note": "Exact-path commit bb23185 created with 6 files, all inside Loop 00 ownership. Post-commit verification passed: git diff --name-status 84a57b3..HEAD shows exactly the 6 owned additions and zero feature source; canonical confirmed an ancestor; worktree clean; git diff --check exit 0; the three baseline artifact SHA-256 values re-verified unchanged after commit; integration build re-run at the new commit exit 0 with byte-identical asset hashes, proving no source drift."
+        }
       ],
       "postCommitVerification": [
-        { "command": "git diff --name-status 84a57b3..HEAD", "status": "pass", "evidence": "6 additions, all owned: the 3 baseline artifacts plus integration-ledger.json, leases.json, loop-00.json. Zero paths under apps/, packages/, extensions/, and no package manifest, AGENTS.md, CLAUDE.md or .claude/ rewrite." },
-        { "command": "git merge-base --is-ancestor 84a57b3 HEAD", "status": "pass", "evidence": "exit 0" },
-        { "command": "git status --porcelain --untracked-files=all", "status": "pass", "evidence": "empty — nothing uncommitted" },
-        { "command": "git diff --check", "status": "pass", "evidence": "exit 0" },
-        { "command": "SHA-256 re-check of the 3 baseline artifacts after commit", "status": "pass", "evidence": "all three match the values recorded pre-commit" },
-        { "command": "pnpm --filter @openclaw/desktop build (at bb23185)", "status": "pass", "evidence": "exit 0, built in 12.31s, emitted index-Dm-6l7bQ.css and index-B7j3vZGB.js — identical content hashes to the canonical build, confirming the commit changed no source" }
+        {
+          "command": "git diff --name-status 84a57b3..HEAD",
+          "status": "pass",
+          "evidence": "6 additions, all owned: the 3 baseline artifacts plus integration-ledger.json, leases.json, loop-00.json. Zero paths under apps/, packages/, extensions/, and no package manifest, AGENTS.md, CLAUDE.md or .claude/ rewrite."
+        },
+        {
+          "command": "git merge-base --is-ancestor 84a57b3 HEAD",
+          "status": "pass",
+          "evidence": "exit 0"
+        },
+        {
+          "command": "git status --porcelain --untracked-files=all",
+          "status": "pass",
+          "evidence": "empty — nothing uncommitted"
+        },
+        {
+          "command": "git diff --check",
+          "status": "pass",
+          "evidence": "exit 0"
+        },
+        {
+          "command": "SHA-256 re-check of the 3 baseline artifacts after commit",
+          "status": "pass",
+          "evidence": "all three match the values recorded pre-commit"
+        },
+        {
+          "command": "pnpm --filter @openclaw/desktop build (at bb23185)",
+          "status": "pass",
+          "evidence": "exit 0, built in 12.31s, emitted index-Dm-6l7bQ.css and index-B7j3vZGB.js — identical content hashes to the canonical build, confirming the commit changed no source"
+        }
       ]
     },
     {
       "loop": "01",
       "title": "Domain model, contracts and ADRs",
       "window": "W1",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-01-20260728",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop01",
       "baseCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
-      "commitSha": null,
-      "handoff": null,
-      "dependsOn": ["00"],
+      "commitSha": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+      "handoff": "docs/handoffs/personal-office/loop-01.json",
+      "dependsOn": [
+        "00"
+      ],
       "dependencyStatus": "SATISFIED — Loop 00 is ACCEPTED on ref feature/personal-office-baseline-20260728",
-      "branchIsBehindIntegrationBy": 2,
-      "safeSyncInstruction": {
-        "note": "W1's branch sits at canonical 84a57b3 and is behind integration. Its Loop 01 work is UNCOMMITTED, so W1 must commit its own owned paths BEFORE syncing, otherwise the rebase will refuse to run or put the work at risk. Rebase onto the REF, never onto a SHA copied from this file — see integrationHeadNote.",
-        "steps": [
-          "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"",
-          "git status --porcelain   # confirm only Loop 01 owned paths are dirty",
-          "git add -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
-          "git commit -m \"<message>\" -- apps/desktop/src/shared/personal-office docs/architecture worklogs/personal-office-loop-01-provisional.md",
-          "git rebase feature/personal-office-baseline-20260728",
-          "git log --oneline -3   # confirm the two Loop 00 commits are now ancestors"
-        ],
-        "conflictExpectation": "No file-level conflict is expected. Loop 00 adds docs/architecture/source-of-truth-baseline.{md,json}; Loop 01 adds docs/architecture/personal-office-os.md, legacy-personal-office-mapping.md and adr/ADR-PO-001..004. Verified: no filename overlap.",
-        "prohibited": ["merge to main", "push", "force-push", "reset --hard", "any write to the quarantined dirty worktree"]
-      },
       "observedByW0": {
         "at": "2026-07-28T08:58:32Z",
         "mode": "read-only inspection",
@@ -118,20 +206,13 @@
         "collisionCheck": "No filename collision with Loop 00 artifacts: Loop 01 does not write source-of-truth-baseline.md or .json. The shared docs/architecture/ directory merges cleanly.",
         "note": "Work is uncommitted. W0 has not verified its content and makes no claim about its correctness. Status stays PROVISIONAL until W1 commits and submits a handoff."
       },
-      "blockingGate": "RESOLVED — PQ-08 is ruled. Loop 01's shared/personal-office/** is confirmed as the contract of record under the two-layer model.",
+      "blockingGate": "NONE — all pre-acceptance conditions met and verified by W0.",
       "pq08Outcome": {
         "verdict": "W1 layer UPHELD as contract of record",
         "reason": "A contract layer must be dependency-free and importable from both the main process and the renderer. W1's modules meet that constraint; an execution engine cannot, because it depends on SQLite, IPC and the main process.",
         "promotedIntoW1Scope": "The superseded draft's WorkRunLineageKind ('original'|'retry'|'fork'), WorkRunOrigin, canonicalJson and action-hash binding are to be promoted into shared/personal-office/ by W1 under a contract change request. Note this partially answers W1's own mapping §3.9, which had declared lineage Blocked as 'a design decision, not a migration one' — the draft had already made that design."
       },
-      "remainingConditionsBeforeAcceptance": [
-        "Add waiting_external as a first-class RunState per gate PO-RUNSTATE-CONTRACT-GAP, or record a reasoned rejection that specifically addresses the Loop 02 'Waiting for me' lane argument. Without this, Loop 03 cannot meet its own acceptance criteria.",
-        "Update legacy-personal-office-mapping.md §3.6 to the AMENDED archived ruling: derive the terminal from agent_run_entries where conclusive, else map to canceled with canceledReason='legacy_archived_outcome_unknown' — NOT completed. Always set archivedAt and preserve legacyStatusRaw. See acceptance/loop-00.json → mappingRulings → MAP-ARCHIVED.",
-        "Absorb the promoted lineage/canonicalJson/action-hash content under a contract change request, or record a reasoned rejection.",
-        "Commit Loop 01's owned paths — the work is currently uncommitted.",
-        "Submit docs/handoffs/personal-office/loop-01.json per the §10 schema.",
-        "Confirm PERSONAL_OFFICE_SCHEMA_VERSION remains the single version authority (see gate PO-VERSION-COLLISION)."
-      ],
+      "remainingConditionsBeforeAcceptance": [],
       "mappingRulingsForW1": {
         "MAP-BLOCKED": "UPHELD as proposed — blocked → paused, never failed. pausedReason authorised as an additive discriminator.",
         "MAP-ARCHIVED": "AMENDED — a contract change request is required before acceptance."
@@ -139,34 +220,225 @@
       "inputHashesForW1": {
         "note": "Verify these before implementation. A mismatch means the input drifted and the gate must be re-run.",
         "artifacts": [
-          { "path": "docs/architecture/source-of-truth-baseline.md", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3" },
-          { "path": "docs/architecture/source-of-truth-baseline.json", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a" },
-          { "path": "docs/handoffs/personal-office/acceptance/loop-00.json", "sha256": "see quarantine/dirty-state.json sibling record; re-hash from the ref" }
+          {
+            "path": "docs/architecture/source-of-truth-baseline.md",
+            "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3"
+          },
+          {
+            "path": "docs/architecture/source-of-truth-baseline.json",
+            "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a"
+          },
+          {
+            "path": "docs/handoffs/personal-office/acceptance/loop-00.json",
+            "sha256": "see quarantine/dirty-state.json sibling record; re-hash from the ref"
+          }
         ],
         "quarantineSalvageInputs": [
-          { "path": "apps/desktop/src/shared/work-model.ts", "sha256": "5c32c894535d12326c26243154173becc7f6bbd547c63696add8ee87ee30186f", "role": "superseded contract, salvage content for promotion" },
-          { "path": "apps/desktop/src/shared/work-redaction.ts", "sha256": "0107e2da386a02c7eb16a99252300fd4d4787153913a964bebfe35561e10e87b", "role": "runtime redaction; reconcile against W1 classification.ts and secret-ref.ts" }
+          {
+            "path": "apps/desktop/src/shared/work-model.ts",
+            "sha256": "5c32c894535d12326c26243154173becc7f6bbd547c63696add8ee87ee30186f",
+            "role": "superseded contract, salvage content for promotion"
+          },
+          {
+            "path": "apps/desktop/src/shared/work-redaction.ts",
+            "sha256": "0107e2da386a02c7eb16a99252300fd4d4787153913a964bebfe35561e10e87b",
+            "role": "runtime redaction; reconcile against W1 classification.ts and secret-ref.ts"
+          }
         ]
-      }
+      },
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-01.json",
+      "acceptedImplementationCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+      "acceptedHandoffCommit": "07e5ac386467945999513268306e70b06c2d9097",
+      "integrationRef": "feature/personal-office-baseline-20260728",
+      "conditionsClearedAtAcceptance": [
+        "waiting_external added as first-class RunState (verified in entities.ts + state-machine.ts; RunPauseReason narrowed to 'stuck' | 'guardrail') — PO-RUNSTATE-CONTRACT-GAP closed",
+        "mapping §3.6 updated to the AMENDED archived ruling (evidence-derived terminal; inconclusive maps to canceled with legacy_archived_outcome_unknown; archivedAt + legacyStatusRaw preserved; exactly one audit migration event) — verified at L310-L322 and L116",
+        "lineage + canonicalJson promoted into the contract (entities.ts lineage fields; canonical.ts + canonical.test.ts present) — PQ-08 upward-promotion satisfied",
+        "owned paths committed — 23 files, ownership audit clean, zero hot files, zero feature source outside ownership",
+        "handoff submitted at docs/handoffs/personal-office/loop-01.json, schemaVersion 1",
+        "PERSONAL_OFFICE_SCHEMA_VERSION confirmed as the single version authority in the contract layer"
+      ],
+      "verificationSummary": "W0 independent verification in the isolated toolchain: vitest 4 files / 45 tests PASS; tsc main profile exit 0; git diff --check exit 0; ownership audit clean (23 files, all inside ownedPaths); 7/7 declared output hashes match; 3/3 declared input artifact hashes match; 8/8 coordinator JSON parse at schemaVersion 1; secret scan clean (one hit is a deliberate dummy fixture in classification.test.ts); zero commits touched quarantine; dirty source repo status hash unchanged. Lint remains NOT RUNNABLE (PQ-01) and no lint claim is made.",
+      "twoPhaseCommitVerified": {
+        "phase1": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+        "phase2": "07e5ac386467945999513268306e70b06c2d9097",
+        "evidence": "git diff --name-only 830a12c..07e5ac3 returns exactly docs/handoffs/personal-office/loop-01.json and worklogs/personal-office-loop-01.md — no source or docs changed in phase 2, so the artifact bytes were immutable and hashed before any status document asserted anything about them."
+      },
+      "statusHistory": [
+        {
+          "at": "2026-07-29T04:15:00Z",
+          "status": "ACCEPTED",
+          "by": "W0",
+          "note": "Integration verification passed on 15 checks. acceptedImplementationCommit=830a12ca75bba6d78f0e3ba8fea8353c84353d71, acceptedHandoffCommit=07e5ac386467945999513268306e70b06c2d9097. Acceptance record committed separately as 16f25b28820d829b3050981e8d60db433194059b per the two-phase rule. Loop 02 and Loop 03 worktree creation is now unblocked."
+        }
+      ]
     },
-    { "loop": "02", "title": "Product shell and reference UX", "window": "W2", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true, "note": "Per the orchestration doc, no Loop 02 worktree may be created until Loop 01 is ACCEPTED. A draft shell already exists uncommitted in the quarantined worktree (renderer/shell/**, docs/product/personal-office-ia.md) and must be salvaged selectively, never cherry-picked blind." },
-    { "loop": "03", "title": "Unified work engine", "window": "W3", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true, "note": "A substantial draft exists uncommitted in the quarantined worktree and is the subject of PQ-08. It is already wired into database.ts, index.ts, preload.ts and App.tsx there. Freeze and salvage; do not continue implementation in that worktree." },
-    { "loop": "04", "title": "Context, Live profile and blueprint", "window": "W4", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true },
-    { "loop": "05", "title": "Context compiler and agent kernel", "window": "W3", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["03"], "worktreeCreationBlocked": true },
-    { "loop": "06", "title": "Model gateway and provider routing", "window": "W3", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["05"], "worktreeCreationBlocked": true },
-    { "loop": "07", "title": "Capability registry and package adapters", "window": "W1", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["01"], "worktreeCreationBlocked": true },
-    { "loop": "08", "title": "Workspace blueprint and provisioning", "window": "W4", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["04"], "worktreeCreationBlocked": true },
-    { "loop": "09", "title": "Marketplace and installer", "window": "W4", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["07"], "worktreeCreationBlocked": true },
-    { "loop": "10", "title": "Auth, integrations and grant vault", "window": "W4", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["04"], "worktreeCreationBlocked": true },
-    { "loop": "11", "title": "Runtime manager and browser isolation", "window": "W3", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["06"], "worktreeCreationBlocked": true },
-    { "loop": "12", "title": "Marketing blueprint and final shell integration", "window": "W2", "status": "PROVISIONAL", "branch": null, "worktree": null, "commitSha": null, "handoff": null, "dependsOn": ["02"], "worktreeCreationBlocked": true }
+    {
+      "loop": "02",
+      "title": "Product shell and reference UX",
+      "window": "W2",
+      "status": "READY_TO_START",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "01"
+      ],
+      "worktreeCreationBlocked": false,
+      "note": "Per the orchestration doc, no Loop 02 worktree may be created until Loop 01 is ACCEPTED. A draft shell already exists uncommitted in the quarantined worktree (renderer/shell/**, docs/product/personal-office-ia.md) and must be salvaged selectively, never cherry-picked blind.",
+      "dependencyStatus": "SATISFIED — Loop 01 is ACCEPTED on ref feature/personal-office-baseline-20260728"
+    },
+    {
+      "loop": "03",
+      "title": "Unified work engine",
+      "window": "W3",
+      "status": "READY_TO_START",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "01"
+      ],
+      "worktreeCreationBlocked": false,
+      "note": "A substantial draft exists uncommitted in the quarantined worktree and is the subject of PQ-08. It is already wired into database.ts, index.ts, preload.ts and App.tsx there. Freeze and salvage; do not continue implementation in that worktree.",
+      "dependencyStatus": "SATISFIED — Loop 01 is ACCEPTED on ref feature/personal-office-baseline-20260728"
+    },
+    {
+      "loop": "04",
+      "title": "Context, Live profile and blueprint",
+      "window": "W4",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "01",
+        "03"
+      ],
+      "worktreeCreationBlocked": true,
+      "dependencyStatus": "PARTIAL — Loop 01 ACCEPTED, but PO-LOOP04-DEPENDENCY establishes the true edge as 01 -> 03 -> 04. Loop 04 stays research/spec-only until Loop 03 is ACCEPTED."
+    },
+    {
+      "loop": "05",
+      "title": "Context compiler and agent kernel",
+      "window": "W3",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "03"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "06",
+      "title": "Model gateway and provider routing",
+      "window": "W3",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "05"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "07",
+      "title": "Capability registry and package adapters",
+      "window": "W1",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "01"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "08",
+      "title": "Workspace blueprint and provisioning",
+      "window": "W4",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "04"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "09",
+      "title": "Marketplace and installer",
+      "window": "W4",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "07"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "10",
+      "title": "Auth, integrations and grant vault",
+      "window": "W4",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "04"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "11",
+      "title": "Runtime manager and browser isolation",
+      "window": "W3",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "06"
+      ],
+      "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "12",
+      "title": "Marketing blueprint and final shell integration",
+      "window": "W2",
+      "status": "PROVISIONAL",
+      "branch": null,
+      "worktree": null,
+      "commitSha": null,
+      "handoff": null,
+      "dependsOn": [
+        "02"
+      ],
+      "worktreeCreationBlocked": true
+    }
   ],
-
   "programmeGates": [
     {
       "id": "PQ-08",
       "severity": "CRITICAL",
-      "status": "RULED",
+      "status": "CLOSED",
       "ruledAt": "2026-07-28T09:20:00Z",
       "ruledBy": "W0",
       "ruling": "Two-layer model. W1 owns the governance/catalog contract layer at shared/personal-office/**; W3 owns the execution core at main/work/**. shared/work-model.ts is SUPERSEDED as contract of record and demoted to salvage content whose lineage types, canonicalJson and action-hash binding are promoted upward under a W1 contract change request. Neither side is discarded.",
@@ -181,7 +453,11 @@
         "Contradictory instructions over the same files: Loop 01 is told not to change UI or migrate the real database, while the Loop 03 draft already migrates SQLite and edited App.tsx"
       ],
       "requiredAction": "W0 must (1) preserve the draft — branch or patch it out of quarantine, since it is currently unrecoverable — and (2) rule on adopt vs supersede vs refactor, plus decide which loop owns database.ts, index.ts, preload.ts and App.tsx.",
-      "blocks": ["01", "02", "03"]
+      "blocks": [
+        "03"
+      ],
+      "closedAt": "2026-07-29T04:15:00Z",
+      "closureEvidence": "The two-layer ruling is now realised in accepted code. W1 owns shared/personal-office/** as contract of record; the promoted lineage types and canonicalJson landed inside that layer (entities.ts lineage, canonical.ts + canonical.test.ts). W3 has not yet written main/work/**, so the one-way dependency direction is still intact. The remaining half — W3 importing rather than redefining — is carried by PO-VERSION-COLLISION, which blocks Loop 03."
     },
     {
       "id": "PQ-01",
@@ -211,7 +487,9 @@
       "ruling": "PERSONAL_OFFICE_SCHEMA_VERSION is the single version authority. WORK_SCHEMA_VERSION is retired, not renumbered.",
       "migrationCost": "ZERO today — no draft-carrying build has shipped and the only database touched is inside quarantine. If a draft build reaches a real user database first, this becomes a data-forensics problem instead.",
       "requiredAction": "Loop 03 deletes WORK_SCHEMA_VERSION, imports PERSONAL_OFFICE_SCHEMA_VERSION, and adds a serialization test proving the engine's envelope passes W1's version guard while an unknown version is rejected rather than coerced. No quarantine-era database file may be promoted into a shipped build.",
-      "blocks": ["03"]
+      "blocks": [
+        "03"
+      ]
     },
     {
       "id": "PO-VAULT-OWNERSHIP",
@@ -221,12 +499,13 @@
       "title": "vault-ops / vault-types / wikilink have no assigned owner",
       "resolution": "Assigned to Loop 04 / W4. The roadmap's Loop 04 PHẢI ĐỌC list names shared/vault-types.ts, shared/vault-ops.ts, shared/wikilink.ts and renderer/components/vault/* directly, so these are Loop 04 INPUTS rather than Loop 02 shell salvage.",
       "followUp": "Amend quarantine/loop-02-dirty-salvage.json from HOLD_PENDING_OWNERSHIP to Loop 04 ownership at the next registry write.",
-      "blocks": []
+      "blocks": [],
+      "followUpStatus": "STILL OPEN — quarantine/loop-02-dirty-salvage.json has not yet been amended from HOLD_PENDING_OWNERSHIP to Loop 04 ownership. Must be done before W2 reads that manifest as authoritative."
     },
     {
       "id": "PO-RUNSTATE-CONTRACT-GAP",
       "severity": "CRITICAL",
-      "status": "OPEN",
+      "status": "CLOSED",
       "title": "Loop 03's mandated run state machine contradicts Loop 01's frozen contract",
       "detail": "Roadmap Loop 03 §4 specifies a MINIMUM ('tối thiểu') run state machine: draft, queued, running, waiting_user, waiting_external, paused, succeeded, failed, cancelled. W1's frozen RunState is: created, queued, running, awaiting_approval, paused, completed, failed, canceled. Four differences are naming only, but waiting_external is genuinely ABSENT and W1's mapping §3.4 explicitly declined to add it.",
       "analysis": "W1's reasoning was sound for the question it asked — which legacy values force a new state — but that is a migration question, not a product requirement. Two pieces of evidence W1 did not weigh: (1) the roadmap calls the list a minimum, so Loop 03's acceptance is measured against it; (2) Loop 02 §3 requires the Today page to show Active work / Waiting for me / Delivered as distinct lanes, and a run blocked on an integration or runtime is none of those three. Under W1's model that run is 'paused' plus an OPTIONAL pausedReason, and a primary always-visible product lane cannot be built reliably on an optional field — any writer that omits it silently misfiles the run, and the state machine cannot enforce legal transitions on a field it does not model.",
@@ -235,7 +514,10 @@
       "consequenceIfDeferred": "Loop 03 either violates its own acceptance criteria or forks the state machine, which is precisely the failure PQ-08 was raised to prevent.",
       "sequencingConstraint": "Must be resolved TOGETHER WITH PO-VERSION-COLLISION and before Loop 03 persists anything. If waiting_external lands after PERSONAL_OFFICE_SCHEMA_VERSION has tagged persisted rows, the version stops being a reliable discriminator.",
       "discoveredBy": "W0 provisional research, docs/handoffs/personal-office/planning/loops-01-04-provisional-plan.md §1",
-      "blocks": ["01", "03"]
+      "blocks": [],
+      "closedAt": "2026-07-29T04:15:00Z",
+      "closedBy": "W0",
+      "closureEvidence": "W1 accepted the contract change request rather than rejecting it. Verified in the accepted tree: entities.ts RunState includes waiting_external; state-machine.ts models running -> waiting_external and waiting_external -> running | canceled; RunPauseReason narrowed to 'stuck' | 'guardrail'. state-machine.test.ts covers both the legal transitions and the illegal ones (waiting_external -> paused|completed|failed, created/awaiting_approval -> waiting_external). 45/45 tests pass under W0's own run. Cost was a version note only, as predicted — PERSONAL_OFFICE_SCHEMA_VERSION stays 1 because no shipped build carries v1."
     },
     {
       "id": "PO-LOOP04-DEPENDENCY",
@@ -255,10 +537,28 @@
       "title": "The quarantined worktree is under concurrent write",
       "detail": "A session outside W0 control continues to write to the dirty source worktree: 83 entries at Loop 00 start, 113 at Loop 00 end, 118 at Loop 00 acceptance. HEAD is unchanged at 959e2d2 and the PQ-08 drafts are intact.",
       "requiredAction": "Stop the concurrent session, or accept that the worktree is not a stable reference. Any consumer diffing against it must re-snapshot immediately before use.",
+      "blocks": [],
+      "w0Note": "Re-verified during Loop 01 acceptance at 2026-07-29T04:15:00Z: quarantine HEAD is still 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 and its status is still 119 entries with normalized hash B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0, unchanged across the isolated-toolchain build and the full acceptance run. No W0 or W1 action wrote to quarantine. Note that the concurrent writer has now also appeared in the INTEGRATION worktree — see PO-LEASE-VIOLATION-PQ01."
+    },
+    {
+      "id": "PO-LEASE-VIOLATION-PQ01",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "openedAt": "2026-07-29T04:15:00Z",
+      "openedBy": "W0",
+      "title": "PQ-01 lint work is being performed in the integration worktree without a lease",
+      "detail": "While running Loop 01 acceptance, W0 observed uncommitted PQ-01 work appearing inside the integration worktree F:\\Ai Tools\\_wt-starizzi-personal-office-baseline: package.json modified (adds @eslint/js, eslint 9.39.4, eslint-plugin-react-hooks, globals, typescript-eslint as root devDependencies and adds lint:fix / lint:strict scripts, rewriting lint to target apps packages extensions), a new untracked eslint.config.mjs (7261 bytes, mtime 2026-07-29 11:10, which is DIFFERENT from the 6365-byte copy in quarantine), plus pnpm-lock.yaml and .github/workflows/desktop-ci.yml modified. The file set grew during the acceptance pass, so the writer is active right now.",
+      "leaseStatusAtObservation": "leases.json records package manifests / lockfile with currentLease: null and singleOwnerAtATime: true. No lease was granted to any window. The registry rule is explicit: 'A producer must never write a hot file without holding an active lease.'",
+      "whyItMatters": "Three distinct problems. (1) It is exactly the unleased hot-file write that PQ-08 and the lease registry exist to prevent. (2) It dirties the integration worktree that W0 must keep clean to verify and accept loops, so every future acceptance has to filter it out by hand. (3) The lockfile is involved, and an uncoordinated lockfile change can silently move dependency versions for every window at once.",
+      "containmentApplied": "W0 committed the Loop 01 acceptance record and this ledger update with explicit exact-path commits (git commit -- <path>), so none of the unleased changes were captured in any coordinator commit. The unleased edits remain uncommitted and attributable.",
+      "requiredAction": "Identify the session doing this and either grant it the package-manifest/lockfile lease formally (single owner, recorded in leases.json with a named CHANGE_REQUEST) or have it revert. Do not simply commit the work to make the worktree clean: that would ratify an unleased hot-file write as programme precedent. If the work is good, it should be re-landed under a lease inside its own worktree with a re-measured warning ceiling on canonical, as PQ-01 already requires.",
+      "relatedGates": [
+        "PQ-01",
+        "QUARANTINE-DRIFT"
+      ],
       "blocks": []
     }
   ],
-
   "auditTrail": [
     {
       "at": "2026-07-28T08:58:32Z",
@@ -269,41 +569,86 @@
       "at": "2026-07-28T09:04:00Z",
       "by": "W0",
       "action": "Committed 6 exact owned paths as bb231856343e59e492d6d25701e171844f459d34. Post-commit verification passed on all six checks including a re-run integration build with byte-identical assets. Flipped Loop 00 READY_FOR_REVIEW to ACCEPTED and advanced integrationHead to bb23185. Recorded W1's safe sync instruction. No worktree was created for Loop 02 or Loop 03, per the rule that they wait on Loop 01 acceptance."
+    },
+    {
+      "at": "2026-07-29T04:15:00Z",
+      "by": "W0",
+      "action": "Ran the Loop 01 integration gate and ACCEPTED it. Independent verification in an isolated toolchain: vitest 4 files / 45 tests pass, tsc main exit 0, git diff --check exit 0, ownership audit clean over 23 files, 7/7 output hashes and 3/3 input hashes match, 8/8 coordinator JSON at schemaVersion 1, secret scan clean, quarantine untouched. Confirmed the two-phase commit by showing 830a12c..07e5ac3 contains only the handoff and worklog. Wrote acceptance/loop-01.json as its own commit 16f25b28820d829b3050981e8d60db433194059b. Closed PO-RUNSTATE-CONTRACT-GAP and PQ-08. Unblocked Loop 02 and Loop 03 worktree creation. Opened PO-LEASE-VIOLATION-PQ01 after observing unleased package.json / eslint.config.mjs / pnpm-lock.yaml / desktop-ci.yml writes inside the integration worktree; all coordinator commits used exact-path form so none of it was captured."
     }
   ],
-
   "completedByW0": [
-    { "at": "2026-07-28T09:20:00Z", "action": "Preserved the PQ-08 draft out-of-repo (422 KB, hashed). The irreversible-loss risk is closed.", "record": "quarantine/dirty-state.json" },
-    { "at": "2026-07-28T09:20:00Z", "action": "Ruled PQ-08 as a two-layer model and assigned hot-file ownership for database.ts, index.ts, preload.ts (Loop 03) and App.tsx (Loop 02 first).", "record": "acceptance/loop-00.json → pq08Ruling" },
-    { "at": "2026-07-28T09:20:00Z", "action": "Ruled both escalated legacy mappings and recorded version/migration impact.", "record": "acceptance/loop-00.json → mappingRulings" }
+    {
+      "at": "2026-07-28T09:20:00Z",
+      "action": "Preserved the PQ-08 draft out-of-repo (422 KB, hashed). The irreversible-loss risk is closed.",
+      "record": "quarantine/dirty-state.json"
+    },
+    {
+      "at": "2026-07-28T09:20:00Z",
+      "action": "Ruled PQ-08 as a two-layer model and assigned hot-file ownership for database.ts, index.ts, preload.ts (Loop 03) and App.tsx (Loop 02 first).",
+      "record": "acceptance/loop-00.json → pq08Ruling"
+    },
+    {
+      "at": "2026-07-28T09:20:00Z",
+      "action": "Ruled both escalated legacy mappings and recorded version/migration impact.",
+      "record": "acceptance/loop-00.json → mappingRulings"
+    },
+    {
+      "at": "2026-07-29T04:15:00Z",
+      "action": "Verified and ACCEPTED Loop 01 on 15 checks; recorded acceptedImplementationCommit, acceptedHandoffCommit and integrationCommit.",
+      "record": "acceptance/loop-01.json"
+    },
+    {
+      "at": "2026-07-29T04:15:00Z",
+      "action": "Closed PO-RUNSTATE-CONTRACT-GAP — waiting_external is first-class in the accepted contract with transition tests.",
+      "record": "integration-ledger.json -> programmeGates"
+    },
+    {
+      "at": "2026-07-29T04:15:00Z",
+      "action": "Closed PQ-08 contract-of-record half; the W3-imports-not-redefines half remains under PO-VERSION-COLLISION.",
+      "record": "integration-ledger.json -> programmeGates"
+    }
   ],
-
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Stop or isolate the concurrent session still writing to the quarantined worktree. Drift is now detectable by re-hashing, but the worktree is still not a stable reference and the session could still overwrite draft files that the snapshot captured.",
-      "gate": "QUARANTINE-DRIFT"
+      "action": "Resolve the unleased PQ-01 writes now sitting in the integration worktree. Either grant the package-manifest/lockfile lease to exactly one owner with a recorded CHANGE_REQUEST, or have the work reverted and re-landed inside its own worktree. Do not commit it to tidy the tree.",
+      "gate": "PO-LEASE-VIOLATION-PQ01"
     },
     {
       "priority": 2,
-      "action": "Await W1's contract change request on mapping §3.6, then run the integration gate on Loop 01. Loop 01 acceptance is the key that unblocks Loop 02 and Loop 03 worktree creation.",
-      "gate": "PQ-08 follow-through"
+      "action": "Dispatch Loop 03 to W3 with the PO-VERSION-COLLISION preconditions stated as entry gates: delete WORK_SCHEMA_VERSION, import PERSONAL_OFFICE_SCHEMA_VERSION, and add the version-guard serialization test before persisting anything.",
+      "gate": "PO-VERSION-COLLISION"
     },
     {
       "priority": 3,
-      "action": "Grant the package-manifest/lockfile lease to exactly one loop to close PQ-01, then re-measure the lint warning ceiling on canonical rather than adopting the old 359 figure.",
-      "gate": "PQ-01"
+      "action": "Dispatch Loop 02 to W2 against the new worktree. Loop 02 is first owner of App.tsx under §8.1, so grant that lease to W2 and not to W3.",
+      "gate": "none"
     },
     {
       "priority": 4,
-      "action": "Rule ownership for vault-ops / vault-types / wikilink before any producer claims them.",
+      "action": "Amend quarantine/loop-02-dirty-salvage.json from HOLD_PENDING_OWNERSHIP to Loop 04 ownership for vault-ops / vault-types / wikilink, so W2 does not read a stale ownership claim.",
       "gate": "PO-VAULT-OWNERSHIP"
+    },
+    {
+      "priority": 5,
+      "action": "Stop or isolate the concurrent writer. It is now touching both quarantine and the integration worktree.",
+      "gate": "QUARANTINE-DRIFT"
     }
   ],
-
   "worktreeCreationPolicy": {
     "rule": "No Loop 02 or Loop 03 implementation worktree may be created until Loop 01 is ACCEPTED.",
-    "statusAtThisCommit": "Loop 01 is PROVISIONAL, so NO new implementation worktree was created by this pass.",
-    "existingWorktrees": ["baseline (W0, Loop 00)", "loop01 (W1, Loop 01)"]
-  }
+    "statusAtThisCommit": "Loop 01 is ACCEPTED, so the rule is now SATISFIED and Loop 02 / Loop 03 worktrees are authorised.",
+    "createdByThisPass": [
+      "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02 on branch feature/personal-office-loop-02-20260729",
+      "F:\\Ai Tools\\_wt-starizzi-personal-office-loop03 on branch feature/personal-office-loop-03-20260729"
+    ],
+    "existingWorktrees": [
+      "baseline (W0, Loop 00 + integration)",
+      "loop01 (W1, Loop 01 ACCEPTED)",
+      "loop02 (W2, Loop 02)",
+      "loop03 (W3, Loop 03)"
+    ],
+    "toolchainNote": "Each new worktree needs an isolated toolchain before any build or test command runs. node_modules must NOT be junctioned to the quarantined source repo — that was the BLOCKED_TOOLCHAIN condition, and the procedure that resolved it for loop01 is recorded in F:\\Ai Tools\\_starizzi-toolchain-evidence\\ISOLATED-TOOLCHAIN-EVIDENCE.md."
+  },
+  "loop01AcceptanceCommit": "16f25b28820d829b3050981e8d60db433194059b"
 }

@@ -3,100 +3,280 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-28T08:58:32Z",
+  "updatedAt": "2026-07-29T04:20:00Z",
   "updatedBy": "W0",
-  "integrationCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
-
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No hot-file lease is held by any window as of this integration commit. Every hot file below is unclaimed and available for W0 to grant.",
-
+  "integrationCommit": "16f25b28820d829b3050981e8d60db433194059b",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
+      "loop": "03",
+      "window": "W3",
+      "grantedAt": "2026-07-29T04:20:00Z",
+      "grantedBy": "W0",
+      "scope": "execution core + wired seams",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/db/database.ts",
+        "apps/desktop/src/main/db/sqlite-schema.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/personal-office/**"
+      ],
+      "prohibitedPaths": [
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/src/shared/personal-office/**"
+      ],
+      "conditions": [
+        "Retire WORK_SCHEMA_VERSION and import PERSONAL_OFFICE_SCHEMA_VERSION before persisting anything (gate PO-VERSION-COLLISION).",
+        "Add a serialization test proving an engine-written envelope passes W1 version guard and an unknown version is rejected, not coerced.",
+        "Do not land shared/work-model.ts as a second contract. Import from shared/personal-office/ only.",
+        "Handle waiting_external in transitions and adapters; it is now a first-class RunState.",
+        "MAP-BLOCKED: legacy blocked -> paused, never failed.",
+        "MAP-ARCHIVED: derive terminal from agent_run_entries where conclusive; else canceled with canceledReason=legacy_archived_outcome_unknown, never completed. Always set archivedAt, preserve legacyStatusRaw, emit exactly one audit migration event.",
+        "Security review must cover the log-and-proceed migration error path in database.ts before acceptance.",
+        "No quarantine-era database file may be promoted into a shipped build.",
+        "Salvage selectively from quarantine/loop-03-dirty-salvage.json inside the Loop 03 worktree. No blind cherry-pick."
+      ],
+      "changeRequestRequiredFor": [
+        "any edit to apps/desktop/src/shared/personal-office/** (W1 contract of record)"
+      ],
+      "expiresOn": "Loop 03 acceptance or W0 revocation"
+    },
+    {
+      "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
+      "loop": "02",
+      "window": "W2",
+      "grantedAt": "2026-07-29T04:20:00Z",
+      "grantedBy": "W0",
+      "scope": "product shell + reference UX",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/renderer/shell/**",
+        "apps/desktop/src/renderer/components/personal-office/**",
+        "apps/desktop/src/renderer/pages/personal-office/**",
+        "apps/desktop/src/renderer/store/personalOffice.ts",
+        "apps/desktop/src/renderer/styles/personal-office.css",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx",
+        "docs/product/personal-office-ia.md"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/personal-office/**",
+        "apps/desktop/src/renderer/store/agentWorkspace.ts"
+      ],
+      "prohibitedPaths": [
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml"
+      ],
+      "conditions": [
+        "Mount behind the izzi.shell.personalOffice flag.",
+        "Loop 02 is FIRST owner of App.tsx and Sidebar.tsx under section 8.1. W3 must not take them even though the quarantine draft modified them.",
+        "Treat the canonical copy of App.tsx as the base. The dirty quarantine copy is NOT authoritative.",
+        "Today lanes render off RunState: waiting_external is now first-class, so Waiting-for-me does not depend on an optional field.",
+        "agentWorkspace.ts is compatibility read-only for Loop 02; semantic changes need a change request.",
+        "Salvage selectively from quarantine/loop-02-dirty-salvage.json inside the Loop 02 worktree. No blind cherry-pick."
+      ],
+      "changeRequestRequiredFor": [
+        "any edit to apps/desktop/src/shared/personal-office/** (W1 contract of record)",
+        "semantic changes to apps/desktop/src/renderer/store/agentWorkspace.ts"
+      ],
+      "expiresOn": "Loop 02 acceptance or W0 revocation"
+    }
+  ],
+  "activeLeaseCount": 2,
+  "statement": "Loop 01 is ACCEPTED at acceptance/loop-01.json. Two leases are now ACTIVE: LEASE-L03-EXEC-WIRING-20260729 (W3, execution core + wired seams) and LEASE-L02-SHELL-MOUNT-20260729 (W2, product shell incl. App.tsx and Sidebar.tsx as first owner). The package-manifest/lockfile lease remains UNGRANTED and is currently being violated - see gate PO-LEASE-VIOLATION-PQ01.",
   "preApprovedOnLoop01Acceptance": {
     "note": "Consequences of the PQ-08 two-layer ruling. These are NOT active leases — each still requires an explicit W0 grant, and none may be granted before Loop 01 is ACCEPTED. Listed so producers can plan and so no one claims a hot file by assuming.",
     "queue": [
-      { "loop": "03", "window": "W3", "paths": ["apps/desktop/src/main/db/database.ts", "apps/desktop/src/main/index.ts", "apps/desktop/src/main/preload.ts"], "reason": "Wire the adopted execution core. The quarantine draft already modified all three WITHOUT a lease; that must not be replicated.", "blockedBy": ["Loop 01 ACCEPTED", "retire WORK_SCHEMA_VERSION in favour of PERSONAL_OFFICE_SCHEMA_VERSION"] },
-      { "loop": "02", "window": "W2", "paths": ["apps/desktop/src/renderer/App.tsx", "apps/desktop/src/renderer/components/Sidebar.tsx"], "reason": "Mount the salvaged Personal Office shell behind the izzi.shell.personalOffice flag.", "blockedBy": ["Loop 01 ACCEPTED"], "note": "Loop 02 is first owner of App.tsx under §8.1, so W3 must NOT take it even though the quarantine draft modified it." },
-      { "loop": "TBD", "window": "TBD", "paths": ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"], "reason": "Close PQ-01 by porting eslint.config.mjs and the lint scripts, then re-measure the warning ceiling on canonical.", "constraint": "Single owner at a time. Grant to exactly one loop." }
+      {
+        "loop": "03",
+        "window": "W3",
+        "paths": [
+          "apps/desktop/src/main/db/database.ts",
+          "apps/desktop/src/main/index.ts",
+          "apps/desktop/src/main/preload.ts"
+        ],
+        "reason": "Wire the adopted execution core. The quarantine draft already modified all three WITHOUT a lease; that must not be replicated.",
+        "blockedBy": [
+          "retire WORK_SCHEMA_VERSION before persisting (condition, not a block on the grant)"
+        ],
+        "granted": true,
+        "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
+        "grantedAt": "2026-07-29T04:20:00Z"
+      },
+      {
+        "loop": "02",
+        "window": "W2",
+        "paths": [
+          "apps/desktop/src/renderer/App.tsx",
+          "apps/desktop/src/renderer/components/Sidebar.tsx"
+        ],
+        "reason": "Mount the salvaged Personal Office shell behind the izzi.shell.personalOffice flag.",
+        "blockedBy": [],
+        "note": "Loop 02 is first owner of App.tsx under §8.1, so W3 must NOT take it even though the quarantine draft modified it.",
+        "granted": true,
+        "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
+        "grantedAt": "2026-07-29T04:20:00Z"
+      },
+      {
+        "loop": "TBD",
+        "window": "TBD",
+        "paths": [
+          "package.json",
+          "pnpm-workspace.yaml",
+          "pnpm-lock.yaml"
+        ],
+        "reason": "Close PQ-01 by porting eslint.config.mjs and the lint scripts, then re-measure the warning ceiling on canonical.",
+        "constraint": "Single owner at a time. Grant to exactly one loop.",
+        "granted": false,
+        "note": "STILL UNGRANTED. A concurrent session is already writing package.json, pnpm-lock.yaml, eslint.config.mjs and .github/workflows/desktop-ci.yml in the integration worktree without this lease. See gate PO-LEASE-VIOLATION-PQ01."
+      }
     ]
   },
-
   "contestedFileResolution": {
     "note": "PQ-08 resolved by layering rather than by picking a winner. Recorded here because it changes who may write which shared path.",
     "rulings": [
-      { "path": "apps/desktop/src/shared/personal-office/**", "owner": "W1 / Loop 01", "role": "contract of record — governance/catalog layer", "otherLoops": "read-only; changes via contract change request" },
-      { "path": "apps/desktop/src/main/work/**", "owner": "W3 / Loop 03", "role": "execution core", "constraint": "must import contracts from shared/personal-office/, never define a parallel model" },
-      { "path": "apps/desktop/src/shared/work-model.ts", "owner": "none — SUPERSEDED", "role": "salvage content only", "instruction": "Do not land as a second contract. Promote its lineage types, canonicalJson and action-hash binding into shared/personal-office/ under a W1 contract change request." },
-      { "path": "apps/desktop/src/shared/{vault-ops,vault-types,wikilink}.ts", "owner": "UNRESOLVED", "role": "vault / Live-profile adjacent", "instruction": "Ownership table points Live/profile concerns at Loop 04, not Loop 02. Held pending a W0 ownership ruling; no producer may claim these yet." }
+      {
+        "path": "apps/desktop/src/shared/personal-office/**",
+        "owner": "W1 / Loop 01",
+        "role": "contract of record — governance/catalog layer",
+        "otherLoops": "read-only; changes via contract change request"
+      },
+      {
+        "path": "apps/desktop/src/main/work/**",
+        "owner": "W3 / Loop 03",
+        "role": "execution core",
+        "constraint": "must import contracts from shared/personal-office/, never define a parallel model"
+      },
+      {
+        "path": "apps/desktop/src/shared/work-model.ts",
+        "owner": "none — SUPERSEDED",
+        "role": "salvage content only",
+        "instruction": "Do not land as a second contract. Promote its lineage types, canonicalJson and action-hash binding into shared/personal-office/ under a W1 contract change request."
+      },
+      {
+        "path": "apps/desktop/src/shared/{vault-ops,vault-types,wikilink}.ts",
+        "owner": "W4 / Loop 04",
+        "role": "vault / Live-profile adjacent",
+        "instruction": "RESOLVED per gate PO-VAULT-OWNERSHIP: these are Loop 04 inputs, not Loop 02 shell salvage. No other producer may claim them."
+      }
     ]
   },
-
   "pendingRequests": [],
-
   "hotFiles": [
     {
       "path": "apps/desktop/src/renderer/App.tsx",
-      "ownerOrder": ["02", "12"],
-      "currentLease": null,
-      "note": "ALREADY MODIFIED-UNCOMMITTED in the quarantined dirty worktree by the concurrent Loop 03 draft. Loop 02 must treat the canonical copy as the base and salvage selectively; it must not assume the dirty copy is authoritative."
+      "ownerOrder": [
+        "02",
+        "12"
+      ],
+      "currentLease": "LEASE-L02-SHELL-MOUNT-20260729",
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the quarantined dirty worktree by the concurrent Loop 03 draft. Loop 02 must treat the canonical copy as the base and salvage selectively; it must not assume the dirty copy is authoritative.",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
-      "ownerOrder": ["02", "12"],
-      "currentLease": null
+      "ownerOrder": [
+        "02",
+        "12"
+      ],
+      "currentLease": "LEASE-L02-SHELL-MOUNT-20260729",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/main/db/sqlite-schema.ts",
-      "ownerOrder": ["03"],
-      "currentLease": null
+      "ownerOrder": [
+        "03"
+      ],
+      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/main/db/database.ts",
-      "ownerOrder": ["03"],
-      "currentLease": null,
+      "ownerOrder": [
+        "03"
+      ],
+      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
       "laterLoopsRequireChangeRequest": true,
-      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree: the Loop 03 draft wired runWorkModelMigration, backupSqliteFile, WorkService and a workEventSink into it. Security review must cover the log-and-proceed migration error path before this is accepted."
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree: the Loop 03 draft wired runWorkModelMigration, backupSqliteFile, WorkService and a workEventSink into it. Security review must cover the log-and-proceed migration error path before this is accepted.",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/main/index.ts",
-      "ownerOrder": ["03", "10", "11"],
-      "currentLease": null,
-      "note": "Loops 10 and 11 may write only under an explicit lease. ALREADY MODIFIED-UNCOMMITTED in the dirty worktree."
+      "ownerOrder": [
+        "03",
+        "10",
+        "11"
+      ],
+      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
+      "note": "Loops 10 and 11 may write only under an explicit lease. ALREADY MODIFIED-UNCOMMITTED in the dirty worktree.",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/main/preload.ts",
-      "ownerOrder": ["03", "10", "11", "12"],
-      "currentLease": null,
-      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree."
+      "ownerOrder": [
+        "03",
+        "10",
+        "11",
+        "12"
+      ],
+      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree.",
+      "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
       "path": "apps/desktop/src/renderer/store/agentGateway.ts",
-      "ownerOrder": ["06"],
+      "ownerOrder": [
+        "06"
+      ],
       "currentLease": null,
       "otherLoopsReadOnly": true,
       "note": "PQ-09. Modified-uncommitted in the dirty worktree AND on the Loop 01 required-reading list, so the canonical copy is not the copy in flight. Canonical also has agentGateway-routing.ts plus its test, which the old branch lacks."
     },
     {
       "path": "apps/desktop/src/renderer/store/agentWorkspace.ts",
-      "ownerOrder": ["02"],
+      "ownerOrder": [
+        "02"
+      ],
       "currentLease": null,
       "compatibilityReadOnlyFor": "02",
       "semanticChangesRequireChangeRequest": true
     },
     {
       "path": "apps/desktop/src/main/agent/agent-service.ts",
-      "ownerOrder": ["05", "06"],
+      "ownerOrder": [
+        "05",
+        "06"
+      ],
       "currentLease": null,
       "note": "Modified-uncommitted in the dirty worktree."
     },
     {
       "path": "apps/desktop/src/main/agent/host-agent.ts",
-      "ownerOrder": ["05", "06"],
+      "ownerOrder": [
+        "05",
+        "06"
+      ],
       "currentLease": null,
       "note": "Modified-uncommitted in the dirty worktree."
     },
     {
       "path": "apps/desktop/src/main/agent/agent-tools.ts",
-      "ownerOrder": ["05", "07", "11"],
+      "ownerOrder": [
+        "05",
+        "07",
+        "11"
+      ],
       "currentLease": null
     },
     {
@@ -107,13 +287,22 @@
         "apps/desktop/src/main/extensions/permissions.ts",
         "packages/agent-bundle/src/manifest.ts"
       ],
-      "ownerOrder": ["07", "09", "11"],
+      "ownerOrder": [
+        "07",
+        "09",
+        "11"
+      ],
       "currentLease": null
     },
     {
       "path": "Marketplace UI / API",
-      "resolvedPaths": ["apps/marketplace-api/**", "apps/desktop/src/renderer/pages/Marketplace.tsx"],
-      "ownerOrder": ["09"],
+      "resolvedPaths": [
+        "apps/marketplace-api/**",
+        "apps/desktop/src/renderer/pages/Marketplace.tsx"
+      ],
+      "ownerOrder": [
+        "09"
+      ],
       "currentLease": null
     },
     {
@@ -123,45 +312,107 @@
         "apps/desktop/src/renderer/pages/KnowledgeUniverse.tsx",
         "apps/desktop/src/renderer/store/graphWorkspace.ts"
       ],
-      "ownerOrder": ["04"],
+      "ownerOrder": [
+        "04"
+      ],
       "currentLease": null,
       "note": "All three are modified-uncommitted in the dirty worktree."
     },
     {
       "path": "Customer Marketing broad migration",
-      "resolvedPaths": ["apps/desktop/src/main/customer-marketing/**", "apps/desktop/src/shared/customer-marketing-*.ts"],
-      "ownerOrder": ["12"],
+      "resolvedPaths": [
+        "apps/desktop/src/main/customer-marketing/**",
+        "apps/desktop/src/shared/customer-marketing-*.ts"
+      ],
+      "ownerOrder": [
+        "12"
+      ],
       "currentLease": null,
       "note": "Loops 03, 08 and 11 may only add adapters or new files, or request a lease."
     },
     {
       "path": "package manifests / lockfile",
-      "resolvedPaths": ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "apps/desktop/package.json"],
-      "ownerOrder": ["lease-only"],
+      "resolvedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json"
+      ],
+      "ownerOrder": [
+        "lease-only"
+      ],
       "currentLease": null,
       "singleOwnerAtATime": true,
-      "note": "PQ-01 will need this lease to add the root eslint devDependencies and the lint scripts. Grant it to exactly one loop at a time."
+      "note": "PQ-01 will need this lease to add the root eslint devDependencies and the lint scripts. Grant it to exactly one loop at a time.",
+      "violationObserved": {
+        "at": "2026-07-29T04:20:00Z",
+        "observedBy": "W0 during Loop 01 acceptance",
+        "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
+        "files": [
+          "package.json (modified)",
+          "pnpm-lock.yaml (modified)",
+          "eslint.config.mjs (untracked, 7261 bytes)",
+          ".github/workflows/desktop-ci.yml (modified)"
+        ],
+        "detail": "PQ-01 work is being performed in the integration worktree with no lease granted. W0 did NOT commit these files; the acceptance and ledger commits used explicit pathspecs so they remain unstaged.",
+        "requiredAction": "Identify the actor, then either grant the lease formally or revert. Do not let unleased manifest changes ride along on an integration commit."
+      }
     },
     {
       "path": "GitNexus index and managed doc blocks",
-      "resolvedPaths": [".gitnexus/**", "AGENTS.md", "CLAUDE.md", ".claude/skills/gitnexus/**"],
-      "ownerOrder": ["W0"],
+      "resolvedPaths": [
+        ".gitnexus/**",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/skills/gitnexus/**"
+      ],
+      "ownerOrder": [
+        "W0"
+      ],
       "currentLease": "W0 (permanent)",
       "note": "Reserved to W0 permanently. gitnexus analyze rewrites the managed blocks in 8 tracked files; W0 reverts them so producer diffs stay honest. No producer may commit those rewrites."
     }
   ],
-
   "quarantine": {
     "path": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
     "branch": "feature/aibase-my-graph-ui-sync",
     "head": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
     "mode": "READ-ONLY for the entire programme",
-    "prohibited": ["reset", "stash", "clean", "overwriting checkout", "move", "delete", "commit", "continuing implementation"],
+    "prohibited": [
+      "reset",
+      "stash",
+      "clean",
+      "overwriting checkout",
+      "move",
+      "delete",
+      "commit",
+      "continuing implementation"
+    ],
     "unstable": true,
     "observedGrowth": [
-      { "at": "Loop 00 start", "entries": 83, "modifiedTracked": 31, "untracked": 52 },
-      { "at": "Loop 00 end", "entries": 113, "modifiedTracked": 35, "untracked": 78 },
-      { "at": "Loop 00 acceptance", "entries": 118, "modifiedTracked": 36, "untracked": 82 }
+      {
+        "at": "Loop 00 start",
+        "entries": 83,
+        "modifiedTracked": 31,
+        "untracked": 52
+      },
+      {
+        "at": "Loop 00 end",
+        "entries": 113,
+        "modifiedTracked": 35,
+        "untracked": 78
+      },
+      {
+        "at": "Loop 00 acceptance",
+        "entries": 118,
+        "modifiedTracked": 36,
+        "untracked": 82
+      },
+      {
+        "at": "Loop 01 acceptance",
+        "entries": 119,
+        "note": "HEAD still 959e2d28; status hash B4850D68 verified unchanged before and after the isolated toolchain build, so no W0 or W1 action wrote here."
+      }
     ],
     "warning": "A session outside W0 control is still writing here. Any consumer that diffs against this worktree must re-snapshot immediately before use; a stale snapshot is wrong within minutes.",
     "salvageRule": "No blind cherry-pick. Salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code.",
@@ -169,5 +420,45 @@
     "preservationRecord": "docs/handoffs/personal-office/quarantine/dirty-state.json",
     "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728",
     "preservationNote": "Content is now copied out-of-repo and hashed, so a git clean in quarantine no longer destroys the draft. Per-file manifests: quarantine/loop-02-dirty-salvage.json and quarantine/loop-03-dirty-salvage.json."
+  },
+  "contractOwnership": {
+    "note": "Recorded at Loop 01 acceptance. W1 owns the governance/catalog contract layer; W3 owns the execution core beneath it. Dependency direction is one-way: engine imports contract, never the reverse.",
+    "W1": {
+      "window": "W1",
+      "loop": "01",
+      "scope": "governance/catalog contract of record",
+      "ownedPaths": [
+        "apps/desktop/src/shared/personal-office/**",
+        "docs/architecture/personal-office-os.md",
+        "docs/architecture/legacy-personal-office-mapping.md",
+        "docs/architecture/adr/ADR-PO-00{1,2,3,4}-*.md"
+      ],
+      "accessForOthers": "read-only; changes only via contract change request approved by W0",
+      "status": "ACCEPTED and FROZEN as of acceptance/loop-01.json"
+    },
+    "W3": {
+      "window": "W3",
+      "loop": "03",
+      "scope": "execution core + wired seams",
+      "ownedPaths": [
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/db/database.ts",
+        "apps/desktop/src/main/db/sqlite-schema.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts"
+      ],
+      "mustDependOn": "apps/desktop/src/shared/personal-office/** - never a parallel model"
+    },
+    "W2": {
+      "window": "W2",
+      "loop": "02",
+      "scope": "product shell / reference UX",
+      "ownedPaths": [
+        "apps/desktop/src/renderer/shell/**",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx"
+      ],
+      "note": "First owner of App.tsx and Sidebar.tsx per section 8.1 ownerOrder [02, 12]."
+    }
   }
 }
