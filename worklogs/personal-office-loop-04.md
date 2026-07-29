@@ -1,7 +1,7 @@
 # Loop 04 — Live profile, vault and MyGraph
 
-Status: READY_FOR_REVIEW  
-Base: `4fa9e1d`  
+Status: READY_FOR_REVIEW
+Base: `4fa9e1d`
 Lease: `LEASE-L04-LIVE-VAULT-GRAPH-20260729`
 
 ## Outcome
@@ -72,4 +72,3 @@ builder implementation stayed inside the lease. `/search-first`,
 `/frontend-patterns`, `/deployment-patterns`, `Design`, `/gpt-taste`,
 `/design-taste-frontend` and `/stitch-design-taste` were applied as boundary
 checks: this loop intentionally added no mounted UI or deployment behavior.
-
