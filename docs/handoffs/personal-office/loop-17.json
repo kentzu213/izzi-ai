@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-checkpoint",
+  "loop": "17",
+  "status": "PROVISIONAL",
+  "title": "Attested isolated browser adapter boundary",
+  "canonicalBase": "0f32a0ca2d3155af0ff103a5fe0239e0f0e62091",
+  "branch": "feature/personal-office-loop-17-20260729",
+  "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
+  "implemented": [
+    "current SHA-256 driver attestation validation",
+    "exact package binding",
+    "visible review and encrypted-state requirements",
+    "runtime origin containment",
+    "idempotent replay requirement"
+  ],
+  "verification": {
+    "focusedTests": "4/4",
+    "fullTests": "1402/1402",
+    "mainTypeScript": "PASS",
+    "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
+    "changedLint": "0 warnings",
+    "repositoryLint": "0 errors, 350 warnings"
+  },
+  "remainingBeforeReview": [
+    "audited production Playwright driver and executable provenance",
+    "production account/grant/repository/vault adapters",
+    "exact W0 leases for main composition seams",
+    "complete install-to-open-to-delegate-to-artifact E2E evidence"
+  ],
+  "authorization": "No push, deployment, install, browser launch, network action, secret retrieval or external effect is authorized."
+}
