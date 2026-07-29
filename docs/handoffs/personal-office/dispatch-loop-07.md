@@ -1,7 +1,7 @@
 # Loop 07 runnable handoff — Capability registry and package adapters
 
-Status: READY_TO_START  
-Base: `feature/personal-office-baseline-20260728` at `4fa9e1d`  
+Status: READY_TO_START
+Base: `feature/personal-office-baseline-20260728` at `4fa9e1d`
 Lease: `LEASE-L07-CAPABILITY-ADAPTERS-20260729`
 
 ## Goal
