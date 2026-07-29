@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "07",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This producer handoff grants no lease and authorizes no runtime wiring.",
+  "title": "Deterministic capability registry and least-privilege package adapters",
+  "producer": {
+    "window": "W1",
+    "role": "capability registry and package adapters",
+    "branch": "feature/personal-office-loop-07-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop07",
+    "lease": "LEASE-L07-CAPABILITY-ADAPTERS-20260729"
+  },
+  "canonicalBase": "4fa9e1dd62671097b833d2e3bdaa0c70c6b273b2",
+  "dispatchCommit": "b0601e03c85b61288988de7516d1b15b8ba741f5",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "767fb57a3a001f09d25204979098466b73a98de4",
+      "phase": "implementation",
+      "subject": "feat(personal-office): add capability registry adapters",
+      "scope": "versioned contracts, strict validation, policy catalog, audited registry, invocation and approval gates, .ocx/.oab adapters, tests and product documentation"
+    }
+  ],
+  "handoffCommitNote": "This JSON, worklogs/personal-office-loop-07.md and change-request-loop-07-agent-bundle-export.md are the only files in the phase-2 handoff commit.",
+  "ownedPaths": [
+    "apps/desktop/src/shared/capabilities/**",
+    "apps/desktop/src/main/capabilities/**",
+    "packages/agent-bundle/src/adapters/**",
+    "docs/product/personal-office-capabilities.md",
+    "docs/handoffs/personal-office/loop-07.json",
+    "docs/handoffs/personal-office/change-request-loop-07-agent-bundle-export.md",
+    "worklogs/personal-office-loop-07.md"
+  ],
+  "implementationFiles": {
+    "count": 16,
+    "diff": "2425 insertions, 0 deletions",
+    "allInsideLease": true
+  },
+  "contractCompliance": [
+    "Accepted shared/personal-office entities remain read-only and authoritative.",
+    "Registry records compose SkillPackage and ToolDefinition instead of redefining domain entities.",
+    "IntegrationGrant and RuntimeInstance remain accepted domain concepts and cannot be minted by manifests.",
+    "Loop 03 WorkService remains the authority for approval hashing, redaction, persistence and decisions.",
+    "Package manifests, package files and lockfiles remain unchanged."
+  ],
+  "securityGate": {
+    "surface": "untrusted .ocx/.oab declarations, permissions, classifications, secrets and side effects",
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "Strict exact-key, versioned plain-object envelope parser.",
+      "Manifest declares keys only; trusted policy supplies permission, trust zone, classification, effects, risk and status.",
+      "Unknown, wildcard, duplicate, blocked and unsupported declarations fail closed.",
+      "Credential-shaped public metadata is rejected; publisher digest has an exact sha256 format.",
+      "Network egress is limited to public_metadata.",
+      "Invocation requires an exact permission; wildcard grants do not satisfy it.",
+      "Capability fingerprints and whole-registry digest are verified before authorization.",
+      "Side effects become Loop 03 approval inputs and are never executed by the adapter."
+    ],
+    "secretScan": "Production files clean. One deliberate fake sk-... string exists only in the validation tripwire test."
+  },
+  "verification": [
+    {
+      "check": "targeted capability tests",
+      "result": "PASS",
+      "evidence": "4 files, 17/17 tests"
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "85 files, 1069/1069 tests"
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main + Vite; 1167 modules transformed"
+    },
+    {
+      "check": "agent-bundle build",
+      "result": "PASS",
+      "evidence": "CommonJS and ESM TypeScript builds"
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "Zero findings in shared/main capabilities and agent-bundle adapters"
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "16/16 implementation files inside the active lease; no renderer, DB, index/preload, contract, manifest, package, lockfile or quarantine change"
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS",
+      "evidence": "Implementation commit range clean"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "PASS_WITH_INDEX_LIMIT",
+      "evidence": "Baseline index plus explicit Loop 07 worktree: low risk, 16 changed files, zero changed indexed symbols and zero affected processes. New symbols are absent from the baseline index."
+    }
+  ],
+  "toolingNotes": [
+    "CodeGraph was not initialized in the Loop 07 linked worktree.",
+    "The required Socrates and orchestrator spawns both returned agent thread limit reached; W0 authorized equivalent in-process checks and an independent post-implementation review.",
+    "No dependency install ran. Temporary node_modules junctions to the accepted baseline toolchain were removed before commit.",
+    "The unset NODE_AUTH_TOKEN placeholder warning exposed no value."
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/capabilities/registry.ts",
+      "sha256": "bf0f91fc4aad3ed6fc8f47f23a7730e3257c3ec29e4705de47b662915b0e3947",
+      "bytes": 10631
+    },
+    {
+      "path": "apps/desktop/src/shared/capabilities/validation.ts",
+      "sha256": "143d7f65729da03470ff5ac217c8f139f50a84f370ba226dd3d077dd57982a4d",
+      "bytes": 13523
+    },
+    {
+      "path": "packages/agent-bundle/src/adapters/capability-envelope.ts",
+      "sha256": "750fc3557c528112ba1f6a67640187ab7a9101d0b919c8f3f65bd774e3078f7f",
+      "bytes": 6461
+    },
+    {
+      "path": "docs/product/personal-office-capabilities.md",
+      "sha256": "c9dbf20ea0536979d30d3ac228a7c58ea4916e4a9204201476dab45304570bf6",
+      "bytes": 8806
+    }
+  ],
+  "changeRequests": [
+    {
+      "path": "docs/handoffs/personal-office/change-request-loop-07-agent-bundle-export.md",
+      "target": "packages/agent-bundle/src/index.ts",
+      "reason": "Export the implemented adapter from the package root without changing package.json.",
+      "status": "REQUESTED_NOT_APPLIED"
+    }
+  ],
+  "residualRisks": [
+    "Publisher signature verification is declared by the accepted model but remains a later execution-plane responsibility.",
+    "Automation and integration scopes remain fail-closed until explicit scoped policies and IntegrationGrant wiring exist.",
+    "The .oab adapter is not package-root exported until W0 grants the requested barrel lease.",
+    "Runtime install/load wiring is outside this loop's lease and must consume the registry before grant or invocation."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Independently review commit 767fb57, verify exact paths/hashes, rerun tests/build/GitNexus on integration, decide the barrel export change request, then accept or return concrete findings."
+    },
+    {
+      "owner": "future install/runtime owner",
+      "action": "After W0 acceptance and an explicit lease, adapt validated manifests, admit the complete registry atomically, require exact grants, and route side effects through Loop 03 approvals."
+    }
+  ],
+  "agentAudit": {
+    "builder": "Loop 07 implemented and verified only leased capability and adapter paths.",
+    "orchestrator": "Equivalent short plan executed in-process after the role spawn failed with agent thread limit reached.",
+    "socrates": "Equivalent challenge executed in-process; W0 was notified to perform the independent post-implementation review.",
+    "decisionAuthority": "W0 only"
+  },
+  "skillAudit": [
+    {
+      "skill": "/search-first",
+      "status": "USED"
+    },
+    {
+      "skill": "/context-gatherer",
+      "status": "USED"
+    },
+    {
+      "skill": "/quick-spec",
+      "status": "USED"
+    },
+    {
+      "skill": "/backend-patterns",
+      "status": "USED"
+    },
+    {
+      "skill": "/security-review",
+      "status": "USED"
+    },
+    {
+      "skill": "/verification-loop",
+      "status": "USED"
+    },
+    {
+      "skill": "/understand-codebase",
+      "status": "USED"
+    },
+    {
+      "skill": "/frontend-patterns",
+      "status": "APPLIED_AS_NO_RENDERER_BOUNDARY"
+    },
+    {
+      "skill": "/deployment-patterns",
+      "status": "APPLIED_AS_NO_DEPLOY_OR_INSTALL_GUARD"
+    },
+    {
+      "skill": "Design",
+      "status": "APPLIED_AS_NON_VISUAL_SCOPE_GUARD"
+    },
+    {
+      "skill": "/gpt-taste",
+      "status": "APPLIED_AS_NON_VISUAL_SCOPE_GUARD"
+    },
+    {
+      "skill": "/design-taste-frontend",
+      "status": "APPLIED_AS_NON_VISUAL_SCOPE_GUARD"
+    },
+    {
+      "skill": "/stitch-design-taste",
+      "status": "APPLIED_AS_NON_VISUAL_SCOPE_GUARD"
+    }
+  ]
+}
