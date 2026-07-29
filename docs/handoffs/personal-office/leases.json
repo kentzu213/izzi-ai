@@ -3,12 +3,12 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:55Z",
+  "updatedAt": "2026-07-29T23:59:59Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "2e5c61daa2a405fe1c411331ad1562a7c3443636",
+  "integrationCommit": "ae1fd77293e85da822674aedb48020d06f37376a",
   "activeLeases": [],
   "activeLeaseCount": 0,
-  "statement": "Loop 15 has one bounded Codex lease for the audited Marketplace bridge and operation boundary. Quarantine remains read-only. Auth implementation, DB/schema, Work internals, capability registry, grant/provisioning internals, legacy extension install code, runtime adapters, packages, real installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised.",
+  "statement": "No producer holds a hot-file lease. Loop 16 was accepted entirely within new isolated main/integrations/grant-operation and documentation paths, so no lease was required. Quarantine remains read-only. Production account/OAuth adapters, main/preload composition, DB/schema, legacy integration IPC, runtime adapters, packages, real installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised until Loop 17 receives exact W0 change requests and leases.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
