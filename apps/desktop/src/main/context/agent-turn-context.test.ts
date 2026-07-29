@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -218,5 +218,31 @@ describe('PersonalOfficeAgentContextRuntime', () => {
       rawRequest: 'Draft the update.',
     })).rejects.toThrow(/workspace is unavailable/i);
     expect(snapshots.writer.upsertContextSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('guards abort and steering IPC before active-turn input use', async () => {
+    const source = await readFile(
+      join(process.cwd(), 'src', 'main', 'index.ts'),
+      'utf8',
+    );
+    const abortStart = source.indexOf("ipcMain.handle('customProvider:abort'");
+    const injectStart = source.indexOf("ipcMain.handle('customProvider:inject'");
+    expect(abortStart).toBeGreaterThanOrEqual(0);
+    expect(injectStart).toBeGreaterThan(abortStart);
+
+    const abortHandler = source.slice(abortStart, injectStart);
+    expect(abortHandler.indexOf('isTrustedMarketingSender(event)')).toBeGreaterThanOrEqual(0);
+    expect(abortHandler.indexOf('isTrustedMarketingSender(event)')).toBeLessThan(
+      abortHandler.indexOf('activeAgentTurns.get(turnId)'),
+    );
+
+    const injectHandler = source.slice(injectStart);
+    expect(injectHandler.indexOf('isTrustedMarketingSender(event)')).toBeGreaterThanOrEqual(0);
+    expect(injectHandler.indexOf('isTrustedMarketingSender(event)')).toBeLessThan(
+      injectHandler.indexOf('activeAgentTurns.get(turnId)'),
+    );
+    expect(injectHandler.indexOf('isTrustedMarketingSender(event)')).toBeLessThan(
+      injectHandler.indexOf('text.trim()'),
+    );
   });
 });
