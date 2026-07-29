@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T11:36:19Z",
+  "updatedAt": "2026-07-29T11:50:19Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -331,19 +331,23 @@
       "loop": "05",
       "title": "Context compiler and agent kernel",
       "window": "W3",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-05-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop05",
-      "commitSha": null,
-      "handoff": "docs/handoffs/personal-office/dispatch-loop-05.md",
+      "commitSha": "4f01bedddaf6eab18a87e4f814587eaef96ef667",
+      "handoff": "docs/handoffs/personal-office/loop-05.json",
       "dependsOn": [
         "03",
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 03 and Loop 04 are ACCEPTED. Lease LEASE-L05-CONTEXT-KERNEL-20260729 granted as the second and final active producer lane.",
-      "dispatchStatus": "READY_TO_START",
-      "dispatchBase": "feature/personal-office-baseline-20260728 at 37afbc291688736056f9dc346ba63d5425ab231e"
+      "dependencyStatus": "SATISFIED — Loops 03, 04 and 05 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-05.json",
+      "acceptedProducerImplementation": "f69ff7d3b0415480a7ef217ce142d0f71f727e6b",
+      "acceptedProducerHandoff": "d4dd17c864bf9e92aed1f10e0447f154be2c7cb0",
+      "integrationImplementationCommit": "fd2ed1d5e7561174e5af5ab3e473b51433606c35",
+      "integrationHandoffCommit": "4f01bedddaf6eab18a87e4f814587eaef96ef667",
+      "verificationSummary": "Independent security PASS after raw-request, multimodal and Git-blob provenance corrections; targeted 19/19 and full desktop 1159/1159 tests PASS; main TypeScript, production build and lint ceiling PASS; exact lease, prohibited-path, scope, tamper and secret audits PASS."
     },
     {
       "loop": "06",
@@ -655,6 +659,11 @@
       "at": "2026-07-29T11:36:19Z",
       "by": "W0",
       "action": "Opened the second producer slot for Loop 08 after Loop 09 acceptance. Granted LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 for isolated blueprint, plan-only provisioning and the exact optional WorkspaceInstance.health contract amendment. Kiro/provider writers remain disabled; Codex is the only authorised producer."
+    },
+    {
+      "at": "2026-07-29T11:50:19Z",
+      "by": "W0",
+      "action": "Exact-path integrated and ACCEPTED Loop 05. Implementation fd2ed1d contains 14 leased context/host paths; handoff 4f01bed contains only loop-05.json and the worklog. Independent security review PASS after exact raw-request, multimodal fail-closed and Git-blob provenance corrections. Integration verification: targeted 19/19, full desktop 1159/1159, TypeScript, production build, targeted lint, repository lint ceiling, ownership, prohibited paths, secrets and hashes PASS. Revoked LEASE-L05-CONTEXT-KERNEL-20260729 and unblocked Loop 06."
     }
   ],
   "completedByW0": [
@@ -697,6 +706,11 @@
       "at": "2026-07-29T11:30:03Z",
       "action": "Verified and ACCEPTED Loop 09; integrated the plan-only Marketplace surface and revoked its producer lease.",
       "record": "acceptance/loop-09.json"
+    },
+    {
+      "at": "2026-07-29T11:50:19Z",
+      "action": "Verified and ACCEPTED Loop 05; integrated the deterministic context kernel, revoked its producer lease and unblocked Loop 06.",
+      "record": "acceptance/loop-05.json"
     }
   ],
   "nextActionsForW0": [
