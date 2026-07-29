@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T11:50:19Z",
+  "updatedAt": "2026-07-29T11:54:00Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -353,15 +353,17 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-06-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop06",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/dispatch-loop-06.md",
       "dependsOn": [
         "05"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 05 is ACCEPTED. Isolated worktree and LEASE-L06-MODEL-GATEWAY-20260729 are authorised.",
+      "lease": "LEASE-L06-MODEL-GATEWAY-20260729"
     },
     {
       "loop": "07",
@@ -664,6 +666,11 @@
       "at": "2026-07-29T11:50:19Z",
       "by": "W0",
       "action": "Exact-path integrated and ACCEPTED Loop 05. Implementation fd2ed1d contains 14 leased context/host paths; handoff 4f01bed contains only loop-05.json and the worklog. Independent security review PASS after exact raw-request, multimodal fail-closed and Git-blob provenance corrections. Integration verification: targeted 19/19, full desktop 1159/1159, TypeScript, production build, targeted lint, repository lint ceiling, ownership, prohibited paths, secrets and hashes PASS. Revoked LEASE-L05-CONTEXT-KERNEL-20260729 and unblocked Loop 06."
+    },
+    {
+      "at": "2026-07-29T11:54:00Z",
+      "by": "W0",
+      "action": "Dispatched Loop 06 from the accepted Loop 05 integration ref and granted LEASE-L06-MODEL-GATEWAY-20260729. Scope is deterministic managed/custom routing, same-route retry and secret-free decisions. Cross-provider/model fallback, host-context edits, package/DB/schema/renderer changes and real network tests are prohibited. Codex remains the sole writer while Kiro/provider routing is unavailable."
     }
   ],
   "completedByW0": [

@@ -3,10 +3,68 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T11:50:19Z",
+  "updatedAt": "2026-07-29T11:54:00Z",
   "updatedBy": "W0",
-  "integrationCommit": "4f01bedddaf6eab18a87e4f814587eaef96ef667",
+  "integrationCommit": "9736e30c2cc23fe8d30676ef655dbc2a0f85cc46",
   "activeLeases": [
+    {
+      "leaseId": "LEASE-L06-MODEL-GATEWAY-20260729",
+      "loop": "06",
+      "window": "W3",
+      "grantedAt": "2026-07-29T11:54:00Z",
+      "grantedBy": "W0",
+      "scope": "Deterministic managed/custom model routing, same-route retry and secret-free route decisions",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/shared/model-gateway/**",
+        "apps/desktop/src/main/agent/chat-provider.ts",
+        "apps/desktop/src/main/agent/provider-resolver.ts",
+        "apps/desktop/src/main/agent/provider-settings-store.ts",
+        "apps/desktop/src/main/agent/custom-openai-provider.ts",
+        "apps/desktop/src/main/agent/managed-agent-provider.ts",
+        "apps/desktop/src/main/agent/izzi-request-headers.ts",
+        "apps/desktop/src/main/agent/agent-service.ts",
+        "apps/desktop/src/main/agent/custom-provider.test.ts",
+        "apps/desktop/src/main/agent/managed-agent-provider.test.ts",
+        "apps/desktop/src/main/agent/managed-agent-provider.production.test.ts",
+        "apps/desktop/src/main/agent/izzi-request-headers.test.ts",
+        "apps/desktop/src/main/agent/agent-service.routing.test.ts",
+        "docs/product/personal-office-model-gateway.md"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/main/agent/secret-store.ts",
+        "apps/desktop/src/main/agent/host-agent.ts",
+        "apps/desktop/src/main/agent/host-agent.context.test.ts",
+        "apps/desktop/src/main/agent/host-agent.streaming-fallback.test.ts",
+        "apps/desktop/src/main/agent/agent-permissions.ts",
+        "apps/desktop/src/main/agent/agent-tools.ts",
+        "apps/desktop/src/shared/context/**",
+        "apps/desktop/src/shared/model-credit-policy.ts",
+        "apps/desktop/src/main/db/**"
+      ],
+      "prohibitedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/main/agent/host-agent.ts",
+        "apps/desktop/src/main/agent/secret-store.ts",
+        "apps/desktop/src/main/agent/agent-tools.ts",
+        "apps/desktop/src/renderer/**",
+        "F:/Ai Tools/Tool Starizzi - B2C - Openclaw/**"
+      ],
+      "conditions": [
+        "Custom disabled routes explicitly to managed; custom enabled with invalid config or missing key fails closed and never silently falls back to managed.",
+        "Provider, endpoint and model are frozen for each request; runtime failure cannot trigger cross-provider or cross-model fallback.",
+        "Only the narrow recognised streaming incompatibility may retry once, non-streamed, on the same route/model/idempotency key.",
+        "Route decisions and diagnostics contain no raw secret, URL credential, query or fragment.",
+        "Loop 05 host/context bytes remain unchanged and no second context path is introduced.",
+        "No real network, account, billing, package, DB/schema, IPC, renderer or deployment side effect."
+      ],
+      "expiresOn": "Loop 06 acceptance or W0 revocation"
+    },
     {
       "leaseId": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
       "loop": "08",
@@ -61,8 +119,8 @@
       "expiresOn": "Loop 08 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 08 is the only active producer lease. Loops 05 and 09 are ACCEPTED and revoked. One producer slot is available for newly unblocked Loop 06. Package manifests, DB/schema and operational provisioning/installer seams remain unleased.",
+  "activeLeaseCount": 2,
+  "statement": "Loops 06 and 08 are the only active producer leases. Loops 05 and 09 are ACCEPTED and revoked. No producer slot remains until one active loop is accepted or revoked. Package manifests, DB/schema, host-context, renderer and operational provisioning/installer seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
