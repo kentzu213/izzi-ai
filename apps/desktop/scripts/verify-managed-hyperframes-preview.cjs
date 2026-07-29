@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const { createReadStream } = require('node:fs');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 
 function fail(message) {
@@ -54,6 +55,13 @@ async function inventory(root) {
   };
   await visit(root);
   return files;
+}
+
+async function runtimeScratchDirectories(parent) {
+  return (await fs.readdir(parent, { withFileTypes: true }))
+    .filter((entry) => entry.name.startsWith('izzi-ai-hf-'))
+    .map((entry) => entry.name)
+    .sort();
 }
 
 async function packagedHyperframesDiagnostics(appRoot) {
@@ -158,10 +166,13 @@ async function main() {
     .update(projectRoot)
     .digest('hex')
     .slice(0, 12);
+  const runtimeScratchParent = await fs.realpath(os.tmpdir());
+  const scratchBefore = new Set(await runtimeScratchDirectories(runtimeScratchParent));
   const service = new CustomerVideoStudioService({
     rootPath: runtimeRoot,
     appRoot,
     managedBrowserPath: browserPath,
+    runtimeScratchParent,
   });
   const toolchain = await service.getToolchain();
   if (!toolchain.previewAvailable) {
@@ -180,6 +191,11 @@ async function main() {
     imported.evidenceDigest,
   );
   service.killAll();
+  const scratchAfter = await runtimeScratchDirectories(runtimeScratchParent);
+  const leakedScratchDirectories = scratchAfter.filter((entry) => !scratchBefore.has(entry));
+  if (leakedScratchDirectories.length > 0) {
+    fail('Packaged preview left a managed runtime scratch directory behind.');
+  }
   if (!preview.receipt.passed) {
     fail('Packaged preview quality gate did not pass: ' + JSON.stringify(preview.receipt));
   }
@@ -235,6 +251,7 @@ async function main() {
     artifacts: preview.artifacts,
     outputFiles: files,
     snapshotFrames: frameFiles,
+    runtimeScratchClean: true,
     hostPathEntries: (process.env.PATH || '').split(path.delimiter).filter(Boolean).length,
     commercialRenderAvailable: toolchain.commercialRenderAvailable,
     externalActionsPerformed: false,
