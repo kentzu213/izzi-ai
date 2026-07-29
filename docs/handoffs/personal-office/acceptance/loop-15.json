@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "15",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T23:59:30Z",
+  "authority": "W0 accepted the host-validated Marketplace operation only after exact-path producer reconciliation, fail-closed security corrections and the complete canonical verification matrix.",
+  "subject": {
+    "title": "Host-validated Marketplace operation",
+    "producerBranch": "feature/personal-office-loop-15-20260729",
+    "producerImplementationCommit": "bee907cc59109175401de8e4fda97e9414646e75",
+    "producerHandoffCommit": "b48603efa430740e3ca5edffb621cc4afe3e80d1",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "6fd0d68c89eb39611b9830c273d889ac2a7113f5"
+  },
+  "integration": {
+    "method": "W0 replayed exactly 17 leased implementation paths from the immutable producer implementation commit, verified every staged and committed Git blob, then reconciled only the producer handoff JSON and worklog. No merge, blind cherry-pick, quarantine input or prohibited-path edit was used.",
+    "implementationCommit": "ee783578da3910ecca3e462a67fc309c36d73967",
+    "handoffReconciliationCommit": "6fd0d68c89eb39611b9830c273d889ac2a7113f5",
+    "producerBlobEquality": "17/17 implementation Git blobs matched producer commit bee907cc59109175401de8e4fda97e9414646e75 at canonical commit ee783578da3910ecca3e462a67fc309c36d73967."
+  },
+  "review": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "method": "Codex-only in-process review, per user direction; no Kiro or subagent writer/reviewer was used.",
+    "closedFindings": [
+      "Renderer no longer creates tenant, user or workspace authority and the production route has no demo-catalog fallback.",
+      "Unknown and child-frame senders are rejected before Marketplace request parsing or service execution.",
+      "Every submitted plan is strictly parsed, recreated from current main authority and compared canonically before package verification.",
+      "Package identity, byte digest and publisher-signature digest bind the exact Work approval.",
+      "Resume rejects an approval record whose id or binding digest differs from the requested approval.",
+      "Strict IPC receipt parsing rejects reordered stages, invalid timestamps, false completion, workspace/package mismatch and approval-reference mismatch.",
+      "Missing grants, failed provisioning or unavailable installation stop every later effect and preserve only truthful partial evidence.",
+      "Production catalog and effect ports remain unavailable and are not connected to extensions:runtime:installFromMarketplace.",
+      "No package handle, raw user id, token, URL, local path or secret crosses preload."
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused final Marketplace tests",
+      "result": "PASS",
+      "evidence": "5 files, 20/20 tests on the producer implementation."
+    },
+    {
+      "check": "full canonical desktop tests",
+      "result": "PASS",
+      "evidence": "127 files, 1388/1388 tests at canonical implementation commit ee783578."
+    },
+    {
+      "check": "canonical main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "canonical desktop production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "canonical lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors and 350 warnings, below maximum 358. The changed Marketplace surface separately passed with --max-warnings 0."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 17 implementation paths were integrated under LEASE-L15-MARKETPLACE-OPERATION-20260729; zero auth implementation, DB/schema, Work/capability/grant/provisioning internals, extension installer, runtime, package or lockfile paths changed."
+    },
+    {
+      "check": "provenance, diff and secret audit",
+      "result": "PASS",
+      "evidence": "17/17 canonical Git blobs matched the producer; git diff --check passed; changed files contained no credential-shaped assignment or private-key material."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEGRADED_LOW",
+      "evidence": "The stale canonical index mapped 11 changed symbols and no affected process. New unindexed Marketplace files were covered by manual review, full tests, both typechecks, production build and lint."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 459 expanded entries and status SHA-256 07f2e713c57599d4787c36d67394f6573dfab702a42e454f1c0f3b8e09160ca5."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "PO-PRODUCT-MARKETPLACE-OPERATION",
+      "before": "PROVISIONAL",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-16",
+      "before": "BLOCKED_BY_LOOP_15",
+      "after": "ELIGIBLE_FOR_GOVERNED_START"
+    },
+    {
+      "gate": "LOOP-17",
+      "before": "BLOCKED_BY_LOOP_15_AND_LOOP_16",
+      "after": "BLOCKED_BY_LOOP_16"
+    }
+  ],
+  "residualRisks": [
+    "Production catalog, verifier, approval, grant, provisioning and installer adapters remain intentionally unavailable; Loop 15 proves the boundary but performs no real installation.",
+    "The production bundle retains the pre-existing large-chunk advisory.",
+    "GitNexus must be refreshed in a future W0-owned maintenance window before its symbol/process mapping can be treated as current.",
+    "This acceptance authorizes no OAuth, runtime adapter, download, installation, deployment, browser automation enablement, push, secret retrieval or external effect."
+  ]
+}
