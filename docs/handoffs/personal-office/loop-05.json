@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "05",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED.",
+  "title": "Deterministic Personal Office context compiler and bounded host-agent kernel",
+  "producer": {
+    "window": "W3",
+    "role": "context compiler + bounded host seam",
+    "branch": "feature/personal-office-loop-05-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop05",
+    "lease": "LEASE-L05-CONTEXT-KERNEL-20260729"
+  },
+  "baseCommit": "aa5884811dee055510967162854d1fdc8a84041d",
+  "implementationCommit": {
+    "sha": "f69ff7d3b0415480a7ef217ce142d0f71f727e6b",
+    "subject": "feat(context): add deterministic Personal Office kernel",
+    "scope": "shared context contract, compiler, package verifier, metadata guard, Work Engine snapshot adapter, optional text-only host-agent seam with exact raw-request binding, tests and product contract"
+  },
+  "handoffCommitNote": "This JSON and worklogs/personal-office-loop-05.md are the only files in the phase-2 handoff commit. Implementation bytes were committed and independently reviewed first.",
+  "contractCompliance": [
+    "Uses LIVE_CONTEXT_PRECEDENCE and effectiveLiveDirectives read-only; it does not reparse Live.md or bypass consent, supersession or expiry.",
+    "Requires exact workspace and owner scope on every source, package, kernel input and snapshot.",
+    "Keeps the base safety prompt in system role and the exact raw current text request in user role; only one bounded delimited segment is appended.",
+    "Does not trim or Unicode-normalize the protected current request; its canonical JSON string literal is hash-bound and compared against the exact string sent in the provider payload.",
+    "Reconstructs the system segment from validated items and compares byte-for-byte, so recomputing the public hash cannot bless extra system text.",
+    "Enforces compiler-owned source, item, decision and byte ceilings in both compiler and verifier.",
+    "Rejects forbidden classifications, raw credentials and reserved delimiters in content and rendered metadata; SecretRef remains opaque and unrendered.",
+    "Treats contentHash as deterministic content-addressing and integrity evidence, never authenticity or origin proof.",
+    "Writes only deterministic metadata through the accepted Work Engine snapshot API; snapshot IDs bind workspace, owner, content and optional run.",
+    "Host context binding is text-only; a turn containing context plus any image fails closed before provider or network access.",
+    "Managed AgentService injection is deferred because the accepted tree has neither an authoritative managed safety message nor session workspace identity."
+  ],
+  "ownedPaths": [
+    "apps/desktop/src/shared/context/**",
+    "apps/desktop/src/main/context/**",
+    "apps/desktop/src/main/agent/host-agent.ts",
+    "apps/desktop/src/main/agent/host-agent.context.test.ts",
+    "docs/product/personal-office-context-kernel.md",
+    "docs/handoffs/personal-office/loop-05.json",
+    "worklogs/personal-office-loop-05.md"
+  ],
+  "implementationFiles": {
+    "count": 14,
+    "allInsideLease": true,
+    "diff": "2831 insertions, 3 deletions from aa58848 through f69ff7d"
+  },
+  "prohibitedPathsRespected": [
+    "apps/desktop/src/main/agent/agent-service.ts has zero content diff",
+    "apps/desktop/src/main/agent/agent-tools.ts",
+    "apps/desktop/src/main/agent/provider-*.ts and *provider*.ts",
+    "apps/desktop/src/main/db/**",
+    "apps/desktop/src/main/work/**",
+    "apps/desktop/src/main/index.ts",
+    "apps/desktop/src/main/preload.ts",
+    "apps/desktop/src/renderer/**",
+    "package manifests and lockfiles",
+    "deployment and permanent quarantine"
+  ],
+  "securityGate": {
+    "decision": "PASS_FOR_W0_REVIEW",
+    "surfaces": [
+      "workspace and owner isolation",
+      "prompt-role injection and system replacement",
+      "trimmed or Unicode-normalized current-request aliasing",
+      "incomplete multimodal request binding",
+      "self-rehashed package tampering",
+      "credential and delimiter injection",
+      "unbounded context and forged budgets",
+      "snapshot run aliasing",
+      "provider/tool/DB/renderer scope creep"
+    ],
+    "controls": [
+      "Unknown fields, invalid roles, classifications, provenance shapes and scope mismatches fail closed.",
+      "Safety and current text-request content is hash-bound but excluded from the appended segment.",
+      "The protected current request is preserved exactly and hashed through its canonical JSON string literal; trailing whitespace, line-ending changes and NFC/NFD differences cannot share a binding.",
+      "Context plus any image is rejected before provider or network access until the complete multimodal user payload can be hashed canonically.",
+      "Canonical ordering uses deterministic UTF-16 lexical comparison rather than locale-sensitive collation.",
+      "Verifier checks item hashes, exact canonical segment bytes, hard ceilings and decision/budget consistency.",
+      "Only public_metadata and personal_graph classifications may render.",
+      "Credential-shaped content or rendered metadata is rejected; opaque SecretRef metadata is never rendered or resolved.",
+      "Snapshot IDs include optional runId and returned run, scope, hash, source, summary, ref and schema metadata must match exactly.",
+      "No managed-agent context seam remains without authoritative safety and workspace bindings."
+    ],
+    "secretScan": "PASS. Prior W0 and current correction scans found only deliberate fixtures and test-key values; no production secret literal was found."
+  },
+  "verification": [
+    {
+      "check": "producer context/compiler/kernel/snapshot tests",
+      "result": "PASS",
+      "evidence": "3 files, 14/14 tests with --no-cache and NODE_DISABLE_COMPILE_CACHE=1"
+    },
+    {
+      "check": "corrected host seam tests",
+      "result": "PASS",
+      "evidence": "5/5 tests through read-only baseline Vitest with --no-cache, including exact trailing-whitespace preservation, trailing-whitespace mismatch rejection, NFC/NFD mismatch rejection and context plus image rejection before fetch"
+    },
+    {
+      "check": "isolated main/shared TypeScript",
+      "result": "PASS",
+      "evidence": "current compiler/kernel correction and prior producer/W0 checks passed against read-only baseline type packages"
+    },
+    {
+      "check": "targeted ESLint",
+      "result": "PASS",
+      "evidence": "current correction linted the compiler, kernel and host regression through the read-only baseline config; prior W0 independently linted 13 files"
+    },
+    {
+      "check": "ownership, prohibited paths, whitespace and secrets",
+      "result": "PASS",
+      "evidence": "14/14 implementation paths authorized; agent-service.ts zero diff; git diff --check clean"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "REVIEWED_WITH_STALE_INDEX_CAVEAT",
+      "evidence": "Pre-edit impact reported critical broad fan-out through runHostAgentTurn on an 11-commit-stale baseline index; the new compiler/kernel symbols were absent. Post-change detect_changes saw the four expected files but mapped zero symbols. No host signature or host production source changed in this correction."
+    },
+    {
+      "check": "full desktop suite and production build",
+      "result": "DEFERRED_TO_W0_INTEGRATION",
+      "evidence": "Correction verification intentionally used no-install, no-junction, no-worktree-cache checks through read-only baseline tools. Full integration remains W0-owned."
+    }
+  ],
+  "outputHashMethod": "Each sha256 and bytes value is the SHA-256 digest and byte length of the exact Phase 1 Git blob bytes obtained through raw git cat-file output, independent of checkout line endings.",
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/shared/context/contract.ts",
+      "bytes": 3883,
+      "sha256": "0c23c97e7b02d4e0dc475fab6c0316d4ce97eb557b2d804b2d1ed50029f03c68"
+    },
+    {
+      "path": "apps/desktop/src/main/context/compiler.ts",
+      "bytes": 22797,
+      "sha256": "077da661d6b4ffeb444e2bc7d77e23b0cff09238883ebae6c859ae654895bc48"
+    },
+    {
+      "path": "apps/desktop/src/main/context/prompt-kernel.ts",
+      "bytes": 21791,
+      "sha256": "1f167e874cf7ac32f5a137796978d830e96c9b669a64edee1d84abff229ab5ca"
+    },
+    {
+      "path": "apps/desktop/src/main/context/work-snapshot-adapter.ts",
+      "bytes": 2833,
+      "sha256": "ff2e390374d4934ab6468c2c306fb8cfc205769b8dc1c024991a5e5219cacaf9"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.ts",
+      "bytes": 21954,
+      "sha256": "49a08bdd608ea1505527db117d7bf5f43fc7248e860f7cd0c13a8bdfa3cb6591"
+    },
+    {
+      "path": "docs/product/personal-office-context-kernel.md",
+      "bytes": 7111,
+      "sha256": "63daf4a60ffcd1eed438ee85a9db0efb8720a9d6bd229a740da965220878876b"
+    }
+  ],
+  "socratesReview": {
+    "managedAgentService": {
+      "initial": "BLOCK",
+      "blockingFinding": "Managed AgentService history has no authoritative safety-system message or accepted session workspace binding, so caller-supplied context would be unusable or cross-workspace unsafe.",
+      "correction": "Removed the AgentService production seam and test; documented managed injection as deferred to a future contract and exact lease.",
+      "reReview": "PASS"
+    },
+    "multimodalBinding": {
+      "initial": "BLOCK",
+      "blockingFinding": "The host seam hash-bound only the text request while images also influence the provider payload, so a contextual multimodal turn was not completely bound.",
+      "correction": "Made contextual turns text-only and added a regression proving context plus any image fails before fetch.",
+      "final": "CORRECTED_READY_FOR_REVIEW"
+    },
+    "exactRawRequestBinding": {
+      "initial": "BLOCK",
+      "blockingFinding": "The compiler trimmed and NFC-normalized current_request before hashing while the host sent the raw message, allowing byte-distinct trailing whitespace or canonically equivalent Unicode to pass verification.",
+      "correction": "Preserved the exact raw protected request, hash-bound its canonical JSON string literal and added provider-boundary regressions for trailing whitespace and NFC/NFD mismatch.",
+      "challengeExecution": "The Socrates role checklist was completed in-process because the root thread had no free agent slot; orchestrator sequencing and builder ownership remained explicit.",
+      "final": "CORRECTED_READY_FOR_REVIEW"
+    },
+    "finalEvidence": "The corrected tree binds the exact host safety prompt and raw text request, rejects byte-distinct request aliases and contextual image turns before network access, reconstructs tamper-resistant segments, enforces hard ceilings and metadata guards, binds snapshot runs and retains zero AgentService diff."
+  },
+  "residualRisks": [
+    "No production caller currently supplies an authenticated owner plus explicit workspace and exact base prompt to the optional host seam; wiring remains intentionally deferred.",
+    "Managed AgentService context requires a future trusted safety prompt and session workspace identity contract.",
+    "Future callers must compile and verify the same untouched raw text string that is sent to the provider; trimming or Unicode normalization before either step is forbidden.",
+    "Multimodal context remains deferred until the complete user payload, including image semantics, can be hashed canonically; contextual host turns must reject every image until then.",
+    "The unkeyed content hash does not authenticate origin; a future cross-process or cross-trust boundary needs its own authorization and signature or equivalent trusted channel.",
+    "W0 should rerun full desktop tests/build and authoritative graph impact after integration onto the current tip."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify phase-1 hashes and exact paths, rerun full integration tests/build/GitNexus, then accept or return concrete findings."
+    },
+    {
+      "owner": "future managed-agent integration",
+      "action": "Do not pass compiled context into AgentService until a trusted managed safety prompt and explicit session workspace binding are accepted under a new lease."
+    },
+    {
+      "owner": "future host wiring",
+      "action": "Compile only from authenticated main-process scope, bind the exact host system prompt and untouched raw text request, never trim or Unicode-normalize that request, capture snapshot metadata through the Work Engine, and reject every image before provider access until canonical full-payload hashing exists."
+    }
+  ],
+  "skillAudit": {
+    "search-first": "USED",
+    "context-gatherer": "USED",
+    "quick-spec": "USED",
+    "backend-patterns": "USED",
+    "security-review": "USED",
+    "verification-loop": "USED",
+    "understand-codebase": "USED",
+    "frontend-patterns": "BOUNDARY_ONLY",
+    "deployment-patterns": "BOUNDARY_ONLY",
+    "Design": "BOUNDARY_ONLY",
+    "gpt-taste": "BOUNDARY_ONLY",
+    "design-taste-frontend": "BOUNDARY_ONLY",
+    "stitch-design-taste": "BOUNDARY_ONLY"
+  },
+  "agentAudit": {
+    "orchestrator": "W0 controlled lease, cleanup, review, two-phase commits and acceptance authority.",
+    "builder": "W3 implemented and verified only the final 14 leased implementation paths.",
+    "socrates": "Managed AgentService seam BLOCK led to removal and re-review PASS; multimodal binding BLOCK led to fail-closed text-only correction; the exact-request challenge ran in-process because the agent limit was full and ended CORRECTED_READY_FOR_REVIEW.",
+    "securityReview": "Closed self-rehashed segment tampering, forged-budget, rendered-metadata secret, locale-ordering, snapshot run-alias and normalized-current-request alias regressions before commit."
+  }
+}
