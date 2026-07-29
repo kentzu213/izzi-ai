@@ -32,4 +32,6 @@
 ## Notes
 
 - Windows signing is optional in this phase. If no certificate is configured, the NSIS installer is still published unsigned.
-- macOS production release is blocked until Apple credentials and signing material are available in GitHub Actions.
+- The macOS release job fails closed when any signing/notarization secret is missing.
+- `electron-builder` uses hardened runtime plus built-in notarization; a real macOS CI artifact must still pass `codesign`, `stapler validate`, and `spctl --assess` before a stable release is approved.
+- Local Windows packaging must use `--publish never`. Creating a tag or publishing a release requires a separate explicit approval.
