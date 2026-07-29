@@ -493,6 +493,7 @@ function setupIPC() {
       manifest: {
         displayName: extension.manifest.displayName,
         description: extension.manifest.description,
+        version: extension.manifest.version,
         private: extension.manifest.private === true,
         customerMarketing: extension.manifest.customerMarketing === true,
         customerMarketingCapability: extension.manifest.customerMarketingCapability,
@@ -504,6 +505,7 @@ function setupIPC() {
     customerMarketingWorkspaceClient,
     (value) => clipboard.writeText(value),
     customerMarketingCredentialVault,
+    workService,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

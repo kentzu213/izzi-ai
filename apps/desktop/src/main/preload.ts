@@ -90,6 +90,11 @@ import {
   RUNTIME_IPC_CHANNELS,
   type RuntimePreloadApi,
 } from '../shared/runtime/ipc';
+import type {
+  MarketingWorkspaceEvidenceResult,
+  MarketingWorkspaceProvisionRequest,
+  MarketingWorkspaceProvisionResult,
+} from '../shared/marketing-workspace';
 
 /**
  * Published first-class preload shape for the unified work engine.
@@ -649,6 +654,14 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:runMediaPreview', input),
     reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:reviewApproval', input),
+    getReferenceWorkspaceEvidence: (
+      packageKey: string,
+    ): Promise<MarketingWorkspaceEvidenceResult> =>
+      ipcRenderer.invoke('customerMarketing:getReferenceWorkspaceEvidence', packageKey),
+    provisionReferenceWorkspace: (
+      input: MarketingWorkspaceProvisionRequest,
+    ): Promise<MarketingWorkspaceProvisionResult> =>
+      ipcRenderer.invoke('customerMarketing:provisionReferenceWorkspace', input),
   },
 
   affiliate: {

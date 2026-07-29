@@ -982,3 +982,35 @@
     animation: none;
   }
 }
+.po-marketplace-open-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(24, 199, 181, 0.32);
+  border-radius: 12px;
+  background: rgba(24, 199, 181, 0.08);
+}
+
+.po-marketplace-open-workspace > div {
+  display: grid;
+  gap: 4px;
+}
+
+.po-marketplace-open-workspace span {
+  color: var(--text-secondary, #aab2c0);
+  font-size: 0.82rem;
+}
+
+.po-marketplace-open-workspace__error {
+  color: var(--color-danger, #ff8f8f) !important;
+}
+
+@media (max-width: 640px) {
+  .po-marketplace-open-workspace {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
