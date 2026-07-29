@@ -66,6 +66,7 @@ import {
   CustomerVideoStudioService,
   type CustomerF5TtsStatus,
 } from './customer-marketing/customer-video-studio-service';
+import { discoverLocalF5TtsRuntime } from './customer-marketing/f5-tts-runtime';
 import {
   readVoiceStudioLicenseEvidence,
   verifyCommercialVoiceLicense,
@@ -261,22 +262,14 @@ function probeLoopbackService(rawUrl: string): Promise<boolean> {
 }
 
 async function inspectConfiguredF5Tts(): Promise<CustomerF5TtsStatus> {
-  const installRoot = process.env.STARIZZI_F5_TTS_INSTALL_ROOT?.trim();
-  const pythonPath = process.env.STARIZZI_F5_TTS_PYTHON?.trim();
-  const modelPath = process.env.STARIZZI_F5_TTS_MODEL_PATH?.trim();
-  const endpoint = process.env.STARIZZI_F5_TTS_URL?.trim();
-  const installed = Boolean(
-    installRoot
-      && pythonPath
-      && modelPath
-      && fs.existsSync(installRoot)
-      && fs.existsSync(pythonPath)
-      && fs.existsSync(modelPath),
-  );
+  const discovery = discoverLocalF5TtsRuntime();
   return {
-    installed,
-    running: Boolean(installed && endpoint && await probeLoopbackService(endpoint)),
-    version: process.env.STARIZZI_F5_TTS_VERSION?.trim() || undefined,
+    ...discovery.status,
+    running: Boolean(
+      discovery.status.installed
+      && discovery.endpoint
+      && await probeLoopbackService(discovery.endpoint),
+    ),
   };
 }
 

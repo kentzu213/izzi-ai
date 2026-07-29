@@ -69,6 +69,19 @@ Before completing any code modification task, verify:
 3. `gitnexus_detect_changes()` confirms changes match expected scope
 4. All d=1 (WILL BREAK) dependents were updated
 
+## Small Release Operating Loop
+
+Complete every bounded product slice before starting the next one:
+
+1. Finish the scoped implementation and its focused tests.
+2. Run the strongest practical verification, then review the exact diff.
+3. Commit and push the completed slice to `main`.
+4. Publish the next real version and GitHub Release only when product bytes changed.
+5. Install or launch the public artifact on the workstation and exercise the primary workflow.
+6. Record observed evidence. If the public build exposes a reproducible defect, open the smallest patch and repeat this loop.
+
+Do not stack unrelated local changes or continue speculative implementation before the current public artifact has been exercised.
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:

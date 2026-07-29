@@ -1,5 +1,20 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.12
+
+Customer Marketing local F5-TTS discovery patch.
+
+- Discover the already installed ViVoice runtime from bounded HyperFrames
+  project roots under the user's local Documents or OneDrive Documents folder.
+- Require the Python environment, F5 source package, checkpoint, vocabulary,
+  and Vocos files before reporting the runtime as installed.
+- Preserve the explicit environment-based configuration as an authoritative
+  override while keeping invalid partial configuration fail-closed.
+- Return only public provider, model, version, and license metadata to the
+  Marketing Room; local paths remain in the main process.
+- Keep ViVoice non-commercial and synthesis/render gates locked. Discovery
+  performs no inference, process launch, download, upload, or publish action.
+
 ## 1.14.0-beta.11
 
 Customer Marketing media re-import refresh patch.
