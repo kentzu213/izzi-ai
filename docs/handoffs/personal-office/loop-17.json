@@ -3,7 +3,7 @@
   "artifactKind": "producer-checkpoint",
   "loop": "17",
   "status": "PROVISIONAL",
-  "title": "Attested isolated browser adapter boundary",
+  "title": "Operational attested browser runtime boundary",
   "canonicalBase": "0f32a0ca2d3155af0ff103a5fe0239e0f0e62091",
   "branch": "feature/personal-office-loop-17-20260729",
   "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
@@ -20,21 +20,36 @@
     "mandatory authoritative receipt resolution before prepare and execute",
     "authorization drift denial with exact receipt and exact-scope digest binding",
     "encrypted atomic operational evidence store keyed by exact runtime authority and runtime digest",
-    "dependency-injected Electron safeStorage encryption adapter"
+    "dependency-injected Electron safeStorage encryption adapter",
+    "dependency-injected managed Playwright-compatible driver without an undeclared package import",
+    "exact executable path and SHA-256 verifier gate",
+    "headed sandboxed fixed-viewport isolated BrowserContext",
+    "service-worker blocking and downloads disabled",
+    "phase-aware HTTP method/origin routing with read-only preparation",
+    "WebSockets denied until a separate socket-effect authority exists",
+    "explicit endpoint idempotency authority before submit",
+    "bounded text, response and screenshot evidence",
+    "query-stripped custom audit trace and screenshot digest-only evidence",
+    "idempotent browser/context cleanup on cancellation, timeout and open failure"
   ],
+  "latestImplementationCommit": "0c31987db0c14e2da83a6edc5d179d83e25511d9",
   "verification": {
-    "focusedTests": "30/30",
-    "fullTests": "134 files, 1428/1428",
+    "focusedTests": "37/37",
+    "fullTests": "135 files, 1435/1435",
     "mainTypeScript": "PASS",
+    "rendererTypeScript": "PASS",
     "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
     "changedLint": "0 warnings",
     "repositoryLint": "0 errors, 350 warnings"
   },
   "remainingBeforeReview": [
-    "audited production Playwright driver and executable provenance",
+    "W0-approved declared Playwright dependency and lockfile provenance",
+    "audited production port registration and compatible executable provenance",
     "main-authoritative hooks that record only Marketplace and grant operation outputs",
     "exact W0 leases for main composition seams",
+    "separate WebSocket authority if a production workflow requires sockets",
     "real production-adapter install-to-open-to-delegate-to-artifact evidence"
   ],
+  "requestedChange": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
   "authorization": "No push, deployment, install, browser launch, network action, secret retrieval or external effect is authorized."
 }
