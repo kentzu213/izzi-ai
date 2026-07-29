@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   canonicalJson,
   looksLikeRawSecret,
@@ -39,6 +40,8 @@ export interface OperationalRuntimeEvidenceQuery {
   readonly integration: string;
   readonly grantId: string;
   readonly runId: string;
+  readonly runtimeId: string;
+  readonly runtimeDigest: string;
   readonly requiredScopes: readonly string[];
 }
 
@@ -81,6 +84,47 @@ interface ResolvedAuthorization {
 }
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
+
+export function createOperationalRuntimeEvidenceQuery(
+  runtime: BrowserRuntimeSpec,
+  packageBinding: OperationalPackageBinding,
+): OperationalRuntimeEvidenceQuery {
+  const values = [
+    runtime.authority.tenantId,
+    runtime.authority.userId,
+    runtime.authority.workspaceId,
+    packageBinding.packageKey,
+    packageBinding.packageId,
+    packageBinding.integration,
+    runtime.authority.grantId,
+    runtime.authority.runId ?? '',
+    runtime.id,
+    ...packageBinding.requiredScopes,
+  ];
+  if (
+    !runtime.authority.runId
+    || runtime.authority.packageId !== packageBinding.packageId
+    || runtime.authority.integrationId !== packageBinding.integration
+    || values.some((value) => looksLikeRawSecret(value))
+  ) {
+    throw new OperationalBrowserServiceError('AUTHORIZATION_DENIED');
+  }
+  return Object.freeze({
+    tenantId: runtime.authority.tenantId,
+    userId: runtime.authority.userId,
+    workspaceId: runtime.authority.workspaceId,
+    packageKey: packageBinding.packageKey,
+    packageId: packageBinding.packageId,
+    integration: packageBinding.integration,
+    grantId: runtime.authority.grantId,
+    runId: runtime.authority.runId,
+    runtimeId: runtime.id,
+    runtimeDigest: `sha256:${createHash('sha256')
+      .update(canonicalJson(runtime))
+      .digest('hex')}`,
+    requiredScopes: packageBinding.requiredScopes,
+  });
+}
 
 export class OperationalBrowserService {
   constructor(
@@ -143,6 +187,7 @@ export class OperationalBrowserService {
   ): Promise<ResolvedAuthorization> {
     let runtime: BrowserRuntimeSpec;
     let packageBinding: OperationalPackageBinding;
+    let query: OperationalRuntimeEvidenceQuery;
     try {
       const validated = validateRuntimeSpec(inputRuntime);
       if (validated.kind !== 'browser') {
@@ -150,17 +195,10 @@ export class OperationalBrowserService {
       }
       runtime = validated;
       packageBinding = validateOperationalPackageBinding(inputBinding);
-      if (
-        !runtime.authority.runId
-        || runtime.authority.packageId !== packageBinding.packageId
-        || runtime.authority.integrationId !== packageBinding.integration
-      ) {
-        throw new Error('runtime authority does not match package binding');
-      }
+      query = createOperationalRuntimeEvidenceQuery(runtime, packageBinding);
     } catch {
       throw new OperationalBrowserServiceError('AUTHORIZATION_DENIED');
     }
-    const query = this.query(runtime, packageBinding);
     let evidence: OperationalRuntimeEvidenceSnapshot | null;
     try {
       evidence = await this.evidence.resolve(query);
@@ -185,34 +223,4 @@ export class OperationalBrowserService {
     }
   }
 
-  private query(
-    runtime: BrowserRuntimeSpec,
-    packageBinding: OperationalPackageBinding,
-  ): OperationalRuntimeEvidenceQuery {
-    const values = [
-      runtime.authority.tenantId,
-      runtime.authority.userId,
-      runtime.authority.workspaceId,
-      packageBinding.packageKey,
-      packageBinding.packageId,
-      packageBinding.integration,
-      runtime.authority.grantId,
-      runtime.authority.runId ?? '',
-      ...packageBinding.requiredScopes,
-    ];
-    if (values.some((value) => looksLikeRawSecret(value))) {
-      throw new OperationalBrowserServiceError('AUTHORIZATION_DENIED');
-    }
-    return Object.freeze({
-      tenantId: runtime.authority.tenantId,
-      userId: runtime.authority.userId,
-      workspaceId: runtime.authority.workspaceId,
-      packageKey: packageBinding.packageKey,
-      packageId: packageBinding.packageId,
-      integration: packageBinding.integration,
-      grantId: runtime.authority.grantId,
-      runId: runtime.authority.runId ?? '',
-      requiredScopes: packageBinding.requiredScopes,
-    });
-  }
 }

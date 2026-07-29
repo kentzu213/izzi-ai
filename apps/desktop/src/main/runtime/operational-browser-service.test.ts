@@ -162,6 +162,8 @@ describe('OperationalBrowserService', () => {
       integration: packageBinding.integration,
       grantId: runtime.authority.grantId,
       runId: runtime.authority.runId,
+      runtimeId: runtime.id,
+      runtimeDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       requiredScopes: [...packageBinding.requiredScopes].sort(),
     });
     expect(test.coordinator.execute).toHaveBeenCalledOnce();
@@ -188,6 +190,33 @@ describe('OperationalBrowserService', () => {
     await expect(test.service.execute(prepared)).rejects.toMatchObject({
       code: 'AUTHORIZATION_DRIFT',
     });
+    expect(test.coordinator.execute).not.toHaveBeenCalled();
+  });
+
+  it('denies runtime policy drift after the reviewed preparation', async () => {
+    const test = harness();
+    const prepared = await test.service.prepare({
+      runtime,
+      packageBinding,
+      runId: preparedAction.runId,
+      readUrl: preparedAction.readUrl,
+      submitUrl: preparedAction.submitUrl,
+      draftBody: preparedAction.draftBody,
+      idempotencyKey: preparedAction.idempotencyKey,
+    });
+    await expect(test.service.execute({
+      ...prepared,
+      preparedAction: {
+        ...prepared.preparedAction,
+        runtime: {
+          ...prepared.preparedAction.runtime,
+          budget: {
+            ...prepared.preparedAction.runtime.budget,
+            timeoutMs: 120_000,
+          },
+        },
+      },
+    })).rejects.toMatchObject({ code: 'AUTHORIZATION_DRIFT' });
     expect(test.coordinator.execute).not.toHaveBeenCalled();
   });
 

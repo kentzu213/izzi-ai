@@ -22,6 +22,7 @@ import {
 } from './encrypted-state-store';
 import { FileEffectClaimStore } from './effect-claim-store';
 import { OperationalBrowserService } from './operational-browser-service';
+import { EncryptedOperationalEvidenceStore } from './operational-evidence-store';
 import type {
   RuntimeAuthorizationQuery,
   RuntimeAuthorizationResolver,
@@ -178,6 +179,12 @@ describe('Personal Office operational runtime E2E', () => {
       scopes: ['browser.test.submit'],
       approvalId: 'approval:grant',
     };
+    const packageBinding = {
+      packageKey: marketplaceReceipt.packageKey,
+      packageId: runtime.authority.packageId,
+      integration: runtime.authority.integrationId,
+      requiredScopes: ['browser.test.submit'],
+    };
 
     let submitCalls = 0;
     const session: IsolatedBrowserSession = {
@@ -234,29 +241,21 @@ describe('Personal Office operational runtime E2E', () => {
       authorization,
       () => new Date('2026-07-29T10:03:00.000Z'),
     );
-    const operational = new OperationalBrowserService(coordinator, {
-      resolve: async (query) => {
-        expect(query).toMatchObject({
-          tenantId: runtime.authority.tenantId,
-          userId: runtime.authority.userId,
-          workspaceId: runtime.authority.workspaceId,
-          packageId: runtime.authority.packageId,
-          integration: runtime.authority.integrationId,
-          grantId: runtime.authority.grantId,
-          runId: run.id,
-        });
-        return { marketplaceReceipt, grantReceipt };
-      },
+    const evidence = new EncryptedOperationalEvidenceStore(
+      path.join(root, 'evidence'),
+      new TestEncryption(),
+    );
+    await evidence.record({
+      runtime,
+      packageBinding,
+      marketplaceReceipt,
+      grantReceipt,
     });
+    const operational = new OperationalBrowserService(coordinator, evidence);
     try {
       const prepared = await operational.prepare({
         runtime,
-        packageBinding: {
-          packageKey: marketplaceReceipt.packageKey,
-          packageId: runtime.authority.packageId,
-          integration: runtime.authority.integrationId,
-          requiredScopes: ['browser.test.submit'],
-        },
+        packageBinding,
         runId: run.id,
         readUrl: 'http://127.0.0.1:43111/read',
         submitUrl: 'http://127.0.0.1:43111/submit',

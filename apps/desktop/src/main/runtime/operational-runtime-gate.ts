@@ -63,7 +63,9 @@ function exactIso(value: string, path: string): string {
   return value;
 }
 
-function parseConnectedGrant(value: unknown): IntegrationGrantOperationReceipt {
+export function parseConnectedIntegrationGrantReceipt(
+  value: unknown,
+): IntegrationGrantOperationReceipt {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('grantReceipt: plain object required');
   }
@@ -165,7 +167,7 @@ export function authorizeOperationalBrowserRuntime(input: {
   readonly runtime: BrowserRuntimeSpec;
 }): OperationalRuntimeAuthorization {
   const marketplace = parseMarketplaceInstallOperationReceipt(input.marketplaceReceipt);
-  const grant = parseConnectedGrant(input.grantReceipt);
+  const grant = parseConnectedIntegrationGrantReceipt(input.grantReceipt);
   const binding = validateOperationalPackageBinding(input.packageBinding);
   const runtime = validateRuntimeSpec(input.runtime);
   if (runtime.kind !== 'browser') throw new Error('Only browser runtime is supported');
@@ -190,6 +192,7 @@ export function authorizeOperationalBrowserRuntime(input: {
     marketplace,
     grant,
     packageBinding: binding,
+    runtime,
     marketplaceOperationId: marketplace.operationId,
     grantOperationId: grant.operationId,
     workspaceId: marketplace.scope.workspaceInstanceId,

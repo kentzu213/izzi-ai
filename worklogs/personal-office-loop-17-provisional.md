@@ -26,12 +26,19 @@ before execution, and denies any receipt, scope or authorization drift. Grants
 must now use exact least-privilege scopes; completed Marketplace evidence must
 show a fully successful ordered pipeline with a matching approval.
 
-Verification: focused 22/22; full desktop 132 files / 1420 tests; main TypeScript
+Added an encrypted atomic evidence store. Its key binds tenant, user, workspace,
+package, integration, grant, run, runtime id and the SHA-256 digest of the full
+runtime spec. Persisted records carry their own canonical digest, are validated
+again after decryption, and are rejected on scope, policy or ciphertext drift.
+An injectable Electron safeStorage adapter supplies the OS-backed encryption
+boundary without importing or initializing Electron in tests.
+
+Verification: focused 30/30; full desktop 134 files / 1428 tests; main TypeScript
 and production build pass; changed-surface lint 0 warnings; repository lint 0
 errors / 350 warnings.
 
 This is intentionally not READY_FOR_REVIEW or ACCEPTED. Production Playwright
-registration, authoritative receipt adapters, main composition and the real
+registration, authoritative operation-to-store hooks, main composition and the real
 adapter-backed Market → install → provision → open → delegate → artifact proof
 remain missing.
 No browser, network, install, secret or external effect was used.
