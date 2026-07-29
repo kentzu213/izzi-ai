@@ -1,5 +1,12 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.7
+
+Customer Marketing quota-label patch.
+
+- Label the workspace monthly quota as `credit/tháng` so it cannot be read as
+  a duration in months.
+
 ## 1.14.0-beta.6
 
 Packaged updater and prerelease metadata patch.

@@ -996,7 +996,7 @@ function WorkspaceHeader({
         </span>
         <span className="cmr-credit-balance">
           {snapshot.workspace.creditBalance.toLocaleString('vi-VN')} credit
-          <small>/ {snapshot.workspace.monthlyQuota.toLocaleString('vi-VN')} tháng</small>
+          <small>/ {snapshot.workspace.monthlyQuota.toLocaleString('vi-VN')} credit/tháng</small>
         </span>
         {(snapshot.workspace.role === 'owner' || snapshot.workspace.role === 'manager') && (
           <button

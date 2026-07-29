@@ -12,4 +12,9 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     );
     expect(roomSource).not.toContain("{activeView === 'brand' && (\n            <BrandView");
   });
+
+  it('labels the monthly quota as credits instead of a number of months', () => {
+    expect(roomSource).toContain("monthlyQuota.toLocaleString('vi-VN')} credit/tháng");
+    expect(roomSource).not.toContain("monthlyQuota.toLocaleString('vi-VN')} tháng");
+  });
 });
