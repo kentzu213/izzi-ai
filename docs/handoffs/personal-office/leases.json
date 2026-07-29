@@ -43,7 +43,7 @@
         "apps/desktop/package.json",
         "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw\\**"
       ],
-      "securityDecision": "Main derives trusted sender, authenticated owner hash and canonical personal workspace. Exact safety/request binding and metadata-only snapshot capture must fail closed before provider access."
+      "securityDecision": "Main derives trusted sender, authenticated owner hash and canonical personal workspace. Exact safety/request binding and metadata-only snapshot capture must fail closed before provider access. Abort and steering injection must also reject untrusted or child-frame senders before active-turn lookup or input parsing."
     }
   ],
   "activeLeaseCount": 1,
@@ -352,10 +352,11 @@
       "ownerOrder": [
         "03",
         "10",
-        "11"
+        "11",
+        "14"
       ],
-      "currentLease": null,
-      "note": "Loop 11 accepted and lease revoked. Any later main/index.ts edit requires a new W0 change request and lease.",
+      "currentLease": "LEASE-L14-CONTEXT-RUNTIME-20260729",
+      "note": "Loop 14 holds a bounded lease for customProvider chat/context wiring plus abort/inject sender-trust guards. No other main/index.ts surface is writable.",
       "leasedAt": "2026-07-29T04:20:00Z"
     },
     {

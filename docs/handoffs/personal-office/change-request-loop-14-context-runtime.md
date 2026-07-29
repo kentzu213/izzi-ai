@@ -19,6 +19,8 @@ Decision authority: W0
 - `apps/desktop/src/main/index.ts`
   - require a trusted top-level renderer and authenticated owner before the
     host-agent provider path;
+  - require the same trusted sender before aborting or injecting into an active
+    host-agent turn;
   - bind the canonical `personal` workspace in main;
   - compile with the exact trusted host safety prompt and exact outgoing text;
   - pass the verified kernel input into the existing optional host-agent seam.
@@ -50,13 +52,16 @@ message before the exact-request binding can be established.
 7. For agent mode, reject untrusted sender, unauthenticated owner, wrong/missing
    workspace, multimodal context, invalid Live.md, forbidden classification or
    snapshot mismatch before provider access.
-8. Keep plain non-agent chat behavior and all provider routing/tool approval
+8. Reject untrusted or child-frame senders before active-turn lookup, abort or
+   steering-message parsing.
+9. Keep plain non-agent chat behavior and all provider routing/tool approval
    behavior unchanged.
 
 ## Security decision
 
 - `main/index.ts` is a hot file and is leased only for the bounded
-  `customProvider:chat` context wiring and imports.
+  `customProvider:chat`, `customProvider:abort` and `customProvider:inject`
+  sender/context wiring and imports.
 - AuthManager, WorkService, compiler, kernel, Live contract/service,
   host-agent, DB/schema, preload, renderer, packages and runtime adapters remain
   read-only.
@@ -72,7 +77,8 @@ message before the exact-request binding can be established.
 
 1. New runtime tests cover empty-profile initialization, effective Live
    directives, foreign-scope rejection, `local_files` egress rejection,
-   unknown workspace rejection and snapshot metadata.
+   unknown workspace rejection, snapshot metadata and source-level proof that
+   abort/inject validate sender trust before active-turn input use.
 2. Existing host context tests prove exact safety/request binding and
    pre-provider rejection.
 3. Main and renderer TypeScript, targeted tests, full desktop tests, production
