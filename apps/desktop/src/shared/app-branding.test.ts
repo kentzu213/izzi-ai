@@ -64,8 +64,8 @@ describe('Izzi AI desktop branding contract', () => {
 
     expect(builderConfig.detectUpdateChannel).toBe(true);
     expect(builderConfig.publish.releaseType).toBe('draft');
-    expect(workflowSource).toMatch(/^  workflow_dispatch:$/m);
-    expect(workflowSource).not.toMatch(/^  push:$/m);
+    expect(workflowSource).toMatch(/^ {2}workflow_dispatch:$/m);
+    expect(workflowSource).not.toMatch(/^ {2}push:$/m);
     expect(workflowSource).toContain('if: ${{ inputs.confirm_publish == true }}');
     expect(workflowSource).toContain('          - draft');
     expect(workflowSource).toContain('          - prerelease');
