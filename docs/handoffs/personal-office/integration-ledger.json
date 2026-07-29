@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T09:12:14Z",
+  "updatedAt": "2026-07-29T09:28:26Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -309,17 +309,23 @@
       "loop": "04",
       "title": "Context, Live profile and blueprint",
       "window": "W4",
-      "status": "READY_TO_START",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-04-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop04",
-      "commitSha": null,
-      "handoff": null,
+      "commitSha": "5750c4b6f5929db347c0466e2773950121d99dcf",
+      "handoff": "docs/handoffs/personal-office/loop-04.json",
       "dependsOn": [
         "01",
         "03"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 01 and Loop 03 are ACCEPTED."
+      "dependencyStatus": "SATISFIED — Loop 01, Loop 03 and Loop 04 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-04.json",
+      "acceptedProducerImplementation": "c2551f180dca9eb241f2ba79b5ae0c5d27a30c05",
+      "acceptedProducerHandoff": "6d9edbeec03631acd8ee98513d637b83c2975437",
+      "integrationImplementationCommit": "9a7b216b0717a417efe5cd985c7e61bde8b3a26b",
+      "integrationHandoffCommit": "5750c4b6f5929db347c0466e2773950121d99dcf",
+      "verificationSummary": "Independent Socrates PASS after two blocking corrections; integration targeted 40/40 and full desktop 1117/1117 tests PASS; desktop build and targeted lint PASS; 7/7 normalized hashes, exact ownership, prohibited-path and secret/process audits PASS."
     },
     {
       "loop": "05",
@@ -334,7 +340,8 @@
         "03",
         "04"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 03 and Loop 04 are ACCEPTED. W0 may dispatch one isolated producer lane."
     },
     {
       "loop": "06",
@@ -383,7 +390,8 @@
       "dependsOn": [
         "04"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 04 is ACCEPTED. Scheduling waits for an available producer slot."
     },
     {
       "loop": "09",
@@ -413,7 +421,8 @@
       "dependsOn": [
         "04"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 04 is ACCEPTED. Scheduling waits for an available producer slot."
     },
     {
       "loop": "11",
