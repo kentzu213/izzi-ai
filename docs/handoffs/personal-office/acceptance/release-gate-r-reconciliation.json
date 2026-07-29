@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R2-R4",
+  "decision": "READY_FOR_PLATFORM_VALIDATION",
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T17:45:00Z",
+  "authority": "This record accepts the local default-branch reconciliation candidate for platform validation. It does not authorize push, tag creation, publish, deployment, installer execution, secret retrieval, GitHub environment mutation, or stable promotion.",
+  "subject": {
+    "branch": "feature/personal-office-reconciled-20260729",
+    "candidateCommit": "0246f19",
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "originMainReplayedThrough": "8330b4609a834d6741a4ba47d527013833d312ba",
+    "originMainVersionLineage": "v1.14.0-beta.9"
+  },
+  "acceptedWork": {
+    "r2": {
+      "title": "Default-branch release-security reconciliation",
+      "implementationCommit": "37237b6",
+      "lintNormalizationCommit": "0246f19",
+      "reviewedSourceCommit": "8106e60b771e27ff7dd25970afc4d1d951869e3d",
+      "patchId": "0650cca7bc8c8aa3fe93111eedfa30fb66ec1e84",
+      "result": "Exact reviewed patch applied onto the beta.9 candidate, preserving newer product changes. Checkout is pinned to refs/tags/<input> with credentials disabled; tag object, checked-out HEAD, and desktop package version must match; Windows signing secrets fail closed; local Windows scripts are packaging-only with --publish never."
+    },
+    "r3": {
+      "title": "Customer Marketing two-feature merge",
+      "mergeCommit": "96ed070",
+      "result": "Product Marketing Context authority/tamper protections and Personal Office reference-workspace provisioning/projection both survive. Four conflict paths were reconciled without ours/theirs wholesale replacement."
+    },
+    "r4": {
+      "title": "Trusted top-level renderer gate for work/runtime IPC",
+      "mergeCommit": "96ed070",
+      "result": "All 10 work invoke handlers and the runtime health handler reject unknown senders and child frames before parsing input, resolving identity/authority, or accessing service data.",
+      "independentSecurityReview": "PASS"
+    },
+    "beta9Replay": {
+      "mergeCommit": "6633aba",
+      "sourceCommits": [
+        "6cb2c9b8a96d7b85c07f5a37640c3b2052552265",
+        "8330b4609a834d6741a4ba47d527013833d312ba"
+      ],
+      "result": "Managed HyperFrames preview and beta.9 evidence were replayed without conflict or loss of Personal Office code."
+    }
+  },
+  "verification": [
+    {
+      "check": "full desktop test suite",
+      "result": "PASS",
+      "evidence": "122/122 files and 1359/1359 tests passed against candidate source using a read-only dependency alias to the canonical isolated toolchain."
+    },
+    {
+      "check": "focused Customer Marketing, HyperFrames and IPC regression",
+      "result": "PASS",
+      "evidence": "233/233 focused beta.9/Customer Marketing/R4 tests passed; the dedicated R4 run passed 34/34."
+    },
+    {
+      "check": "main TypeScript",
+      "result": "PASS",
+      "evidence": "tsc main profile completed with zero errors using candidate source and read-only canonical dependency/type resolution."
+    },
+    {
+      "check": "renderer production build",
+      "result": "PASS_WITH_SIZE_WARNING",
+      "evidence": "Vite transformed 1180 modules and emitted production assets. The existing >500 kB chunk advisory remains; no build error occurred."
+    },
+    {
+      "check": "lint",
+      "result": "PASS",
+      "evidence": "444 files, 0 errors, 350 warnings against the established ceiling of 358."
+    },
+    {
+      "check": "release contract",
+      "result": "PASS",
+      "evidence": "app-branding release contract 5/5; exact R2 patch-id matched before the lint-only regex normalization."
+    },
+    {
+      "check": "security and ownership",
+      "result": "PASS",
+      "evidence": "Independent R4 security review PASS; conflict-marker scan, diff check and diff-only secret scan clean; R4 unstaged ownership was limited to its four leased files before merge."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 status entries."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Run Windows fresh install, launch, prior-version upgrade and uninstall with data-retention checks.",
+    "Produce real signed/notarized macOS x64 and arm64 artifacts.",
+    "Pass codesign --verify, stapler validate and spctl --assess on the macOS deliverables.",
+    "Run an approved RC tag through platform validation.",
+    "Promote a validated draft/prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "push",
+    "tag creation",
+    "publish",
+    "stable promotion",
+    "deployment",
+    "installer execution",
+    "secret retrieval",
+    "GitHub environment mutation"
+  ]
+}

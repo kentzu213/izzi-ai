@@ -4,8 +4,8 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T16:48:15Z",
-  "updatedBy": "W0",
+  "updatedAt": "2026-07-29T17:45:00Z",
+  "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
     "commit": "84a57b38117ee7544691115be5aca7a141af1abf",
@@ -865,7 +865,7 @@
   },
   "loop01AcceptanceCommit": "16f25b28820d829b3050981e8d60db433194059b",
   "releaseGateR": {
-    "decision": "BLOCKED_MAIN_DIVERGENCE_RECONCILIATION_ACTIVE",
+    "decision": "READY_FOR_PLATFORM_VALIDATION",
     "stableReleaseAccepted": false,
     "acceptedPatchCommits": [
       "845d8da98204b214f2978525166e1abafe62e954",
@@ -883,34 +883,31 @@
       "macOS signing/notarization secret fail-open behavior",
       "automatic stable publishing from v* tag pushes"
     ],
-    "scopeCaveat": "The closed findings are verified only on feature/personal-office-baseline-20260728. Read-only GitHub verification found that current origin/main does not contain the accepted hardening.",
+    "scopeCaveat": "The accepted hardening is now present in the local reconciliation candidate together with origin/main beta.9. No remote/default-branch mutation has been performed.",
     "defaultBranchDrift": {
       "observedAt": "2026-07-29T16:48:15Z",
       "defaultBranch": "main",
-      "commit": "7e265286bacf367da4423914d338233c1e47f936",
-      "versionLineage": "v1.14.0-beta.8",
-      "integrationAhead": 95,
-      "integrationBehind": 10,
-      "releaseWorkflowFinding": "origin/main still triggers on v* tag pushes with root contents:write and releaseType=release.",
+      "commit": "8330b4609a834d6741a4ba47d527013833d312ba",
+      "versionLineage": "v1.14.0-beta.9",
+      "integrationAhead": null,
+      "integrationBehind": null,
+      "releaseWorkflowFinding": "The local candidate contains the reviewed manual draft/prerelease-only workflow correction; origin/main itself has not been mutated by this work.",
       "environmentFinding": "GitHub API reports zero repository environments; desktop-release protection is not configured.",
       "publishedArtifactFinding": "GitHub Actions run 30465599108 published v1.14.0-beta.8 as a public prerelease; the macOS job logged skipped application code signing because identity auto-discovery was disabled. These artifacts are non-authoritative for Gate R.",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r2-main-reconciliation.md",
-      "activeLease": "LEASE-R2-MAIN-RECONCILIATION-20260729"
+      "activeLease": null
     },
     "r2Review": {
-      "reviewedCommit": "5529757013ffb19b898db6983c1e875d45fe774e",
+      "reviewedCommit": "8106e60b771e27ff7dd25970afc4d1d951869e3d",
       "correctnessReview": "PASS",
-      "securityReview": "FAIL",
-      "decision": "CORRECTION_REQUIRED",
-      "blockers": [
-        "Requested ref is regex-checked but not proven to be an immutable refs/tags object at the checked-out commit.",
-        "Windows publish is not fail-closed on signing material.",
-        "Local release-win scripts can publish outside the desktop-release environment when GH_TOKEN is present.",
-        "No tag-to-package-version consistency check; the existing branding workflow assertion is stale."
-      ]
+      "securityReview": "PASS",
+      "decision": "ACCEPTED_IN_LOCAL_RECONCILIATION",
+      "candidateCommit": "37237b6",
+      "patchId": "0650cca7bc8c8aa3fe93111eedfa30fb66ec1e84",
+      "blockers": []
     },
     "r3Merge": {
-      "status": "READY_PENDING_R4_SECURITY_CORRECTION",
+      "status": "ACCEPTED",
       "lease": "LEASE-R3-CUSTOMER-MARKETING-MERGE-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-reconciled-20260729",
       "conflictPaths": [
@@ -921,10 +918,11 @@
       ],
       "rule": "Both feature families must survive; no ours/theirs wholesale resolution.",
       "verification": "Conflict markers 0; focused Customer Marketing 163/163 PASS; independent correctness review PASS.",
-      "securityReview": "The four resolved files preserve their authority boundaries, but candidate acceptance is blocked by missing trusted-renderer checks in separate work/runtime IPC modules."
+      "securityReview": "PASS after the separate R4 trusted-renderer correction closed the candidate-level finding.",
+      "mergeCommit": "96ed070"
     },
     "r4Security": {
-      "status": "ACTIVE",
+      "status": "ACCEPTED",
       "lease": "LEASE-R4-IPC-SENDER-TRUST-20260729",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r4-ipc-sender-trust.md",
       "ownedPaths": [
@@ -933,10 +931,16 @@
         "apps/desktop/src/main/runtime/runtime-ipc.ts",
         "apps/desktop/src/main/runtime/runtime-ipc.test.ts"
       ],
-      "blockingFinding": "work:* and runtime:* invoke handlers do not reject untrusted renderer or child-frame senders before authorization/data access."
+      "blockingFinding": null,
+      "resolution": "All 10 work invoke handlers and runtime:listHealth apply the existing trusted top-level renderer check before input parsing, identity/authority resolution, or service access.",
+      "focusedTests": "34/34 PASS",
+      "independentSecurityReview": "PASS",
+      "mergeCommit": "96ed070"
     },
+    "reconciliationAcceptance": "docs/handoffs/personal-office/acceptance/release-gate-r-reconciliation.json",
+    "reconciliationCandidate": "0246f19",
+    "verificationSummary": "Full desktop 1359/1359; focused beta.9/Customer Marketing/R4 233/233; main TypeScript PASS; renderer production build PASS with existing size advisory; lint 0 errors/350 warnings below ceiling 358; release contract 5/5; independent R4 security PASS; secret, marker, diff and quarantine gates PASS.",
     "remainingPlatformGates": [
-      "Reconcile the accepted Gate R hardening onto current origin/main without losing beta.8 changes",
       "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled",
       "Windows install/launch/upgrade/uninstall and data-retention checks",
       "real macOS x64 and arm64 codesign/notarization/stapling/Gatekeeper evidence",
@@ -952,6 +956,6 @@
       "installer execution",
       "secret retrieval"
     ],
-    "decidedAt": "2026-07-29T16:33:50Z"
+    "decidedAt": "2026-07-29T17:45:00Z"
   }
 }
