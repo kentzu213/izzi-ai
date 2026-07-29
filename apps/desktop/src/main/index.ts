@@ -37,7 +37,10 @@ import { AgentService } from './agent/agent-service';
 import { ProviderSettingsStore } from './agent/provider-settings-store';
 import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
-import { runHostAgentTurn } from './agent/host-agent';
+import {
+  buildHostAgentSystemPrompt,
+  runHostAgentTurn,
+} from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
 import { AutopostAuth } from './autopost/autopost-auth';
 import { AutopostClient } from './autopost/autopost-client';
@@ -55,7 +58,10 @@ import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
 import { IzziLlmProxy } from './agents/izzi-llm-proxy';
 import { AgentSessionCapturer } from './agents/agent-session-graph';
 import { SessionRecorder } from './agents/agent-session-recorder';
-import { registerMarketingIpc } from './marketing/marketing-ipc';
+import {
+  isTrustedMarketingSender,
+  registerMarketingIpc,
+} from './marketing/marketing-ipc';
 import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
@@ -81,6 +87,10 @@ import {
   type WorkIpcIdentity,
   type WorkTenantWorkspaceBinding,
 } from './work/work-ipc';
+import { DEFAULT_WORKSPACE_ID } from './work/work-types';
+import { PersonalOfficeAgentContextRuntime } from './context/agent-turn-context';
+import { ContextCompilationError } from './context/context-error';
+import type { ContextKernelInput } from '../shared/context';
 import {
   denyAllRuntimeAuthorization,
   registerRuntimeIpc,
@@ -327,6 +337,11 @@ function setupIPC() {
     },
   };
   registerWorkIpc(workService, workIdentity);
+  const agentContextRuntime = new PersonalOfficeAgentContextRuntime({
+    rootDir: path.join(app.getPath('userData'), 'personal-office', 'live'),
+    resolveWorkspace: (workspaceId) => workService.repo.getWorkspace(workspaceId),
+    snapshotWriter: workService.repo,
+  });
   dbManager.setWorkEventSink(
     createWorkEventForwarder(
       () => mainWindow?.webContents ?? null,
@@ -1149,7 +1164,9 @@ function setupIPC() {
         images?: string[];
       },
     ): Promise<{ reply?: string; error?: string }> => {
-      const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
+      if (!isTrustedMarketingSender(event)) return { error: 'untrusted-sender' };
+      const rawMessage = typeof payload?.message === 'string' ? payload.message : '';
+      const message = rawMessage.trim();
       const turnId = typeof payload?.turnId === 'string' ? payload.turnId : '';
       const images = Array.isArray(payload?.images)
         ? payload.images.filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
@@ -1180,6 +1197,29 @@ function setupIPC() {
       const permStore = new AgentPermissionStore(dbManager);
       const permMode = permStore.getMode();
       if (permMode === 'agent' || permMode === 'agent-full') {
+        if (images.length > 0) {
+          return { error: 'multimodal-context-binding-unsupported' };
+        }
+        const ownerId = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+        if (!ownerId) return { error: 'authentication-required' };
+        const workingDir = permStore.getWorkingDir();
+        let context: ContextKernelInput;
+        try {
+          context = (await agentContextRuntime.prepare({
+            scope: {
+              workspaceId: DEFAULT_WORKSPACE_ID,
+              ownerId,
+            },
+            safetySystemPrompt: buildHostAgentSystemPrompt(workingDir),
+            rawRequest: rawMessage,
+          })).context;
+        } catch (error) {
+          return {
+            error: error instanceof ContextCompilationError
+              ? error.code
+              : 'context-preparation-failed',
+          };
+        }
         const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
         // Auto-Post tools: enabled by the manual flag OR by installing the Social
         // Auto Poster marketplace product. Gives the agent list/draft/schedule via
@@ -1192,11 +1232,11 @@ function setupIPC() {
         const result = await runHostAgentTurn({
           config: cfg,
           apiKey: key,
-          message,
-          history,
+          message: rawMessage,
+          history: history.filter((entry) => entry.role !== 'system'),
           images,
           mode: permMode,
-          workingDir: permStore.getWorkingDir(),
+          workingDir,
           turnId,
           signal: controller.signal,
           pollInjection: () => control.queue.shift(),
@@ -1208,6 +1248,7 @@ function setupIPC() {
           classifyExtraRisk: autopostClient
             ? (name) => (isAutopostTool(name) ? classifyAutopostRisk(name) : undefined)
             : undefined,
+          context,
           // The agent's live plan → real tasks on the Replay board (Todo/In-Progress/
           // Done). Written to the shared agent_tasks table + pushed live via the
           // 'agent:stream' task_upsert channel the board already listens on.
