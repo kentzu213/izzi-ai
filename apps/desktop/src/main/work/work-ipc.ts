@@ -32,6 +32,7 @@ import { isTrustedMarketingSender } from '../marketing/marketing-ipc';
 import type { WorkApprovalDecision, WorkEvent, WorkRun } from './work-types';
 import type { WorkService } from './work-service';
 import {
+  accessibleWorkspaceIds,
   canAccessWorkspace,
   type WorkAuthContext,
 } from './work-authz';
@@ -127,6 +128,11 @@ export function registerWorkIpc(
   service: WorkService,
   identity: WorkIpcIdentity,
 ): void {
+  // Bootstrap the one canonical local workspace once at main-process startup.
+  // This is idempotent and keeps the renderer from inventing a workspace id or
+  // mutating persistence from a nominal read operation.
+  service.ensureWorkspace();
+
   /** The caller's authorization context, resolved fresh on every call. */
   const authContext = (): WorkAuthContext => resolveWorkAuthContext(identity);
 
@@ -152,6 +158,19 @@ export function registerWorkIpc(
     if (!run) return null;
     return run.workspaceId === requestedWorkspace ? run : null;
   };
+
+  ipcMain.handle(WORK_IPC_CHANNELS.listWorkspaces, (event) => {
+    assertTrustedWorkSender(event);
+    const workspaces = service.listWorkspaces();
+    const visibleIds = new Set(accessibleWorkspaceIds(authContext(), workspaces));
+    return workspaces
+      .filter((workspace) => visibleIds.has(workspace.id))
+      .sort((left, right) => {
+        if (left.id === 'personal') return -1;
+        if (right.id === 'personal') return 1;
+        return left.name.localeCompare(right.name);
+      });
+  });
 
   ipcMain.handle(WORK_IPC_CHANNELS.listRuns, (event, raw: unknown) => {
     assertTrustedWorkSender(event);

@@ -230,6 +230,32 @@ describe('authz predicate', () => {
 });
 
 describe('reads are workspace-scoped', () => {
+  it('lists the canonical personal workspace while signed out', () => {
+    const { call, close } = setup();
+    const workspaces = call<Array<{ id: string; kind: string }>>('work:listWorkspaces');
+    expect(workspaces).toEqual([
+      expect.objectContaining({ id: 'personal', kind: 'personal' }),
+    ]);
+    close();
+  });
+
+  it('lists a tenant workspace only for the reviewer bound to it', () => {
+    const { identityState, call, close } = setup();
+
+    identityState.reviewerHash = SIGNED_IN;
+    expect(call<Array<{ id: string }>>('work:listWorkspaces').map((item) => item.id))
+      .toEqual(['personal']);
+
+    identityState.bindings = [{ reviewerHash: SIGNED_IN!, workspaceId: TENANT }];
+    expect(call<Array<{ id: string }>>('work:listWorkspaces').map((item) => item.id))
+      .toEqual(['personal', TENANT]);
+
+    identityState.reviewerHash = OTHER_SIGNED_IN;
+    expect(call<Array<{ id: string }>>('work:listWorkspaces').map((item) => item.id))
+      .toEqual(['personal']);
+    close();
+  });
+
   it('listRuns omits tenant runs for a signed-out caller', () => {
     const { personalRun, tenantRun, call, close } = setup();
     const runs = call<Array<{ id: string }>>('work:listRuns', { workspaceId: 'personal' });

@@ -107,6 +107,7 @@ import type {
  * event inside the same renderer.
  */
 const workApi: WorkPreloadApi = {
+  listWorkspaces: () => ipcRenderer.invoke(WORK_IPC_CHANNELS.listWorkspaces),
   listRuns: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listRuns, input),
   getRun: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.getRun, input),
   listEvents: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listEvents, input),

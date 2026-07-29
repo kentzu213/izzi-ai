@@ -92,6 +92,14 @@ export function useWorkSnapshot(): UseWorkSnapshotResult {
     };
   }, [reloadToken]);
 
+  useEffect(() => {
+    const source = sourceRef.current;
+    if (!source?.subscribe) return undefined;
+    return source.subscribe(() => {
+      setReloadToken((token) => token + 1);
+    });
+  }, []);
+
   const retry = useCallback(() => {
     setReloadToken((token) => token + 1);
   }, []);
@@ -101,12 +109,17 @@ export function useWorkSnapshot(): UseWorkSnapshotResult {
       const source = sourceRef.current;
       const trimmed = goal.trim();
       if (!source || trimmed.length === 0) return false;
+      const targetWorkspace = workspaceId ?? data.workspaces[0]?.id;
+      if (!targetWorkspace) {
+        setErrorMessage('Create or open a workspace before delegating work.');
+        return false;
+      }
 
       setIsDelegating(true);
       try {
         await source.delegate({
           goal: trimmed,
-          workspaceId: workspaceId ?? (data.workspaces[0]?.id as WorkspaceInstanceId),
+          workspaceId: targetWorkspace,
         });
         const reloaded = await source.load();
         setData(reloaded);
