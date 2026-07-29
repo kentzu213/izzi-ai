@@ -5,7 +5,7 @@
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
   "updatedAt": "2026-07-29T14:40:00Z",
   "updatedBy": "W0",
-  "integrationCommit": "65b4279d58f8ab0de76b6b33885178d02ceaf162",
+  "integrationCommit": "979ee06499a7066c7f012bb7101ec44519c1ac0c",
   "activeLeases": [
     {
       "leaseId": "LEASE-L12-MARKETING-REFERENCE-20260729",
@@ -16,7 +16,7 @@
       "grantedBy": "W0",
       "branch": "feature/personal-office-loop-12-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop12",
-      "baseCommit": "65b4279d58f8ab0de76b6b33885178d02ceaf162",
+      "baseCommit": "979ee06499a7066c7f012bb7101ec44519c1ac0c",
       "changeRequest": "docs/handoffs/personal-office/dispatch-loop-12.md",
       "ownedPaths": [
         "apps/desktop/src/shared/marketing-workspace/**",
