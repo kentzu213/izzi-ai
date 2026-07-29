@@ -3,12 +3,42 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59Z",
+  "updatedAt": "2026-07-29T23:59:59.900Z",
   "updatedBy": "W0 Control Tower / Codex",
   "integrationCommit": "ae1fd77293e85da822674aedb48020d06f37376a",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No producer holds a hot-file lease. Loop 16 was accepted entirely within new isolated main/integrations/grant-operation and documentation paths, so no lease was required. Quarantine remains read-only. Production account/OAuth adapters, main/preload composition, DB/schema, legacy integration IPC, runtime adapters, packages, real installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised until Loop 17 receives exact W0 change requests and leases.",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
+      "loop": "17",
+      "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T23:59:59.900Z",
+      "branch": "feature/personal-office-loop-17-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
+      "paths": [
+        "apps/desktop/src/main/marketplace/operation-service.ts",
+        "apps/desktop/src/main/marketplace/operation-service.test.ts",
+        "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.ts",
+        "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.test.ts",
+        "apps/desktop/src/main/runtime/operational-browser-service.ts",
+        "apps/desktop/src/main/runtime/operational-browser-service.test.ts",
+        "apps/desktop/src/main/runtime/operational-evidence-store.ts",
+        "apps/desktop/src/main/runtime/operational-evidence-store.test.ts",
+        "apps/desktop/src/main/runtime/authoritative-operation-receipts.ts",
+        "apps/desktop/src/main/runtime/authoritative-operation-receipts.test.ts"
+      ],
+      "constraints": [
+        "Output hooks may observe only receipts returned by the accepted main-authoritative services.",
+        "Connected and completed receipts may be persisted only through OS-backed encryption; revoked grants must make prior runtime evidence unusable before execute revalidation.",
+        "Receipt persistence failure must never fabricate a successful receipt or replay an already-performed install/connect effect.",
+        "No package manifest, lockfile, main/index.ts, preload, renderer, DB/schema, browser launch, network request, install, secret retrieval or quarantine write is authorised."
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Loop 17 holds one exact-path offline lease for authoritative Marketplace/IntegrationGrant receipt hooks and encrypted runtime-evidence revalidation. Package manifests, lockfile, main/preload composition, DB/schema, production adapters, real installation, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
