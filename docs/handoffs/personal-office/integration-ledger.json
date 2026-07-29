@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T23:50:00Z",
+  "updatedAt": "2026-07-29T23:59:40Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -840,21 +840,21 @@
       "at": "2026-07-29T23:30:00Z",
       "action": "Verified and ACCEPTED Loop 14 after exact-path integration, authenticated owner/workspace review, closure of error-path leakage and active-turn sender-trust findings, 1376/1376 tests, both TypeScript gates, production build, lint ceiling, provenance and quarantine isolation checks.",
       "record": "acceptance/loop-14.json"
+    },
+    {
+      "at": "2026-07-29T23:59:30Z",
+      "action": "Verified and ACCEPTED Loop 15 after exact-path integration, host-authoritative Marketplace scope and plan review, strict receipt and approval-binding corrections, 1388/1388 tests, both TypeScript gates, production build, lint ceiling, 17/17 producer blob equality and quarantine isolation checks.",
+      "record": "acceptance/loop-15.json"
     }
   ],
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Open Loop 15: replace the non-installable demo Marketplace path with a host-validated catalog and approval-bound install/provisioning orchestrator.",
-      "gate": "PO-PRODUCT-MARKETPLACE-OPERATION"
-    },
-    {
-      "priority": 2,
       "action": "Open Loop 16: operationalize izziapi account scope, OAuth/connect/revoke and IntegrationGrant persistence through SecretRef-only vault boundaries.",
       "gate": "PO-PRODUCT-ACCOUNT-GRANTS"
     },
     {
-      "priority": 3,
+      "priority": 2,
       "action": "Open Loop 17: register attested local/browser runtime adapters and verify the complete install-to-open-to-delegate-to-artifact path before platform release gates.",
       "gate": "PO-PRODUCT-RUNTIME-E2E"
     }
@@ -960,15 +960,22 @@
     {
       "loop": "15",
       "title": "Host-validated Marketplace operation",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "gate": "PO-PRODUCT-MARKETPLACE-OPERATION",
       "branch": "feature/personal-office-loop-15-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop15",
-      "baseCommit": "e82eb30168ad08d3865e8348b8f4080487846a99",
+      "baseCommit": "fefe740a046723f9b0dc91e2ac51afb19f680736",
       "lease": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
       "changeRequest": "docs/handoffs/personal-office/change-request-loop-15-marketplace-operation.md",
+      "producerImplementation": "bee907cc59109175401de8e4fda97e9414646e75",
+      "producerHandoff": "b48603efa430740e3ca5edffb621cc4afe3e80d1",
+      "integrationImplementation": "ee783578da3910ecca3e462a67fc309c36d73967",
+      "integrationHandoff": "6fd0d68c89eb39611b9830c273d889ac2a7113f5",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-15.json",
+      "acceptanceCommit": "5c6ac26067da386adff032ca7fb439a28722091b",
       "dependsOn": [
-        "13"
+        "13",
+        "14"
       ],
       "dependencyStatus": "SATISFIED — Loop 13 and Loop 14 are ACCEPTED.",
       "securityGate": "Trusted sender, main-derived scope, audited catalog/registry, unchanged plan, package-byte/signature evidence, Work approval, exact grants and truthful stage receipts; production effect ports remain fail-closed."
@@ -976,10 +983,11 @@
     {
       "loop": "16",
       "title": "Account, OAuth and IntegrationGrant operation",
-      "status": "BLOCKED_GATE",
+      "status": "PROVISIONAL",
       "dependsOn": [
         "15"
-      ]
+      ],
+      "dependencyStatus": "SATISFIED — Loop 15 is ACCEPTED. No producer worktree or lease exists until W0 opens the loop."
     },
     {
       "loop": "17",
