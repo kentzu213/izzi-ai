@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T21:30:00Z",
+  "updatedAt": "2026-07-29T22:00:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -931,10 +931,17 @@
     {
       "loop": "14",
       "title": "Authenticated Live/context agent turn",
-      "status": "BLOCKED_GATE",
+      "status": "PROVISIONAL",
+      "gate": "PO-PRODUCT-CONTEXT-RUNTIME",
+      "branch": "feature/personal-office-loop-14-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop14",
+      "baseCommit": "63c979a9ae7c3f3addf104b08de417a4222445c9",
+      "lease": "LEASE-L14-CONTEXT-RUNTIME-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-14-context-runtime.md",
       "dependsOn": [
         "13"
-      ]
+      ],
+      "securityGate": "Trusted sender, authenticated non-PII owner hash, canonical personal workspace, exact safety/raw-request binding and metadata-only snapshot capture before provider access."
     },
     {
       "loop": "15",
