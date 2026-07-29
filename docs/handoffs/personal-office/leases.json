@@ -3,58 +3,38 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59.980Z",
+  "updatedAt": "2026-07-29T23:59:59.995Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
-  "activeLeases": [
+  "integrationCommit": "16e980e214b86bf7868f59434e4acdfcd61cab32",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No Personal Office producer lease is active. Loop 17's offline authoritative-receipt and isolated runtime dependency-closure checkpoint is integrated and reviewed, but production dependency, main composition, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
       "loop": "17",
       "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T23:59:59.900Z",
+      "revokedAt": "2026-07-29T23:59:59.990Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/personal-office-loop-17-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
       "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
-      "paths": [
-        "apps/desktop/src/main/marketplace/operation-service.ts",
-        "apps/desktop/src/main/marketplace/operation-service.test.ts",
-        "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.ts",
-        "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.test.ts",
-        "apps/desktop/src/main/runtime/operational-browser-service.ts",
-        "apps/desktop/src/main/runtime/operational-browser-service.test.ts",
-        "apps/desktop/src/main/runtime/operational-evidence-store.ts",
-        "apps/desktop/src/main/runtime/operational-evidence-store.test.ts",
-        "apps/desktop/src/main/runtime/operational-runtime-e2e.test.ts",
-        "apps/desktop/src/main/runtime/operational-runtime-gate.test.ts",
-        "apps/desktop/src/main/runtime/operational-runtime-gate.ts",
-        "apps/desktop/src/main/runtime/authoritative-operation-receipts.ts",
-        "apps/desktop/src/main/runtime/authoritative-operation-receipts.test.ts",
-        "apps/desktop/src/main/runtime/attested-browser-driver.ts",
-        "apps/desktop/src/main/runtime/attested-browser-driver.test.ts",
-        "apps/desktop/src/main/runtime/managed-playwright-driver.ts",
-        "apps/desktop/src/main/runtime/managed-playwright-driver.test.ts",
-        "apps/desktop/src/main/runtime/safe-storage-encryption.ts",
-        "apps/desktop/src/main/runtime/safe-storage-encryption.test.ts",
-        "apps/desktop/src/shared/marketplace/operation.ts",
-        "apps/desktop/src/shared/marketplace/operation.test.ts",
-        "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
-        "docs/handoffs/personal-office/planning/loop-17-quick-spec.md",
-        "docs/product/personal-office-attested-runtime.md"
+      "producerImplementation": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+      "producerHandoff": "8766096413a780b740175a33be5d92ef6ef87f86",
+      "canonicalImplementationCommits": [
+        "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
+        "30e9ad315418ff37a6af620493c871f10bfea9e9"
       ],
-      "constraints": [
-        "Output hooks may observe only receipts returned by the accepted main-authoritative services.",
-        "Connected and completed receipts may be persisted only through OS-backed encryption; revoked grants must make prior runtime evidence unusable before execute revalidation.",
-        "Receipt persistence failure must never fabricate a successful receipt or replay an already-performed install/connect effect.",
-        "Dependency-closure replay is limited to immutable producer blobs already reviewed in Loop 17 commits 80df88d through 0c31987; no production registration or new external effect is authorised.",
-        "No package manifest, lockfile, main/index.ts, preload, renderer, DB/schema, browser launch, network request, install, secret retrieval or quarantine write is authorised."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 17 holds one exact-path offline lease for authoritative Marketplace/IntegrationGrant receipt hooks, encrypted runtime-evidence revalidation and the immutable isolated runtime dependency closure required to verify them on canonical. Package manifests, lockfile, main/preload composition, DB/schema, production adapter registration, real installation, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
-  "leaseHistory": [
+      "canonicalHandoffCommits": [
+        "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
+        "16e980e214b86bf7868f59434e4acdfcd61cab32"
+      ],
+      "leaseExtension": "67e36b091c8268588a1412e0207faa622a7830b9",
+      "reason": "The offline authoritative receipt lifecycle and immutable isolated runtime dependency closure passed independent review, 69/69 focused tests, 1447/1447 full desktop tests, both TypeScript gates, production build, changed-file lint, repository lint ceiling, exact producer-blob, ownership, prohibited-path, secret and quarantine-isolation checks. Loop 17 remains PROVISIONAL because production dependency provenance, main composition and real browser/network E2E are still absent."
+    },
     {
       "leaseId": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
       "loop": "15",

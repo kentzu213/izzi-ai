@@ -1014,13 +1014,47 @@
     {
       "loop": "17",
       "title": "Production runtime adapters and operational E2E",
-      "status": "PROVISIONAL",
+      "status": "PROVISIONAL_CHECKPOINT_INTEGRATED",
+      "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
+      "branch": "feature/personal-office-loop-17-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
+      "canonicalBase": "0f32a0ca2d3155af0ff103a5fe0239e0f0e62091",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
+      "producerImplementationCommits": [
+        "80df88d",
+        "4b7b078",
+        "b266b6b",
+        "cf5b618",
+        "8e39a8d",
+        "0c31987",
+        "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da"
+      ],
+      "producerHandoff": "8766096413a780b740175a33be5d92ef6ef87f86",
+      "integrationImplementationCommits": [
+        "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
+        "30e9ad315418ff37a6af620493c871f10bfea9e9"
+      ],
+      "integrationHandoffCommits": [
+        "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
+        "16e980e214b86bf7868f59434e4acdfcd61cab32"
+      ],
+      "leaseExtension": "67e36b091c8268588a1412e0207faa622a7830b9",
+      "checkpointDecision": "OFFLINE_AUTHORITATIVE_RECEIPTS_REVIEWED_PASS",
+      "verification": "Focused Loop 17 runtime 69/69; full desktop 136 files and 1447/1447 tests; main and renderer TypeScript PASS; production build PASS with existing chunk advisory; changed-file lint clean; repository lint 0 errors/350 warnings; exact producer blobs, ownership, prohibited-path, secret and quarantine gates PASS.",
+      "review": "Independent read-only review PASS after moving the Marketplace evidence-authority check before workspace provisioning. IntegrationGrant evidence failure records tombstone before cleanup and reports incomplete compensation explicitly.",
+      "remainingGates": [
+        "declared Playwright dependency and lockfile provenance under a new package lease",
+        "audited main/index.ts production composition under a new hot-file lease",
+        "real authorized browser/network install-to-artifact E2E",
+        "separate WebSocket effect authority if required"
+      ],
       "dependsOn": [
         "14",
         "15",
         "16"
       ],
-      "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED. Loop 17 is eligible for governed start."
+      "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED.",
+      "securityGate": "Offline authority persistence is integrated and fail-closed. No package/lockfile, main/preload, renderer, DB/schema, browser launch, network action, install, secret retrieval or external effect was authorised."
     }
   ],
   "releaseGateR": {

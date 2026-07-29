@@ -42,22 +42,35 @@
   ],
   "latestImplementationCommit": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
   "offlineAuthoritativeReceiptSubphase": {
-    "status": "REVIEWED_PASS",
+    "status": "CANONICAL_INTEGRATED_REVIEWED_PASS",
     "implementationCommit": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
     "lease": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
     "independentReview": "PASS",
+    "canonicalImplementationCommits": [
+      "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
+      "30e9ad315418ff37a6af620493c871f10bfea9e9"
+    ],
+    "canonicalHandoffCommits": [
+      "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
+      "16e980e214b86bf7868f59434e4acdfcd61cab32"
+    ],
     "scope": "Offline authoritative receipt persistence, revocation invalidation and runtime evidence revalidation only. No production composition or external browser/network effect."
   },
   "verification": {
-    "focusedTests": "8 files, 55/55",
+    "focusedTests": "11 files, 69/69",
     "fullTests": "136 files, 1447/1447",
     "mainTypeScript": "PASS",
     "rendererTypeScript": "PASS",
     "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
     "changedLint": "0 warnings",
     "repositoryLint": "0 errors, 350 warnings",
-    "ownershipAndSecurity": "PASS — 13/13 paths in active lease; prohibited paths 0; diff secret hits 0; quarantine unchanged.",
-    "gitNexus": "DEGRADED_REVIEWED — stale baseline index reported 11 changed files but zero indexed symbols; focused/full tests and manual dependency review cover the isolated delta."
+    "ownershipAndSecurity": "PASS — 20 implementation source/test paths plus 5 producer governance/product docs were exact-path replayed; prohibited paths 0; diff secret hits 0; quarantine unchanged.",
+    "gitNexus": "DEGRADED_REVIEWED — stale baseline index reported 26 changed files but zero indexed symbols; focused/full tests and manual dependency review cover the isolated delta."
+  },
+  "canonicalCheckpoint": {
+    "decision": "PROVISIONAL_CHECKPOINT_INTEGRATED",
+    "leaseRevokedAfterPass": true,
+    "note": "The first canonical verification exposed seven missing isolated runtime dependency files. W0 extended the lease before replaying their immutable producer blobs, then reran the complete canonical verification matrix successfully."
   },
   "remainingBeforeReview": [
     "W0-approved declared Playwright dependency and lockfile provenance",

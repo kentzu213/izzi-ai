@@ -108,5 +108,19 @@ adapter registration and the real adapter-backed Market → install → provisio
 → open → delegate → artifact proof remain missing.
 No browser, network, install, secret or external effect was used.
 
+W0 exact-path integrated the reviewed checkpoint as canonical implementation
+commits `08b5dcdaf0c04191fe461fbad3d1737a2b2abc68` and
+`30e9ad315418ff37a6af620493c871f10bfea9e9`, with handoff/spec commits
+`296c5255fa852cd5af7c87a1ad21d3cec24e2e4e` and
+`16e980e214b86bf7868f59434e4acdfcd61cab32`.
+
+The first canonical verification correctly failed because seven isolated Loop
+17 dependency files had never been integrated. W0 did not bypass the gate: it
+committed lease extension `67e36b091c8268588a1412e0207faa622a7830b9`,
+replayed the seven immutable producer blobs, then reran 69/69 focused tests,
+1447/1447 full tests, both TypeScript gates, production build and lint ceiling
+successfully. The subphase is now `CANONICAL_INTEGRATED_REVIEWED_PASS`; the
+overall Loop 17 status remains `PROVISIONAL_CHECKPOINT_INTEGRATED`.
+
 Method: Codex-only under the `security-review`, `backend-patterns` and
 `verification-loop` skills; Kiro held no writer authority.
