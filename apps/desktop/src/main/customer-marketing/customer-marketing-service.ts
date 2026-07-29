@@ -3,6 +3,8 @@ import type { DatabaseManager } from '../db/database';
 import type { IzziAgentChatPayload, IzziAgentChatResult } from '../agents/izzi-agent';
 import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
+import type { WorkService } from '../work/work-service';
+import { importCustomerRun } from '../work/work-adapters';
 import { buildCustomerMarketingInvitationLink } from './customer-marketing-invitation-link';
 import {
   CustomerMarketingWorkflowStore,
@@ -98,6 +100,14 @@ import {
 } from '../../shared/customer-marketing-action-gate-types';
 import { parseCustomerExtensionCapabilityDefinition } from '../../shared/customer-marketing-capability-manifest';
 import {
+  MARKETING_WORKSPACE_BRIDGE_SCHEMA_VERSION,
+  parseMarketingWorkspaceHostEvidence,
+  type MarketingWorkspaceEvidenceResult,
+  type MarketingWorkspaceHostEvidence,
+  type MarketingWorkspaceProvisionRequest,
+  type MarketingWorkspaceProvisionResult,
+} from '../../shared/marketing-workspace';
+import {
   evaluateCustomerMarketingActionGate,
   preflightCustomerMarketingActionGateRequest,
   validateCustomerMarketingActionGateApproval,
@@ -113,9 +123,11 @@ export interface CustomerIdentity {
 export interface CustomerRuntimeExtension {
   id: string;
   name: string;
+  version?: string;
   manifest?: {
     displayName?: string;
     description?: string;
+    version?: string;
     private?: boolean;
     customerMarketing?: boolean;
     customerMarketingCapability?: unknown;
@@ -827,7 +839,209 @@ export class CustomerMarketingService {
       CustomerMarketingCredentialVault,
       'listStatuses' | 'revokeCredential'
     > | null = null,
+    private readonly workService: WorkService | null = null,
   ) {}
+
+  async getReferenceWorkspaceEvidence(
+    packageKey: string,
+  ): Promise<MarketingWorkspaceEvidenceResult> {
+    const identity = this.getIdentity();
+    if (!identity) return { ok: false, reason: 'not_authenticated' };
+    const match = /^ocx_extension:([a-z0-9][a-z0-9._-]*)@([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$/.exec(
+      packageKey.trim(),
+    );
+    if (!match) return { ok: false, reason: 'package_not_installed' };
+
+    let record = this.readRecord(identity);
+    const workspaceState = await this.resolveWorkspaceState(record);
+    if (
+      workspaceState.status === 'unavailable'
+      || (workspaceState.status === 'synced' && !workspaceState.workspace)
+    ) {
+      return { ok: false, reason: 'workspace_unavailable' };
+    }
+    if (workspaceState.workspace) {
+      record = this.applyRemoteWorkspace(record, workspaceState.workspace);
+    }
+
+    const extension = this.getRuntimeExtensions().find((candidate) => (
+      candidate.name === match[1] && candidate.version === match[2]
+    ));
+    if (!extension) return { ok: false, reason: 'package_not_installed' };
+    if (extension.manifest?.customerMarketing !== true) {
+      return { ok: false, reason: 'package_not_marketing_capable' };
+    }
+    const state = extension.state ?? 'installed';
+    if (!['active', 'activated', 'enabled', 'installed', 'running'].includes(state)) {
+      return { ok: false, reason: 'package_not_installed' };
+    }
+
+    const issuedAt = new Date().toISOString();
+    const scope = {
+      tenantId: `tenant:${record.workspaceId}`,
+      userId: identity.id,
+      workspaceInstanceId: `customer-marketing:${record.workspaceId}`,
+    };
+    const installedPackage = {
+      extensionId: extension.id,
+      packageKey,
+      version: match[2],
+      state,
+    };
+    const digestMaterial = JSON.stringify({
+      installedPackage,
+      issuedAt,
+      role: record.role,
+      scope,
+    });
+    const evidence: MarketingWorkspaceHostEvidence = {
+      schemaVersion: MARKETING_WORKSPACE_BRIDGE_SCHEMA_VERSION,
+      evidenceDigest: `sha256:${createHash('sha256').update(digestMaterial).digest('hex')}`,
+      issuedAt,
+      scope,
+      role: record.role,
+      installedPackage,
+    };
+    return { ok: true, evidence };
+  }
+
+  async provisionReferenceWorkspace(
+    input: MarketingWorkspaceProvisionRequest,
+  ): Promise<MarketingWorkspaceProvisionResult> {
+    const parsed = parseMarketingWorkspaceHostEvidence(input?.evidence);
+    if (!parsed) return { ok: false, reason: 'invalid_request' };
+    const evidenceAgeMs = Date.now() - Date.parse(parsed.issuedAt);
+    if (
+      !Number.isFinite(evidenceAgeMs)
+      || evidenceAgeMs < -30_000
+      || evidenceAgeMs > 5 * 60_000
+    ) {
+      return { ok: false, reason: 'stale_evidence' };
+    }
+    const current = await this.getReferenceWorkspaceEvidence(parsed.installedPackage.packageKey);
+    if (!current.ok) return { ok: false, reason: current.reason === 'workspace_unavailable'
+      ? 'workspace_unavailable'
+      : current.reason === 'package_not_marketing_capable'
+        ? 'package_not_marketing_capable'
+        : 'package_not_installed' };
+    const currentMaterial = JSON.stringify({
+      installedPackage: current.evidence.installedPackage,
+      issuedAt: parsed.issuedAt,
+      role: current.evidence.role,
+      scope: current.evidence.scope,
+    });
+    const currentDigest = `sha256:${createHash('sha256').update(currentMaterial).digest('hex')}`;
+    if (
+      currentDigest !== parsed.evidenceDigest
+      || JSON.stringify(current.evidence.scope) !== JSON.stringify(parsed.scope)
+      || current.evidence.role !== parsed.role
+    ) {
+      return { ok: false, reason: 'scope_mismatch' };
+    }
+    if (!this.workService) return { ok: false, reason: 'workspace_unavailable' };
+
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    const reused = Boolean(this.workService.repo.getWorkspace(parsed.scope.workspaceInstanceId));
+    this.workService.ensureWorkspace({
+      id: parsed.scope.workspaceInstanceId,
+      name: record.onboarding?.business.name
+        ? `${record.onboarding.business.name} Marketing`
+        : 'Customer Marketing Workspace',
+      kind: 'customer',
+      externalRef: record.workspaceId,
+    });
+    this.projectUnifiedWork(record, parsed.scope.workspaceInstanceId);
+    return {
+      ok: true,
+      reused,
+      intent: {
+        kind: 'open_customer_marketing_workspace',
+        workspaceInstanceId: parsed.scope.workspaceInstanceId,
+      },
+    };
+  }
+
+  private projectUnifiedWork(
+    record: CustomerTenantRecord,
+    workspaceId = `customer-marketing:${record.workspaceId}`,
+  ): void {
+    if (!this.workService) return;
+    for (const run of record.runs) {
+      const projectedRun = importCustomerRun(this.workService, {
+        run,
+        approvals: record.approvals,
+        workspaceId,
+        workspaceExternalRef: record.workspaceId,
+      });
+      for (const approval of record.approvals) {
+        if (approval.runId !== run.id || approval.status === 'pending') continue;
+        const idempotencyKey = `cmr-approval:${approval.id}`;
+        let projectedApproval = this.workService
+          .listApprovals(projectedRun.id)
+          .find((item) => item.binding.idempotencyKey === idempotencyKey);
+        if (!projectedApproval) {
+          projectedApproval = this.workService.requestApproval({
+            runId: projectedRun.id,
+            kind: approval.kind === 'media_publish'
+              ? 'external_publish'
+              : approval.kind === 'media_preview' || approval.kind === 'media_render'
+                ? 'media_render'
+                : 'strategy',
+            title: approval.title,
+            summary: approval.summary,
+            risk: approval.risk,
+            target: `customer-marketing/${workspaceId}`,
+            input: {
+              approvalId: approval.id,
+              evidenceDigest: approval.evidenceDigest ?? null,
+              mediaJobId: approval.mediaJobId ?? null,
+            },
+            estimatedSideEffect: approval.kind === 'media_publish'
+              ? 'Publish marketing content to a customer channel'
+              : 'Advance the marketing workflow past this gate',
+            idempotencyKey,
+            blockRun: false,
+          });
+        }
+        if (projectedApproval.status !== 'pending') continue;
+        this.workService.decideApproval({
+          approvalId: projectedApproval.id,
+          decision: approval.status === 'approved' ? 'approve' : 'reject',
+          decidedBy: 'customer-marketing-authority',
+          note: 'Projected from the role- and evidence-gated Customer Marketing authority.',
+        });
+      }
+
+      const sourceApprovals = record.approvals.filter((approval) => approval.runId === run.id);
+      const wasRejected = sourceApprovals.some((approval) => approval.status === 'rejected');
+      const advance = (state: 'running' | 'waiting_external' | 'completed' | 'canceled') => {
+        const current = this.workService?.getRun(projectedRun.id);
+        if (!current || current.state === state || ['completed', 'failed', 'canceled'].includes(current.state)) {
+          return;
+        }
+        this.workService?.transition(projectedRun.id, state, {
+          reason: 'customer-marketing-authority-projection',
+        });
+      };
+      try {
+        if (wasRejected) {
+          advance('canceled');
+        } else if (run.status === 'completed') {
+          advance('running');
+          advance('completed');
+        } else if (run.status === 'ready' || run.status === 'in_progress') {
+          advance('running');
+        } else if (run.status === 'blocked') {
+          advance('running');
+          advance('waiting_external');
+        }
+      } catch {
+        // A projection never rewinds terminal work or fights a newer unified
+        // state. Customer Marketing remains the source of record.
+      }
+    }
+  }
 
   private marketingCreateRequest(
     workspaceId: string,
@@ -865,6 +1079,11 @@ export class CustomerMarketingService {
       }
     } catch {
       // The workflow store quarantines malformed state and the customer room remains fail-closed.
+    }
+    try {
+      this.projectUnifiedWork(record);
+    } catch {
+      // Projection is additive. Customer Marketing remains available if Work is degraded.
     }
     return this.snapshot(identity, record);
   }
@@ -1973,6 +2192,12 @@ export class CustomerMarketingService {
       updatedAt: now,
     };
     this.writeRecord(identity, next);
+    try {
+      this.projectUnifiedWork(next);
+    } catch {
+      // Customer Marketing is the write authority. Projection degradation must
+      // not roll back an already durable source workflow.
+    }
     return { ok: true, snapshot: await this.snapshot(identity, next, false, workspaceState) };
   }
 
@@ -2435,6 +2660,12 @@ export class CustomerMarketingService {
       updatedAt: now,
     };
     this.writeRecord(identity, next);
+    try {
+      this.projectUnifiedWork(next);
+    } catch {
+      // Projection is append-only and best-effort; the authoritative decision
+      // has already been durably recorded above.
+    }
     return { ok: true, snapshot: await this.snapshot(identity, next) };
   }
 
@@ -2678,7 +2909,8 @@ export class CustomerMarketingService {
         updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       };
     } catch {
-      this.db.deleteSetting(key);
+      // Preserve malformed source bytes for recovery/forensics. A read failure
+      // must never destroy the only legacy copy.
       return this.emptyRecord(identity);
     }
   }

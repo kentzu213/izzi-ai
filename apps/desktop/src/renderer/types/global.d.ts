@@ -1,5 +1,10 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
 import type { BranchClassification } from './graph-workspace';
+import type {
+  MarketingWorkspaceEvidenceResult,
+  MarketingWorkspaceProvisionRequest,
+  MarketingWorkspaceProvisionResult,
+} from '../../shared/marketing-workspace';
 import type { UniverseNodeDetail } from '../../shared/universe-adapter';
 import type {
   MarketingPathSelectionResult,
@@ -187,6 +192,12 @@ declare global {
     selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
     runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
+    getReferenceWorkspaceEvidence: (
+      packageKey: string,
+    ) => Promise<MarketingWorkspaceEvidenceResult>;
+    provisionReferenceWorkspace: (
+      input: MarketingWorkspaceProvisionRequest,
+    ) => Promise<MarketingWorkspaceProvisionResult>;
   }
   /**
    * The renderer view of the preload `electronAPI`. The new graph/memory

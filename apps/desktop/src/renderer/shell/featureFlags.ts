@@ -18,6 +18,7 @@
 export type ShellChoice = 'v2' | 'legacy';
 
 export const PERSONAL_OFFICE_FLAG_KEY = 'izzi.shell.personalOffice';
+export const MARKETING_WORKSPACE_REFERENCE_FLAG_KEY = 'izzi.marketing.workspaceReference';
 
 /** Forced surface state, for capturing the interaction-state matrix. */
 export type ForcedSurfaceState = 'loading' | 'empty' | 'error' | 'offline' | 'degraded';
@@ -83,6 +84,25 @@ export function setPersonalOfficeShellEnabled(enabled: boolean): void {
     window.localStorage.setItem(PERSONAL_OFFICE_FLAG_KEY, enabled ? 'on' : 'off');
   } catch {
     // Non-fatal: the flag simply stays at its default next launch.
+  }
+}
+
+export function isMarketingWorkspaceReferenceEnabled(): boolean {
+  if (typeof window === 'undefined') return true;
+  const query = readQuery('marketing');
+  if (query === 'legacy') return false;
+  if (query === 'reference') return true;
+  return readStored(MARKETING_WORKSPACE_REFERENCE_FLAG_KEY) !== 'off';
+}
+
+export function setMarketingWorkspaceReferenceEnabled(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(
+      MARKETING_WORKSPACE_REFERENCE_FLAG_KEY,
+      enabled ? 'on' : 'off',
+    );
+  } catch {
+    // Presentation rollback remains best-effort when storage is denied.
   }
 }
 

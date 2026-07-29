@@ -55,6 +55,14 @@ function serviceMock() {
     createGoal: vi.fn(),
     askDirector: vi.fn(),
     reviewApproval: vi.fn(),
+    getReferenceWorkspaceEvidence: vi.fn(async () => ({
+      ok: false,
+      reason: 'package_not_installed',
+    })),
+    provisionReferenceWorkspace: vi.fn(async () => ({
+      ok: false,
+      reason: 'scope_mismatch',
+    })),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
     createWorkspaceInvitation: vi.fn(async () => ({
@@ -431,6 +439,72 @@ describe('customer marketing CMR-306 workflow IPC', () => {
     await expect(prepare!(event('http://localhost:9999/customer-marketing'), prepareInput))
       .rejects.toThrow('Customer Marketing IPC sender');
     expect(service.prepareMarketingWorkflow).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing reference workspace IPC', () => {
+  const evidence = {
+    schemaVersion: 1,
+    evidenceDigest: `sha256:${'a'.repeat(64)}`,
+    issuedAt: '2026-07-29T10:00:00.000Z',
+    scope: {
+      tenantId: 'tenant:customer-a',
+      userId: 'user-a',
+      workspaceInstanceId: 'customer-marketing:customer-a',
+    },
+    role: 'owner',
+    installedPackage: {
+      extensionId: 'extension-a',
+      packageKey: 'ocx_extension:marketing-a@1.2.3',
+      version: '1.2.3',
+      state: 'installed',
+    },
+  } as const;
+
+  it('passes only a string package key to the host evidence service', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:getReferenceWorkspaceEvidence');
+
+    await expect(handler!(event(), 'ocx_extension:marketing-a@1.2.3'))
+      .resolves.toEqual({ ok: false, reason: 'package_not_installed' });
+    expect(service.getReferenceWorkspaceEvidence)
+      .toHaveBeenCalledWith('ocx_extension:marketing-a@1.2.3');
+
+    await expect(handler!(event(), { packageKey: 'ocx_extension:marketing-a@1.2.3' }))
+      .resolves.toEqual({ ok: false, reason: 'package_not_installed' });
+    expect(service.getReferenceWorkspaceEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects widened provision payloads before service execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:provisionReferenceWorkspace');
+
+    await expect(handler!(event(), { evidence }))
+      .resolves.toEqual({ ok: false, reason: 'scope_mismatch' });
+    expect(service.provisionReferenceWorkspace).toHaveBeenCalledWith({ evidence });
+
+    await expect(handler!(event(), {
+      evidence,
+      token: 'renderer-controlled',
+    })).resolves.toEqual({ ok: false, reason: 'invalid_request' });
+    expect(service.provisionReferenceWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before evidence or provision execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const evidenceHandler = electronMocks.handlers.get('customerMarketing:getReferenceWorkspaceEvidence');
+    const provisionHandler = electronMocks.handlers.get('customerMarketing:provisionReferenceWorkspace');
+    const untrusted = event('http://localhost:9999/customer-marketing');
+
+    await expect(evidenceHandler!(untrusted, evidence.installedPackage.packageKey))
+      .rejects.toThrow('Customer Marketing IPC sender');
+    await expect(provisionHandler!(untrusted, { evidence }))
+      .rejects.toThrow('Customer Marketing IPC sender');
+    expect(service.getReferenceWorkspaceEvidence).not.toHaveBeenCalled();
+    expect(service.provisionReferenceWorkspace).not.toHaveBeenCalled();
   });
 });
 

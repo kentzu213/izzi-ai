@@ -53,7 +53,18 @@ import {
   type CustomerCapabilitySurfaceState,
   type CustomerCapabilityWorkbenchId,
 } from './customer-capability-actions';
+import {
+  isMarketingWorkspaceReferenceEnabled,
+  setMarketingWorkspaceReferenceEnabled,
+} from '../shell/featureFlags';
+import {
+  MARKETING_REFERENCE_SETUP_GROUPS,
+  MARKETING_REFERENCE_SURFACES,
+} from '../marketing-workspace/reference-contract';
 import '../styles/customer-marketing-room.css';
+
+type ReferenceSurface = typeof MARKETING_REFERENCE_SURFACES[number]['id'];
+type ReferenceSetupGroup = typeof MARKETING_REFERENCE_SETUP_GROUPS[number]['id'];
 
 type ViewId =
   | 'home'
@@ -168,6 +179,26 @@ const VIEW_ITEMS: Array<{
   { id: 'apps', label: 'Apps', icon: ExtensionIcon },
   { id: 'brand', label: 'Thương hiệu', icon: DesignIcon },
 ];
+
+const REFERENCE_SURFACES: ReadonlyArray<{
+  id: ReferenceSurface;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+}> = MARKETING_REFERENCE_SURFACES.map((surface) => ({
+  ...surface,
+  icon: {
+    brief: OverviewIcon,
+    work: PlanningIcon,
+    deliverables: DesignIcon,
+    approvals: ReviewIcon,
+  }[surface.id],
+}));
+
+const REFERENCE_SETUP_GROUPS: ReadonlyArray<{
+  id: ReferenceSetupGroup;
+  label: string;
+  description: string;
+}> = MARKETING_REFERENCE_SETUP_GROUPS;
 
 const CATEGORY_LABELS: Record<CustomerCapability['category'], string> = {
   strategy: 'Chiến lược',
@@ -2012,6 +2043,360 @@ function BrandView({ form, setForm, onSave, busy }: BrandViewProps) {
   );
 }
 
+function ReferenceSetupDrawer({
+  open,
+  snapshot,
+  form,
+  setForm,
+  busy,
+  onSave,
+  onClose,
+  onOpenLegacy,
+}: {
+  open: boolean;
+  snapshot: CustomerMarketingSnapshot;
+  form: CustomerOnboardingInput;
+  setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
+  busy: boolean;
+  onSave: () => Promise<void>;
+  onClose: () => void;
+  onOpenLegacy: () => void;
+}) {
+  const [group, setGroup] = useState<ReferenceSetupGroup>('context');
+  const panelRef = useRef<HTMLElement | null>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.querySelector<HTMLElement>('button')?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      restoreRef.current?.focus?.();
+    };
+  }, [onClose, open]);
+
+  if (!open) return null;
+  const runningCapabilities = snapshot.capabilities.filter((item) => (
+    item.status === 'running' || item.status === 'available'
+  ));
+
+  return (
+    <div className="cmr-reference-drawer-layer">
+      <button
+        type="button"
+        className="cmr-reference-drawer-backdrop"
+        onClick={onClose}
+        aria-label="Close setup"
+      />
+      <aside
+        ref={panelRef}
+        className="cmr-reference-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Setup for ${snapshot.workspace.name}`}
+      >
+        <header className="cmr-reference-drawer__header">
+          <div>
+            <span className="cmr-eyebrow">Occasional configuration</span>
+            <h2>Setup</h2>
+          </div>
+          <button type="button" className="cmr-icon-button" onClick={onClose} aria-label="Close setup">
+            <CloseIcon className="cmr-icon" />
+          </button>
+        </header>
+        <div className="cmr-reference-setup-tabs" role="tablist" aria-label="Setup groups">
+          {REFERENCE_SETUP_GROUPS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={group === item.id}
+              className={group === item.id ? 'is-active' : ''}
+              onClick={() => setGroup(item.id)}
+            >
+              <strong>{item.label}</strong>
+              <span>{item.description}</span>
+            </button>
+          ))}
+        </div>
+        <div className="cmr-reference-drawer__body" role="tabpanel">
+          {group === 'context' && (
+            <BrandView form={form} setForm={setForm} onSave={onSave} busy={busy} />
+          )}
+          {group === 'connections' && (
+            <div className="cmr-view-stack">
+              <div className="cmr-view-intro">
+                <span className="cmr-eyebrow">Capability-specific</span>
+                <h2>Connections</h2>
+                <p>Unneeded channels stay deferred. Credential values never enter this page.</p>
+              </div>
+              <CustomerMarketingChannels role={snapshot.workspace.role} />
+              <section className="cmr-panel">
+                <div className="cmr-section-heading">
+                  <div><span className="cmr-eyebrow">Host status</span><h3>Installed capabilities</h3></div>
+                  <StatusPill value={snapshot.capabilityCatalog.status} />
+                </div>
+                <div className="cmr-reference-capability-list">
+                  {snapshot.capabilities.map((capability) => (
+                    <div key={capability.id}>
+                      <span><strong>{capability.name}</strong><small>{capability.description}</small></span>
+                      <StatusPill value={capability.status} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+          {group === 'automation' && (
+            <div className="cmr-view-stack">
+              <div className="cmr-view-intro">
+                <span className="cmr-eyebrow">Guardrailed by default</span>
+                <h2>Automation</h2>
+                <p>External publish, spend, send and delete remain approval-bound.</p>
+              </div>
+              <section className="cmr-panel cmr-reference-automation">
+                <div>
+                  <span>Current mode</span>
+                  <strong>{MODE_OPTIONS.find((item) => item.value === form.automationMode)?.label ?? form.automationMode}</strong>
+                </div>
+                <div>
+                  <span>Pending approvals</span>
+                  <strong>{snapshot.approvals.filter((item) => item.status === 'pending').length}</strong>
+                </div>
+                <div>
+                  <span>Ready capabilities</span>
+                  <strong>{runningCapabilities.length}/{snapshot.capabilities.length}</strong>
+                </div>
+              </section>
+              <TeamView capabilities={snapshot.capabilities} />
+            </div>
+          )}
+        </div>
+        <footer className="cmr-reference-drawer__footer">
+          <button type="button" className="cmr-button cmr-button--ghost" onClick={onOpenLegacy}>
+            Open legacy room
+          </button>
+          <span>Rollback changes presentation only; source records stay untouched.</span>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function ReferenceCustomerRoom({
+  snapshot,
+  form,
+  setForm,
+  onRefresh,
+  onMutation,
+  onSelectMedia,
+  onOpenLegacy,
+  busy,
+  error,
+  notice,
+}: {
+  snapshot: CustomerMarketingSnapshot;
+  form: CustomerOnboardingInput;
+  setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
+  onRefresh: () => Promise<void>;
+  onMutation: (operation: MutationOperation, successNotice?: string | null) => Promise<CustomerMutationResult | null>;
+  onSelectMedia: () => Promise<void>;
+  onOpenLegacy: () => void;
+  busy: boolean;
+  error: string;
+  notice: string;
+}) {
+  const [surface, setSurface] = useState<ReferenceSurface>('brief');
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [deliverableKind, setDeliverableKind] = useState<'campaign' | 'content' | 'asset' | 'knowledge' | 'media'>('content');
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const pendingCount = snapshot.approvals.filter((approval) => approval.status === 'pending').length;
+
+  const director = async (goal: string) => {
+    const input: CustomerDirectorInput = {
+      goal,
+      channels: form.channels,
+      automationMode: form.automationMode,
+    };
+    const result = await onMutation((api) => api.askDirector(input), 'Work created and waiting at its real approval gate.');
+    if (result?.ok) setSurface('work');
+  };
+  const review = async (approvalId: string, decision: 'approved' | 'rejected') => {
+    await onMutation((api) => api.reviewApproval({ approvalId, decision }));
+  };
+  const saveContext = async () => {
+    await onMutation((api) => api.saveOnboarding(form));
+  };
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const index = REFERENCE_SURFACES.findIndex((item) => item.id === surface);
+    const next = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? REFERENCE_SURFACES.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + REFERENCE_SURFACES.length) % REFERENCE_SURFACES.length;
+    const target = REFERENCE_SURFACES[next];
+    setSurface(target.id);
+    tabsRef.current?.querySelector<HTMLElement>(`#cmr-reference-tab-${target.id}`)?.focus();
+  };
+
+  return (
+    <div className="cmr-page cmr-reference">
+      <div className="cmr-page__inner" inert={setupOpen || undefined} aria-hidden={setupOpen || undefined}>
+        <header className="cmr-reference-header">
+          <div>
+            <span className="cmr-eyebrow">Personal Office / Marketing</span>
+            <h1>{snapshot.workspace.name}</h1>
+            <p>One operator, one work loop, with the full Customer Marketing capability underneath.</p>
+          </div>
+          <div className="cmr-reference-header__actions">
+            <span className={`cmr-workspace-status cmr-workspace-status--${snapshot.workspace.syncStatus}`}>
+              {snapshot.workspace.syncStatus}
+            </span>
+            <button type="button" className="cmr-button cmr-button--ghost" onClick={() => void onRefresh()} disabled={busy}>
+              <RefreshIcon className="cmr-button__icon" /> Refresh
+            </button>
+            <button type="button" className="cmr-button cmr-button--primary" onClick={() => setSetupOpen(true)}>
+              <SettingsIcon className="cmr-button__icon" /> Setup
+            </button>
+          </div>
+        </header>
+
+        <div className="cmr-reference-summary" aria-label="Workspace summary">
+          <Metric label="Active work" value={snapshot.runs.filter((run) => !['completed', 'blocked'].includes(run.status)).length} hint="Real Customer Marketing runs" />
+          <Metric label="Needs you" value={pendingCount} hint="Role-aware approvals" tone={pendingCount > 0 ? 'warning' : 'neutral'} />
+          <Metric label="Delivered" value={snapshot.runs.filter((run) => run.status === 'completed').length + snapshot.media.artifacts.length} hint="Runs and artifacts" />
+        </div>
+
+        <div
+          ref={tabsRef}
+          className="cmr-reference-tabs"
+          role="tablist"
+          aria-label="Marketing workspace surfaces"
+          onKeyDown={onTabKeyDown}
+        >
+          {REFERENCE_SURFACES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              id={`cmr-reference-tab-${id}`}
+              type="button"
+              role="tab"
+              aria-selected={surface === id}
+              aria-controls={`cmr-reference-panel-${id}`}
+              tabIndex={surface === id ? 0 : -1}
+              className={surface === id ? 'is-active' : ''}
+              onClick={() => setSurface(id)}
+            >
+              <Icon className="cmr-icon" />
+              <span>{label}</span>
+              {id === 'approvals' && pendingCount > 0 && <b>{pendingCount}</b>}
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
+        {notice && <div className="cmr-alert cmr-alert--success" role="status">{notice}</div>}
+
+        <main
+          id={`cmr-reference-panel-${surface}`}
+          className="cmr-reference-panel"
+          role="tabpanel"
+          aria-labelledby={`cmr-reference-tab-${surface}`}
+        >
+          {surface === 'brief' && (
+            <div className="cmr-reference-brief">
+              <section className="cmr-panel">
+                <span className="cmr-eyebrow">Current brief</span>
+                <h2>{snapshot.onboarding?.business.name || 'Marketing workspace'}</h2>
+                <p>{snapshot.onboarding?.business.offer || 'Add the offer and audience in Setup → Context.'}</p>
+                <dl className="cmr-reference-facts">
+                  <div><dt>Objective</dt><dd>{snapshot.onboarding?.objectives.join(', ') || 'Not set'}</dd></div>
+                  <div><dt>Audience</dt><dd>{snapshot.onboarding?.audience.segments || 'Not set'}</dd></div>
+                  <div><dt>Channels</dt><dd>{snapshot.onboarding?.channels.join(', ') || 'Deferred'}</dd></div>
+                  <div><dt>Automation</dt><dd>{snapshot.onboarding?.automationMode || 'copilot'}</dd></div>
+                </dl>
+              </section>
+              <section className="cmr-panel cmr-reference-delegate">
+                <span className="cmr-eyebrow">Delegate to Director</span>
+                <h2>What outcome do you need?</h2>
+                <p>The Director creates one durable Customer Marketing workflow and its real approval gate.</p>
+                <DirectorComposer onSubmit={director} busy={busy} />
+              </section>
+            </div>
+          )}
+          {surface === 'work' && (
+            <div className="cmr-view-stack">
+              <div className="cmr-view-intro cmr-view-intro--row">
+                <div><span className="cmr-eyebrow">Execution timeline</span><h2>Work</h2><p>Specialists appear inside each run, not in primary navigation.</p></div>
+                <DirectorComposer onSubmit={director} busy={busy} compact />
+              </div>
+              <GoalsView snapshot={snapshot} onOpenDirector={() => setSurface('brief')} />
+            </div>
+          )}
+          {surface === 'deliverables' && (
+            <div className="cmr-view-stack">
+              <div className="cmr-view-intro">
+                <span className="cmr-eyebrow">Source-backed outputs</span>
+                <h2>Deliverables</h2>
+                <p>Only current revision, preview and export affordances supported by the source are shown.</p>
+              </div>
+              <div className="cmr-reference-filter" role="group" aria-label="Deliverable type">
+                {(['content', 'campaign', 'asset', 'knowledge', 'media'] as const).map((kind) => (
+                  <button key={kind} type="button" aria-pressed={deliverableKind === kind} onClick={() => setDeliverableKind(kind)}>
+                    {humanize(kind)}
+                  </button>
+                ))}
+              </div>
+              {deliverableKind !== 'media' ? (
+                <CustomerMarketingResources kind={deliverableKind} role={snapshot.workspace.role} />
+              ) : (
+                <section className="cmr-panel">
+                  <div className="cmr-section-heading">
+                    <div><span className="cmr-eyebrow">Media receipts</span><h3>Artifacts</h3></div>
+                    <button type="button" className="cmr-button cmr-button--ghost" onClick={() => void onSelectMedia()} disabled={busy}>Import project</button>
+                  </div>
+                  {snapshot.media.artifacts.length === 0 ? (
+                    <div className="cmr-empty"><DesignIcon className="cmr-empty__icon" /><h3>No media artifacts</h3><p>Imported projects and local previews leave evidence here.</p></div>
+                  ) : (
+                    <div className="cmr-reference-artifacts">
+                      {snapshot.media.artifacts.map((artifact) => (
+                        <article key={artifact.id}>
+                          <div><strong>{artifact.name}</strong><span>{artifact.kind} · {formatDate(artifact.createdAt, true)}</span></div>
+                          <span>{artifact.sizeBytes ? `${Math.round(artifact.sizeBytes / 1024)} KB` : 'Metadata only'}</span>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
+          {surface === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
+        </main>
+      </div>
+      <ReferenceSetupDrawer
+        open={setupOpen}
+        snapshot={snapshot}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+        onSave={saveContext}
+        onClose={() => setSetupOpen(false)}
+        onOpenLegacy={onOpenLegacy}
+      />
+    </div>
+  );
+}
+
 function CustomerRoom({
   snapshot,
   view,
@@ -2196,6 +2581,9 @@ export function CustomerMarketingRoomPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [referenceEnabled, setReferenceEnabled] = useState(
+    isMarketingWorkspaceReferenceEnabled,
+  );
   const invitationStatusRef = useRef('');
 
   const loadSnapshot = useCallback(async () => {
@@ -2346,5 +2734,42 @@ export function CustomerMarketingRoomPage() {
     return <OnboardingRoom form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} />;
   }
 
-  return <CustomerRoom snapshot={snapshot} view={view} setView={setView} form={form} setForm={setForm} onRefresh={loadSnapshot} onMutation={runMutation} onSelectMedia={selectMediaProject} busy={busy} error={error} notice={notice} />;
+  if (referenceEnabled) {
+    return (
+      <ReferenceCustomerRoom
+        snapshot={snapshot}
+        form={form}
+        setForm={setForm}
+        onRefresh={loadSnapshot}
+        onMutation={runMutation}
+        onSelectMedia={selectMediaProject}
+        onOpenLegacy={() => {
+          setMarketingWorkspaceReferenceEnabled(false);
+          setReferenceEnabled(false);
+        }}
+        busy={busy}
+        error={error}
+        notice={notice}
+      />
+    );
+  }
+
+  return (
+    <div className="cmr-legacy-host">
+      <div className="cmr-legacy-host__notice" role="status">
+        <span>Legacy Customer Marketing room</span>
+        <button
+          type="button"
+          className="cmr-button cmr-button--primary"
+          onClick={() => {
+            setMarketingWorkspaceReferenceEnabled(true);
+            setReferenceEnabled(true);
+          }}
+        >
+          Return to reference workspace
+        </button>
+      </div>
+      <CustomerRoom snapshot={snapshot} view={view} setView={setView} form={form} setForm={setForm} onRefresh={loadSnapshot} onMutation={runMutation} onSelectMedia={selectMediaProject} busy={busy} error={error} notice={notice} />
+    </div>
+  );
 }
