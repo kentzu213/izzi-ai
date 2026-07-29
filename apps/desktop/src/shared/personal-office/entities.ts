@@ -79,6 +79,8 @@ export interface WorkspaceBlueprint extends Timestamps {
 }
 
 /** ── WorkspaceInstance ──────────────────────────────────────────────────── */
+export type WorkspaceHealth = 'ok' | 'attention' | 'blocked' | 'unknown';
+
 export interface WorkspaceInstance extends Timestamps {
   readonly schemaVersion: SchemaVersion;
   readonly id: WorkspaceInstanceId;
@@ -88,6 +90,11 @@ export interface WorkspaceInstance extends Timestamps {
   readonly state: WorkspaceState;
   /** Bring-up sub-state (see provisioning lifecycle). */
   readonly provisioning: ProvisioningState;
+  /**
+   * Non-authoritative operational signal. Health never forces or implies a
+   * WorkspaceState or ProvisioningState transition.
+   */
+  readonly health?: WorkspaceHealth;
   /** Runtime bound to this office once provisioned. */
   readonly runtimeInstanceId?: RuntimeInstanceId;
 }
