@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "12",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff enables no real publish, spend, send, delete, deployment or package installation.",
+  "title": "Marketing Workspace reference and final shell bridge",
+  "producer": {
+    "window": "W2",
+    "role": "Codex builder; Kiro had no writer authority",
+    "branch": "feature/personal-office-loop-12-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop12",
+    "lease": "LEASE-L12-MARKETING-REFERENCE-20260729"
+  },
+  "canonicalBase": "979ee06499a7066c7f012bb7101ec44519c1ac0c",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "0e46ea11495c2651890822582c6532aa2884edd6",
+      "phase": "implementation",
+      "subject": "feat(personal-office): add marketing workspace reference"
+    },
+    {
+      "sha": "35845da19e72d0eb741b2a411dd2df08854b2705",
+      "phase": "implementation",
+      "subject": "fix(personal-office): clean loop12 lint deltas"
+    }
+  ],
+  "handoffCommitNote": "The second producer commit contains only this JSON and worklogs/personal-office-loop-12.md.",
+  "inputs": [
+    {
+      "producerLoop": "03",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-03.json",
+      "sha256": "189daa2edc4da2f326117e03f0a062a8e6bfb7b59c98ab9d76202754c4c349f3",
+      "bytes": 4010
+    },
+    {
+      "producerLoop": "09",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-09.json",
+      "sha256": "42cc53ba5cc738ec907588455c3d240798c86821e137d09237deba64605ce28f",
+      "bytes": 4956
+    },
+    {
+      "producerLoop": "10",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-10.json",
+      "sha256": "a186cc03481bd77e70d5ae73bccb274ab4a2a39c9b15341a4843cb92e8084da3",
+      "bytes": 5178
+    },
+    {
+      "producerLoop": "11",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-11.json",
+      "sha256": "a81c9c324bcdf056b5a3360fec3aa261ebf98997f85bb4fbf45a606599b25570",
+      "bytes": 5049
+    }
+  ],
+  "ownership": {
+    "allInsideLease": true,
+    "implementationPathCount": 19,
+    "prohibitedPathChanges": 0,
+    "forbiddenPathsUntouched": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "apps/desktop/package.json",
+      "apps/desktop/src/main/db/**",
+      "apps/desktop/src/main/work/**",
+      "auth/updater/deployment surfaces"
+    ]
+  },
+  "architecture": {
+    "writeAuthority": "Customer Marketing",
+    "unifiedWork": "append-only idempotent projection",
+    "approvalAuthority": "Customer Marketing role/evidence gate; projection records the decision and never performs an effect",
+    "marketplace": "plan/demo cannot provision; installed package still requires fresh host validation and exact scope",
+    "rollback": "presentation flag only; source records are preserved"
+  },
+  "securityGate": {
+    "surfaces": [
+      "trusted IPC sender",
+      "host evidence digest and freshness",
+      "installed package and manifest capability",
+      "tenant/user/workspace scope authority",
+      "approval authority and projection replay",
+      "renderer secret exposure",
+      "external-effect boundaries"
+    ],
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "trusted sender checked before payload parsing or service execution",
+      "evidence rejects widened payloads, stale/future timestamps, package drift and scope drift",
+      "main process revalidates installed extension id/version/state and manifest.customerMarketing before provisioning",
+      "Customer Marketing remains the only write authority; Unified Work projection is idempotent and append-only",
+      "malformed legacy tenant cache bytes are preserved rather than deleted",
+      "no credential value crosses into renderer types, bridge contracts or docs",
+      "no real publish, spend, send, delete, auth, updater, DB/schema or deployment path changed"
+    ],
+    "independentReview": {
+      "security": "REQUESTED_SEPARATELY_AT_HANDOFF_TIME; W0 should still run independent review on 35845da"
+    }
+  },
+  "verification": [
+    {
+      "check": "targeted Loop 12 tests",
+      "result": "PASS",
+      "evidence": "Vitest 4.1.2, 4 files / 146 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "Vitest 4.1.2, 119 files / 1283 tests with --no-cache."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json both passed with --noEmit."
+    },
+    {
+      "check": "production renderer build",
+      "result": "PASS",
+      "evidence": "Vite 6.4.1 build passed; 1176 modules transformed. Existing large-chunk warning only."
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors, 36 warnings. Remaining warnings are pre-existing hub-file `any` debt plus ignored CSS/global type surfaces."
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS",
+      "evidence": "No whitespace defects on producer branch after final implementation commit."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 19 changed implementation paths from 979ee06..35845da, all inside LEASE-L12-MARKETING-REFERENCE-20260729."
+    },
+    {
+      "check": "diff-only secret scan",
+      "result": "PASS",
+      "evidence": "No added-line secret/token/password assignments or key material detected in the Loop 12 diff. Whole-file regex hits were limited to existing auth typings and invitation-token route strings in shared hub files."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 status entries."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEFERRED_TRUTHFULLY",
+      "evidence": "`gitnexus status` in the producer worktree returned `Repository not indexed.` Because this loop touches `customer-marketing-service`, `customer-marketing-ipc`, `main/index.ts`, `preload.ts` and `CustomerMarketingRoom.tsx`, W0 should treat canonical review scope as CRITICAL and rerun impact on the integration ref."
+    }
+  ],
+  "verificationToolchain": {
+    "method": "No install. Verification used the existing gitignored NTFS junctions for loop12 root and `apps/desktop` node_modules. `VITE_CACHE_DIR` was redirected into loop12 `.cache` during verification only."
+  },
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-marketing-ipc.test.ts",
+      "sha256": "aba6047b0efa546bfa2c8543dddef42ddb83d738d4bcd51d07d31c63ad35002e",
+      "bytes": 28294
+    },
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-marketing-ipc.ts",
+      "sha256": "799f8e531e30ca44e7a862b59ea84aa4feb3eaef0d6bac3be8e6a3b1ebc24eb5",
+      "bytes": 13255
+    },
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
+      "sha256": "4901861ad91e0380217fd0e9f4526cec9f8ef969864a4b580fbea6296afcb383",
+      "bytes": 118918
+    },
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-marketing-service.ts",
+      "sha256": "be0887049c5471b46aa191024a4499ca63c0014896dcd17f050e235b30450bab",
+      "bytes": 138962
+    },
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "sha256": "6f2e5f65602091fd28277a530193c57b2af8a9f8e0d12701e094af3dacd09c17",
+      "bytes": 70639
+    },
+    {
+      "path": "apps/desktop/src/main/preload.ts",
+      "sha256": "770271c4f418166a6718ab198791ecc5b7484013bbc26f15ccf699f984c6bc02",
+      "bytes": 36126
+    },
+    {
+      "path": "apps/desktop/src/renderer/marketing-workspace/reference-contract.test.ts",
+      "sha256": "20f3cebf91c0b0ecbb960e111f0c5b6ec438c0c7a1f79636c8e0815c9f3363e1",
+      "bytes": 3746
+    },
+    {
+      "path": "apps/desktop/src/renderer/marketing-workspace/reference-contract.ts",
+      "sha256": "879c727499d23b3c61030f7efdfb1376012c2d8613ae27e6eb4c165ee974bd03",
+      "bytes": 1852
+    },
+    {
+      "path": "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx",
+      "sha256": "41e5e99fe9f03f3f2629a4827a3490a6edc9c027f092c0d83fdc7c88128b672a",
+      "bytes": 118682
+    },
+    {
+      "path": "apps/desktop/src/renderer/pages/Marketplace.tsx",
+      "sha256": "4122d33ce2c89288e5ac50eeb1794924d8e83c19a28ee10ea0968c57ade6b342",
+      "bytes": 5295
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/featureFlags.ts",
+      "sha256": "e1d7e08ffdbfdbe7bfdff96a005a24fb50d989667b7c38f5e58ef3f77370edc9",
+      "bytes": 4158
+    },
+    {
+      "path": "apps/desktop/src/renderer/styles/customer-marketing-room.css",
+      "sha256": "1f59ad9a924d1c651c5c38e22348f39702944763f5360cf95abc3fb83c88593b",
+      "bytes": 81197
+    },
+    {
+      "path": "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
+      "sha256": "35fa63bab1ffee8e726a06dd07be63cc13cfefa54e3239ff42b4c77fc9a08f4d",
+      "bytes": 22396
+    },
+    {
+      "path": "apps/desktop/src/renderer/types/global.d.ts",
+      "sha256": "14615c7674a2b452410240e556d9326f2dd9bca3250f78805025c9f6a7a7b995",
+      "bytes": 10180
+    },
+    {
+      "path": "apps/desktop/src/shared/marketing-workspace/index.ts",
+      "sha256": "11afd9ecbfa958f63aeca01001c8513c878446f8db3ce2a9c80a2b595e030640",
+      "bytes": 426
+    },
+    {
+      "path": "apps/desktop/src/shared/marketing-workspace/types.ts",
+      "sha256": "80381bc382fd6927884f354f0fbc11aa2bd592eac784121e930def286650ee7e",
+      "bytes": 1710
+    },
+    {
+      "path": "apps/desktop/src/shared/marketing-workspace/validation.test.ts",
+      "sha256": "30ae04ab311aabe2b9143fdb20eff955d6c5c2105a51ad98d247b6e941121399",
+      "bytes": 1287
+    },
+    {
+      "path": "apps/desktop/src/shared/marketing-workspace/validation.ts",
+      "sha256": "cd7c3e462700930c1ecb01f2d2b8974e18680a25f6c029b2739861c587caa21e",
+      "bytes": 3493
+    },
+    {
+      "path": "docs/product/marketing-workspace-reference.md",
+      "sha256": "9cc10ab70b428b804267f8e34aca87004767907a23d234f3523ee9b73bc9bd37",
+      "bytes": 6535
+    }
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify all 19 Git blob hashes, run independent security review on 35845da, exact-path integrate implementation then handoff, rerun canonical impact and browser matrix if desired, create acceptance/loop-12.json and revoke the lease only after PASS."
+    }
+  ]
+}
