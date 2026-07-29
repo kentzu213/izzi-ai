@@ -98,6 +98,10 @@ import type {
   MarketingWorkspaceProvisionRequest,
   MarketingWorkspaceProvisionResult,
 } from '../shared/marketing-workspace';
+import {
+  MARKETPLACE_IPC_CHANNELS,
+  type MarketplacePreloadApi,
+} from '../shared/marketplace';
 
 /**
  * Published first-class preload shape for the unified work engine.
@@ -134,6 +138,16 @@ const workApi: WorkPreloadApi = {
       ipcRenderer.removeListener(WORK_IPC_CHANNELS.event, handler);
     };
   },
+};
+
+const marketplacePersonalOfficeApi: MarketplacePreloadApi = {
+  loadCatalog: () => ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.loadCatalog),
+  createPlan: (packageKey) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.createPlan, packageKey),
+  requestInstall: (input) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.requestInstall, input),
+  resumeInstall: (input) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.resumeInstall, input),
 };
 
 const runtimeApi: RuntimePreloadApi = {
@@ -176,6 +190,8 @@ const electronAPI = {
     uninstall: (extensionId: string) => ipcRenderer.invoke('extensions:uninstall', extensionId),
     marketplace: (query?: string) => ipcRenderer.invoke('extensions:marketplace', query),
   },
+
+  marketplacePersonalOffice: marketplacePersonalOfficeApi,
 
   extensionRuntime: {
     list: () => ipcRenderer.invoke('extensions:runtime:list'),

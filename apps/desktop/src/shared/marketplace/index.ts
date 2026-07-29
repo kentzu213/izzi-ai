@@ -41,6 +41,25 @@ export {
   createMarketplaceInstallPlan,
 } from './install-plan';
 export {
+  MARKETPLACE_IPC_CHANNELS,
+  MARKETPLACE_OPERATION_SCHEMA_VERSION,
+  MARKETPLACE_OPERATION_VERSION,
+  marketplaceOperationId,
+  parseMarketplaceInstallOperationReceipt,
+} from './operation';
+export type {
+  MarketplaceInstallOperationReceipt,
+  MarketplaceInstallOperationRequest,
+  MarketplaceInstallOperationResumeRequest,
+  MarketplaceInstallOperationStage,
+  MarketplaceInstallOperationStatus,
+  MarketplaceInstallStageOutcome,
+  MarketplaceInstallStageReceipt,
+  MarketplaceOperationResult,
+  MarketplacePackageVerificationEvidence,
+  MarketplacePreloadApi,
+} from './operation';
+export {
   createMarketplaceDemoCatalog,
   markMarketplaceDemoInstalled,
   readInstalledOcxExtensionPackageKeys,

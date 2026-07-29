@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import {
   canCreateMarketplaceInstallPlan,
-  createMarketplaceInstallPlan,
   type MarketplaceCatalog,
   type MarketplaceInstallPlan,
+  type MarketplaceInstallOperationReceipt,
   type MarketplaceInstallScope,
   type MarketplacePackage,
 } from '../../shared/marketplace';
@@ -27,6 +27,7 @@ export interface MarketplacePersonalOfficeState {
   readonly scope: MarketplaceInstallScope;
   readonly scopeError: string | null;
   readonly plan: MarketplaceInstallPlan | null;
+  readonly operationReceipt: MarketplaceInstallOperationReceipt | null;
   readonly errorMessage: string | null;
   loadCatalog: (loader: MarketplaceCatalogLoader) => Promise<void>;
   setCatalog: (catalog: MarketplaceCatalog) => void;
@@ -34,9 +35,10 @@ export interface MarketplacePersonalOfficeState {
   setCategory: (category: string) => void;
   selectPackage: (packageKey: string) => void;
   openReview: (packageKey: string) => void;
-  setScopeField: (field: keyof MarketplaceInstallScope, value: string) => void;
+  setScopeError: (message: string | null) => void;
   cancelReview: () => void;
-  confirmPlan: (plannedAt: string) => MarketplaceInstallPlan | null;
+  acceptPlan: (plan: MarketplaceInstallPlan) => void;
+  setOperationReceipt: (receipt: MarketplaceInstallOperationReceipt | null) => void;
   closePlan: () => void;
   reset: () => void;
 }
@@ -51,15 +53,6 @@ function firstPackageKey(catalog: MarketplaceCatalog): string | null {
   return catalog.packages[0]?.identity.packageKey ?? null;
 }
 
-function selectedPackage(
-  state: Pick<MarketplacePersonalOfficeState, 'catalog' | 'selectedPackageKey'>,
-): MarketplacePackage | null {
-  if (!state.catalog || !state.selectedPackageKey) return null;
-  return state.catalog.packages.find((item) => (
-    item.identity.packageKey === state.selectedPackageKey
-  )) ?? null;
-}
-
 export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOfficeState>(
   (set, get) => ({
     phase: 'idle',
@@ -71,6 +64,7 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
     scope: EMPTY_SCOPE,
     scopeError: null,
     plan: null,
+    operationReceipt: null,
     errorMessage: null,
 
     loadCatalog: async (loader) => {
@@ -80,6 +74,7 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
         selectedPackageKey: null,
         reviewState: 'closed',
         plan: null,
+        operationReceipt: null,
         errorMessage: null,
       });
       try {
@@ -109,12 +104,14 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
         selectedPackageKey: firstPackageKey(catalog),
         reviewState: 'closed',
         plan: null,
+        operationReceipt: null,
         errorMessage: null,
       });
     },
 
     setQuery: (query) => set({ query }),
     setCategory: (category) => set({ category }),
+    setScopeError: (scopeError) => set({ scopeError }),
     selectPackage: (packageKey) => set({
       selectedPackageKey: packageKey,
       reviewState: get().reviewState === 'reviewing' ? 'closed' : get().reviewState,
@@ -141,17 +138,10 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
         scope: EMPTY_SCOPE,
         scopeError: null,
         plan: null,
+        operationReceipt: null,
         errorMessage: null,
       });
     },
-
-    setScopeField: (field, value) => set((state) => ({
-      scope: {
-        ...state.scope,
-        [field]: value,
-      },
-      scopeError: null,
-    })),
 
     cancelReview: () => set({
       reviewState: 'canceled',
@@ -161,40 +151,23 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
       errorMessage: null,
     }),
 
-    confirmPlan: (plannedAt) => {
-      const state = get();
-      const packageRecord = selectedPackage(state);
-      if (!state.catalog || !packageRecord) {
-        set({ scopeError: 'Select a package before creating a plan.' });
-        return null;
-      }
-      try {
-        const plan = createMarketplaceInstallPlan(
-          state.catalog,
-          packageRecord.identity.packageKey,
-          state.scope,
-          plannedAt,
-        );
-        set({
-          reviewState: 'planned',
-          plan,
-          scopeError: null,
-          errorMessage: null,
-        });
-        return plan;
-      } catch (error) {
-        set({
-          scopeError: error instanceof Error
-            ? error.message
-            : 'Exact tenant, user, and workspace ids are required.',
-        });
-        return null;
-      }
-    },
+    acceptPlan: (plan) => set({
+      reviewState: 'planned',
+      plan,
+      scope: plan.scope,
+      scopeError: null,
+      operationReceipt: null,
+      errorMessage: null,
+    }),
+
+    setOperationReceipt: (operationReceipt) => set({
+      operationReceipt,
+    }),
 
     closePlan: () => set({
       reviewState: 'closed',
       plan: null,
+      operationReceipt: null,
       scope: EMPTY_SCOPE,
       scopeError: null,
     }),
@@ -209,6 +182,7 @@ export const useMarketplacePersonalOfficeStore = create<MarketplacePersonalOffic
       scope: EMPTY_SCOPE,
       scopeError: null,
       plan: null,
+      operationReceipt: null,
       errorMessage: null,
     }),
   }),

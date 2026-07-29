@@ -55,6 +55,7 @@ import type {
   CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
 import type { RuntimePreloadApi } from '../../shared/runtime/ipc';
+import type { MarketplacePreloadApi } from '../../shared/marketplace';
 
 export {};
 
@@ -221,6 +222,7 @@ declare global {
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
     runtime?: RuntimePreloadApi;
+    marketplacePersonalOffice?: MarketplacePreloadApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }

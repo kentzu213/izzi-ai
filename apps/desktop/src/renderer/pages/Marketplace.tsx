@@ -1,11 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  createMarketplaceDemoCatalog,
-  markMarketplaceDemoInstalled,
-  readInstalledOcxExtensionPackageKeys,
-} from '../../shared/marketplace';
 import { MarketplacePageView } from '../components/marketplace';
-import { apiClient } from '../lib/api-client';
 import {
   selectMarketplacePackages,
   useMarketplacePersonalOfficeStore,
@@ -20,23 +14,13 @@ export interface MarketplacePageProps {
 }
 
 export async function loadDefaultMarketplaceCatalog(): Promise<MarketplaceCatalogLoadResult> {
-  const online = await apiClient.checkMarketplaceHealth();
-  let installedPackageKeys: readonly string[] = [];
-
-  try {
-    const installed = await window.electronAPI?.extensions.list();
-    installedPackageKeys = readInstalledOcxExtensionPackageKeys(installed);
-  } catch {
-    // Installed state is read-only context. Failure does not make demo data trusted.
+  const api = window.electronAPI?.marketplacePersonalOffice;
+  if (!api) {
+    throw new Error('Marketplace host bridge is unavailable.');
   }
-
-  const notice = online
-    ? 'The remote service is reachable, but this build has no leased host-validated catalog bridge. Showing non-installable demo records.'
-    : 'Marketplace service is offline. Showing non-installable demo records.';
-  const demo = createMarketplaceDemoCatalog(online ? 'online' : 'offline', notice);
-  return {
-    catalog: markMarketplaceDemoInstalled(demo, installedPackageKeys),
-  };
+  const result = await api.loadCatalog();
+  if (!result.ok) throw new Error(result.reason);
+  return { catalog: result.value };
 }
 
 export function MarketplacePage(_props: MarketplacePageProps = {}) {
@@ -46,6 +30,8 @@ export function MarketplacePage(_props: MarketplacePageProps = {}) {
   const [openError, setOpenError] = useState('');
   const packages = selectMarketplacePackages(state);
   const loadCatalog = state.loadCatalog;
+  const plan = state.plan;
+  const operationReceipt = state.operationReceipt;
   const selectedInstalledPackage = useMemo(
     () => selectInstalledMarketingWorkspacePackage(state.catalog, state.selectedPackageKey),
     [state.catalog, state.selectedPackageKey],
@@ -87,6 +73,46 @@ export function MarketplacePage(_props: MarketplacePageProps = {}) {
     }
   }, [openLegacy, selectedInstalledPackage]);
 
+  const createPlanFromHost = useCallback(async () => {
+    const api = window.electronAPI?.marketplacePersonalOffice;
+    const packageKey = state.selectedPackageKey;
+    if (!api || !packageKey) {
+      state.setScopeError('Select a host-validated package before creating a plan.');
+      return;
+    }
+    const result = await api.createPlan(packageKey);
+    if (!result.ok) {
+      state.setScopeError(result.reason);
+      return;
+    }
+    state.acceptPlan(result.value);
+  }, [state]);
+
+  const requestInstall = useCallback(async () => {
+    const api = window.electronAPI?.marketplacePersonalOffice;
+    if (!api || !plan) return;
+    const result = await api.requestInstall({ plan });
+    if (!result.ok) {
+      state.setScopeError(result.reason);
+      return;
+    }
+    state.setOperationReceipt(result.value);
+  }, [plan, state]);
+
+  const resumeInstall = useCallback(async () => {
+    const api = window.electronAPI?.marketplacePersonalOffice;
+    if (!api || !plan || !operationReceipt?.approvalId) return;
+    const result = await api.resumeInstall({
+      plan,
+      approvalId: operationReceipt.approvalId,
+    });
+    if (!result.ok) {
+      state.setScopeError(result.reason);
+      return;
+    }
+    state.setOperationReceipt(result.value);
+  }, [operationReceipt?.approvalId, plan, state]);
+
   return (
     <>
       {selectedInstalledPackage && (
@@ -117,20 +143,19 @@ export function MarketplacePage(_props: MarketplacePageProps = {}) {
         category={state.category}
         selectedPackageKey={state.selectedPackageKey}
         reviewState={state.reviewState}
-        scope={state.scope}
         scopeError={state.scopeError}
-        plan={state.plan}
+        plan={plan}
+        operationReceipt={operationReceipt}
         errorMessage={state.errorMessage}
         onRetry={reload}
         onQueryChange={state.setQuery}
         onCategoryChange={state.setCategory}
         onSelectPackage={state.selectPackage}
         onOpenReview={state.openReview}
-        onScopeChange={state.setScopeField}
         onCancelReview={state.cancelReview}
-        onConfirmPlan={() => {
-          state.confirmPlan(new Date().toISOString());
-        }}
+        onConfirmPlan={() => { void createPlanFromHost(); }}
+        onRequestInstall={() => { void requestInstall(); }}
+        onResumeInstall={() => { void resumeInstall(); }}
         onClosePlan={state.closePlan}
       />
     </>

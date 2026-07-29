@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  createMarketplaceInstallPlan,
   parseMarketplaceCatalog,
   type MarketplaceCatalog,
 } from '../../shared/marketplace';
@@ -81,21 +82,23 @@ describe('marketplace personal office store', () => {
     });
   });
 
-  it('creates only a plan after exact scope is supplied', () => {
+  it('accepts only a plan returned by the host bridge', () => {
     const catalog = trustedCatalog();
     useMarketplacePersonalOfficeStore.getState().setCatalog(catalog);
     useMarketplacePersonalOfficeStore.getState().openReview(
       catalog.packages[0].identity.packageKey,
     );
-    useMarketplacePersonalOfficeStore.getState().setScopeField('tenantId', 'tenant:primary');
-    useMarketplacePersonalOfficeStore.getState().setScopeField('userId', 'user:owner');
-    useMarketplacePersonalOfficeStore.getState().setScopeField(
-      'workspaceInstanceId',
-      'workspace:personal-office',
-    );
-    const plan = useMarketplacePersonalOfficeStore.getState().confirmPlan(
+    const plan = createMarketplaceInstallPlan(
+      catalog,
+      catalog.packages[0].identity.packageKey,
+      {
+        tenantId: 'tenant:primary',
+        userId: 'user:owner',
+        workspaceInstanceId: 'workspace:personal-office',
+      },
       '2026-07-29T03:00:00.000Z',
     );
+    useMarketplacePersonalOfficeStore.getState().acceptPlan(plan);
     expect(plan).toMatchObject({
       effect: 'plan_only',
       requestedPermissions: ['ui.panel'],

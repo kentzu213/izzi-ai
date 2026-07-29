@@ -96,6 +96,10 @@ import {
   registerRuntimeIpc,
   RuntimeManager,
 } from './runtime';
+import {
+  MarketplaceOperationService,
+  registerMarketplaceIpc,
+} from './marketplace';
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
@@ -337,6 +341,65 @@ function setupIPC() {
     },
   };
   registerWorkIpc(workService, workIdentity);
+  const marketplaceOperationService = new MarketplaceOperationService({
+    // Loop 15 deliberately does not trust the legacy Marketplace API or
+    // fallback extension catalog. Loop 16/17 will register these authorities
+    // behind their own leases; until then the bridge is visibly unavailable.
+    catalogAuthority: {
+      load: async () => null,
+    },
+    identityAuthority: {
+      resolveScope: async () => {
+        const reviewerHash = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+        const workspace = workService.repo.getWorkspace(DEFAULT_WORKSPACE_ID);
+        if (
+          !reviewerHash
+          || !workspace
+          || workspace.kind !== 'personal'
+          || workspace.id !== DEFAULT_WORKSPACE_ID
+        ) {
+          return null;
+        }
+        return {
+          tenantId: `personal:${reviewerHash}`,
+          userId: reviewerHash,
+          workspaceInstanceId: workspace.id,
+        };
+      },
+    },
+    packageVerifier: {
+      verify: async () => {
+        throw new Error('PACKAGE_VERIFIER_NOT_REGISTERED');
+      },
+    },
+    approvals: {
+      request: async () => ({
+        approvalId: 'unavailable',
+        state: 'unavailable' as const,
+        bindingDigest: 'unavailable',
+      }),
+      get: async () => null,
+    },
+    grants: {
+      resolve: async () => ({
+        status: 'unavailable' as const,
+        code: 'GRANT_AUTHORITY_NOT_REGISTERED',
+      }),
+    },
+    provisioner: {
+      provision: async () => ({
+        status: 'unavailable' as const,
+        code: 'PROVISIONER_NOT_REGISTERED',
+      }),
+    },
+    installer: {
+      install: async () => ({
+        status: 'unavailable' as const,
+        code: 'INSTALLER_NOT_REGISTERED',
+      }),
+    },
+  });
+  registerMarketplaceIpc(marketplaceOperationService);
   const agentContextRuntime = new PersonalOfficeAgentContextRuntime({
     rootDir: path.join(app.getPath('userData'), 'personal-office', 'live'),
     resolveWorkspace: (workspaceId) => workService.repo.getWorkspace(workspaceId),
