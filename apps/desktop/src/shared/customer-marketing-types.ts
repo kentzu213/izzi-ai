@@ -64,7 +64,11 @@ export type CustomerMediaJobStatus =
   | 'blocked'
   | 'failed';
 
-export type CustomerMediaArtifactKind = 'project_manifest' | 'check_receipt' | 'snapshot';
+export type CustomerMediaArtifactKind =
+  | 'project_manifest'
+  | 'check_report'
+  | 'check_receipt'
+  | 'snapshot';
 
 export type CustomerMediaRuntimeState = 'ready' | 'blocked' | 'needs_setup';
 

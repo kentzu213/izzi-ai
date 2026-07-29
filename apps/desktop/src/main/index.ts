@@ -425,6 +425,7 @@ function setupIPC() {
     },
     verifyCommercialVoiceLicense,
   });
+  app.on('before-quit', () => customerVideoStudio.killAll());
   const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.

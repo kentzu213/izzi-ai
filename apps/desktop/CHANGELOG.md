@@ -1,5 +1,27 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.9
+
+Customer Marketing managed HyperFrames preview patch.
+
+- Verify the bundled HyperFrames `0.7.57` package and CLI before exposing
+  preview readiness.
+- Use the packaged Electron runtime for local check/snapshot work when a
+  compatible system Node runtime is unavailable. This managed path remains
+  preview-only and cannot enable commercial render.
+- Discover an existing HyperFrames Chrome Headless Shell without downloading
+  or installing a browser from Izzi AI.
+- Run HyperFrames with a scrubbed environment, isolated runtime profile,
+  bounded output, timeout, process-tree cleanup, and output containment under
+  `preview-runs`.
+- Capture snapshots at scene midpoints from `video-workflow.json`, avoiding
+  blank frames at timeline and scene boundaries.
+- Keep generated preview paths below the Windows legacy `MAX_PATH` boundary by
+  using compact timestamped run IDs, including under long or Unicode roots.
+- Preserve the existing Voice Studio commercial-license contract for an
+  explicitly configured and verified system Node runtime. F5 ViVoice remains
+  blocked for commercial use under its noncommercial license.
+
 ## 1.14.0-beta.8
 
 Customer Marketing reviewer-identity patch.
