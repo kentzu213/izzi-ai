@@ -3,146 +3,286 @@
   "artifactKind": "producer-handoff",
   "loop": "02",
   "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This record is the producer's claim, not a decision. Nothing here asserts acceptance.",
+  "title": "Personal Office app shell and information architecture",
   "producer": {
     "window": "W2",
+    "role": "product shell + reference UX",
     "branch": "feature/personal-office-loop-02-20260729",
-    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02"
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02",
+    "lease": "LEASE-L02-SHELL-MOUNT-20260729"
   },
   "baseCommit": "6063bc8ac8115382be14db04cc17d32a2f7471f6",
-  "lease": "LEASE-L02-SHELL-MOUNT-20260729",
-  "implementationCommits": [
-    "663de47d6d61bb245939f7e341bba13c93b7fac0",
-    "5512884"
+  "canonicalAncestor": "84a57b38117ee7544691115be5aca7a141af1abf",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "663de47d6d61bb245939f7e341bba13c93b7fac0",
+      "phase": "implementation",
+      "subject": "feat(personal-office): Personal Office shell layer (Loop 02)",
+      "scope": "19 shell modules + renderer/store/personalOffice.ts",
+      "note": "The commit message for this commit claimed the shell was mounted from App.tsx. That was inaccurate: the diff contains no App.tsx change. W0 caught it. It was corrected forward in 5512884 by performing the mount, not by rewriting history. Recorded here because a handoff must not hide a producer error."
+    },
+    {
+      "sha": "55128840b33077f8917b5f09cbd5a451990b7979",
+      "phase": "implementation",
+      "subject": "feat(personal-office): mount the shell behind the flag with legacy rollback",
+      "scope": "App.tsx mount, personal-office.css, and the interface fixes W0 flagged"
+    },
+    {
+      "sha": "04a2163dac88710da83bd6364d418550b7bd3c96",
+      "phase": "artifact",
+      "subject": "docs(personal-office): record Loop 02 IA",
+      "scope": "docs/product/personal-office-ia.md only"
+    }
   ],
-  "artifactCommit": "04a2163dac88710da83bd6364d418550b7bd3c96",
-  "summary": "Personal Office reference shell, genuinely mounted from App.tsx behind izzi.shell.personalOffice, with the untouched classic layout retained as the rollback path.",
+  "handoffCommitNote": "This handoff and its worklog land in a separate phase-2 commit containing exactly two files, so every source and artifact byte was immutable and hashed before any document asserted a status about it.",
+  "inputs": [
+    {
+      "path": "apps/desktop/src/shared/personal-office/**",
+      "producer": "W1 / Loop 01",
+      "producerStatus": "ACCEPTED",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-01.json",
+      "consumedAs": "read-only contract of record",
+      "verified": "Present at base 6063bc8: 15 modules incl. entities.ts, state-machine.ts, events.ts, ids.ts. RunState carries waiting_external per accepted change PO-RUNSTATE-CONTRACT-GAP."
+    },
+    {
+      "path": "docs/handoffs/personal-office/leases.json",
+      "producer": "W0",
+      "consumedAs": "lease terms — exclusiveWritePaths, readOnlyPaths, prohibitedPaths",
+      "verified": "LEASE-L02-SHELL-MOUNT-20260729 read; every changed path is inside exclusiveWritePaths."
+    },
+    {
+      "path": "docs/handoffs/personal-office/quarantine/loop-02-dirty-salvage.json",
+      "producer": "W0",
+      "consumedAs": "salvage manifest and the six preconditions before W2 may implement",
+      "verified": "All six conditions addressed; see conditionsSatisfied."
+    }
+  ],
   "ownedPaths": [
     "apps/desktop/src/renderer/shell/**",
     "apps/desktop/src/renderer/store/personalOffice.ts",
     "apps/desktop/src/renderer/styles/personal-office.css",
     "apps/desktop/src/renderer/App.tsx",
-    "docs/product/personal-office-ia.md",
-    "docs/handoffs/personal-office/loop-02.json",
-    "worklogs/personal-office-loop-02.md"
+    "apps/desktop/src/renderer/components/Sidebar.tsx",
+    "docs/product/personal-office-ia.md"
   ],
-  "prohibitedPathsVerifiedClean": [
-    "apps/desktop/src/main/work/**",
-    "apps/desktop/src/main/db/**",
-    "apps/desktop/src/main/index.ts",
+  "forbiddenPathsRespected": [
+    "apps/desktop/src/main/**",
     "apps/desktop/src/main/preload.ts",
+    "apps/desktop/src/main/db/database.ts",
+    "apps/desktop/src/main/work/**",
     "apps/desktop/src/shared/personal-office/**",
     "package.json",
     "pnpm-workspace.yaml",
     "pnpm-lock.yaml",
-    "apps/desktop/src/renderer/components/Sidebar.tsx"
+    "docs/handoffs/personal-office/integration-ledger.json",
+    "docs/handoffs/personal-office/leases.json",
+    "docs/handoffs/personal-office/acceptance/**"
   ],
-  "deliverables": {
-    "codeAndStylesPathCount": 22,
-    "informationArchitecture": "docs/product/personal-office-ia.md",
-    "topLevelRoutes": [
-      "today",
-      "workspaces",
-      "mygraph",
-      "market",
-      "settings"
-    ],
-    "workspaceSurfaces": [
-      "brief",
-      "work",
-      "deliverables",
-      "approvals"
-    ],
-    "mount": {
-      "flag": "izzi.shell.personalOffice",
-      "entry": "apps/desktop/src/renderer/App.tsx",
-      "rollback": "The classic App.tsx layout and Sidebar.tsx remain intact; disabling the flag flips React state back to the classic layout without deleting legacy surfaces."
-    }
+  "forbiddenPathScan": "git diff --name-only 6063bc8..HEAD filtered against every forbidden prefix returns zero paths.",
+  "filesChanged": {
+    "count": 23,
+    "note": "SHA-256 over working-tree bytes at 04a2163. Compare working-tree to working-tree: .gitattributes normalises line endings, so a fresh clone will hash differently.",
+    "files": [
+      { "path": "apps/desktop/src/renderer/App.tsx", "state": "modified", "bytes": 16698, "sha256": "8f07e76b5def4c1efde73a0cae8bab6dfa49a014ce23ca2c9fbb03240617eeb8" },
+      { "path": "apps/desktop/src/renderer/shell/CommandPalette.tsx", "state": "created", "bytes": 8050, "sha256": "2b2f6dc3deb641d67d583d910e836451f36fb5851e881204fcb790ff035c4b74" },
+      { "path": "apps/desktop/src/renderer/shell/DelegateComposer.tsx", "state": "created", "bytes": 3143, "sha256": "d39327913b3fd7dedf173d1cc30dc41231523f96a4825b46306ce3302bf33eb7" },
+      { "path": "apps/desktop/src/renderer/shell/MyGraphRoute.tsx", "state": "created", "bytes": 2128, "sha256": "5fd8c7ae4b11915d32f3bb93977217d98776afc3b19d18e729215e971692f44e" },
+      { "path": "apps/desktop/src/renderer/shell/PersonalOfficeShell.tsx", "state": "created", "bytes": 11160, "sha256": "a764162b55ce4e3e0e3a0c0697920441abbc364a3fc1d74f5bf1c9abe8566caa" },
+      { "path": "apps/desktop/src/renderer/shell/ShellIcons.tsx", "state": "created", "bytes": 2834, "sha256": "50a1313bf18245d38e081342e1e2ae5086c79fed843811a1f918515acd7134ca" },
+      { "path": "apps/desktop/src/renderer/shell/ShellNav.tsx", "state": "created", "bytes": 5910, "sha256": "1df2c1e63391412c7fe3968ff99ddd5ac4798f782a72c6dda2a29a3644e85d23" },
+      { "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx", "state": "created", "bytes": 4920, "sha256": "2cd8ee63f92b0fb22ce569f09df72c608bb26a95efac2e321b35d23b73a25557" },
+      { "path": "apps/desktop/src/renderer/shell/ShellTopBar.tsx", "state": "created", "bytes": 3140, "sha256": "87630f33605b264cd76b2741bcd6e5afa24f7373044c578f8d83d3efa6e4e746" },
+      { "path": "apps/desktop/src/renderer/shell/SurfaceState.tsx", "state": "created", "bytes": 4920, "sha256": "bb0910fe79094397241cab2871314ef1ad9866da5db6e31cff1bf383fb6d3314" },
+      { "path": "apps/desktop/src/renderer/shell/TodayPage.tsx", "state": "created", "bytes": 6315, "sha256": "c5b949749d19f3390c6af062f7fb3d06ee8c70ef40b49c05a476a9cb69890f21" },
+      { "path": "apps/desktop/src/renderer/shell/WorkLane.tsx", "state": "created", "bytes": 10086, "sha256": "dbe1d25c76241eb10e936218dc7152f791c2d630fda0f9b7bc465fc0a7bd6925" },
+      { "path": "apps/desktop/src/renderer/shell/WorkspaceHome.tsx", "state": "created", "bytes": 12529, "sha256": "077df7b6706b37ba0dbb30195945e81c7da78fecbef124a1dc20d35f120c432f" },
+      { "path": "apps/desktop/src/renderer/shell/WorkspacesPage.tsx", "state": "created", "bytes": 5742, "sha256": "6f05254097a08b32c0f5e658f01e119d9a8a43215629cbb882127da01ffe8fce" },
+      { "path": "apps/desktop/src/renderer/shell/featureFlags.ts", "state": "created", "bytes": 3353, "sha256": "caee1ba26e48c2e12920a0f981b5b49ce05b6dfef40c65986ca2f2be35817c1f" },
+      { "path": "apps/desktop/src/renderer/shell/format.ts", "state": "created", "bytes": 3369, "sha256": "c942ecc40005a392657e9483dbb3520b880777eafb4ceb9a9728d388a633bbc8" },
+      { "path": "apps/desktop/src/renderer/shell/legacySurfaces.ts", "state": "created", "bytes": 6124, "sha256": "3cb737b922537d788b962e5cb1f80f6e1fcf3094841b50ce4fb7312a0adbebe2" },
+      { "path": "apps/desktop/src/renderer/shell/types.ts", "state": "created", "bytes": 6790, "sha256": "dc8652b5af09fce1755db09aff5d695a4b687e9a75b6fb0cdf6dd64a45fbb8a0" },
+      { "path": "apps/desktop/src/renderer/shell/useWorkSnapshot.ts", "state": "created", "bytes": 4493, "sha256": "3fbeff6c4f829ff3f0d6093ff873c6faf329c0894e4834e69dc86867a3567d2e" },
+      { "path": "apps/desktop/src/renderer/shell/workAdapter.ts", "state": "created", "bytes": 14168, "sha256": "abb6c72d058aba1663c4a7472b0acff589064ad85460d347b6944b57c38eed89" },
+      { "path": "apps/desktop/src/renderer/store/personalOffice.ts", "state": "created", "bytes": 3626, "sha256": "9ac9073e59a35c3aec75ea9576e5ff2be0406e620a3fb464141351b08bf100e1" },
+      { "path": "apps/desktop/src/renderer/styles/personal-office.css", "state": "created", "bytes": 32026, "sha256": "6fadd0c8ad319073bede164d513c1de1ab768fec27f7fbb916f82f047546b3e1" },
+      { "path": "docs/product/personal-office-ia.md", "state": "created", "bytes": 9145, "sha256": "88e75f7ef85eda22c2727862b06301016dcc21238c9b9881490f239f6acf8136" }
+    ]
   },
-  "verification": [
+  "notChanged": {
+    "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
+    "reason": "Held under lease but never edited. Rollback does not require it: clearing the flag flips React state inside App.tsx and the untouched legacy layout re-renders in place, keeping the session. Editing it would have been change without cause. git diff 84a57b3..HEAD -- Sidebar.tsx is empty.",
+    "leaseUnspent": true
+  },
+  "contractChanges": {
+    "none": true,
+    "statement": "Loop 02 defines no domain type and edits nothing under shared/personal-office/**. The quarantine draft's Loop-02-local ApprovalRequest was DELETED, not ported: the shell renders W1's Approval directly.",
+    "retargetEvidence": "9 shell modules import from ../../shared/personal-office. Zero files import main/agent/types.ts.",
+    "runStateUsage": "RUN_STATE_LANE in shell/types.ts is a Readonly<Record<RunState, TodayLane>> over W1's union, so adding a RunState breaks this file at compile time rather than silently dropping runs out of every lane."
+  },
+  "openChangeRequests": [
     {
-      "check": "desktop production build",
-      "result": "PASS",
-      "command": "pnpm --filter @openclaw/desktop build",
-      "evidence": "1167 modules transformed; tsc main profile and Vite build exited 0."
+      "id": "CR-UX-02",
+      "target": "W1 / shared/personal-office/entities.ts",
+      "severity": "high",
+      "ask": "WorkspaceInstance has no instance-level brief, and no favorite / lastOpenedAt.",
+      "why": "The Brief surface is one of four mandated workspace surfaces and currently has nothing authoritative to render. WorkspaceBlueprint.description describes the template, so every workspace from one blueprint would show identical text.",
+      "loop02Workaround": "WorkspaceView.brief is optional and the Brief surface renders an explicit 'not set' affordance rather than borrowing blueprint text. favorite is held as local UI state in the shell and declared as a device preference, not domain truth."
     },
     {
-      "check": "lint ceiling",
-      "result": "PASS",
-      "command": "pnpm lint:ci",
-      "evidence": "358 warnings, 0 errors; inherited canonical ceiling was not raised."
+      "id": "CR-UX-03",
+      "target": "W1 / shared/personal-office/entities.ts",
+      "severity": "medium",
+      "ask": "ApprovalActionBinding.input is typed unknown, so the shell has no safe way to render an action preview.",
+      "why": "An operator approving an external effect should see what will be sent. The doc comment promises redaction but the type cannot enforce it, and blind-rendering an unknown risks putting a raw payload or secret-shaped value on a primary surface.",
+      "loop02Workaround": "binding.input is NEVER rendered. The preview shows binding.target and binding.estimatedSideEffect only. Proposal on record: producer-supplied, pre-redacted previewFields."
     },
     {
-      "check": "desktop test suite",
-      "result": "PASS",
-      "command": "pnpm --filter @openclaw/desktop test",
-      "evidence": "74 files, 946/946 tests passed."
+      "id": "CR-UX-05",
+      "target": "W1 / shared/personal-office/entities.ts",
+      "severity": "high",
+      "ask": "Approval carries no post-decision outcome, and no link from an approved Approval to the resulting Artifact or follow-up event.",
+      "why": "'Receive the deliverable' is the last step of the primary workflow. Without an outcome the operator approves into a void and the shell cannot render an honest receipt.",
+      "loop02Workaround": "No receipt is faked. The approval card exposes no outcome claim at all."
     },
     {
-      "check": "diff and ownership",
-      "result": "PASS",
-      "evidence": "git diff --check exited 0; implementation and IA changes are confined to the active Loop 02 lease."
+      "id": "CR-UX-06",
+      "target": "W3 / main/work/**",
+      "severity": "medium",
+      "ask": "Expose a create-run intent, e.g. CreateRunIntent { goal, workspaceInstanceId }.",
+      "why": "WorkRun requires rootRunId, lineageKind, attempt, planVersion, planHash and appliedEventSequence. A renderer cannot supply any of them, and must not invent them.",
+      "loop02Workaround": "WorkDataSource.delegate takes { goal, workspaceId } and the engine assembles the run. The shell never constructs a WorkRun literal."
     },
     {
-      "check": "rollback smoke",
-      "result": "PASS",
-      "evidence": "Classic desktop and mobile layouts were rendered from the unchanged legacy path after the flag was disabled."
-    },
-    {
-      "check": "Personal Office visual matrix",
-      "result": "PARTIAL",
-      "evidence": "The v2 shell was exercised during implementation, but no durable, hashed desktop/mobile screenshot bundle was committed. W0 must repeat a v2 desktop and mobile screenshot smoke before ACCEPTED."
+      "id": "CR-UX-07",
+      "target": "W1 or W3",
+      "severity": "medium",
+      "ask": "No workspace bootstrap path is specified: WorkRun.workspaceInstanceId is required and WorkspaceInstance.blueprintId is required, so a first-run operator with no blueprint and no workspace cannot delegate at all.",
+      "why": "This directly threatens the acceptance criterion 'launch to delegating a sample brief in at most two actions'.",
+      "loop02Workaround": "The shell does NOT synthesize a workspace. With no data it shows an honest empty state and the composer is disabled with a stated reason. The quarantine draft's fabricated REAL_WORKSPACE_ID = 'personal' was deleted."
     }
+  ],
+  "conditionsSatisfied": [
+    { "condition": "Loop 01 ACCEPTED before a Loop 02 worktree exists", "met": true, "evidence": "acceptance/loop-01.json decision ACCEPTED; contract present at base 6063bc8." },
+    { "condition": "Retarget workAdapter.ts, types.ts, useWorkSnapshot.ts onto shared/personal-office/", "met": true, "evidence": "9 shell files import the contract barrel; zero import main/agent/types.ts." },
+    { "condition": "Drop the Loop-02-local ApprovalRequest in favour of W1's Approval", "met": true, "evidence": "No ApprovalRequest type exists in the tree. WorkLane.ApprovalCard takes W1's Approval." },
+    { "condition": "Request a W0 lease for App.tsx and Sidebar.tsx before touching either", "met": true, "evidence": "LEASE-L02-SHELL-MOUNT-20260729 granted and read before the mount. App.tsx edited under lease; Sidebar.tsx not edited." },
+    { "condition": "Rewrite section 0 of personal-office-ia.md against the accepted contracts", "met": true, "evidence": "docs/product/personal-office-ia.md section 0 states the contract is ACCEPTED and FROZEN and lists what the shell consumes. The earlier draft's 'no contract yet' premise is recorded as void." },
+    { "condition": "Run the full UI verification set incl. CommandPalette focus-trap", "met": false, "evidence": "Implemented in code but NOT captured as evidence. See residualRisks R1. Not claimed as passing." }
   ],
   "securityGate": {
-    "decision": "PASS_WITH_REVIEW_CONDITION",
-    "controls": [
-      "No raw secret or SecretRef value is rendered by the shell.",
-      "Artifact local references are reduced to display-safe labels.",
-      "Messages are redacted before rendering.",
-      "No main-process, preload, database, contract, manifest, lockfile, or quarantine path changed.",
-      "Demo data is explicitly badged and off by default."
+    "surfaces": ["A — secrets and config", "D — data exposure and privacy"],
+    "risksChecked": [
+      "engine-supplied error text reaching a toast or screenshot with a token in it",
+      "Artifact.localRef putting an absolute local path on a primary surface",
+      "ApprovalActionBinding.input rendering a raw provider payload",
+      "hash-shaped receipt fields (planHash, actionHash, evidenceDigest) leaking onto glanceable surfaces",
+      "demo data being mistaken for real work and acted on",
+      "acting on stale state while offline or degraded"
     ],
-    "reviewCondition": "W0 must independently smoke the v2 shell at desktop and mobile sizes before acceptance."
+    "controls": [
+      "toSafeMessage() strips secret-shaped tokens (sk/pk/izzi/ghp/gho/xox prefixes), bearer/apikey/password patterns, and Windows plus POSIX paths, collapses to one line, caps at 160 chars",
+      "toFileLabel() reduces any artifact pointer to its basename; localRef is never rendered intact",
+      "binding.input is never rendered on any surface at any disclosure level",
+      "progressive disclosure contract: tokens, raw payloads, absolute paths, per-task agent assignment and customer PII are L3-at-most and never L1",
+      "demo mode is OFF by default and every demo snapshot carries isDemo, rendered as a visible Demo badge; WorkDataSource.isReal distinguishes engine from fake",
+      "offline and degraded disable write affordances with a stated reason rather than failing on click",
+      "unwired controls do not render at all: onDecide and onOpenWorkspace are optional, so no dead Approve button is shown"
+    ],
+    "residualRisk": "WorkRun.goal is operator-authored free text and is rendered at L1 by necessity, so a primary surface can contain whatever the operator typed, including customer names. This is inherent, not a defect. Mitigation is screenshot hygiene: capture only demo fixtures. Secondly, redaction is defence in depth on top of a producer promise the type system cannot enforce; if an upstream field embeds a secret in prose the regexes are heuristic, not proof.",
+    "secretScan": "0 hits across all 23 owned outputs for sk-/pk-/ghp_/gho_/xox/AKIA/PRIVATE KEY/Bearer patterns.",
+    "decision": "proceed — no secret, credential, token or absolute path is present in any owned output, and no new network-exposed or unauthenticated surface was created. The shell is renderer-only and adds no IPC."
   },
-  "outputHashes": [
-    {
-      "path": "apps/desktop/src/renderer/App.tsx",
-      "sha256": "8f07e76b5def4c1efde73a0cae8bab6dfa49a014ce23ca2c9fbb03240617eeb8"
-    },
-    {
-      "path": "apps/desktop/src/renderer/styles/personal-office.css",
-      "sha256": "6fadd0c8ad319073bede164d513c1de1ab768fec27f7fbb916f82f047546b3e1"
-    },
-    {
-      "path": "docs/product/personal-office-ia.md",
-      "sha256": "88e75f7ef85eda22c2727862b06301016dcc21238c9b9881490f239f6acf8136"
+  "verification": {
+    "toolchainNote": "Run in the Loop 02 worktree with an isolated pnpm store. .npmrc is git-tracked and needs NODE_AUTH_TOKEN, supplied as a dummy env var for local reads only; the file was not edited.",
+    "sourceStateWhenRun": "Build, tests, lint, typecheck and diff --check were executed at source commit 5512884. The only later commit, 04a2163, adds one markdown file and changes no compiled input, so those results carry forward. Tests and lint were additionally re-run after the IA doc was written and were unchanged.",
+    "commands": [
+      { "check": "renderer typecheck", "command": "tsc -p apps/desktop/tsconfig.json --noEmit", "result": "PASS", "detail": "EXIT=0, zero errors across all 21 source files including the App.tsx mount" },
+      { "check": "desktop unit and integration tests", "command": "vitest run (apps/desktop)", "result": "PASS", "detail": "74 test files, 946/946 tests passed, EXIT=0. Matches the Loop 01 acceptance baseline of 946/946 exactly." },
+      { "check": "BF-02 flake (customer-video-studio-service)", "command": "included in the full run", "result": "did not reproduce", "detail": "No timeout observed in either full run. Absence in a run is not proof of a fix; the flake stays on the register. No timeout was widened." },
+      { "check": "navigation-map regression", "command": "vitest navigationMap.test.ts", "result": "PASS", "detail": "Green after the App.tsx mount. The Page union, useState<Page>( and all five cross-page trigger strings are byte-identical to baseline; the mount is an added early return plus a defaulted parameter, so the text contract the test asserts is untouched." },
+      { "check": "lint gate", "command": "pnpm lint:ci  (eslint apps packages extensions --max-warnings 358)", "result": "PASS", "detail": "358 warnings, 0 errors, EXIT=0. Exactly at ceiling: zero new warnings. One warning I introduced (an unused LegacySurface import) was found by this gate and removed rather than absorbed by raising the ceiling." },
+      { "check": "production build", "command": "vite build (apps/desktop)", "result": "PASS", "detail": "EXIT=0, 1167 modules transformed, artifacts written to apps/desktop/dist/{main,renderer,shared}. personal-office.css is bundled into the 385.45 kB renderer stylesheet, which also proves the CSS import resolves." },
+      { "check": "whitespace and conflict markers", "command": "git diff --check 6063bc8..HEAD", "result": "PASS", "detail": "EXIT=0, zero output lines" },
+      { "check": "ownership audit", "command": "git diff --name-only 6063bc8..HEAD", "result": "PASS", "detail": "23 paths, every one inside the lease's exclusiveWritePaths. Forbidden-prefix filter returns zero." },
+      { "check": "secret-shaped literal scan", "command": "regex scan over the 23 owned outputs", "result": "PASS", "detail": "0 hits" },
+      { "check": "working tree clean at handoff", "command": "git status --porcelain --untracked-files=all", "result": "PASS", "detail": "Clean at 04a2163 before the phase-2 commit. Scratch files (.tc.exit, VERIFY-TC.txt) were deleted and appear in no commit." },
+      { "check": "responsive, keyboard, focus-trap, zoom 200%, reduced motion, 44px targets, five interaction states", "command": "not executed", "result": "NOT RUN", "detail": "See residualRisks R1. No pass is claimed and no screenshot exists." }
+    ]
+  },
+  "visualEvidence": {
+    "captured": false,
+    "statement": "No screenshot of the v2 shell exists. None is attached and none is claimed. Any screenshot referenced in earlier session narration showed the LEGACY shell and would only have evidenced the rollback path, not the new IA — it is deliberately excluded so it cannot be mistaken for v2 evidence.",
+    "whyNot": "Playwright is not a dependency of this repo and adding one needs the package-manifest lease under gate PQ-01, which Loop 02 does not hold. A driver was installed OUTSIDE the repo at C:\\Users\\NgNghia213\\po-evidence and a harness was written there, but the run did not complete inside this loop: the installed Playwright expects chromium build 1234 while the local cache holds 1208 through 1228, and resolving that was cut short when source was frozen. No package.json, pnpm-workspace.yaml or pnpm-lock.yaml was touched at any point.",
+    "harnessLeftOutsideRepo": "C:\\Users\\NgNghia213\\po-evidence\\capture.mjs",
+    "captureSeamsAlreadyBuiltIn": {
+      "note": "The shell was built so this capture needs no source change when a lease exists. Three injectable globals plus query equivalents drive it.",
+      "shellChoice": "window.__IZZI_SHELL__ = 'v2' | 'legacy'   (or ?shell=)",
+      "demoData": "window.__IZZI_SHELL_DEMO__ = true          (or ?demo=1)",
+      "forcedState": "window.__IZZI_SHELL_STATE__ = 'loading' | 'empty' | 'error' | 'offline' | 'degraded'   (or ?state=)"
     }
+  },
+  "outputs": [
+    "Five top-level routes and no more: Today (default landing), Workspaces, MyGraph, Market, Settings.",
+    "Exactly four workspace surfaces: Brief, Work, Deliverables, Approvals. Context, Apps, Brand, Knowledge, Agents/Skills, Policies and Runtime live in a setup drawer and are structurally incapable of becoming tabs.",
+    "Today renders three lanes off RunState with waiting_external in 'Waiting for me', plus a separate always-visible attention band so a failed run is never invisible.",
+    "Delegate composer on the landing route, so launch to delegated brief is two actions: type the goal, press Delegate.",
+    "Command palette on Ctrl/Cmd+K and '/' with an explicit focus trap, arrow/Home/End navigation, aria-activedescendant, and focus restored to the prior element on close.",
+    "Six presentation states resolved by one precedence function: loading > error > offline > degraded > empty > ready.",
+    "One adapter seam: WorkDataSource. W3 changes exactly one function, resolveDataSource(), and no component or view model moves.",
+    "Feature flag izzi.shell.personalOffice with in-place rollback to the untouched legacy sidebar shell, reachable from Settings, with no reload and no lost session.",
+    "Legacy catalogue of 18 surfaces: nothing deleted, nothing re-implemented. AI Marketing and Phong Marketing are catalogued inside one Marketing group instead of being flat peers, and task/agent/model are no longer primary navigation.",
+    "MyGraph is a route shell only; Loop 04 owns the graph internals and no graph styling was touched.",
+    "docs/product/personal-office-ia.md records the route map, component map, legacy catalogue, flag and rollback behaviour, and the responsive, accessibility and state matrices."
+  ],
+  "acceptanceCriteriaSelfAssessment": [
+    { "criterion": "launch to delegating a sample brief in at most two actions", "status": "met in shell structure, blocked end-to-end", "note": "Today is the default route and the composer is the first control. End-to-end delegation cannot complete until the workspace bootstrap question in CR-UX-07 is answered, and the shell refuses to fake a workspace to hide that." },
+    { "criterion": "top-level nav at most 5 items", "status": "met", "note": "TOP_LEVEL_ROUTES has exactly 5 frozen entries." },
+    { "criterion": "AI Marketing and Phong Marketing no longer appear as peers in the shell", "status": "met", "note": "Neither is top-level; both sit in one Marketing group in the Settings legacy catalogue with distinct descriptions." },
+    { "criterion": "task/agent/model are not primary navigation", "status": "met", "note": "All three are legacy catalogue entries only." },
+    { "criterion": "desktop and mobile Playwright screenshots saved", "status": "NOT MET", "note": "residualRisks R1. Honestly unmet rather than substituted with a legacy-shell screenshot." },
+    { "criterion": "keyboard smoke test passes", "status": "NOT VERIFIED", "note": "Implemented (focus trap, arrow keys, Escape, focus restore) but not executed. residualRisks R1." },
+    { "criterion": "accessibility smoke: landmarks, heading order, focus order, SR names, touch targets, 200% zoom", "status": "NOT VERIFIED", "note": "Implemented per the IA doc matrices; not executed. residualRisks R1." },
+    { "criterion": "empty/loading/error/offline/degraded have screenshot or test", "status": "NOT MET", "note": "Implemented and injectable via ?state=, but neither captured nor unit-tested. residualRisks R1 and R2." },
+    { "criterion": "build, relevant tests, lint pass", "status": "met", "note": "Build EXIT=0; 946/946 tests; lint 358 warnings 0 errors at ceiling; typecheck 0 errors." },
+    { "criterion": "visual review by design_reviewer, blocker/high findings fixed", "status": "NOT MET", "note": "No design_reviewer agent exists in this toolkit. No substitution was performed and none is claimed. residualRisks R3." }
   ],
   "residualRisks": [
-    "Loop 03 preload API is not integrated yet; Loop 02 deliberately uses a WorkDataSource seam and in-memory adapter.",
-    "CR-UX-02, CR-UX-03, CR-UX-04, CR-UX-05 and CR-UX-06 remain upstream contract or execution-plane requests.",
-    "W0 must capture and inspect v2 desktop/mobile screenshots before acceptance."
+    { "id": "R1", "severity": "high", "risk": "The entire responsive, keyboard, focus-trap, zoom, reduced-motion, touch-target and interaction-state matrix is implemented but unverified. Playwright cannot be added without the PQ-01 package-manifest lease. Four acceptance criteria are consequently unmet.", "owner": "W0 to grant the manifest lease or accept with a follow-up, then W2 to capture using the injectable seams already built in." },
+    { "id": "R2", "severity": "medium", "risk": "No unit tests were added for shell logic. The exhaustive RUN_STATE_LANE map, resolveStatus precedence, toSafeMessage redaction and filterCommands are all pure functions and cheaply testable, but currently rest only on the typechecker. Vitest needs no new dependency, so this is unfinished work rather than a blocked one.", "owner": "W2 next loop" },
+    { "id": "R3", "severity": "medium", "risk": "No independent design review was performed; the calm-professional, anti-slop direction is self-assessed only.", "owner": "W0 to route to the designer agent if a visual gate is required" },
+    { "id": "R4", "severity": "medium", "risk": "The shell is unwired to real work. resolveDataSource() returns an empty source by default, so a real launch shows an honest empty state and delegation is disabled with a stated reason. This is deliberate rather than a fake, but it means no end-to-end path is provable until W3 lands.", "owner": "W3 / Loop 03" },
+    { "id": "R5", "severity": "low", "risk": "Duplicate class-name aliases exist in the markup (po-btn with po-button, po-icon-btn with po-icon-button). Both are styled so there is no visual defect, but it is avoidable inconsistency. Not fixed here because source is frozen and the change would be cosmetic churn across committed files.", "owner": "W2 polish or sweeper" },
+    { "id": "R6", "severity": "low", "risk": "Renderer bundle is 1.03 MB and vite warns above 500 kB. Pre-existing and not introduced by this loop, but the shell adds to it. No code-splitting was attempted.", "owner": "sweeper" }
   ],
-  "skillAudit": {
-    "/search-first": "USED",
-    "/context-gatherer": "USED",
-    "/quick-spec": "USED",
-    "/frontend-patterns": "USED",
-    "/security-review": "USED",
-    "/verification-loop": "USED",
-    "/understand-codebase": "USED",
-    "/backend-patterns": "READ_ONLY_DEPENDENCY_SEAM",
-    "/deployment-patterns": "N/A",
-    "Design": "USED",
-    "/gpt-taste": "USED",
-    "/design-taste-frontend": "USED",
-    "/stitch-design-taste": "USED"
+  "nextConsumers": [
+    { "loop": "03", "window": "W3", "needs": "Implement WorkDataSource against the real engine and change resolveDataSource() only. Answer CR-UX-06 (create-run intent) and CR-UX-07 (workspace bootstrap). Loop 02 holds App.tsx and Sidebar.tsx first under section 8.1, so W3 must not take them." },
+    { "loop": "04", "window": "W4", "needs": "MyGraphRoute is a route shell whose internals are yours. Do not restyle the graph from the shell side. vault-ops, vault-types and wikilink remain outside Loop 02 per PO-VAULT-OWNERSHIP." },
+    { "loop": "07", "window": "W1", "needs": "CR-UX-02, CR-UX-03 and CR-UX-05 are contract asks against entities.ts, each with the Loop 02 workaround recorded so nothing is silently blocked." }
+  ],
+  "gitnexusEvidence": {
+    "available": false,
+    "limitation": "GitNexus in this environment is a CLI at .gitnexus/run.cjs in the quarantined source repo, not an MCP tool surface available to this window, and the Loop 02 worktree carries no .codegraph or .gitnexus index. Impact analysis was therefore done with targeted git, ripgrep and direct file reads. Recorded as a limitation rather than claimed as an impact run."
   },
-  "agentAudit": {
-    "Socrates": "Used for independent acceptance challenge and rollback/mount verification.",
-    "orchestrator": "Used for lease, dependency and handoff sequencing.",
-    "builder": "Used for bounded implementation and verification under the Loop 02 lease."
-  },
-  "blockers": [],
-  "nextAction": "W0 independently reviews commit range 6063bc8..04a2163, repeats v2 desktop/mobile smoke, integrates by exact commits if clean, then creates acceptance/loop-02.json and updates the ledger/lease registry."
+  "skillAudit": [
+    { "skill": "/search-first", "status": "USED", "effect": "Searched for existing shell, nav, store and icon patterns before writing anything. Found and reused components/AppIcons.tsx (only 10 genuinely missing glyphs were added), the existing :root token block, and the per-page CSS import convention. Also established by search that docs/product/, producer-environment.json and Playwright genuinely did not exist rather than assuming either way." },
+    { "skill": "/context-gatherer", "status": "USED", "effect": "Assembled the gate state each turn: worktree, branch, HEAD, ancestry, lease terms, acceptance record, salvage conditions. This is what caught that Loop 01 was unaccepted in earlier turns, that my own 663de47 commit message overstated the mount, and that the earlier evidence directory contained no screenshots." },
+    { "skill": "/understand-codebase", "status": "USED", "effect": "Mapped App.tsx's useState<Page> routing, the navigationMap.test.ts text contract, the agentWorkspace store shape and the token system. Directly determined the mount design: an added early return plus a defaulted renderPage parameter, which keeps the asserted text contract byte-identical." },
+    { "skill": "/quick-spec", "status": "USED", "effect": "Produced the route map, component map, interaction-state checklist and progressive disclosure contract before implementation, per card section 11, and they became docs/product/personal-office-ia.md." },
+    { "skill": "/frontend-patterns", "status": "USED", "effect": "Drove component boundaries, tab semantics with roving tabindex, the focus trap and focus restore in the palette, sheet and drawer, live-region politeness levels, the single state-precedence resolver, and deriving run progress from steps rather than denormalising it." },
+    { "skill": "/security-review", "status": "USED", "effect": "Produced the securityGate block. Concretely changed the code: toSafeMessage and toFileLabel exist because of it, binding.input is never rendered, hashes are L3-only, demo defaults to off so an empty install cannot show fabricated work, and unwired approve buttons do not render at all." },
+    { "skill": "/verification-loop", "status": "USED (partial)", "effect": "Ran typecheck, full tests, lint:ci, build, diff --check, ownership audit and secret scan; all pass. It also caught the one new lint warning, which I removed rather than raising the ceiling. Partial because the UI and accessibility half could not run without the PQ-01 lease; that is recorded as unmet, not as passing." },
+    { "skill": "Design (#design)", "status": "USED (audit level)", "effect": "Set the calm-professional cockpit direction and the anti-slop constraints actually honoured in the CSS: no gradient fills on shell surfaces, no hero, no decorative blobs, no card-inside-card, restrained token subset, hairline borders, tabular numerals for counts." },
+    { "skill": "/stitch-design-taste", "status": "USED (audit level)", "effect": "Kept every value token-driven against the existing :root block rather than introducing a parallel palette, and added no new :root override block." },
+    { "skill": "/gpt-taste", "status": "N/A", "reason": "Landing-page and portfolio oriented: AIDA structure, hero sections, scroll hijacking and GSAP scroll-triggers. Applying any of it to a dense single-operator desktop cockpit would actively damage the product. Read for anti-slop cues only, not applied." },
+    { "skill": "/design-taste-frontend", "status": "N/A", "reason": "Same landing and portfolio bias. Its audit-first instinct informed reading the existing token system before styling, but its page-structure prescriptions do not apply to an app shell." },
+    { "skill": "/backend-patterns", "status": "N/A", "reason": "No server, API or data-layer work. The adapter is a read-only projection over contract types and adds no IPC, no persistence and no endpoint. main/** was prohibited." },
+    { "skill": "/deployment-patterns", "status": "N/A", "reason": "No CI, CD, container or rollout work in this loop. Rollback here is a client-side feature flag, not a deployment strategy, and no deploy or publish was performed." }
+  ],
+  "agentConclusions": {
+    "socrates": "Gate verified before writing: correct worktree, canonical ancestry, Loop 01 ACCEPTED, lease read, forbidden paths enumerated. Two of my own quarantine-draft fabrications were killed against the real contract rather than ported: REAL_WORKSPACE_ID = 'personal' and the sessionId === runId task heuristic. Two producer errors are recorded rather than hidden: the inaccurate 663de47 commit message, and the fact that 663de47 could not have built because it imported a CSS file that did not yet exist. Four acceptance criteria are declared unmet rather than papered over with legacy screenshots.",
+    "orchestrator": "Sequenced as gate, then foundation, then chrome, then surfaces, then mount, then verify, then two-phase handoff. The mount was correctly treated as the acceptance blocker once W0 flagged it. Remaining work is R1 capture (needs a W0 lease) and R2 unit tests (needs no lease and is simply unfinished).",
+    "builder": "21 source files plus one stylesheet plus one doc, all inside lease. Typecheck, tests, lint, build and diff all green. Sidebar.tsx deliberately untouched. No contract file edited and no domain type redefined."
+  }
 }

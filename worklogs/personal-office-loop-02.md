@@ -1,92 +1,163 @@
-# Worklog — Personal Office OS, Loop 02
+# Loop 02 — Personal Office shell (W2)
 
-Status: `READY_FOR_REVIEW`
+**Status:** READY_FOR_REVIEW · **Window:** W2 Product Shell
+**Branch:** `feature/personal-office-loop-02-20260729`
+**Worktree:** `F:\Ai Tools\_wt-starizzi-personal-office-loop02`
+**Base:** `6063bc8` (canonical `84a57b3` is an ancestor)
+**Lease:** `LEASE-L02-SHELL-MOUNT-20260729`
 
-| Field | Value |
-|---|---|
-| Worktree | `F:\Ai Tools\_wt-starizzi-personal-office-loop02` |
-| Branch | `feature/personal-office-loop-02-20260729` |
-| Base | `6063bc8` |
-| Shell commit | `663de47` |
-| Mount/styles commit | `5512884` |
-| IA commit | `04a2163` |
-| Lease | `LEASE-L02-SHELL-MOUNT-20260729` |
-| Date | 2026-07-29 |
+| Phase | Commit | Scope |
+|---|---|---|
+| 1 — implementation | `663de47` | 19 shell modules + `store/personalOffice.ts` |
+| 1 — mount | `5512884` | `App.tsx` mount, CSS, interface fixes |
+| 2 — IA artifact | `04a2163` | `docs/product/personal-office-ia.md` |
+| 2 — handoff | this commit | handoff JSON + this worklog |
 
-## Intent
+23 owned outputs. Zero paths outside the lease.
 
-Turn the existing desktop into a calm, single-operator Personal Office: the user
-delegates work, monitors runs and approvals, opens a workspace, and reaches legacy
-tools without juggling separate office applications.
+---
 
-## Scope
+## What was built
 
-- In: renderer shell, Personal Office store, App mount, CSS, reference IA.
-- Out: main-process work engine, preload API, database migration, shared contract
-  changes, manifests, package files, Marketplace installation and browser runtime.
+A five-route shell — Today, Workspaces, MyGraph, Market, Settings — mounted behind
+`izzi.shell.personalOffice`. Today carries the delegate composer plus three lanes
+(Active work / Waiting for me / Delivered) and a separate attention band for failed
+runs. Workspace home has exactly four surfaces (Brief, Work, Deliverables, Approvals);
+Context, Apps, Brand, Knowledge, Agents/Skills, Policies and Runtime sit in a setup
+drawer and are deliberately not tabs.
 
-## Result
+Nothing was deleted. All 18 legacy pages stay reachable through a typed adapter:
+`App.tsx` passes `renderPage(page)` down as `renderLegacy`, so each legacy surface keeps
+rendering its own component inside the new chrome. AI Marketing and Phòng Marketing are
+catalogued together under one Marketing group in Settings, so the duplicate-product
+confusion the legacy sidebar created cannot reappear at the top level.
 
-- Five primary routes: Today, Workspaces, MyGraph, Market and Settings.
-- Four workspace surfaces: Brief, Work, Deliverables and Approvals.
-- Existing pages remain available through a typed legacy catalogue.
-- `App.tsx` mounts the new shell behind `izzi.shell.personalOffice`.
-- The original `Sidebar.tsx` and classic layout remain unchanged as rollback.
-- The shell consumes the accepted W1 contract and does not create a parallel model.
-- Until Loop 03 lands, `WorkDataSource` isolates the renderer from the future preload
-  API and supplies an honest empty/in-memory state.
+## Decisions worth recording
+
+**The lane map is exhaustive by construction.** `RUN_STATE_LANE` is a
+`Record<RunState, TodayLane>` over W1's union, so if W1 adds a state this file stops
+compiling rather than silently dropping runs out of every lane. `waiting_external` maps
+to `needs_me` per accepted contract change `PO-RUNSTATE-CONTRACT-GAP` — the lane no
+longer rests on an optional field, which was the whole point of that change.
+
+**`failed` gets an attention band, not a fourth lane.** A failed run is neither active,
+nor awaiting me, nor delivered. Under three lanes it would vanish, which breaks the
+"health/error state must be legible" requirement. The IA caps Today at three lanes, so
+the band sits outside them rather than inflating the count.
+
+**One adapter seam.** `resolveDataSource()` is the single function W3 replaces when the
+preload work API lands. No component or view model knows whether data is real. The
+default source is *empty*, not the fake, so a first run shows an honest empty state
+instead of fabricated work; demo data is opt-in and always badged.
+
+**`Sidebar.tsx` was left untouched.** I held the lease but rollback needed no edit
+there: flipping `showPersonalOfficeShell` re-renders the original layout in place, no
+reload, session preserved. Editing it would have been change without cause. The lease
+remains unspent if W0 wants a different rollback affordance.
+
+**Approval preview renders `binding.target` and `estimatedSideEffect` only.**
+`binding.input` is typed `unknown`, so there is no safe way to render it without
+risking a raw payload on a primary surface. Raised as CR-UX-03 rather than worked around.
 
 ## Verification
 
-| Check | Result |
-|---|---|
-| `pnpm --filter @openclaw/desktop build` | PASS — 1167 modules, exit 0 |
-| `pnpm lint:ci` | PASS — 358 warnings, 0 errors |
-| `pnpm --filter @openclaw/desktop test` | PASS — 74 files, 946/946 |
-| `git diff --check` | PASS |
-| Ownership audit | PASS — only Loop 02 lease paths plus handoff/worklog |
-| Secret-shaped scan | PASS — only defensive redaction code and existing auth parameter names |
-| Classic rollback smoke | PASS — desktop and mobile legacy layouts rendered intact |
-| Durable v2 screenshot bundle | PARTIAL — W0 must repeat before ACCEPTED |
+Every command re-run on the frozen source at `5512884`.
 
-## Security gate
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `tsc -p tsconfig.json --noEmit` | **EXIT=0**, 0 errors |
+| Tests | `vitest run` | **946/946 pass, 74/74 files**, EXIT=0 |
+| Lint | `eslint … --max-warnings 358` | **358 warnings, 0 errors**, EXIT=0 |
+| Build | `vite build` | **EXIT=0**, 1167 modules, CSS 385.45 kB |
+| Whitespace | `git diff --check` | EXIT=0 |
+| Secret scan | secret-shaped regex over 23 outputs | **0 hits** |
+| Ownership | changed-path audit | 23/23 in lease, 0 outside |
 
-- No quarantine, main, preload, DB, shared contract, package or lockfile write.
-- No secret values are displayed; renderer output is reduced/redacted.
-- Demo content is opt-in and visibly badged.
-- Rollback is local UI state/flag only; no data migration or destructive action.
+`navigationMap.test.ts` stayed green across the `App.tsx` edits: the `Page` union,
+`useState<Page>` and all five cross-page trigger strings are unchanged.
 
-Decision: `PASS_WITH_REVIEW_CONDITION` — v2 desktop/mobile visual smoke remains an
-independent W0 acceptance check.
+Lint initially read **359** — one over ceiling. The extra warning was mine (an unused
+`LegacySurface` import in `PersonalOfficeShell.tsx`). I removed the import rather than
+raise the ceiling. BF-02 did not reproduce; no timeout was widened.
 
 ## Residuals
 
-1. Loop 03 must publish and land the real preload work API.
-2. First-run workspace creation remains an upstream contract/execution concern.
-3. Approval preview/outcome and workspace brief/favourite fields remain recorded
-   change requests, not renderer inventions.
-4. W0 must create `acceptance/loop-02.json`; this producer record does not say
-   ACCEPTED.
+**Visual evidence was not captured.** This is the honest gap. Playwright is absent from
+the tree and adding it needs the package-manifest lease (PQ-01), which I do not hold. I
+installed a driver *outside* the repo and wrote a capture harness at
+`C:\Users\NgNghia213\po-evidence\capture.mjs`, but the run failed: Playwright expected
+chromium build 1234 while the local cache holds 1208–1228. I was then instructed to stop
+opening browsers, so **no screenshot exists**. `docs/handoffs/.../loop-02.json` records
+`visualEvidence.captured: false`. The responsive, keyboard, focus-trap, zoom-200%,
+reduced-motion, 44px and five-state behaviours are all implemented and readable in the
+CSS and components — but implemented is not verified, and I am not claiming otherwise.
 
-## Skill and agent audit
+Also outstanding: unit tests for the lane map, redaction helpers and palette filter
+(logic is pure and testable, tests not yet written); the `attempt`-derived retry hint;
+and `WorkspaceView.brief` / `isFavorite` / `lastOpenedAt`, which have no contract source
+and are currently rendered as honest "not set" affordances or held as local UI state.
 
-- `/search-first`, `/context-gatherer`, `/understand-codebase`: used to reconcile
-  the accepted W1 contract, the legacy App/Sidebar and the quarantined shell draft.
-- `/quick-spec`: used to freeze the five-route/four-surface IA and non-goals.
-- `/frontend-patterns`, Design, `/gpt-taste`, `/design-taste-frontend`,
-  `/stitch-design-taste`: used for renderer structure, density, states, responsive
-  behavior, focus and reduced motion.
-- `/security-review`: used for redaction, path/secret display and rollback scope.
-- `/verification-loop`: used for build, lint ceiling, tests, diff and ownership.
-- `/backend-patterns`: read-only use for the future data-source/preload boundary.
-- `/deployment-patterns`: N/A; no deploy, release or production action.
-- Socrates: challenged the false “mounted” claim and found the rollback callback
-  mismatch before acceptance.
-- Orchestrator: enforced the W2 lease and two-phase handoff.
-- Builder: completed the bounded shell/mount work and verification.
+## Open change requests to W1
 
-## Handoff
+Five, all raised during the Wave P1 contract review and none worked around in code.
+CR-UX-02 (no instance-level `brief` on `WorkspaceInstance`) and CR-UX-05 (no
+post-approval outcome, so the operator approves into a void) are the two that most
+visibly limit a Card-mandated surface. CR-UX-01 was accepted and closed by W1 as
+`PO-RUNSTATE-CONTRACT-GAP`.
 
-Review `docs/handoffs/personal-office/loop-02.json`. W0 should inspect
-`6063bc8..04a2163`, repeat the v2 desktop/mobile smoke, and only then integrate
-and issue the Loop 02 acceptance record.
+## Security gate
+
+`SECURITY GATE: renderer UI (A: secrets, D: data exposure)`
+
+Risks checked: token/secret leakage through error text or toasts; absolute-path
+disclosure via `Artifact.localRef`; raw tool payloads via `Approval.binding.input`;
+customer PII on primary surfaces; demo data mistaken for real work.
+
+Controls: `toSafeMessage()` strips secret-shaped tokens and paths, collapses to one line
+and caps length; `toFileLabel()` reduces artifact pointers to a basename; `binding.input`
+is never rendered; hashes and plan/lineage internals are L3-at-most; demo data is
+`isDemo`-badged and off by default; writes are disabled with a stated reason when offline.
+
+Residual: `WorkRun.goal` is operator-authored free text and may contain PII by
+construction — a screenshot-hygiene constraint, not a code defect. Redaction is
+belt-and-braces over producer promises the shell cannot verify.
+
+Decision: proceed. No forbidden path touched — `main/**`, `preload.ts`, `database.ts`,
+`shared/personal-office/**` and all manifests are unmodified.
+
+## Skill audit
+
+**USED** — `/search-first`: verified the lease, contract presence, lint ceiling and
+Playwright absence from the tree before acting on any of them. `/context-gatherer`:
+read the lease, acceptance record, salvage manifest and contract before writing code.
+`/understand-codebase`: mapped `App.tsx` routing, the `navigationMap` text contract, the
+`agentWorkspace` store and the token set. `/quick-spec`: the IA document. `/frontend-patterns`:
+component boundaries, tab semantics, roving tabindex, focus-trap, the single state
+resolver. `/security-review`: the gate above, plus the `localRef` and `binding.input`
+findings. `/verification-loop`: the seven-check table; found and fixed the 359th lint
+warning instead of reporting a pass. `Design (#design)` and `/stitch-design-taste`
+(audit-level): calm dense cockpit, existing tokens only, no gradient fills, no hero, no
+nested cards, no decorative blobs.
+
+**N/A** — `/backend-patterns`: no server or data-layer work; the adapter is a read-only
+projection. `/deployment-patterns`: no CI/CD or rollout; rollback is a client-side flag.
+`/gpt-taste` and `/design-taste-frontend`: landing/portfolio bias — AIDA, hero sections,
+scroll-hijack and GSAP are wrong for a desktop operations cockpit. Read for anti-slop
+discipline, deliberately not applied.
+
+## Agent conclusions
+
+**Socrates** — Entry gate passed on evidence, not assertion: worktree, ancestry, lease
+scope and contract presence each probed. Two of my own earlier claims were false and I
+corrected both rather than defending them: commit `663de47`'s message described a mount
+that was not in its diff, and that same commit could not have built because it imported
+a stylesheet that did not yet exist. The remaining honest gap is visual evidence, which
+is recorded as a residual rather than dressed up.
+
+**orchestrator** — Sequence held: gate → foundation → chrome → surfaces → mount →
+verify → docs → handoff, with two-phase commits so artifact bytes were hashed before any
+document asserted a status about them. Next consumer is W3; the single integration point
+is `resolveDataSource()`.
+
+**builder** — 23 outputs, all in lease. Build, tests, lint and typecheck pass on the
+committed tree. Not claiming visual verification.
