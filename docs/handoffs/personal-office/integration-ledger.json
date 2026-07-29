@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:04:28Z",
+  "updatedAt": "2026-07-29T12:20:13Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -390,19 +390,25 @@
       "loop": "08",
       "title": "Workspace blueprint and provisioning",
       "window": "W4",
-      "status": "READY_FOR_REVIEW",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-08-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop08",
-      "commitSha": "5621d34fc7995b323f53e9292559f6569320d320",
+      "commitSha": "c192c39",
       "handoff": "docs/handoffs/personal-office/loop-08.json",
       "dependsOn": [
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Producer corrected all four prior Socrates findings and resubmitted READY_FOR_REVIEW; independent security re-review is active.",
-      "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+      "dependencyStatus": "SATISFIED — Loops 01, 03, 04 and 08 are ACCEPTED.",
+      "lease": null,
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-08.json",
+      "acceptedProducerImplementation": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+      "acceptedProducerHandoff": "fb497ffdb291e89a8461ed74a9413e191667c5d3",
+      "integrationImplementationCommit": "8078eb7",
+      "integrationHandoffCommit": "c192c39",
+      "verificationSummary": "Independent security PASS after four blocking corrections; targeted 27/27 and full desktop 1173/1173 tests PASS; main TypeScript, production build and lint ceiling PASS; 12/12 canonical Git-blob hashes, exact ownership, prohibited-path, scope, secret and plan-only audits PASS.",
       "reviewGate": {
-        "status": "RE_REVIEW_PENDING",
+        "status": "PASS",
         "reviewedAt": "2026-07-29T12:01:24Z",
         "reviewedCommit": "fd35f97049f4c64f9064994a78fef3632561d29c",
         "correctedImplementationCommit": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
@@ -413,7 +419,7 @@
           "Semantic-version validation accepts leading-zero core versions and empty prerelease identifiers.",
           "Credential-shaped identifiers such as AWS access-key forms are not rejected."
         ],
-        "nextAction": "Independent security re-review must return PASS before any exact-path integration."
+        "nextAction": "Closed by acceptance/loop-08.json."
       }
     },
     {
@@ -695,6 +701,11 @@
       "at": "2026-07-29T12:04:28Z",
       "by": "W0",
       "action": "Loop 08 resubmitted READY_FOR_REVIEW at 5621d34 after correction commit 67be7fe. Producer evidence reports 27/27 targeted tests, strict TypeScript, exact ownership, prohibited-path, secret, output-hash and two-phase checks PASS. Independent security re-review is active; no integration or acceptance claim has been made."
+    },
+    {
+      "at": "2026-07-29T12:20:13Z",
+      "by": "W0",
+      "action": "Exact-path integrated and ACCEPTED Loop 08. Implementation 8078eb7 contains exactly 12 leased blueprint/contract paths; final handoff c192c39 contains only loop-08.json and the worklog. Independent security review PASS after four trust-boundary corrections. Integration verification: targeted 27/27, full desktop 1173/1173, main TypeScript, production build, lint 298 warnings/0 errors, 12/12 canonical Git-blob hashes, ownership, prohibited paths, scope, secrets and plan-only boundaries PASS. Revoked LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 and opened one producer slot for Loop 10."
     }
   ],
   "completedByW0": [
