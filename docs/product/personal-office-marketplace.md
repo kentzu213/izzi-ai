@@ -1,6 +1,6 @@
 # Personal Office marketplace and install planning
 
-Status: Loop 09 implementation artifact
+Status: Loop 15 host-operation boundary
 Catalog schema: `1`
 Catalog version: `1.0.0`
 Install-plan schema: `1`
@@ -9,13 +9,16 @@ Capability registry dependency: Loop 07, schema `1`, registry `1.1.0`
 
 ## Purpose
 
-The Personal Office marketplace is a trust review surface, not an installer.
-It lets an operator inspect a package's stable identity, compatibility,
-permissions, trust zone, data classifications and side effects before creating
-a deterministic install plan.
+The Personal Office marketplace is a trust review surface backed by a
+main-process operation boundary. It lets an operator inspect a package's stable
+identity, compatibility, permissions, trust zone, data classifications and side
+effects before requesting a host-controlled operation.
 
-This loop does not download package bytes, execute commands, grant permission,
-activate a runtime, mutate an account or provision a workspace.
+Loop 15 defines and tests the ordered verification, approval, grant,
+provisioning and installation ports. Its production catalog and effect ports
+remain deliberately unavailable, so the accepted implementation does not
+download package bytes, execute commands, grant permission, activate a runtime,
+mutate an account or provision a workspace.
 
 ## Security gate
 
@@ -121,14 +124,14 @@ Rules:
 - canceling review creates no plan or side effect;
 - a planned receipt says exactly what did not happen.
 
-## Demo behavior in the current desktop
+## Superseded Loop 09 demo behavior
 
-The current renderer has no leased Electron bridge that can transfer a
-host-validated Marketplace catalog into the page. Marketplace API health is
-therefore read-only context only.
+Loop 09 used a visibly labelled, non-confirmable demo catalog because no leased
+Electron bridge existed. Loop 15 removes that fallback from the production
+Marketplace route. Demo helpers remain only for isolated contract and component
+tests.
 
-`loadDefaultMarketplaceCatalog` always presents a visibly labelled,
-non-confirmable demo catalog:
+The superseded behavior presented:
 
 - `Demo catalog online` when Marketplace API health responds;
 - `Demo catalog offline` when it does not;
@@ -141,17 +144,18 @@ non-confirmable demo catalog:
   make them trusted;
 - no API response is treated as capability authority.
 
-This is intentional. A reachable server cannot self-assert that its metadata
-was audited by the desktop host.
+The security rationale remains: a reachable server cannot self-assert that its
+metadata was audited by the desktop host. Production now fails closed when the
+host catalog authority is unavailable.
 
 ## Install-plan contract
 
-Confirmation accepts:
+The main process creates a plan from:
 
 - one host-verified compatible package that is not already installed;
-- exact `tenantId`;
-- exact `userId`;
-- exact `workspaceInstanceId`;
+- exact `tenantId` derived from the authenticated reviewer authority;
+- exact opaque `userId` derived in main;
+- the canonical personal `workspaceInstanceId`;
 - an explicit UTC plan timestamp.
 
 Wildcards, empty scope, unsafe ids and credential-shaped scope values are
@@ -208,9 +212,9 @@ The renderer provides:
 - stable selected-package detail;
 - incompatible, installed and verification badges;
 - capability-level permission review;
-- a modal exact-scope form with focus restoration, keyboard containment and
+- a modal permission review with focus restoration, keyboard containment and
   Escape cancellation;
-- canceled and plan-only receipts;
+- canceled, plan-only and staged operation receipts;
 - responsive two-pane desktop layout and single-column/mobile sheet layout;
 - reduced-motion and visible-focus support.
 
@@ -239,10 +243,11 @@ No catalog or plan is returned for:
 
 ## Next seam request
 
-A later owner must request an exact W0 lease for the Electron main/preload/index
-seams before connecting this page to live data.
+A later owner must request an exact W0 lease before registering production
+catalog, package-verification, approval, exact-grant, provisioning or installer
+adapters.
 
-That bridge must:
+Those adapters must:
 
 1. fetch or read public remote/cached metadata;
 2. build or load the complete Loop 07 capability registry in the main process;
@@ -250,10 +255,28 @@ That bridge must:
 4. project the catalog with
    `buildMarketplaceCatalogFromCapabilityRegistry`;
 5. expose only the validated catalog to the renderer;
-6. keep any download, install, grant, approval and runtime activation operation
-   separate from this plan-only call.
+6. consume an unchanged main-created plan;
+7. bind package bytes and publisher signature evidence to Work approval;
+8. resolve every exact grant and workspace scope before any later effect;
+9. report every completed, pending, blocked or failed stage truthfully.
 
-Installer execution remains future work. It must consume an unchanged plan,
-resolve accepted exact-scope grants, route side effects through Loop 03
-approvals, verify package bytes and publisher signatures, and report each
-effect truthfully. A plan receipt is never evidence that installation happened.
+A plan, approval or provisioned workspace is never evidence that installation
+happened.
+
+## Loop 15 operation boundary
+
+Marketplace data is now requested from the desktop host through an authenticated
+Personal Office bridge. The renderer does not create identity scope, load demo
+records, or call the legacy extension installer.
+
+The host re-derives every plan from the audited catalog and reports the operation
+as stage receipts:
+
+`plan revalidation → package/signature evidence → Work approval → exact grants → workspace provisioning → package installation`
+
+An approval, plan, provisioned workspace or receipt by itself is not installation
+evidence. If a later authority is unavailable, earlier stages remain visible and
+the receipt is `blocked` or `failed`; no success is fabricated. In the current
+build the production catalog/effect ports remain unavailable until their
+subsequent authority loops are accepted, so Marketplace may show a truthful
+catalog-unavailable state instead of demo packages.

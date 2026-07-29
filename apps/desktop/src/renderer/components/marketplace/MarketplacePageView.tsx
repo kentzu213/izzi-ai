@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import {
   canCreateMarketplaceInstallPlan,
   type MarketplaceCatalog,
+  type MarketplaceInstallOperationReceipt,
   type MarketplaceInstallPlan,
-  type MarketplaceInstallScope,
   type MarketplacePackage,
 } from '../../../shared/marketplace';
 import {
@@ -29,18 +29,19 @@ export interface MarketplacePageViewProps {
   readonly category: string;
   readonly selectedPackageKey: string | null;
   readonly reviewState: MarketplaceReviewState;
-  readonly scope: MarketplaceInstallScope;
   readonly scopeError: string | null;
   readonly plan: MarketplaceInstallPlan | null;
+  readonly operationReceipt: MarketplaceInstallOperationReceipt | null;
   readonly errorMessage: string | null;
   readonly onRetry: () => void;
   readonly onQueryChange: (query: string) => void;
   readonly onCategoryChange: (category: string) => void;
   readonly onSelectPackage: (packageKey: string) => void;
   readonly onOpenReview: (packageKey: string) => void;
-  readonly onScopeChange: (field: keyof MarketplaceInstallScope, value: string) => void;
   readonly onCancelReview: () => void;
   readonly onConfirmPlan: () => void;
+  readonly onRequestInstall: () => void;
+  readonly onResumeInstall: () => void;
   readonly onClosePlan: () => void;
 }
 
@@ -324,16 +325,12 @@ function MarketplacePackageDetail({
 
 export function MarketplaceReviewDialog({
   packageRecord,
-  scope,
   scopeError,
-  onScopeChange,
   onCancel,
   onConfirm,
 }: {
   readonly packageRecord: MarketplacePackage;
-  readonly scope: MarketplaceInstallScope;
   readonly scopeError: string | null;
-  readonly onScopeChange: (field: keyof MarketplaceInstallScope, value: string) => void;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
@@ -410,45 +407,11 @@ export function MarketplaceReviewDialog({
         </div>
 
         <p id="marketplace-review-dialog-description" className="po-marketplace-dialog__lede">
-          Enter exact identity scope for the proposed plan. No grant or account
-          change is made by this confirmation.
+          The desktop host derives the authenticated identity and canonical personal
+          workspace. No renderer-supplied scope, grant or account change is accepted.
         </p>
 
         <CapabilityReview packageRecord={packageRecord} />
-
-        <fieldset className="po-marketplace-scope">
-          <legend>Exact scope</legend>
-          <label>
-            <span>Tenant id</span>
-            <input
-              value={scope.tenantId}
-              onChange={(event) => onScopeChange('tenantId', event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="tenant:primary"
-            />
-          </label>
-          <label>
-            <span>User id</span>
-            <input
-              value={scope.userId}
-              onChange={(event) => onScopeChange('userId', event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="user:owner"
-            />
-          </label>
-          <label>
-            <span>Workspace instance id</span>
-            <input
-              value={scope.workspaceInstanceId}
-              onChange={(event) => onScopeChange('workspaceInstanceId', event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="workspace:personal-office"
-            />
-          </label>
-        </fieldset>
 
         {scopeError && (
           <p className="po-marketplace-form-error" role="alert">
@@ -480,19 +443,28 @@ export function MarketplaceReviewDialog({
 
 function MarketplacePlanReceipt({
   plan,
+  operationReceipt,
+  onRequestInstall,
+  onResumeInstall,
   onClose,
 }: {
   readonly plan: MarketplaceInstallPlan;
+  readonly operationReceipt: MarketplaceInstallOperationReceipt | null;
+  readonly onRequestInstall: () => void;
+  readonly onResumeInstall: () => void;
   readonly onClose: () => void;
 }) {
+  const awaitingApproval = operationReceipt?.status === 'awaiting_approval';
+  const completed = operationReceipt?.status === 'completed';
   return (
     <section className="po-marketplace-receipt" role="status" aria-live="polite">
       <PlanningIcon className="po-marketplace-receipt__icon" />
       <div>
-        <h2>Install plan created</h2>
+        <h2>{completed ? 'Marketplace operation completed' : 'Install plan created'}</h2>
         <p>
-          No download, execution, permission grant, activation, account mutation,
-          or provisioning occurred.
+          {completed
+            ? 'The receipt below records the exact package and workspace outcome.'
+            : 'A plan is not installation evidence. The host must verify bytes, approval, grants and workspace before any effect.'}
         </p>
         <dl>
           <div>
@@ -512,10 +484,40 @@ function MarketplacePlanReceipt({
             <dd className="po-marketplace-mono">{plan.effect}</dd>
           </div>
         </dl>
+        {operationReceipt && (
+          <ol className="po-marketplace-operation-stages">
+            {operationReceipt.stages.map((item) => (
+              <li key={`${item.stage}:${item.code}`}>
+                <span>{humanize(item.stage)}</span>
+                <strong>{item.code}</strong>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
-      <button type="button" className="po-marketplace-button" onClick={onClose}>
-        Close receipt
-      </button>
+      <div className="po-marketplace-dialog__actions">
+        {!operationReceipt && (
+          <button
+            type="button"
+            className="po-marketplace-button po-marketplace-button--primary"
+            onClick={onRequestInstall}
+          >
+            Request host installation
+          </button>
+        )}
+        {awaitingApproval && (
+          <button
+            type="button"
+            className="po-marketplace-button po-marketplace-button--primary"
+            onClick={onResumeInstall}
+          >
+            Check approval and continue
+          </button>
+        )}
+        <button type="button" className="po-marketplace-button" onClick={onClose}>
+          Close receipt
+        </button>
+      </div>
     </section>
   );
 }
@@ -608,7 +610,13 @@ export function MarketplacePageView(props: MarketplacePageViewProps) {
           )}
 
           {props.plan && props.reviewState === 'planned' && (
-            <MarketplacePlanReceipt plan={props.plan} onClose={props.onClosePlan} />
+            <MarketplacePlanReceipt
+              plan={props.plan}
+              operationReceipt={props.operationReceipt}
+              onRequestInstall={props.onRequestInstall}
+              onResumeInstall={props.onResumeInstall}
+              onClose={props.onClosePlan}
+            />
           )}
 
           <section className="po-marketplace-controls" aria-label="Catalog filters">
@@ -689,9 +697,7 @@ export function MarketplacePageView(props: MarketplacePageViewProps) {
       {props.reviewState === 'reviewing' && selectedPackage && (
         <MarketplaceReviewDialog
           packageRecord={selectedPackage}
-          scope={props.scope}
           scopeError={props.scopeError}
-          onScopeChange={props.onScopeChange}
           onCancel={props.onCancelReview}
           onConfirm={props.onConfirmPlan}
         />

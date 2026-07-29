@@ -92,22 +92,19 @@ function props(
     category: 'all',
     selectedPackageKey: catalog.packages[0].identity.packageKey,
     reviewState: 'closed',
-    scope: {
-      tenantId: '',
-      userId: '',
-      workspaceInstanceId: '',
-    },
     scopeError: null,
     plan: null,
+    operationReceipt: null,
     errorMessage: null,
     onRetry: noOp,
     onQueryChange: noOp,
     onCategoryChange: noOp,
     onSelectPackage: noOp,
     onOpenReview: noOp,
-    onScopeChange: noOp,
     onCancelReview: noOp,
     onConfirmPlan: noOp,
+    onRequestInstall: noOp,
+    onResumeInstall: noOp,
     onClosePlan: noOp,
     ...overrides,
   };
@@ -200,7 +197,7 @@ describe('MarketplacePageView states', () => {
     });
     expect(markup).toContain('Install plan created');
     expect(markup).toContain('plan_only');
-    expect(markup).toContain('No download, execution, permission grant');
+    expect(markup).toContain('A plan is not installation evidence');
     expect(markup).not.toContain('Successfully installed');
   });
 });
