@@ -48,6 +48,7 @@ jobs:
         run: npx electron-builder --win --config electron-builder.json --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
 
   build-mac:
     runs-on: macos-latest
@@ -88,4 +89,5 @@ jobs:
         run: npx electron-builder --mac --config electron-builder.json --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
           CSC_IDENTITY_AUTO_DISCOVERY: false

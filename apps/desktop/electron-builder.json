@@ -4,6 +4,7 @@
   "productName": "Izzi AI",
   "copyright": "Copyright © 2024-2026 Izzi AI",
   "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+  "detectUpdateChannel": true,
 
   "directories": {
     "output": "release",

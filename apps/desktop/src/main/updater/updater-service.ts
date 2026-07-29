@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { DesktopUpdaterState } from './types';
@@ -11,8 +13,49 @@ interface UpdaterLike extends EventEmitter {
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
 }
 
+interface UpdaterServiceOptions {
+  adapter?: UpdaterLike;
+  appVersion?: string;
+  packaged?: boolean;
+  mockMode?: boolean;
+  directoryPackage?: boolean;
+  updateConfigAvailable?: boolean;
+}
+
 function isTruthy(value: string | undefined): boolean {
   return value === '1' || value === 'true';
+}
+
+function pathSegments(value: string): string[] {
+  return value
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase());
+}
+
+export function isElectronBuilderDirectoryPackage(execPath: string, resourcesPath: string): boolean {
+  const resourceSegments = pathSegments(resourcesPath);
+  if (resourceSegments.some((segment) => /^(?:win|linux)-unpacked$/.test(segment))) {
+    return true;
+  }
+
+  const executableSegments = pathSegments(execPath);
+  const appBundleIndex = executableSegments.findIndex((segment) => segment.endsWith('.app'));
+  if (appBundleIndex < 2) {
+    return false;
+  }
+
+  return executableSegments[appBundleIndex - 2] === 'release'
+    && /^mac(?:-[a-z0-9_-]+)?$/.test(executableSegments[appBundleIndex - 1]);
+}
+
+function updaterErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/\bENOENT\b/i.test(message) && /(?:dev-)?app-update\.yml/i.test(message)) {
+    return 'Desktop update configuration is unavailable.';
+  }
+  return message;
 }
 
 function bumpPatch(version: string): string {
@@ -34,21 +77,28 @@ export class UpdaterService extends EventEmitter {
   private readonly appVersion: string;
   private readonly mockMode: boolean;
   private readonly packaged: boolean;
+  private readonly updateChecksEnabled: boolean;
   private state: DesktopUpdaterState;
 
-  constructor(options?: { adapter?: UpdaterLike; appVersion?: string; packaged?: boolean; mockMode?: boolean }) {
+  constructor(options?: UpdaterServiceOptions) {
     super();
 
     this.appVersion = options?.appVersion ?? app.getVersion();
     this.packaged = options?.packaged ?? app.isPackaged;
     this.mockMode = options?.mockMode ?? isTruthy(process.env.OPENCLAW_MOCK_UPDATER);
+    const resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : '';
+    const directoryPackage = options?.directoryPackage
+      ?? isElectronBuilderDirectoryPackage(process.execPath, resourcesPath);
+    const updateConfigAvailable = options?.updateConfigAvailable
+      ?? (resourcesPath.length > 0 && existsSync(join(resourcesPath, 'app-update.yml')));
+    this.updateChecksEnabled = !directoryPackage || updateConfigAvailable;
     this.adapter = this.mockMode ? options?.adapter : options?.adapter ?? (autoUpdater as unknown as UpdaterLike);
     this.state = {
       state: 'idle',
       version: this.appVersion,
     };
 
-    if (!this.mockMode) {
+    if (!this.mockMode && this.updateChecksEnabled) {
       this.bindAdapter();
     }
   }
@@ -83,6 +133,15 @@ export class UpdaterService extends EventEmitter {
       return;
     }
 
+    if (!this.updateChecksEnabled) {
+      this.setState({
+        state: 'idle',
+        version: this.appVersion,
+        checkedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
     if (!this.adapter) {
       return;
     }
@@ -91,11 +150,10 @@ export class UpdaterService extends EventEmitter {
     try {
       await this.adapter.checkForUpdates();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
       this.setState({
         state: 'error',
         version: this.appVersion,
-        error: message,
+        error: updaterErrorMessage(err),
         checkedAt: new Date().toISOString(),
       });
     }
@@ -196,7 +254,7 @@ export class UpdaterService extends EventEmitter {
         version: this.appVersion,
         availableVersion: this.state.availableVersion,
         progress: this.state.progress,
-        error: error.message,
+        error: updaterErrorMessage(error),
         checkedAt: new Date().toISOString(),
       });
     });

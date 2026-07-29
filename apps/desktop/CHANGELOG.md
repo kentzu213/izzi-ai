@@ -1,5 +1,23 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.6
+
+Packaged updater and prerelease metadata patch.
+
+- Treat electron-builder directory packages such as `win-unpacked` as local
+  smoke builds when `app-update.yml` is absent, so they do not show a false
+  updater error.
+- Keep missing update configuration actionable for installed packages while
+  replacing raw local filesystem paths with a stable user-facing error.
+- Recognize Windows, Linux, and the original electron-builder macOS release
+  directories. A macOS `.app` moved out of `release/mac-*` remains treated as
+  an installed package because it cannot be distinguished safely from a
+  damaged installation.
+- Pin prerelease update-channel detection so beta builds publish `beta.yml`
+  metadata instead of the stable `latest.yml` channel.
+- Publish version tags containing a prerelease suffix as GitHub prereleases on
+  both Windows and macOS jobs.
+
 ## 1.14.0-beta.5
 
 Customer Marketing Product Context release.

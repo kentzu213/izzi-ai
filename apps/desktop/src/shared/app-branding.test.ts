@@ -55,4 +55,15 @@ describe('Izzi AI desktop branding contract', () => {
     expect(logoSource).toContain('aria-label="Izzi AI logo"');
     expect(logoSource).not.toContain('Starizzi Logo');
   });
+
+  it('publishes prerelease version tags as GitHub prereleases on every platform', () => {
+    const workflowSource = readFileSync(
+      new URL('../../../../.github/workflows/release-desktop.yml', import.meta.url),
+      'utf8',
+    );
+
+    expect(builderConfig.detectUpdateChannel).toBe(true);
+    expect(workflowSource.match(/EP_PRE_RELEASE:/g)).toHaveLength(2);
+    expect(workflowSource.match(/contains\(github\.ref_name, '-'\)/g)).toHaveLength(2);
+  });
 });
