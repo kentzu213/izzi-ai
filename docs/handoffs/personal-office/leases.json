@@ -23,6 +23,7 @@
         "apps/desktop/src/shared/customer-marketing-*.ts",
         "apps/desktop/src/shared/marketplace/**",
         "apps/desktop/src/main/customer-marketing/**",
+        "apps/desktop/src/main/index.ts",
         "apps/desktop/src/main/preload.ts",
         "apps/desktop/src/renderer/types/global.d.ts",
         "apps/desktop/src/renderer/marketing-workspace/**",
@@ -58,7 +59,8 @@
         "No real publish, spend, send or destructive external action",
         "Credential values never cross into renderer, migration, Graph, Live, logs or exports",
         "Marketplace plan/demo state cannot provision; host-validated installed evidence is mandatory",
-        "Legacy Customer Marketing data and route remain recoverable behind rollback"
+        "Legacy Customer Marketing data and route remain recoverable behind rollback",
+        "main/index.ts is leased only to inject the existing WorkService and host-owned Customer Marketing evidence into the reference bridge"
       ]
     }
   ],
