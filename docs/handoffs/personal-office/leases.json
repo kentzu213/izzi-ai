@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T12:23:21Z",
+  "updatedAt": "2026-07-29T12:33:42Z",
   "updatedBy": "W0",
   "integrationCommit": "9736e30c2cc23fe8d30676ef655dbc2a0f85cc46",
   "activeLeases": [
@@ -71,6 +71,9 @@
       "window": "W4",
       "grantedAt": "2026-07-29T12:23:21Z",
       "grantedBy": "W0",
+      "writerAuthority": "Codex only",
+      "writerTransferredAt": "2026-07-29T12:33:42Z",
+      "previousWriterAuthority": "Kiro W4 — revoked before source changes",
       "scope": "Secret-free integration-grant contracts, deterministic legacy mapping and injected no-value grant-vault facade",
       "exclusiveWritePaths": [
         "apps/desktop/src/shared/integration-grants/**",
@@ -116,7 +119,7 @@
     }
   ],
   "activeLeaseCount": 2,
-  "statement": "Loops 06 and 10 are the only active source-writer leases. Loop 06 is owned by Codex and Loop 10 by Kiro W4. W0, W1, W2 and the Kiro W3 shadow lane are read-only. Package manifests, DB/schema, host-context, renderer and operational OAuth/provisioning/runtime seams remain unleased.",
+  "statement": "Loops 06 and 10 are the only active source-writer leases and both are owned exclusively by Codex. All Kiro windows, W0, W1 and W2 are read-only outside W0 control records. Package manifests, DB/schema, host-context, renderer and operational OAuth/provisioning/runtime seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",

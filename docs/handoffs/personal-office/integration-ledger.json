@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:23:21Z",
+  "updatedAt": "2026-07-29T12:33:42Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -447,7 +447,7 @@
       "loop": "10",
       "title": "Auth, integrations and grant vault",
       "window": "W4",
-      "status": "READY_TO_START",
+      "status": "PROVISIONAL",
       "branch": "feature/personal-office-loop-10-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop10",
       "commitSha": null,
@@ -457,7 +457,10 @@
       ],
       "worktreeCreationBlocked": false,
       "dependencyStatus": "SATISFIED — Loops 01, 04 and 08 are ACCEPTED. Isolated worktree and LEASE-L10-INTEGRATION-GRANTS-20260729 are authorised.",
-      "lease": "LEASE-L10-INTEGRATION-GRANTS-20260729"
+      "lease": "LEASE-L10-INTEGRATION-GRANTS-20260729",
+      "writerAuthority": "Codex only",
+      "writerTransferredAt": "2026-07-29T12:33:42Z",
+      "writerTransferReason": "Kiro provider remained unavailable; Kiro authority was revoked while the Loop 10 worktree was clean and before any source change."
     },
     {
       "loop": "11",
@@ -712,6 +715,11 @@
       "at": "2026-07-29T12:23:21Z",
       "by": "W0",
       "action": "Dispatched Loop 10 to Kiro W4 from the accepted Loop 08 integration ref and granted LEASE-L10-INTEGRATION-GRANTS-20260729. Scope is secret-free integration-grant contracts, deterministic legacy status mapping and an injected no-value grant-vault facade. Existing production integrations/auth/secret-store, network, persistence, DB/schema, IPC and renderer remain read-only or prohibited. Loop 06 Codex and Loop 10 Kiro are the only source writers."
+    },
+    {
+      "at": "2026-07-29T12:33:42Z",
+      "by": "W0",
+      "action": "Revoked Kiro W4 writer authority for Loop 10 at the user's direction after verifying the producer worktree was clean at 7d361d4 with no staged, modified or untracked source. The existing exact-path lease remains active but is transferred to Codex as sole writer. Loop 06 and Loop 10 Codex are now the only source writers; Kiro is read-only and may not resume without a new W0 transfer."
     }
   ],
   "completedByW0": [

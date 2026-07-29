@@ -10,9 +10,10 @@
 - Dependencies: Loops 01, 04 and 08 are ACCEPTED.
 - Status authority: only W0 may set `ACCEPTED`.
 
-Kiro W4 is the only authorised Loop 10 writer. Codex remains the only Loop 06
-writer. Other Kiro windows are read-only reviewers/spec lanes until W0 grants a
-new exact lease.
+Codex is the only authorised Loop 10 writer. Codex also remains the only Loop
+06 writer. Kiro writer authority was revoked before any Loop 10 source change
+because the provider remained unavailable; every Kiro window is read-only and
+must not resume from this dispatch without a new W0 control-plane transfer.
 
 ## Objective
 
