@@ -5,6 +5,9 @@ import type {
   CustomerGoalInput,
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
+  CustomerProductMarketingContextMutationResult,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
   CustomerMarketingResourceArchiveResult,
   CustomerMarketingResourceListResult,
   CustomerMarketingResourceMutationResult,
@@ -24,6 +27,9 @@ import type {
   CustomerWorkspaceInvitationResult,
   CustomerWorkspaceInvitationAcceptanceResult,
 } from '../../shared/customer-marketing-types';
+import {
+  parseCustomerProductMarketingContextSaveInput,
+} from '../../shared/customer-marketing-product-context';
 import type { CustomerMarketingService } from './customer-marketing-service';
 import type {
   CustomerMarketingCredentialListResult,
@@ -107,6 +113,27 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:getSnapshot', async (event): Promise<CustomerMarketingSnapshot> => {
     trusted(event);
     return service.getSnapshot();
+  });
+
+  ipcMain.handle('customerMarketing:getProductMarketingContext', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerProductMarketingContextV1 | null> => {
+    trusted(event);
+    if (payload !== undefined) {
+      throw new Error('Payload Product Marketing Context không được phép.');
+    }
+    return service.getProductMarketingContext();
+  });
+
+  ipcMain.handle('customerMarketing:saveProductMarketingContext', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerProductMarketingContextMutationResult> => {
+    trusted(event);
+    const parsed = parseCustomerProductMarketingContextSaveInput(payload);
+    if (!parsed) throw new Error('Payload Product Marketing Context không hợp lệ.');
+    return service.saveProductMarketingContext(parsed);
   });
 
   ipcMain.handle('customerMarketing:listIntegrationCredentials', async (

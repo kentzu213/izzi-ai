@@ -1,7 +1,7 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (60% weighted local scope)
-Vertical slice status: verified_local_media_pending_approval
+Product status: in_progress (65% weighted local scope)
+Vertical slice status: verified_product_context_release_pending_runtime_smoke
 Backend foundation status: verified_local_not_deployed
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
@@ -58,6 +58,17 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 24. [x] Rename the product and canonical repository to Izzi AI, publish Windows
     `v1.14.0-beta.4`, and verify the installed title, shortcuts, profile continuity, and official
     cyan `S` icon.
+25. [x] Add CMR-218 Product Marketing Context v1:
+    - reviewer identity and SHA-256 evidence are derived in the main process
+    - VI/EN positioning, audience, value proposition, brand voice, CTA, proof claims, prohibited
+      claims, and HTTPS evidence sources are revisioned together
+    - workflows, jobs, artifacts, approvals, and AI Director prompts bind to one structural
+      context reference
+    - AI Director product claims require an approved proof-claim ID before replacing approval
+      evidence
+    - stale strategy approvals remain pending after a context revision changes
+    - Brand Center preserves drafts across workspace navigation and provides explicit
+      revision-conflict recovery
 
 ## Verification evidence
 
@@ -86,6 +97,9 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - Release-session GitNexus note: the MCP transport closed and the clean release worktree had no
   local CLI index. Prior branding impact evidence remained `LOW` with zero affected flows; shell
   diff, tests, production build, and artifact verification were used as the release fallback.
+- CMR-218 clean release verification: focused Product Context/service/workflow/IPC/UI contract
+  tests **197/197**, full desktop regression **931/931**, main TypeScript typecheck, and production
+  Vite build passed. External actions remain disabled and confirmed spend is **0 VND**.
 
 ## Next phases
 

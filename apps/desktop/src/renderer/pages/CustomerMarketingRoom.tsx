@@ -36,12 +36,15 @@ import type {
   CustomerObjective,
   CustomerOnboardingInput,
   CustomerOnboardingProfile,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
   CustomerRole,
   CustomerRun,
   CustomerWorkspaceMember,
   CustomerWorkspaceMembersResult,
   CustomerWorkspaceInvitationAcceptanceResult,
 } from '../../shared/customer-marketing-types';
+import { CUSTOMER_MARKETING_VOICE_PREVIEW_CAPABILITY_ID } from '../../shared/customer-marketing-voice-preview';
 import { CustomerMarketingResources } from './CustomerMarketingResources';
 import { CustomerMarketingChannels } from './CustomerMarketingChannels';
 import { CustomerMarketingCapabilityWorkbench } from './CustomerMarketingCapabilityWorkbenches';
@@ -265,6 +268,154 @@ function profileToInput(profile: CustomerOnboardingProfile): CustomerOnboardingI
     automationMode: profile.automationMode,
     completedSteps: [...profile.completedSteps],
   };
+}
+
+type ProductContextDraft = CustomerProductMarketingContextSaveInput;
+type ProductContextLocalizedKey =
+  | 'category'
+  | 'positioning'
+  | 'targetAudience'
+  | 'valueProposition'
+  | 'brandVoice'
+  | 'callToAction';
+
+function productContextToDraft(
+  context: CustomerProductMarketingContextV1,
+): ProductContextDraft {
+  return {
+    expectedRevision: context.revision,
+    product: {
+      ...context.product,
+      category: { ...context.product.category },
+      positioning: { ...context.product.positioning },
+      targetAudience: { ...context.product.targetAudience },
+      valueProposition: { ...context.product.valueProposition },
+      brandVoice: { ...context.product.brandVoice },
+      callToAction: { ...context.product.callToAction },
+      proofClaims: context.product.proofClaims.map((claim) => ({
+        ...claim,
+        text: { ...claim.text },
+        sourceIds: [...claim.sourceIds],
+      })),
+      prohibitedClaims: context.product.prohibitedClaims.map((claim) => ({
+        ...claim,
+        text: { ...claim.text },
+        reason: { ...claim.reason },
+      })),
+    },
+    sources: context.sources.map(({ sha256: _sha256, ...source }) => ({ ...source })),
+  };
+}
+
+function onboardingProductContextDraft(form: CustomerOnboardingInput): ProductContextDraft {
+  return {
+    expectedRevision: 0,
+    product: {
+      productName: form.business.name.trim().slice(0, 160),
+      category: {
+        vi: form.business.industry.trim(),
+        en: '',
+      },
+      positioning: {
+        vi: form.business.offer.trim(),
+        en: '',
+      },
+      targetAudience: {
+        vi: form.audience.segments.trim(),
+        en: '',
+      },
+      valueProposition: {
+        vi: form.audience.needs.trim(),
+        en: '',
+      },
+      brandVoice: {
+        vi: form.brand.tone.trim(),
+        en: '',
+      },
+      callToAction: {
+        vi: '',
+        en: '',
+      },
+      proofClaims: [],
+      prohibitedClaims: [],
+    },
+    sources: [],
+  };
+}
+
+function validateProductContextDraft(draft: ProductContextDraft): string {
+  if (draft.product.productName.trim().length < 2) {
+    return 'Nhập tên sản phẩm trước khi lưu Product Marketing Context.';
+  }
+  const localizedFields: Array<[string, ProductContextLocalizedKey]> = [
+    ['Danh mục', 'category'],
+    ['Định vị', 'positioning'],
+    ['Khách hàng mục tiêu', 'targetAudience'],
+    ['Giá trị cốt lõi', 'valueProposition'],
+    ['Giọng thương hiệu', 'brandVoice'],
+    ['Kêu gọi hành động', 'callToAction'],
+  ];
+  for (const [label, key] of localizedFields) {
+    if (!draft.product[key].vi.trim() || !draft.product[key].en.trim()) {
+      return `${label} cần đủ nội dung tiếng Việt và tiếng Anh.`;
+    }
+  }
+  if (draft.sources.length === 0) return 'Thêm ít nhất một nguồn bằng chứng HTTPS.';
+  const sourceIds = new Set<string>();
+  for (const source of draft.sources) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(source.id)) {
+      return 'Mỗi nguồn cần ID chữ thường hợp lệ, ví dụ source-product-site.';
+    }
+    if (sourceIds.has(source.id)) return `ID nguồn '${source.id}' đang bị trùng.`;
+    sourceIds.add(source.id);
+    if (!source.title.trim() || source.excerpt.trim().length < 10) {
+      return `Nguồn '${source.id}' cần tiêu đề và đoạn trích bằng chứng rõ ràng.`;
+    }
+    try {
+      const url = new URL(source.url);
+      if (url.protocol !== 'https:' || url.username || url.password) throw new Error();
+    } catch {
+      return `Nguồn '${source.id}' phải dùng URL HTTPS hợp lệ.`;
+    }
+  }
+  if (draft.product.proofClaims.length === 0) {
+    return 'Thêm ít nhất một claim được phép và gắn với nguồn bằng chứng.';
+  }
+  const proofIds = new Set<string>();
+  for (const claim of draft.product.proofClaims) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(claim.id) || proofIds.has(claim.id)) {
+      return 'Claim được phép cần ID chữ thường, duy nhất.';
+    }
+    proofIds.add(claim.id);
+    if (!claim.text.vi.trim() || !claim.text.en.trim()) {
+      return `Claim '${claim.id}' cần đủ tiếng Việt và tiếng Anh.`;
+    }
+    if (
+      claim.sourceIds.length === 0
+      || claim.sourceIds.some((sourceId) => !sourceIds.has(sourceId))
+    ) {
+      return `Claim '${claim.id}' phải tham chiếu ít nhất một nguồn đang có.`;
+    }
+  }
+  if (draft.product.prohibitedClaims.length === 0) {
+    return 'Thêm ít nhất một claim bị cấm để Brand Guardian chặn nội dung rủi ro.';
+  }
+  const prohibitedIds = new Set<string>();
+  for (const claim of draft.product.prohibitedClaims) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(claim.id) || prohibitedIds.has(claim.id)) {
+      return 'Claim bị cấm cần ID chữ thường, duy nhất.';
+    }
+    prohibitedIds.add(claim.id);
+    if (
+      !claim.text.vi.trim()
+      || !claim.text.en.trim()
+      || !claim.reason.vi.trim()
+      || !claim.reason.en.trim()
+    ) {
+      return `Claim bị cấm '${claim.id}' cần đủ nội dung và lý do VI/EN.`;
+    }
+  }
+  return '';
 }
 
 function formatDate(value: string, includeTime = false): string {
@@ -1990,24 +2141,675 @@ interface BrandViewProps {
   form: CustomerOnboardingInput;
   setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
   onSave: () => Promise<void>;
+  context: CustomerProductMarketingContextV1 | null;
+  onSnapshot: (snapshot: CustomerMarketingSnapshot) => void;
   busy: boolean;
 }
 
-function BrandView({ form, setForm, onSave, busy }: BrandViewProps) {
+function LocalizedContextField({
+  label,
+  value,
+  onChange,
+  multiline = true,
+}: {
+  label: string;
+  value: { vi: string; en: string };
+  onChange: (locale: 'vi' | 'en', value: string) => void;
+  multiline?: boolean;
+}) {
+  return (
+    <fieldset className="cmr-localized-field">
+      <legend>{label}</legend>
+      <div className="cmr-localized-field__grid">
+        <Field
+          label="Tiếng Việt"
+          value={value.vi}
+          onChange={(next) => onChange('vi', next)}
+          multiline={multiline}
+        />
+        <Field
+          label="English"
+          value={value.en}
+          onChange={(next) => onChange('en', next)}
+          multiline={multiline}
+        />
+      </div>
+    </fieldset>
+  );
+}
+
+function BrandView({
+  form,
+  setForm,
+  onSave,
+  context,
+  onSnapshot,
+  busy,
+}: BrandViewProps) {
   const updateBrand = <Key extends keyof CustomerOnboardingInput['brand']>(
     key: Key,
     value: CustomerOnboardingInput['brand'][Key],
   ) => setForm((current) => ({ ...current, brand: { ...current.brand, [key]: value } }));
   const updateBusiness = (key: keyof CustomerOnboardingInput['business'], value: string) => setForm((current) => ({ ...current, business: { ...current.business, [key]: value } }));
   const updateAudience = (key: keyof CustomerOnboardingInput['audience'], value: string) => setForm((current) => ({ ...current, audience: { ...current.audience, [key]: value } }));
+  const initialContextDraft = context
+    ? productContextToDraft(context)
+    : onboardingProductContextDraft(form);
+  const [contextDraft, setContextDraft] = useState<ProductContextDraft>(initialContextDraft);
+  const [contextBaseline, setContextBaseline] = useState<ProductContextDraft>(initialContextDraft);
+  const [loadedContextSha, setLoadedContextSha] = useState(context?.sha256 ?? 'missing');
+  const [serverConflict, setServerConflict] =
+    useState<CustomerProductMarketingContextV1 | null>(null);
+  const [contextBusy, setContextBusy] = useState(false);
+  const [contextError, setContextError] = useState('');
+  const [contextNotice, setContextNotice] = useState('');
+  const contextDirty = useMemo(
+    () => JSON.stringify(contextDraft) !== JSON.stringify(contextBaseline),
+    [contextBaseline, contextDraft],
+  );
+
+  useEffect(() => {
+    const nextSha = context?.sha256 ?? 'missing';
+    if (nextSha === loadedContextSha) return;
+    setLoadedContextSha(nextSha);
+    if (contextDirty) {
+      setServerConflict(context);
+      setContextError(
+        context
+          ? 'Context trên workspace đã đổi revision trong khi bạn đang sửa. Bản nháp vẫn được giữ.'
+          : 'Context đang lưu không còn hợp lệ. Bản nháp vẫn được giữ để bạn rà soát.',
+      );
+      return;
+    }
+    const nextDraft = context
+      ? productContextToDraft(context)
+      : onboardingProductContextDraft(form);
+    setContextDraft(nextDraft);
+    setContextBaseline(nextDraft);
+    setServerConflict(null);
+    setContextError('');
+  }, [context, contextDirty, form, loadedContextSha]);
+
+  const updateLocalizedProduct = (
+    key: ProductContextLocalizedKey,
+    locale: 'vi' | 'en',
+    value: string,
+  ) => {
+    setContextDraft((current) => ({
+      ...current,
+      product: {
+        ...current.product,
+        [key]: {
+          ...current.product[key],
+          [locale]: value,
+        },
+      },
+    }));
+  };
+
+  const updateSource = (
+    index: number,
+    key: keyof ProductContextDraft['sources'][number],
+    value: string,
+  ) => {
+    setContextDraft((current) => {
+      const previousId = current.sources[index]?.id ?? '';
+      return {
+        ...current,
+        product: key === 'id' && previousId
+          ? {
+            ...current.product,
+            proofClaims: current.product.proofClaims.map((claim) => ({
+              ...claim,
+              sourceIds: claim.sourceIds.map((sourceId) => (
+                sourceId === previousId ? value : sourceId
+              )),
+            })),
+          }
+          : current.product,
+        sources: current.sources.map((source, sourceIndex) => (
+          sourceIndex === index ? { ...source, [key]: value } : source
+        )),
+      };
+    });
+  };
+
+  const removeSource = (index: number) => {
+    setContextDraft((current) => {
+      const removedId = current.sources[index]?.id;
+      return {
+        ...current,
+        sources: current.sources.filter((_source, sourceIndex) => sourceIndex !== index),
+        product: {
+          ...current.product,
+          proofClaims: current.product.proofClaims.map((claim) => ({
+            ...claim,
+            sourceIds: removedId
+              ? claim.sourceIds.filter((sourceId) => sourceId !== removedId)
+              : claim.sourceIds,
+          })),
+        },
+      };
+    });
+  };
+
+  const updateProofClaim = (
+    index: number,
+    updater: (claim: ProductContextDraft['product']['proofClaims'][number]) =>
+      ProductContextDraft['product']['proofClaims'][number],
+  ) => {
+    setContextDraft((current) => ({
+      ...current,
+      product: {
+        ...current.product,
+        proofClaims: current.product.proofClaims.map((claim, claimIndex) => (
+          claimIndex === index ? updater(claim) : claim
+        )),
+      },
+    }));
+  };
+
+  const updateProhibitedClaim = (
+    index: number,
+    updater: (claim: ProductContextDraft['product']['prohibitedClaims'][number]) =>
+      ProductContextDraft['product']['prohibitedClaims'][number],
+  ) => {
+    setContextDraft((current) => ({
+      ...current,
+      product: {
+        ...current.product,
+        prohibitedClaims: current.product.prohibitedClaims.map((claim, claimIndex) => (
+          claimIndex === index ? updater(claim) : claim
+        )),
+      },
+    }));
+  };
+
+  const fillFromOnboarding = () => {
+    const seeded = onboardingProductContextDraft(form);
+    setContextDraft((current) => ({
+      ...current,
+      product: {
+        ...current.product,
+        productName: current.product.productName || seeded.product.productName,
+        category: {
+          vi: current.product.category.vi || seeded.product.category.vi,
+          en: current.product.category.en,
+        },
+        positioning: {
+          vi: current.product.positioning.vi || seeded.product.positioning.vi,
+          en: current.product.positioning.en,
+        },
+        targetAudience: {
+          vi: current.product.targetAudience.vi || seeded.product.targetAudience.vi,
+          en: current.product.targetAudience.en,
+        },
+        valueProposition: {
+          vi: current.product.valueProposition.vi || seeded.product.valueProposition.vi,
+          en: current.product.valueProposition.en,
+        },
+        brandVoice: {
+          vi: current.product.brandVoice.vi || seeded.product.brandVoice.vi,
+          en: current.product.brandVoice.en,
+        },
+      },
+    }));
+    setContextNotice('Đã điền các trường tiếng Việt còn trống từ hồ sơ onboarding.');
+    setContextError('');
+  };
+
+  const useServerRevision = () => {
+    if (!serverConflict) return;
+    setContextDraft((current) => ({
+      ...current,
+      expectedRevision: serverConflict.revision,
+    }));
+    setLoadedContextSha(serverConflict.sha256);
+    setServerConflict(null);
+    setContextError('');
+    setContextNotice(
+      `Bản nháp đang dùng revision ${serverConflict.revision}; hãy rà soát rồi lưu lại.`,
+    );
+  };
+
+  const loadServerContext = () => {
+    if (!serverConflict) return;
+    const nextDraft = productContextToDraft(serverConflict);
+    setContextDraft(nextDraft);
+    setContextBaseline(nextDraft);
+    setLoadedContextSha(serverConflict.sha256);
+    setServerConflict(null);
+    setContextError('');
+    setContextNotice('Đã tải nội dung context đang lưu trên workspace.');
+  };
+
+  const saveProductContext = async () => {
+    const validationError = validateProductContextDraft(contextDraft);
+    if (validationError) {
+      setContextError(validationError);
+      setContextNotice('');
+      return;
+    }
+    const api = getCustomerApi();
+    if (!api) {
+      setContextError('Product Marketing Context cần chạy trong Izzi AI Desktop.');
+      return;
+    }
+    setContextBusy(true);
+    setContextError('');
+    setContextNotice('');
+    try {
+      const result = await api.saveProductMarketingContext(contextDraft);
+      if (result.snapshot) onSnapshot(result.snapshot);
+      if (result.ok && result.context) {
+        const savedDraft = productContextToDraft(result.context);
+        setContextDraft(savedDraft);
+        setContextBaseline(savedDraft);
+        setLoadedContextSha(result.context.sha256);
+        setServerConflict(null);
+        setContextNotice(
+          result.duplicate
+            ? `Context revision ${result.context.revision} không đổi vì nội dung trùng khớp.`
+            : `Đã khóa Product Marketing Context revision ${result.context.revision}.`,
+        );
+        return;
+      }
+      if (result.status === 'conflict') {
+        setServerConflict(result.context);
+        if (result.context) setLoadedContextSha(result.context.sha256);
+      }
+      setContextError(result.error || 'Chưa lưu được Product Marketing Context.');
+    } catch (reason) {
+      setContextError(
+        reason instanceof Error
+          ? reason.message
+          : 'Không lưu được Product Marketing Context; bản nháp vẫn được giữ.',
+      );
+    } finally {
+      setContextBusy(false);
+    }
+  };
+
+  const receiptContext = serverConflict ?? context;
 
   return (
     <div className="cmr-view-stack">
-      <div className="cmr-view-intro cmr-view-intro--row"><div><span className="cmr-eyebrow">Brand boundary</span><h2>Brand Center</h2><p>Giữ mọi đề xuất của AI nhất quán với doanh nghiệp và khách hàng mục tiêu.</p></div><button type="button" className="cmr-button cmr-button--primary" onClick={() => void onSave()} disabled={busy}>{busy ? 'Đang lưu...' : 'Lưu thay đổi'} <StatusIcon className="cmr-button__icon" /></button></div>
-      <div className="cmr-brand-grid">
-        <section className="cmr-panel cmr-brand-panel"><div className="cmr-section-heading"><div><span className="cmr-eyebrow">Identity</span><h3>Thương hiệu</h3></div><span className="cmr-color-preview" style={{ background: form.brand.primaryColor }} /></div><div className="cmr-form-grid"><Field label="Logo URL" value={form.brand.logoUrl} onChange={(value) => updateBrand('logoUrl', value)} /><Field label="Font" value={form.brand.font} onChange={(value) => updateBrand('font', value)} /><Field label="Màu chính" value={form.brand.primaryColor} onChange={(value) => updateBrand('primaryColor', value)} /><Field label="Màu nhấn" value={form.brand.accentColor} onChange={(value) => updateBrand('accentColor', value)} /><div className="cmr-field cmr-field--wide"><Field label="Tone of voice" value={form.brand.tone} onChange={(value) => updateBrand('tone', value)} /></div><div className="cmr-field cmr-field--wide"><Field label="Guideline" value={form.brand.guidelines} onChange={(value) => updateBrand('guidelines', value)} multiline /></div><div className="cmr-field"><Field label="Từ nên dùng" value={form.brand.wordsToUse.join(', ')} onChange={(value) => updateBrand('wordsToUse', value.split(',').map((item) => item.trim()).filter(Boolean))} /></div><div className="cmr-field"><Field label="Từ nên tránh" value={form.brand.wordsToAvoid.join(', ')} onChange={(value) => updateBrand('wordsToAvoid', value.split(',').map((item) => item.trim()).filter(Boolean))} /></div></div></section>
-        <section className="cmr-panel cmr-brand-panel"><div className="cmr-section-heading"><div><span className="cmr-eyebrow">Context</span><h3>Doanh nghiệp và khách hàng</h3></div></div><div className="cmr-form-grid"><Field label="Tên doanh nghiệp" value={form.business.name} onChange={(value) => updateBusiness('name', value)} required /><Field label="Lĩnh vực" value={form.business.industry} onChange={(value) => updateBusiness('industry', value)} required /><div className="cmr-field cmr-field--wide"><Field label="Sản phẩm/dịch vụ" value={form.business.offer} onChange={(value) => updateBusiness('offer', value)} multiline required /></div><div className="cmr-field cmr-field--wide"><Field label="Nhóm khách hàng" value={form.audience.segments} onChange={(value) => updateAudience('segments', value)} multiline /></div><Field label="Nhu cầu" value={form.audience.needs} onChange={(value) => updateAudience('needs', value)} multiline /><Field label="Thị trường" value={form.audience.market} onChange={(value) => updateAudience('market', value)} /></div></section>
+      <div className="cmr-view-intro cmr-view-intro--row">
+        <div>
+          <span className="cmr-eyebrow">Brand boundary</span>
+          <h2>Brand Center</h2>
+          <p>Giữ mọi đề xuất của AI nhất quán với doanh nghiệp và khách hàng mục tiêu.</p>
+        </div>
+        <button
+          type="button"
+          className="cmr-button cmr-button--primary"
+          onClick={() => void onSave()}
+          disabled={busy || contextBusy}
+        >
+          {busy ? 'Đang lưu...' : 'Lưu hồ sơ'}
+          <StatusIcon className="cmr-button__icon" />
+        </button>
       </div>
+      <div className="cmr-brand-grid">
+        <section className="cmr-panel cmr-brand-panel">
+          <div className="cmr-section-heading">
+            <div><span className="cmr-eyebrow">Identity</span><h3>Thương hiệu</h3></div>
+            <span className="cmr-color-preview" style={{ background: form.brand.primaryColor }} />
+          </div>
+          <div className="cmr-form-grid">
+            <Field label="Logo URL" value={form.brand.logoUrl} onChange={(value) => updateBrand('logoUrl', value)} />
+            <Field label="Font" value={form.brand.font} onChange={(value) => updateBrand('font', value)} />
+            <Field label="Màu chính" value={form.brand.primaryColor} onChange={(value) => updateBrand('primaryColor', value)} />
+            <Field label="Màu nhấn" value={form.brand.accentColor} onChange={(value) => updateBrand('accentColor', value)} />
+            <div className="cmr-field cmr-field--wide"><Field label="Tone of voice" value={form.brand.tone} onChange={(value) => updateBrand('tone', value)} /></div>
+            <div className="cmr-field cmr-field--wide"><Field label="Guideline" value={form.brand.guidelines} onChange={(value) => updateBrand('guidelines', value)} multiline /></div>
+            <div className="cmr-field"><Field label="Từ nên dùng" value={form.brand.wordsToUse.join(', ')} onChange={(value) => updateBrand('wordsToUse', value.split(',').map((item) => item.trim()).filter(Boolean))} /></div>
+            <div className="cmr-field"><Field label="Từ nên tránh" value={form.brand.wordsToAvoid.join(', ')} onChange={(value) => updateBrand('wordsToAvoid', value.split(',').map((item) => item.trim()).filter(Boolean))} /></div>
+          </div>
+        </section>
+        <section className="cmr-panel cmr-brand-panel">
+          <div className="cmr-section-heading">
+            <div><span className="cmr-eyebrow">Context</span><h3>Doanh nghiệp và khách hàng</h3></div>
+          </div>
+          <div className="cmr-form-grid">
+            <Field label="Tên doanh nghiệp" value={form.business.name} onChange={(value) => updateBusiness('name', value)} required />
+            <Field label="Lĩnh vực" value={form.business.industry} onChange={(value) => updateBusiness('industry', value)} required />
+            <div className="cmr-field cmr-field--wide"><Field label="Sản phẩm/dịch vụ" value={form.business.offer} onChange={(value) => updateBusiness('offer', value)} multiline required /></div>
+            <div className="cmr-field cmr-field--wide"><Field label="Nhóm khách hàng" value={form.audience.segments} onChange={(value) => updateAudience('segments', value)} multiline /></div>
+            <Field label="Nhu cầu" value={form.audience.needs} onChange={(value) => updateAudience('needs', value)} multiline />
+            <Field label="Thị trường" value={form.audience.market} onChange={(value) => updateAudience('market', value)} />
+          </div>
+        </section>
+      </div>
+      <section className="cmr-panel cmr-product-context">
+        <div className="cmr-product-context__header">
+          <div>
+            <span className="cmr-eyebrow">Approved evidence</span>
+            <h3>Product Marketing Context</h3>
+            <p>
+              Workflow, AI Director và Brand Guardian chỉ dùng claim đã gắn với nguồn này.
+            </p>
+          </div>
+          <div className="cmr-product-context__header-actions">
+            <StatusPill value={receiptContext ? 'approved' : 'needs_setup'} />
+            <button
+              type="button"
+              className="cmr-button cmr-button--quiet"
+              onClick={fillFromOnboarding}
+              disabled={contextBusy}
+            >
+              Điền từ hồ sơ
+            </button>
+          </div>
+        </div>
+
+        <dl className="cmr-context-receipt">
+          <div><dt>Revision</dt><dd>{receiptContext?.revision ?? 0}</dd></div>
+          <div><dt>Reviewer</dt><dd>{receiptContext?.reviewer.name ?? 'Chưa xác nhận'}</dd></div>
+          <div>
+            <dt>Digest</dt>
+            <dd><code>{receiptContext ? `${receiptContext.sha256.slice(0, 16)}…` : 'Chưa có'}</code></dd>
+          </div>
+          <div>
+            <dt>Trạng thái bản nháp</dt>
+            <dd>{contextDirty ? 'Có thay đổi chưa lưu' : 'Đồng bộ'}</dd>
+          </div>
+        </dl>
+
+        {contextError && <div className="cmr-alert cmr-alert--error" role="alert">{contextError}</div>}
+        {contextNotice && <div className="cmr-alert cmr-alert--success" role="status">{contextNotice}</div>}
+        {serverConflict && (
+          <div className="cmr-context-conflict">
+            <div>
+              <strong>Workspace đang ở revision {serverConflict.revision}</strong>
+              <span>Bản nháp trên màn hình chưa bị ghi đè.</span>
+            </div>
+            <div className="cmr-inline-actions">
+              <button type="button" className="cmr-button cmr-button--quiet" onClick={loadServerContext}>
+                Tải bản workspace
+              </button>
+              <button type="button" className="cmr-button cmr-button--primary" onClick={useServerRevision}>
+                Giữ nháp, dùng revision mới
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="cmr-context-section">
+          <div className="cmr-context-section__heading">
+            <div><span className="cmr-eyebrow">Message system</span><h4>Thông điệp song ngữ</h4></div>
+          </div>
+          <Field
+            label="Tên sản phẩm"
+            value={contextDraft.product.productName}
+            onChange={(value) => setContextDraft((current) => ({
+              ...current,
+              product: { ...current.product, productName: value },
+            }))}
+            required
+          />
+          <div className="cmr-context-localized-grid">
+            {([
+              ['Danh mục', 'category'],
+              ['Định vị', 'positioning'],
+              ['Khách hàng mục tiêu', 'targetAudience'],
+              ['Giá trị cốt lõi', 'valueProposition'],
+              ['Giọng thương hiệu', 'brandVoice'],
+              ['Kêu gọi hành động', 'callToAction'],
+            ] as Array<[string, ProductContextLocalizedKey]>).map(([label, key]) => (
+              <LocalizedContextField
+                key={key}
+                label={label}
+                value={contextDraft.product[key]}
+                onChange={(locale, value) => updateLocalizedProduct(key, locale, value)}
+                multiline={key !== 'category'}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="cmr-context-section">
+          <div className="cmr-context-section__heading">
+            <div><span className="cmr-eyebrow">Evidence registry</span><h4>Nguồn bằng chứng</h4></div>
+            <button
+              type="button"
+              className="cmr-button cmr-button--quiet"
+              onClick={() => setContextDraft((current) => ({
+                ...current,
+                sources: [...current.sources, { id: '', title: '', url: '', excerpt: '' }],
+              }))}
+            >
+              Thêm nguồn
+            </button>
+          </div>
+          {contextDraft.sources.length === 0 ? (
+            <div className="cmr-context-empty">
+              Chưa có nguồn. Thêm trang sản phẩm, tài liệu hoặc repository HTTPS có thể kiểm chứng.
+            </div>
+          ) : (
+            <div className="cmr-context-list">
+              {contextDraft.sources.map((source, index) => (
+                <div className="cmr-context-row" key={`source-${index}`}>
+                  <div className="cmr-context-row__heading">
+                    <strong>Nguồn {index + 1}</strong>
+                    <button
+                      type="button"
+                      className="cmr-icon-button cmr-context-remove"
+                      onClick={() => removeSource(index)}
+                      aria-label={`Xóa nguồn ${index + 1}`}
+                      title="Xóa nguồn"
+                    >
+                      <CloseIcon className="cmr-icon" />
+                    </button>
+                  </div>
+                  <div className="cmr-form-grid">
+                    <Field label="ID nguồn" value={source.id} onChange={(value) => updateSource(index, 'id', value)} placeholder="source-product-site" />
+                    <Field label="Tiêu đề" value={source.title} onChange={(value) => updateSource(index, 'title', value)} />
+                    <div className="cmr-field cmr-field--wide">
+                      <Field label="URL HTTPS" value={source.url} onChange={(value) => updateSource(index, 'url', value)} placeholder="https://..." />
+                    </div>
+                    <div className="cmr-field cmr-field--wide">
+                      <Field label="Đoạn trích bằng chứng" value={source.excerpt} onChange={(value) => updateSource(index, 'excerpt', value)} multiline />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="cmr-context-section">
+          <div className="cmr-context-section__heading">
+            <div><span className="cmr-eyebrow">Proof boundary</span><h4>Claim được phép</h4></div>
+            <button
+              type="button"
+              className="cmr-button cmr-button--quiet"
+              onClick={() => setContextDraft((current) => ({
+                ...current,
+                product: {
+                  ...current.product,
+                  proofClaims: [
+                    ...current.product.proofClaims,
+                    { id: '', text: { vi: '', en: '' }, sourceIds: [] },
+                  ],
+                },
+              }))}
+            >
+              Thêm claim
+            </button>
+          </div>
+          {contextDraft.product.proofClaims.length === 0 ? (
+            <div className="cmr-context-empty">
+              Chưa có claim được phép. AI sẽ không được dùng tuyên bố sản phẩm chưa có bằng chứng.
+            </div>
+          ) : (
+            <div className="cmr-context-list">
+              {contextDraft.product.proofClaims.map((claim, index) => (
+                <div className="cmr-context-row" key={`proof-${index}`}>
+                  <div className="cmr-context-row__heading">
+                    <strong>Claim {index + 1}</strong>
+                    <button
+                      type="button"
+                      className="cmr-icon-button cmr-context-remove"
+                      onClick={() => setContextDraft((current) => ({
+                        ...current,
+                        product: {
+                          ...current.product,
+                          proofClaims: current.product.proofClaims.filter(
+                            (_claim, claimIndex) => claimIndex !== index,
+                          ),
+                        },
+                      }))}
+                      aria-label={`Xóa claim được phép ${index + 1}`}
+                      title="Xóa claim"
+                    >
+                      <CloseIcon className="cmr-icon" />
+                    </button>
+                  </div>
+                  <Field
+                    label="ID claim"
+                    value={claim.id}
+                    onChange={(value) => updateProofClaim(index, (current) => ({
+                      ...current,
+                      id: value,
+                    }))}
+                    placeholder="proof-api-catalog"
+                  />
+                  <div className="cmr-context-localized-grid">
+                    <LocalizedContextField
+                      label="Nội dung claim"
+                      value={claim.text}
+                      onChange={(locale, value) => updateProofClaim(index, (current) => ({
+                        ...current,
+                        text: { ...current.text, [locale]: value },
+                      }))}
+                    />
+                  </div>
+                  <fieldset className="cmr-source-picker">
+                    <legend>Nguồn chứng minh</legend>
+                    {contextDraft.sources.filter((source) => source.id).length === 0 ? (
+                      <span>Nhập ID nguồn trước để liên kết.</span>
+                    ) : contextDraft.sources.filter((source) => source.id).map((source) => (
+                      <label key={source.id}>
+                        <input
+                          type="checkbox"
+                          checked={claim.sourceIds.includes(source.id)}
+                          onChange={() => updateProofClaim(index, (current) => ({
+                            ...current,
+                            sourceIds: current.sourceIds.includes(source.id)
+                              ? current.sourceIds.filter((sourceId) => sourceId !== source.id)
+                              : [...current.sourceIds, source.id],
+                          }))}
+                        />
+                        <span>{source.title || source.id}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="cmr-context-section">
+          <div className="cmr-context-section__heading">
+            <div><span className="cmr-eyebrow">Safety boundary</span><h4>Claim bị cấm</h4></div>
+            <button
+              type="button"
+              className="cmr-button cmr-button--quiet"
+              onClick={() => setContextDraft((current) => ({
+                ...current,
+                product: {
+                  ...current.product,
+                  prohibitedClaims: [
+                    ...current.product.prohibitedClaims,
+                    { id: '', text: { vi: '', en: '' }, reason: { vi: '', en: '' } },
+                  ],
+                },
+              }))}
+            >
+              Thêm rule
+            </button>
+          </div>
+          {contextDraft.product.prohibitedClaims.length === 0 ? (
+            <div className="cmr-context-empty">
+              Chưa có claim bị cấm. Khai báo các cam kết tuyệt đối hoặc tuyên bố không được phép.
+            </div>
+          ) : (
+            <div className="cmr-context-list">
+              {contextDraft.product.prohibitedClaims.map((claim, index) => (
+                <div className="cmr-context-row" key={`prohibited-${index}`}>
+                  <div className="cmr-context-row__heading">
+                    <strong>Rule {index + 1}</strong>
+                    <button
+                      type="button"
+                      className="cmr-icon-button cmr-context-remove"
+                      onClick={() => setContextDraft((current) => ({
+                        ...current,
+                        product: {
+                          ...current.product,
+                          prohibitedClaims: current.product.prohibitedClaims.filter(
+                            (_claim, claimIndex) => claimIndex !== index,
+                          ),
+                        },
+                      }))}
+                      aria-label={`Xóa claim bị cấm ${index + 1}`}
+                      title="Xóa rule"
+                    >
+                      <CloseIcon className="cmr-icon" />
+                    </button>
+                  </div>
+                  <Field
+                    label="ID rule"
+                    value={claim.id}
+                    onChange={(value) => updateProhibitedClaim(index, (current) => ({
+                      ...current,
+                      id: value,
+                    }))}
+                    placeholder="no-guaranteed-results"
+                  />
+                  <div className="cmr-context-localized-grid">
+                    <LocalizedContextField
+                      label="Tuyên bố bị cấm"
+                      value={claim.text}
+                      onChange={(locale, value) => updateProhibitedClaim(index, (current) => ({
+                        ...current,
+                        text: { ...current.text, [locale]: value },
+                      }))}
+                    />
+                    <LocalizedContextField
+                      label="Lý do"
+                      value={claim.reason}
+                      onChange={(locale, value) => updateProhibitedClaim(index, (current) => ({
+                        ...current,
+                        reason: { ...current.reason, [locale]: value },
+                      }))}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="cmr-product-context__footer">
+          <div>
+            <ReviewIcon className="cmr-icon" />
+            <span>
+              Lưu context tạo evidence digest mới. Approval chiến lược cũ sẽ không được dùng cho revision mới.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="cmr-button cmr-button--primary"
+            onClick={() => void saveProductContext()}
+            disabled={busy || contextBusy || !contextDirty || Boolean(serverConflict)}
+          >
+            {contextBusy ? 'Đang khóa context...' : 'Lưu Product Context'}
+            <StatusIcon className="cmr-button__icon" />
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2020,6 +2822,7 @@ function CustomerRoom({
   setForm,
   onRefresh,
   onMutation,
+  onSnapshot,
   onSelectMedia,
   busy,
   error,
@@ -2032,6 +2835,7 @@ function CustomerRoom({
   setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
   onRefresh: () => Promise<void>;
   onMutation: (operation: MutationOperation, successNotice?: string | null) => Promise<CustomerMutationResult | null>;
+  onSnapshot: (snapshot: CustomerMarketingSnapshot) => void;
   onSelectMedia: () => Promise<void>;
   busy: boolean;
   error: string;
@@ -2176,11 +2980,23 @@ function CustomerRoom({
                 capabilities={snapshot.capabilities}
                 catalog={snapshot.capabilityCatalog}
                 workspace={snapshot.workspace}
-                onOpen={openCapabilityView}
+                onOpen={(action) => openCapabilityView(action, 'apps')}
               />
             )
           )}
-          {activeView === 'brand' && <BrandView form={form} setForm={setForm} onSave={saveBrand} busy={busy} />}
+          <div
+            hidden={activeView !== 'brand'}
+            aria-hidden={activeView !== 'brand'}
+          >
+            <BrandView
+              form={form}
+              setForm={setForm}
+              onSave={saveBrand}
+              context={snapshot.productMarketingContext}
+              onSnapshot={onSnapshot}
+              busy={busy}
+            />
+          </div>
         </div>
       </div>
       <WorkspaceSettingsDrawer open={settingsOpen} snapshot={snapshot} onClose={closeSettings} />
@@ -2346,5 +3162,20 @@ export function CustomerMarketingRoomPage() {
     return <OnboardingRoom form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} />;
   }
 
-  return <CustomerRoom snapshot={snapshot} view={view} setView={setView} form={form} setForm={setForm} onRefresh={loadSnapshot} onMutation={runMutation} onSelectMedia={selectMediaProject} busy={busy} error={error} notice={notice} />;
+  return (
+    <CustomerRoom
+      snapshot={snapshot}
+      view={view}
+      setView={setView}
+      form={form}
+      setForm={setForm}
+      onRefresh={loadSnapshot}
+      onMutation={runMutation}
+      onSnapshot={setSnapshot}
+      onSelectMedia={selectMediaProject}
+      busy={busy}
+      error={error}
+      notice={notice}
+    />
+  );
 }

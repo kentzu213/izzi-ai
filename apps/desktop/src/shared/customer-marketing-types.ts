@@ -1,3 +1,15 @@
+import type {
+  CustomerProductMarketingContextRef,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
+} from './customer-marketing-product-context';
+
+export type {
+  CustomerProductMarketingContextRef,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
+} from './customer-marketing-product-context';
+
 export type CustomerRole = 'owner' | 'manager' | 'editor' | 'reviewer' | 'viewer';
 
 export type CustomerAutomationMode = 'copilot' | 'semi_autonomous' | 'guardrailed_autonomous';
@@ -200,6 +212,7 @@ export interface CustomerRun {
   stage: string;
   progress: number;
   steps: CustomerRunStep[];
+  productContextRef?: CustomerProductMarketingContextRef;
   directorReply?: string;
   createdAt: string;
   updatedAt: string;
@@ -211,6 +224,7 @@ export interface CustomerApproval {
   kind?: CustomerApprovalKind;
   mediaJobId?: string;
   evidenceDigest?: string;
+  productContextRef?: CustomerProductMarketingContextRef;
   title: string;
   summary: string;
   risk: 'low' | 'medium' | 'high';
@@ -298,6 +312,7 @@ export interface CustomerMediaWorkspace {
 export interface CustomerMarketingSnapshot {
   workspace: CustomerWorkspaceSummary;
   onboarding: CustomerOnboardingProfile | null;
+  productMarketingContext: CustomerProductMarketingContextV1 | null;
   capabilityCatalog: CustomerCapabilityCatalogSummary;
   capabilities: CustomerCapability[];
   runs: CustomerRun[];
@@ -350,6 +365,22 @@ export interface CustomerMutationResult {
   ok: boolean;
   snapshot?: CustomerMarketingSnapshot;
   reply?: string;
+  error?: string;
+}
+
+export type CustomerProductMarketingContextMutationStatus =
+  | 'saved'
+  | 'conflict'
+  | 'forbidden'
+  | 'unavailable'
+  | 'invalid';
+
+export interface CustomerProductMarketingContextMutationResult {
+  ok: boolean;
+  status: CustomerProductMarketingContextMutationStatus;
+  context: CustomerProductMarketingContextV1 | null;
+  snapshot?: CustomerMarketingSnapshot;
+  duplicate?: boolean;
   error?: string;
 }
 

@@ -14,6 +14,9 @@ import type {
   CustomerMarketingCredentialStatus,
 } from '../../shared/customer-marketing-credential-types';
 import type {
+  CustomerProductMarketingContextSaveInput,
+} from '../../shared/customer-marketing-product-context';
+import type {
   CustomerExtensionCapabilityDefinition,
 } from '../../shared/customer-marketing-capability-manifest';
 import {
@@ -357,6 +360,75 @@ function marketingWorkflowGateway(
   };
 }
 
+function productMarketingContext(
+  expectedRevision = 0,
+  productName = 'IzziAPI',
+): CustomerProductMarketingContextSaveInput {
+  return {
+    expectedRevision,
+    product: {
+      productName,
+      category: {
+        vi: 'Nền tảng API và AI automation',
+        en: 'API and AI automation platform',
+      },
+      positioning: {
+        vi: 'Một API thống nhất để đội ngũ nhỏ triển khai workflow AI.',
+        en: 'One unified API for small teams to ship AI workflows.',
+      },
+      targetAudience: {
+        vi: 'Nhà phát triển, startup và đội vận hành.',
+        en: 'Developers, startups, and operations teams.',
+      },
+      valueProposition: {
+        vi: 'Giảm thời gian tích hợp và giữ quyền kiểm soát vận hành.',
+        en: 'Reduce integration time while retaining operational control.',
+      },
+      brandVoice: {
+        vi: 'Rõ ràng, thực tế và dựa trên bằng chứng.',
+        en: 'Clear, practical, and evidence-led.',
+      },
+      callToAction: {
+        vi: 'Dùng thử workflow phù hợp với nhu cầu của bạn.',
+        en: 'Try a workflow that fits your use case.',
+      },
+      proofClaims: [{
+        id: 'proof-api-catalog',
+        text: {
+          vi: 'IzziAPI cung cấp catalog API cho nhiều workflow AI.',
+          en: 'IzziAPI provides an API catalog for multiple AI workflows.',
+        },
+        sourceIds: ['source-site', 'source-repo'],
+      }],
+      prohibitedClaims: [{
+        id: 'no-guaranteed-results',
+        text: {
+          vi: 'Cam kết kết quả marketing hoặc doanh thu.',
+          en: 'Guaranteed marketing or revenue outcomes.',
+        },
+        reason: {
+          vi: 'Hiệu quả phụ thuộc dữ liệu, kênh, ngân sách và cách triển khai.',
+          en: 'Outcomes depend on data, channels, budget, and execution.',
+        },
+      }],
+    },
+    sources: [
+      {
+        id: 'source-site',
+        title: 'IzziAPI product site',
+        url: 'https://izziapi.com/',
+        excerpt: 'Product and API capability overview used as marketing evidence.',
+      },
+      {
+        id: 'source-repo',
+        title: 'Izzi AI repository',
+        url: 'https://github.com/kentzu213/izzi-ai',
+        excerpt: 'Desktop Marketing Room implementation and release evidence.',
+      },
+    ],
+  };
+}
+
 function customerExtensionDefinition(
   overrides: Partial<CustomerExtensionCapabilityDefinition> = {},
 ): CustomerExtensionCapabilityDefinition {
@@ -496,6 +568,9 @@ async function completeOnboarding(service: CustomerMarketingService, name = 'Acm
   const result = await service.saveOnboarding(onboarding(name));
   expect(result.ok).toBe(true);
   expect(result.snapshot?.onboarding?.completed).toBe(true);
+  const context = await service.saveProductMarketingContext(productMarketingContext());
+  expect(context.ok).toBe(true);
+  expect(context.context?.revision).toBe(1);
   return result;
 }
 
@@ -571,6 +646,141 @@ describe('CustomerMarketingService tenant boundary', () => {
   });
 
 describe('CustomerMarketingService onboarding and workflow', () => {
+  it('persists a reviewer-owned bilingual context with deterministic evidence digests', async () => {
+    const context = setup();
+    const onboardingResult = await context.service.saveOnboarding(onboarding());
+    expect(onboardingResult.ok).toBe(true);
+
+    const saved = await context.service.saveProductMarketingContext(productMarketingContext());
+
+    expect(saved).toMatchObject({
+      ok: true,
+      status: 'saved',
+      duplicate: false,
+      context: {
+        schemaVersion: 1,
+        contextId: 'product-marketing-context',
+        revision: 1,
+        locales: ['vi', 'en'],
+        reviewer: { name: 'Owner A' },
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+    expect(saved.context?.sources).toHaveLength(2);
+    expect(saved.context?.sources.every((source) => /^[a-f0-9]{64}$/.test(source.sha256))).toBe(true);
+    expect(saved.snapshot?.productMarketingContext).toEqual(saved.context);
+    expect(JSON.stringify(saved)).not.toContain('tenant-a');
+
+    const restored = await context.service.getProductMarketingContext();
+    expect(restored).toEqual(saved.context);
+  });
+
+  it('replays an identical save without revision churn and rejects a stale conflicting writer', async () => {
+    const context = setup();
+    await context.service.saveOnboarding(onboarding());
+    const first = await context.service.saveProductMarketingContext(productMarketingContext());
+    const firstSha = first.context?.sha256;
+
+    const replay = await context.service.saveProductMarketingContext(productMarketingContext());
+    expect(replay).toMatchObject({
+      ok: true,
+      status: 'saved',
+      duplicate: true,
+      context: { revision: 1, sha256: firstSha },
+    });
+
+    const conflictingDraft = productMarketingContext(0, 'Conflicting product');
+    const conflict = await context.service.saveProductMarketingContext(conflictingDraft);
+    expect(conflict).toMatchObject({
+      ok: false,
+      status: 'conflict',
+      context: { revision: 1, sha256: firstSha },
+    });
+    expect((await context.service.getProductMarketingContext())?.product.productName).toBe('IzziAPI');
+
+    const updated = await context.service.saveProductMarketingContext(
+      productMarketingContext(1, 'IzziAPI Platform'),
+    );
+    expect(updated).toMatchObject({
+      ok: true,
+      status: 'saved',
+      duplicate: false,
+      context: { revision: 2, product: { productName: 'IzziAPI Platform' } },
+    });
+    expect(updated.context?.sha256).not.toBe(firstSha);
+  });
+
+  it('records a new revision when the authenticated reviewer changes on identical content', async () => {
+    const context = setup();
+    await context.service.saveOnboarding(onboarding());
+    const first = await context.service.saveProductMarketingContext(productMarketingContext());
+
+    context.setIdentity({
+      id: 'tenant-a',
+      name: 'Manager B',
+      plan: 'pro',
+      balance: 75,
+    });
+    const reviewed = await context.service.saveProductMarketingContext(productMarketingContext(1));
+
+    expect(reviewed).toMatchObject({
+      ok: true,
+      status: 'saved',
+      duplicate: false,
+      context: {
+        revision: 2,
+        reviewer: { name: 'Manager B' },
+      },
+    });
+    expect(reviewed.context?.sha256).not.toBe(first.context?.sha256);
+  });
+
+  it('omits tampered context evidence and blocks workflow creation before durable state exists', async () => {
+    const context = setup();
+    await completeOnboarding(context.service);
+    const stored = await context.service.getProductMarketingContext();
+    context.db.updateOnlyRecord({
+      productMarketingContext: {
+        ...stored,
+        product: {
+          ...stored?.product,
+          positioning: {
+            vi: 'Nội dung bị sửa ngoài authority.',
+            en: 'Content modified outside authority.',
+          },
+        },
+      },
+    });
+
+    const snapshot = await context.service.getSnapshot();
+    expect(snapshot.productMarketingContext).toBeNull();
+    const created = await context.service.createGoal({
+      goal: 'Create a workflow from tampered product evidence',
+    });
+    expect(created).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Product Marketing Context'),
+    });
+    expect(Array.from(context.db.values.keys())
+      .filter((key) => key.startsWith('customer_marketing_workflows:v1:'))).toHaveLength(0);
+  });
+
+  it('requires Product Marketing Context before creating any workflow artifact', async () => {
+    const context = setup();
+    await context.service.saveOnboarding(onboarding());
+
+    const result = await context.service.createGoal({
+      goal: 'Create a campaign before product context exists',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Product Marketing Context'),
+    });
+    expect(Array.from(context.db.values.keys())
+      .some((key) => key.startsWith('customer_marketing_workflows:v1:'))).toBe(false);
+  });
+
   it('persists all seven numeric onboarding steps', async () => {
     const context = setup();
     const result = await completeOnboarding(context.service);
@@ -595,6 +805,13 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       status: 'awaiting_approval',
       stage: 'awaiting_strategy_approval',
       progress: 80,
+      productContextRef: result.snapshot?.productMarketingContext
+        ? {
+          contextId: result.snapshot.productMarketingContext.contextId,
+          revision: result.snapshot.productMarketingContext.revision,
+          sha256: result.snapshot.productMarketingContext.sha256,
+        }
+        : undefined,
       directorReply: expect.stringContaining('Launch a focused 14 day product campaign'),
     }));
     expect(result.snapshot?.runs[0].steps.map((step) => step.status)).toEqual([
@@ -616,9 +833,22 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       .find(([key]) => key.startsWith('customer_marketing_workflows:v1:'))?.[1];
     expect(durableRaw).toBeTruthy();
     const durable = JSON.parse(durableRaw!) as {
-      workflows: Array<{ jobs: Array<{ status: string }> }>;
-      artifacts: Array<{ content: string }>;
+      workflows: Array<{
+        productContextRef: { contextId: string; revision: number; sha256: string };
+        jobs: Array<{
+          status: string;
+          productContextRef: { contextId: string; revision: number; sha256: string };
+        }>;
+      }>;
+      artifacts: Array<{
+        content: string;
+        productContextRef: { contextId: string; revision: number; sha256: string };
+      }>;
+      approvals: Array<{
+        productContextRef: { contextId: string; revision: number; sha256: string };
+      }>;
     };
+    const expectedContextRef = result.snapshot?.runs[0].productContextRef;
     expect(durable.workflows[0].jobs.map((job) => job.status)).toEqual([
       'completed',
       'completed',
@@ -629,6 +859,17 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(durable.artifacts).toHaveLength(5);
     expect(durable.artifacts.some((artifact) => artifact.content.includes('brand_guardian_receipt'))).toBe(true);
     expect(durable.artifacts.some((artifact) => artifact.content.includes('"externalActionsAllowed":false'))).toBe(true);
+    expect(durable.workflows[0].productContextRef).toEqual(expectedContextRef);
+    expect(durable.workflows[0].jobs.every((job) => (
+      JSON.stringify(job.productContextRef) === JSON.stringify(expectedContextRef)
+    ))).toBe(true);
+    expect(durable.artifacts.every((artifact) => (
+      JSON.stringify(artifact.productContextRef) === JSON.stringify(expectedContextRef)
+      && artifact.content.includes(`"sha256":"${expectedContextRef?.sha256}"`)
+    ))).toBe(true);
+    expect(durable.approvals.every((approval) => (
+      JSON.stringify(approval.productContextRef) === JSON.stringify(expectedContextRef)
+    ))).toBe(true);
   });
 
   it('keeps goal execution local while revalidating server authority and catalog', async () => {
@@ -856,6 +1097,12 @@ describe('CustomerMarketingService AI Director', () => {
       agentId: 'customer-marketing-director',
       model: 'izzi/auto',
     }));
+    expect(director.mock.calls[0][0].message).toContain('Product context revision: 1');
+    expect(director.mock.calls[0][0].message).toContain(
+      result.snapshot?.productMarketingContext?.sha256,
+    );
+    expect(director.mock.calls[0][0].message).toContain('proof-api-catalog');
+    expect(director.mock.calls[0][0].message).toContain('no-guaranteed-results');
     expect(result.snapshot?.runs[0].directorReply).toContain('Research the audience');
     expect(result.snapshot?.workspace.usedCredits).toBe(1);
     expect(result.snapshot?.approvals[0].status).toBe('pending');
@@ -902,6 +1149,63 @@ describe('CustomerMarketingService AI Director', () => {
     };
     const durableApproval = durable.approvals[0];
     const durableArtifact = durable.artifacts.find((artifact) => artifact.id === durableApproval.artifactId);
+    expect(durableArtifact?.content).not.toContain('directorRevision');
+    expect(durableArtifact?.sha256).toBe(result.snapshot?.approvals[0].evidenceDigest);
+  });
+
+  it('accepts a director revision that cites an approved Product Context proof claim', async () => {
+    const director = vi.fn(async () => ({
+      reply: 'Use proof-api-catalog: IzziAPI provides an API catalog for multiple AI workflows.',
+    }));
+    const context = setup({ director });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create an evidence-led acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(true);
+    const durableRaw = Array.from(context.db.values.entries())
+      .find(([key]) => key.startsWith('customer_marketing_workflows:v1:'))?.[1];
+    const durable = JSON.parse(durableRaw!) as {
+      approvals: Array<{ artifactId: string }>;
+      artifacts: Array<{ id: string; content: string }>;
+    };
+    const durableArtifact = durable.artifacts.find(
+      (artifact) => artifact.id === durable.approvals[0]?.artifactId,
+    );
+    expect(durableArtifact?.content).toContain('"approvedProofClaimIds":["proof-api-catalog"]');
+    expect(durableArtifact?.content).toContain('"unsupportedProductClaims":[]');
+  });
+
+  it('blocks an unsupported product claim before it can replace approval evidence', async () => {
+    const director = vi.fn(async () => ({
+      reply: 'IzziAPI is the fastest API platform in Vietnam.',
+    }));
+    const context = setup({ director });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Brand Guardian');
+    expect(result.snapshot?.runs[0]).toMatchObject({
+      status: 'blocked',
+      stage: 'brand_review_blocked',
+    });
+    expect(result.snapshot?.runs[0].directorReply).not.toContain('fastest');
+    const durableRaw = Array.from(context.db.values.entries())
+      .find(([key]) => key.startsWith('customer_marketing_workflows:v1:'))?.[1];
+    const durable = JSON.parse(durableRaw!) as {
+      approvals: Array<{ artifactId: string; digest: string }>;
+      artifacts: Array<{ id: string; content: string; sha256: string }>;
+    };
+    const durableApproval = durable.approvals[0];
+    const durableArtifact = durable.artifacts.find(
+      (artifact) => artifact.id === durableApproval.artifactId,
+    );
     expect(durableArtifact?.content).not.toContain('directorRevision');
     expect(durableArtifact?.sha256).toBe(result.snapshot?.approvals[0].evidenceDigest);
   });
@@ -1059,6 +1363,32 @@ describe('customer capability catalog', () => {
       }),
     ]));
     expect(capabilities.some((capability) => capability.source === 'core')).toBe(true);
+  });
+
+  it('keeps a strategy approval pending when the Product Marketing Context revision changes', async () => {
+    const context = setup();
+    await completeOnboarding(context.service);
+    const created = await context.service.createGoal({
+      goal: 'Create a strategy bound to a reviewed product context',
+    });
+    const approvalId = created.snapshot?.approvals[0].id;
+    expect(approvalId).toBeTruthy();
+
+    const updated = await context.service.saveProductMarketingContext(
+      productMarketingContext(1, 'IzziAPI Updated'),
+    );
+    expect(updated.context?.revision).toBe(2);
+
+    const review = await context.service.reviewApproval({
+      approvalId: approvalId!,
+      decision: 'approved',
+    });
+
+    expect(review).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Product Marketing Context'),
+    });
+    expect((await context.service.getSnapshot()).approvals[0].status).toBe('pending');
   });
 
   it('keeps the production local extension allowlist empty by default', () => {
@@ -1702,15 +2032,23 @@ describe('CustomerMarketingService backend workspace sync', () => {
     expect(stored.onboarding.business.name).toBe('Server profile');
   });
   it.each<CustomerRole>(['reviewer', 'viewer'])('uses the backend %s role before creating a workflow', async (role) => {
-    const workspace = remoteWorkspace({ role });
+    let activeRole: CustomerRole = 'owner';
+    const currentWorkspace = () => remoteWorkspace({ role: activeRole });
     const gateway: CustomerMarketingWorkspaceGateway = {
       ...memberGatewayMethods(),
-      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
-      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      getCurrent: vi.fn(async () => ({
+        status: 'synced',
+        workspace: currentWorkspace(),
+      })),
+      ensureWorkspace: vi.fn(async () => ({
+        status: 'synced',
+        workspace: currentWorkspace(),
+      })),
       reserveQuota: vi.fn(async () => ({ status: 'forbidden', quota: null })),
     };
     const context = setup({ workspaceGateway: gateway });
     await completeOnboarding(context.service);
+    activeRole = role;
 
     const result = await context.service.askDirector({ goal: 'Create a new marketing workflow' });
 
@@ -1760,22 +2098,34 @@ describe('CustomerMarketingService backend workspace sync', () => {
   });
 
   it('fails closed when workspace permission cannot be synchronized', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-workspace-unavailable',
+      name: 'Owner Workspace',
+      plan: 'pro',
+      balance: 75,
+    };
+    const local = setup({ identity });
+    await completeOnboarding(local.service);
     const gateway: CustomerMarketingWorkspaceGateway = {
       ...memberGatewayMethods(),
       getCurrent: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
-      ensureWorkspace: vi.fn()
-        .mockResolvedValueOnce({ status: 'local', workspace: null })
-        .mockResolvedValue({ status: 'unavailable', workspace: null }),
+      ensureWorkspace: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
       reserveQuota: vi.fn(async () => ({ status: 'unavailable', quota: null })),
     };
-    const context = setup({ workspaceGateway: gateway });
-    await completeOnboarding(context.service);
+    const service = new CustomerMarketingService(
+      local.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      gateway,
+    );
 
-    const result = await context.service.askDirector({ goal: 'Create a new marketing workflow' });
+    const result = await service.askDirector({ goal: 'Create a new marketing workflow' });
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain('xác nhận quyền workspace');
-    expect((await context.service.getSnapshot()).runs).toHaveLength(0);
+    expect((await local.service.getSnapshot()).runs).toHaveLength(0);
   });
 
   it('keeps a persisted workspace binding when the gateway returns another tenant', async () => {

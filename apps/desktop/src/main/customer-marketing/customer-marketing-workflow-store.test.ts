@@ -48,6 +48,36 @@ function oneJobWorkflow(id = 'workflow-1', maxAttempts = 3) {
   };
 }
 
+const PRODUCT_CONTEXT_REF = {
+  contextId: 'product-marketing-context' as const,
+  revision: 7,
+  sha256: 'a'.repeat(64),
+};
+
+function createApprovalChain(
+  store: CustomerMarketingWorkflowStore,
+  productContextRef?: typeof PRODUCT_CONTEXT_REF,
+) {
+  store.createWorkflow({
+    id: 'workflow-1',
+    jobs: [{ id: 'job-1' }],
+    ...(productContextRef ? { productContextRef } : {}),
+  });
+  const claim = store.claimNextJob('workflow-1', { workerId: 'reviewer' })!;
+  const artifact = store.appendApprovalArtifact(
+    'workflow-1',
+    'job-1',
+    claim.lease!.token,
+    { id: 'approval-artifact', content: 'Reviewable campaign' },
+  );
+  const approval = store.requestApproval('workflow-1', 'job-1', claim.lease!.token, {
+    id: 'approval-1',
+    artifactId: artifact.id,
+    digest: artifact.sha256,
+  });
+  return { artifact, approval };
+}
+
 function createPendingApproval(store: CustomerMarketingWorkflowStore) {
   store.createWorkflow(oneJobWorkflow());
   const claim = store.claimNextJob('workflow-1', { workerId: 'receipt-reviewer' })!;
@@ -424,6 +454,170 @@ describe('CustomerMarketingWorkflowStore', () => {
       ],
     });
   });
+
+  it('binds one product context reference to the workflow, every job, artifact, and approval', () => {
+    const test = harness();
+    const store = test.makeStore();
+    const workflow = store.createWorkflow({
+      id: 'campaign',
+      productContextRef: PRODUCT_CONTEXT_REF,
+      jobs: [
+        { id: 'draft' },
+        { id: 'review', dependsOn: ['draft'] },
+      ],
+    });
+
+    const draft = store.claimNextJob('campaign', { workerId: 'writer' })!;
+    const draftArtifactInput = { id: 'draft-output', content: 'Campaign draft' };
+    store.completeJob('campaign', 'draft', draft.lease!.token, draftArtifactInput);
+    const review = store.claimNextJob('campaign', { workerId: 'reviewer' })!;
+    const approvalArtifact = store.appendApprovalArtifact(
+      'campaign',
+      'review',
+      review.lease!.token,
+      { id: 'review-output', content: 'Reviewable campaign' },
+    );
+    const approval = store.requestApproval('campaign', 'review', review.lease!.token, {
+      id: 'approval-1',
+      artifactId: approvalArtifact.id,
+      digest: approvalArtifact.sha256,
+    });
+
+    expect(workflow.productContextRef).toEqual(PRODUCT_CONTEXT_REF);
+    expect(workflow.jobs.every((job) => (
+      JSON.stringify(job.productContextRef) === JSON.stringify(PRODUCT_CONTEXT_REF)
+    ))).toBe(true);
+    expect(store.getArtifact(draftArtifactInput.id)?.productContextRef)
+      .toEqual(PRODUCT_CONTEXT_REF);
+    expect(approvalArtifact.productContextRef).toEqual(PRODUCT_CONTEXT_REF);
+    expect(approval.productContextRef).toEqual(PRODUCT_CONTEXT_REF);
+  });
+
+  it('rejects malformed product context references before persistence', () => {
+    const test = harness();
+    const store = test.makeStore();
+    const invalidRefs = [
+      { ...PRODUCT_CONTEXT_REF, contextId: 'renderer-context' },
+      { ...PRODUCT_CONTEXT_REF, revision: 0 },
+      { ...PRODUCT_CONTEXT_REF, sha256: 'A'.repeat(64) },
+      { ...PRODUCT_CONTEXT_REF, workspaceId: 'renderer-controlled' },
+    ];
+
+    for (const productContextRef of invalidRefs) {
+      expect(() => store.createWorkflow({
+        ...oneJobWorkflow(`invalid-${test.settings.values.size}`),
+        productContextRef,
+      } as never)).toThrow(/product context reference is invalid/i);
+    }
+    expect(test.settings.values.size).toBe(0);
+  });
+
+  it('rejects caller-supplied product context references on artifact and approval inputs', () => {
+    const test = harness();
+    const store = test.makeStore();
+    store.createWorkflow({
+      ...oneJobWorkflow(),
+      productContextRef: PRODUCT_CONTEXT_REF,
+    });
+    const claim = store.claimNextJob('workflow-1', { workerId: 'reviewer' })!;
+
+    expect(() => store.appendApprovalArtifact(
+      'workflow-1',
+      'job-1',
+      claim.lease!.token,
+      {
+        id: 'unsafe-artifact',
+        content: 'Renderer-controlled context',
+        productContextRef: PRODUCT_CONTEXT_REF,
+      } as never,
+    )).toThrow(/unsupported field/i);
+
+    const artifact = store.appendApprovalArtifact(
+      'workflow-1',
+      'job-1',
+      claim.lease!.token,
+      { id: 'approval-artifact', content: 'Store-bound context' },
+    );
+    expect(() => store.requestApproval('workflow-1', 'job-1', claim.lease!.token, {
+      id: 'unsafe-approval',
+      artifactId: artifact.id,
+      digest: artifact.sha256,
+      productContextRef: PRODUCT_CONTEXT_REF,
+    } as never)).toThrow(/unsupported field/i);
+    expect(store.getApproval('unsafe-approval')).toBeNull();
+  });
+
+  it('persists null product context references when workflow callers omit the binding', () => {
+    const test = harness();
+    const store = test.makeStore();
+    const { artifact, approval } = createApprovalChain(store);
+    const workflow = store.getWorkflow('workflow-1')!;
+
+    expect(workflow.productContextRef).toBeNull();
+    expect(workflow.jobs[0]?.productContextRef).toBeNull();
+    expect(artifact.productContextRef).toBeNull();
+    expect(approval.productContextRef).toBeNull();
+  });
+
+  it('normalizes legacy V1 records missing product context references to null without quarantine', () => {
+    const test = harness();
+    const first = test.makeStore();
+    createApprovalChain(first);
+    const storageKey = Array.from(test.settings.values.keys())[0]!;
+    const legacy = JSON.parse(test.settings.values.get(storageKey)!) as {
+      workflows: Array<{
+        productContextRef?: unknown;
+        jobs: Array<{ productContextRef?: unknown }>;
+      }>;
+      artifacts: Array<{ productContextRef?: unknown }>;
+      approvals: Array<{ productContextRef?: unknown }>;
+    };
+    delete legacy.workflows[0]?.productContextRef;
+    delete legacy.workflows[0]?.jobs[0]?.productContextRef;
+    delete legacy.artifacts[0]?.productContextRef;
+    delete legacy.approvals[0]?.productContextRef;
+    test.settings.values.set(storageKey, JSON.stringify(legacy));
+
+    const snapshot = test.makeStore().getSnapshot();
+
+    expect(snapshot.schemaVersion).toBe(1);
+    expect(snapshot.workflows[0]?.productContextRef).toBeNull();
+    expect(snapshot.workflows[0]?.jobs[0]?.productContextRef).toBeNull();
+    expect(snapshot.artifacts[0]?.productContextRef).toBeNull();
+    expect(snapshot.approvals[0]?.productContextRef).toBeNull();
+    expect(test.settings.values.has(`${storageKey}:quarantine`)).toBe(false);
+    expect(JSON.parse(test.settings.values.get(storageKey)!).workflows[0])
+      .not.toHaveProperty('productContextRef');
+  });
+
+  it.each(['workflow', 'job', 'artifact', 'approval'] as const)(
+    'quarantines a tampered %s product context reference and fails closed',
+    (layer) => {
+      const test = harness();
+      const store = test.makeStore();
+      createApprovalChain(store, PRODUCT_CONTEXT_REF);
+      const storageKey = Array.from(test.settings.values.keys())[0]!;
+      const persisted = JSON.parse(test.settings.values.get(storageKey)!) as {
+        workflows: Array<{
+          productContextRef: typeof PRODUCT_CONTEXT_REF;
+          jobs: Array<{ productContextRef: typeof PRODUCT_CONTEXT_REF }>;
+        }>;
+        artifacts: Array<{ productContextRef: typeof PRODUCT_CONTEXT_REF }>;
+        approvals: Array<{ productContextRef: typeof PRODUCT_CONTEXT_REF }>;
+      };
+      const tamperedRef = { ...PRODUCT_CONTEXT_REF, revision: PRODUCT_CONTEXT_REF.revision + 1 };
+      if (layer === 'workflow') persisted.workflows[0]!.productContextRef = tamperedRef;
+      if (layer === 'job') persisted.workflows[0]!.jobs[0]!.productContextRef = tamperedRef;
+      if (layer === 'artifact') persisted.artifacts[0]!.productContextRef = tamperedRef;
+      if (layer === 'approval') persisted.approvals[0]!.productContextRef = tamperedRef;
+      test.settings.values.set(storageKey, JSON.stringify(persisted));
+
+      expect(() => store.getSnapshot()).toThrow(WorkflowStoreCorruptionError);
+      expect(test.settings.values.has(storageKey)).toBe(false);
+      expect(test.settings.values.get(`${storageKey}:quarantine`))
+        .toContain('product context reference mismatch');
+    },
+  );
 
   it('fails closed and quarantines malformed persisted data', () => {
     const test = harness();

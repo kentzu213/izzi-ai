@@ -1,5 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  parseCustomerProductMarketingContextRef,
+  type CustomerProductMarketingContextRef,
+} from '../../shared/customer-marketing-product-context';
 import type { CustomerMarketingWorkflowAuditReceiptV1 } from '../../shared/customer-marketing-types';
 
 const SCHEMA_VERSION = 1;
@@ -46,6 +50,7 @@ export interface WorkflowLease {
 
 export interface WorkflowJob {
   id: string;
+  productContextRef: CustomerProductMarketingContextRef | null;
   dependsOn: string[];
   status: WorkflowJobStatus;
   attempts: number;
@@ -62,6 +67,7 @@ export interface WorkflowJob {
 
 export interface CustomerMarketingWorkflow {
   id: string;
+  productContextRef: CustomerProductMarketingContextRef | null;
   status: WorkflowStatus;
   jobs: WorkflowJob[];
   revision: number;
@@ -74,6 +80,7 @@ export interface WorkflowArtifact {
   id: string;
   workflowId: string;
   jobId: string;
+  productContextRef: CustomerProductMarketingContextRef | null;
   purpose: WorkflowArtifactPurpose;
   content: string;
   mediaType: string;
@@ -87,6 +94,7 @@ export interface WorkflowApproval {
   id: string;
   workflowId: string;
   jobId: string;
+  productContextRef: CustomerProductMarketingContextRef | null;
   artifactId: string;
   digest: string;
   status: WorkflowApprovalStatus;
@@ -125,6 +133,7 @@ export interface CreateWorkflowJobInput {
 
 export interface CreateWorkflowInput {
   id: string;
+  productContextRef?: CustomerProductMarketingContextRef;
   jobs: readonly CreateWorkflowJobInput[];
 }
 
@@ -318,9 +327,11 @@ export class CustomerMarketingWorkflowStore {
       }
       const workflow: CustomerMarketingWorkflow = {
         id: normalized.id,
+        productContextRef: normalized.productContextRef,
         status: 'pending',
         jobs: normalized.jobs.map((job) => ({
           id: job.id,
+          productContextRef: normalized.productContextRef,
           dependsOn: [...job.dependsOn],
           status: 'pending',
           attempts: 0,
@@ -747,6 +758,7 @@ export class CustomerMarketingWorkflowStore {
         if (
           existing.workflowId === workflowId
           && existing.jobId === jobId
+          && productContextRefsEqual(existing.productContextRef, workflow.productContextRef)
           && existing.artifactId === request.artifactId
           && existing.digest === request.digest
           && job.approvalIds.includes(existing.id)
@@ -784,6 +796,7 @@ export class CustomerMarketingWorkflowStore {
         id: request.id,
         workflowId,
         jobId,
+        productContextRef: workflow.productContextRef,
         artifactId: request.artifactId,
         digest: request.digest,
         status: 'pending',
@@ -1012,17 +1025,52 @@ function normalizePersistedStateShape(value: unknown): unknown {
     ],
     'Persisted workflow store',
   );
-  if (Object.prototype.hasOwnProperty.call(value, 'receipts')) return value;
-  return { ...value, receipts: [] };
+  const workflows = Array.isArray(value.workflows)
+    ? value.workflows.map(normalizePersistedWorkflowProductContextShape)
+    : value.workflows;
+  const artifacts = Array.isArray(value.artifacts)
+    ? value.artifacts.map(normalizeLegacyProductContextRef)
+    : value.artifacts;
+  const approvals = Array.isArray(value.approvals)
+    ? value.approvals.map(normalizeLegacyProductContextRef)
+    : value.approvals;
+  const receipts = Object.prototype.hasOwnProperty.call(value, 'receipts')
+    ? value.receipts
+    : [];
+  return { ...value, workflows, artifacts, approvals, receipts };
+}
+
+function normalizePersistedWorkflowProductContextShape(value: unknown): unknown {
+  const normalized = normalizeLegacyProductContextRef(value);
+  if (typeof normalized !== 'object' || normalized === null || Array.isArray(normalized)) {
+    return normalized;
+  }
+  const workflow = normalized as Record<string, unknown>;
+  if (!Array.isArray(workflow.jobs)) return workflow;
+  return {
+    ...workflow,
+    jobs: workflow.jobs.map(normalizeLegacyProductContextRef),
+  };
+}
+
+function normalizeLegacyProductContextRef(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(record, 'productContextRef')) return record;
+  return { ...record, productContextRef: null };
 }
 
 function normalizeWorkflowInput(input: CreateWorkflowInput): {
   id: string;
+  productContextRef: CustomerProductMarketingContextRef | null;
   jobs: Array<{ id: string; dependsOn: string[]; maxAttempts: number }>;
 } {
   assertRecord(input, 'Workflow input');
-  assertOnlyKeys(input, ['id', 'jobs'], 'Workflow input');
+  assertOnlyKeys(input, ['id', 'productContextRef', 'jobs'], 'Workflow input');
   assertIdentifier(input.id, 'Workflow id');
+  const productContextRef = input.productContextRef === undefined
+    ? null
+    : normalizeProductContextRef(input.productContextRef, 'Workflow product context reference');
   if (!Array.isArray(input.jobs) || input.jobs.length === 0) {
     throw new WorkflowStoreValidationError('Workflow jobs must be a non-empty array.');
   }
@@ -1042,7 +1090,7 @@ function normalizeWorkflowInput(input: CreateWorkflowInput): {
     return { id: job.id, dependsOn, maxAttempts };
   });
   validateDag(jobs);
-  return { id: input.id, jobs };
+  return { id: input.id, productContextRef, jobs };
 }
 
 function normalizeArtifactInput(input: ArtifactInput): Required<ArtifactInput> {
@@ -1179,11 +1227,14 @@ function addArtifact(
   input: Required<ArtifactInput>,
   timestamp: string,
 ): { artifact: WorkflowArtifact; created: boolean } {
+  const workflow = requireWorkflow(state, workflowId);
+  requireJob(workflow, jobId);
   const existing = state.artifacts.find((artifact) => artifact.id === input.id);
   if (existing) {
     if (
       existing.workflowId === workflowId
       && existing.jobId === jobId
+      && productContextRefsEqual(existing.productContextRef, workflow.productContextRef)
       && existing.purpose === purpose
       && existing.content === input.content
       && existing.mediaType === input.mediaType
@@ -1197,6 +1248,7 @@ function addArtifact(
     id: input.id,
     workflowId,
     jobId,
+    productContextRef: workflow.productContextRef,
     purpose,
     content: input.content,
     mediaType: input.mediaType,
@@ -1387,6 +1439,11 @@ function validatePersistedState(
     if (!owner || !owner.artifactIds.includes(artifact.id)) {
       throw new WorkflowStoreValidationError(`Artifact '${artifact.id}' references a missing job.`);
     }
+    if (!productContextRefsEqual(artifact.productContextRef, owner.productContextRef)) {
+      throw new WorkflowStoreValidationError(
+        `Artifact '${artifact.id}' product context reference mismatch.`,
+      );
+    }
     artifactsById.set(artifact.id, artifact);
   }
 
@@ -1406,9 +1463,19 @@ function validatePersistedState(
     ) {
       throw new WorkflowStoreValidationError(`Approval '${approval.id}' has an invalid artifact binding.`);
     }
+    if (!productContextRefsEqual(approval.productContextRef, artifact.productContextRef)) {
+      throw new WorkflowStoreValidationError(
+        `Approval '${approval.id}' product context reference mismatch.`,
+      );
+    }
     const owner = jobsByKey.get(jobKey(approval.workflowId, approval.jobId));
     if (!owner || !owner.approvalIds.includes(approval.id)) {
       throw new WorkflowStoreValidationError(`Approval '${approval.id}' references a missing job.`);
+    }
+    if (!productContextRefsEqual(approval.productContextRef, owner.productContextRef)) {
+      throw new WorkflowStoreValidationError(
+        `Approval '${approval.id}' product context reference mismatch.`,
+      );
     }
     approvalsById.set(approval.id, approval);
   }
@@ -1471,10 +1538,23 @@ function validatePersistedWorkflow(value: unknown): asserts value is CustomerMar
   assertRecord(value, 'Persisted workflow');
   assertOnlyKeys(
     value,
-    ['id', 'status', 'jobs', 'revision', 'createdAt', 'updatedAt', 'completedAt'],
+    [
+      'id',
+      'productContextRef',
+      'status',
+      'jobs',
+      'revision',
+      'createdAt',
+      'updatedAt',
+      'completedAt',
+    ],
     'Persisted workflow',
   );
   assertIdentifier(value.id, 'Persisted workflow id');
+  validatePersistedProductContextRef(
+    value.productContextRef,
+    `Workflow '${value.id}' product context reference`,
+  );
   if (!isWorkflowStatus(value.status)) {
     throw new WorkflowStoreValidationError(`Workflow '${value.id}' has an invalid status.`);
   }
@@ -1485,7 +1565,14 @@ function validatePersistedWorkflow(value: unknown): asserts value is CustomerMar
   if (!Array.isArray(value.jobs) || value.jobs.length === 0) {
     throw new WorkflowStoreValidationError(`Workflow '${value.id}' must contain jobs.`);
   }
-  for (const job of value.jobs) validatePersistedJob(job);
+  for (const job of value.jobs) {
+    validatePersistedJob(job);
+    if (!productContextRefsEqual(value.productContextRef, job.productContextRef)) {
+      throw new WorkflowStoreValidationError(
+        `Workflow '${value.id}' job '${job.id}' product context reference mismatch.`,
+      );
+    }
+  }
   validateDag(value.jobs);
   if (derivedWorkflowStatus(value.jobs) !== value.status) {
     throw new WorkflowStoreValidationError(`Workflow '${value.id}' status is inconsistent with its jobs.`);
@@ -1501,6 +1588,7 @@ function validatePersistedJob(value: unknown): asserts value is WorkflowJob {
     value,
     [
       'id',
+      'productContextRef',
       'dependsOn',
       'status',
       'attempts',
@@ -1517,6 +1605,10 @@ function validatePersistedJob(value: unknown): asserts value is WorkflowJob {
     'Persisted job',
   );
   assertIdentifier(value.id, 'Persisted job id');
+  validatePersistedProductContextRef(
+    value.productContextRef,
+    `Job '${value.id}' product context reference`,
+  );
   if (!isJobStatus(value.status)) {
     throw new WorkflowStoreValidationError(`Job '${value.id}' has an invalid status.`);
   }
@@ -1578,6 +1670,7 @@ function validatePersistedArtifact(value: unknown): asserts value is WorkflowArt
       'id',
       'workflowId',
       'jobId',
+      'productContextRef',
       'purpose',
       'content',
       'mediaType',
@@ -1591,6 +1684,10 @@ function validatePersistedArtifact(value: unknown): asserts value is WorkflowArt
   assertIdentifier(value.id, 'Persisted artifact id');
   assertIdentifier(value.workflowId, 'Persisted artifact workflow id');
   assertIdentifier(value.jobId, 'Persisted artifact job id');
+  validatePersistedProductContextRef(
+    value.productContextRef,
+    `Artifact '${value.id}' product context reference`,
+  );
   if (value.purpose !== 'job_output' && value.purpose !== 'approval') {
     throw new WorkflowStoreValidationError(`Artifact '${value.id}' has an invalid purpose.`);
   }
@@ -1616,6 +1713,7 @@ function validatePersistedApproval(value: unknown): asserts value is WorkflowApp
       'id',
       'workflowId',
       'jobId',
+      'productContextRef',
       'artifactId',
       'digest',
       'status',
@@ -1629,6 +1727,10 @@ function validatePersistedApproval(value: unknown): asserts value is WorkflowApp
   assertIdentifier(value.id, 'Persisted approval id');
   assertIdentifier(value.workflowId, 'Persisted approval workflow id');
   assertIdentifier(value.jobId, 'Persisted approval job id');
+  validatePersistedProductContextRef(
+    value.productContextRef,
+    `Approval '${value.id}' product context reference`,
+  );
   assertIdentifier(value.artifactId, 'Persisted approval artifact id');
   assertDigest(value.digest, 'Persisted approval digest');
   if (value.status !== 'pending' && value.status !== 'approved' && value.status !== 'rejected') {
@@ -1755,6 +1857,37 @@ function assertArtifactContent(value: unknown): asserts value is string {
   if (Buffer.byteLength(value, 'utf8') > MAX_ARTIFACT_BYTES) {
     throw new WorkflowStoreValidationError('Artifact content exceeds the local storage limit.');
   }
+}
+
+function normalizeProductContextRef(
+  value: unknown,
+  label: string,
+): CustomerProductMarketingContextRef {
+  const parsed = parseCustomerProductMarketingContextRef(value);
+  if (!parsed) {
+    throw new WorkflowStoreValidationError(`${label} is invalid.`);
+  }
+  return parsed;
+}
+
+function validatePersistedProductContextRef(
+  value: unknown,
+  label: string,
+): asserts value is CustomerProductMarketingContextRef | null {
+  if (value === null) return;
+  normalizeProductContextRef(value, label);
+}
+
+function productContextRefsEqual(
+  first: CustomerProductMarketingContextRef | null,
+  second: CustomerProductMarketingContextRef | null,
+): boolean {
+  return first === null
+    ? second === null
+    : second !== null
+      && first.contextId === second.contextId
+      && first.revision === second.revision
+      && first.sha256 === second.sha256;
 }
 
 function assertDigest(value: unknown, label: string): asserts value is string {

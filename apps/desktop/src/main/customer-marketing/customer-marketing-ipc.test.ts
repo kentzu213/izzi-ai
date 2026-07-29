@@ -51,6 +51,24 @@ function serviceMock() {
       revoked: true,
       credential: { provider: input.provider, state: 'disconnected', updatedAt: null },
     })),
+    getProductMarketingContext: vi.fn(async () => null),
+    saveProductMarketingContext: vi.fn(async (input) => ({
+      ok: true,
+      status: 'saved',
+      context: {
+        schemaVersion: 1,
+        contextId: 'product-marketing-context',
+        revision: 1,
+        locales: ['vi', 'en'],
+        product: input.product,
+        sources: input.sources.map((source) => ({ ...source, sha256: 'a'.repeat(64) })),
+        reviewer: {
+          name: 'Owner A',
+          reviewedAt: '2026-07-29T12:00:00.000Z',
+        },
+        sha256: 'b'.repeat(64),
+      },
+    })),
     saveOnboarding: vi.fn(),
     createGoal: vi.fn(),
     askDirector: vi.fn(),
@@ -145,6 +163,104 @@ describe('customer marketing media IPC', () => {
 
     await expect(handler!(event(), 'media-job-id')).rejects.toThrow('Payload customer marketing không hợp lệ');
     expect(service.runMediaPreview).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing Product Marketing Context IPC', () => {
+  const input = {
+    expectedRevision: 0,
+    product: {
+      productName: 'IzziAPI',
+      category: {
+        vi: 'Nền tảng API và AI automation',
+        en: 'API and AI automation platform',
+      },
+      positioning: {
+        vi: 'Một API thống nhất để đội ngũ nhỏ triển khai workflow AI.',
+        en: 'One unified API for small teams to ship AI workflows.',
+      },
+      targetAudience: {
+        vi: 'Nhà phát triển, startup và đội vận hành.',
+        en: 'Developers, startups, and operations teams.',
+      },
+      valueProposition: {
+        vi: 'Giảm thời gian tích hợp và giữ quyền kiểm soát vận hành.',
+        en: 'Reduce integration time while retaining operational control.',
+      },
+      brandVoice: {
+        vi: 'Rõ ràng, thực tế và dựa trên bằng chứng.',
+        en: 'Clear, practical, and evidence-led.',
+      },
+      callToAction: {
+        vi: 'Dùng thử workflow phù hợp với nhu cầu của bạn.',
+        en: 'Try a workflow that fits your use case.',
+      },
+      proofClaims: [{
+        id: 'proof-api-catalog',
+        text: {
+          vi: 'IzziAPI cung cấp catalog API cho nhiều workflow AI.',
+          en: 'IzziAPI provides an API catalog for multiple AI workflows.',
+        },
+        sourceIds: ['source-site'],
+      }],
+      prohibitedClaims: [{
+        id: 'no-guaranteed-results',
+        text: {
+          vi: 'Cam kết kết quả marketing hoặc doanh thu.',
+          en: 'Guaranteed marketing or revenue outcomes.',
+        },
+        reason: {
+          vi: 'Hiệu quả phụ thuộc dữ liệu, kênh, ngân sách và cách triển khai.',
+          en: 'Outcomes depend on data, channels, budget, and execution.',
+        },
+      }],
+    },
+    sources: [{
+      id: 'source-site',
+      title: 'IzziAPI product site',
+      url: 'https://izziapi.com/',
+      excerpt: 'Product and API capability overview used as marketing evidence.',
+    }],
+  };
+
+  it('reads context only from a trusted sender and accepts no renderer payload', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:getProductMarketingContext');
+
+    await expect(handler!(event())).resolves.toBeNull();
+    await expect(handler!(event(), { workspaceId: 'renderer-controlled' }))
+      .rejects.toThrow('Payload Product Marketing Context không được phép');
+    await expect(handler!(event('http://localhost:9999/customer-marketing')))
+      .rejects.toThrow('Customer Marketing IPC sender');
+    expect(service.getProductMarketingContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes only the strict context draft and rejects renderer-owned authority fields', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:saveProductMarketingContext');
+
+    await expect(handler!(event(), input)).resolves.toMatchObject({
+      ok: true,
+      status: 'saved',
+      context: { revision: 1 },
+    });
+    expect(service.saveProductMarketingContext).toHaveBeenCalledWith(input);
+
+    await expect(handler!(event(), {
+      ...input,
+      workspaceId: 'renderer-controlled',
+    })).rejects.toThrow('Payload Product Marketing Context không hợp lệ');
+    await expect(handler!(event(), {
+      ...input,
+      reviewer: { name: 'Renderer reviewer' },
+    })).rejects.toThrow('Payload Product Marketing Context không hợp lệ');
+    await expect(handler!(event(), {
+      ...input,
+      sha256: 'c'.repeat(64),
+    })).rejects.toThrow('Payload Product Marketing Context không hợp lệ');
+    expect(service.saveProductMarketingContext).toHaveBeenCalledTimes(1);
   });
 });
 

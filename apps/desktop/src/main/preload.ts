@@ -45,6 +45,9 @@ import type {
   CustomerGoalInput,
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
+  CustomerProductMarketingContextMutationResult,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingCalendarInput,
   CustomerMarketingResourceArchiveInput,
@@ -536,6 +539,12 @@ const electronAPI = {
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
       ipcRenderer.invoke('customerMarketing:getSnapshot'),
+    getProductMarketingContext: (): Promise<CustomerProductMarketingContextV1 | null> =>
+      ipcRenderer.invoke('customerMarketing:getProductMarketingContext'),
+    saveProductMarketingContext: (
+      input: CustomerProductMarketingContextSaveInput,
+    ): Promise<CustomerProductMarketingContextMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:saveProductMarketingContext', input),
     listIntegrationCredentials: (): Promise<CustomerMarketingCredentialListResult> =>
       ipcRenderer.invoke('customerMarketing:listIntegrationCredentials'),
     revokeIntegrationCredential: (

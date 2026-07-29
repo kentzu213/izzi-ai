@@ -10,6 +10,9 @@ import type {
   CustomerGoalInput,
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
+  CustomerProductMarketingContextMutationResult,
+  CustomerProductMarketingContextSaveInput,
+  CustomerProductMarketingContextV1,
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingCalendarInput,
   CustomerMarketingResourceArchiveInput,
@@ -156,6 +159,10 @@ declare global {
 
   interface ElectronCustomerMarketingApi {
     getSnapshot: () => Promise<CustomerMarketingSnapshot>;
+    getProductMarketingContext: () => Promise<CustomerProductMarketingContextV1 | null>;
+    saveProductMarketingContext: (
+      input: CustomerProductMarketingContextSaveInput,
+    ) => Promise<CustomerProductMarketingContextMutationResult>;
     listIntegrationCredentials: () => Promise<CustomerMarketingCredentialListResult>;
     revokeIntegrationCredential: (
       input: CustomerMarketingCredentialRevokeInput,

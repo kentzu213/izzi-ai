@@ -1,5 +1,22 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.5
+
+Customer Marketing Product Context release.
+
+- Add a bilingual, reviewer-owned Product Marketing Context with canonical
+  SHA-256 evidence, HTTPS sources, approved proof claims, and prohibited claims.
+- Bind the context revision and digest to every durable strategy workflow, job,
+  artifact, approval, and AI Director prompt; stale approvals remain pending.
+- Add the operational Brand Center editor with draft preservation, optimistic
+  revision checks, explicit conflict recovery, cross-navigation draft continuity,
+  and responsive layouts.
+- Require AI Director product claims to cite an approved Product Context proof
+  claim ID before approval evidence can be replaced.
+- Keep reviewer identity, tenant scope, digests, and durable workflow authority
+  in the main process. Publish, spend, bulk email, and integration mutation stay
+  disabled.
+
 ## 1.14.0-beta.4
 
 Windows identity and icon patch.
