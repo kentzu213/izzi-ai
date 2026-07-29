@@ -19,10 +19,12 @@ import type {
   WorkCheckpointCursor,
   WorkEvent,
   WorkRun,
+  Workspace,
 } from './work-types';
 import type { WorkRunBundle } from './work-service';
 
 export const WORK_IPC_CHANNELS = Object.freeze({
+  listWorkspaces: 'work:listWorkspaces',
   listRuns: 'work:listRuns',
   getRun: 'work:getRun',
   listEvents: 'work:listEvents',
@@ -101,6 +103,7 @@ export type WorkResumeResponse =
   | { ok: false; reason: WorkIpcFailure };
 
 export interface WorkPreloadApi {
+  listWorkspaces(): Promise<Workspace[]>;
   listRuns(input: WorkListRunsRequest): Promise<WorkRun[]>;
   getRun(input: WorkRunRequest): Promise<WorkRunBundle | null>;
   listEvents(input: WorkListEventsRequest): Promise<WorkEvent[]>;
