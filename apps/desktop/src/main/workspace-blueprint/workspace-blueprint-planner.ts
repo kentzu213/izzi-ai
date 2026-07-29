@@ -1,6 +1,7 @@
 import {
   createWorkspaceProvisioningPlan,
   type WorkspaceBlueprintDescriptor,
+  type WorkspaceBlueprintProvenance,
   type WorkspaceProvisioningPlan,
   type WorkspaceProvisioningScopeInput,
 } from '../../shared/workspace-blueprint';
@@ -10,9 +11,10 @@ import {
  * owners cannot mistake this loop for operational provisioning.
  */
 export function planWorkspaceBlueprint(
-  blueprint: WorkspaceBlueprintDescriptor,
+  blueprint: WorkspaceBlueprintDescriptor | unknown,
+  provenance: WorkspaceBlueprintProvenance,
   scope: WorkspaceProvisioningScopeInput,
   plannedAt: string,
 ): WorkspaceProvisioningPlan {
-  return createWorkspaceProvisioningPlan(blueprint, scope, plannedAt);
+  return createWorkspaceProvisioningPlan(blueprint, provenance, scope, plannedAt);
 }

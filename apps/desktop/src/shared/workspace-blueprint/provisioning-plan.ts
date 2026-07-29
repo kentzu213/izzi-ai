@@ -1,9 +1,14 @@
-import type { DataClassification, TrustZone } from '../personal-office';
+import {
+  canonicalJson,
+  type DataClassification,
+  type TrustZone,
+} from '../personal-office';
 import {
   WORKSPACE_PROVISIONING_PLAN_SCHEMA_VERSION,
   WORKSPACE_PROVISIONING_PLAN_VERSION,
   WorkspaceBlueprintValidationError,
   type WorkspaceBlueprintDescriptor,
+  type WorkspaceBlueprintProvenance,
   type WorkspaceProvisioningExpectedSideEffect,
   type WorkspaceProvisioningPlan,
   type WorkspaceProvisioningScope,
@@ -17,6 +22,7 @@ import {
   parsePlanRecord,
   parsePlanText,
   parseTrustZoneArray,
+  parseWorkspaceBlueprintDescriptor,
   parseWorkspaceProvisioningScope,
 } from './validation';
 
@@ -82,18 +88,25 @@ function encoded(value: string): string {
 }
 
 export function workspaceProvisioningPlanId(
-  blueprint: Pick<WorkspaceBlueprintDescriptor, 'id' | 'blueprintVersion'>,
+  blueprint: WorkspaceBlueprintDescriptor,
   scope: WorkspaceProvisioningScope,
 ): string {
-  return [
-    'workspace-provision-plan',
-    WORKSPACE_PROVISIONING_PLAN_VERSION,
-    encoded(blueprint.id),
-    encoded(blueprint.blueprintVersion),
-    encoded(scope.tenantId),
-    encoded(scope.userId),
-    encoded(scope.workspaceInstanceId),
-  ].join(':');
+  const material = derived(blueprint);
+  return `workspace-provision-plan:${WORKSPACE_PROVISIONING_PLAN_VERSION}:${encoded(
+    canonicalJson({
+      blueprintId: blueprint.id,
+      blueprintVersion: blueprint.blueprintVersion,
+      dataClassifications: material.dataClassifications,
+      evidenceDigest: blueprint.evidenceDigest,
+      expectedSideEffects: material.expectedSideEffects,
+      requestedApps: material.requestedApps,
+      requestedPackages: material.requestedPackages,
+      requiredIntegrationGrantRefs: material.requiredIntegrationGrantRefs,
+      requiresApproval: material.requiresApproval,
+      scope,
+      trustZones: material.trustZones,
+    }),
+  )}`;
 }
 
 function ensureTrusted(blueprint: WorkspaceBlueprintDescriptor): void {
@@ -107,10 +120,12 @@ function ensureTrusted(blueprint: WorkspaceBlueprintDescriptor): void {
 }
 
 export function createWorkspaceProvisioningPlan(
-  blueprint: WorkspaceBlueprintDescriptor,
+  blueprintInput: unknown,
+  provenance: WorkspaceBlueprintProvenance,
   scopeInput: WorkspaceProvisioningScopeInput,
   plannedAt: string,
 ): WorkspaceProvisioningPlan {
+  const blueprint = parseWorkspaceBlueprintDescriptor(blueprintInput, provenance);
   ensureTrusted(blueprint);
   const scope = parseWorkspaceProvisioningScope(scopeInput);
   const values = derived(blueprint);
@@ -126,13 +141,15 @@ export function createWorkspaceProvisioningPlan(
     },
     ...values,
     effect: 'plan_only',
-  }, blueprint);
+  }, blueprint, provenance);
 }
 
 export function parseWorkspaceProvisioningPlan(
   value: unknown,
-  blueprint: WorkspaceBlueprintDescriptor,
+  blueprintInput: unknown,
+  provenance: WorkspaceBlueprintProvenance,
 ): WorkspaceProvisioningPlan {
+  const blueprint = parseWorkspaceBlueprintDescriptor(blueprintInput, provenance);
   ensureTrusted(blueprint);
   const plan = parsePlanRecord(value);
   if (plan.schemaVersion !== WORKSPACE_PROVISIONING_PLAN_SCHEMA_VERSION) {
@@ -219,7 +236,7 @@ export function parseWorkspaceProvisioningPlan(
       message: 'must match the reviewed expected side effects',
     }]);
   }
-  const planId = parsePlanText(plan.planId, 'plan.planId', 2048);
+  const planId = parsePlanText(plan.planId, 'plan.planId', 65_536);
   if (planId !== workspaceProvisioningPlanId(blueprint, scope)) {
     throw new WorkspaceBlueprintValidationError([{
       code: 'INVALID_PLAN',

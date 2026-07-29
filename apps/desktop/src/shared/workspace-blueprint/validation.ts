@@ -20,7 +20,8 @@ import {
   type WorkspaceProvisioningScopeInput,
 } from './types';
 
-const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
 const SHA256 = /^sha256:[a-f0-9]{64}$/;
 const CLASSIFICATIONS: readonly DataClassification[] = [
@@ -49,7 +50,7 @@ const APP_SIDE_EFFECTS: readonly WorkspaceBlueprintAppSideEffect[] = [
   'ui_mutation',
 ];
 const EMBEDDED_SECRET =
-  /(?:sk|pk|ghp|gho|xox[bap])[-_][A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./i;
+  /(?:sk|pk|ghp|gho|xox[bap])[-_][A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.|(?:AKIA|ASIA)[A-Z0-9]{16}/i;
 
 function fail(
   code: WorkspaceBlueprintValidationCode,

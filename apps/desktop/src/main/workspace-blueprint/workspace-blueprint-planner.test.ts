@@ -34,6 +34,10 @@ describe('main workspace blueprint planner', () => {
     const plan = planWorkspaceBlueprint(
       blueprint,
       {
+        boundary: 'host_validated',
+        expectedEvidenceDigest: digest,
+      },
+      {
         tenantId: 'tenant:izzi',
         userId: 'user:owner',
         workspaceInstanceId: 'workspace:focus',

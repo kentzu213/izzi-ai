@@ -56,8 +56,11 @@ describe('workspace blueprint descriptor', () => {
           packageVersion: '9.9.9',
         }],
       },
+      { ...trustedBlueprintInput(), blueprintVersion: '01.0.0' },
+      { ...trustedBlueprintInput(), blueprintVersion: '1.0.0-alpha..1' },
       { ...trustedBlueprintInput(), id: '*' },
       { ...trustedBlueprintInput(), id: `sk-${'x'.repeat(24)}` },
+      { ...trustedBlueprintInput(), id: `AKIA${'A'.repeat(16)}` },
     ];
 
     for (const input of cases) {

@@ -8,6 +8,10 @@ import {
 import { trustedBlueprintInput } from './workspace-blueprint.test';
 
 const DIGEST = `sha256:${'a'.repeat(64)}`;
+const PROVENANCE = {
+  boundary: 'host_validated' as const,
+  expectedEvidenceDigest: DIGEST,
+};
 const SCOPE = {
   tenantId: 'tenant:izzi',
   userId: 'user:owner',
@@ -17,7 +21,7 @@ const SCOPE = {
 function trustedBlueprint() {
   return parseWorkspaceBlueprintDescriptor(
     trustedBlueprintInput(),
-    { boundary: 'host_validated', expectedEvidenceDigest: DIGEST },
+    PROVENANCE,
   );
 }
 
@@ -25,12 +29,14 @@ describe('workspace provisioning plan', () => {
   it('is deterministic, exact-scoped and derives review fields', () => {
     const blueprint = trustedBlueprint();
     const first = createWorkspaceProvisioningPlan(
-      blueprint,
+      trustedBlueprintInput(),
+      PROVENANCE,
       SCOPE,
       '2026-07-29T12:00:00.000Z',
     );
     const second = createWorkspaceProvisioningPlan(
-      blueprint,
+      trustedBlueprintInput(),
+      PROVENANCE,
       SCOPE,
       '2026-07-29T12:00:00.000Z',
     );
@@ -60,7 +66,8 @@ describe('workspace provisioning plan', () => {
 
   it('rejects ambiguous scope and untrusted availability', () => {
     expect(() => createWorkspaceProvisioningPlan(
-      trustedBlueprint(),
+      trustedBlueprintInput(),
+      PROVENANCE,
       { ...SCOPE, tenantId: '*' },
       '2026-07-29T12:00:00.000Z',
     )).toThrow(/non-wildcard/);
@@ -75,6 +82,7 @@ describe('workspace provisioning plan', () => {
     );
     expect(() => createWorkspaceProvisioningPlan(
       demo,
+      { boundary: 'demo' },
       SCOPE,
       '2026-07-29T12:00:00.000Z',
     )).toThrow(/host-verified/);
@@ -83,7 +91,8 @@ describe('workspace provisioning plan', () => {
   it('rejects execution, persistence, grant, activation and success fields', () => {
     const blueprint = trustedBlueprint();
     const plan = createWorkspaceProvisioningPlan(
-      blueprint,
+      trustedBlueprintInput(),
+      PROVENANCE,
       SCOPE,
       '2026-07-29T12:00:00.000Z',
     );
@@ -101,7 +110,8 @@ describe('workspace provisioning plan', () => {
     ]) {
       expect(() => parseWorkspaceProvisioningPlan(
         { ...plan, [field]: true },
-        blueprint,
+        trustedBlueprintInput(),
+        PROVENANCE,
       )).toThrow(/not supported/);
     }
   });
@@ -109,7 +119,8 @@ describe('workspace provisioning plan', () => {
   it('rejects serialized tampering by re-deriving identity and authority', () => {
     const blueprint = trustedBlueprint();
     const plan = createWorkspaceProvisioningPlan(
-      blueprint,
+      trustedBlueprintInput(),
+      PROVENANCE,
       SCOPE,
       '2026-07-29T12:00:00.000Z',
     );
@@ -129,8 +140,55 @@ describe('workspace provisioning plan', () => {
     for (const mutation of mutations) {
       expect(() => parseWorkspaceProvisioningPlan(
         { ...plan, ...mutation },
-        blueprint,
+        trustedBlueprintInput(),
+        PROVENANCE,
       )).toThrowError(WorkspaceBlueprintValidationError);
     }
+  });
+
+  it('re-parses the descriptor at every public planning boundary', () => {
+    const forged = {
+      ...trustedBlueprint(),
+      id: '*',
+      evidenceDigest: 'truthy-but-not-trusted',
+    };
+    expect(() => createWorkspaceProvisioningPlan(
+      forged,
+      PROVENANCE,
+      SCOPE,
+      '2026-07-29T12:00:00.000Z',
+    )).toThrowError(WorkspaceBlueprintValidationError);
+  });
+
+  it('changes plan identity when any reviewed material changes', () => {
+    const first = createWorkspaceProvisioningPlan(
+      trustedBlueprintInput(),
+      PROVENANCE,
+      SCOPE,
+      '2026-07-29T12:00:00.000Z',
+    );
+    const changedInput = trustedBlueprintInput();
+    changedInput.apps[0] = {
+      ...changedInput.apps[0],
+      dataClassifications: ['audit_events', 'local_files'],
+    };
+    const second = createWorkspaceProvisioningPlan(
+      changedInput,
+      PROVENANCE,
+      SCOPE,
+      '2026-07-29T12:00:00.000Z',
+    );
+    const changedEvidence = createWorkspaceProvisioningPlan(
+      { ...trustedBlueprintInput(), evidenceDigest: `sha256:${'b'.repeat(64)}` },
+      {
+        boundary: 'host_validated',
+        expectedEvidenceDigest: `sha256:${'b'.repeat(64)}`,
+      },
+      SCOPE,
+      '2026-07-29T12:00:00.000Z',
+    );
+
+    expect(second.planId).not.toBe(first.planId);
+    expect(changedEvidence.planId).not.toBe(first.planId);
   });
 });
