@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "09",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T11:30:03Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent security and design PASS decisions plus integration verification.",
+  "subject": {
+    "title": "Trustworthy Marketplace catalog and deterministic plan-only install intent",
+    "producerBranch": "feature/personal-office-loop-09-20260729",
+    "producerImplementation": "8634172d5c9bf0ba27959ecb642a151c6b5bd78c",
+    "producerHandoff": "f370d362c5c3b129da861572d2a141c0b53403c0",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "60452ea05b669aba6a27b794bde440faa68b584e"
+  },
+  "integration": {
+    "method": "W0 restored the explicit 18-path implementation range from producer commit 8634172 and committed it as f47601d, then restored only loop-09.json and the Loop 09 worklog from f370d36 and committed them as 60452ea. No merge, blind cherry-pick, package edit, DB/schema edit, installer execution seam or quarantine byte was used.",
+    "implementationCommit": "f47601d06efb33e4126ebdb8321532016c9601a1",
+    "handoffCommit": "60452ea05b669aba6a27b794bde440faa68b584e"
+  },
+  "independentReview": {
+    "securityDecision": "PASS",
+    "designDecision": "PASS",
+    "closedFindings": [
+      "Installed state uses exact sourceKind:name@version identity and ignores extension id collisions or incomplete records.",
+      "Serialized plans fail closed by re-deriving scope, package identity, permissions, classifications, side effects, approval requirement and plan id.",
+      "Catalog metadata remains display-only; authority-bearing values come from the accepted Loop 07 audited registry snapshot.",
+      "The implementation creates only effect: plan_only output and performs no download, install, process execution, grant, activation, account mutation or provisioning.",
+      "Desktop and mobile evidence matches the recorded hashes and presents truthful demo, review and plan-only states without fabricated success."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted Marketplace tests",
+      "result": "PASS",
+      "evidence": "5 files, 23/23 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "96 files, 1140/1140 tests on integration with --no-cache."
+    },
+    {
+      "check": "main-process TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p tsconfig.main.json --noEmit --incremental false exited 0."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1174 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 349 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 18 implementation paths inside the amended LEASE-L09-MARKETPLACE-UI-20260729 and exactly two coordinator handoff paths. No manifest, lockfile, DB/schema, main index/preload, extensions runtime, provider, Marketplace API or shell ownership change."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All 18 declared hashes and byte counts match exact Git blob bytes at producer implementation 8634172; phase-2 changes only the handoff JSON and worklog."
+    },
+    {
+      "check": "security and side-effect boundary",
+      "result": "PASS",
+      "evidence": "Refined production-secret scan clean; exact tenant/user/workspace scope enforced; runtime/download/process/install side effects absent."
+    },
+    {
+      "check": "responsive design evidence",
+      "result": "PASS_WITH_RECORDED_EVIDENCE",
+      "evidence": "Independent review verified the hashed 1440x900 and 390x844 screenshots plus renderer/CSS. A new live browser session was not rerun during acceptance."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L09-MARKETPLACE-UI-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-09",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    }
+  ],
+  "residualRisks": [
+    "Marketplace currently exposes reviewed demo/catalog planning only; no trusted remote catalog bridge or operational installer execution is authorized.",
+    "Future download, signature verification, permission grant, runtime activation and provisioning require new exact leases and security review.",
+    "The production bundle retains the pre-existing large-chunk warning.",
+    "The acceptance design pass relied on hash-verified recorded screenshots rather than a newly launched browser session."
+  ]
+}

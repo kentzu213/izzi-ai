@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T09:36:13Z",
+  "updatedAt": "2026-07-29T11:30:03Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -399,17 +399,22 @@
       "loop": "09",
       "title": "Marketplace and installer",
       "window": "W4",
-      "status": "READY_TO_START",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-09-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop09",
-      "commitSha": null,
-      "handoff": "docs/handoffs/personal-office/dispatch-loop-09.md",
+      "commitSha": "60452ea05b669aba6a27b794bde440faa68b584e",
+      "handoff": "docs/handoffs/personal-office/loop-09.json",
       "dependsOn": [
         "07"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 07 is ACCEPTED. Isolated worktree and LEASE-L09-MARKETPLACE-UI-20260729 are authorized.",
-      "lease": "LEASE-L09-MARKETPLACE-UI-20260729"
+      "dependencyStatus": "SATISFIED — Loop 07 and Loop 09 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-09.json",
+      "acceptedProducerImplementation": "8634172d5c9bf0ba27959ecb642a151c6b5bd78c",
+      "acceptedProducerHandoff": "f370d362c5c3b129da861572d2a141c0b53403c0",
+      "integrationImplementationCommit": "f47601d06efb33e4126ebdb8321532016c9601a1",
+      "integrationHandoffCommit": "60452ea05b669aba6a27b794bde440faa68b584e",
+      "verificationSummary": "Independent security and design PASS; targeted 23/23 and full desktop 1140/1140 tests PASS; main TypeScript, production build and lint ceiling PASS; exact lease, blob-hash, prohibited-path, scope, secret and plan-only side-effect audits PASS."
     },
     {
       "loop": "10",
@@ -639,6 +644,11 @@
       "at": "2026-07-29T06:29:08Z",
       "by": "W0",
       "action": "Path-audited and integrated the seven exact Loop 02 commits, then ACCEPTED the shell. Verification: 23/23 declared hashes, 0 forbidden paths, build 1167 modules, lint 358 warnings/0 errors, producer tests 946/946, integration BF-02 isolated rerun 14/14, desktop/mobile Playwright, keyboard/focus and five forced states PASS. Revoked LEASE-L02-SHELL-MOUNT-20260729."
+    },
+    {
+      "at": "2026-07-29T11:30:03Z",
+      "by": "W0",
+      "action": "Exact-path integrated and ACCEPTED Loop 09. Implementation commit f47601d contains the reviewed 18 leased Marketplace paths; handoff commit 60452ea contains only loop-09.json and the worklog. Independent security and design reviews PASS. Integration verification: targeted 23/23, full desktop 1140/1140, main TypeScript, Vite production build, lint 349 warnings/0 errors, exact blob hashes, ownership, prohibited paths, scope, secret and plan-only boundaries PASS. Revoked LEASE-L09-MARKETPLACE-UI-20260729."
     }
   ],
   "completedByW0": [
@@ -676,6 +686,11 @@
       "at": "2026-07-29T06:29:08Z",
       "action": "Verified and ACCEPTED Loop 02; closed its shell lease and established the renderer shell as the stable consumer target for Loop 03.",
       "record": "acceptance/loop-02.json"
+    },
+    {
+      "at": "2026-07-29T11:30:03Z",
+      "action": "Verified and ACCEPTED Loop 09; integrated the plan-only Marketplace surface and revoked its producer lease.",
+      "record": "acceptance/loop-09.json"
     }
   ],
   "nextActionsForW0": [
