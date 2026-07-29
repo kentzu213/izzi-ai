@@ -3,52 +3,36 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T22:00:00Z",
+  "updatedAt": "2026-07-29T23:40:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "63c979a9ae7c3f3addf104b08de417a4222445c9",
-  "activeLeases": [
+  "integrationCommit": "d3420a565b0b8888ed027b2f74e5163852ad4121",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No producer lease is active. Loop 14 is accepted and its bounded main/index.ts lease is revoked. Quarantine remains read-only. Auth implementation, DB/schema, Work/Live/compiler/kernel contracts, packages, installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L14-CONTEXT-RUNTIME-20260729",
       "loop": "14",
       "gate": "PO-PRODUCT-CONTEXT-RUNTIME",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T22:00:00Z",
-      "baseRef": "feature/personal-office-baseline-20260728",
-      "baseCommit": "63c979a9ae7c3f3addf104b08de417a4222445c9",
+      "revokedAt": "2026-07-29T23:40:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/personal-office-loop-14-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop14",
-      "changeRequest": "docs/handoffs/personal-office/change-request-loop-14-context-runtime.md",
-      "ownedPaths": [
-        "apps/desktop/src/main/context/agent-turn-context.ts",
-        "apps/desktop/src/main/context/agent-turn-context.test.ts",
-        "apps/desktop/src/main/index.ts",
-        "docs/handoffs/personal-office/loop-14.json",
-        "worklogs/personal-office-loop-14.md"
+      "producerImplementationCommits": [
+        "e903540014b25a3407c021b3a67dffb71aee5ca2",
+        "3c4b112"
       ],
-      "prohibitedPaths": [
-        "apps/desktop/src/main/auth/**",
-        "apps/desktop/src/main/db/**",
-        "apps/desktop/src/main/work/**",
-        "apps/desktop/src/main/live/**",
-        "apps/desktop/src/main/agent/host-agent.ts",
-        "apps/desktop/src/main/context/compiler.ts",
-        "apps/desktop/src/main/context/prompt-kernel.ts",
-        "apps/desktop/src/shared/**",
-        "apps/desktop/src/main/preload.ts",
-        "apps/desktop/src/renderer/**",
-        "package.json",
-        "pnpm-workspace.yaml",
-        "pnpm-lock.yaml",
-        "apps/desktop/package.json",
-        "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw\\**"
+      "producerHandoff": "cef4930548382ffcee40dd994a11b845e9217c18",
+      "canonicalImplementationCommits": [
+        "80545a232881187a80d9d425ffb1bc0d43bed5a5",
+        "80038bb"
       ],
-      "securityDecision": "Main derives trusted sender, authenticated owner hash and canonical personal workspace. Exact safety/request binding and metadata-only snapshot capture must fail closed before provider access. Abort and steering injection must also reject untrusted or child-frame senders before active-turn lookup or input parsing."
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "One isolated Codex writer lease is active for Loop 14 authenticated Live/context agent-turn wiring. Quarantine remains read-only. Auth implementation, DB/schema, Work/Live/compiler/kernel contracts, packages, installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised.",
-  "leaseHistory": [
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-14.json",
+      "reason": "Loop 14 exact-path integration passed context and full desktop tests, both TypeScript gates, production build, lint ceiling, authenticated owner/workspace review, error-leak and active-turn sender-trust corrections, provenance, prohibited-path, secret and quarantine-isolation checks."
+    },
     {
       "leaseId": "LEASE-L13-REAL-WORK-BRIDGE-20260729",
       "loop": "13",
@@ -355,9 +339,10 @@
         "11",
         "14"
       ],
-      "currentLease": "LEASE-L14-CONTEXT-RUNTIME-20260729",
-      "note": "Loop 14 holds a bounded lease for customProvider chat/context wiring plus abort/inject sender-trust guards. No other main/index.ts surface is writable.",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "currentLease": null,
+      "note": "Loop 14 context and active-turn sender-trust wiring is accepted and its bounded lease is revoked. Any later main/index.ts edit requires a new W0 change request and lease.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T23:40:00Z"
     },
     {
       "path": "apps/desktop/src/main/preload.ts",
