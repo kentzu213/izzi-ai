@@ -12,11 +12,14 @@
     "exact package binding",
     "visible review and encrypted-state requirements",
     "runtime origin containment",
-    "idempotent replay requirement"
+    "idempotent replay requirement",
+    "strict completed Marketplace receipt validation",
+    "connected IntegrationGrant and least-privilege scope validation",
+    "tenant/user/workspace/package/integration/grant/run launch binding"
   ],
   "verification": {
-    "focusedTests": "4/4",
-    "fullTests": "1402/1402",
+    "focusedTests": "10/10",
+    "fullTests": "1408/1408",
     "mainTypeScript": "PASS",
     "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
     "changedLint": "0 warnings",
@@ -26,7 +29,7 @@
     "audited production Playwright driver and executable provenance",
     "production account/grant/repository/vault adapters",
     "exact W0 leases for main composition seams",
-    "complete install-to-open-to-delegate-to-artifact E2E evidence"
+    "real adapter-backed install-to-open-to-delegate-to-artifact E2E evidence"
   ],
   "authorization": "No push, deployment, install, browser launch, network action, secret retrieval or external effect is authorized."
 }
