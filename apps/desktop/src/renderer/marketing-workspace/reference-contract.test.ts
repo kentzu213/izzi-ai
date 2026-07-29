@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createMarketplaceDemoCatalog,
   markMarketplaceDemoInstalled,
@@ -7,6 +7,7 @@ import {
   MARKETING_REFERENCE_SETUP_GROUPS,
   MARKETING_REFERENCE_SURFACES,
   selectInstalledMarketingWorkspacePackage,
+  trapDialogTabFocus,
 } from './reference-contract';
 import {
   isMarketingWorkspaceReferenceEnabled,
@@ -70,5 +71,35 @@ describe('Marketing workspace reference contract', () => {
     const installed = markMarketplaceDemoInstalled(catalog, [packageKey]);
     expect(selectInstalledMarketingWorkspacePackage(installed, packageKey)?.installation.state)
       .toBe('installed');
+  });
+
+  it('keeps Tab and Shift+Tab inside modal setup boundaries', () => {
+    const focusLog: string[] = [];
+    const first = { focus: () => focusLog.push('first') };
+    const middle = { focus: () => focusLog.push('middle') };
+    const last = { focus: () => focusLog.push('last') };
+    const preventDefault = vi.fn();
+
+    expect(trapDialogTabFocus(
+      { key: 'Tab', shiftKey: false, preventDefault },
+      [first, middle, last],
+      last,
+    )).toBe(true);
+    expect(focusLog).toEqual(['first']);
+
+    expect(trapDialogTabFocus(
+      { key: 'Tab', shiftKey: true, preventDefault },
+      [first, middle, last],
+      first,
+    )).toBe(true);
+    expect(focusLog).toEqual(['first', 'last']);
+
+    expect(trapDialogTabFocus(
+      { key: 'Tab', shiftKey: false, preventDefault },
+      [first, middle, last],
+      { focus: vi.fn() },
+    )).toBe(true);
+    expect(focusLog).toEqual(['first', 'last', 'first']);
+    expect(preventDefault).toHaveBeenCalledTimes(3);
   });
 });

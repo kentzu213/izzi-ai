@@ -10,8 +10,6 @@ import type {
   CustomerMarketingResourceMutationResult,
   CustomerMarketingWorkflowListResult,
   CustomerMarketingWorkflowMutationResult,
-  CustomerMarketingWorkflowPrepareRequest,
-  CustomerMarketingWorkflowReviewRequest,
   CustomerMarketingWorkflowSourceListResult,
   CustomerMediaPreviewInput,
   CustomerMediaProjectSelectionResult,

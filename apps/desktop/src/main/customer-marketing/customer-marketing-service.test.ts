@@ -385,7 +385,6 @@ function customerRuntimeExtension(
   const base: CustomerRuntimeExtension = {
     id: 'ext-video-runtime',
     name: 'video-runtime',
-    version: '1.2.3',
     state: 'installed',
     manifest: {
       displayName: 'Video Studio',
@@ -588,9 +587,33 @@ describe('CustomerMarketingService tenant boundary', () => {
     expect(context.db.values.get(key)).toBe(malformedSource);
   });
 
+  it.each(['{invalid-json', 'null'])(
+    'fails closed without overwriting malformed source bytes during onboarding mutation (%s)',
+    async (malformedSource) => {
+      const remote = marketingResourceGateway('owner');
+      const context = setup({ workspaceGateway: remote.gateway });
+      await completeOnboarding(context.service);
+      const key = Array.from(context.db.values.keys()).find((item) => (
+        item.startsWith('customer_marketing:v1:')
+      ));
+      if (!key) throw new Error('Expected a tenant record.');
+      context.db.values.set(key, malformedSource);
+      vi.mocked(remote.gateway.ensureWorkspace).mockClear();
+
+      await expect(context.service.saveOnboarding(onboarding('Replacement tenant'))).resolves.toEqual({
+        ok: false,
+        error: 'Không thể lưu vì dữ liệu Customer Marketing cũ đang bị lỗi. Dữ liệu gốc đã được giữ nguyên để khôi phục.',
+      });
+      expect(remote.gateway.ensureWorkspace).not.toHaveBeenCalled();
+      expect(context.db.values.get(key)).toBe(malformedSource);
+    },
+  );
+
 describe('CustomerMarketingService reference workspace bridge', () => {
   it('denies uninstalled and non-marketing packages before issuing host evidence', async () => {
-    const missing = setup();
+    const missing = setup({
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
     await expect(missing.service.getReferenceWorkspaceEvidence(
       'ocx_extension:video-runtime@1.2.3',
     )).resolves.toEqual({ ok: false, reason: 'package_not_installed' });
@@ -599,17 +622,62 @@ describe('CustomerMarketingService reference workspace bridge', () => {
       extensions: [customerRuntimeExtension({
         manifest: { customerMarketing: false },
       })],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
     });
     await expect(incapable.service.getReferenceWorkspaceEvidence(
       'ocx_extension:video-runtime@1.2.3',
     )).resolves.toEqual({ ok: false, reason: 'package_not_marketing_capable' });
   });
 
+  it('matches the installed package version from the runtime manifest shape used by main', async () => {
+    const context = setup({
+      extensions: [{
+        id: 'ext-video-runtime',
+        name: 'video-runtime',
+        state: 'installed',
+        manifest: {
+          displayName: 'Video Studio',
+          description: 'Creates approved campaign videos.',
+          version: '1.2.3',
+          private: false,
+          customerMarketing: true,
+          customerMarketingCapability: customerExtensionDefinition(),
+        },
+      }],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toMatchObject({
+      ok: true,
+      evidence: {
+        installedPackage: {
+          extensionId: 'ext-video-runtime',
+          version: '1.2.3',
+        },
+      },
+    });
+  });
+
+  it('refuses host evidence when the current workspace is only local', async () => {
+    const context = setup({
+      extensions: [customerRuntimeExtension()],
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'workspace_unavailable' });
+  });
+
   it('rejects stale, future and scope-tampered evidence', async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date('2026-07-29T10:00:00.000Z'));
-      const context = setup({ extensions: [customerRuntimeExtension()] });
+      const context = setup({
+        extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
+      });
       const result = await context.service.getReferenceWorkspaceEvidence(
         'ocx_extension:video-runtime@1.2.3',
       );
@@ -641,6 +709,7 @@ describe('CustomerMarketingService reference workspace bridge', () => {
     try {
       const context = setup({
         extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
         workService: work.service,
       });
       const result = await context.service.getReferenceWorkspaceEvidence(
