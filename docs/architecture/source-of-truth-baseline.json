@@ -49,7 +49,10 @@
     "testExpands": "vitest run",
     "testSmoke": "pnpm --filter @openclaw/desktop test:smoke",
     "lintRequestedByBrief": "pnpm lint:ci",
-    "lintActuallyAvailable": "pnpm -r lint",
+    "lintActuallyAvailable": "pnpm lint:ci (available from ed437c6 onward; at 84a57b3 itself only 'pnpm -r lint' existed and it failed with exit 2)",
+    "lintCeiling": 358,
+    "lintCeilingMeasuredAt": "ed437c6",
+    "lintCeilingNote": "358 warnings / 0 errors, measured on a clean canonical checkout after PQ-01 landed. NOT the 359 from the old feature branch — that number was measured on a different file set. Negative test confirmed: adding one warning makes lint:ci exit 1.",
     "typecheck": "no dedicated script — typecheck is folded into the desktop build via tsc -p tsconfig.main.json",
     "diffCheck": "git diff --check"
   },
@@ -144,7 +147,9 @@
       "exitCode": 1,
       "classification": "baseline-gap",
       "baselineFailureId": "BF-03",
-      "evidence": "ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL — Command \"lint:ci\" not found. Did you mean \"pnpm lint\"? The script does not exist at canonical."
+      "evidence": "ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL — Command \"lint:ci\" not found. Did you mean \"pnpm lint\"? The script does not exist at canonical.",
+      "measuredAtCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+      "supersededBy": "CHK-13 (same command, measured after PQ-01 landed). This entry is retained because it is a true statement about canonical 84a57b3, which remains the programme anchor."
     },
     {
       "id": "CHK-12",
@@ -153,7 +158,8 @@
       "exitCode": 2,
       "classification": "baseline-gap",
       "baselineFailureId": "BF-04",
-      "evidence": "apps/desktop lint$ eslint src/ produced: ESLint couldn't find an eslint.config.(js|mjs|cjs) file. ESLint 9.39.4 requires flat config. No eslint.config.* and no .eslintrc* exists anywhere in the canonical tree (verified via git ls-tree -r 84a57b3)."
+      "evidence": "apps/desktop lint$ eslint src/ produced: ESLint couldn't find an eslint.config.(js|mjs|cjs) file. ESLint 9.39.4 requires flat config. No eslint.config.* and no .eslintrc* exists anywhere in the canonical tree (verified via git ls-tree -r 84a57b3).",
+      "scopeNote": "Measured AT canonical 84a57b3, before PQ-01. Superseded by CHK-15/CHK-16 at ed437c6. Retained because it is the evidence BF-04 rests on."
     },
     {
       "id": "CHK-13",
@@ -180,6 +186,46 @@
       "finding": "The dirty worktree nevertheless CHANGED during Loop 00, by a concurrent third-party session, not by this loop. Start of Loop 00: 31 modified tracked + 52 untracked = 83 entries, HEAD 959e2d2. End of Loop 00: 35 modified tracked + 78 untracked = 113 entries, HEAD unchanged at 959e2d2.",
       "attribution": "A concurrent 'Loop 03' session is actively building the Personal Office execution plane in that worktree. Evidence: apps/desktop/src/main/{db/database.ts,index.ts,preload.ts} and src/renderer/App.tsx were all rewritten at the same instant 2026-07-28 15:26:06 — between this loop's JSON write (15:23:39) and worklog write (15:31:26) — adding imports of runWorkModelMigration, WorkService, backupSqliteFile and a workEventSink fan-out. Files under main/work/ carry mtimes running continuously from 14:46:50 to 15:26:21, and the untracked count rose from 77 to 78 during final verification, i.e. the session was still writing.",
       "consequence": "The acceptance criterion 'dirty worktree not modified' holds for THIS loop's actions but cannot be asserted about the worktree's state, because another writer owns it concurrently. Any later loop that diffs against that worktree must re-snapshot it first; a stale snapshot will be wrong within minutes."
+    },
+
+    {
+      "id": "CHK-16",
+      "command": "pnpm install (adds 5 exact-pinned eslint devDependencies)",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "Added @eslint/js 9.39.4, eslint 9.39.4, eslint-plugin-react-hooks 7.1.1, globals 16.5.0, typescript-eslint 8.65.0. 19 packages added, all devDependencies, none reaching the production Docker image. Versions are pinned EXACT rather than caret: a caret range could pull a minor release carrying new rules, which would silently change the warning ceiling and make it non-reproducible."
+    },
+    {
+      "id": "CHK-17",
+      "command": "pnpm exec eslint apps packages extensions --no-error-on-unmatched-pattern --format json",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "supersedes": ["CHK-11", "CHK-12"],
+      "evidence": "THE MEASUREMENT that BF-03/BF-04 said was impossible. 284 files linted, 59 with findings: 0 errors, 358 warnings. By rule: no-explicit-any 306, no-unused-vars 31, react-hooks/exhaustive-deps 7, no-require-imports 7, no-useless-escape 5, unused-disable-directive 2.",
+      "note": "358, NOT the 359 carried by the old branch. The old number was measured on a different tree and was never valid here. This is why the brief's instruction to re-measure rather than copy the number mattered."
+    },
+    {
+      "id": "CHK-18",
+      "command": "pnpm lint:ci",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "Ceiling set to --max-warnings 358, the measured value. Exits 0 on a clean canonical checkout."
+    },
+    {
+      "id": "CHK-19",
+      "command": "pnpm lint:ci with one deliberately-introduced `any` (negative test, probe reverted)",
+      "status": "pass",
+      "exitCode": 1,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "ESLint reported 'found too many warnings (maximum: 358)' and exited 1. This is the check that distinguishes a real gate from a decorative one: a ceiling that never fails proves nothing. Probe file removed; tree verified clean afterwards.",
+      "whyThisMatters": "Without the negative test, a mis-set ceiling (e.g. 400) would pass CI forever while silently accepting new debt."
     }
   ],
 
@@ -217,7 +263,14 @@
       "impact": "Any acceptance criterion phrased as 'lint does not increase the warning budget' has NO baseline number to compare against on canonical, because no lint run can succeed at all.",
       "originOfMissingWork": "lint:ci (--max-warnings 359), lint:fix, lint:strict and the root eslint devDependencies exist only on feature/aibase-my-graph-ui-sync, produced by the CMR-404 commits.",
       "preExisting": true,
-      "introducedByThisLoop": false
+      "introducedByThisLoop": false,
+      "resolution": {
+        "status": "RESOLVED",
+        "resolvedBy": "ed437c6",
+        "resolvedAt": "2026-07-29T04:20:00Z",
+        "resolvedUnder": "programme gate PQ-01, W0 lease on package manifests",
+        "note": "The statement above remains TRUE of commit 84a57b3 and is kept verbatim as the historical record. lint:ci, lint:fix and lint:strict now exist on the integration branch, and the ceiling is 358 measured on canonical, NOT the 359 inherited from the old branch."
+      }
     },
     {
       "id": "BF-04",
@@ -227,6 +280,29 @@
       "detail": "eslint ^9.18.0 is a devDependency of apps/desktop and its lint script is 'eslint src/', but git ls-tree -r 84a57b3 finds no eslint.config.js|mjs|cjs and no .eslintrc*. ESLint 9 removed implicit eslintrc discovery, so the script fails with exit 2 before linting a single file.",
       "impact": "The lint gate is non-functional on canonical. This is the single largest genuine gap between canonical and the old feature branch.",
       "remedy": "Port eslint.config.mjs (147 lines) from 959e2d2 — see portQueue PQ-01.",
+      "resolution": {
+        "status": "RESOLVED",
+        "resolvedBy": "ed437c6",
+        "resolvedAt": "2026-07-29T04:20:00Z",
+        "resolvedUnder": "programme gate PQ-01, W0 lease on package manifests",
+        "portedWith": "3 deliberate deviations from the old-branch config, each verified against canonical rather than copied: (1) wikilink.ts removed from the no-control-regex exemption list because that file does NOT exist at canonical, and naming a non-existent file in a scoped override is dead config; (2) added '**/release-*/**' to ignores because canonical carries release-15, release-cmr206-trial and release-hotfix build output directories; (3) the per-rule baseline comment was replaced with counts actually measured on canonical.",
+        "measuredOnCanonical": {
+          "errors": 0,
+          "warnings": 358,
+          "filesLinted": 284,
+          "filesWithFindings": 59,
+          "byRule": {
+            "@typescript-eslint/no-explicit-any": 306,
+            "@typescript-eslint/no-unused-vars": 31,
+            "react-hooks/exhaustive-deps": 7,
+            "@typescript-eslint/no-require-imports": 7,
+            "no-useless-escape": 5,
+            "unused-eslint-disable-directive": 2
+          },
+          "note": "358, not the 359 the old branch used. The old ceiling was measured on a different file set, so inheriting it would have silently allowed one free regression."
+        },
+        "gateProvenByNegativeTest": "A temporary `const __pq01Probe: any = null;` was appended to a source file: pnpm lint:ci then exited 1 with 'ESLint found too many warnings (maximum: 358)'. The probe was removed and the tree verified clean. The gate therefore fails on a NEW warning and is not decorative."
+      },
       "preExisting": true,
       "introducedByThisLoop": false
     }
@@ -439,7 +515,7 @@
   "constraintsForNextLoop": [
     "Verify canonicalCommit equals HEAD before any design work; stop if it differs.",
     "Do not treat BF-02 as a regression; it is a confirmed timing flake.",
-    "Do not claim a lint warning budget until PQ-01 lands and the ceiling is re-measured on canonical.",
+    "SATISFIED at ed437c6: PQ-01 landed and the ceiling was re-measured on canonical at 358 (not the old branch's 359). Consumers may now claim a lint warning budget, and MUST run 'pnpm lint:ci' as a real acceptance gate.",
     "Resolve PQ-08 (adopt vs supersede work-model.ts) BEFORE writing new domain contracts.",
     "Native SQLite cannot be exercised locally (BF-01) — keep new contracts unit-testable without a live better-sqlite3 binding.",
     "Scope every GitNexus call with --repo <absolute worktree path>; the bare repo name is ambiguous on this host."
