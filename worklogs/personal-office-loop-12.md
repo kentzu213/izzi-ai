@@ -1,9 +1,9 @@
 # Loop 12 — Marketing Workspace reference
 
-**Status:** `READY_FOR_REVIEW`  
-**Branch:** `feature/personal-office-loop-12-20260729`  
-**Canonical base:** `979ee06499a7066c7f012bb7101ec44519c1ac0c`  
-**Implementation commits:** `0e46ea1`, `35845da`  
+**Status:** `READY_FOR_REVIEW`
+**Branch:** `feature/personal-office-loop-12-20260729`
+**Canonical base:** `979ee06499a7066c7f012bb7101ec44519c1ac0c`
+**Implementation commits:** `0e46ea1`, `35845da`
 **Lease:** `LEASE-L12-MARKETING-REFERENCE-20260729`
 
 ## Outcome
