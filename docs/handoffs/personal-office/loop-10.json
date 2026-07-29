@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "10",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff authorizes no credential resolution, OAuth, remote connect/disconnect, vault deletion, persistence, IPC, renderer mutation or runtime side effect.",
+  "title": "Secret-free integration grants and grant-vault boundary",
+  "producer": {
+    "window": "W4",
+    "role": "Codex builder after Kiro writer authority was revoked",
+    "branch": "feature/personal-office-loop-10-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop10",
+    "lease": "LEASE-L10-INTEGRATION-GRANTS-20260729"
+  },
+  "canonicalBase": "93cc3b11149b99854237fd2890a4cec993de29c1",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "0528fbb1c30998a08292ada990d66f72fd3fdd21",
+      "phase": "implementation",
+      "subject": "feat(personal-office): add integration grant boundary",
+      "scope": "strict shared grant read model, deterministic legacy mapping, exact authority-bound scope, no-value vault facade, plan-only revocation, tests and product documentation"
+    }
+  ],
+  "handoffCommitNote": "The second producer commit contains only this JSON and worklogs/personal-office-loop-10.md.",
+  "implementationFiles": {
+    "count": 12,
+    "range": "93cc3b11149b99854237fd2890a4cec993de29c1..0528fbb1c30998a08292ada990d66f72fd3fdd21",
+    "tree": "ff9c7acae772c1862fcea70d70c39a2510be684a",
+    "diff": "1259 insertions",
+    "hashMethod": "SHA-256 over exact Git blob bytes at 0528fbb1c30998a08292ada990d66f72fd3fdd21:path; byte count is the same blob length",
+    "allInsideLease": true,
+    "prohibitedPathChanges": 0
+  },
+  "contractCompliance": [
+    "IntegrationGrant adds only optional lastErrorAt and invalid fields; PERSONAL_OFFICE_SCHEMA_VERSION remains 1.",
+    "Raw credential values and legacy error strings are forbidden; only SecretRef plus redacted reason codes/timestamps cross the contract.",
+    "Active requires an exact live unrevoked unexpired grant and resolvable integration-vault reference.",
+    "Mapping, deserialization and revocation require a trusted expectedScope binding tenant, user, workspace, grant, integration and sorted scopes.",
+    "GrantVault independently asks an injected GrantScopeAuthority before invoking the resolver and returns only resolvable, missing or unavailable.",
+    "Revocation creates deterministic plan_only data and performs no operational mutation."
+  ],
+  "securityGate": {
+    "surface": "credentials, tenant/user/workspace authorization, serialized grant state, vault resolution and revocation intent",
+    "decision": "PASS_FOR_W0_REVIEW",
+    "review": "Independent security reviewer first returned SEND_BACK for tenant/user relabeling. The producer added trusted expectedScope validation and an injected GrantScopeAuthority; independent re-review then returned PASS with no remaining blocker."
+  },
+  "verification": [
+    {
+      "check": "targeted tests",
+      "result": "PASS",
+      "evidence": "3 files, 26/26 tests with Vitest 4.1.2 and --no-cache"
+    },
+    {
+      "check": "main TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p apps/desktop/tsconfig.main.json --noEmit"
+    },
+    {
+      "check": "renderer-compatible shared TypeScript",
+      "result": "PASS",
+      "evidence": "ESNext + bundler + isolatedModules + DOM strict profile over integration-grants and Personal Office contract entry files"
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "zero findings in integration-grants, grant-vault and amended Personal Office files"
+    },
+    {
+      "check": "ownership, prohibited paths and schema version",
+      "result": "PASS",
+      "evidence": "12/12 files inside lease; no package/lockfile, DB/schema, auth, main/index/preload, production IntegrationsService, secret-store, renderer or quarantine path; version.ts unchanged"
+    },
+    {
+      "check": "secret and side-effect scan",
+      "result": "PASS",
+      "evidence": "no credential value; no network, shell, DB, persistence, OAuth, revoke execution or account mutation call"
+    },
+    {
+      "check": "GitNexus impact/detect changes",
+      "result": "PASS_WITH_INDEX_LIMIT",
+      "evidence": "IntegrationGrant pre-change impact MEDIUM with three direct importers and no process flow; staged detect reports 12 changed files, LOW risk and no affected process. New files are absent from the baseline index."
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS",
+      "evidence": "phase-1 staged diff clean"
+    }
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/integrations/grant-vault/grant-vault.test.ts",
+      "sha256": "48e8a5fc3e4f85936c2f8644fdc1aff90161870a6d04a2047a9666f51292daed",
+      "bytes": 2978
+    },
+    {
+      "path": "apps/desktop/src/main/integrations/grant-vault/grant-vault.ts",
+      "sha256": "9a9a12f4330eb7ea3ece16c49e9ba40af32acf5ce76aa731cd4d3c56606301f9",
+      "bytes": 1682
+    },
+    {
+      "path": "apps/desktop/src/main/integrations/grant-vault/index.ts",
+      "sha256": "17bdab31c510d83e4a553fa8bfbbf17956a99c7a6a60619ff0b3bd479f3a288d",
+      "bytes": 151
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/index.ts",
+      "sha256": "a0cc407b330ad9e9213a6506d3eaba7c19111249e3e1d981d926038c83eedaed",
+      "bytes": 902
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/integration-grants.test.ts",
+      "sha256": "d6e76f7ad9ef6a37e0ccf1be72f3c22c2807474ea500b1cfb06b8f18097a8efa",
+      "bytes": 7622
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/mapping.ts",
+      "sha256": "c5278a7bb958123966a67eaf7546a33fff19672b0c1bae7e0c9d58d38241b0d1",
+      "bytes": 4118
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/revocation.ts",
+      "sha256": "e0ba53eb699a443c8cbf09c595860674985701737bd68b0c2afbbe493a26638d",
+      "bytes": 2241
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/types.ts",
+      "sha256": "6b505b59cbccad5bfc1e9d860bc4c5bac9fd30ae318e223c25d628b395f12c84",
+      "bytes": 2730
+    },
+    {
+      "path": "apps/desktop/src/shared/integration-grants/validation.ts",
+      "sha256": "c5d594cb58e0c3dfaf651a0dcb09e70e3fcb2127a2f9f1bb703344e31062b84a",
+      "bytes": 16746
+    },
+    {
+      "path": "apps/desktop/src/shared/personal-office/entities.ts",
+      "sha256": "26c1602f7d90afa424d5c6ca5130a09837a4ff57aa0a5b21a44ab863f2580a6c",
+      "bytes": 14179
+    },
+    {
+      "path": "apps/desktop/src/shared/personal-office/serialization.test.ts",
+      "sha256": "c86c017d48f9b1f7c3807bc474dfae167f992ec1567870e05183fa4d37c6040c",
+      "bytes": 6637
+    },
+    {
+      "path": "docs/product/personal-office-integration-grants.md",
+      "sha256": "540a2c65dbc26c2c7231aa28e0081bb0d3dbad732447778b57de3bd8fc94d997",
+      "bytes": 1739
+    }
+  ],
+  "agentAudit": {
+    "orchestrator": "Applied in the root control thread to transfer writer authority, freeze the lease, sequence implementation, verification and two-phase provenance.",
+    "builder": "Codex implemented only the leased contract, facade, tests and product documentation.",
+    "socrates": "Independent security reviewer challenged scope authority, returned SEND_BACK, then PASS after the exact authority-binding correction.",
+    "decisionAuthority": "W0 only"
+  },
+  "skillAudit": [
+    {
+      "skill": "/search-first",
+      "status": "USED_FOR_EXISTING_CONTRACT_AND_VALIDATION_PATTERN_DISCOVERY"
+    },
+    {
+      "skill": "/context-gatherer",
+      "status": "USED_READ_ONLY_BEFORE_IMPLEMENTATION"
+    },
+    {
+      "skill": "/quick-spec",
+      "status": "USED_TO_FREEZE_SCOPE_NON_GOALS_AND_TESTABLE_BEHAVIOR"
+    },
+    {
+      "skill": "/backend-patterns",
+      "status": "USED_FOR_STRICT_BOUNDARY_VALIDATION_INJECTED_FACADES_AND_IMMUTABLE_OUTPUTS"
+    },
+    {
+      "skill": "/frontend-patterns",
+      "status": "APPLIED_AS_NO_RENDERER_BOUNDARY"
+    },
+    {
+      "skill": "/deployment-patterns",
+      "status": "APPLIED_AS_NO_INSTALL_DEPLOY_NETWORK_OR_RUNTIME_MUTATION_GUARD"
+    },
+    {
+      "skill": "/security-review",
+      "status": "USED_WITH_INDEPENDENT_SEND_BACK_AND_PASS"
+    },
+    {
+      "skill": "/verification-loop",
+      "status": "USED_FOR_TEST_TYPE_LINT_SECRET_DIFF_AND_OWNERSHIP_GATES"
+    },
+    {
+      "skill": "/understand-codebase",
+      "status": "USED_FOR_PERSONAL_OFFICE_AND_LEGACY_INTEGRATION_SEAMS"
+    },
+    {
+      "skill": "Design",
+      "status": "NOT_APPLICABLE_NO_UI_OUTPUT"
+    },
+    {
+      "skill": "/gpt-taste",
+      "status": "APPLIED_AS_NON_GENERIC_CONTRACT_NAMING_AND_PRODUCT_COPY_CHECK"
+    },
+    {
+      "skill": "/design-taste-frontend",
+      "status": "NOT_APPLICABLE_NO_FRONTEND_OUTPUT"
+    },
+    {
+      "skill": "/stitch-design-taste",
+      "status": "NOT_APPLICABLE_NO_STITCH_OR_DESIGN_MD_OUTPUT"
+    }
+  ],
+  "residualRisks": [
+    "No operational auth/OAuth or production IntegrationsService adapter exists in this loop; future wiring must supply expectedScope from authenticated host/workspace context.",
+    "GrantScopeAuthority is an injected boundary only. Its persistence and authorization implementation require a future exact lease and independent review.",
+    "Revocation remains plan-only; approval, vault deletion and remote disconnect are deliberately absent."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify all 12 Git-blob hashes, rerun targeted/full desktop gates, integrate exact reviewed paths and create acceptance/loop-10.json only after PASS."
+    },
+    {
+      "owner": "future operational integration owner",
+      "action": "Request explicit auth/IPC/persistence/IntegrationsService leases, provide authoritative tenant/user/workspace binding, consume unchanged validated plans and report real outcomes truthfully."
+    }
+  ]
+}
