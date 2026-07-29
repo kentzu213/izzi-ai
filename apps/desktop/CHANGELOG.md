@@ -13,8 +13,9 @@ Packaged updater and prerelease metadata patch.
   directories. A macOS `.app` moved out of `release/mac-*` remains treated as
   an installed package because it cannot be distinguished safely from a
   damaged installation.
-- Pin prerelease update-channel detection so beta builds publish `beta.yml`
-  metadata instead of the stable `latest.yml` channel.
+- Keep prerelease update-channel detection explicit. For the public GitHub
+  provider, beta selection comes from prerelease tags and the updater accepts
+  the release-local `latest.yml` metadata by design.
 - Publish version tags containing a prerelease suffix as GitHub prereleases on
   both Windows and macOS jobs.
 

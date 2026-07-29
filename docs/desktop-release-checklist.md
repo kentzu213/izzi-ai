@@ -1,4 +1,16 @@
-# Starizzi Desktop Release Checklist
+# Izzi AI Desktop Release Checklist
+
+## Small-slice operating loop
+
+1. Select one reproduced defect or one bounded deliverable.
+2. Finish the slice with the strongest practical tests, build, security, and
+   diff checks.
+3. Push the completed commit to `main`, publish a new version tag, and wait for
+   the release workflow to finish.
+4. Launch the exact packaged version on the local machine after publication.
+5. Exercise the real workflow and capture runtime evidence.
+6. Open the next patch only for a reproduced failure or a measured regression.
+7. Do not accumulate speculative fixes across multiple unpublished slices.
 
 ## Required secrets
 
