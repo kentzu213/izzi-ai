@@ -122,5 +122,39 @@ replayed the seven immutable producer blobs, then reran 69/69 focused tests,
 successfully. The subphase is now `CANONICAL_INTEGRATED_REVIEWED_PASS`; the
 overall Loop 17 status remains `PROVISIONAL_CHECKPOINT_INTEGRATED`.
 
+## Offline production composition checkpoint
+
+W0 granted `LEASE-L17-OFFLINE-COMPOSITION-20260729` for exactly
+`main/index.ts` and the two new operational-runtime composition files. The
+producer implementation commit is
+`09a6f183f03ded042239ab6d9d38b91f759a1529`; W0 replayed those three Git blobs
+exactly and integrated them as
+`8434b735a62d39e8d13266ca28c4cda594960d18`.
+
+The production main process now constructs the encrypted authoritative receipt
+and cached-evidence stores under the app user-data directory using Electron
+`safeStorage`, and injects only the Marketplace completed-receipt sink. It does
+not register a browser driver, IntegrationGrant connector, network port or
+external effect. Runtime roots must be absolute, trimmed, NUL-free and already
+canonical.
+
+Verification on canonical: focused runtime 7 files / 34 tests; full desktop 137
+files / 1450 tests; main and renderer TypeScript pass; production build passes
+with the existing large-chunk advisory; repository lint reports 0 errors / 350
+warnings under ceiling 358. Independent security review and Socrates review
+both passed. Producer/canonical blobs match on all three paths and no prohibited
+path or secret was introduced.
+
+Quarantine remained read-only at
+`959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5`. Its 459-entry fingerprint changed
+under an external writer during this checkpoint; no quarantine bytes were used
+as an implementation input, so the drift stayed isolated.
+
+The offline-composition lease is revoked. Loop 17 remains
+`PROVISIONAL_CHECKPOINT_INTEGRATED`, not ACCEPTED. Remaining gates are declared
+Playwright dependency/lockfile provenance, audited production driver and
+executable registration, any required WebSocket authority, and a separately
+authorized real browser/network install-to-artifact E2E.
+
 Method: Codex-only under the `security-review`, `backend-patterns` and
 `verification-loop` skills; Kiro held no writer authority.

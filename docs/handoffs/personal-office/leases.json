@@ -3,17 +3,22 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59.997Z",
+  "updatedAt": "2026-07-29T23:59:59.999Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "ad605f7379a072081414285c65c2b4c5afefb02a",
-  "activeLeases": [
+  "integrationCommit": "8434b735a62d39e8d13266ca28c4cda594960d18",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No producer lease is active. Loop 17 remains PROVISIONAL: package/lockfile changes, dependency installation, production driver or connector registration, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
       "loop": "17",
       "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T23:59:59.996Z",
+      "revokedAt": "2026-07-29T23:59:59.999Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/personal-office-loop-17-composition-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17-composition",
       "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-offline-composition.md",
@@ -26,12 +31,11 @@
         "Only Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition are authorised.",
         "The composition must remain fail-closed when OS-backed encryption, catalog, grant, installer, driver or runtime authority is unavailable.",
         "No package manifest, lockfile, dependency install, Playwright import, browser launch, network request, connector registration, preload, renderer, DB/schema, auth, secret retrieval or quarantine write is authorised."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 17 holds one exact-path offline production-composition lease for safeStorage-backed authority stores and Marketplace receipt-sink injection. Package/lockfile changes, dependency installation, main runtime driver registration, browser launch, network effects, push, tag, publish, deployment, secret retrieval and quarantine writes remain unauthorised.",
-  "leaseHistory": [
+      ],
+      "producerImplementation": "09a6f183f03ded042239ab6d9d38b91f759a1529",
+      "canonicalImplementation": "8434b735a62d39e8d13266ca28c4cda594960d18",
+      "reason": "Exact-path integration passed 34/34 focused runtime tests, 1450/1450 full desktop tests, both TypeScript gates, production build, repository lint ceiling, independent security and Socrates review, producer/canonical blob equality, ownership, prohibited-path, secret and quarantine-isolation checks. Loop 17 remains PROVISIONAL because production dependency provenance, driver registration and real authorized browser/network E2E remain open."
+    },
     {
       "leaseId": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
       "loop": "17",

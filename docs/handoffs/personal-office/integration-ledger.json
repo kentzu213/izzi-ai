@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T23:59:58Z",
+  "updatedAt": "2026-07-29T23:59:59.999Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -1027,12 +1027,14 @@
         "cf5b618",
         "8e39a8d",
         "0c31987",
-        "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da"
+        "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+        "09a6f183f03ded042239ab6d9d38b91f759a1529"
       ],
       "producerHandoff": "8766096413a780b740175a33be5d92ef6ef87f86",
       "integrationImplementationCommits": [
         "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
-        "30e9ad315418ff37a6af620493c871f10bfea9e9"
+        "30e9ad315418ff37a6af620493c871f10bfea9e9",
+        "8434b735a62d39e8d13266ca28c4cda594960d18"
       ],
       "integrationHandoffCommits": [
         "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
@@ -1040,11 +1042,18 @@
       ],
       "leaseExtension": "67e36b091c8268588a1412e0207faa622a7830b9",
       "checkpointDecision": "OFFLINE_AUTHORITATIVE_RECEIPTS_REVIEWED_PASS",
-      "verification": "Focused Loop 17 runtime 69/69; full desktop 136 files and 1447/1447 tests; main and renderer TypeScript PASS; production build PASS with existing chunk advisory; changed-file lint clean; repository lint 0 errors/350 warnings; exact producer blobs, ownership, prohibited-path, secret and quarantine gates PASS.",
-      "review": "Independent read-only review PASS after moving the Marketplace evidence-authority check before workspace provisioning. IntegrationGrant evidence failure records tombstone before cleanup and reports incomplete compensation explicitly.",
+      "verification": "Offline composition focused runtime 7 files and 34/34 tests; full desktop 137 files and 1450/1450 tests; main and renderer TypeScript PASS; production build PASS with existing chunk advisory; changed-file lint 0 errors; repository lint 0 errors/350 warnings below ceiling 358; exact producer blobs, ownership, prohibited-path, secret and quarantine-isolation gates PASS.",
+      "review": "Independent security review and Socrates review PASS. Main injects Electron safeStorage and only the Marketplace completed-receipt sink; canonical absolute runtime roots are enforced and no browser, connector or network effect is registered.",
+      "offlineComposition": {
+        "lease": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
+        "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-offline-composition.md",
+        "producerImplementation": "09a6f183f03ded042239ab6d9d38b91f759a1529",
+        "integrationImplementation": "8434b735a62d39e8d13266ca28c4cda594960d18",
+        "decision": "CANONICAL_INTEGRATED_REVIEWED_PASS"
+      },
       "remainingGates": [
         "declared Playwright dependency and lockfile provenance under a new package lease",
-        "audited main/index.ts production composition under a new hot-file lease",
+        "audited production browser-driver registration and executable provenance under new exact leases",
         "real authorized browser/network install-to-artifact E2E",
         "separate WebSocket effect authority if required"
       ],
@@ -1054,7 +1063,7 @@
         "16"
       ],
       "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED.",
-      "securityGate": "Offline authority persistence is integrated and fail-closed. No package/lockfile, main/preload, renderer, DB/schema, browser launch, network action, install, secret retrieval or external effect was authorised."
+      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
     }
   ],
   "releaseGateR": {
