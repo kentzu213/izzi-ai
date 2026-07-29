@@ -156,5 +156,13 @@ Playwright dependency/lockfile provenance, audited production driver and
 executable registration, any required WebSocket authority, and a separately
 authorized real browser/network install-to-artifact E2E.
 
+Offline provenance inspection then confirmed that no Playwright package is
+declared, resolved in `pnpm-lock.yaml`, present in desktop/root `node_modules`,
+or present in the canonical `.pnpm` package directory. The Vitest lock entry is
+only optional peer metadata. W0 recorded
+`gate-loop-17-playwright-provenance.md` as
+`BLOCKED_NO_OFFLINE_PROVENANCE`; no package lease was granted and no lockfile,
+install or driver-registration write was attempted.
+
 Method: Codex-only under the `security-review`, `backend-patterns` and
 `verification-loop` skills; Kiro held no writer authority.

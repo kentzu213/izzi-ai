@@ -84,6 +84,12 @@
     "independentSocratesReview": "PASS",
     "scope": "Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition only. No driver, browser, connector or network effect."
   },
+  "dependencyProvenanceGate": {
+    "status": "BLOCKED_NO_OFFLINE_PROVENANCE",
+    "artifact": "docs/handoffs/personal-office/gate-loop-17-playwright-provenance.md",
+    "evidence": "No Playwright package is declared, resolved in pnpm-lock.yaml or present in canonical node_modules/.pnpm. Vitest mentions only an optional browser-playwright peer.",
+    "decision": "No package lease, lockfile edit, install or production driver registration until authorized reproducible provenance exists."
+  },
   "remainingBeforeReview": [
     "W0-approved declared Playwright dependency and lockfile provenance",
     "audited production port registration and compatible executable provenance",
