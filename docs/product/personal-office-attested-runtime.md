@@ -37,8 +37,11 @@ without importing Playwright. A production adapter must supply an exact
 attested executable, headed sandboxed launch, one isolated fixed-viewport
 context, blocked service workers, disabled downloads, phase-aware
 HTTP/redirect routing, bounded timeouts, encrypted state handoff and an
-explicit endpoint idempotency authority. WebSockets remain blocked because the
-runtime contract does not yet carry a socket-effect authority.
+explicit endpoint idempotency authority. WebSockets remain deny-all under
+`WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1`: no accepted v1 browser workflow
+requires a socket, HTTP allowlisting does not imply socket authority, and the
+separate `.ocx` `net.websocket` permission is not transitive browser-runtime
+authority. A future socket consumer must first pass a contract change request.
 
 Raw Playwright traces are intentionally disabled at this boundary because they
 may contain DOM, headers or session material. The driver emits only

@@ -1054,16 +1054,21 @@
       "remainingGates": [
         "declared Playwright dependency and lockfile provenance under a new package lease — offline 1.59.1 provenance verified; awaiting install/package-write authority",
         "audited production browser-driver registration and executable provenance under new exact leases",
-        "real authorized browser/network install-to-artifact E2E",
-        "separate WebSocket effect authority if required"
+        "real authorized browser/network install-to-artifact E2E"
       ],
+      "webSocketAuthorityDecision": {
+        "status": "WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1",
+        "artifact": "docs/handoffs/personal-office/decision-loop-17-websocket-authority.md",
+        "ruling": "No accepted v1 managed-browser consumer requires ws/wss. routeWebSocket remains deny-all; HTTP allowlisting and the separate .ocx net.websocket capability are not socket authority for the managed browser runtime.",
+        "futureChange": "A concrete future socket workflow must submit a new contract change request and pass security review before any contract, driver or registration change."
+      },
       "dependsOn": [
         "14",
         "15",
         "16"
       ],
       "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED.",
-      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright 1.59.1 offline package/browser provenance is verified, but dependency installation and package writes remain unauthorized. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
+      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright 1.59.1 offline package/browser provenance is verified, but dependency installation and package writes remain unauthorized. WebSocket authority is not required for v1 and the driver remains deny-all for every socket. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
     }
   ],
   "releaseGateR": {

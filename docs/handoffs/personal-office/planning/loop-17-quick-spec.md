@@ -33,8 +33,8 @@ undeclared browser package. It requires:
 - an exact absolute executable path and current matching SHA-256 verification;
 - headed sandboxed launch and one isolated fixed-viewport `BrowserContext`;
 - `serviceWorkers: 'block'` and downloads disabled;
-- phase-aware HTTP request/redirect allowlisting and WebSockets blocked until
-  a separate socket-effect authority exists;
+- phase-aware HTTP request/redirect allowlisting and deny-all WebSockets for
+  v1 under `WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1`;
 - bounded operation, text and screenshot budgets;
 - encrypted storage-state import/export;
 - explicit endpoint idempotency authority before submit;
@@ -51,6 +51,13 @@ governance/product docs.
 No main composition, preload, package/lockfile, DB/schema, auth, real Playwright
 import/launch, network request, install, secret retrieval or external effect is
 authorized.
+
+The v1 consumer inventory found no Marketplace, IntegrationGrant, Work,
+workspace-blueprint or product workflow that requires `ws:`/`wss:`. The generic
+`.ocx` `net.websocket` permission is a separate extension capability and does
+not authorize managed browser sockets. A future socket consumer must submit a
+new contract change request; HTTP allowlisting never implies socket authority.
+See `decision-loop-17-websocket-authority.md`.
 
 Loop 17 remains `PROVISIONAL` until the requested production provenance,
 operation hooks, registration/composition leases and a real adapter-backed E2E

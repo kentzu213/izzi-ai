@@ -177,3 +177,29 @@ driver-registration write was attempted.
 
 Method: Codex-only under the `security-review`, `backend-patterns` and
 `verification-loop` skills; Kiro held no writer authority.
+
+## WebSocket authority decision
+
+W0 completed the v1 consumer inventory across the runtime contract, managed
+driver, Marketplace, IntegrationGrant, Work, workspace-blueprint, product docs
+and production composition. No accepted v1 workflow declares or requires
+`ws:`/`wss:`. `BrowserRuntimeSpec` carries no socket authority and production
+still registers no managed browser driver.
+
+The generic `.ocx` `net.websocket` permission is a separate host-mediated
+extension capability. It cannot be treated as transitive authority for the
+Personal Office managed browser runtime.
+
+Decision: `WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1`. The existing
+`routeWebSocket('**/*')` deny-all behavior remains mandatory, including for
+sockets whose mapped HTTPS origin is allowlisted. The optional WebSocket item
+is therefore closed as a Loop 17 gate, not implemented as a capability.
+
+Any future concrete socket workflow must open a new contract change request
+covering endpoint/subprotocol scope, message schemas and budgets, secret and
+data classification, approval/revocation/reconnect semantics, effect
+idempotency or reconciliation, audit redaction, abuse tests and independent
+security review.
+
+No source, package manifest, lockfile, dependency, browser, network, secret,
+database, preload, renderer or quarantine byte was changed by this decision.

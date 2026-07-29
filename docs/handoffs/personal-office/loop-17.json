@@ -26,7 +26,7 @@
     "headed sandboxed fixed-viewport isolated BrowserContext",
     "service-worker blocking and downloads disabled",
     "phase-aware HTTP method/origin routing with read-only preparation",
-    "WebSockets denied until a separate socket-effect authority exists",
+    "WebSockets denied by v1 governance because no accepted workflow requires socket authority",
     "explicit endpoint idempotency authority before submit",
     "bounded text, response and screenshot evidence",
     "query-stripped custom audit trace and screenshot digest-only evidence",
@@ -92,10 +92,17 @@
     "evidence": "Exact package integrity, Apache-2.0 license, pnpm content-addressed store entries, materialized package metadata, browsers.json mapping and a complete SHA-256-pinned Chromium executable were verified offline.",
     "decision": "No package lease, lockfile edit, install or production driver registration until dependency installation/package writes are explicitly authorized."
   },
+  "webSocketAuthorityDecision": {
+    "status": "WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1",
+    "artifact": "docs/handoffs/personal-office/decision-loop-17-websocket-authority.md",
+    "scope": "Personal Office managed browser runtime only",
+    "consumerInventory": "No accepted Marketplace, IntegrationGrant, Work, workspace-blueprint or v1 product workflow declares or requires ws/wss. BrowserRuntimeSpec contains no socket authority.",
+    "enforcement": "The managed driver keeps deny-all routeWebSocket handling. HTTP origin approval and the separate .ocx net.websocket capability do not grant browser-runtime socket authority.",
+    "reopenRule": "A future concrete socket consumer requires a new contract change request, security model, tests, independent review and exact-path lease before implementation."
+  },
   "remainingBeforeReview": [
     "W0-approved declared Playwright dependency and lockfile provenance",
     "audited production port registration and compatible executable provenance",
-    "separate WebSocket authority if a production workflow requires sockets",
     "real production-adapter install-to-open-to-delegate-to-artifact evidence"
   ],
   "requestedChange": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
