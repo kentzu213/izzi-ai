@@ -171,6 +171,10 @@ describe('IntegrationGrantOperationService', () => {
       scopes: scope.scopes,
     });
     expect(result).not.toHaveProperty('secret');
+    expect(setup.connector.connect).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: result.operationId,
+      scope,
+    }));
     expect(setup.repository.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         secret: ref,
@@ -216,6 +220,12 @@ describe('IntegrationGrantOperationService', () => {
 
     expect(result.code).toBe('VAULT_UNRESOLVABLE');
     expect(setup.repository.upsert).not.toHaveBeenCalled();
+    expect(setup.connector.revoke).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: result.operationId,
+      grant: expect.objectContaining({ id: grantId }),
+      scope,
+    }));
+    expect(setup.credentials.revoke).toHaveBeenCalledWith(ref, scope);
   });
 
   it('redacts malformed evidence and adapter exceptions from public receipts', async () => {

@@ -33,7 +33,11 @@ database/schema, renderer, package manifests and the legacy
 5. Revocation order is remote disconnect, vault invalidation, then metadata
    revocation. Partial failure marks the grant invalid and never reports
    success.
-6. Receipts contain stable codes and redacted evidence only.
+6. Deterministic operation ids reach every remote effect adapter so retries can
+   be deduplicated.
+7. A failed post-connect vault/persistence gate triggers best-effort remote and
+   vault compensation.
+8. Receipts contain stable codes and redacted evidence only.
 
 ## Verification
 

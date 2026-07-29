@@ -75,6 +75,7 @@ export interface IntegrationGrantApprovalPort {
 
 export interface IntegrationGrantConnectorPort {
   connect(input: {
+    readonly operationId: string;
     readonly scope: IntegrationGrantScope;
     readonly bindingDigest: string;
   }): Promise<{
@@ -84,6 +85,7 @@ export interface IntegrationGrantConnectorPort {
     readonly evidenceDigest?: string;
   }>;
   revoke(input: {
+    readonly operationId: string;
     readonly grant: IntegrationGrant;
     readonly scope: IntegrationGrantScope;
     readonly bindingDigest: string;
@@ -211,6 +213,21 @@ export class IntegrationGrantOperationService {
     this.now = options.now ?? (() => new Date());
   }
 
+  private async compensateConnectedGrant(
+    operationIdValue: string,
+    grant: IntegrationGrant,
+    scope: IntegrationGrantScope,
+    digest: string,
+  ): Promise<void> {
+    await this.options.connector.revoke({
+      operationId: operationIdValue,
+      grant,
+      scope,
+      bindingDigest: digest,
+    }).catch(() => undefined);
+    await this.options.credentials.revoke(grant.secret, scope).catch(() => false);
+  }
+
   async connect(input: {
     readonly integration: string;
     readonly scopes: readonly string[];
@@ -287,6 +304,7 @@ export class IntegrationGrantOperationService {
     }
 
     const connected = await this.options.connector.connect({
+      operationId: operationIdValue,
       scope,
       bindingDigest: digest,
     }).catch(() => ({
@@ -342,6 +360,7 @@ export class IntegrationGrantOperationService {
       .check(grant, scope)
       .catch(() => 'unavailable' as const);
     if (vaultResolution !== 'resolvable') {
+      await this.compensateConnectedGrant(operationIdValue, grant, scope, digest);
       return receipt(
         observedAt,
         operationIdValue,
@@ -354,7 +373,7 @@ export class IntegrationGrantOperationService {
     try {
       await this.options.repository.upsert(grant, scope);
     } catch {
-      await this.options.credentials.revoke(grant.secret, scope).catch(() => false);
+      await this.compensateConnectedGrant(operationIdValue, grant, scope, digest);
       return receipt(
         observedAt,
         operationIdValue,
@@ -475,6 +494,7 @@ export class IntegrationGrantOperationService {
     }
 
     const remote = await this.options.connector.revoke({
+      operationId: operationIdValue,
       grant,
       scope,
       bindingDigest: digest,

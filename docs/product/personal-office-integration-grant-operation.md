@@ -14,6 +14,8 @@ idempotency key. Authenticated main authority resolves the exact tenant, user,
 workspace and grant id. Connect and revoke each create a deterministic operation
 id and approval binding digest. A missing, pending, rejected, expired,
 invalidated or digest-mismatched approval stops every later effect.
+The same operation id reaches the effect adapter so retries can be deduplicated
+at the remote boundary.
 
 ## Secret boundary
 
@@ -26,6 +28,10 @@ After connect, the accepted `GrantVault` independently verifies the exact scope
 binding and reference resolvability. Metadata persistence happens only after
 that check succeeds. A runtime may treat a grant as active only through this
 vault-backed authority.
+
+If connect succeeds but vault verification or metadata persistence fails, the
+service attempts compensating remote revocation and vault invalidation. The
+receipt remains failed even when compensation succeeds.
 
 ## Revocation order
 
