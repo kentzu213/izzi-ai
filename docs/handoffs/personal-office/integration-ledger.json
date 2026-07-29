@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:33:42Z",
+  "updatedAt": "2026-07-29T12:57:09Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -353,7 +353,7 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-06-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop06",
       "commitSha": null,
@@ -447,20 +447,29 @@
       "loop": "10",
       "title": "Auth, integrations and grant vault",
       "window": "W4",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-10-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop10",
-      "commitSha": null,
-      "handoff": "docs/handoffs/personal-office/dispatch-loop-10.md",
+      "commitSha": "13deea15961ace866c9ebd6449ce0a76eeffb5f0",
+      "handoff": "docs/handoffs/personal-office/loop-10.json",
       "dependsOn": [
-        "04"
+        "01",
+        "04",
+        "08"
       ],
       "worktreeCreationBlocked": false,
       "dependencyStatus": "SATISFIED — Loops 01, 04 and 08 are ACCEPTED. Isolated worktree and LEASE-L10-INTEGRATION-GRANTS-20260729 are authorised.",
       "lease": "LEASE-L10-INTEGRATION-GRANTS-20260729",
       "writerAuthority": "Codex only",
       "writerTransferredAt": "2026-07-29T12:33:42Z",
-      "writerTransferReason": "Kiro provider remained unavailable; Kiro authority was revoked while the Loop 10 worktree was clean and before any source change."
+      "writerTransferReason": "Kiro provider remained unavailable; Kiro authority was revoked while the Loop 10 worktree was clean and before any source change.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-10.json",
+      "acceptedProducerImplementation": "0528fbb1c30998a08292ada990d66f72fd3fdd21",
+      "acceptedProducerHandoff": "2405ff46f2f9cb0854ca74e8de8cb2aa00cfda24",
+      "integrationImplementationCommit": "7af2c95005945d6e87cab0b4065829161086a1b7",
+      "integrationHandoffCommit": "f9b706dd56f51c9fe78b5b540f4eb0a89fcf980b",
+      "integrationNormalizationCommit": "13deea15961ace866c9ebd6449ce0a76eeffb5f0",
+      "verificationSummary": "Independent security PASS after tenant/user authority-binding correction; targeted 26/26 and full desktop 1185/1185 tests PASS; main and shared renderer-compatible TypeScript, production build, lint 351 warnings/0 errors, 12/12 canonical Git-blob hashes, ownership, prohibited-path, exact scope, secret and plan-only boundaries PASS."
     },
     {
       "loop": "11",
@@ -720,6 +729,11 @@
       "at": "2026-07-29T12:33:42Z",
       "by": "W0",
       "action": "Revoked Kiro W4 writer authority for Loop 10 at the user's direction after verifying the producer worktree was clean at 7d361d4 with no staged, modified or untracked source. The existing exact-path lease remains active but is transferred to Codex as sole writer. Loop 06 and Loop 10 Codex are now the only source writers; Kiro is read-only and may not resume without a new W0 transfer."
+    },
+    {
+      "at": "2026-07-29T12:57:09Z",
+      "by": "W0",
+      "action": "Exact-path integrated and ACCEPTED Loop 10. Implementation 7af2c95 contains exactly 12 leased grant/contract paths; handoff f9b706d contains only loop-10.json and the worklog; 13deea is docs-only whitespace normalization. Independent security review PASS after closing tenant/user relabeling with trusted expectedScope and injected GrantScopeAuthority. Integration verification: targeted 26/26, full desktop 1185/1185, main and shared renderer-compatible TypeScript, production build, lint 351 warnings/0 errors, 12/12 Git-blob hashes, ownership, prohibited paths, exact scope, secrets and plan-only boundaries PASS. Revoked LEASE-L10-INTEGRATION-GRANTS-20260729; Loop 06 is now the sole active producer."
     }
   ],
   "completedByW0": [

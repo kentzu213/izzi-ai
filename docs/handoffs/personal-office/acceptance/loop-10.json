@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "10",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T12:57:09Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent security PASS plus full integration verification.",
+  "subject": {
+    "title": "Secret-free integration grants and grant-vault boundary",
+    "producerBranch": "feature/personal-office-loop-10-20260729",
+    "producerImplementation": "0528fbb1c30998a08292ada990d66f72fd3fdd21",
+    "producerHandoff": "2405ff46f2f9cb0854ca74e8de8cb2aa00cfda24",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "13deea15961ace866c9ebd6449ce0a76eeffb5f0"
+  },
+  "integration": {
+    "method": "W0 restored exactly 12 reviewed implementation paths from producer commit 0528fbb and committed them as 7af2c95, then restored only loop-10.json and the Loop 10 worklog from 2405ff4 and committed them as f9b706d. A docs-only normalization commit 13deea removed four Markdown hard-break spaces. No merge, blind cherry-pick, package edit, DB/schema edit, auth/OAuth wiring, operational IntegrationsService edit, renderer change or quarantine byte was used.",
+    "implementationCommit": "7af2c95005945d6e87cab0b4065829161086a1b7",
+    "handoffCommit": "f9b706dd56f51c9fe78b5b540f4eb0a89fcf980b",
+    "normalizationCommit": "13deea15961ace866c9ebd6449ce0a76eeffb5f0"
+  },
+  "independentReview": {
+    "securityDecision": "PASS_AFTER_SEND_BACK",
+    "closedFindings": [
+      "The first review found tenant/user relabeling because the canonical grant does not itself carry those fields.",
+      "Mapping, deserialization and revocation now require trusted expectedScope covering tenant, user, workspace, grant, integration and exact sorted scopes.",
+      "GrantVault now consults an injected GrantScopeAuthority and rejects claimed-versus-authoritative scope mismatch before invoking the resolver.",
+      "Active state requires a live, unrevoked, unexpired exact grant and resolvable integration-vault SecretRef.",
+      "No raw credential, legacy error string, network call, persistence, vault deletion, remote disconnect or fabricated success is present."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted grant tests",
+      "result": "PASS",
+      "evidence": "3 files, 26/26 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "105 files, 1185/1185 tests on integration with --no-cache."
+    },
+    {
+      "check": "main and renderer-compatible shared TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json passed; shared contracts passed strict ESNext/bundler/isolatedModules/DOM profile."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1174 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 351 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 12 implementation paths inside LEASE-L10-INTEGRATION-GRANTS-20260729 and exactly two producer handoff paths. No package, lockfile, DB/schema, auth, main/index/preload, production IntegrationsService, secret-store, customer-marketing, renderer or quarantine change."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All 12 declared SHA-256 hashes and byte counts match producer Git blobs at 0528fbb and the staged integration blobs before commit."
+    },
+    {
+      "check": "security and side-effect boundary",
+      "result": "PASS",
+      "evidence": "Exact authority-bound tenant/user/workspace/grant/integration/scopes; integration-vault SecretRef only; no credential value, OAuth, network, shell, DB, persistence or revoke execution."
+    },
+    {
+      "check": "GitNexus",
+      "result": "PASS_WITH_INDEX_LIMIT",
+      "evidence": "Pre-change IntegrationGrant impact MEDIUM with three direct importers and no execution process; staged detect reported 12 changed files, LOW risk and no affected process. New files are absent from the baseline index."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L10-INTEGRATION-GRANTS-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-10",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    }
+  ],
+  "residualRisks": [
+    "Operational OAuth, persistence, IPC and production IntegrationsService wiring remain intentionally absent and require new exact leases.",
+    "GrantScopeAuthority is an injected contract boundary; its future implementation must source scope from authenticated host/workspace context.",
+    "Revocation remains plan-only; approval, credential deletion and remote disconnect are not authorized.",
+    "The production bundle retains the pre-existing large-chunk warning."
+  ]
+}

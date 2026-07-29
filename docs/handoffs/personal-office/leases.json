@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T12:33:42Z",
+  "updatedAt": "2026-07-29T12:57:09Z",
   "updatedBy": "W0",
   "integrationCommit": "9736e30c2cc23fe8d30676ef655dbc2a0f85cc46",
   "activeLeases": [
@@ -64,62 +64,10 @@
         "No real network, account, billing, package, DB/schema, IPC, renderer or deployment side effect."
       ],
       "expiresOn": "Loop 06 acceptance or W0 revocation"
-    },
-    {
-      "leaseId": "LEASE-L10-INTEGRATION-GRANTS-20260729",
-      "loop": "10",
-      "window": "W4",
-      "grantedAt": "2026-07-29T12:23:21Z",
-      "grantedBy": "W0",
-      "writerAuthority": "Codex only",
-      "writerTransferredAt": "2026-07-29T12:33:42Z",
-      "previousWriterAuthority": "Kiro W4 — revoked before source changes",
-      "scope": "Secret-free integration-grant contracts, deterministic legacy mapping and injected no-value grant-vault facade",
-      "exclusiveWritePaths": [
-        "apps/desktop/src/shared/integration-grants/**",
-        "apps/desktop/src/main/integrations/grant-vault/**",
-        "apps/desktop/src/shared/personal-office/entities.ts",
-        "apps/desktop/src/shared/personal-office/index.ts",
-        "apps/desktop/src/shared/personal-office/serialization.test.ts",
-        "docs/product/personal-office-integration-grants.md"
-      ],
-      "readOnlyPaths": [
-        "apps/desktop/src/shared/personal-office/** except the three exact leased files",
-        "apps/desktop/src/shared/customer-marketing-credential-types.ts",
-        "apps/desktop/src/main/integrations/integrations-service.ts",
-        "apps/desktop/src/main/agent/secret-store.ts",
-        "apps/desktop/src/main/auth/**",
-        "apps/desktop/src/main/db/**",
-        "apps/desktop/src/shared/workspace-blueprint/**"
-      ],
-      "prohibitedPaths": [
-        "package.json",
-        "pnpm-workspace.yaml",
-        "pnpm-lock.yaml",
-        "apps/desktop/package.json",
-        "apps/desktop/src/main/db/**",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts",
-        "apps/desktop/src/main/integrations/integrations-service.ts",
-        "apps/desktop/src/main/agent/secret-store.ts",
-        "apps/desktop/src/main/auth/**",
-        "apps/desktop/src/main/customer-marketing/**",
-        "apps/desktop/src/renderer/**",
-        "F:/Ai Tools/Tool Starizzi - B2C - Openclaw/**"
-      ],
-      "conditions": [
-        "IntegrationGrant is amended additively with lastErrorAt and invalid only; PERSONAL_OFFICE_SCHEMA_VERSION is unchanged.",
-        "No raw credential value appears in contracts, fixtures, logs, errors, events, hashes or handoffs.",
-        "Every grant is bound to exact workspace, integration and least-privilege scopes; wildcards and cross-workspace reuse fail closed.",
-        "Vault access exposes resolvability only and never returns the raw value.",
-        "Legacy error text is not preserved; only redacted reason codes and timestamps are allowed.",
-        "Revocation is plan/result modeling only; no vault deletion, remote disconnect, account mutation, persistence or network side effect."
-      ],
-      "expiresOn": "Loop 10 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 2,
-  "statement": "Loops 06 and 10 are the only active source-writer leases and both are owned exclusively by Codex. All Kiro windows, W0, W1 and W2 are read-only outside W0 control records. Package manifests, DB/schema, host-context, renderer and operational OAuth/provisioning/runtime seams remain unleased.",
+  "activeLeaseCount": 1,
+  "statement": "Loop 06 is the only active source-writer lease and is owned exclusively by Codex. All Kiro windows and other lanes are read-only outside W0 control records. Package manifests, DB/schema, host-context, renderer and operational OAuth/provisioning/runtime seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -183,6 +131,15 @@
       "revokedAt": "2026-07-29T12:20:13Z",
       "revokedBy": "W0",
       "reason": "Loop 08 accepted at docs/handoffs/personal-office/acceptance/loop-08.json after independent security review, canonical Git-blob provenance reconciliation and full integration verification."
+    },
+    {
+      "leaseId": "LEASE-L10-INTEGRATION-GRANTS-20260729",
+      "loop": "10",
+      "window": "W4",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T12:57:09Z",
+      "revokedBy": "W0",
+      "reason": "Loop 10 accepted at docs/handoffs/personal-office/acceptance/loop-10.json after independent security review, tenant/user authority-binding correction, exact-path integration and full verification."
     }
   ],
   "preApprovedOnLoop01Acceptance": {
