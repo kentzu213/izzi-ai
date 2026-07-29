@@ -12,7 +12,8 @@
  * @module renderer/shell/PersonalOfficeShell
  */
 
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { WorkspaceInstanceId } from '../../shared/personal-office';
 import { usePersonalOfficeStore } from '../store/personalOffice';
 import { useWorkSnapshot } from './useWorkSnapshot';
 import { ShellSidebar, ShellSheetNav } from './ShellNav';
@@ -23,7 +24,7 @@ import { WorkspacesPage } from './WorkspacesPage';
 import { WorkspaceHome } from './WorkspaceHome';
 import { MyGraphRoute } from './MyGraphRoute';
 import { ShellSettingsPanel } from './ShellSettingsPanel';
-import { SurfaceState } from './SurfaceState';
+import { SurfaceNotice } from './SurfaceState';
 import { LEGACY_SURFACES, type LegacyPageId } from './legacySurfaces';
 import { TOP_LEVEL_ROUTES, WORKSPACE_SURFACES, type ShellRoute } from './types';
 import '../styles/personal-office.css';
@@ -33,6 +34,34 @@ interface PersonalOfficeShellProps {
   readonly renderLegacy: (page: LegacyPageId) => React.ReactNode;
   /** Switches the whole app back to the legacy sidebar shell. */
   readonly onDisableShell: () => void;
+}
+
+/**
+ * Narrow breakpoint, matching the CSS.
+ *
+ * Below this the sidebar is replaced by a full-screen sheet rather than a
+ * shrunken rail, so the menu button only exists here. Kept in sync with the
+ * `--po-narrow` breakpoint in personal-office.css by hand: a media query in JS
+ * and one in CSS cannot share a token without a build step.
+ */
+const NARROW_QUERY = '(max-width: 899px)';
+
+function useIsNarrow(): boolean {
+  const [isNarrow, setIsNarrow] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia(NARROW_QUERY).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const query = window.matchMedia(NARROW_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
+    query.addEventListener('change', onChange);
+    setIsNarrow(query.matches);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  return isNarrow;
 }
 
 /** Is the event target a field where "/" should type a slash instead of opening search? */
@@ -57,6 +86,14 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
   const setNavSheetOpen = usePersonalOfficeStore((state) => state.setNavSheetOpen);
 
   const { snapshot, retry, delegate, isDelegating } = useWorkSnapshot();
+  const isNarrow = useIsNarrow();
+
+  /**
+   * Favourites are a per-device preference, not domain truth: W1's
+   * `WorkspaceInstance` has no `favorite` field (raised as CR-UX-02). Holding
+   * them here keeps the shell honest instead of inventing a contract field.
+   */
+  const [favorites, setFavorites] = useState<readonly string[]>([]);
 
   /* ── global shortcuts ── */
   useEffect(() => {
@@ -78,11 +115,17 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
   }, [setPaletteOpen]);
 
   const handleOpenWorkspace = useCallback(
-    (id: string) => {
+    (id: WorkspaceInstanceId) => {
       openWorkspace(id);
     },
     [openWorkspace],
   );
+
+  const handleToggleFavorite = useCallback((id: WorkspaceInstanceId) => {
+    setFavorites((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }, []);
 
   /* ── palette commands ── */
   const commands = useMemo<PaletteCommand[]>(() => {
@@ -103,7 +146,7 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
         id: `ws:${workspace.id}`,
         label: workspace.name,
         group: 'Workspaces',
-        keywords: 'workspace open switch',
+        keywords: ['workspace', 'open', 'switch'],
         run: () => handleOpenWorkspace(workspace.id),
       });
     }
@@ -124,7 +167,7 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
         id: `legacy:${surface.id}`,
         label: surface.label,
         group: 'Other surfaces',
-        keywords: surface.description,
+        keywords: [surface.description],
         hint: surface.description,
         run: () => openLegacy(surface.id),
       });
@@ -173,23 +216,25 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
         return (
           <WorkspacesPage
             snapshot={snapshot}
+            favorites={favorites}
+            onOpen={handleOpenWorkspace}
+            onToggleFavorite={handleToggleFavorite}
             onRetry={retry}
-            onOpenWorkspace={handleOpenWorkspace}
           />
         );
       case 'workspace':
         return (
           <WorkspaceHome
+            workspace={activeWorkspace}
             snapshot={snapshot}
-            workspaceId={workspaceId}
             surface={workspaceSurface}
             onSurfaceChange={setWorkspaceSurface}
             onRetry={retry}
-            onBackToWorkspaces={() => navigate('workspaces')}
+            onBack={() => navigate('workspaces')}
           />
         );
       case 'mygraph':
-        return <MyGraphRoute snapshot={snapshot}>{renderLegacy('knowledge')}</MyGraphRoute>;
+        return <MyGraphRoute snapshot={snapshot} renderGraph={() => renderLegacy('knowledge')} />;
       case 'market':
         return (
           <section className="po-surface" aria-labelledby="po-market-heading">
@@ -200,10 +245,9 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
               <p className="po-surface__lede">Add capabilities to your office.</p>
             </header>
             {snapshot.isOffline ? (
-              <SurfaceState
+              <SurfaceNotice
                 kind="offline"
-                title="Market needs a connection"
-                description="Reconnect to browse and install capabilities."
+                message="Market needs a connection. Reconnect to browse and install capabilities."
               />
             ) : (
               <div className="po-embed">{renderLegacy('marketplace')}</div>
@@ -235,24 +279,14 @@ export function PersonalOfficeShell({ renderLegacy, onDisableShell }: PersonalOf
     }
   }
 
-  const healthState = snapshot.isOffline
-    ? 'offline'
-    : snapshot.status === 'error'
-      ? 'error'
-      : snapshot.status === 'degraded'
-        ? 'degraded'
-        : snapshot.status === 'loading'
-          ? 'loading'
-          : 'ready';
-
   return (
     <div className="po-shell">
       <ShellTopBar
-        contextLabel={contextLabel}
-        healthState={healthState}
-        isDemo={snapshot.isDemo}
+        title={contextLabel}
+        snapshot={snapshot}
+        showMenuButton={isNarrow}
         onOpenNav={() => setNavSheetOpen(true)}
-        onOpenSearch={() => setPaletteOpen(true)}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       <div className="po-shell__body">

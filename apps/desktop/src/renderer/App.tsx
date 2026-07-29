@@ -26,6 +26,11 @@ import { CustomerMarketingRoomPage } from './pages/CustomerMarketingRoom';
 import KnowledgeUniversePage from './pages/KnowledgeUniverse';
 import { ScheduledSessionsPage } from './pages/ScheduledSessions';
 import { useAgentWorkspaceStore } from './store/agentWorkspace';
+import { PersonalOfficeShell } from './shell/PersonalOfficeShell';
+import {
+  isPersonalOfficeShellEnabled,
+  setPersonalOfficeShellEnabled,
+} from './shell/featureFlags';
 import { vi } from './i18n/vi';
 
 type Page =
@@ -64,6 +69,11 @@ export function App() {
   const [currentPage, setCurrentPage] = useState<Page>('chat');
   const [isLoading, setIsLoading] = useState(true);
   const [extensionUpdateCount, setExtensionUpdateCount] = useState(0);
+  // Read once at mount: flipping the shell is an explicit, reload-backed action,
+  // so re-reading storage on every render would only add noise.
+  const [showPersonalOfficeShell, setShowPersonalOfficeShell] = useState(() =>
+    isPersonalOfficeShellEnabled(),
+  );
 
   const bootstrapWorkspace = useAgentWorkspaceStore((state) => state.bootstrap);
   const ensureWorkspaceStream = useAgentWorkspaceStore((state) => state.ensureStream);
@@ -283,8 +293,30 @@ export function App() {
     }
   }
 
-  function renderPage() {
-    switch (currentPage) {
+  /**
+   * Renders a page by id.
+   *
+   * Defaults to `currentPage` so the legacy shell keeps calling it with no
+   * argument, and the Personal Office shell can pass an explicit page as its
+   * legacy adapter. The `Page` union, `useState<Page>` and every
+   * `setCurrentPage(...)` trigger are unchanged — the navigation contract that
+   * navigationMap.test.ts pins is preserved.
+   */
+  /**
+   * Rollback: clear the flag and drop straight back to the legacy sidebar shell.
+   *
+   * No reload — the legacy layout is still mounted in this same component, so
+   * flipping state is enough and the user keeps their session. This is the
+   * escape hatch that makes the new shell safe to ship behind a flag.
+   */
+  function handleDisablePersonalOfficeShell() {
+    setPersonalOfficeShellEnabled(false);
+    setShowPersonalOfficeShell(false);
+    setCurrentPage('chat');
+  }
+
+  function renderPage(page: Page = currentPage) {
+    switch (page) {
       case 'chat':
         return (
           <ChatPage
@@ -381,6 +413,32 @@ export function App() {
           onLogin={handleLogin}
           onGoogleLogin={handleGoogleLogin}
           onSignup={handleSignup}
+        />
+      </>
+    );
+  }
+
+  // Personal Office shell (Loop 02), behind `izzi.shell.personalOffice`.
+  //
+  // The legacy layout below is untouched and is the rollback path: clearing the
+  // flag re-renders exactly the previous shell. Legacy pages are not
+  // re-implemented — `renderPage` is handed down as the adapter, so every
+  // pre-existing surface keeps rendering its own component inside the new chrome.
+  if (showPersonalOfficeShell) {
+    return (
+      <>
+        <TitleBar />
+        <ErrorBoundary fallbackTitle="Loi hien thi trang">
+          <PersonalOfficeShell
+            renderLegacy={(page) => renderPage(page)}
+            onDisableShell={handleDisablePersonalOfficeShell}
+          />
+        </ErrorBoundary>
+        <OnboardingWizard user={currentUser} />
+        <UpdateNotification
+          updaterState={updaterState}
+          onDownload={() => void downloadUpdate()}
+          onRestart={() => void restartToUpdate()}
         />
       </>
     );

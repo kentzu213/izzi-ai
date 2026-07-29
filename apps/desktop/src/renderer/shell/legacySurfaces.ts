@@ -51,6 +51,8 @@ export interface LegacySurface {
 export interface LegacyGroup {
   readonly id: string;
   readonly label: string;
+  /** Why this group exists, shown above the list. */
+  readonly description: string;
   readonly surfaces: readonly LegacySurface[];
 }
 
@@ -58,6 +60,8 @@ export const LEGACY_GROUPS: readonly LegacyGroup[] = Object.freeze([
   Object.freeze({
     id: 'marketing',
     label: 'Marketing',
+    description:
+      'Two separate marketing products, catalogued here instead of competing for a top-level slot.',
     surfaces: Object.freeze([
       Object.freeze({
         id: 'customer-marketing' as LegacyPageId,
@@ -79,6 +83,8 @@ export const LEGACY_GROUPS: readonly LegacyGroup[] = Object.freeze([
   Object.freeze({
     id: 'work',
     label: 'Legacy work tools',
+    description:
+      'The pre-Personal-Office ways of working. Still here, no longer the front door.',
     surfaces: Object.freeze([
       Object.freeze({ id: 'chat' as LegacyPageId, label: 'Chat', description: 'Direct agent chat' }),
       Object.freeze({ id: 'tasks' as LegacyPageId, label: 'Replay tasks', description: 'The old task list' }),
@@ -94,6 +100,7 @@ export const LEGACY_GROUPS: readonly LegacyGroup[] = Object.freeze([
   Object.freeze({
     id: 'system',
     label: 'System',
+    description: 'Account, runtime, spend and providers.',
     surfaces: Object.freeze([
       Object.freeze({ id: 'dashboard' as LegacyPageId, label: 'Operations', description: 'Account overview' }),
       Object.freeze({ id: 'status' as LegacyPageId, label: 'Guardrails', description: 'Runtime status' }),
@@ -102,6 +109,50 @@ export const LEGACY_GROUPS: readonly LegacyGroup[] = Object.freeze([
       Object.freeze({ id: 'extensions' as LegacyPageId, label: 'Extensions', description: 'Installed workflow imports' }),
       Object.freeze({ id: 'setup' as LegacyPageId, label: 'Setup wizard', description: 'First-run configuration' }),
       Object.freeze({ id: 'affiliate' as LegacyPageId, label: 'Affiliate', description: 'Referral programme' }),
+    ]),
+  }),
+]);
+
+/**
+ * Setup surfaces.
+ *
+ * These are the ones the IA explicitly forbids as workspace tabs: Context, Apps,
+ * Brand, Knowledge, Agents/Skills, Policies and Runtime. They live in Settings
+ * and in the per-workspace setup drawer, so a workspace keeps exactly four
+ * surfaces (Brief / Work / Deliverables / Approvals).
+ *
+ * Only entries backed by a real legacy page are listed. The remaining concepts
+ * (Context, Brand, Policies) have no page at this commit, so they are handled by
+ * the workspace setup drawer as explicit "not configured yet" rows rather than
+ * being faked with a link to an unrelated surface.
+ */
+export const SETUP_GROUPS: readonly LegacyGroup[] = Object.freeze([
+  Object.freeze({
+    id: 'setup',
+    label: 'Office setup',
+    description:
+      'Capabilities, knowledge and runtime. Deliberately kept out of the daily work surfaces.',
+    surfaces: Object.freeze([
+      Object.freeze({
+        id: 'knowledge' as LegacyPageId,
+        label: 'Knowledge',
+        description: 'Your graph and stored context',
+      }),
+      Object.freeze({
+        id: 'agents' as LegacyPageId,
+        label: 'Agents and skills',
+        description: 'Who can act on your behalf',
+      }),
+      Object.freeze({
+        id: 'extensions' as LegacyPageId,
+        label: 'Apps',
+        description: 'Installed extensions and imports',
+      }),
+      Object.freeze({
+        id: 'connections' as LegacyPageId,
+        label: 'Runtime',
+        description: 'Providers, models and routing',
+      }),
     ]),
   }),
 ]);

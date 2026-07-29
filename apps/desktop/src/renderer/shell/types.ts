@@ -52,6 +52,9 @@ export const WORKSPACE_SURFACES: readonly { id: WorkspaceSurface; label: string 
   Object.freeze({ id: 'approvals' as WorkspaceSurface, label: 'Approvals' }),
 ]);
 
+/** The surface a workspace opens on. Named so callers never index the array. */
+export const FIRST_WORKSPACE_SURFACE: WorkspaceSurface = 'brief';
+
 /**
  * Today's lanes.
  *
