@@ -299,6 +299,10 @@ export interface IntegrationGrant extends Timestamps {
   readonly secret: SecretRef;
   readonly expiresAt?: string;
   readonly revokedAt?: string;
+  /** Redacted evidence timestamp only; the legacy error string is never retained. */
+  readonly lastErrorAt?: string;
+  /** True when the grant must be re-authorized before use. */
+  readonly invalid?: boolean;
 }
 
 /** ── RuntimeInstance (a running execution environment) ──────────────────── */
