@@ -55,10 +55,18 @@ export interface OperationalRuntimeEvidenceSnapshot {
  * package and agent input may identify the requested operation but must never
  * supply either receipt or decide that a package/grant is trusted.
  */
-export interface OperationalRuntimeEvidencePort {
+export interface OperationalRuntimeEvidenceResolverPort {
   resolve(
     query: OperationalRuntimeEvidenceQuery,
   ): Promise<OperationalRuntimeEvidenceSnapshot | null>;
+}
+
+export interface OperationalRuntimeEvidencePort
+extends OperationalRuntimeEvidenceResolverPort {
+  ensure(input: {
+    readonly runtime: BrowserRuntimeSpec;
+    readonly packageBinding: OperationalPackageBinding;
+  }): Promise<void>;
 }
 
 export interface OperationalBrowserCoordinatorPort {
@@ -201,6 +209,7 @@ export class OperationalBrowserService {
     }
     let evidence: OperationalRuntimeEvidenceSnapshot | null;
     try {
+      await this.evidence.ensure({ runtime, packageBinding });
       evidence = await this.evidence.resolve(query);
     } catch {
       evidence = null;

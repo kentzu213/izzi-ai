@@ -17,7 +17,7 @@ import type { IntegrationGrantOperationReceipt } from '../integrations/grant-ope
 import type { RuntimeEncryptionProvider } from './encrypted-state-store';
 import {
   createOperationalRuntimeEvidenceQuery,
-  type OperationalRuntimeEvidencePort,
+  type OperationalRuntimeEvidenceResolverPort,
   type OperationalRuntimeEvidenceQuery,
   type OperationalRuntimeEvidenceSnapshot,
 } from './operational-browser-service';
@@ -120,7 +120,7 @@ function normalizeQuery(value: OperationalRuntimeEvidenceQuery): OperationalRunt
   });
 }
 
-export class EncryptedOperationalEvidenceStore implements OperationalRuntimeEvidencePort {
+export class EncryptedOperationalEvidenceStore implements OperationalRuntimeEvidenceResolverPort {
   constructor(
     private readonly root: string,
     private readonly encryption: RuntimeEncryptionProvider,
@@ -181,6 +181,18 @@ export class EncryptedOperationalEvidenceStore implements OperationalRuntimeEvid
       });
     } catch {
       throw new OperationalEvidenceStoreError('CORRUPT_EVIDENCE');
+    }
+  }
+
+  async remove(inputQuery: OperationalRuntimeEvidenceQuery): Promise<void> {
+    const query = normalizeQuery(inputQuery);
+    try {
+      await fs.promises.unlink(this.fileFor(query));
+      await this.syncRoot();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new OperationalEvidenceStoreError('CORRUPT_EVIDENCE');
+      }
     }
   }
 

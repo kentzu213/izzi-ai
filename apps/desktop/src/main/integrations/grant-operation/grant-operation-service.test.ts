@@ -46,6 +46,10 @@ const grant: IntegrationGrant = {
 function options(
   overrides: Partial<IntegrationGrantOperationServiceOptions> = {},
 ): IntegrationGrantOperationServiceOptions {
+  const operationalEvidence = {
+    recordConnected: vi.fn().mockResolvedValue(undefined),
+    beginRevocation: vi.fn().mockResolvedValue(undefined),
+  };
   return {
     identity: {
       resolveConnectScope: vi.fn().mockResolvedValue(scope),
@@ -82,6 +86,7 @@ function options(
       { canResolve: vi.fn().mockResolvedValue(true) },
       { getScope: vi.fn().mockResolvedValue(scope) },
     ),
+    operationalEvidence,
     now: () => new Date(NOW),
     ...overrides,
   };
@@ -165,6 +170,8 @@ describe('IntegrationGrantOperationService', () => {
     expect(result).toMatchObject({
       status: 'connected',
       code: 'CONNECTED',
+      tenantId: scope.tenantId,
+      userId: scope.userId,
       integration: scope.integration,
       grantId,
       workspaceInstanceId,
@@ -183,6 +190,76 @@ describe('IntegrationGrantOperationService', () => {
       }),
       scope,
     );
+    expect(setup.operationalEvidence?.recordConnected).toHaveBeenCalledWith(result);
+  });
+
+  it('compensates a connected grant when encrypted operational evidence cannot be recorded', async () => {
+    const setup = options({
+      operationalEvidence: {
+        recordConnected: vi.fn().mockRejectedValue(new Error('encryption unavailable')),
+        beginRevocation: vi.fn(),
+      },
+    });
+    const result = await new IntegrationGrantOperationService(setup).connect({
+      integration: scope.integration,
+      scopes: scope.scopes,
+      idempotencyKey: 'connect:calendar:evidence-failure',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      code: 'EVIDENCE_RECORDING_FAILED',
+    });
+    expect(setup.connector.revoke).toHaveBeenCalledOnce();
+    expect(setup.credentials.revoke).toHaveBeenCalledWith(ref, scope);
+    expect(setup.repository.markInvalid).toHaveBeenCalledWith(grantId, NOW);
+  });
+
+  it('performs no connection or persistence effect without an operational evidence authority', async () => {
+    const setup = options({ operationalEvidence: undefined });
+    const result = await new IntegrationGrantOperationService(setup).connect({
+      integration: scope.integration,
+      scopes: scope.scopes,
+      idempotencyKey: 'connect:calendar:no-evidence-authority',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      code: 'EVIDENCE_RECORDING_FAILED',
+    });
+    expect(setup.connector.connect).not.toHaveBeenCalled();
+    expect(setup.repository.upsert).not.toHaveBeenCalled();
+    expect(setup.connector.revoke).not.toHaveBeenCalled();
+    expect(setup.credentials.revoke).not.toHaveBeenCalled();
+  });
+
+  it('reports incomplete cleanup when evidence recording and compensation both fail', async () => {
+    const setup = options({
+      connector: {
+        connect: vi.fn().mockResolvedValue({
+          status: 'connected',
+          secret: ref,
+        }),
+        revoke: vi.fn().mockResolvedValue({ status: 'failed' }),
+      },
+      operationalEvidence: {
+        recordConnected: vi.fn().mockRejectedValue(new Error('encryption unavailable')),
+        beginRevocation: vi.fn().mockRejectedValue(new Error('tombstone unavailable')),
+      },
+    });
+    const result = await new IntegrationGrantOperationService(setup).connect({
+      integration: scope.integration,
+      scopes: scope.scopes,
+      idempotencyKey: 'connect:calendar:compensation-failure',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      code: 'EVIDENCE_COMPENSATION_FAILED',
+    });
+    expect(setup.connector.revoke).toHaveBeenCalledOnce();
+    expect(setup.credentials.revoke).toHaveBeenCalledWith(ref, scope);
+    expect(setup.repository.markInvalid).toHaveBeenCalledWith(grantId, NOW);
   });
 
   it('rejects raw connector credentials and never writes them', async () => {
@@ -293,6 +370,12 @@ describe('IntegrationGrantOperationService', () => {
         }),
         markInvalid: vi.fn(),
       },
+      operationalEvidence: {
+        recordConnected: vi.fn(),
+        beginRevocation: vi.fn().mockImplementation(async () => {
+          order.push('evidence');
+        }),
+      },
     });
     const result = await new IntegrationGrantOperationService(setup).revoke({
       grantId,
@@ -300,7 +383,44 @@ describe('IntegrationGrantOperationService', () => {
     });
 
     expect(result).toMatchObject({ status: 'revoked', code: 'REVOKED' });
-    expect(order).toEqual(['remote', 'vault', 'metadata']);
+    expect(order).toEqual(['evidence', 'remote', 'vault', 'metadata']);
+  });
+
+  it('performs no revocation effect when the evidence tombstone cannot be persisted', async () => {
+    const setup = options({
+      operationalEvidence: {
+        recordConnected: vi.fn(),
+        beginRevocation: vi.fn().mockRejectedValue(new Error('disk unavailable')),
+      },
+    });
+    const result = await new IntegrationGrantOperationService(setup).revoke({
+      grantId,
+      idempotencyKey: 'revoke:calendar:evidence-failure',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      code: 'EVIDENCE_REVOCATION_FAILED',
+    });
+    expect(setup.connector.revoke).not.toHaveBeenCalled();
+    expect(setup.credentials.revoke).not.toHaveBeenCalled();
+    expect(setup.repository.markRevoked).not.toHaveBeenCalled();
+  });
+
+  it('performs no revocation effect without an operational evidence authority', async () => {
+    const setup = options({ operationalEvidence: undefined });
+    const result = await new IntegrationGrantOperationService(setup).revoke({
+      grantId,
+      idempotencyKey: 'revoke:calendar:no-evidence-authority',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      code: 'EVIDENCE_REVOCATION_FAILED',
+    });
+    expect(setup.connector.revoke).not.toHaveBeenCalled();
+    expect(setup.credentials.revoke).not.toHaveBeenCalled();
+    expect(setup.repository.markRevoked).not.toHaveBeenCalled();
   });
 
   it('stops revocation before vault and metadata when remote disconnect fails', async () => {

@@ -102,6 +102,7 @@ const marketplaceReceipt = {
     ['grant_resolution', 'passed'],
     ['workspace_provisioning', 'passed'],
     ['package_installation', 'passed'],
+    ['operational_evidence', 'passed'],
   ].map(([stage, outcome]) => ({
     stage,
     outcome,
@@ -185,6 +186,22 @@ describe('EncryptedOperationalEvidenceStore', () => {
         budget: { ...runtime.budget, timeoutMs: 120_000 },
       }, packageBinding),
     )).resolves.toBeNull();
+  });
+
+  it('removes exact evidence before a later authorization revalidation', async () => {
+    const test = harness();
+    await test.store.record({
+      runtime,
+      packageBinding,
+      marketplaceReceipt,
+      grantReceipt,
+    });
+    const query = createOperationalRuntimeEvidenceQuery(runtime, packageBinding);
+
+    await test.store.remove(query);
+
+    await expect(test.store.resolve(query)).resolves.toBeNull();
+    await expect(test.store.remove(query)).resolves.toBeUndefined();
   });
 
   it('fails closed for ciphertext corruption and unavailable encryption', async () => {

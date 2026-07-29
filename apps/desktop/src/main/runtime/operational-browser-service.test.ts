@@ -68,6 +68,7 @@ const marketplaceReceipt = {
     ['grant_resolution', 'passed'],
     ['workspace_provisioning', 'passed'],
     ['package_installation', 'passed'],
+    ['operational_evidence', 'passed'],
   ].map(([stage, outcome]) => ({
     stage,
     outcome,
@@ -127,6 +128,7 @@ function harness(initial: OperationalRuntimeEvidenceSnapshot | null = {
     execute: vi.fn().mockResolvedValue(receipt),
   };
   const evidence = {
+    ensure: vi.fn().mockResolvedValue(undefined),
     resolve: vi.fn(async () => snapshot),
   };
   return {
@@ -152,6 +154,7 @@ describe('OperationalBrowserService', () => {
       idempotencyKey: preparedAction.idempotencyKey,
     });
     await expect(test.service.execute(prepared)).resolves.toEqual(receipt);
+    expect(test.evidence.ensure).toHaveBeenCalledTimes(2);
     expect(test.evidence.resolve).toHaveBeenCalledTimes(2);
     expect(test.evidence.resolve).toHaveBeenCalledWith({
       tenantId: runtime.authority.tenantId,
@@ -249,6 +252,24 @@ describe('OperationalBrowserService', () => {
       idempotencyKey: preparedAction.idempotencyKey,
     })).rejects.toMatchObject({ code: 'AUTHORIZATION_DENIED' });
     expect(excessive.coordinator.prepare).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse cached evidence when authoritative receipt revalidation fails', async () => {
+    const test = harness();
+    test.evidence.ensure.mockRejectedValueOnce(new Error('grant revoked'));
+
+    await expect(test.service.prepare({
+      runtime,
+      packageBinding,
+      runId: preparedAction.runId,
+      readUrl: preparedAction.readUrl,
+      submitUrl: preparedAction.submitUrl,
+      draftBody: preparedAction.draftBody,
+      idempotencyKey: preparedAction.idempotencyKey,
+    })).rejects.toEqual(new OperationalBrowserServiceError('EVIDENCE_UNAVAILABLE'));
+
+    expect(test.evidence.resolve).not.toHaveBeenCalled();
+    expect(test.coordinator.prepare).not.toHaveBeenCalled();
   });
 
   it('does not query evidence for an incomplete or mismatched runtime authority', async () => {

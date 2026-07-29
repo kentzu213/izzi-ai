@@ -17,6 +17,10 @@ import {
   type BrowserDriverAttestation,
 } from './attested-browser-driver';
 import {
+  AuthoritativeOperationalEvidencePort,
+  EncryptedAuthoritativeOperationReceiptStore,
+} from './authoritative-operation-receipts';
+import {
   EncryptedBrowserStateStore,
   type RuntimeEncryptionProvider,
 } from './encrypted-state-store';
@@ -156,6 +160,7 @@ describe('Personal Office operational runtime E2E', () => {
         ['grant_resolution', 'passed'],
         ['workspace_provisioning', 'passed'],
         ['package_installation', 'passed'],
+        ['operational_evidence', 'passed'],
       ].map(([stage, outcome]) => ({
         stage,
         outcome,
@@ -173,6 +178,8 @@ describe('Personal Office operational runtime E2E', () => {
       status: 'connected',
       code: 'CONNECTED',
       observedAt: '2026-07-29T10:02:00.000Z',
+      tenantId: runtime.authority.tenantId,
+      userId: runtime.authority.userId,
       integration: runtime.authority.integrationId,
       grantId: runtime.authority.grantId,
       workspaceInstanceId: runtime.authority.workspaceId,
@@ -241,17 +248,24 @@ describe('Personal Office operational runtime E2E', () => {
       authorization,
       () => new Date('2026-07-29T10:03:00.000Z'),
     );
-    const evidence = new EncryptedOperationalEvidenceStore(
-      path.join(root, 'evidence'),
-      new TestEncryption(),
+    const encryption = new TestEncryption();
+    const authoritativeReceipts = new EncryptedAuthoritativeOperationReceiptStore(
+      path.join(root, 'authoritative-receipts'),
+      encryption,
     );
-    await evidence.record({
-      runtime,
-      packageBinding,
-      marketplaceReceipt,
-      grantReceipt,
-    });
-    const operational = new OperationalBrowserService(coordinator, evidence);
+    await authoritativeReceipts.recordCompleted(marketplaceReceipt);
+    await authoritativeReceipts.recordConnected(grantReceipt);
+    const evidenceStore = new EncryptedOperationalEvidenceStore(
+      path.join(root, 'evidence'),
+      encryption,
+    );
+    const operational = new OperationalBrowserService(
+      coordinator,
+      new AuthoritativeOperationalEvidencePort(
+        authoritativeReceipts,
+        evidenceStore,
+      ),
+    );
     try {
       const prepared = await operational.prepare({
         runtime,

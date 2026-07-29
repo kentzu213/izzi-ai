@@ -36,6 +36,9 @@ export type IntegrationGrantOperationCode =
   | 'REMOTE_REVOCATION_FAILED'
   | 'VAULT_REVOCATION_FAILED'
   | 'GRANT_PERSISTENCE_FAILED'
+  | 'EVIDENCE_RECORDING_FAILED'
+  | 'EVIDENCE_COMPENSATION_FAILED'
+  | 'EVIDENCE_REVOCATION_FAILED'
   | 'CONNECTED'
   | 'REVOKED';
 
@@ -44,6 +47,8 @@ export interface IntegrationGrantOperationReceipt {
   readonly status: IntegrationGrantOperationStatus;
   readonly code: IntegrationGrantOperationCode;
   readonly observedAt: string;
+  readonly tenantId?: IntegrationGrantScope['tenantId'];
+  readonly userId?: IntegrationGrantScope['userId'];
   readonly integration?: string;
   readonly grantId?: IntegrationGrantId;
   readonly workspaceInstanceId?: IntegrationGrantScope['workspaceInstanceId'];
@@ -106,6 +111,15 @@ export interface IntegrationGrantRepositoryPort {
   markInvalid(grantId: IntegrationGrantId, observedAt: string): Promise<void>;
 }
 
+export interface IntegrationGrantOperationalEvidenceSink {
+  recordConnected(receipt: IntegrationGrantOperationReceipt): Promise<void>;
+  beginRevocation(input: {
+    readonly operationId: string;
+    readonly scope: IntegrationGrantScope;
+    readonly observedAt: string;
+  }): Promise<void>;
+}
+
 export interface IntegrationGrantOperationServiceOptions {
   readonly identity: IntegrationGrantIdentityAuthorityPort;
   readonly approvals: IntegrationGrantApprovalPort;
@@ -113,6 +127,7 @@ export interface IntegrationGrantOperationServiceOptions {
   readonly credentials: IntegrationGrantCredentialStorePort;
   readonly repository: IntegrationGrantRepositoryPort;
   readonly vault: GrantVault;
+  readonly operationalEvidence?: IntegrationGrantOperationalEvidenceSink;
   readonly now?: () => Date;
 }
 
@@ -194,6 +209,8 @@ function receipt(
     code,
     observedAt,
     ...(scope ? {
+      tenantId: scope.tenantId,
+      userId: scope.userId,
       integration: scope.integration,
       grantId: scope.grantId,
       workspaceInstanceId: scope.workspaceInstanceId,
@@ -218,14 +235,23 @@ export class IntegrationGrantOperationService {
     grant: IntegrationGrant,
     scope: IntegrationGrantScope,
     digest: string,
-  ): Promise<void> {
-    await this.options.connector.revoke({
+  ): Promise<{
+    readonly remoteRevoked: boolean;
+    readonly credentialRevoked: boolean;
+  }> {
+    const remote = await this.options.connector.revoke({
       operationId: operationIdValue,
       grant,
       scope,
       bindingDigest: digest,
-    }).catch(() => undefined);
-    await this.options.credentials.revoke(grant.secret, scope).catch(() => false);
+    }).catch(() => ({ status: 'failed' as const }));
+    const credentialRevoked = await this.options.credentials
+      .revoke(grant.secret, scope)
+      .catch(() => false);
+    return {
+      remoteRevoked: remote.status === 'revoked',
+      credentialRevoked,
+    };
   }
 
   async connect(input: {
@@ -298,6 +324,16 @@ export class IntegrationGrantOperationService {
         operationIdValue,
         'rejected',
         'APPROVAL_REJECTED',
+        scope,
+        approval.approvalId,
+      );
+    }
+    if (!this.options.operationalEvidence) {
+      return receipt(
+        observedAt,
+        operationIdValue,
+        'failed',
+        'EVIDENCE_RECORDING_FAILED',
         scope,
         approval.approvalId,
       );
@@ -383,7 +419,7 @@ export class IntegrationGrantOperationService {
         approval.approvalId,
       );
     }
-    return receipt(
+    const connectedReceipt = receipt(
       observedAt,
       operationIdValue,
       'connected',
@@ -392,6 +428,45 @@ export class IntegrationGrantOperationService {
       approval.approvalId,
       connected.evidenceDigest,
     );
+    try {
+      await this.options.operationalEvidence.recordConnected(connectedReceipt);
+    } catch {
+      let tombstoneRecorded = false;
+      try {
+        await this.options.operationalEvidence.beginRevocation({
+          operationId: operationIdValue,
+          scope,
+          observedAt,
+        });
+        tombstoneRecorded = true;
+      } catch {
+        tombstoneRecorded = false;
+      }
+      const compensation = await this.compensateConnectedGrant(
+        operationIdValue,
+        grant,
+        scope,
+        digest,
+      );
+      const invalidated = await this.options.repository
+        .markInvalid(scope.grantId, observedAt)
+        .then(() => true)
+        .catch(() => false);
+      return receipt(
+        observedAt,
+        operationIdValue,
+        'failed',
+        tombstoneRecorded
+          && compensation.remoteRevoked
+          && compensation.credentialRevoked
+          && invalidated
+          ? 'EVIDENCE_RECORDING_FAILED'
+          : 'EVIDENCE_COMPENSATION_FAILED',
+        scope,
+        approval.approvalId,
+      );
+    }
+    return connectedReceipt;
   }
 
   async revoke(input: {
@@ -488,6 +563,33 @@ export class IntegrationGrantOperationService {
         operationIdValue,
         'rejected',
         'APPROVAL_REJECTED',
+        scope,
+        approval.approvalId,
+      );
+    }
+    if (!this.options.operationalEvidence) {
+      return receipt(
+        observedAt,
+        operationIdValue,
+        'failed',
+        'EVIDENCE_REVOCATION_FAILED',
+        scope,
+        approval.approvalId,
+      );
+    }
+
+    try {
+      await this.options.operationalEvidence.beginRevocation({
+        operationId: operationIdValue,
+        scope,
+        observedAt,
+      });
+    } catch {
+      return receipt(
+        observedAt,
+        operationIdValue,
+        'failed',
+        'EVIDENCE_REVOCATION_FAILED',
         scope,
         approval.approvalId,
       );

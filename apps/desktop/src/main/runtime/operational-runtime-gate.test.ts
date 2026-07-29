@@ -29,6 +29,7 @@ const marketplaceReceipt = {
     ['grant_resolution', 'passed'],
     ['workspace_provisioning', 'passed'],
     ['package_installation', 'passed'],
+    ['operational_evidence', 'passed'],
   ].map(([stage, outcome]) => ({
     stage,
     outcome,

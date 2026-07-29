@@ -126,6 +126,10 @@ export interface MarketplaceInstallerPort {
   }>;
 }
 
+export interface MarketplaceCompletedReceiptSink {
+  recordCompleted(receipt: MarketplaceInstallOperationReceipt): Promise<void>;
+}
+
 export interface MarketplaceOperationServiceOptions {
   readonly catalogAuthority: MarketplaceCatalogAuthorityPort;
   readonly identityAuthority: MarketplaceIdentityAuthorityPort;
@@ -134,6 +138,7 @@ export interface MarketplaceOperationServiceOptions {
   readonly grants: MarketplaceGrantResolutionPort;
   readonly provisioner: MarketplaceWorkspaceProvisioningPort;
   readonly installer: MarketplaceInstallerPort;
+  readonly completedReceiptSink?: MarketplaceCompletedReceiptSink;
   readonly now?: () => Date;
 }
 
@@ -494,6 +499,21 @@ export class MarketplaceOperationService {
       ...(grant.evidenceDigest ? { evidenceDigest: grant.evidenceDigest } : {}),
     }));
 
+    if (!this.options.completedReceiptSink) {
+      stages.push(stage({
+        stage: 'workspace_provisioning',
+        outcome: 'blocked',
+        code: 'OPERATIONAL_EVIDENCE_SINK_UNAVAILABLE',
+      }));
+      return this.receipt(
+        authoritative.plan,
+        stages,
+        'blocked',
+        startedAt,
+        approvalId,
+      );
+    }
+
     const provisioned = await this.options.provisioner.provision({
       plan: authoritative.plan,
       packageEvidence: verified.evidence,
@@ -556,15 +576,42 @@ export class MarketplaceOperationService {
       ...(installed.evidenceDigest ? { evidenceDigest: installed.evidenceDigest } : {}),
       referenceId: installed.installedPackageKey,
     }));
-    return this.receipt(
+    const completedStages = [
+      ...stages,
+      stage({
+        stage: 'operational_evidence',
+        outcome: 'passed',
+        code: 'AUTHORITATIVE_RECEIPT_RECORDED',
+      }),
+    ];
+    const completed = this.receipt(
       authoritative.plan,
-      stages,
+      completedStages,
       'completed',
       startedAt,
       approvalId,
       provisioned.workspaceInstanceId,
       installed.installedPackageKey,
     );
+    try {
+      await this.options.completedReceiptSink.recordCompleted(completed);
+    } catch {
+      stages.push(stage({
+        stage: 'operational_evidence',
+        outcome: 'blocked',
+        code: 'AUTHORITATIVE_RECEIPT_UNAVAILABLE',
+      }));
+      return this.receipt(
+        authoritative.plan,
+        stages,
+        'blocked',
+        startedAt,
+        approvalId,
+        provisioned.workspaceInstanceId,
+        installed.installedPackageKey,
+      );
+    }
+    return completed;
   }
 
   private bindingDigest(
