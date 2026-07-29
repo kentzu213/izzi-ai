@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "16",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff authorizes no push, deployment, external OAuth action, secret retrieval, package installation or browser automation.",
+  "title": "Account and IntegrationGrant operation boundary",
+  "producer": {
+    "window": "W0-Codex",
+    "role": "Codex orchestrator, builder and in-process Socrates/security reviewer; Kiro and child agents had no writer authority",
+    "branch": "feature/personal-office-loop-16-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop16"
+  },
+  "canonicalBase": "8fbb27fec5cc3a203fcfa659179a925b7187479e",
+  "implementationCommits": [
+    "22a8a089673d67183d6f93d9d310688da57482a3",
+    "40a8a3c077ea2e799913545322ada3bd4f56bb73",
+    "f992302aff3a07ecf00aeab0616550e0c9c57f1b"
+  ],
+  "outcome": {
+    "authority": "Connect and revoke scope is resolved by authenticated main authority; caller input cannot set tenant, user, workspace or grant identity.",
+    "approval": "Every effect is bound to deterministic operation id, exact action and exact scope; pending, rejected, expired, invalidated, unavailable or drifted approvals stop later effects.",
+    "secretBoundary": "The connector may return only an integration_vault SecretRef. Raw credentials and malformed evidence cannot be persisted or returned.",
+    "vaultAuthority": "Grant metadata is persisted only after exact GrantVault resolvability succeeds.",
+    "failureTruth": "Remote/vault compensation runs after failed post-connect gates; revocation follows remote, vault, metadata order and never fabricates success."
+  },
+  "ownership": {
+    "implementationPathCount": 6,
+    "allInsideApprovedScope": true,
+    "hotFileChanges": 0,
+    "prohibitedPathChanges": 0,
+    "paths": [
+      "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.ts",
+      "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.test.ts",
+      "apps/desktop/src/main/integrations/grant-operation/index.ts",
+      "docs/handoffs/personal-office/change-request-loop-16-integration-grant-operation.md",
+      "docs/handoffs/personal-office/planning/loop-16-quick-spec.md",
+      "docs/product/personal-office-integration-grant-operation.md"
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused grant operation tests",
+      "result": "PASS",
+      "evidence": "1 file, 10/10 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "128 files, 1398/1398 tests."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "lint",
+      "result": "PASS_WITH_BASELINE_WARNINGS",
+      "evidence": "Changed surface passed with zero warnings. Repository lint:ci passed with 0 errors and 350 warnings under ceiling 358."
+    },
+    {
+      "check": "security and ownership",
+      "result": "PASS",
+      "evidence": "No raw secret output, exception disclosure, renderer authority, hot file, package, auth, DB/schema, runtime or legacy integration edit."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Read-only HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5; 459 entries; fingerprint 90f36adf09cbdbae401a7b1abbf8406ffcde5bbbe4106e576ff63374d89d2f05."
+    }
+  ],
+  "outputs": [
+    {
+      "path": "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.ts",
+      "bytes": 15517,
+      "sha256": "93dff508f64565c986bd01bd19e4ef661477f831f14a2c8a2e498f358392cac4",
+      "gitBlob": "219ecfd3da8fa17f6a3a4f8c1f589f09b93de7d5"
+    },
+    {
+      "path": "apps/desktop/src/main/integrations/grant-operation/grant-operation-service.test.ts",
+      "bytes": 10754,
+      "sha256": "32010003950d83f6ac699d45c537f4b9de406fd794a62e3209eba2fca89c08f6",
+      "gitBlob": "b8069b23caca04bddc5e155db27ce6eb5abcc1b2"
+    },
+    {
+      "path": "apps/desktop/src/main/integrations/grant-operation/index.ts",
+      "bytes": 454,
+      "sha256": "aa751867d9b0aeafd5229cedb483fdfeadb2085e7c08f04b3c6745d99f4ed087",
+      "gitBlob": "99fd44cf509fac7c341dddc26eec2d1eadd44922"
+    },
+    {
+      "path": "docs/handoffs/personal-office/change-request-loop-16-integration-grant-operation.md",
+      "bytes": 914,
+      "sha256": "b21a3c83b8d4ed1959ec4be6db2240a0bee006e1e713cf6531fd9645657c2695",
+      "gitBlob": "97ed83e6f62d707c1befd7ad6e757a5315c4ddde"
+    },
+    {
+      "path": "docs/handoffs/personal-office/planning/loop-16-quick-spec.md",
+      "bytes": 1886,
+      "sha256": "d0da66d1b15741bcf183bb42bfdac440effae0154002a0710d410c78f7d4ad9d",
+      "gitBlob": "3306acd660a21f756e2afe793c173eb247fcaaa4"
+    },
+    {
+      "path": "docs/product/personal-office-integration-grant-operation.md",
+      "bytes": 2460,
+      "sha256": "31e2abf5c5d7879d8320207b71b7e2d1bda45ee6e950d3787a8edbf18e3fd1ee",
+      "gitBlob": "1d5592ea33620008ddb192f326eb3a0c3ebc953d"
+    }
+  ],
+  "residualRisks": [
+    "Production OAuth/account, approval, repository and vault adapters remain unregistered.",
+    "No renderer/preload IPC exposes this service; main composition requires a separate hot-file lease and audited server contract.",
+    "The production bundle retains the existing large-chunk advisory."
+  ],
+  "nextConsumer": {
+    "owner": "W0",
+    "action": "Verify producer blobs and exact-path replay the six implementation paths into the current integration ref, then reconcile only this handoff and worklog. Create acceptance/loop-16.json and update governance separately if canonical verification passes."
+  }
+}
