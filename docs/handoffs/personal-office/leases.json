@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T09:06:13Z",
+  "updatedAt": "2026-07-29T09:12:14Z",
   "updatedBy": "W0",
   "integrationCommit": "d8fb1a0a5bc5b9bf51efcef54133769d41549dd1",
   "activeLeases": [
@@ -56,10 +56,59 @@
         }
       ],
       "expiresOn": "Loop 04 acceptance or W0 revocation"
+    },
+    {
+      "leaseId": "LEASE-L09-MARKETPLACE-UI-20260729",
+      "loop": "09",
+      "window": "W4",
+      "grantedAt": "2026-07-29T09:12:14Z",
+      "grantedBy": "W0",
+      "scope": "Personal Office marketplace catalog, install intent and installer planning",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/shared/marketplace/**",
+        "apps/desktop/src/main/marketplace/**",
+        "apps/desktop/src/renderer/components/marketplace/**",
+        "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
+        "apps/desktop/src/renderer/pages/Marketplace.tsx",
+        "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
+        "docs/product/personal-office-marketplace.md"
+      ],
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/capabilities/**",
+        "apps/desktop/src/main/capabilities/**",
+        "apps/desktop/src/main/extensions/**",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/shell/**",
+        "packages/agent-bundle/**",
+        "apps/marketplace-api/**"
+      ],
+      "prohibitedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/main/extensions/**",
+        "apps/desktop/src/shared/capabilities/**",
+        "packages/agent-bundle/**",
+        "apps/marketplace-api/**",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx"
+      ],
+      "conditions": [
+        "Consume the accepted Loop 07 capability registry read-only; do not redefine permissions, grants or package identity.",
+        "Catalog/demo/offline state must be explicit. Never present fabricated demo entries as installed or remotely verified.",
+        "Install intent must show permissions, trust zone, data classification and side effects before confirmation.",
+        "No download, process execution, runtime activation, account mutation or provisioning side effect in this lease.",
+        "Request a new exact seam lease before any main/index/preload/extensions/marketplace-api change."
+      ],
+      "expiresOn": "Loop 09 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 07 is ACCEPTED and its capability-adapter lease is revoked. Loop 04 remains the only active producer lease. Package manifests remain unleased.",
+  "activeLeaseCount": 2,
+  "statement": "Loop 04 and Loop 09 are the two active producer leases. Loop 07 is ACCEPTED and revoked. Package manifests and installer execution seams remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -299,7 +348,9 @@
       "ownerOrder": [
         "09"
       ],
-      "currentLease": null
+      "currentLease": "LEASE-L09-MARKETPLACE-UI-20260729",
+      "leasedAt": "2026-07-29T09:12:14Z",
+      "note": "This lease covers Marketplace.tsx and new Personal Office marketplace modules only. apps/marketplace-api and installer execution seams remain read-only."
     },
     {
       "path": "Graph workspace / pages / store",

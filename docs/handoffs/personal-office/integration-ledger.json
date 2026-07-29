@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T09:06:13Z",
+  "updatedAt": "2026-07-29T09:12:14Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -389,16 +389,17 @@
       "loop": "09",
       "title": "Marketplace and installer",
       "window": "W4",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-09-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop09",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/dispatch-loop-09.md",
       "dependsOn": [
         "07"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 07 is ACCEPTED. W0 may create an isolated worktree and lease."
+      "dependencyStatus": "SATISFIED — Loop 07 is ACCEPTED. Isolated worktree and LEASE-L09-MARKETPLACE-UI-20260729 are authorized.",
+      "lease": "LEASE-L09-MARKETPLACE-UI-20260729"
     },
     {
       "loop": "10",
