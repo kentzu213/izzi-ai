@@ -1,10 +1,10 @@
 # Loop 14 — Authenticated Live context runtime
 
-**Status:** `READY_FOR_REVIEW`  
-**Branch:** `feature/personal-office-loop-14-20260729`  
-**Canonical base:** `cd567e23c5a8573f7f039c7d0330854893137dff`  
-**Producer implementation:** `e903540`, `3c4b112`  
-**Canonical implementation:** `80545a2`, `80038bb`  
+**Status:** `READY_FOR_REVIEW`
+**Branch:** `feature/personal-office-loop-14-20260729`
+**Canonical base:** `cd567e23c5a8573f7f039c7d0330854893137dff`
+**Producer implementation:** `e903540`, `3c4b112`
+**Canonical implementation:** `80545a2`, `80038bb`
 **Lease:** `LEASE-L14-CONTEXT-RUNTIME-20260729`
 
 ## Outcome
