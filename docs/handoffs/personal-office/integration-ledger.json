@@ -1068,7 +1068,14 @@
         "16"
       ],
       "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED.",
-      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright 1.59.1 offline package/browser provenance is verified, but dependency installation and package writes remain unauthorized. WebSocket authority is not required for v1 and the driver remains deny-all for every socket. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
+      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright 1.59.1 offline package/browser provenance is verified, but dependency installation and package writes remain unauthorized. WebSocket authority is not required for v1 and the driver remains deny-all for every socket. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised.",
+      "dependencySecurityReview": {
+        "status": "OFFLINE_PACKAGE_PAYLOAD_VERIFIED_AWAITING_INSTALL_AUTHORITY",
+        "artifact": "docs/handoffs/personal-office/gate-loop-17-playwright-security-review.md",
+        "payloadVerification": "playwright 133/133 and playwright-core 465/465 files matched pnpm store SHA-512 and size metadata; zero extra payload files; no lifecycle scripts, build or side-effect cache.",
+        "browserVerification": "Chromium revision 1217 / Chrome for Testing 147.0.7727.15 executable SHA-256 392187401C8583B0312798976FB8D50EDB93F143195F3DCA7CBF64B9BB314697.",
+        "residualGate": "Current vulnerability advisory freshness is not claimed because registry/advisory network access remains unauthorized."
+      }
     }
   ],
   "releaseGateR": {

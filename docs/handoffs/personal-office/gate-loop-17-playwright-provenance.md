@@ -57,9 +57,14 @@ The implementation gate may reopen when dependency installation/package writes
 are authorized. The exact request is recorded at
 `change-request-loop-17-playwright-dependency.md`.
 
+The package payload and dependency closure have also passed the offline
+file-by-file review recorded at
+`gate-loop-17-playwright-security-review.md`. That review confirms no lifecycle
+scripts, no build/side-effect payload and exact pnpm-store integrity, but it
+does not claim a current online vulnerability-advisory result.
+
 After authorization, W0 must grant a single-owner package/lockfile lease and
 perform an offline, script-disabled dependency materialization from the verified
 store. A separate exact-path lease is still required for production-driver
 composition. Browser launch, network access and real install-to-artifact E2E
 remain separately authorized external effects.
-

@@ -203,3 +203,30 @@ security review.
 
 No source, package manifest, lockfile, dependency, browser, network, secret,
 database, preload, renderer or quarantine byte was changed by this decision.
+
+## Offline Playwright package security review
+
+W0 completed a file-by-file offline payload review without granting a package
+lease. `playwright@1.59.1` matched all 133 pnpm store-indexed files and
+`playwright-core@1.59.1` matched all 465 files, including exact SHA-512 and byte
+size. Neither payload had a missing, mismatched or extra package file.
+
+Both packages declare Apache-2.0, Node `>=18`, no lifecycle scripts, no build
+requirement and no pnpm side-effect payload. The only required runtime
+dependency is exact `playwright-core: 1.59.1`; optional `fsevents: 2.3.2` is not
+selected on Windows. `@playwright/test` is not part of the requested production
+closure.
+
+The verified Chromium revision remains `1217`, Chrome for Testing
+`147.0.7727.15`, executable SHA-256
+`392187401C8583B0312798976FB8D50EDB93F143195F3DCA7CBF64B9BB314697`.
+
+This closes payload-integrity uncertainty but not install authority or current
+advisory freshness. No registry/advisory query was made. A future authorized
+materialization must stay offline, disable lifecycle scripts, set
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, reproduce the exact lock integrity, run
+an approved vulnerability check and revoke the package lease before source
+registration begins.
+
+No package, lockfile, dependency link, source, browser, network, secret,
+database, preload, renderer or quarantine byte was changed.

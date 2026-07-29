@@ -87,9 +87,11 @@
   "dependencyProvenanceGate": {
     "status": "OFFLINE_PROVENANCE_VERIFIED_AWAITING_INSTALL_AUTHORITY",
     "artifact": "docs/handoffs/personal-office/gate-loop-17-playwright-provenance.md",
+    "securityReview": "docs/handoffs/personal-office/gate-loop-17-playwright-security-review.md",
     "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-playwright-dependency.md",
     "candidate": "playwright@1.59.1 / Chromium revision 1217",
-    "evidence": "Exact package integrity, Apache-2.0 license, pnpm content-addressed store entries, materialized package metadata, browsers.json mapping and a complete SHA-256-pinned Chromium executable were verified offline.",
+    "evidence": "Exact package integrity, Apache-2.0 license, pnpm content-addressed store entries, materialized package metadata, browsers.json mapping and a complete SHA-256-pinned Chromium executable were verified offline. File-by-file verification matched 133/133 Playwright and 465/465 Playwright Core payload files with zero hash, size or extra-payload failures; both packages declare no lifecycle scripts or build side effects.",
+    "residualSecurityGate": "No advisory network query was authorized, so current vulnerability-database freshness must be checked after approved materialization.",
     "decision": "No package lease, lockfile edit, install or production driver registration until dependency installation/package writes are explicitly authorized."
   },
   "webSocketAuthorityDecision": {
