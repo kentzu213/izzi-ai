@@ -16,10 +16,12 @@ import { asId, newId } from './ids';
 import type {
   WorkRun,
   WorkRunId,
+  IntegrationGrant,
   WorkspaceHealth,
   WorkspaceInstance,
   WorkspaceInstanceId,
 } from './index';
+import { secretRef } from './secret-ref';
 
 function sampleRun(): WorkRun {
   return {
@@ -90,6 +92,30 @@ describe('workspace health contract', () => {
       expect(workspace.state).toBe('active');
       expect(workspace.provisioning).toBe('ready');
     }
+  });
+});
+
+describe('integration grant additive contract', () => {
+  it('round-trips invalid and redacted last-error evidence without a schema bump', () => {
+    const grant: IntegrationGrant = {
+      schemaVersion: PERSONAL_OFFICE_SCHEMA_VERSION,
+      id: asId<'IntegrationGrantId'>('grant_google'),
+      workspaceInstanceId: asId<'WorkspaceInstanceId'>('ws_1'),
+      integration: 'google-drive',
+      scopes: ['documents.read'],
+      secret: secretRef(
+        'integration_vault',
+        'integration/google-drive/operator',
+        ['documents.read'],
+      ),
+      invalid: true,
+      lastErrorAt: '2026-07-29T12:00:00.000Z',
+      createdAt: '2026-07-29T10:00:00.000Z',
+      updatedAt: '2026-07-29T12:00:00.000Z',
+    };
+
+    expect(roundTrip('IntegrationGrant', grant)).toEqual(grant);
+    expect(grant.schemaVersion).toBe(1);
   });
 });
 
