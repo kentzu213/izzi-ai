@@ -3,9 +3,9 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T18:10:00Z",
+  "updatedAt": "2026-07-29T18:20:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "177b6a902b340feff4d67678f90c76dfdc512a54",
+  "integrationCommit": "d23c33e",
   "activeLeases": [
     {
       "leaseId": "LEASE-R5-BETA10-RECONCILIATION-20260729",
@@ -32,7 +32,7 @@
         "worklogs/personal-office-release-gate-r5-beta10.md"
       ],
       "constraints": [
-        "Restore only the seven exact tracked source paths from bc0d5d6; untracked packaging directories are not inputs.",
+        "Restore the six non-conflicting tracked source blobs from bc0d5d6. Preserve canonical main/index.ts and port only runtimeScratchParent: app.getPath('temp'); whole-file replacement is prohibited. Untracked packaging directories are not inputs.",
         "Preserve all accepted Personal Office and R2-R4 reconciliation behavior.",
         "No package installation, lockfile, DB/schema, browser automation enablement, push, tag, publish, deploy, installer execution, secret retrieval, GitHub environment mutation or quarantine/source-worktree mutation."
       ]

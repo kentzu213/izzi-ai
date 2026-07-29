@@ -34,13 +34,19 @@ Owned paths:
 - `docs/handoffs/personal-office/release-gate-r5-beta10.json`
 - `worklogs/personal-office-release-gate-r5-beta10.md`
 
-The seven source paths must be restored from the exact Git objects in
+Six non-conflicting source paths must be restored from the exact Git objects in
 `bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8`, then reviewed against the
-Personal Office integration base. No untracked packaging output is an input.
+Personal Office integration base. `apps/desktop/src/main/index.ts` must retain
+the canonical Personal Office/R2-R4 blob and receive only the reviewed
+`runtimeScratchParent: app.getPath('temp')` constructor option from the source
+commit. Whole-file replacement of `main/index.ts` is prohibited. No untracked
+packaging output is an input.
 
 ## Required verification
 
-1. Confirm all seven source blobs match `bc0d5d6` after replay.
+1. Confirm six non-conflicting source blobs match `bc0d5d6` after replay and
+   `main/index.ts` differs from the R5 base by exactly the one constructor
+   option described above.
 2. Verify the temp runtime root is fail-closed against symlinks/junctions and
    is removed on success and failure.
 3. Verify staged snapshots are validated before and after no-overwrite copy to
