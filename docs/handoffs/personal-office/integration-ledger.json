@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:20:13Z",
+  "updatedAt": "2026-07-29T12:23:21Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -447,16 +447,17 @@
       "loop": "10",
       "title": "Auth, integrations and grant vault",
       "window": "W4",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-10-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop10",
       "commitSha": null,
-      "handoff": null,
+      "handoff": "docs/handoffs/personal-office/dispatch-loop-10.md",
       "dependsOn": [
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loop 04 is ACCEPTED. Scheduling waits for an available producer slot."
+      "dependencyStatus": "SATISFIED — Loops 01, 04 and 08 are ACCEPTED. Isolated worktree and LEASE-L10-INTEGRATION-GRANTS-20260729 are authorised.",
+      "lease": "LEASE-L10-INTEGRATION-GRANTS-20260729"
     },
     {
       "loop": "11",
@@ -706,6 +707,11 @@
       "at": "2026-07-29T12:20:13Z",
       "by": "W0",
       "action": "Exact-path integrated and ACCEPTED Loop 08. Implementation 8078eb7 contains exactly 12 leased blueprint/contract paths; final handoff c192c39 contains only loop-08.json and the worklog. Independent security review PASS after four trust-boundary corrections. Integration verification: targeted 27/27, full desktop 1173/1173, main TypeScript, production build, lint 298 warnings/0 errors, 12/12 canonical Git-blob hashes, ownership, prohibited paths, scope, secrets and plan-only boundaries PASS. Revoked LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 and opened one producer slot for Loop 10."
+    },
+    {
+      "at": "2026-07-29T12:23:21Z",
+      "by": "W0",
+      "action": "Dispatched Loop 10 to Kiro W4 from the accepted Loop 08 integration ref and granted LEASE-L10-INTEGRATION-GRANTS-20260729. Scope is secret-free integration-grant contracts, deterministic legacy status mapping and an injected no-value grant-vault facade. Existing production integrations/auth/secret-store, network, persistence, DB/schema, IPC and renderer remain read-only or prohibited. Loop 06 Codex and Loop 10 Kiro are the only source writers."
     }
   ],
   "completedByW0": [
