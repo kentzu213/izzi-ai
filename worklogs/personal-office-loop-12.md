@@ -3,7 +3,7 @@
 **Status:** `READY_FOR_REVIEW`
 **Branch:** `feature/personal-office-loop-12-20260729`
 **Canonical base:** `979ee06499a7066c7f012bb7101ec44519c1ac0c`
-**Implementation commits:** `0e46ea1`, `35845da`
+**Implementation commits:** `0e46ea1`, `f54aba3`
 **Lease:** `LEASE-L12-MARKETING-REFERENCE-20260729`
 
 ## Outcome
@@ -33,6 +33,16 @@ workspace. Demo and plan-only flows do not provision anything.
 - Customer Marketing role/evidence checks remain the approval authority.
   Projection records decisions but never performs an external effect.
 - Malformed legacy tenant-cache bytes are preserved rather than deleted.
+- Malformed or non-object tenant-cache source is now write-protected
+  centrally. Onboarding returns a recoverable error before invoking any remote
+  workspace operation.
+- Installed extension versions are matched from the runtime manifest shape
+  supplied by `main`, removing the split top-level version assumption.
+- Setup traps Tab and Shift+Tab inside the modal drawer and restores the
+  operator's previous focus when it closes.
+- Reference evidence now requires a `synced` IzziAPI workspace with an
+  authoritative workspace object. Local/API-disabled mode returns
+  `workspace_unavailable` and cannot provision Unified Work.
 - No credential value was added to renderer types, bridge contracts, docs or
   logs.
 - No package, lockfile, DB/schema, auth, updater or deployment file changed.
@@ -41,26 +51,26 @@ workspace. Demo and plan-only flows do not provision anything.
 
 ## Verification
 
-- Targeted Loop 12 tests: **PASS**, 4 files / 146 tests.
-- Full desktop suite: **PASS**, 119 files / 1283 tests, `--no-cache`.
+- Targeted blocker regression tests: **PASS**, 2 files / 115 tests.
+- Full desktop suite: **PASS**, 119 files / 1288 tests, `--no-cache`.
 - Main TypeScript: **PASS**, `tsconfig.main.json --noEmit`.
 - Renderer TypeScript: **PASS**, `tsconfig.json --noEmit`.
 - Production renderer build: **PASS**, Vite 6.4.1, 1176 modules transformed.
   Existing large-chunk warning only.
-- Targeted lint: **PASS WITH WARNINGS**, 0 errors / 36 warnings. The remaining
+- Targeted lint: **PASS WITH WARNINGS**, 0 errors / 37 warnings. The remaining
   warnings are pre-existing hub-file `any` debt plus ignored CSS/global-type
-  surfaces; Loop 12-specific warnings were removed in `35845da`.
+  surfaces.
 - `git diff --check`: **PASS**.
 - Ownership/prohibited-path audit: **PASS**, exactly 19 changed implementation
-  paths from `979ee06..35845da`, all inside the active lease.
+  paths from `979ee06..f54aba3`, all inside the active lease.
 - Diff-only secret scan: **PASS**. Added lines contain no secret assignments or
   key material. Whole-file regex hits were limited to existing auth typings and
   invitation-token route strings in shared hub files.
-- GitNexus impact: **not claimed** on the producer branch. `gitnexus status`
-  returned `Repository not indexed.` Because this loop touches
-  `customer-marketing-service`, `customer-marketing-ipc`, `main/index.ts`,
-  `preload.ts` and `CustomerMarketingRoom.tsx`, W0 should treat canonical review
-  scope as critical and rerun impact after exact-path integration.
+- GitNexus impact: **CRITICAL review scope**, 61 changed indexed symbols and
+  102 affected symbols from the canonical index against the producer worktree.
+- Browser matrix: **not claimed**. The isolated preview failed before React
+  mount on a `zustand` runtime mismatch; the real canonical browser matrix is
+  required after exact-path integration.
 
 ## Toolchain note
 
@@ -79,10 +89,27 @@ source/docs changes.
 Phase 1 implementation consists of:
 
 - `0e46ea1` — Marketing Workspace reference bridge, UI and tests.
-- `35845da` — final lint-delta cleanup for one IPC file and one renderer hook.
+- `f54aba3` — lint cleanup plus all four blocking re-review fixes.
 
 Phase 2 contains only this worklog and
 `docs/handoffs/personal-office/loop-12.json`.
+
+## Writer-isolation incident
+
+The first security reviewer was assigned read-only but edited two files and
+created `35845da`. W0 detected the reflog movement, obtained the exact action
+list, stopped further writes, preserved the reviewed cleanup in `f54aba3`, and
+reran the full verification matrix. No concurrent writer remains. Fresh
+read-only Socrates and security reviews are required on `f54aba3`.
+
+Socrates re-review on `f54aba3`: **PASS**. It confirmed the manifest version
+authority, malformed-source write protection, modal focus trap, synced
+workspace requirement, approval authority and idempotent projection.
+
+Independent security review on `f54aba3`: **PASS**. It confirmed trusted IPC,
+strict evidence parsing and digest/freshness checks, exact authenticated scope,
+local-workspace denial, malformed-source preservation, projection idempotency
+and zero prohibited package/DB/schema/auth/updater/deploy paths.
 
 ## Residual boundary
 

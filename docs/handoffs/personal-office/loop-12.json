@@ -21,9 +21,10 @@
       "subject": "feat(personal-office): add marketing workspace reference"
     },
     {
-      "sha": "35845da19e72d0eb741b2a411dd2df08854b2705",
+      "sha": "f54aba342a774abac1c663224d2618fd0de6b5d3",
       "phase": "implementation",
-      "subject": "fix(personal-office): clean loop12 lint deltas"
+      "subject": "fix(personal-office): clean loop12 lint deltas",
+      "note": "Supersedes reviewer-created 35845da and includes the three Socrates blocker fixes."
     }
   ],
   "handoffCommitNote": "The second producer commit contains only this JSON and worklogs/personal-office-loop-12.md.",
@@ -94,24 +95,39 @@
       "evidence rejects widened payloads, stale/future timestamps, package drift and scope drift",
       "main process revalidates installed extension id/version/state and manifest.customerMarketing before provisioning",
       "Customer Marketing remains the only write authority; Unified Work projection is idempotent and append-only",
-      "malformed legacy tenant cache bytes are preserved rather than deleted",
+      "runtime package version is read from the manifest shape supplied by main",
+      "malformed or non-object legacy tenant cache bytes are preserved and all writes fail closed",
+      "onboarding refuses malformed source before any remote workspace call",
+      "the modal Setup drawer traps Tab and Shift+Tab and restores prior focus",
       "no credential value crosses into renderer types, bridge contracts or docs",
       "no real publish, spend, send, delete, auth, updater, DB/schema or deployment path changed"
     ],
     "independentReview": {
-      "security": "REQUESTED_SEPARATELY_AT_HANDOFF_TIME; W0 should still run independent review on 35845da"
+      "security": "PASS on f54aba3 — trusted IPC, exact scope/evidence/package validation, local-workspace denial, malformed-source preservation, idempotency and prohibited paths verified",
+      "socrates": "PASS on f54aba3 — all four blockers closed; authority, scope, projection and prohibited-path boundaries upheld"
     }
+  },
+  "writerIsolationIncident": {
+    "detected": true,
+    "actor": "independent security reviewer assigned read-only",
+    "unauthorizedCommitsObserved": [
+      "35845da19e72d0eb741b2a411dd2df08854b2705",
+      "fccb95c (handoff-only, later superseded)",
+      "7d332954aa1fb2c459703c913b3d4b4b65bca14a (handoff-only, amended by W0)"
+    ],
+    "resolution": "W0 identified every tree movement through reflog, stopped all reviewer agents, preserved the reviewed cleanup in implementation tip f54aba3, kept phase 2 handoff-only, and reran ownership/security/full verification.",
+    "concurrentWritersRemaining": 0
   },
   "verification": [
     {
-      "check": "targeted Loop 12 tests",
+      "check": "targeted blocker regression tests",
       "result": "PASS",
-      "evidence": "Vitest 4.1.2, 4 files / 146 tests."
+      "evidence": "Vitest 4.1.2, 2 files / 115 tests."
     },
     {
       "check": "full desktop tests",
       "result": "PASS",
-      "evidence": "Vitest 4.1.2, 119 files / 1283 tests with --no-cache."
+      "evidence": "Vitest 4.1.2, 119 files / 1288 tests with --no-cache."
     },
     {
       "check": "main and renderer TypeScript",
@@ -126,7 +142,7 @@
     {
       "check": "targeted lint",
       "result": "PASS_WITH_WARNINGS",
-      "evidence": "0 errors, 36 warnings. Remaining warnings are pre-existing hub-file `any` debt plus ignored CSS/global type surfaces."
+      "evidence": "0 errors, 37 warnings. Remaining warnings are pre-existing hub-file `any` debt plus one ignored global type surface."
     },
     {
       "check": "git diff --check",
@@ -136,7 +152,7 @@
     {
       "check": "ownership and prohibited paths",
       "result": "PASS",
-      "evidence": "Exactly 19 changed implementation paths from 979ee06..35845da, all inside LEASE-L12-MARKETING-REFERENCE-20260729."
+      "evidence": "Exactly 19 changed implementation paths from 979ee06..f54aba3, all inside LEASE-L12-MARKETING-REFERENCE-20260729; zero package/lockfile, DB/schema, auth, updater or deployment paths."
     },
     {
       "check": "diff-only secret scan",
@@ -150,8 +166,13 @@
     },
     {
       "check": "GitNexus impact",
-      "result": "DEFERRED_TRUTHFULLY",
-      "evidence": "`gitnexus status` in the producer worktree returned `Repository not indexed.` Because this loop touches `customer-marketing-service`, `customer-marketing-ipc`, `main/index.ts`, `preload.ts` and `CustomerMarketingRoom.tsx`, W0 should treat canonical review scope as CRITICAL and rerun impact on the integration ref."
+      "result": "CRITICAL_REVIEW_SCOPE",
+      "evidence": "Canonical-index compare with the producer worktree found 61 changed symbols and 102 affected symbols. Full tests, both typechecks, build and independent reviews are mandatory."
+    },
+    {
+      "check": "browser matrix",
+      "result": "DEFERRED_TO_CANONICAL",
+      "evidence": "No visual PASS is claimed. The earlier isolated preview failed before React mount on a zustand runtime mismatch; W0 must run the real canonical browser matrix after exact-path integration."
     }
   ],
   "verificationToolchain": {
@@ -170,13 +191,13 @@
     },
     {
       "path": "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
-      "sha256": "4901861ad91e0380217fd0e9f4526cec9f8ef969864a4b580fbea6296afcb383",
-      "bytes": 118918
+      "sha256": "9777661cc3f385aca55e7ff2fd6720d0d8f7ee3e778fe360bec6d4d0cf0589e4",
+      "bytes": 119636
     },
     {
       "path": "apps/desktop/src/main/customer-marketing/customer-marketing-service.ts",
-      "sha256": "be0887049c5471b46aa191024a4499ca63c0014896dcd17f050e235b30450bab",
-      "bytes": 138962
+      "sha256": "606eb01407f9e8df1ec9cb002fd46f6dafeeafb62c90726d3bfa7b9004f774ff",
+      "bytes": 138855
     },
     {
       "path": "apps/desktop/src/main/index.ts",
@@ -257,7 +278,7 @@
   "nextConsumers": [
     {
       "owner": "W0",
-      "action": "Verify all 19 Git blob hashes, run independent security review on 35845da, exact-path integrate implementation then handoff, rerun canonical impact and browser matrix if desired, create acceptance/loop-12.json and revoke the lease only after PASS."
+      "action": "Verify all 19 output hashes, require fresh security and Socrates PASS on f54aba3, exact-path integrate implementation then handoff, rerun canonical impact and browser matrix, create acceptance/loop-12.json and revoke the lease only after PASS."
     }
   ]
 }
