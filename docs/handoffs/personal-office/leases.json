@@ -3,70 +3,22 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T14:40:00Z",
+  "updatedAt": "2026-07-29T15:54:00Z",
   "updatedBy": "W0",
-  "integrationCommit": "979ee06499a7066c7f012bb7101ec44519c1ac0c",
-  "activeLeases": [
+  "integrationCommit": "733ad0e9e594b76b0030d41ff2882521da5a81c5",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No producer lease is active. Loops 00-12 are ACCEPTED. Release Gate R is eligible for a separate review; push, release and deployment remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L12-MARKETING-REFERENCE-20260729",
       "loop": "12",
       "window": "W2",
-      "status": "ACTIVE",
-      "grantedAt": "2026-07-29T14:40:00Z",
-      "grantedBy": "W0",
-      "branch": "feature/personal-office-loop-12-20260729",
-      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop12",
-      "baseCommit": "979ee06499a7066c7f012bb7101ec44519c1ac0c",
-      "changeRequest": "docs/handoffs/personal-office/dispatch-loop-12.md",
-      "ownedPaths": [
-        "apps/desktop/src/shared/marketing-workspace/**",
-        "apps/desktop/src/shared/customer-marketing-*.ts",
-        "apps/desktop/src/shared/marketplace/**",
-        "apps/desktop/src/main/customer-marketing/**",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts",
-        "apps/desktop/src/renderer/types/global.d.ts",
-        "apps/desktop/src/renderer/marketing-workspace/**",
-        "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx",
-        "apps/desktop/src/renderer/pages/CustomerMarketingResources.tsx",
-        "apps/desktop/src/renderer/pages/CustomerMarketingChannels.tsx",
-        "apps/desktop/src/renderer/pages/CustomerMarketingCapabilityWorkbenches.tsx",
-        "apps/desktop/src/renderer/pages/customer-capability-actions.ts",
-        "apps/desktop/src/renderer/pages/Marketplace.tsx",
-        "apps/desktop/src/renderer/components/marketplace/**",
-        "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
-        "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
-        "apps/desktop/src/renderer/store/personalOffice.ts",
-        "apps/desktop/src/renderer/shell/PersonalOfficeShell.tsx",
-        "apps/desktop/src/renderer/shell/WorkspaceHome.tsx",
-        "apps/desktop/src/renderer/shell/WorkspacesPage.tsx",
-        "apps/desktop/src/renderer/shell/legacySurfaces.ts",
-        "apps/desktop/src/renderer/shell/featureFlags.ts",
-        "apps/desktop/src/renderer/shell/types.ts",
-        "apps/desktop/src/renderer/App.tsx",
-        "apps/desktop/src/renderer/components/Sidebar.tsx",
-        "apps/desktop/src/renderer/styles/customer-marketing-room.css",
-        "apps/desktop/src/renderer/styles/customer-marketing-resources.css",
-        "apps/desktop/src/renderer/styles/marketplace-personal-office.css",
-        "apps/desktop/src/renderer/styles/personal-office.css",
-        "docs/product/marketing-workspace-reference.md",
-        "worklogs/personal-office-loop-12.md",
-        "docs/handoffs/personal-office/loop-12.json"
-      ],
-      "constraints": [
-        "One Codex builder is the only writer",
-        "No package/lockfile, database/schema, auth, updater or deployment edits",
-        "No real publish, spend, send or destructive external action",
-        "Credential values never cross into renderer, migration, Graph, Live, logs or exports",
-        "Marketplace plan/demo state cannot provision; host-validated installed evidence is mandatory",
-        "Legacy Customer Marketing data and route remain recoverable behind rollback",
-        "main/index.ts is leased only to inject the existing WorkService and host-owned Customer Marketing evidence into the reference bridge"
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 12 is the only active producer under LEASE-L12-MARKETING-REFERENCE-20260729. Kiro has no writer authority. Release Gate R remains blocked until Loop 12 is accepted.",
-  "leaseHistory": [
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T15:54:00Z",
+      "revokedBy": "W0",
+      "reason": "Loop 12 accepted at docs/handoffs/personal-office/acceptance/loop-12.json after independent security and Socrates PASS, exact-path integration, full canonical verification and browser smoke evidence."
+    },
     {
       "leaseId": "LEASE-L11-RUNTIME-BROWSER-20260729",
       "loop": "11",
@@ -243,10 +195,10 @@
         "02",
         "12"
       ],
-      "currentLease": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "currentLease": null,
       "note": "Loop 12 may change only Customer Marketing route compatibility and final shell integration.",
       "leasedAt": "2026-07-29T04:20:00Z",
-      "releasedAt": "2026-07-29T06:29:08Z"
+      "releasedAt": "2026-07-29T15:54:00Z"
     },
     {
       "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
@@ -254,27 +206,29 @@
         "02",
         "12"
       ],
-      "currentLease": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "currentLease": null,
       "leasedAt": "2026-07-29T04:20:00Z",
-      "releasedAt": "2026-07-29T06:29:08Z"
+      "releasedAt": "2026-07-29T15:54:00Z"
     },
     {
       "path": "apps/desktop/src/main/db/sqlite-schema.ts",
       "ownerOrder": [
         "03"
       ],
-      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "currentLease": null,
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T07:10:00Z"
     },
     {
       "path": "apps/desktop/src/main/db/database.ts",
       "ownerOrder": [
         "03"
       ],
-      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
+      "currentLease": null,
       "laterLoopsRequireChangeRequest": true,
       "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree: the Loop 03 draft wired runWorkModelMigration, backupSqliteFile, WorkService and a workEventSink into it. Security review must cover the log-and-proceed migration error path before this is accepted.",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T07:10:00Z"
     },
     {
       "path": "apps/desktop/src/main/index.ts",
@@ -295,9 +249,10 @@
         "11",
         "12"
       ],
-      "currentLease": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "currentLease": null,
       "note": "Loop 12 may add only Customer Marketing reference-workspace IPC/preload bridge methods.",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T15:54:00Z"
     },
     {
       "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx",
@@ -334,8 +289,9 @@
         "05",
         "06"
       ],
-      "currentLease": "LEASE-L05-CONTEXT-KERNEL-20260729",
-      "note": "Modified-uncommitted in the dirty worktree."
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree.",
+      "releasedAt": "2026-07-29T11:50:19Z"
     },
     {
       "path": "apps/desktop/src/main/agent/host-agent.ts",
@@ -343,8 +299,9 @@
         "05",
         "06"
       ],
-      "currentLease": "LEASE-L05-CONTEXT-KERNEL-20260729",
-      "note": "Modified-uncommitted in the dirty worktree."
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree.",
+      "releasedAt": "2026-07-29T11:50:19Z"
     },
     {
       "path": "apps/desktop/src/main/agent/agent-tools.ts",
@@ -380,9 +337,10 @@
         "09",
         "12"
       ],
-      "currentLease": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "currentLease": null,
       "leasedAt": "2026-07-29T09:12:14Z",
-      "note": "This lease covers Marketplace.tsx and new Personal Office marketplace modules only. apps/marketplace-api and installer execution seams remain read-only."
+      "note": "Loop 12 lease covered Marketplace.tsx and new Personal Office marketplace modules only. apps/marketplace-api and installer execution seams remained read-only.",
+      "releasedAt": "2026-07-29T15:54:00Z"
     },
     {
       "path": "Graph workspace / pages / store",
@@ -406,8 +364,9 @@
       "ownerOrder": [
         "12"
       ],
-      "currentLease": "LEASE-L12-MARKETING-REFERENCE-20260729",
-      "note": "Loop 12 owns the broad reference migration. Other loops remain read-only."
+      "currentLease": null,
+      "note": "Loop 12 broad reference migration is accepted. Later changes require a new W0 change request and exact lease.",
+      "releasedAt": "2026-07-29T15:54:00Z"
     },
     {
       "path": "package manifests / lockfile",

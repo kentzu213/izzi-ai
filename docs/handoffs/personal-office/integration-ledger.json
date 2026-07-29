@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T14:40:00Z",
+  "updatedAt": "2026-07-29T15:54:00Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -507,17 +507,35 @@
       "loop": "12",
       "title": "Marketing blueprint and final shell integration",
       "window": "W2",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "branch": "feature/personal-office-loop-12-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop12",
-      "commitSha": null,
+      "commitSha": "e58a56d",
       "handoff": "docs/handoffs/personal-office/loop-12.json",
       "dependsOn": [
         "02",
         "11"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 02-11 are ACCEPTED. W0 issued dispatch-loop-12.md and LEASE-L12-MARKETING-REFERENCE-20260729; Codex is the only authorised producer."
+      "dependencyStatus": "SATISFIED — Loops 02-11 and Loop 12 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-12.json",
+      "acceptanceRecordCommit": "733ad0e9e594b76b0030d41ff2882521da5a81c5",
+      "producerImplementationCommit": "f54aba342a774abac1c663224d2618fd0de6b5d3",
+      "producerHandoffCommit": "517dc1805cdaa8958f05e0970a6050ca9a1ad540",
+      "integrationImplementationCommits": [
+        "af6e57f",
+        "dbd686e"
+      ],
+      "integrationHandoffCommit": "e58a56d",
+      "verificationSummary": "Independent security and Socrates PASS; targeted 115 and full desktop 1288/1288 tests PASS; main and renderer TypeScript, production build, lint 37 warnings/0 errors, 19/19 canonical Git blobs, ownership, prohibited-path, secret, browser-smoke and quarantine gates PASS. GitNexus CRITICAL scope (95 changed / 147 affected symbols) was explicitly reviewed. Electron-hosted Setup drawer visual interaction remains a recorded browser limitation with focus behavior covered by tests.",
+      "statusHistory": [
+        {
+          "at": "2026-07-29T15:54:00Z",
+          "status": "ACCEPTED",
+          "by": "W0",
+          "note": "Acceptance record committed separately as 733ad0e. Exact-path integration and final blocker reconciliation are recorded at af6e57f, dbd686e and e58a56d; LEASE-L12-MARKETING-REFERENCE-20260729 is revoked in the following governance commit."
+        }
+      ]
     }
   ],
   "programmeGates": [
