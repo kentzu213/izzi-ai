@@ -13,7 +13,13 @@ import {
   isCurrentSchemaVersion,
 } from './version';
 import { asId, newId } from './ids';
-import type { WorkRun, WorkRunId, WorkspaceInstanceId } from './index';
+import type {
+  WorkRun,
+  WorkRunId,
+  WorkspaceHealth,
+  WorkspaceInstance,
+  WorkspaceInstanceId,
+} from './index';
 
 function sampleRun(): WorkRun {
   return {
@@ -61,6 +67,29 @@ describe('run lineage contract', () => {
     expect(retry.parentRunId).toBe(failed.id);
     expect(retry.rootRunId).toBe(failed.rootRunId);
     expect(retry.attempt).toBe(2);
+  });
+});
+
+describe('workspace health contract', () => {
+  it('does not alter the lifecycle state of an active workspace', () => {
+    const healthValues: WorkspaceHealth[] = ['ok', 'attention', 'blocked', 'unknown'];
+    const base: WorkspaceInstance = {
+      schemaVersion: PERSONAL_OFFICE_SCHEMA_VERSION,
+      id: asId<'WorkspaceInstanceId'>('ws_active') as WorkspaceInstanceId,
+      blueprintId: asId<'WorkspaceBlueprintId'>('blueprint_office'),
+      ownerId: asId<'OwnerId'>('owner_1'),
+      displayName: 'My office',
+      state: 'active',
+      provisioning: 'ready',
+      createdAt: '2026-07-29T00:00:00.000Z',
+      updatedAt: '2026-07-29T00:00:00.000Z',
+    };
+
+    for (const health of healthValues) {
+      const workspace: WorkspaceInstance = { ...base, health };
+      expect(workspace.state).toBe('active');
+      expect(workspace.provisioning).toBe('ready');
+    }
   });
 });
 

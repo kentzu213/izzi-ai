@@ -97,6 +97,7 @@ export type {
   Timestamps,
   WorkspaceBlueprint,
   WorkspaceInstance,
+  WorkspaceHealth,
   WorkRun,
   WorkRunOrigin,
   WorkRunLineageKind,
