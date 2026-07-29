@@ -161,6 +161,7 @@ export interface CustomerMediaArtifactDraft {
 export interface CustomerMediaImportedProject {
   runtimeProjectId: string;
   projectId: string;
+  sourceIdentity?: string;
   title: string;
   width: number;
   height: number;
@@ -309,6 +310,13 @@ function slug(value: string): string {
 
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+export function deriveImportedSourceIdentity(
+  workspaceId: string,
+  canonicalSourceRoot: string,
+): string {
+  return sha256(workspaceId + '\0' + path.normalize(path.resolve(canonicalSourceRoot)));
 }
 
 function isNonCommercialLicense(license: string): boolean {
@@ -727,6 +735,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     const scenes = Array.isArray(workflow.data.scenes) ? workflow.data.scenes : [];
     const runtimeProjectId = randomUUID();
     const projectId = slug(textValue(project.id, 100) || path.basename(sourceRoot));
+    const sourceIdentity = deriveImportedSourceIdentity(workspaceId, sourceRoot);
     const importedAt = new Date().toISOString();
     const destinationRoot = this.projectRoot(workspaceId, runtimeProjectId);
 
@@ -751,6 +760,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         version: 1,
         runtimeProjectId,
         projectId,
+        sourceIdentity,
         evidenceDigest,
         importedAt,
       }, null, 2), 'utf8');
@@ -771,6 +781,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       return {
         runtimeProjectId,
         projectId,
+        sourceIdentity,
         title: textValue(workflow.data.title, 160) || projectId,
         width: numberValue(project.width, 1080, 320, 7680),
         height: numberValue(project.height, 1920, 320, 7680),
