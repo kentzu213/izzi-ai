@@ -293,33 +293,33 @@
       "loop": "03",
       "title": "Unified work engine",
       "window": "W3",
-      "status": "READY_TO_START",
-      "branch": null,
-      "worktree": null,
-      "commitSha": null,
-      "handoff": null,
+      "status": "ACCEPTED",
+      "branch": "feature/personal-office-loop-03-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop03",
+      "commitSha": "5a5219307b70d45a7e74df3ca5c35ae996069ce2",
+      "handoff": "docs/handoffs/personal-office/loop-03.json",
       "dependsOn": [
         "01"
       ],
       "worktreeCreationBlocked": false,
-      "note": "A substantial draft exists uncommitted in the quarantined worktree and is the subject of PQ-08. It is already wired into database.ts, index.ts, preload.ts and App.tsx there. Freeze and salvage; do not continue implementation in that worktree.",
-      "dependencyStatus": "SATISFIED — Loop 01 is ACCEPTED on ref feature/personal-office-baseline-20260728"
+      "note": "Accepted after W0 reran 106 work tests, the full 1052-test desktop suite, build, lint, ownership and security gates. Acceptance: acceptance/loop-03.json.",
+      "dependencyStatus": "SATISFIED — Loop 01 and Loop 03 are ACCEPTED."
     },
     {
       "loop": "04",
       "title": "Context, Live profile and blueprint",
       "window": "W4",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-04-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop04",
       "commitSha": null,
       "handoff": null,
       "dependsOn": [
         "01",
         "03"
       ],
-      "worktreeCreationBlocked": true,
-      "dependencyStatus": "PARTIAL — Loop 01 ACCEPTED, but PO-LOOP04-DEPENDENCY establishes the true edge as 01 -> 03 -> 04. Loop 04 stays research/spec-only until Loop 03 is ACCEPTED."
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 01 and Loop 03 are ACCEPTED."
     },
     {
       "loop": "05",
@@ -331,7 +331,8 @@
       "commitSha": null,
       "handoff": null,
       "dependsOn": [
-        "03"
+        "03",
+        "04"
       ],
       "worktreeCreationBlocked": true
     },
@@ -339,15 +340,15 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "PROVISIONAL",
-      "branch": null,
-      "worktree": null,
+      "status": "READY_TO_START",
+      "branch": "feature/personal-office-loop-07-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop07",
       "commitSha": null,
       "handoff": null,
       "dependsOn": [
         "05"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false
     },
     {
       "loop": "07",

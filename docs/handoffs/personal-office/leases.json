@@ -3,54 +3,89 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T06:29:08Z",
+  "updatedAt": "2026-07-29T07:10:00Z",
   "updatedBy": "W0",
   "integrationCommit": "16f25b28820d829b3050981e8d60db433194059b",
   "activeLeases": [
     {
-      "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
-      "loop": "03",
-      "window": "W3",
-      "grantedAt": "2026-07-29T04:20:00Z",
+      "leaseId": "LEASE-L04-LIVE-VAULT-GRAPH-20260729",
+      "loop": "04",
+      "window": "W4",
+      "grantedAt": "2026-07-29T07:10:00Z",
       "grantedBy": "W0",
-      "scope": "execution core + wired seams",
+      "scope": "Live.md, vault, wikilink and MyGraph integration",
       "exclusiveWritePaths": [
-        "apps/desktop/src/main/work/**",
-        "apps/desktop/src/main/db/database.ts",
-        "apps/desktop/src/main/db/sqlite-schema.ts",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts"
+        "apps/desktop/src/main/live/**",
+        "apps/desktop/src/shared/live-*.ts",
+        "apps/desktop/src/shared/vault-*.ts",
+        "apps/desktop/src/shared/wikilink.ts",
+        "apps/desktop/src/renderer/components/live/**",
+        "apps/desktop/src/renderer/components/vault/**",
+        "apps/desktop/src/renderer/store/liveProfile.ts",
+        "apps/desktop/src/renderer/styles/live-profile.css",
+        "docs/product/personal-office-live-graph.md"
       ],
       "readOnlyPaths": [
-        "apps/desktop/src/shared/personal-office/**"
+        "apps/desktop/src/shared/personal-office/**",
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/renderer/shell/MyGraphRoute.tsx"
       ],
       "prohibitedPaths": [
         "apps/desktop/src/renderer/App.tsx",
-        "apps/desktop/src/renderer/components/Sidebar.tsx",
+        "apps/desktop/src/main/db/database.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
         "package.json",
         "pnpm-workspace.yaml",
         "pnpm-lock.yaml",
         "apps/desktop/src/shared/personal-office/**"
       ],
       "conditions": [
-        "Retire WORK_SCHEMA_VERSION and import PERSONAL_OFFICE_SCHEMA_VERSION before persisting anything (gate PO-VERSION-COLLISION).",
-        "Add a serialization test proving an engine-written envelope passes W1 version guard and an unknown version is rejected, not coerced.",
-        "Do not land shared/work-model.ts as a second contract. Import from shared/personal-office/ only.",
-        "Handle waiting_external in transitions and adapters; it is now a first-class RunState.",
-        "MAP-BLOCKED: legacy blocked -> paused, never failed.",
-        "MAP-ARCHIVED: derive terminal from agent_run_entries where conclusive; else canceled with canceledReason=legacy_archived_outcome_unknown, never completed. Always set archivedAt, preserve legacyStatusRaw, emit exactly one audit migration event.",
-        "Security review must cover the log-and-proceed migration error path in database.ts before acceptance.",
-        "No quarantine-era database file may be promoted into a shipped build.",
-        "Salvage selectively from quarantine/loop-03-dirty-salvage.json inside the Loop 03 worktree. No blind cherry-pick."
+        "Live.md stores personal working preferences and rules, never raw secrets.",
+        "Graph writes must retain provenance, classification and workspace/user scope.",
+        "Consume Loop 03 work APIs read-only; request a lease before any main/index/preload/database change.",
+        "Salvage vault/live/wikilink files selectively from the preserved quarantine snapshot; never write quarantine."
       ],
-      "changeRequestRequiredFor": [
-        "any edit to apps/desktop/src/shared/personal-office/** (W1 contract of record)"
+      "expiresOn": "Loop 04 acceptance or W0 revocation"
+    },
+    {
+      "leaseId": "LEASE-L07-CAPABILITY-ADAPTERS-20260729",
+      "loop": "07",
+      "window": "W1",
+      "grantedAt": "2026-07-29T07:10:00Z",
+      "grantedBy": "W0",
+      "scope": "capability registry and package adapters",
+      "exclusiveWritePaths": [
+        "apps/desktop/src/shared/capabilities/**",
+        "apps/desktop/src/main/capabilities/**",
+        "packages/agent-bundle/src/adapters/**",
+        "docs/product/personal-office-capabilities.md"
       ],
-      "expiresOn": "Loop 03 acceptance or W0 revocation"
+      "readOnlyPaths": [
+        "apps/desktop/src/shared/personal-office/**",
+        "apps/desktop/src/main/work/**",
+        "packages/agent-bundle/src/manifest.ts"
+      ],
+      "prohibitedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "packages/agent-bundle/src/manifest.ts",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/renderer/**"
+      ],
+      "conditions": [
+        "Adapters depend on the accepted contract/work layers; they do not redefine domain entities.",
+        "No package manifest or lockfile edit without a separate PQ-01 lease.",
+        "Capability declarations must be deterministic, versioned and least-privilege."
+      ],
+      "expiresOn": "Loop 07 acceptance or W0 revocation"
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "Loop 02 is ACCEPTED and LEASE-L02-SHELL-MOUNT-20260729 is REVOKED. Only LEASE-L03-EXEC-WIRING-20260729 remains ACTIVE. Package-manifest/lockfile ownership remains governed by PO-LEASE-VIOLATION-PQ01.",
+  "activeLeaseCount": 2,
+  "statement": "Loops 02 and 03 are ACCEPTED; their leases are revoked. Loop 04 and Loop 07 now run in parallel under disjoint leases. Package manifests remain unleased.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -60,6 +95,15 @@
       "revokedAt": "2026-07-29T06:29:08Z",
       "revokedBy": "W0",
       "reason": "Loop 02 accepted at docs/handoffs/personal-office/acceptance/loop-02.json."
+    },
+    {
+      "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
+      "loop": "03",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T07:10:00Z",
+      "revokedBy": "W0",
+      "reason": "Loop 03 accepted at docs/handoffs/personal-office/acceptance/loop-03.json."
     }
   ],
   "preApprovedOnLoop01Acceptance": {
