@@ -1,20 +1,19 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Izzi AI Desktop — Windows Build & Release (PowerShell)
+  Izzi AI Desktop — Local Windows Build (PowerShell)
 .DESCRIPTION
-  Double-click or run from terminal. Sets GH_TOKEN env var to publish.
-  Without GH_TOKEN, builds local installer only.
+  Double-click or run from terminal to build a local installer.
+  Publishing is restricted to the protected GitHub Actions release workflow.
 .EXAMPLE
   .\release-win.ps1
-  $env:GH_TOKEN = "ghp_xxx"; .\release-win.ps1
 #>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "===== Izzi AI Desktop Release (Windows) =====" -ForegroundColor Cyan
+Write-Host "===== Izzi AI Desktop Local Build (Windows) =====" -ForegroundColor Cyan
 Write-Host ""
 
 # Navigate to desktop app root
@@ -57,19 +56,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[OK] Build successful." -ForegroundColor Green
 Write-Host ""
 
-# Determine publish mode
-$publishMode = if ($env:GH_TOKEN) { "always" } else { "never" }
-if ($publishMode -eq "always") {
-    Write-Host "[4/5] GH_TOKEN detected — will PUBLISH to GitHub." -ForegroundColor Yellow
-} else {
-    Write-Host "[4/5] GH_TOKEN not set — LOCAL build only." -ForegroundColor Gray
-    Write-Host "       To publish: `$env:GH_TOKEN = 'ghp_xxx'; .\release-win.ps1"
-}
+# Publishing is intentionally unavailable from local scripts.
+Write-Host "[4/5] Publishing disabled — building a LOCAL installer only." -ForegroundColor Gray
 Write-Host ""
 
 # Package
 Write-Host "[5/5] Packaging with electron-builder..."
-npx electron-builder --win --publish $publishMode
+npx electron-builder --win --publish never
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] electron-builder failed!" -ForegroundColor Red
     exit 1
@@ -84,11 +77,6 @@ Write-Host ""
 if (Test-Path "release") {
     Get-ChildItem release -Filter "*.exe" | ForEach-Object { Write-Host "  $_" }
     Get-ChildItem release -Filter "*.yml" | ForEach-Object { Write-Host "  $_" }
-}
-
-if ($publishMode -eq "always") {
-    Write-Host ""
-    Write-Host "[PUBLISHED] https://github.com/kentzu213/izzi-ai/releases" -ForegroundColor Green
 }
 
 Write-Host ""

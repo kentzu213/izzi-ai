@@ -14,12 +14,15 @@
 
 ## Required secrets
 
-- `GH_TOKEN`
+- `WINDOWS_CSC_LINK`
+- `WINDOWS_CSC_KEY_PASSWORD`
 - `APPLE_ID`
 - `APPLE_APP_SPECIFIC_PASSWORD`
 - `APPLE_TEAM_ID`
 - `CSC_LINK`
 - `CSC_KEY_PASSWORD`
+
+The workflow uses its job-scoped `GITHUB_TOKEN` for draft/prerelease uploads.
 
 ## Internal RC flow
 
@@ -30,13 +33,15 @@
    - `STARIZZI_MOCK_INTEGRATIONS=true`
    - `STARIZZI_MOCK_UPDATER=true`
 4. Validate login, onboarding, chat stream, task creation, memory persistence, updater banner, and restart behavior.
-5. Create tag `vX.Y.Z-rc.N`.
+5. Set `apps/desktop/package.json` to the intended version and create the exact
+   matching tag, such as `vX.Y.Z-rc.N` or `vX.Y.Z-beta.N`.
 6. Manually dispatch `Release Desktop`, select `draft` or `prerelease`, and
    confirm artifact upload. The workflow never runs from a tag push alone.
 7. Keep the `desktop-release` GitHub environment protected with required
    reviewers and self-review disabled.
-8. Confirm the workflow checked out the requested tag and uploaded only a
-   draft/prerelease.
+8. Confirm the workflow verified that `refs/tags/<release_tag>` exists, resolves
+   exactly to the checked-out `HEAD`, and matches the desktop package version.
+9. Confirm the workflow uploaded only a draft/prerelease.
 
 ## Stable release gate
 
@@ -51,9 +56,12 @@
 
 ## Notes
 
-- Windows signing is optional in this phase. If no certificate is configured, the NSIS installer is still published unsigned.
+- The Windows release job fails closed unless `WINDOWS_CSC_LINK` and
+  `WINDOWS_CSC_KEY_PASSWORD` are configured, then maps them to electron-builder's
+  `CSC_LINK` and `CSC_KEY_PASSWORD` inputs.
 - The macOS release job fails closed when any signing/notarization secret is missing.
 - `electron-builder` uses hardened runtime plus built-in notarization; a real macOS CI artifact must still pass `codesign`, `stapler validate`, and `spctl --assess` before a stable release is approved.
-- Local Windows packaging must use `--publish never`. Creating a tag or publishing a release requires a separate explicit approval.
+- Local Windows scripts always use `--publish never`; they cannot publish a
+  GitHub release. Creating a tag or publishing requires a separate explicit approval.
 - Pushing a `v*` tag does not trigger publishing. Release jobs require a manual
   dispatch, an explicit confirmation input, and the `desktop-release` environment.

@@ -56,14 +56,51 @@ describe('Izzi AI desktop branding contract', () => {
     expect(logoSource).not.toContain('Starizzi Logo');
   });
 
-  it('publishes prerelease version tags as GitHub prereleases on every platform', () => {
+  it('requires a manual, version-matched draft or prerelease workflow', () => {
     const workflowSource = readFileSync(
       new URL('../../../../.github/workflows/release-desktop.yml', import.meta.url),
       'utf8',
     );
 
     expect(builderConfig.detectUpdateChannel).toBe(true);
+    expect(builderConfig.publish.releaseType).toBe('draft');
+    expect(workflowSource).toMatch(/^  workflow_dispatch:$/m);
+    expect(workflowSource).not.toMatch(/^  push:$/m);
+    expect(workflowSource).toContain('if: ${{ inputs.confirm_publish == true }}');
+    expect(workflowSource).toContain('          - draft');
+    expect(workflowSource).toContain('          - prerelease');
+    expect(workflowSource.match(/ref: refs\/tags\/\$\{\{ inputs\.release_tag \}\}/g)).toHaveLength(3);
+    expect(workflowSource.match(/persist-credentials: false/g)).toHaveLength(3);
+    expect(workflowSource.match(/git show-ref --verify --quiet "\$TAG_REF"/g)).toHaveLength(3);
+    expect(workflowSource.match(/git rev-parse "\$\{TAG_REF\}\^\{commit\}"/g)).toHaveLength(3);
+    expect(workflowSource.match(/git rev-parse HEAD/g)).toHaveLength(3);
+    expect(workflowSource.match(/require\('\.\/apps\/desktop\/package\.json'\)\.version/g)).toHaveLength(
+      3,
+    );
+    expect(workflowSource.match(/TAG_VERSION="\$\{RELEASE_TAG#v\}"/g)).toHaveLength(3);
+    expect(workflowSource).toContain('WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}');
+    expect(workflowSource).toContain(
+      'WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}',
+    );
+    expect(workflowSource).toContain('CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}');
+    expect(workflowSource).toContain(
+      'CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}',
+    );
+    expect(workflowSource.match(/EP_DRAFT:/g)).toHaveLength(2);
     expect(workflowSource.match(/EP_PRE_RELEASE:/g)).toHaveLength(2);
-    expect(workflowSource.match(/contains\(github\.ref_name, '-'\)/g)).toHaveLength(2);
+  });
+
+  it('keeps local Windows release helpers packaging-only', () => {
+    const powershellSource = readFileSync(
+      new URL('../../scripts/release-win.ps1', import.meta.url),
+      'utf8',
+    );
+    const batchSource = readFileSync(new URL('../../scripts/release-win.bat', import.meta.url), 'utf8');
+
+    for (const source of [powershellSource, batchSource]) {
+      expect(source).toContain('--publish never');
+      expect(source).not.toContain('--publish always');
+      expect(source).not.toContain('GH_TOKEN');
+    }
   });
 });

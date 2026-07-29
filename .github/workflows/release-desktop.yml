@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing vX.Y.Z or vX.Y.Z-rc.N tag to package
+        description: Existing vX.Y.Z or vX.Y.Z-prerelease tag to package
         required: true
         type: string
       release_type:
@@ -30,13 +30,43 @@ jobs:
     if: ${{ inputs.confirm_publish == true }}
     runs-on: ubuntu-latest
     steps:
-      - name: Validate requested release tag
+      - name: Validate release tag format
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-            echo "::error::release_tag must match vX.Y.Z or vX.Y.Z-rc.N"
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::release_tag must match vX.Y.Z or vX.Y.Z-prerelease"
+            exit 1
+          fi
+
+      - name: Checkout requested tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+          persist-credentials: false
+
+      - name: Verify exact release tag and package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG_REF="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$TAG_REF"; then
+            echo "::error::$TAG_REF does not exist"
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-parse "${TAG_REF}^{commit}")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+            echo "::error::$TAG_REF does not resolve to checked-out HEAD"
+            exit 1
+          fi
+          PACKAGE_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag version $TAG_VERSION does not match desktop package version $PACKAGE_VERSION"
             exit 1
           fi
 
@@ -54,12 +84,55 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: refs/tags/${{ inputs.release_tag }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Verify exact release tag and package version
+        shell: bash
+        working-directory: .
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG_REF="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$TAG_REF"; then
+            echo "::error::$TAG_REF does not exist"
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-parse "${TAG_REF}^{commit}")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+            echo "::error::$TAG_REF does not resolve to checked-out HEAD"
+            exit 1
+          fi
+          PACKAGE_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag version $TAG_VERSION does not match desktop package version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Validate Windows signing secrets
+        shell: pwsh
+        env:
+          WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          $missing = $false
+          foreach ($name in @("WINDOWS_CSC_LINK", "WINDOWS_CSC_KEY_PASSWORD")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              Write-Host "::error::$name is not configured"
+              $missing = $true
+            }
+          }
+          if ($missing) {
+            exit 1
+          }
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -87,6 +160,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: ${{ inputs.release_type == 'draft' }}
           EP_PRE_RELEASE: ${{ inputs.release_type == 'prerelease' }}
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
 
   build-mac:
     runs-on: macos-latest
@@ -105,12 +180,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: refs/tags/${{ inputs.release_tag }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Verify exact release tag and package version
+        shell: bash
+        working-directory: .
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          TAG_REF="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$TAG_REF"; then
+            echo "::error::$TAG_REF does not exist"
+            exit 1
+          fi
+          TAG_COMMIT="$(git rev-parse "${TAG_REF}^{commit}")"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+            echo "::error::$TAG_REF does not resolve to checked-out HEAD"
+            exit 1
+          fi
+          PACKAGE_VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag version $TAG_VERSION does not match desktop package version $PACKAGE_VERSION"
+            exit 1
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
