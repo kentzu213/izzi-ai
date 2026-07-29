@@ -20,12 +20,18 @@ encrypted state store, atomic effect-claim store, BrowserRuntimeCoordinator and
 attested driver wrapper. It proves one approved action produces durable draft
 and effect-receipt artifacts and invokes the idempotent fake driver once.
 
-Verification: focused 11/11; full desktop 131 files / 1409 tests; main TypeScript
+Added a fail-closed operational service that resolves Marketplace and grant
+receipts from one main-authoritative port before preparation, re-resolves them
+before execution, and denies any receipt, scope or authorization drift. Grants
+must now use exact least-privilege scopes; completed Marketplace evidence must
+show a fully successful ordered pipeline with a matching approval.
+
+Verification: focused 22/22; full desktop 132 files / 1420 tests; main TypeScript
 and production build pass; changed-surface lint 0 warnings; repository lint 0
 errors / 350 warnings.
 
 This is intentionally not READY_FOR_REVIEW or ACCEPTED. Production Playwright
-registration, account/grant adapters, main composition and the real
+registration, authoritative receipt adapters, main composition and the real
 adapter-backed Market → install → provision → open → delegate → artifact proof
 remain missing.
 No browser, network, install, secret or external effect was used.

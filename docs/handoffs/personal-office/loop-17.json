@@ -16,11 +16,13 @@
     "strict completed Marketplace receipt validation",
     "connected IntegrationGrant and least-privilege scope validation",
     "tenant/user/workspace/package/integration/grant/run launch binding",
-    "local Work run, approval, idempotent effect claim and artifact E2E"
+    "local Work run, approval, idempotent effect claim and artifact E2E",
+    "mandatory authoritative receipt resolution before prepare and execute",
+    "authorization drift denial with exact receipt and exact-scope digest binding"
   ],
   "verification": {
-    "focusedTests": "11/11",
-    "fullTests": "131 files, 1409/1409",
+    "focusedTests": "22/22",
+    "fullTests": "132 files, 1420/1420",
     "mainTypeScript": "PASS",
     "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
     "changedLint": "0 warnings",
@@ -28,7 +30,7 @@
   },
   "remainingBeforeReview": [
     "audited production Playwright driver and executable provenance",
-    "production account/grant/repository/vault adapters",
+    "production authoritative Marketplace/grant evidence adapters",
     "exact W0 leases for main composition seams",
     "real production-adapter install-to-open-to-delegate-to-artifact evidence"
   ],

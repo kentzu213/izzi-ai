@@ -96,6 +96,9 @@ describe('authorizeOperationalBrowserRuntime', () => {
       workspaceId: scope.workspaceInstanceId,
       packageKey: packageBinding.packageKey,
       packageId: packageBinding.packageId,
+      integration: packageBinding.integration,
+      grantId: grantReceipt.grantId,
+      requiredScopes: packageBinding.requiredScopes,
       runtimeId: runtime.id,
       runId: runtime.authority.runId,
     });
@@ -107,6 +110,26 @@ describe('authorizeOperationalBrowserRuntime', () => {
     ['wrong package', { runtime: { ...runtime, authority: { ...runtime.authority, packageId: 'skill-package:other' } } }],
     ['wrong grant', { runtime: { ...runtime, authority: { ...runtime.authority, grantId: 'grant:other' } } }],
     ['missing scope', { grantReceipt: { ...grantReceipt, scopes: ['calendar.read'] } }],
+    ['excess scope', { grantReceipt: { ...grantReceipt, scopes: [...grantReceipt.scopes, 'calendar.admin'] } }],
+    ['invalid observed time', { grantReceipt: { ...grantReceipt, observedAt: 'not-a-time' } }],
+    ['invalid evidence digest', { grantReceipt: { ...grantReceipt, evidenceDigest: 'sha256:not-valid' } }],
+    ['missing grant approval', { grantReceipt: { ...grantReceipt, approvalId: undefined } }],
+    ['failed intermediate install stage', {
+      marketplaceReceipt: {
+        ...marketplaceReceipt,
+        stages: marketplaceReceipt.stages.map((stage) => (
+          stage.stage === 'grant_resolution'
+            ? { ...stage, outcome: 'failed' }
+            : stage
+        )),
+      },
+    }],
+    ['mismatched install approval', {
+      marketplaceReceipt: {
+        ...marketplaceReceipt,
+        approvalId: 'approval:other',
+      },
+    }],
   ])('rejects %s', (_label, override) => {
     expect(() => authorizeOperationalBrowserRuntime({
       marketplaceReceipt,
@@ -115,5 +138,24 @@ describe('authorizeOperationalBrowserRuntime', () => {
       runtime,
       ...override,
     })).toThrow();
+  });
+
+  it('binds the authorization digest to exact receipt evidence', () => {
+    const original = authorizeOperationalBrowserRuntime({
+      marketplaceReceipt,
+      grantReceipt,
+      packageBinding,
+      runtime,
+    });
+    const changed = authorizeOperationalBrowserRuntime({
+      marketplaceReceipt,
+      grantReceipt: {
+        ...grantReceipt,
+        evidenceDigest: `sha256:${'b'.repeat(64)}`,
+      },
+      packageBinding,
+      runtime,
+    });
+    expect(changed.authorizationDigest).not.toBe(original.authorizationDigest);
   });
 });
