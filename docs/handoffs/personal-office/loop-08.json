@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "08",
+  "status": "READY_FOR_REVIEW",
+  "producer": "Codex builder",
+  "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+  "baseCommit": "b2fee9f0955dff5df6f86fbaa519f78261d69787",
+  "implementationCommit": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+  "codeImplementationCommit": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+  "documentationCorrectionCommit": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+  "objective": "Strict deterministic workspace blueprints and exact scoped plan-only provisioning receipts.",
+  "contractDecisions": [
+    "Only host-validated descriptors with matching sha256 evidence can create a plan.",
+    "Demo, offline and unavailable descriptors remain explicit and non-planable.",
+    "Plan identity binds exact tenant, user, WorkspaceInstanceId, WorkspaceBlueprintId and blueprint version.",
+    "All authority fields are re-derived from the reviewed descriptor; unknown execution or success fields fail closed.",
+    "WorkspaceInstance.health is optional and independent from workspace and provisioning lifecycle."
+  ],
+  "verification": {
+    "targetedTests": "PASS: 4 files, 27/27 tests, --no-cache",
+    "targetedTypeScript": "PASS: strict ES2022 compile of all Loop 08 production modules and touched Personal Office contracts",
+    "lint": "NOT_RUNNABLE: read-only external ESLint binary could not resolve @eslint/js from this worktree; no install or junction was created",
+    "gitDiffCheck": "PASS",
+    "ownership": "PASS: 12/12 implementation paths inside the exact lease",
+    "prohibitedPaths": "PASS: no package, lockfile, DB/schema, main index/preload, IPC, App, Sidebar, shell, provider, extension runtime or quarantine change",
+    "secretScan": "PASS: no credential value; secret-shaped strings exist only as deliberate negative test fixtures",
+    "gitnexus": "LOW risk; 2 indexed touched symbols, 0 affected processes. New files were not yet indexed, so exact diff and tests are authoritative."
+  },
+  "outputs": [
+    {"path":"apps/desktop/src/main/workspace-blueprint/workspace-blueprint-planner.test.ts","sha256":"f79f3baaab174b9ff51f87dd1ea819d842b08667e5e55d3989cdfd5979e97d0c","bytes":1617},
+    {"path":"apps/desktop/src/main/workspace-blueprint/workspace-blueprint-planner.ts","sha256":"ab3856c523e6079cc2a89f74dc2dd291c7f86dfac4df4d559b7c55de8a5a1da3","bytes":704},
+    {"path":"apps/desktop/src/shared/personal-office/entities.ts","sha256":"1fa928063914bb0d434a7495b239cbf8208a306d7a13396ca0ee3197609e9c4d","bytes":14273},
+    {"path":"apps/desktop/src/shared/personal-office/index.ts","sha256":"cfbcbac4eaeb3cdcfdd7302a086de9a93d280b9fec86cfb430101b94b8f0538e","bytes":3458},
+    {"path":"apps/desktop/src/shared/personal-office/serialization.test.ts","sha256":"47ebffe6ad5c311de247aa421459dd72510e3477ee3c1d560d31f4b91c704ad2","bytes":5870},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/index.ts","sha256":"dcfe712876ca464e020d9932da87d8c20adb95fecb8df1eb075a1db82454bbb1","bytes":931},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/provisioning-plan.test.ts","sha256":"4fd093f3b95031f02c3dfbeb829dd74bb81af9242d91ef8d4d7cfa5eb3c8cd9f","bytes":5666},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/provisioning-plan.ts","sha256":"47d92a34f692b2a2ee7d156eef2304f39b3bfb9073038e6e1e2b8c8c6547571c","bytes":9718},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/types.ts","sha256":"816e502115f342615ca516a642e5fd974627cbcc2bf1a8a0b77f1633a1c0faaf","bytes":3941},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/validation.ts","sha256":"0e214364f50dbdb6679fef3b5c6d0aa83ba945fe5bc1b53d047c1477cc409fed","bytes":12515},
+    {"path":"apps/desktop/src/shared/workspace-blueprint/workspace-blueprint.test.ts","sha256":"a20f850e20e52977afdeb2b37fc8948fac54ab6c541508eabb98c13d6effc099","bytes":3071},
+    {"path":"docs/product/personal-office-workspace-blueprints.md","sha256":"6b4ebe8935cb021f66b5b74c1dde149529b6243b4889292651edb0c2661bf1ef","bytes":3827}
+  ],
+  "twoPhaseCommit": {
+    "phase1": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+    "phase2Scope": [
+      "docs/handoffs/personal-office/loop-08.json",
+      "worklogs/personal-office-loop-08.md"
+    ]
+  },
+  "priorReviewDisposition": {
+    "decision": "SEND-BACK",
+    "reviewer": "Socrates",
+    "closedBy": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+    "closedFindings": [
+      "Public create and parse boundaries now re-parse descriptor input with explicit trusted provenance.",
+      "Plan identity now binds evidence digest and every material derived field through canonical JSON.",
+      "Semantic versions now use strict SemVer 2.0 rules for core and prerelease identifiers.",
+      "Credential-shaped identifiers now include AWS AKIA and ASIA access-key forms."
+    ]
+  },
+  "documentationReviewDisposition": {
+    "decision": "NON_BLOCKING_NOTE_CLOSED",
+    "codeSecurityDecision": "PASS remains valid",
+    "correction": "Product contract now states that planId binds exact scope, trusted evidenceDigest, and all material derived authority fields through canonical JSON."
+  },
+  "residualRisks": [
+    "Full desktop build/test/lint remains W0 integration work because this producer worktree has no local dependency tree and install was prohibited.",
+    "No renderer was created, so no visual claim or design review is required.",
+    "Operational provisioning, persistence, IPC, download, install, grant and activation remain unimplemented and unleased."
+  ],
+  "submittedAt": "2026-07-29T12:10:00Z"
+}
