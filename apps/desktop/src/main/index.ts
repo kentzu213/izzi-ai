@@ -80,6 +80,11 @@ import {
   type WorkIpcIdentity,
   type WorkTenantWorkspaceBinding,
 } from './work/work-ipc';
+import {
+  denyAllRuntimeAuthorization,
+  registerRuntimeIpc,
+  RuntimeManager,
+} from './runtime';
 
 let mainWindow: BrowserWindow | null = null;
 let authManager: AuthManager;
@@ -92,6 +97,7 @@ let syncEngine: SyncEngine;
 let extensionManager: ExtensionManager;
 let extensionLoader: ExtensionLoader;
 let localServiceManager: LocalServiceManager;
+let runtimeManager: RuntimeManager;
 let updateChecker: ExtensionUpdateChecker;
 let agentService: AgentService;
 let autopostAuth: AutopostAuth;
@@ -321,6 +327,12 @@ function setupIPC() {
       createWorkEventVisibility(workService, workIdentity),
     ),
   );
+  registerRuntimeIpc(runtimeManager, {
+    // Runtime execution is production-disabled in Loop 11 (no adapters and a
+    // deny-all authorizer), so health visibility is also empty until a future
+    // exact tenant/user/workspace authority adapter is explicitly leased.
+    listAuthorizedRuntimeScopes: () => [],
+  });
 
   // ── Window controls ──
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
@@ -1445,6 +1457,11 @@ async function initServices() {
   // `service` block, the loader boots its backend (docker compose) via this
   // manager, then injects the resolved backendUrl into the extension's settings.
   localServiceManager = new LocalServiceManager();
+  // Loop 11 control plane. Adapters are registered only when their execution
+  // requirements can be proven; an empty registry is intentionally fail-closed.
+  // The safe browser POC uses an injected fake driver in tests and does not
+  // globally enable browser.automation or production account access.
+  runtimeManager = new RuntimeManager([], denyAllRuntimeAuthorization);
   extensionLoader.setServiceManager(localServiceManager);
   extensionLoader.onServiceLog = (extensionId, line) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

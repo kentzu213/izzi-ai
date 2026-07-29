@@ -46,6 +46,7 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
+import type { RuntimePreloadApi } from '../../shared/runtime/ipc';
 
 export {};
 
@@ -201,6 +202,7 @@ declare global {
     affiliate?: ElectronAffiliateApi;
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
+    runtime?: RuntimePreloadApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }
