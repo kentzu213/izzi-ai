@@ -31,25 +31,42 @@ import { ipcMain, type WebContents } from 'electron';
 import type { WorkApprovalDecision, WorkEvent, WorkRun } from './work-types';
 import type { WorkService } from './work-service';
 import {
-  accessibleWorkspaceIds,
   canAccessWorkspace,
   type WorkAuthContext,
-  type WorkDenyReason,
 } from './work-authz';
+import {
+  WORK_IPC_CHANNELS,
+  type WorkCreateRunRequest,
+  type WorkDecideApprovalRequest,
+  type WorkIpcFailure,
+  type WorkListEventsRequest,
+  type WorkListEventsSinceRequest,
+  type WorkListRunsRequest,
+  type WorkPendingApprovalsRequest,
+  type WorkRunRequest,
+  type WorkWorkspaceRequest,
+} from './work-preload-api';
 
 export interface WorkIpcIdentity {
   /** Stable, non-PII reviewer reference derived from the signed-in user. */
   resolveReviewerHash(): string | null;
   /**
-   * Tenant workspace ids the signed-in identity is bound to. Optional so a host
-   * with no tenant concept at all stays personal-only (the safe default) rather
-   * than having to fabricate an empty binding.
+   * Tenant bindings include the reviewer that minted/resolved them. Keeping the
+   * subject on the binding prevents a cached workspace from being joined to a
+   * different account after an auth transition.
    */
-  resolveTenantWorkspaceIds?(): readonly string[];
+  resolveTenantWorkspaceBindings?(): readonly WorkTenantWorkspaceBinding[];
+}
+
+export interface WorkTenantWorkspaceBinding {
+  reviewerHash: string;
+  workspaceId: string;
 }
 
 const MAX_BRIEF = 4_000;
 const MAX_TITLE = 300;
+const MAX_ID = 200;
+const MAX_EVENT_CURSOR = Number.MAX_SAFE_INTEGER;
 
 /** Opaque, stable reviewer reference. Never an email or a raw user id. */
 export function reviewerHashFromUserId(userId: string | null | undefined): string | null {
@@ -65,123 +82,150 @@ function isDecision(value: unknown): value is WorkApprovalDecision {
   return value === 'approve' || value === 'edit' || value === 'reject';
 }
 
-function deny(reason: WorkDenyReason) {
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
+function objectInput(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function deny(reason: WorkIpcFailure) {
   return { ok: false as const, reason };
 }
 
+/** Resolve one atomic authorization context and discard stale account bindings. */
+export function resolveWorkAuthContext(identity: WorkIpcIdentity): WorkAuthContext {
+  const reviewerHash = identity.resolveReviewerHash();
+  const tenantWorkspaceIds = reviewerHash
+    ? (identity.resolveTenantWorkspaceBindings?.() ?? [])
+        .filter((binding) => binding.reviewerHash === reviewerHash)
+        .map((binding) => binding.workspaceId)
+    : [];
+  return { reviewerHash, tenantWorkspaceIds: [...new Set(tenantWorkspaceIds)] };
+}
+
 /**
- * Register the work IPC handlers and wire live event fan-out.
+ * Register the work IPC handlers.
  *
- * `getWebContents` is used by `createWorkEventForwarder`; it is accepted here so
- * a caller can register the bridge and the forwarder from one place.
+ * Every request names one workspace and every row-bearing operation verifies
+ * both that the caller may access that workspace and that the requested row
+ * belongs to it. Main never widens an invalid/forbidden request to another
+ * workspace, including the personal workspace.
  */
 export function registerWorkIpc(
   service: WorkService,
   identity: WorkIpcIdentity,
-  getWebContents: () => WebContents | null,
 ): void {
-  void getWebContents;
-
   /** The caller's authorization context, resolved fresh on every call. */
-  const authContext = (): WorkAuthContext => ({
-    reviewerHash: identity.resolveReviewerHash(),
-    tenantWorkspaceIds: identity.resolveTenantWorkspaceIds?.() ?? [],
-  });
-
-  /** Workspace ids this caller may read right now. */
-  const scope = (): string[] =>
-    accessibleWorkspaceIds(authContext(), service.repo.listWorkspaces());
+  const authContext = (): WorkAuthContext => resolveWorkAuthContext(identity);
 
   /** True when the caller may see `workspaceId`. */
   const allows = (workspaceId: string): boolean =>
     canAccessWorkspace(authContext(), workspaceId, service.repo.getWorkspace(workspaceId));
+
+  const visibleWorkspace = (raw: unknown): string | null => {
+    const workspaceId = cleanText(raw, MAX_ID);
+    return workspaceId && allows(workspaceId) ? workspaceId : null;
+  };
 
   /**
    * Resolve a run the caller is allowed to see. Returns null both for "no such
    * run" and "not yours" — the two must be indistinguishable, or the bridge
    * becomes an existence oracle for another workspace's run ids.
    */
-  const visibleRun = (runId: unknown): WorkRun | null => {
-    if (typeof runId !== 'string' || !runId) return null;
-    const run = service.getRun(runId);
+  const visibleRun = (workspaceId: unknown, runId: unknown): WorkRun | null => {
+    const requestedWorkspace = visibleWorkspace(workspaceId);
+    const id = cleanText(runId, MAX_ID);
+    if (!requestedWorkspace || !id) return null;
+    const run = service.getRun(id);
     if (!run) return null;
-    return allows(run.workspaceId) ? run : null;
+    return run.workspaceId === requestedWorkspace ? run : null;
   };
 
-  ipcMain.handle('work:listRuns', (_event, options?: { workspaceId?: string; limit?: number }) => {
-    const limit = typeof options?.limit === 'number' ? options.limit : undefined;
-    const requested = typeof options?.workspaceId === 'string' ? options.workspaceId : null;
-
-    if (requested !== null) {
-      // An explicit request is honoured only if it is in scope; it is never
-      // silently widened to everything the caller *can* see.
-      if (!allows(requested)) return [];
-      return service.listRuns({ workspaceId: requested, ...(limit ? { limit } : {}) });
-    }
-
-    return scope().flatMap((workspaceId) =>
-      service.listRuns({ workspaceId, ...(limit ? { limit } : {}) }),
-    );
+  ipcMain.handle(WORK_IPC_CHANNELS.listRuns, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkListRunsRequest;
+    const workspaceId = visibleWorkspace(input.workspaceId);
+    if (!workspaceId) return [];
+    return service.listRuns({
+      workspaceId,
+      limit: boundedInteger(input.limit, 100, 1, 500),
+    });
   });
 
-  ipcMain.handle('work:getRun', (_event, runId: string) => {
-    const run = visibleRun(runId);
+  ipcMain.handle(WORK_IPC_CHANNELS.getRun, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkRunRequest;
+    const run = visibleRun(input.workspaceId, input.runId);
     return run ? service.getRunBundle(run.id) : null;
   });
 
-  ipcMain.handle('work:listEvents', (_event, runId: string, afterRunSeq?: number) => {
-    const run = visibleRun(runId);
+  ipcMain.handle(WORK_IPC_CHANNELS.listEvents, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkListEventsRequest;
+    const run = visibleRun(input.workspaceId, input.runId);
     if (!run) return [];
-    return service.listEvents(run.id, typeof afterRunSeq === 'number' ? afterRunSeq : 0);
+    return service.listEvents(
+      run.id,
+      boundedInteger(input.afterRunSeq, 0, 0, MAX_EVENT_CURSOR),
+      boundedInteger(input.limit, 1_000, 1, 5_000),
+    );
   });
 
-  ipcMain.handle('work:listEventsSince', (_event, afterSeq?: number, limit?: number) => {
-    const allowed = new Set(scope());
-    return service
-      .listEventsSince(
-        typeof afterSeq === 'number' ? afterSeq : 0,
-        typeof limit === 'number' ? limit : 500,
-      )
-      .filter((event) => allowed.has(event.workspaceId));
+  ipcMain.handle(WORK_IPC_CHANNELS.listEventsSince, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkListEventsSinceRequest;
+    const workspaceId = visibleWorkspace(input.workspaceId);
+    if (!workspaceId) return [];
+    return service.listEventsSince(
+      workspaceId,
+      boundedInteger(input.afterSeq, 0, 0, MAX_EVENT_CURSOR),
+      boundedInteger(input.limit, 500, 1, 2_000),
+    );
   });
 
-  // The cursor itself carries no work content, so it is not scoped — a subscriber
-  // needs the true head position to resume from, and filtering it would make a
-  // caller re-read the same window forever.
-  ipcMain.handle('work:latestEventSeq', () => service.latestEventSeq());
+  ipcMain.handle(WORK_IPC_CHANNELS.latestEventSeq, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkWorkspaceRequest;
+    const workspaceId = visibleWorkspace(input.workspaceId);
+    return workspaceId ? service.latestEventSeq(workspaceId) : 0;
+  });
 
-  ipcMain.handle('work:listLineage', (_event, runId: string) => {
-    const run = visibleRun(runId);
+  ipcMain.handle(WORK_IPC_CHANNELS.listLineage, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkRunRequest;
+    const run = visibleRun(input.workspaceId, input.runId);
     if (!run) return [];
-    // Lineage crossing a workspace boundary is filtered too: a retry is a new
-    // run, and nothing guarantees every ancestor sits in the same workspace.
-    return service.listLineage(run.id).filter((item) => allows(item.workspaceId));
+    return service.listLineage(run.id).filter((item) => item.workspaceId === run.workspaceId);
   });
 
-  ipcMain.handle('work:listPendingApprovals', (_event, runId?: string) => {
-    if (typeof runId === 'string' && runId) {
-      const run = visibleRun(runId);
+  ipcMain.handle(WORK_IPC_CHANNELS.listPendingApprovals, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkPendingApprovalsRequest;
+    const workspaceId = visibleWorkspace(input.workspaceId);
+    if (!workspaceId) return [];
+    const runId = cleanText(input.runId, MAX_ID);
+    if (runId) {
+      const run = visibleRun(workspaceId, runId);
       return run ? service.listPendingApprovals(run.id) : [];
     }
-    const allowed = new Set(scope());
-    return service.listPendingApprovals().filter((approval) => allowed.has(approval.workspaceId));
+    return service
+      .listPendingApprovals()
+      .filter((approval) => approval.workspaceId === workspaceId);
   });
 
   // A user starting a piece of work from a brief. Starts in `created` (no side
   // effects) — the acceptance-criteria entry point.
   ipcMain.handle(
-    'work:createRun',
-    (_event, input: { title?: string; brief?: string; workspaceId?: string }) => {
+    WORK_IPC_CHANNELS.createRun,
+    (_event, raw: unknown) => {
+      const input = objectInput(raw) as unknown as WorkCreateRunRequest;
+      const workspaceId = visibleWorkspace(input.workspaceId);
       const brief = cleanText(input?.brief, MAX_BRIEF);
-      if (!brief) return null;
-      const requested = cleanText(input?.workspaceId, 200);
-      if (requested && !allows(requested)) return null;
+      if (!workspaceId || !brief) return null;
       const title = cleanText(input?.title, MAX_TITLE) || brief.slice(0, 80);
       return service.createRun({
         title,
         brief,
         origin: 'manual',
-        ...(requested ? { workspaceId: requested } : {}),
+        workspaceId,
       });
     },
   );
@@ -190,12 +234,13 @@ export function registerWorkIpc(
   // authenticated identity — the renderer cannot claim to be someone else, and it
   // cannot approve when signed out.
   ipcMain.handle(
-    'work:decideApproval',
+    WORK_IPC_CHANNELS.decideApproval,
     (
       _event,
-      input: { approvalId?: string; decision?: string; note?: string; editedInput?: unknown },
+      raw: unknown,
     ) => {
-      const approvalId = cleanText(input?.approvalId, 200);
+      const input = objectInput(raw) as unknown as WorkDecideApprovalRequest;
+      const approvalId = cleanText(input.approvalId, MAX_ID);
       if (!approvalId || !isDecision(input?.decision)) return deny('invalid-request');
 
       const decidedBy = identity.resolveReviewerHash();
@@ -205,8 +250,10 @@ export function registerWorkIpc(
 
       // Authorize against the approval's own workspace before touching it, so a
       // guessed approval id in another workspace cannot be decided.
+      const workspaceId = visibleWorkspace(input.workspaceId);
+      if (!workspaceId) return deny('forbidden');
       const approval = service.getApproval(approvalId);
-      if (!approval || !allows(approval.workspaceId)) return deny('forbidden');
+      if (!approval || approval.workspaceId !== workspaceId) return deny('forbidden');
 
       const result = service.decideApproval({
         approvalId,
@@ -228,14 +275,17 @@ export function registerWorkIpc(
     },
   );
 
-  ipcMain.handle('work:resume', (_event, runId: string) => {
-    const run = visibleRun(runId);
+  ipcMain.handle(WORK_IPC_CHANNELS.resume, (_event, raw: unknown) => {
+    const input = objectInput(raw) as unknown as WorkRunRequest;
+    const run = visibleRun(input.workspaceId, input.runId);
     if (!run) return deny('forbidden');
     try {
       const result = service.resume(run.id);
       return { ok: true as const, run: result.run, cursor: result.cursor };
-    } catch (error) {
-      return { ok: false as const, reason: (error as Error).message };
+    } catch {
+      // The renderer gets a stable, non-sensitive code. The detailed invariant
+      // failure remains in main where it cannot disclose schema or row details.
+      return deny('invalid-state');
     }
   });
 }
@@ -249,13 +299,13 @@ export function registerWorkIpc(
  */
 export function createWorkEventForwarder(
   getWebContents: () => WebContents | null,
-  isVisible?: (event: WorkEvent) => boolean,
+  isVisible: (event: WorkEvent) => boolean,
 ): (event: WorkEvent) => void {
   return (event: WorkEvent) => {
     const wc = getWebContents();
     if (!wc || wc.isDestroyed()) return;
-    if (isVisible && !isVisible(event)) return;
-    wc.send('work:event', event);
+    if (!isVisible(event)) return;
+    wc.send(WORK_IPC_CHANNELS.event, event);
   };
 }
 
@@ -269,10 +319,7 @@ export function createWorkEventVisibility(
 ): (event: WorkEvent) => boolean {
   return (event: WorkEvent) =>
     canAccessWorkspace(
-      {
-        reviewerHash: identity.resolveReviewerHash(),
-        tenantWorkspaceIds: identity.resolveTenantWorkspaceIds?.() ?? [],
-      },
+      resolveWorkAuthContext(identity),
       event.workspaceId,
       service.repo.getWorkspace(event.workspaceId),
     );

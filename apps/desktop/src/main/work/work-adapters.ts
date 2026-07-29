@@ -113,10 +113,51 @@ export interface ArchivedOutcome {
   evidence: string;
 }
 
-/** Entry text that proves a run finished its work. */
-const COMPLETION_EVIDENCE = /\b(?:completed?|finished|delivered|shipped|done|succeeded)\b/i;
-/** Entry text that proves a run ended in failure. */
-const FAILURE_EVIDENCE = /\b(?:failed|failure|aborted|crashed|fatal|unrecoverable)\b/i;
+const STRUCTURED_TERMINAL_STATES: Readonly<Record<string, ArchivedOutcome['state']>> =
+  Object.freeze({
+    completed: 'completed',
+    complete: 'completed',
+    succeeded: 'completed',
+    success: 'completed',
+    done: 'completed',
+    failed: 'failed',
+    failure: 'failed',
+    aborted: 'failed',
+    crashed: 'failed',
+    canceled: 'canceled',
+    cancelled: 'canceled',
+  });
+
+/**
+ * Extract a terminal outcome only from a structured field/marker.
+ *
+ * Free-form prose is deliberately ignored: "not completed" and "failed to
+ * connect" describe intermediate facts, not the run's terminal outcome.
+ */
+function structuredTerminalState(
+  entry: LegacyAgentRunEntry,
+): ArchivedOutcome['state'] | null {
+  if (entry.kind !== 'event') return null;
+
+  const content = entry.content.trim();
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      const raw = record.status ?? record.outcome ?? record.runStatus;
+      if (typeof raw === 'string') {
+        return STRUCTURED_TERMINAL_STATES[raw.trim().toLowerCase()] ?? null;
+      }
+    }
+  } catch {
+    // A plain structured marker is supported below; arbitrary prose is not.
+  }
+
+  const marker = content
+    .toLowerCase()
+    .match(/^(?:run[.:_-]|status\s*[:=]\s*|outcome\s*[:=]\s*)([a-z]+)$/);
+  return marker ? (STRUCTURED_TERMINAL_STATES[marker[1]] ?? null) : null;
+}
 
 /**
  * Derive the terminal state of an archived legacy run from its entries
@@ -139,19 +180,12 @@ export function deriveArchivedOutcome(entries: readonly LegacyAgentRunEntry[]): 
   const ordered = [...entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   for (const entry of ordered) {
-    const text = entry.content ?? '';
-    if (FAILURE_EVIDENCE.test(text)) {
+    const state = structuredTerminalState(entry);
+    if (state) {
       return {
-        state: 'failed',
+        state,
         conclusive: true,
-        evidence: `entry ${entry.id} evidences failure`,
-      };
-    }
-    if (COMPLETION_EVIDENCE.test(text)) {
-      return {
-        state: 'completed',
-        conclusive: true,
-        evidence: `entry ${entry.id} evidences completion`,
+        evidence: `entry ${entry.id} carries structured terminal outcome ${state}`,
       };
     }
   }

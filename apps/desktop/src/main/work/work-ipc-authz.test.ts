@@ -36,6 +36,7 @@ import {
   createWorkEventForwarder,
   createWorkEventVisibility,
   registerWorkIpc,
+  resolveWorkAuthContext,
   reviewerHashFromUserId,
   type WorkIpcIdentity,
 } from './work-ipc';
@@ -45,6 +46,7 @@ import type { WorkEvent } from './work-types';
 
 const TENANT = 'ws-acme';
 const SIGNED_IN = reviewerHashFromUserId('user-1');
+const OTHER_SIGNED_IN = reviewerHashFromUserId('user-2');
 
 /**
  * Build a service holding one personal run and one tenant run, then register the
@@ -65,17 +67,20 @@ function setup() {
     workspaceId: TENANT,
   });
 
-  const identityState: { reviewerHash: string | null; tenants: string[] } = {
+  const identityState: {
+    reviewerHash: string | null;
+    bindings: Array<{ reviewerHash: string; workspaceId: string }>;
+  } = {
     reviewerHash: null,
-    tenants: [],
+    bindings: [],
   };
   const identity: WorkIpcIdentity = {
     resolveReviewerHash: () => identityState.reviewerHash,
-    resolveTenantWorkspaceIds: () => identityState.tenants,
+    resolveTenantWorkspaceBindings: () => identityState.bindings,
   };
 
   electronMocks.handlers.clear();
-  registerWorkIpc(service, identity, () => null);
+  registerWorkIpc(service, identity);
 
   const call = <T>(channel: string, ...args: unknown[]): T => {
     const handler = electronMocks.handlers.get(channel);
@@ -133,12 +138,25 @@ describe('authz predicate', () => {
       accessibleWorkspaceIds({ reviewerHash: SIGNED_IN, tenantWorkspaceIds: [TENANT] }, workspaces).sort(),
     ).toEqual(['personal', TENANT]);
   });
+
+  it('does not join a cached workspace binding to a different signed-in account', () => {
+    const identity: WorkIpcIdentity = {
+      resolveReviewerHash: () => OTHER_SIGNED_IN,
+      resolveTenantWorkspaceBindings: () => [
+        { reviewerHash: SIGNED_IN!, workspaceId: TENANT },
+      ],
+    };
+    expect(resolveWorkAuthContext(identity)).toEqual({
+      reviewerHash: OTHER_SIGNED_IN,
+      tenantWorkspaceIds: [],
+    });
+  });
 });
 
 describe('reads are workspace-scoped', () => {
   it('listRuns omits tenant runs for a signed-out caller', () => {
     const { personalRun, tenantRun, call, close } = setup();
-    const runs = call<Array<{ id: string }>>('work:listRuns');
+    const runs = call<Array<{ id: string }>>('work:listRuns', { workspaceId: 'personal' });
     expect(runs.map((r) => r.id)).toContain(personalRun.id);
     expect(runs.map((r) => r.id)).not.toContain(tenantRun.id);
     close();
@@ -147,8 +165,8 @@ describe('reads are workspace-scoped', () => {
   it('listRuns includes a tenant run once the identity is bound', () => {
     const { identityState, tenantRun, call, close } = setup();
     identityState.reviewerHash = SIGNED_IN;
-    identityState.tenants = [TENANT];
-    const runs = call<Array<{ id: string }>>('work:listRuns');
+    identityState.bindings = [{ reviewerHash: SIGNED_IN!, workspaceId: TENANT }];
+    const runs = call<Array<{ id: string }>>('work:listRuns', { workspaceId: TENANT });
     expect(runs.map((r) => r.id)).toContain(tenantRun.id);
     close();
   });
@@ -160,10 +178,23 @@ describe('reads are workspace-scoped', () => {
     close();
   });
 
+  it('requires an explicit workspace scope instead of defaulting to personal', () => {
+    const { call, close } = setup();
+    expect(call<unknown[]>('work:listRuns')).toEqual([]);
+    expect(call<number>('work:latestEventSeq')).toBe(0);
+    close();
+  });
+
   it('getRun hides a tenant run indistinguishably from a missing one', () => {
     const { tenantRun, call, close } = setup();
-    const forbidden = call<unknown>('work:getRun', tenantRun.id);
-    const missing = call<unknown>('work:getRun', 'run_does_not_exist');
+    const forbidden = call<unknown>('work:getRun', {
+      workspaceId: TENANT,
+      runId: tenantRun.id,
+    });
+    const missing = call<unknown>('work:getRun', {
+      workspaceId: TENANT,
+      runId: 'run_does_not_exist',
+    });
     expect(forbidden).toBeNull();
     // Same answer for both, so the bridge cannot confirm the id exists.
     expect(forbidden).toEqual(missing);
@@ -172,14 +203,22 @@ describe('reads are workspace-scoped', () => {
 
   it('listEvents and listLineage refuse an out-of-scope run', () => {
     const { tenantRun, call, close } = setup();
-    expect(call<unknown[]>('work:listEvents', tenantRun.id)).toEqual([]);
-    expect(call<unknown[]>('work:listLineage', tenantRun.id)).toEqual([]);
+    expect(
+      call<unknown[]>('work:listEvents', { workspaceId: TENANT, runId: tenantRun.id }),
+    ).toEqual([]);
+    expect(
+      call<unknown[]>('work:listLineage', { workspaceId: TENANT, runId: tenantRun.id }),
+    ).toEqual([]);
     close();
   });
 
   it('listEventsSince filters out events from unauthorized workspaces', () => {
     const { tenantRun, personalRun, call, close } = setup();
-    const events = call<WorkEvent[]>('work:listEventsSince', 0, 500);
+    const events = call<WorkEvent[]>('work:listEventsSince', {
+      workspaceId: 'personal',
+      afterSeq: 0,
+      limit: 500,
+    });
     expect(events.length).toBeGreaterThan(0);
     expect(events.every((e) => e.workspaceId === 'personal')).toBe(true);
     expect(events.some((e) => e.runId === personalRun.id)).toBe(true);
@@ -189,8 +228,13 @@ describe('reads are workspace-scoped', () => {
 
   it('listPendingApprovals is scoped for both the global and per-run form', () => {
     const { tenantRun, call, close } = setup();
-    expect(call<unknown[]>('work:listPendingApprovals', tenantRun.id)).toEqual([]);
-    expect(call<unknown[]>('work:listPendingApprovals')).toEqual([]);
+    expect(
+      call<unknown[]>('work:listPendingApprovals', {
+        workspaceId: TENANT,
+        runId: tenantRun.id,
+      }),
+    ).toEqual([]);
+    expect(call<unknown[]>('work:listPendingApprovals', { workspaceId: TENANT })).toEqual([]);
     close();
   });
 });
@@ -204,7 +248,10 @@ describe('commands fail closed', () => {
 
   it('createRun still works in the personal workspace while signed out', () => {
     const { call, close } = setup();
-    const run = call<{ workspaceId: string } | null>('work:createRun', { brief: 'Local task' });
+    const run = call<{ workspaceId: string } | null>('work:createRun', {
+      workspaceId: 'personal',
+      brief: 'Local task',
+    });
     expect(run?.workspaceId).toBe('personal');
     close();
   });
@@ -227,6 +274,7 @@ describe('commands fail closed', () => {
     // Signed out: an approval is an accountability record, so there is nobody to
     // attribute it to and it must not proceed.
     const denied = call<{ ok: boolean; reason?: string }>('work:decideApproval', {
+      workspaceId: 'personal',
       approvalId: approval.id,
       decision: 'approve',
     });
@@ -252,8 +300,9 @@ describe('commands fail closed', () => {
 
     // Signed in, but bound to no tenant: a guessed approval id must not be decidable.
     identityState.reviewerHash = SIGNED_IN;
-    identityState.tenants = [];
+    identityState.bindings = [];
     const denied = call<{ ok: boolean; reason?: string }>('work:decideApproval', {
+      workspaceId: TENANT,
       approvalId: approval.id,
       decision: 'approve',
     });
@@ -267,7 +316,10 @@ describe('commands fail closed', () => {
 
   it('resume refuses an out-of-scope run', () => {
     const { tenantRun, call, close } = setup();
-    const result = call<{ ok: boolean; reason?: string }>('work:resume', tenantRun.id);
+    const result = call<{ ok: boolean; reason?: string }>('work:resume', {
+      workspaceId: TENANT,
+      runId: tenantRun.id,
+    });
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('forbidden');
     close();
@@ -276,6 +328,7 @@ describe('commands fail closed', () => {
   it('rejects a malformed decision without consulting the store', () => {
     const { call, close } = setup();
     const result = call<{ ok: boolean; reason?: string }>('work:decideApproval', {
+      workspaceId: 'personal',
       approvalId: 'a',
       decision: 'delete-everything',
     });
@@ -306,7 +359,7 @@ describe('live forwarder is scoped like the reads', () => {
   it('delivers a tenant event once the identity is bound', () => {
     const { service, identity, identityState, close } = setup();
     identityState.reviewerHash = SIGNED_IN;
-    identityState.tenants = [TENANT];
+    identityState.bindings = [{ reviewerHash: SIGNED_IN!, workspaceId: TENANT }];
     const sent: WorkEvent[] = [];
     const wc = { isDestroyed: () => false, send: (_c: string, e: WorkEvent) => sent.push(e) };
     const forward = createWorkEventForwarder(
@@ -319,20 +372,22 @@ describe('live forwarder is scoped like the reads', () => {
     close();
   });
 
-  it('stays personal-only when no visibility predicate is supplied', () => {
-    // The fail-closed default: a caller who forgets to pass the predicate does
-    // not accidentally broadcast every workspace.
+  it('applies the supplied workspace predicate before forwarding', () => {
     const sent: WorkEvent[] = [];
     const wc = { isDestroyed: () => false, send: (_c: string, e: WorkEvent) => sent.push(e) };
-    const forward = createWorkEventForwarder(() => wc as never);
+    const forward = createWorkEventForwarder(
+      () => wc as never,
+      (event) => event.workspaceId === 'personal',
+    );
+    forward({ workspaceId: 'personal' } as WorkEvent);
     forward({ workspaceId: TENANT } as WorkEvent);
-    expect(sent).toHaveLength(1); // no predicate → unfiltered, documented behaviour
+    expect(sent.map((event) => event.workspaceId)).toEqual(['personal']);
   });
 
   it('never sends to a destroyed WebContents', () => {
     const sent: WorkEvent[] = [];
     const wc = { isDestroyed: () => true, send: (_c: string, e: WorkEvent) => sent.push(e) };
-    const forward = createWorkEventForwarder(() => wc as never);
+    const forward = createWorkEventForwarder(() => wc as never, () => true);
     forward({ workspaceId: 'personal' } as WorkEvent);
     expect(sent).toEqual([]);
   });

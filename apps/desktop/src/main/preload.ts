@@ -81,6 +81,47 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../shared/customer-marketing-action-gate-types';
+import {
+  WORK_IPC_CHANNELS,
+  type WorkPreloadApi,
+} from './work/work-preload-api';
+import type { WorkEvent } from './work/work-types';
+
+/**
+ * Published first-class preload shape for the unified work engine.
+ *
+ * Main performs authorization. The additional exact-workspace filter here
+ * keeps one workspace listener from receiving another authorized workspace's
+ * event inside the same renderer.
+ */
+const workApi: WorkPreloadApi = {
+  listRuns: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listRuns, input),
+  getRun: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.getRun, input),
+  listEvents: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listEvents, input),
+  listEventsSince: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.listEventsSince, input),
+  latestEventSeq: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.latestEventSeq, input),
+  listLineage: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listLineage, input),
+  listPendingApprovals: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.listPendingApprovals, input),
+  createRun: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.createRun, input),
+  decideApproval: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.decideApproval, input),
+  resume: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.resume, input),
+  onEvent: (workspaceId, listener) => {
+    const requestedWorkspace = workspaceId.trim();
+    const handler = (_event: unknown, event: WorkEvent) => {
+      if (requestedWorkspace && event?.workspaceId === requestedWorkspace) {
+        listener(event);
+      }
+    };
+    ipcRenderer.on(WORK_IPC_CHANNELS.event, handler);
+    return () => {
+      ipcRenderer.removeListener(WORK_IPC_CHANNELS.event, handler);
+    };
+  },
+};
 
 const electronAPI = {
   window: {
@@ -634,6 +675,8 @@ const electronAPI = {
       ipcRenderer.invoke('schedule:openProfile', profileDir, url),
   },
 
+  work: workApi,
+
   platform: {
     isElectron: true,
     os: process.platform,
@@ -643,3 +686,4 @@ const electronAPI = {
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
 export type ElectronAPI = typeof electronAPI;
+export type { WorkPreloadApi } from './work/work-preload-api';

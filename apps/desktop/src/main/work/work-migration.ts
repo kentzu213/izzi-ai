@@ -50,6 +50,21 @@ export interface WorkMigrationResult {
   backedUp: boolean;
 }
 
+/** A newer database must be opened by a build that understands its schema. */
+export class UnsupportedWorkModelVersionError extends Error {
+  readonly found: number;
+  readonly supported: number;
+
+  constructor(found: number, supported: number) {
+    super(
+      `Refusing to open work model version ${found}; this build supports up to ${supported}.`,
+    );
+    this.name = 'UnsupportedWorkModelVersionError';
+    this.found = found;
+    this.supported = supported;
+  }
+}
+
 const LEDGER_DDL = `
   CREATE TABLE IF NOT EXISTS work_migrations (
     version INTEGER PRIMARY KEY,
@@ -327,9 +342,11 @@ export function runWorkModelMigration(
 ): WorkMigrationResult {
   const db = driver instanceof WorkDb ? driver : new WorkDb(driver);
 
-  db.exec(LEDGER_DDL);
-
   const fromVersion = readWorkModelVersion(db);
+  if (fromVersion > WORK_MODEL_TARGET_VERSION) {
+    throw new UnsupportedWorkModelVersionError(fromVersion, WORK_MODEL_TARGET_VERSION);
+  }
+
   const pending = WORK_MIGRATION_STEPS.filter((step) => step.version > fromVersion).sort(
     (left, right) => left.version - right.version,
   );
@@ -352,6 +369,10 @@ export function runWorkModelMigration(
   const applied: number[] = [];
   for (const step of pending) {
     db.transaction(() => {
+      // Create the ledger inside the same transaction as the first actual
+      // schema step. This keeps the backup hook strictly before the first DDL
+      // and prevents a failed migration from leaving a misleading empty ledger.
+      db.exec(LEDGER_DDL);
       step.up(db);
       db.run('INSERT INTO work_migrations (version, name, applied_at) VALUES (?, ?, ?)', step.version, step.name, new Date().toISOString());
     });
