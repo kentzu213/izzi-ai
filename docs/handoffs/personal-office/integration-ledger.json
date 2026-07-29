@@ -277,17 +277,17 @@
       "loop": "02",
       "title": "Product shell and reference UX",
       "window": "W2",
-      "status": "READY_TO_START",
-      "branch": null,
-      "worktree": null,
-      "commitSha": null,
-      "handoff": null,
+      "status": "ACCEPTED",
+      "branch": "feature/personal-office-loop-02-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02",
+      "commitSha": "d556d9c8120057108cde6948b23ed3d02161193a",
+      "handoff": "docs/handoffs/personal-office/loop-02.json",
       "dependsOn": [
         "01"
       ],
       "worktreeCreationBlocked": false,
-      "note": "Per the orchestration doc, no Loop 02 worktree may be created until Loop 01 is ACCEPTED. A draft shell already exists uncommitted in the quarantined worktree (renderer/shell/**, docs/product/personal-office-ia.md) and must be salvaged selectively, never cherry-picked blind.",
-      "dependencyStatus": "SATISFIED — Loop 01 is ACCEPTED on ref feature/personal-office-baseline-20260728"
+      "note": "Accepted after exact-path integration, 23/23 output hash verification, build/lint/tests, and post-fix desktop/mobile Playwright verification. Acceptance record: acceptance/loop-02.json.",
+      "dependencyStatus": "SATISFIED — Loop 01 ACCEPTED; Loop 02 independently verified and ACCEPTED."
     },
     {
       "loop": "03",
@@ -613,6 +613,11 @@
       "at": "2026-07-29T04:15:00Z",
       "by": "W0",
       "action": "Ran the Loop 01 integration gate and ACCEPTED it. Independent verification in an isolated toolchain: vitest 4 files / 45 tests pass, tsc main exit 0, git diff --check exit 0, ownership audit clean over 23 files, 7/7 output hashes and 3/3 input hashes match, 8/8 coordinator JSON at schemaVersion 1, secret scan clean, quarantine untouched. Confirmed the two-phase commit by showing 830a12c..07e5ac3 contains only the handoff and worklog. Wrote acceptance/loop-01.json as its own commit 16f25b28820d829b3050981e8d60db433194059b. Closed PO-RUNSTATE-CONTRACT-GAP and PQ-08. Unblocked Loop 02 and Loop 03 worktree creation. Opened PO-LEASE-VIOLATION-PQ01 after observing unleased package.json / eslint.config.mjs / pnpm-lock.yaml / desktop-ci.yml writes inside the integration worktree; all coordinator commits used exact-path form so none of it was captured."
+    },
+    {
+      "at": "2026-07-29T06:29:08Z",
+      "by": "W0",
+      "action": "Path-audited and integrated the seven exact Loop 02 commits, then ACCEPTED the shell. Verification: 23/23 declared hashes, 0 forbidden paths, build 1167 modules, lint 358 warnings/0 errors, producer tests 946/946, integration BF-02 isolated rerun 14/14, desktop/mobile Playwright, keyboard/focus and five forced states PASS. Revoked LEASE-L02-SHELL-MOUNT-20260729."
     }
   ],
   "completedByW0": [
@@ -645,6 +650,11 @@
       "at": "2026-07-29T04:15:00Z",
       "action": "Closed PQ-08 contract-of-record half; the W3-imports-not-redefines half remains under PO-VERSION-COLLISION.",
       "record": "integration-ledger.json -> programmeGates"
+    },
+    {
+      "at": "2026-07-29T06:29:08Z",
+      "action": "Verified and ACCEPTED Loop 02; closed its shell lease and established the renderer shell as the stable consumer target for Loop 03.",
+      "record": "acceptance/loop-02.json"
     }
   ],
   "nextActionsForW0": [
@@ -660,7 +670,7 @@
     },
     {
       "priority": 3,
-      "action": "Dispatch Loop 02 to W2 against the new worktree. Loop 02 is first owner of App.tsx under §8.1, so grant that lease to W2 and not to W3.",
+      "action": "Keep Loop 02 frozen after acceptance. Route CR-UX-02, CR-UX-03 and CR-UX-05 to the next W1-owned contract loop; do not reopen App.tsx or shell source without a new change request.",
       "gate": "none"
     },
     {

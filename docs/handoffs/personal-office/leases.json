@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T04:20:00Z",
+  "updatedAt": "2026-07-29T06:29:08Z",
   "updatedBy": "W0",
   "integrationCommit": "16f25b28820d829b3050981e8d60db433194059b",
   "activeLeases": [
@@ -47,54 +47,21 @@
         "any edit to apps/desktop/src/shared/personal-office/** (W1 contract of record)"
       ],
       "expiresOn": "Loop 03 acceptance or W0 revocation"
-    },
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Loop 02 is ACCEPTED and LEASE-L02-SHELL-MOUNT-20260729 is REVOKED. Only LEASE-L03-EXEC-WIRING-20260729 remains ACTIVE. Package-manifest/lockfile ownership remains governed by PO-LEASE-VIOLATION-PQ01.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
       "loop": "02",
       "window": "W2",
-      "grantedAt": "2026-07-29T04:20:00Z",
-      "grantedBy": "W0",
-      "scope": "product shell + reference UX",
-      "exclusiveWritePaths": [
-        "apps/desktop/src/renderer/shell/**",
-        "apps/desktop/src/renderer/components/personal-office/**",
-        "apps/desktop/src/renderer/pages/personal-office/**",
-        "apps/desktop/src/renderer/store/personalOffice.ts",
-        "apps/desktop/src/renderer/styles/personal-office.css",
-        "apps/desktop/src/renderer/App.tsx",
-        "apps/desktop/src/renderer/components/Sidebar.tsx",
-        "docs/product/personal-office-ia.md"
-      ],
-      "readOnlyPaths": [
-        "apps/desktop/src/shared/personal-office/**",
-        "apps/desktop/src/renderer/store/agentWorkspace.ts"
-      ],
-      "prohibitedPaths": [
-        "apps/desktop/src/main/work/**",
-        "apps/desktop/src/main/db/**",
-        "apps/desktop/src/main/index.ts",
-        "apps/desktop/src/main/preload.ts",
-        "package.json",
-        "pnpm-workspace.yaml",
-        "pnpm-lock.yaml"
-      ],
-      "conditions": [
-        "Mount behind the izzi.shell.personalOffice flag.",
-        "Loop 02 is FIRST owner of App.tsx and Sidebar.tsx under section 8.1. W3 must not take them even though the quarantine draft modified them.",
-        "Treat the canonical copy of App.tsx as the base. The dirty quarantine copy is NOT authoritative.",
-        "Today lanes render off RunState: waiting_external is now first-class, so Waiting-for-me does not depend on an optional field.",
-        "agentWorkspace.ts is compatibility read-only for Loop 02; semantic changes need a change request.",
-        "Salvage selectively from quarantine/loop-02-dirty-salvage.json inside the Loop 02 worktree. No blind cherry-pick."
-      ],
-      "changeRequestRequiredFor": [
-        "any edit to apps/desktop/src/shared/personal-office/** (W1 contract of record)",
-        "semantic changes to apps/desktop/src/renderer/store/agentWorkspace.ts"
-      ],
-      "expiresOn": "Loop 02 acceptance or W0 revocation"
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T06:29:08Z",
+      "revokedBy": "W0",
+      "reason": "Loop 02 accepted at docs/handoffs/personal-office/acceptance/loop-02.json."
     }
   ],
-  "activeLeaseCount": 2,
-  "statement": "Loop 01 is ACCEPTED at acceptance/loop-01.json. Two leases are now ACTIVE: LEASE-L03-EXEC-WIRING-20260729 (W3, execution core + wired seams) and LEASE-L02-SHELL-MOUNT-20260729 (W2, product shell incl. App.tsx and Sidebar.tsx as first owner). The package-manifest/lockfile lease remains UNGRANTED and is currently being violated - see gate PO-LEASE-VIOLATION-PQ01.",
   "preApprovedOnLoop01Acceptance": {
     "note": "Consequences of the PQ-08 two-layer ruling. These are NOT active leases — each still requires an explicit W0 grant, and none may be granted before Loop 01 is ACCEPTED. Listed so producers can plan and so no one claims a hot file by assuming.",
     "queue": [
@@ -180,9 +147,10 @@
         "02",
         "12"
       ],
-      "currentLease": "LEASE-L02-SHELL-MOUNT-20260729",
-      "note": "ALREADY MODIFIED-UNCOMMITTED in the quarantined dirty worktree by the concurrent Loop 03 draft. Loop 02 must treat the canonical copy as the base and salvage selectively; it must not assume the dirty copy is authoritative.",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "currentLease": null,
+      "note": "Loop 02 accepted. Any later App.tsx edit requires a new W0 change request and lease.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T06:29:08Z"
     },
     {
       "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
@@ -190,8 +158,9 @@
         "02",
         "12"
       ],
-      "currentLease": "LEASE-L02-SHELL-MOUNT-20260729",
-      "leasedAt": "2026-07-29T04:20:00Z"
+      "currentLease": null,
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T06:29:08Z"
     },
     {
       "path": "apps/desktop/src/main/db/sqlite-schema.ts",
