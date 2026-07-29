@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "14",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff authorizes no push, deployment, installation, browser automation, secret retrieval or external effect.",
+  "title": "Authenticated Live.md context for host-agent turns",
+  "producer": {
+    "window": "W0-Codex",
+    "role": "Codex builder and in-process security reviewer; Kiro and subagents had no writer authority",
+    "branch": "feature/personal-office-loop-14-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop14",
+    "lease": "LEASE-L14-CONTEXT-RUNTIME-20260729"
+  },
+  "canonicalBase": "cd567e23c5a8573f7f039c7d0330854893137dff",
+  "implementationCommits": [
+    "e903540014b25a3407c021b3a67dffb71aee5ca2",
+    "3c4b112"
+  ],
+  "canonicalImplementationCommits": [
+    "80545a232881187a80d9d425ffb1bc0d43bed5a5",
+    "80038bb"
+  ],
+  "handoffCommitNote": "The producer handoff commit contains only this JSON and worklogs/personal-office-loop-14.md.",
+  "outcome": {
+    "authority": "Main derives owner from the authenticated session, hashes it with reviewerHashFromUserId and fixes workspace authority to the canonical personal workspace.",
+    "liveProfile": "Live.md is read or minimally initialized under userData/personal-office/live/<scope-hash>/Live.md without raw user identifiers in the path.",
+    "context": "The accepted compiler binds the trusted host safety prompt, exact raw outgoing request, fixed workspace policy and effective Live directives.",
+    "persistence": "Only Work context snapshot metadata is persisted; safety prompt, raw request and rendered context body are not stored.",
+    "providerGate": "Untrusted sender, missing auth, missing or non-personal workspace, multimodal input, scope mismatch, forbidden classification and snapshot mismatch fail before provider access.",
+    "turnControls": "Abort and steering injection reject unknown or child-frame senders before reading active-turn inputs."
+  },
+  "closedSecurityFindings": [
+    {
+      "finding": "Context preparation returned arbitrary error.message to the renderer and could expose a userData path.",
+      "resolution": "ContextCompilationError returns only its stable code; all filesystem or unknown failures return context-preparation-failed."
+    },
+    {
+      "finding": "customProvider:abort and customProvider:inject lacked trusted-sender validation.",
+      "resolution": "Both handlers now reject before turn lookup, turnId parsing or steering text parsing. The W0 change request and hot-file lease were expanded before this correction."
+    }
+  ],
+  "ownership": {
+    "allInsideLease": true,
+    "implementationPathCount": 3,
+    "prohibitedPathChanges": 0,
+    "paths": [
+      "apps/desktop/src/main/context/agent-turn-context.ts",
+      "apps/desktop/src/main/context/agent-turn-context.test.ts",
+      "apps/desktop/src/main/index.ts"
+    ]
+  },
+  "securityGate": {
+    "decision": "PASS_FOR_W0_ACCEPTANCE",
+    "controls": [
+      "trusted top-level renderer checked before provider or active-turn control",
+      "authenticated owner and canonical personal workspace resolved only in main",
+      "scope-derived storage directory is fixed-width and non-PII",
+      "compiler allows only public_metadata and personal_graph model context",
+      "renderer-supplied system history is removed in agent mode",
+      "multimodal agent context is rejected until canonical payload hashing exists",
+      "snapshot writer receives metadata only",
+      "no raw path or unknown exception message is returned to renderer"
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted context and host-agent tests",
+      "result": "PASS",
+      "evidence": "Final correction run: 2 files, 11/11 tests. Earlier complete context matrix: 6 files, 28/28 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "124 files, 1376/1376 tests after the final sender-trust correction."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit after the final correction."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors, 350 warnings, below maximum 358."
+    },
+    {
+      "check": "ownership, prohibited paths, whitespace and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly 3 implementation paths, all leased; git diff --check clean; no added credential assignment or private-key material."
+    },
+    {
+      "check": "producer/canonical provenance",
+      "result": "PASS",
+      "evidence": "3/3 final Git blobs match between producer commit 3c4b112 and canonical commit 80038bb."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEGRADED_REVIEWED",
+      "evidence": "GitNexus recognized 3 changed files but the canonical index was seven commits stale and returned zero mapped symbols; setupIPC impact remained UNKNOWN. Re-index was not run because it rewrites W0-reserved managed files. Full tests, both typechecks, build, lint and manual hot-file review cover the residual risk."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Read-only HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5; 459 status entries; status SHA-256 b8b124cd1de43b73ef1cf3697df519f1049ccd923ecb024dd9bf166be82c1c8d."
+    }
+  ],
+  "outputs": [
+    {
+      "path": "apps/desktop/src/main/context/agent-turn-context.ts",
+      "bytes": 6109,
+      "producerWorkingTreeSha256": "09d32699be44fe1cba85ca0c9f6a882e42d70974249742afd2824a79f7f97104",
+      "gitBlob": "740ff465c04ef62578bebb79c0813ca81d020bbd"
+    },
+    {
+      "path": "apps/desktop/src/main/context/agent-turn-context.test.ts",
+      "bytes": 8397,
+      "producerWorkingTreeSha256": "745668d948822b8d2026db9fd9cbfcfb568f9719017fec386c20f2b66ab5018e",
+      "gitBlob": "4234ffaeb0a813c24caf1171069994867760ecba"
+    },
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "bytes": 72657,
+      "producerWorkingTreeSha256": "6e76dc393d1a7a4a9f99be82508d3064b8385744744d8680b6035006bbd5e7ee",
+      "gitBlob": "f81786b48a77e751eab4d72837d93266ba2507d3"
+    }
+  ],
+  "nextConsumer": {
+    "owner": "W0",
+    "action": "Reconcile only this handoff and worklog, create acceptance/loop-14.json, update the integration ledger and revoke LEASE-L14-CONTEXT-RUNTIME-20260729 in separate governance commits."
+  }
+}
