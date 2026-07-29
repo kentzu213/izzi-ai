@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T20:35:00Z",
+  "updatedAt": "2026-07-29T21:00:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -906,6 +906,58 @@
       "17"
     ]
   },
+  "continuationExecution": [
+    {
+      "loop": "13",
+      "title": "Real shell-to-Work bridge and first workspace",
+      "status": "PROVISIONAL",
+      "gate": "PO-PRODUCT-REAL-WORK-BRIDGE",
+      "branch": "feature/personal-office-loop-13-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop13",
+      "baseCommit": "03a2397911b5a6e81103f148ab76d52d034bd11e",
+      "lease": "LEASE-L13-REAL-WORK-BRIDGE-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-13-real-work-bridge.md",
+      "dependsOn": [
+        "02",
+        "03"
+      ],
+      "securityGate": "Main-authoritative sender, identity and workspace scope; no DB/schema/auth/runtime/package writes."
+    },
+    {
+      "loop": "14",
+      "title": "Authenticated Live/context agent turn",
+      "status": "BLOCKED_GATE",
+      "dependsOn": [
+        "13"
+      ]
+    },
+    {
+      "loop": "15",
+      "title": "Host-validated Marketplace operation",
+      "status": "BLOCKED_GATE",
+      "dependsOn": [
+        "13"
+      ]
+    },
+    {
+      "loop": "16",
+      "title": "Account, OAuth and IntegrationGrant operation",
+      "status": "BLOCKED_GATE",
+      "dependsOn": [
+        "15"
+      ]
+    },
+    {
+      "loop": "17",
+      "title": "Production runtime adapters and operational E2E",
+      "status": "BLOCKED_GATE",
+      "dependsOn": [
+        "14",
+        "15",
+        "16"
+      ]
+    }
+  ],
   "releaseGateR": {
     "decision": "READY_FOR_PLATFORM_VALIDATION",
     "stableReleaseAccepted": false,

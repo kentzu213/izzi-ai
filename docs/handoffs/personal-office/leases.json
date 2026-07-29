@@ -3,12 +3,52 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T20:20:00Z",
+  "updatedAt": "2026-07-29T21:00:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "64efaf4edb9f0bf6e2f469bbad334a08226e72a9",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No producer lease is active. R6 beta.11 safe re-import reconciliation is accepted locally. The mutable beta.11 source and quarantine remain read-only. Stable release, push, tag, publish, deployment, installer execution, package installation, GitHub environment mutation, browser automation enablement and secret retrieval remain unauthorised.",
+  "integrationCommit": "03a2397911b5a6e81103f148ab76d52d034bd11e",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-L13-REAL-WORK-BRIDGE-20260729",
+      "loop": "13",
+      "gate": "PO-PRODUCT-REAL-WORK-BRIDGE",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T21:00:00Z",
+      "baseRef": "feature/personal-office-baseline-20260728",
+      "baseCommit": "03a2397911b5a6e81103f148ab76d52d034bd11e",
+      "branch": "feature/personal-office-loop-13-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop13",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-13-real-work-bridge.md",
+      "ownedPaths": [
+        "apps/desktop/src/main/work/work-preload-api.ts",
+        "apps/desktop/src/main/work/work-ipc.ts",
+        "apps/desktop/src/main/work/work-ipc-authz.test.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/renderer/shell/workAdapter.ts",
+        "apps/desktop/src/renderer/shell/useWorkSnapshot.ts",
+        "apps/desktop/src/renderer/shell/workAdapter.test.ts",
+        "apps/desktop/src/renderer/shell/useWorkSnapshot.test.tsx",
+        "docs/handoffs/personal-office/loop-13.json",
+        "worklogs/personal-office-loop-13.md"
+      ],
+      "prohibitedPaths": [
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/auth/**",
+        "apps/desktop/src/main/runtime/**",
+        "apps/desktop/src/shared/personal-office/**",
+        "apps/desktop/src/renderer/App.tsx",
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json",
+        "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw\\**"
+      ],
+      "securityDecision": "Main derives identity and workspace authorization. Renderer may request a workspace id but cannot widen visibility, invent tenant identity, or create work outside an authorized workspace."
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "One isolated Codex writer lease is active for Loop 13 real shell-to-Work bridging. Quarantine remains read-only. DB/schema, auth, runtime adapters, packages, installation, push, tag, publish, deployment, browser automation enablement and secret retrieval remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
