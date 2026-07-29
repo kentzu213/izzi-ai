@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:01:24Z",
+  "updatedAt": "2026-07-29T12:04:00Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -390,7 +390,7 @@
       "loop": "08",
       "title": "Workspace blueprint and provisioning",
       "window": "W4",
-      "status": "READY_TO_START",
+      "status": "PROVISIONAL",
       "branch": "feature/personal-office-loop-08-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop08",
       "commitSha": "fd35f97049f4c64f9064994a78fef3632561d29c",
