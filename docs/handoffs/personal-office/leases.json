@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T16:48:15Z",
+  "updatedAt": "2026-07-29T17:15:21Z",
   "updatedBy": "W0",
   "integrationCommit": "749535af88a25289c84694e5a6adc54e154405de",
   "activeLeases": [
@@ -23,18 +23,54 @@
         "apps/desktop/electron-builder.json",
         "docs/desktop-release-checklist.md",
         "package.json",
-        "pnpm-lock.yaml"
+        "pnpm-lock.yaml",
+        "apps/desktop/scripts/release-win.ps1",
+        "apps/desktop/scripts/release-win.bat",
+        "apps/desktop/src/shared/app-branding.test.ts"
       ],
       "constraints": [
         "Preserve beta.8 version, icon-build, updater, marketing and branding changes.",
         "No whole-file package manifest or lockfile replacement from beta.3.",
+        "A correction commit must enforce exact tag-object/package-version checks, fail-closed Windows signing, and local --publish never scripts.",
         "No push, tag, publish, deploy, installer execution, environment creation, secret retrieval or quarantine mutation."
+      ]
+    },
+    {
+      "leaseId": "LEASE-R4-IPC-SENDER-TRUST-20260729",
+      "gate": "R4",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T17:15:21Z",
+      "baseRef": "feature/personal-office-reconciled-20260729",
+      "baseCommit": "MERGE_IN_PROGRESS",
+      "branch": "feature/personal-office-reconciled-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-reconciled-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r4-ipc-sender-trust.md",
+      "ownedPaths": [
+        "apps/desktop/src/main/work/work-ipc.ts",
+        "apps/desktop/src/main/work/work-ipc-authz.test.ts",
+        "apps/desktop/src/main/runtime/runtime-ipc.ts",
+        "apps/desktop/src/main/runtime/runtime-ipc.test.ts"
+      ],
+      "constraints": [
+        "Apply the trusted top-level renderer gate before all work/runtime handler logic.",
+        "No preload/channel, package, lockfile, DB/schema, secret, installer, publish, tag, push, deploy or quarantine changes."
       ]
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "One Codex-only R2 lease is active to reconcile the accepted release hardening onto current origin/main. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution and secret retrieval remain unauthorised.",
+  "activeLeaseCount": 2,
+  "statement": "Two isolated Codex leases are active: R2 keeps the reviewed release correction pinned for latest-main replay, and R4 closes the trusted-renderer gap on work/runtime IPC. R3 conflict resolution passed focused correctness review and its writer lease is revoked. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution and secret retrieval remain unauthorised.",
   "leaseHistory": [
+    {
+      "leaseId": "LEASE-R3-CUSTOMER-MARKETING-MERGE-20260729",
+      "gate": "R3",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T16:55:00Z",
+      "revokedAt": "2026-07-29T17:15:21Z",
+      "revokedBy": "W0",
+      "reason": "The four conflict files were resolved without markers, focused Customer Marketing tests passed 163/163, and independent correctness review passed. Candidate acceptance remains blocked by the separate R4 sender-trust finding."
+    },
     {
       "leaseId": "LEASE-R-DEPENDENCY-SIGNING-20260729",
       "loop": "R",

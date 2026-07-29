@@ -35,6 +35,9 @@ Owned paths:
 - `docs/desktop-release-checklist.md`
 - `package.json`
 - `pnpm-lock.yaml`
+- `apps/desktop/scripts/release-win.ps1`
+- `apps/desktop/scripts/release-win.bat`
+- `apps/desktop/src/shared/app-branding.test.ts`
 
 The producer must preserve all beta.8 product, branding, icon-build, updater,
 marketing, and version changes. Whole-file replacement from the beta.3
@@ -50,6 +53,11 @@ integration ref is prohibited for package manifests and the lockfile.
 5. Add a non-publishing platform-validation workflow or scripts only if they
    cannot upload, publish, create tags, read secret values into logs, or mutate
    a developer installation.
+6. Prove that the requested ref exists under `refs/tags/`, resolves to the
+   checked-out commit, and exactly matches `apps/desktop/package.json`.
+7. Require Windows signing material before the Windows publish step.
+8. Remove the local-script path that publishes merely because `GH_TOKEN` is
+   present; local release scripts must always use `--publish never`.
 
 ## Verification
 
@@ -59,6 +67,10 @@ integration ref is prohibited for package manifests and the lockfile.
 - desktop tests, build, lint ceiling and dependency resolution checks;
 - diff-only secret scan;
 - independent security and Socrates review.
+
+The first independent security review of `5529757` returned FAIL on all four
+items added above. R2 remains unaccepted until a correction commit passes
+re-review.
 
 ## Prohibited
 
