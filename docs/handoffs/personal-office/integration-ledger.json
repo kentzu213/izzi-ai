@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T12:04:00Z",
+  "updatedAt": "2026-07-29T12:04:28Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -390,28 +390,30 @@
       "loop": "08",
       "title": "Workspace blueprint and provisioning",
       "window": "W4",
-      "status": "PROVISIONAL",
+      "status": "READY_FOR_REVIEW",
       "branch": "feature/personal-office-loop-08-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop08",
-      "commitSha": "fd35f97049f4c64f9064994a78fef3632561d29c",
+      "commitSha": "5621d34fc7995b323f53e9292559f6569320d320",
       "handoff": "docs/handoffs/personal-office/loop-08.json",
       "dependsOn": [
         "04"
       ],
       "worktreeCreationBlocked": false,
-      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Producer submitted READY_FOR_REVIEW, but independent Socrates review returned SEND-BACK; the lease remains active for exact-scope corrections.",
+      "dependencyStatus": "SATISFIED — Loops 01, 03 and 04 are ACCEPTED. Producer corrected all four prior Socrates findings and resubmitted READY_FOR_REVIEW; independent security re-review is active.",
       "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
       "reviewGate": {
-        "status": "SEND_BACK",
+        "status": "RE_REVIEW_PENDING",
         "reviewedAt": "2026-07-29T12:01:24Z",
         "reviewedCommit": "fd35f97049f4c64f9064994a78fef3632561d29c",
+        "correctedImplementationCommit": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+        "correctedHandoffCommit": "5621d34fc7995b323f53e9292559f6569320d320",
         "blockingFindings": [
           "Direct runtime WorkspaceBlueprintDescriptor input can bypass strict parsing and provenance validation.",
           "Plan identity does not bind evidenceDigest and all material derived blueprint contents.",
           "Semantic-version validation accepts leading-zero core versions and empty prerelease identifiers.",
           "Credential-shaped identifiers such as AWS access-key forms are not rejected."
         ],
-        "nextAction": "The sole Loop 08 producer must correct all four findings, add regressions, issue new two-phase commits and resubmit READY_FOR_REVIEW."
+        "nextAction": "Independent security re-review must return PASS before any exact-path integration."
       }
     },
     {
@@ -688,6 +690,11 @@
       "at": "2026-07-29T12:01:24Z",
       "by": "W0",
       "action": "Reconciled Loop 08 producer handoff fd35f97, then held status at PROVISIONAL after independent Socrates SEND-BACK. Four blocking trust-boundary findings were returned to the sole producer: parser/provenance bypass, incomplete plan identity binding, non-strict SemVer, and credential-shaped ID acceptance. No Loop 08 byte was integrated; the exact lease remains active only for corrections."
+    },
+    {
+      "at": "2026-07-29T12:04:28Z",
+      "by": "W0",
+      "action": "Loop 08 resubmitted READY_FOR_REVIEW at 5621d34 after correction commit 67be7fe. Producer evidence reports 27/27 targeted tests, strict TypeScript, exact ownership, prohibited-path, secret, output-hash and two-phase checks PASS. Independent security re-review is active; no integration or acceptance claim has been made."
     }
   ],
   "completedByW0": [
