@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "release-reconciliation-handoff",
+  "gate": "R5",
+  "status": "READY_FOR_REVIEW",
+  "preparedBy": "W0 Control Tower / Codex",
+  "preparedAt": "2026-07-29T18:40:00Z",
+  "subject": {
+    "title": "beta.10 HyperFrames short-path staging reconciliation",
+    "branch": "feature/personal-office-beta10-reconcile-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-beta10-reconcile",
+    "baseCommit": "d23c33e0a7589caae450a16eadd72a8d829ba159",
+    "implementationCommit": "f8df559f002d9ff4d8535854bc38fd781807e99e",
+    "sourceCommit": "bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8",
+    "lease": "LEASE-R5-BETA10-RECONCILIATION-20260729",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r5-beta10-reconciliation.md"
+  },
+  "reconciliation": {
+    "method": "Six non-conflicting source blobs were restored from bc0d5d6. The accepted Personal Office/R2-R4 main/index.ts blob was preserved and received only runtimeScratchParent: app.getPath('temp'). No merge or blind cherry-pick was used.",
+    "sourceBlobMatches": 6,
+    "indexPatch": "Exactly one added constructor option in CustomerVideoStudioService setup.",
+    "result": "The managed HyperFrames HOME/cache/temp/cwd/snapshot staging uses an atomic short-lived system-temp profile. Snapshot bytes are validated before and after no-overwrite copy into the durable preview run, and scratch state is removed on completion."
+  },
+  "securityGate": {
+    "surface": "local process execution, filesystem staging, tenant-scoped Customer Marketing artifacts, package version and Electron main-process wiring",
+    "decision": "PASS_FOR_LOCAL_INTEGRATION_REVIEW",
+    "checks": [
+      "runtime scratch parent is a trusted non-link directory and mkdtemp output must remain inside its real path",
+      "staged and durable snapshot directories reject links and path escapes",
+      "durable writes use no-overwrite mode and persisted bytes are re-read and compared",
+      "temporary runtime state is removed in finally blocks on preview/probe completion",
+      "the one main/index.ts injection retains all accepted sender-trust and Personal Office wiring",
+      "no real secret was present; the only scan match is the deliberate cmr210-synthetic-secret smoke fixture"
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused HyperFrames tests",
+      "result": "PASS",
+      "evidence": "1 file, 32/32 tests with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "122/122 files, 1359/1359 tests with --no-cache."
+    },
+    {
+      "check": "main TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json completed with zero errors."
+    },
+    {
+      "check": "renderer production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "Vite transformed 1176 modules; existing >500 kB renderer chunk advisory remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors, 350 warnings, maximum 358."
+    },
+    {
+      "check": "script and version validation",
+      "result": "PASS",
+      "evidence": "Node syntax check and PowerShell parser passed; desktop version is 1.14.0-beta.10."
+    },
+    {
+      "check": "ownership and source reconciliation",
+      "result": "PASS",
+      "evidence": "Exactly 7 leased source paths changed. Six Git blobs match bc0d5d6 and main/index.ts has exactly one added option."
+    },
+    {
+      "check": "isolated dependency read",
+      "result": "PASS",
+      "evidence": "24,373 dependency files retained metadata fingerprint 34a2c54fd8f4ae14825397b105ff093cef9d5ada7b4e0b1be8cab45f3591d4f8 before and after verification. Temporary junctions were removed without touching targets."
+    },
+    {
+      "check": "scratch cleanup",
+      "result": "PASS",
+      "evidence": "Zero izzi-ai-hf-* directories remained in the redirected R5 temp root after focused and full tests."
+    },
+    {
+      "check": "quarantine and source isolation",
+      "result": "PASS",
+      "evidence": "Quarantine stayed at 959e2d28 with 119 entries and status hash b4850d68...; beta.10 source stayed at bc0d5d6 with 7 untracked packaging directories and status hash 9a8d3964...."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "REVIEWED_CRITICAL",
+      "evidence": "3 changed symbols, 139 affected indexed processes, 7 files. Critical scope was addressed with the focused suite, full suite, main TypeScript, build, lint, exact index hunk and filesystem security review."
+    }
+  ],
+  "outputs": [
+    {
+      "path": "apps/desktop/CHANGELOG.md",
+      "sha256": "bd60200393c6a38599f41d1d232ffef8648a9b5601f2a0e85b518b1ae291e7a5",
+      "bytes": 13759,
+      "gitBlob": "caec7507d1c7eafcd7a8083d1cf4a1b0db313b6d"
+    },
+    {
+      "path": "apps/desktop/package.json",
+      "sha256": "f6e38f6ca6e5307adf83eaa95ef5e5a1036b74fed02693649ee272eb8e3bada9",
+      "bytes": 2183,
+      "gitBlob": "9d1df9472629d6c88afb5e3f5f2f61911b00817c"
+    },
+    {
+      "path": "apps/desktop/scripts/run-cmr210-packaged-smoke.ps1",
+      "sha256": "3331ab151a4f89c2b74407609a2d6fb05195d3c27bf4d48b8eb8b149011088a4",
+      "bytes": 11410,
+      "gitBlob": "f4a427a82ba81d9ea284db1fc517d19e223c1fe4"
+    },
+    {
+      "path": "apps/desktop/scripts/verify-managed-hyperframes-preview.cjs",
+      "sha256": "462ce66769203c70a59446f2a2ec8b9ad0e1e6830e2054cf75c726d0f536b97b",
+      "bytes": 9924,
+      "gitBlob": "f4e94959d8b5088cc06de5fb248456da470b3696"
+    },
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
+      "sha256": "8523e4896839154386b3fe6c92243b0f3be2e6924d81c160f1cdc9e1a1f573a5",
+      "bytes": 52388,
+      "gitBlob": "b63d4c3ebebffb4a2a6d8658107d0b07b7adcd3e"
+    },
+    {
+      "path": "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts",
+      "sha256": "e66cf0f5b13439c7d2829edfc78cda31019ee9abe093546ceb714e3bf321df17",
+      "bytes": 69405,
+      "gitBlob": "9b38a089a0cc229fe0cfd9eba7bc60b4f1c9242d"
+    },
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "sha256": "81344db9da2398f324c3bad66a4da83da35e0fba8ef09aba30c4bf3bc7364e31",
+      "bytes": 70912,
+      "gitBlob": "0e9706d47f69e6601e16b8c6f7fff8c6ca69384d"
+    }
+  ],
+  "prohibitedActionsPerformed": [],
+  "stableReleaseAccepted": false,
+  "remainingGates": [
+    "W0 exact-path integration and post-integration verification",
+    "protected GitHub desktop-release environment",
+    "Windows install, upgrade and uninstall validation",
+    "real signed/notarized macOS x64 and arm64 artifacts and platform checks",
+    "approved RC platform run and separate admin promotion"
+  ]
+}
