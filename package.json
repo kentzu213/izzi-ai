@@ -18,12 +18,22 @@
     "dev:marketplace": "pnpm --parallel --filter @openclaw/marketplace-api --filter @openclaw/desktop dev",
     "build": "pnpm --filter @openclaw/desktop build",
     "build:all": "pnpm -r build",
-    "lint": "pnpm -r lint",
+    "lint": "eslint apps packages extensions --no-error-on-unmatched-pattern",
+    "lint:ci": "eslint apps packages extensions --no-error-on-unmatched-pattern --max-warnings 358",
+    "lint:fix": "eslint apps packages extensions --no-error-on-unmatched-pattern --fix",
+    "lint:strict": "eslint apps packages extensions --no-error-on-unmatched-pattern --max-warnings 0",
     "clean": "pnpm -r clean"
   },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "16.5.0",
+    "typescript-eslint": "8.65.0"
   },
   "pnpm": {
     "overrides": {

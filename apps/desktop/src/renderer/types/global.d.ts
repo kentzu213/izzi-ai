@@ -1,5 +1,10 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
 import type { BranchClassification } from './graph-workspace';
+import type {
+  MarketingWorkspaceEvidenceResult,
+  MarketingWorkspaceProvisionRequest,
+  MarketingWorkspaceProvisionResult,
+} from '../../shared/marketing-workspace';
 import type { UniverseNodeDetail } from '../../shared/universe-adapter';
 import type {
   MarketingPathSelectionResult,
@@ -49,6 +54,7 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
+import type { RuntimePreloadApi } from '../../shared/runtime/ipc';
 
 export {};
 
@@ -193,6 +199,12 @@ declare global {
     selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
     runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
+    getReferenceWorkspaceEvidence: (
+      packageKey: string,
+    ) => Promise<MarketingWorkspaceEvidenceResult>;
+    provisionReferenceWorkspace: (
+      input: MarketingWorkspaceProvisionRequest,
+    ) => Promise<MarketingWorkspaceProvisionResult>;
   }
   /**
    * The renderer view of the preload `electronAPI`. The new graph/memory
@@ -208,6 +220,7 @@ declare global {
     affiliate?: ElectronAffiliateApi;
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
+    runtime?: RuntimePreloadApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }

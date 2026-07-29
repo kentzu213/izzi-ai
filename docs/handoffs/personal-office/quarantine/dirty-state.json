@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "quarantine-snapshot",
+  "owner": "W0 Control Tower",
+  "purpose": "Prove and preserve the state of the quarantined dirty source worktree at the moment Loop 00 closed, WITHOUT committing that worktree. Content is preserved out-of-repo; integrity is provable in-repo by hash.",
+  "capturedAt": "2026-07-28T09:20:00Z",
+  "capturedBy": "W0",
+
+  "quarantine": {
+    "path": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+    "branch": "feature/aibase-my-graph-ui-sync",
+    "head": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+    "mode": "READ-ONLY for the whole programme",
+    "committedByW0": false,
+    "prohibited": ["reset", "stash", "clean", "overwriting checkout", "move", "delete", "commit", "continuing implementation"]
+  },
+
+  "entryCounts": { "modifiedTracked": 36, "untracked": 82, "staged": 0, "total": 118 },
+  "driftHistory": [
+    { "at": "Loop 00 start", "total": 83, "modifiedTracked": 31, "untracked": 52 },
+    { "at": "Loop 00 end", "total": 113, "modifiedTracked": 35, "untracked": 78 },
+    { "at": "Loop 00 acceptance", "total": 118, "modifiedTracked": 36, "untracked": 82 },
+    { "at": "this snapshot", "total": 118, "modifiedTracked": 36, "untracked": 82 }
+  ],
+  "driftWarning": "A session outside W0 control has been writing here throughout. HEAD never moved, so nothing was committed, but the working tree is NOT a stable reference. Re-snapshot immediately before any diff.",
+
+  "preservation": {
+    "rationale": "PQ-08 risk 2 was that roughly 190 KB of implementation plus its tests existed in no commit anywhere, so a single `git clean` in quarantine would destroy it. Hashes alone prove integrity but preserve nothing. W0 therefore copied the content to an out-of-repo snapshot and records the hashes here.",
+    "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728",
+    "snapshotIsOutsideAnyGitRepo": true,
+    "scopeDecision": "The snapshot lives OUTSIDE the repository on purpose. Loop 00 owns documentation and coordinator JSON only, so committing ~420 KB of feature source (even as a patch) would breach its ownership. Keeping bytes out-of-repo and hashes in-repo satisfies both preservation and ownership.",
+    "totalSnapshotBytes": 422029,
+    "contents": [
+      { "kind": "patch", "file": "dirty-tracked.patch", "covers": "all 36 modified TRACKED files in quarantine", "sha256": "b330acd70d6abd91f8965aefa003f1333bd92fe66056ae6d6e2b2b98a2db2ea4", "bytes": 128083, "producedBy": "git diff (read-only) in the quarantined worktree" },
+      { "kind": "file-copies", "dir": "untracked/", "fileCount": 42, "covers": "the untracked Loop 02 and Loop 03 draft files, which a patch cannot represent because git does not diff untracked content", "flatteningRule": "path separators replaced with '__' so the original path is recoverable from the filename" }
+    ],
+    "restoreGuidance": "Do NOT blind-apply. Per the orchestration doc, salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code. This snapshot is an evidence and recovery source, not a merge instruction."
+  },
+
+  "wiredHotFiles": {
+    "note": "These four TRACKED files were modified in quarantine to wire the Loop 03 draft into the running app. They are the reason the modified count moved from 31 to 36. Each is a hot file under §8.1 and none may be written without a W0 lease.",
+    "files": [
+      { "path": "apps/desktop/src/main/db/database.ts", "sha256": "8d7af43910299cff21a20262532dc199371f393fe774c413db853980e99728bc", "hotFileOwnerOrder": ["03"], "wiring": "imports runWorkModelMigration, backupSqliteFile, WorkService; holds workService + workEventSink; runs the migration during schema setup" },
+      { "path": "apps/desktop/src/main/index.ts", "sha256": "af886b829978a600dfa06c1938e0c728608b6fd6bd5ef80245e9c7e7ac49cbb7", "hotFileOwnerOrder": ["03", "10", "11"], "wiring": "service init" },
+      { "path": "apps/desktop/src/main/preload.ts", "sha256": "eebad23c271313aece235615ca8644be7c0ad237e80f0cced547d009f3b7f194", "hotFileOwnerOrder": ["03", "10", "11", "12"], "wiring": "IPC surface exposure" },
+      { "path": "apps/desktop/src/renderer/App.tsx", "sha256": "2e86c9a9c962df092ffcac3816e296a40128f189d8a11eed7f245cbd431d0fd6", "hotFileOwnerOrder": ["02", "12"], "wiring": "renderer shell mount" }
+    ],
+    "securityFinding": "The migration error path in database.ts logs and proceeds instead of failing closed, justified in-comment only because v1 is purely additive. That justification expires the moment a destructive migration step is added. Must be covered by the security review of whichever loop lands this code."
+  },
+
+  "verification": {
+    "w0WroteNothingToQuarantine": true,
+    "evidence": "Only read-only git plumbing (status, diff, log, show, cat-file, ls-tree, rev-parse) and file reads were issued against the quarantine path. HEAD is unchanged at 959e2d2. The copy operation read from quarantine and wrote only to the out-of-repo snapshot.",
+    "rehashInstruction": "To confirm nothing drifted since capture, re-hash the paths listed in loop-02-dirty-salvage.json and loop-03-dirty-salvage.json and compare. A mismatch means the concurrent session edited that file after this snapshot, not that the snapshot is corrupt."
+  }
+}

@@ -18,6 +18,9 @@ import type { CustomProviderConfig } from './provider-settings-store';
 import { HOST_TOOLS, classifyToolRisk, executeHostTool, summarizeToolCall, type OpenAiTool, type ToolRisk } from './agent-tools';
 import { needsApproval, type PermissionMode } from './agent-permissions';
 import { extractSseEvents, type AgentTurnEvent } from '../../shared/agent-turn-events';
+import type { ContextKernelInput } from '../../shared/context';
+import { appendCompiledContextToSystemPrompt } from '../context/prompt-kernel';
+import { ContextCompilationError } from '../context/context-error';
 
 const MAX_TOOL_ITERATIONS = 60;
 const TOOL_RESULT_CAP = 12000;
@@ -48,6 +51,12 @@ function buildEnvNote(): string {
     `\n\nEnvironment: host OS is ${process.platform}. run_command runs through the default shell (${shell})` +
     ' To create or overwrite files, prefer the write_file tool instead of shell here-docs or New-Item.'
   );
+}
+
+export function buildHostAgentSystemPrompt(workingDir = ''): string {
+  return workingDir
+    ? `${SYSTEM_PROMPT}\n\nYour working directory is: ${workingDir}. Use it as the default location for commands and as the base for relative file paths.${buildEnvNote()}`
+    : `${SYSTEM_PROMPT}${buildEnvNote()}`;
 }
 
 /** One step of the agent's live task plan (surfaced on the Tasks board). */
@@ -139,6 +148,8 @@ export interface HostAgentTurnOptions {
   signal?: AbortSignal;
   /** Drain any user "steering" messages queued mid-turn; injected before the next round. */
   pollInjection?: () => string | undefined;
+  /** Exact, precompiled workspace context. No tenant/workspace inference occurs here. */
+  context?: ContextKernelInput;
 }
 
 function buildUserContent(message: string, images: string[]): unknown {
@@ -273,6 +284,12 @@ export function isStreamingUnsupportedError(err: unknown): boolean {
 /** Run one agent turn (may span several model round-trips + tool executions). */
 export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ reply: string; error?: string }> {
   const { config, apiKey, message, history, images, mode, turnId, requestApproval, emit } = opts;
+  if (opts.context && images.length > 0) {
+    throw new ContextCompilationError(
+      'multimodal-context-binding-unsupported',
+      'Multimodal context binding is unsupported until the complete user payload can be hashed canonically.',
+    );
+  }
   const scrub = opts.redact ?? ((t: string) => t);
   const workingDir = opts.workingDir && opts.workingDir.trim() ? opts.workingDir.trim() : '';
   const url = resolveChatCompletionsUrl(config.baseUrl);
@@ -286,9 +303,11 @@ export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ re
   const supportsTools = !isOfficialIzziApiUrl(url) || modelSupportsTools(model);
   const tools = [...HOST_TOOLS, UPDATE_PLAN_TOOL, ...(opts.extraTools && opts.extraTools.length ? opts.extraTools : [])];
 
-  const systemContent = workingDir
-    ? `${SYSTEM_PROMPT}\n\nYour working directory is: ${workingDir}. Use it as the default location for commands and as the base for relative file paths.${buildEnvNote()}`
-    : `${SYSTEM_PROMPT}${buildEnvNote()}`;
+  const systemContent = appendCompiledContextToSystemPrompt(
+    buildHostAgentSystemPrompt(workingDir),
+    message,
+    opts.context,
+  );
 
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: systemContent },

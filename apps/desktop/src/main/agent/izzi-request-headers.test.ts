@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildIzziSourceHeaders, modelSupportsTools } from './izzi-request-headers';
+import {
+  buildIzziRequestHeaders,
+  buildIzziSourceHeaders,
+  isOfficialIzziApiUrl,
+  modelSupportsTools,
+} from './izzi-request-headers';
 
 describe('buildIzziSourceHeaders', () => {
   it.each([
     'https://api.izziapi.com/v1/chat/completions',
     'https://izziapi.com/v1/models',
-  ])('attributes official Izzi HTTPS requests: %s', (url) => {
+  ])('attributes official Izzi HTTPS requests: %s', (url: string) => {
     expect(buildIzziSourceHeaders(url)).toEqual({ 'X-Source-Platform': 'starizzi' });
   });
 
@@ -13,9 +18,27 @@ describe('buildIzziSourceHeaders', () => {
     'https://custom.example.dev/v1/chat/completions',
     'https://api.izziapi.com.evil.test/v1/chat/completions',
     'http://api.izziapi.com/v1/chat/completions',
+    'https://user:secret@api.izziapi.com/v1/chat/completions',
+    'https://api.izziapi.com:444/v1/chat/completions',
+    'https://api.izziapi.com/v1/chat/completions?api_key=secret',
+    'https://api.izziapi.com/v1/chat/completions#fragment',
     'not-a-url',
-  ])('does not leak the platform header to non-official endpoints: %s', (url) => {
+  ])('does not leak the platform header to non-official endpoints: %s', (url: string) => {
     expect(buildIzziSourceHeaders(url)).toEqual({});
+    expect(buildIzziRequestHeaders(url, 'request-id')).toEqual({});
+    expect(isOfficialIzziApiUrl(url)).toBe(false);
+  });
+
+  it('adds one request identity only to a strict official URL', () => {
+    expect(
+      buildIzziRequestHeaders(
+        'https://api.izziapi.com/v1/chat/completions',
+        'request-id',
+      ),
+    ).toEqual({
+      'X-Source-Platform': 'starizzi',
+      'Idempotency-Key': 'request-id',
+    });
   });
 });
 

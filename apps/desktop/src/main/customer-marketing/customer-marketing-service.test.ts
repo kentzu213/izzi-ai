@@ -34,6 +34,9 @@ import type {
   RemoteMarketingProfile,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
+import { runWorkModelMigration } from '../work/work-migration';
+import { WorkService } from '../work/work-service';
+import { createNodeSqliteDatabase } from '../work/test-support';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -469,6 +472,7 @@ function customerRuntimeExtension(
     manifest: {
       displayName: 'Video Studio',
       description: 'Creates approved campaign videos.',
+      version: '1.2.3',
       private: false,
       customerMarketing: true,
       customerMarketingCapability: customerExtensionDefinition(),
@@ -492,6 +496,7 @@ function setup(options?: {
     workspaceGateway?: CustomerMarketingWorkspaceGateway;
     writeClipboardText?: (value: string) => void | Promise<void>;
     credentialVault?: Pick<CustomerMarketingCredentialVault, 'listStatuses' | 'revokeCredential'>;
+    workService?: WorkService;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -510,6 +515,7 @@ function setup(options?: {
     options?.workspaceGateway ?? null,
     options?.writeClipboardText,
     options?.credentialVault ?? null,
+    options?.workService ?? null,
   );
   return {
     db,
@@ -587,6 +593,15 @@ async function completeOnboarding(service: CustomerMarketingService, name = 'Acm
   expect(context.ok).toBe(true);
   expect(context.context?.revision).toBe(1);
   return result;
+}
+
+function setupWorkService() {
+  const { db, close } = createNodeSqliteDatabase();
+  runWorkModelMigration(db);
+  return {
+    service: new WorkService({ db, now: () => new Date() }),
+    close,
+  };
 }
 
 describe('CustomerMarketingService tenant boundary', () => {
@@ -690,25 +705,6 @@ describe('CustomerMarketingService tenant boundary', () => {
         completedSteps: [1, 2, 3, 4, 5, 6, 7],
       },
     });
-
-    await expect(context.service.getSnapshot()).resolves.toMatchObject({
-      onboarding: null,
-      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
-    });
-  });
-
-  it('deletes syntactically malformed tenant cache and recovers on subsequent reads', async () => {
-    const context = setup();
-    await completeOnboarding(context.service);
-    const key = Array.from(context.db.values.keys())[0];
-    if (!key) throw new Error('Expected a tenant record.');
-    context.db.values.set(key, '{invalid-json');
-
-    await expect(context.service.getSnapshot()).resolves.toMatchObject({
-      onboarding: null,
-      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
-    });
-    expect(context.db.values.has(key)).toBe(false);
 
     await expect(context.service.getSnapshot()).resolves.toMatchObject({
       onboarding: null,
@@ -902,6 +898,267 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       .some((key) => key.startsWith('customer_marketing_workflows:v1:'))).toBe(false);
   });
 
+});
+
+  it('preserves syntactically malformed tenant cache while returning a safe empty view', async () => {
+    const context = setup();
+    await completeOnboarding(context.service);
+    const key = Array.from(context.db.values.keys())[0];
+    if (!key) throw new Error('Expected a tenant record.');
+    const malformedSource = '{invalid-json';
+    context.db.values.set(key, malformedSource);
+
+    await expect(context.service.getSnapshot()).resolves.toMatchObject({
+      onboarding: null,
+      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
+    });
+    expect(context.db.values.get(key)).toBe(malformedSource);
+
+    await expect(context.service.getSnapshot()).resolves.toMatchObject({
+      onboarding: null,
+      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
+    });
+    expect(context.db.values.get(key)).toBe(malformedSource);
+  });
+
+  it.each(['{invalid-json', 'null'])(
+    'fails closed without overwriting malformed source bytes during onboarding mutation (%s)',
+    async (malformedSource) => {
+      const remote = marketingResourceGateway('owner');
+      const context = setup({ workspaceGateway: remote.gateway });
+      await completeOnboarding(context.service);
+      const key = Array.from(context.db.values.keys()).find((item) => (
+        item.startsWith('customer_marketing:v1:')
+      ));
+      if (!key) throw new Error('Expected a tenant record.');
+      context.db.values.set(key, malformedSource);
+      vi.mocked(remote.gateway.ensureWorkspace).mockClear();
+
+      await expect(context.service.saveOnboarding(onboarding('Replacement tenant'))).resolves.toEqual({
+        ok: false,
+        error: 'Không thể lưu vì dữ liệu Customer Marketing cũ đang bị lỗi. Dữ liệu gốc đã được giữ nguyên để khôi phục.',
+      });
+      expect(remote.gateway.ensureWorkspace).not.toHaveBeenCalled();
+      expect(context.db.values.get(key)).toBe(malformedSource);
+    },
+  );
+
+describe('CustomerMarketingService reference workspace bridge', () => {
+  it('denies uninstalled and non-marketing packages before issuing host evidence', async () => {
+    const missing = setup({
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+    await expect(missing.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'package_not_installed' });
+
+    const incapable = setup({
+      extensions: [customerRuntimeExtension({
+        manifest: { customerMarketing: false },
+      })],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+    await expect(incapable.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'package_not_marketing_capable' });
+  });
+
+  it('matches the installed package version from the runtime manifest shape used by main', async () => {
+    const context = setup({
+      extensions: [{
+        id: 'ext-video-runtime',
+        name: 'video-runtime',
+        state: 'installed',
+        manifest: {
+          displayName: 'Video Studio',
+          description: 'Creates approved campaign videos.',
+          version: '1.2.3',
+          private: false,
+          customerMarketing: true,
+          customerMarketingCapability: customerExtensionDefinition(),
+        },
+      }],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toMatchObject({
+      ok: true,
+      evidence: {
+        installedPackage: {
+          extensionId: 'ext-video-runtime',
+          version: '1.2.3',
+        },
+      },
+    });
+  });
+
+  it('refuses host evidence when the current workspace is only local', async () => {
+    const context = setup({
+      extensions: [customerRuntimeExtension()],
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'workspace_unavailable' });
+  });
+
+  it('rejects stale, future and scope-tampered evidence', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-07-29T10:00:00.000Z'));
+      const context = setup({
+        extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
+      });
+      const result = await context.service.getReferenceWorkspaceEvidence(
+        'ocx_extension:video-runtime@1.2.3',
+      );
+      if (!result.ok) throw new Error(`Expected host evidence, received ${result.reason}.`);
+
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: {
+          ...result.evidence,
+          scope: { ...result.evidence.scope, userId: 'other-user' },
+        },
+      })).resolves.toEqual({ ok: false, reason: 'scope_mismatch' });
+
+      vi.setSystemTime(new Date('2026-07-29T10:06:00.000Z'));
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toEqual({ ok: false, reason: 'stale_evidence' });
+
+      vi.setSystemTime(new Date('2026-07-29T09:59:00.000Z'));
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toEqual({ ok: false, reason: 'stale_evidence' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('provisions once and reuses the exact scoped workspace on replay', async () => {
+    const work = setupWorkService();
+    try {
+      const context = setup({
+        extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
+        workService: work.service,
+      });
+      const result = await context.service.getReferenceWorkspaceEvidence(
+        'ocx_extension:video-runtime@1.2.3',
+      );
+      if (!result.ok) throw new Error(`Expected host evidence, received ${result.reason}.`);
+
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toMatchObject({
+        ok: true,
+        reused: false,
+        intent: {
+          kind: 'open_customer_marketing_workspace',
+          workspaceInstanceId: result.evidence.scope.workspaceInstanceId,
+        },
+      });
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toMatchObject({ ok: true, reused: true });
+      expect(work.service.listWorkspaces().filter((item) => (
+        item.id === result.evidence.scope.workspaceInstanceId
+      ))).toHaveLength(1);
+    } finally {
+      work.close();
+    }
+  });
+
+  it.each([
+    ['approved', 'completed', 'approved'],
+    ['rejected', 'canceled', 'rejected'],
+  ] as const)('projects a %s Customer Marketing decision exactly once', async (
+    decision,
+    expectedRunState,
+    expectedApprovalState,
+  ) => {
+    const work = setupWorkService();
+    try {
+      const context = setup({ workService: work.service });
+      await completeOnboarding(context.service);
+      const created = await context.service.createGoal({
+        goal: 'Launch a focused reference workspace campaign',
+        channels: ['facebook'],
+      });
+      const approvalId = created.snapshot?.approvals[0]?.id;
+      if (!approvalId) throw new Error('Expected a Customer Marketing approval.');
+
+      const projectedBefore = work.service.listRuns().find((run) => (
+        run.origin === 'customer_marketing'
+      ));
+      if (!projectedBefore) throw new Error('Expected a projected unified run.');
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listApprovals(projectedBefore.id)[0].status).toBe('pending');
+
+      await expect(context.service.reviewApproval({
+        approvalId,
+        decision,
+      })).resolves.toMatchObject({ ok: true });
+
+      expect(work.service.getRun(projectedBefore.id)?.state).toBe(expectedRunState);
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listApprovals(projectedBefore.id)[0].status).toBe(expectedApprovalState);
+      const eventCount = work.service.listEvents(projectedBefore.id).length;
+
+      const restarted = new CustomerMarketingService(
+        context.db,
+        () => ({ id: 'tenant-a', name: 'Owner A', plan: 'pro', balance: 75 }),
+        () => [],
+        undefined,
+        null,
+        null,
+        undefined,
+        null,
+        work.service,
+      );
+      await restarted.getSnapshot();
+      await restarted.getSnapshot();
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listEvents(projectedBefore.id)).toHaveLength(eventCount);
+    } finally {
+      work.close();
+    }
+  });
+
+  it('does not let unified projection bypass Customer Marketing role authority', async () => {
+    const work = setupWorkService();
+    try {
+      const context = setup({ workService: work.service });
+      await completeOnboarding(context.service);
+      context.db.updateOnlyRecord({ role: 'editor' });
+      const created = await context.service.createGoal({
+        goal: 'Prepare a role-gated launch campaign',
+        channels: ['facebook'],
+      });
+      const approvalId = created.snapshot?.approvals[0]?.id;
+      if (!approvalId) throw new Error('Expected a Customer Marketing approval.');
+      const projected = work.service.listRuns().find((run) => run.origin === 'customer_marketing');
+      if (!projected) throw new Error('Expected a projected unified run.');
+
+      await expect(context.service.reviewApproval({
+        approvalId,
+        decision: 'approved',
+      })).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining('không có quyền duyệt'),
+      });
+      expect(work.service.listApprovals(projected.id)[0].status).toBe('pending');
+      expect(work.service.getRun(projected.id)?.state).toBe('awaiting_approval');
+    } finally {
+      work.close();
+    }
+  });
+});
+
+describe('CustomerMarketingService onboarding and workflow', () => {
   it('persists all seven numeric onboarding steps', async () => {
     const context = setup();
     const result = await completeOnboarding(context.service);

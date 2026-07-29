@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "03",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This is a producer handoff and does not authorize Loop 04 by itself.",
+  "title": "Unified Personal Office work engine and workspace-scoped desktop bridge",
+  "producer": {
+    "window": "W3",
+    "role": "execution core + wired main-process seams",
+    "branch": "feature/personal-office-loop-03-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop03",
+    "lease": "LEASE-L03-EXEC-WIRING-20260729"
+  },
+  "baseCommit": "6063bc8ac8115382be14db04cc17d32a2f7471f6",
+  "canonicalAncestor": "84a57b38117ee7544691115be5aca7a141af1abf",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "5615305bd91c0d84a2cd83a1a298ad5de76b0b04",
+      "phase": "implementation-a",
+      "subject": "feat(work): unified work engine core, W1-subordinate (Loop 03 phase A)",
+      "scope": "execution model, repository, migrations, adapters, approvals, hashing, redaction, backup and tests"
+    },
+    {
+      "sha": "c4258657de62ed1a258d382588c98f8492ee450c",
+      "phase": "implementation-b",
+      "subject": "feat(work): wire secure workspace-scoped execution bridge",
+      "scope": "database/startup wiring, typed preload API, IPC authorization, workspace event scoping, conservative archive evidence and regression tests"
+    }
+  ],
+  "handoffCommitNote": "This JSON and worklogs/personal-office-loop-03.md are the only files in the phase-2 handoff commit. Implementation bytes were committed and verified first.",
+  "contractAndRulingCompliance": [
+    "apps/desktop/src/shared/personal-office/** remains read-only and is the contract of record.",
+    "PERSONAL_OFFICE_SCHEMA_VERSION is the sole persisted schema authority; WORK_SCHEMA_VERSION and shared/work-model.ts are not used by the engine.",
+    "failed remains terminal; retry and fork create new runs with explicit lineage.",
+    "legacy blocked maps to paused, never failed.",
+    "legacy archived outcomes require structured terminal evidence; inconclusive archives become canceled with canceledReason=legacy_archived_outcome_unknown.",
+    "archivedAt and legacyStatusRaw are preserved, and migration conclusion events are first-write-wins with exactly one idempotency key.",
+    "canonical action hashing binds the exact redacted value that is persisted for both request-time and edit-time approvals."
+  ],
+  "ownedPaths": [
+    "apps/desktop/src/main/work/**",
+    "apps/desktop/src/main/db/database.ts",
+    "apps/desktop/src/main/db/sqlite-schema.ts",
+    "apps/desktop/src/main/index.ts",
+    "apps/desktop/src/main/preload.ts",
+    "docs/handoffs/personal-office/loop-03.json",
+    "worklogs/personal-office-loop-03.md"
+  ],
+  "filesChangedFromBase": {
+    "count": 24,
+    "summary": "21 created work-engine modules/tests and 3 modified wired seams; sqlite-schema.ts was leased but intentionally unchanged.",
+    "diff": "7190 insertions, 10 deletions from 6063bc8 through c425865"
+  },
+  "prohibitedPathsRespected": [
+    "apps/desktop/src/shared/personal-office/**",
+    "apps/desktop/src/shared/work-model.ts",
+    "apps/desktop/src/renderer/**",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "quarantine worktree and snapshot"
+  ],
+  "securityGate": {
+    "surfaces": [
+      "workspace and tenant authorization",
+      "IPC input validation",
+      "live event visibility",
+      "SQLite migration and startup",
+      "approval secrets and immutable action binding",
+      "legacy archive truthfulness",
+      "hot-file leases"
+    ],
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "Every preload operation requires an explicit workspaceId.",
+      "Main resolves current identity for each operation; renderer identity claims are never trusted.",
+      "Tenant workspace bindings include reviewerHash and cannot survive a user switch.",
+      "Event history is filtered in SQL by workspace and live events pass a mandatory main-process visibility predicate plus an exact preload workspace filter.",
+      "Work-model backup runs before first work DDL; migration failure closes the DB and prevents IPC/window startup.",
+      "Future schema versions throw UnsupportedWorkModelVersionError before backup or DDL.",
+      "Approval request and edit inputs pass one redaction boundary whose output is used for hashing and persistence.",
+      "Dynamic SQL assignment names come only from fixed source literals; all values remain parameterized."
+    ],
+    "reviewHistory": [
+      {
+        "reviewer": "security_reviewer",
+        "decision": "REJECTED_BEFORE_COMMIT",
+        "finding": "The approval edit path hashed and persisted raw editedInput.",
+        "resolution": "Added redactApprovalInput and a regression test proving secret-bearing edits are redacted before hashing and SQLite readback."
+      }
+    ],
+    "secretScan": "Only deliberate fake credential strings in redaction regression tests matched. No production literal or real secret value was found."
+  },
+  "verification": [
+    {
+      "check": "targeted security/migration/adapter/service tests",
+      "result": "PASS",
+      "evidence": "4 files, 83/83 tests after the approval-edit security fix"
+    },
+    {
+      "check": "all Loop 03 work tests",
+      "result": "PASS",
+      "evidence": "7 files, 105/105 tests"
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "81 files, 1052/1052 tests after the security fix"
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "1136 modules transformed; renderer bundle emitted"
+    },
+    {
+      "check": "main TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p apps/desktop/tsconfig.main.json --noEmit"
+    },
+    {
+      "check": "renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p apps/desktop/tsconfig.json --noEmit"
+    },
+    {
+      "check": "lint",
+      "result": "PASS",
+      "evidence": "0 errors, 358 warnings; configured ceiling unchanged"
+    },
+    {
+      "check": "ownership and whitespace",
+      "result": "PASS",
+      "evidence": "13/13 Phase B paths inside LEASE-L03-EXEC-WIRING-20260729; git diff --check clean; scratch-file scan empty"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "NOT_RUNNABLE_BY_W3",
+      "evidence": "W3 has no registered index. The only relevant index is W0-owned and stale at 84a57b3; running analyze would mutate W0-reserved .gitnexus and managed documentation blocks. CLI attempt returned repository not found. W0 must re-index and run the authoritative change-impact review."
+    }
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/work/work-service.ts",
+      "sha256": "5367ec617676fc21238d658dca1463efa24c20014be59d758a9d820ad1b5aaac"
+    },
+    {
+      "path": "apps/desktop/src/main/work/work-ipc.ts",
+      "sha256": "6203c15a4463cea2d9c813f3d0d5b3d99343853d47cd2147e72bb164e37a8664"
+    },
+    {
+      "path": "apps/desktop/src/main/work/work-migration.ts",
+      "sha256": "1cdbd9bc34c2fe683ce8957f96515b77e0688d69d86dff4be0a5158077fa21f9"
+    },
+    {
+      "path": "apps/desktop/src/main/db/database.ts",
+      "sha256": "f869279fcc8ce3297d16c4db43125145000f82098f68e86382bf8158bd6f7a66"
+    },
+    {
+      "path": "apps/desktop/src/main/preload.ts",
+      "sha256": "105b2cf24e3d4c979b04b073ae48aec860fb27402582f79da8c93e7b2b88ba9a"
+    }
+  ],
+  "residualRisks": [
+    "W0 must independently review and integrate onto the current integration tip, which already contains Loop 02 acceptance after W3 branched.",
+    "The renderer shell still needs a later leased adapter change to consume window.electronAPI.work; Loop 03 did not edit renderer paths.",
+    "The app logs only the work-model version on successful initialization; no database path or secret is logged.",
+    "GitNexus impact evidence remains an explicit W0 acceptance task."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Review c425865 and 5615305, rerun security/verification/GitNexus on current integration, integrate only exact Loop 03 owned paths, then create acceptance/loop-03.json."
+    },
+    {
+      "owner": "W4 / Loop 04",
+      "action": "Do not start from this producer claim. Wait for W0 decision ACCEPTED, then consume the work model as read-only and stay inside vault/live/wikilink/graph ownership."
+    },
+    {
+      "owner": "W2 / shell integration follow-up",
+      "action": "Under a new lease, replace the shell data-source seam with window.electronAPI.work; do not reimplement authorization in renderer."
+    }
+  ],
+  "skillAudit": [
+    {
+      "skill": "/search-first",
+      "status": "USED",
+      "effect": "Located existing migration, database, auth, preload and IPC patterns before implementation."
+    },
+    {
+      "skill": "/context-gatherer",
+      "status": "USED",
+      "effect": "Reconciled Loop 00 rulings, accepted W1 contracts, lease scope, quarantine manifests and current integration ancestry."
+    },
+    {
+      "skill": "/quick-spec",
+      "status": "USED",
+      "effect": "Separated Phase A execution core from Phase B wiring and fixed acceptance/security invariants before coding."
+    },
+    {
+      "skill": "/backend-patterns",
+      "status": "USED",
+      "effect": "Applied repository/service separation, parameterized SQLite access, transactional migrations, idempotent event append and narrow typed IPC."
+    },
+    {
+      "skill": "/security-review",
+      "status": "USED",
+      "effect": "Found and fixed the raw editedInput persistence defect before commit; verified authz, redaction, migration and secret surfaces."
+    },
+    {
+      "skill": "/verification-loop",
+      "status": "USED",
+      "effect": "Ran targeted and full tests, build, two typechecks, lint, secret scan, diff check and ownership audit after the security fix."
+    },
+    {
+      "skill": "/understand-codebase",
+      "status": "USED",
+      "effect": "Mapped startup sequencing, AuthManager and AutoPost workspace identity, DatabaseManager lifecycle and existing preload conventions."
+    },
+    {
+      "skill": "/frontend-patterns",
+      "status": "N/A",
+      "reason": "No renderer component or visual behavior was implemented; preload exposes a typed transport only."
+    },
+    {
+      "skill": "/deployment-patterns",
+      "status": "N/A",
+      "reason": "No deploy, release, package or production database action."
+    },
+    {
+      "skill": "Design",
+      "status": "N/A",
+      "reason": "Loop 03 owns the execution plane, not UI."
+    },
+    {
+      "skill": "/gpt-taste",
+      "status": "N/A",
+      "reason": "Visual taste skill is outside the execution-engine scope."
+    },
+    {
+      "skill": "/design-taste-frontend",
+      "status": "N/A",
+      "reason": "No frontend layout or component work."
+    },
+    {
+      "skill": "/stitch-design-taste",
+      "status": "N/A",
+      "reason": "No design-system or styling change."
+    }
+  ],
+  "agentAudit": {
+    "orchestrator": "W0 controlled entry gates, leases and the commit/handoff sequence.",
+    "builder": "W3 implemented only leased execution paths and closed the security regression before commit.",
+    "security_reviewer": "Independent review rejected the first candidate, causing a real pre-commit fix.",
+    "socrates": "ACCEPT on committed c425865: no blocking correctness or security finding across workspace isolation, tenant binding, migration fail-closed behavior, archive truthfulness, approval redaction and lease ownership. W0 remains the decision authority."
+  }
+}

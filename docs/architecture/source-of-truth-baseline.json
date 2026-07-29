@@ -1,0 +1,538 @@
+{
+  "artifactKind": "source-of-truth-baseline",
+  "artifactVersion": 1,
+  "loop": "personal-office-loop-00",
+  "purpose": "Machine-readable canonical baseline for the Starizzi/Izzi AI Personal Office OS work. Loop 01 and later loops MUST verify canonicalCommit against HEAD before making design decisions.",
+
+  "canonicalCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+  "canonicalCommitShort": "84a57b3",
+  "canonicalTag": "v1.14.0-beta.3",
+  "canonicalCommitSubject": "chore(release): prepare Izzi AI 1.14.0-beta.3",
+  "canonicalCommitDate": "2026-07-28T14:19:38+07:00",
+  "originMainAtVerification": "84a57b38117ee7544691115be5aca7a141af1abf",
+  "originMainMatchesCanonical": true,
+
+  "installedReferenceTag": "v1.14.0-beta.2",
+  "installedReferenceCommit": "824e2e50b2de08458138f823802c2268546c930f",
+  "installedReferenceIsAncestorOfCanonical": true,
+  "installedReferenceRole": "installed/migration reference only — never a build or design base",
+
+  "integrationBranch": "feature/personal-office-baseline-20260728",
+  "worktreePath": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
+  "repoRoot": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+  "remoteUrl": "https://github.com/kentzu213/izzi-ai",
+  "desktopPackageVersion": "1.14.0-beta.3",
+  "rootPackageName": "izzi-ai",
+
+  "verifiedAt": "2026-07-28T08:12:03Z",
+  "verifiedBy": "builder (Loop 00)",
+  "platform": "Windows_NT 10.0.26200 win32 x64",
+
+  "nodeVersion": "v24.13.0",
+  "pnpmVersion": "10.33.0",
+  "corepackVersion": "0.34.5",
+  "packageManagerFieldPresent": false,
+  "enginesDeclared": { "node": ">=20.0.0", "pnpm": ">=9.0.0" },
+  "lockfileVersion": "9.0",
+  "ciToolchain": { "node": "22", "pnpm": "10", "os": ["windows-latest", "macos-latest"] },
+  "toolchainDeltaVsCi": "Local Node is v24 while CI pins Node 22. Native-module ABI results are therefore NOT comparable between local and CI; treat CI as authoritative for native builds.",
+
+  "buildCommands": {
+    "install": "pnpm install --frozen-lockfile",
+    "installActuallyUsed": "pnpm install --frozen-lockfile --ignore-scripts",
+    "installDeviation": "The documented install fails on this machine (see baselineFailures BF-01). --ignore-scripts was required, followed by a targeted Electron binary fetch.",
+    "electronBinaryFetch": "node install.js (run inside node_modules/.pnpm/electron@34.5.8/node_modules/electron)",
+    "buildDesktop": "pnpm --filter @openclaw/desktop build",
+    "buildDesktopExpands": "tsc -p tsconfig.main.json && vite build",
+    "buildAll": "pnpm build:all",
+    "test": "pnpm --filter @openclaw/desktop test",
+    "testExpands": "vitest run",
+    "testSmoke": "pnpm --filter @openclaw/desktop test:smoke",
+    "lintRequestedByBrief": "pnpm lint:ci",
+    "lintActuallyAvailable": "pnpm lint:ci (available from ed437c6 onward; at 84a57b3 itself only 'pnpm -r lint' existed and it failed with exit 2)",
+    "lintCeiling": 358,
+    "lintCeilingMeasuredAt": "ed437c6",
+    "lintCeilingNote": "358 warnings / 0 errors, measured on a clean canonical checkout after PQ-01 landed. NOT the 359 from the old feature branch — that number was measured on a different file set. Negative test confirmed: adding one warning makes lint:ci exit 1.",
+    "typecheck": "no dedicated script — typecheck is folded into the desktop build via tsc -p tsconfig.main.json",
+    "diffCheck": "git diff --check"
+  },
+
+  "checkResults": [
+    {
+      "id": "CHK-01",
+      "command": "git worktree add -b feature/personal-office-baseline-20260728 <path> 84a57b3",
+      "status": "pass",
+      "exitCode": 0,
+      "evidence": "540 files checked out; HEAD is now at 84a57b3; git status --porcelain returned 0 entries; branch confirmed feature/personal-office-baseline-20260728"
+    },
+    {
+      "id": "CHK-02",
+      "command": "git diff --check",
+      "status": "pass",
+      "exitCode": 0,
+      "evidence": "No whitespace or conflict-marker errors at canonical checkout."
+    },
+    {
+      "id": "CHK-03",
+      "command": "AGENTS.md GitNexus block count",
+      "status": "pass",
+      "expected": 1,
+      "actual": 1,
+      "evidence": "Canonical AGENTS.md contains exactly one gitnexus:start block. The duplicated double-block is an artifact of the dirty worktree only. No fix applied — none needed."
+    },
+    {
+      "id": "CHK-04",
+      "command": "pnpm install --frozen-lockfile",
+      "status": "fail",
+      "exitCode": 1,
+      "classification": "baseline-environment",
+      "baselineFailureId": "BF-01",
+      "evidence": "better-sqlite3@11.10.0 install script ran node-gyp rebuild and aborted: 'Could not find any Visual Studio installation to use'. vswhere.exe absent; no MSVC C++ toolchain on host."
+    },
+    {
+      "id": "CHK-05",
+      "command": "pnpm install --frozen-lockfile --ignore-scripts",
+      "status": "pass",
+      "exitCode": 0,
+      "durationSeconds": 35.5,
+      "evidence": "resolved 743, reused 743, downloaded 0, added 743, done. Done in 35.5s using pnpm v10.33.0."
+    },
+    {
+      "id": "CHK-06",
+      "command": "pnpm --filter @openclaw/desktop build",
+      "status": "pass",
+      "exitCode": 0,
+      "durationSeconds": 14.9,
+      "evidence": "tsc -p tsconfig.main.json produced no type errors; vite v6.4.1 transformed 1136 modules; emitted dist/renderer/index.html 0.82 kB, index-Dm-6l7bQ.css 362.69 kB, index-B7j3vZGB.js 985.22 kB.",
+      "nonBlockingWarnings": ["W-01", "W-02"]
+    },
+    {
+      "id": "CHK-07",
+      "command": "pnpm --filter @openclaw/desktop test (first run, before Electron binary fetch)",
+      "status": "fail",
+      "exitCode": 1,
+      "classification": "environment-artifact-of-CHK-05",
+      "evidence": "Test Files 3 failed | 67 passed (70); Tests 3 failed | 891 passed (894). All 5 failure sites shared one cause: 'Electron failed to install correctly' from electron@34.5.8/index.js getElectronPath. Suites: izzi-agent.test.ts, updater-service.test.ts (load failures) and izzi-agent.production.test.ts (3 tests).",
+      "resolved": true,
+      "resolution": "Fetched the Electron prebuilt binary (no compiler required) via node install.js — electron.exe 190,557,184 bytes, exit 0."
+    },
+    {
+      "id": "CHK-08",
+      "command": "vitest run izzi-agent.test.ts izzi-agent.production.test.ts updater-service.test.ts (after Electron fetch)",
+      "status": "pass",
+      "exitCode": 0,
+      "evidence": "Test Files 3 passed (3); Tests 10 passed (10) in 1.91s. Confirms CHK-07 was purely the missing Electron binary, not a code defect."
+    },
+    {
+      "id": "CHK-09",
+      "command": "pnpm --filter @openclaw/desktop test (full run, after Electron fetch)",
+      "status": "fail-flaky",
+      "exitCode": 1,
+      "classification": "flaky-timeout",
+      "baselineFailureId": "BF-02",
+      "evidence": "Test Files 1 failed | 69 passed (70); Tests 1 failed | 900 passed (901). Only failure: customer-video-studio-service.test.ts > 'reports an installed offline runtime without exposing its local path or enabling commercial render' — 'Test timed out in 5000ms' at 5040ms, i.e. 40ms over the default limit under concurrent load (transform 53.93s, import 79.15s).",
+      "note": "This same suite passed in CHK-07's run. Not a deterministic failure."
+    },
+    {
+      "id": "CHK-10",
+      "command": "vitest run customer-video-studio-service.test.ts (isolated)",
+      "status": "pass",
+      "exitCode": 0,
+      "evidence": "Test Files 1 passed (1); Tests 14 passed (14) in 4.71s (tests 3.47s). Confirms BF-02 is a load-sensitive timeout flake, not a real regression."
+    },
+    {
+      "id": "CHK-11",
+      "command": "pnpm lint:ci",
+      "status": "fail",
+      "exitCode": 1,
+      "classification": "baseline-gap",
+      "baselineFailureId": "BF-03",
+      "evidence": "ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL — Command \"lint:ci\" not found. Did you mean \"pnpm lint\"? The script does not exist at canonical.",
+      "measuredAtCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+      "supersededBy": "CHK-13 (same command, measured after PQ-01 landed). This entry is retained because it is a true statement about canonical 84a57b3, which remains the programme anchor."
+    },
+    {
+      "id": "CHK-12",
+      "command": "pnpm -r lint",
+      "status": "fail",
+      "exitCode": 2,
+      "classification": "baseline-gap",
+      "baselineFailureId": "BF-04",
+      "evidence": "apps/desktop lint$ eslint src/ produced: ESLint couldn't find an eslint.config.(js|mjs|cjs) file. ESLint 9.39.4 requires flat config. No eslint.config.* and no .eslintrc* exists anywhere in the canonical tree (verified via git ls-tree -r 84a57b3).",
+      "scopeNote": "Measured AT canonical 84a57b3, before PQ-01. Superseded by CHK-15/CHK-16 at ed437c6. Retained because it is the evidence BF-04 rests on."
+    },
+    {
+      "id": "CHK-13",
+      "command": "gitnexus analyze",
+      "status": "pass",
+      "exitCode": 0,
+      "durationSeconds": 43.8,
+      "evidence": "450 files, 6898 nodes, 15596 edges, 347 communities, 300 processes. .gitnexus/meta.json lastCommit = 84a57b38117ee7544691115be5aca7a141af1abf, branch = feature/personal-office-baseline-20260728, schemaVersion 5.",
+      "nonBlockingWarnings": ["W-03"]
+    },
+    {
+      "id": "CHK-14",
+      "command": "gitnexus impact ensureSqliteSchema --direction upstream --repo <worktreePath>",
+      "status": "pass",
+      "evidence": "Returned target Function:apps/desktop/src/main/db/sqlite-schema.ts:ensureSqliteSchema, impactedCount 3, risk LOW, epistemic 'exact', affected process initServices (apps/desktop/src/main/index.ts). Graph traversal confirmed working.",
+      "note": "The --repo flag is REQUIRED on this host: many repositories are registered and three share the name 'izzi-ai'. Always scope by absolute worktree path."
+    },
+    {
+      "id": "CHK-15",
+      "command": "git status --porcelain (dirty worktree, read-only verification)",
+      "status": "pass-with-finding",
+      "loop00WroteNothingThere": true,
+      "evidence": "Loop 00 performed ZERO writes to the dirty worktree — only read-only git plumbing (log, diff, show, cat-file, ls-tree, patch-id, merge-base, status) and file reads. No reset, stash, clean, checkout, or file write was issued against that path.",
+      "finding": "The dirty worktree nevertheless CHANGED during Loop 00, by a concurrent third-party session, not by this loop. Start of Loop 00: 31 modified tracked + 52 untracked = 83 entries, HEAD 959e2d2. End of Loop 00: 35 modified tracked + 78 untracked = 113 entries, HEAD unchanged at 959e2d2.",
+      "attribution": "A concurrent 'Loop 03' session is actively building the Personal Office execution plane in that worktree. Evidence: apps/desktop/src/main/{db/database.ts,index.ts,preload.ts} and src/renderer/App.tsx were all rewritten at the same instant 2026-07-28 15:26:06 — between this loop's JSON write (15:23:39) and worklog write (15:31:26) — adding imports of runWorkModelMigration, WorkService, backupSqliteFile and a workEventSink fan-out. Files under main/work/ carry mtimes running continuously from 14:46:50 to 15:26:21, and the untracked count rose from 77 to 78 during final verification, i.e. the session was still writing.",
+      "consequence": "The acceptance criterion 'dirty worktree not modified' holds for THIS loop's actions but cannot be asserted about the worktree's state, because another writer owns it concurrently. Any later loop that diffs against that worktree must re-snapshot it first; a stale snapshot will be wrong within minutes."
+    },
+
+    {
+      "id": "CHK-16",
+      "command": "pnpm install (adds 5 exact-pinned eslint devDependencies)",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "Added @eslint/js 9.39.4, eslint 9.39.4, eslint-plugin-react-hooks 7.1.1, globals 16.5.0, typescript-eslint 8.65.0. 19 packages added, all devDependencies, none reaching the production Docker image. Versions are pinned EXACT rather than caret: a caret range could pull a minor release carrying new rules, which would silently change the warning ceiling and make it non-reproducible."
+    },
+    {
+      "id": "CHK-17",
+      "command": "pnpm exec eslint apps packages extensions --no-error-on-unmatched-pattern --format json",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "supersedes": ["CHK-11", "CHK-12"],
+      "evidence": "THE MEASUREMENT that BF-03/BF-04 said was impossible. 284 files linted, 59 with findings: 0 errors, 358 warnings. By rule: no-explicit-any 306, no-unused-vars 31, react-hooks/exhaustive-deps 7, no-require-imports 7, no-useless-escape 5, unused-disable-directive 2.",
+      "note": "358, NOT the 359 carried by the old branch. The old number was measured on a different tree and was never valid here. This is why the brief's instruction to re-measure rather than copy the number mattered."
+    },
+    {
+      "id": "CHK-18",
+      "command": "pnpm lint:ci",
+      "status": "pass",
+      "exitCode": 0,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "Ceiling set to --max-warnings 358, the measured value. Exits 0 on a clean canonical checkout."
+    },
+    {
+      "id": "CHK-19",
+      "command": "pnpm lint:ci with one deliberately-introduced `any` (negative test, probe reverted)",
+      "status": "pass",
+      "exitCode": 1,
+      "measuredAt": "2026-07-29 (PQ-01)",
+      "measuredAtCommit": "ed437c6",
+      "evidence": "ESLint reported 'found too many warnings (maximum: 358)' and exited 1. This is the check that distinguishes a real gate from a decorative one: a ceiling that never fails proves nothing. Probe file removed; tree verified clean afterwards.",
+      "whyThisMatters": "Without the negative test, a mis-set ceiling (e.g. 400) would pass CI forever while silently accepting new debt."
+    }
+  ],
+
+  "baselineFailures": [
+    {
+      "id": "BF-01",
+      "severity": "blocking-local-only",
+      "surface": "environment / native toolchain",
+      "title": "pnpm install --frozen-lockfile cannot complete on this host",
+      "detail": "better-sqlite3@11.10.0 has no prebuilt binary for Node 24 (local) and falls back to node-gyp source compilation, which needs the MSVC 'Desktop development with C++' workload. vswhere.exe is absent; no Visual Studio installation exists on the host.",
+      "scope": "Local developer machine only. CI runs windows-latest/macos-latest which ship MSVC, and pins Node 22 where a prebuild exists.",
+      "workaround": "pnpm install --frozen-lockfile --ignore-scripts, then fetch the Electron binary separately (node install.js inside the electron package).",
+      "consequence": "No compiled better_sqlite3.node exists anywhere on this host — verified: zero *.node sqlite binaries under either worktree's node_modules. Any Loop 01+ work that needs a REAL SQLite handle cannot be verified locally; design SQLite-facing contracts to be unit-testable without a live native binding.",
+      "preExisting": true,
+      "introducedByThisLoop": false
+    },
+    {
+      "id": "BF-02",
+      "severity": "flaky",
+      "surface": "tests",
+      "title": "customer-video-studio-service F5-TTS boundary test times out under concurrent load",
+      "detail": "The assertion 'reports an installed offline runtime without exposing its local path or enabling commercial render' exceeded vitest's 5000ms default by 40ms (5040ms) during a full-suite run whose transform phase took 53.93s. It passed in an earlier full run and passes in isolation (14/14, 3.47s).",
+      "scope": "Timing only. No behavioural defect identified.",
+      "workaround": "Re-run the suite in isolation to confirm, or raise testTimeout for this suite.",
+      "preExisting": true,
+      "introducedByThisLoop": false,
+      "recommendation": "Loop 01 should NOT treat this as a regression signal. If it recurs, give the suite an explicit timeout rather than chasing a logic bug."
+    },
+    {
+      "id": "BF-03",
+      "severity": "blocking-for-acceptance-criteria",
+      "surface": "lint tooling",
+      "title": "The lint:ci script referenced by the Personal Office briefs does not exist at canonical",
+      "detail": "Root package.json at 84a57b3 defines only build, build:all, dev, dev:marketplace, lint (= pnpm -r lint) and clean. There is no lint:ci, lint:fix or lint:strict.",
+      "impact": "Any acceptance criterion phrased as 'lint does not increase the warning budget' has NO baseline number to compare against on canonical, because no lint run can succeed at all.",
+      "originOfMissingWork": "lint:ci (--max-warnings 359), lint:fix, lint:strict and the root eslint devDependencies exist only on feature/aibase-my-graph-ui-sync, produced by the CMR-404 commits.",
+      "preExisting": true,
+      "introducedByThisLoop": false,
+      "resolution": {
+        "status": "RESOLVED",
+        "resolvedBy": "ed437c6",
+        "resolvedAt": "2026-07-29T04:20:00Z",
+        "resolvedUnder": "programme gate PQ-01, W0 lease on package manifests",
+        "note": "The statement above remains TRUE of commit 84a57b3 and is kept verbatim as the historical record. lint:ci, lint:fix and lint:strict now exist on the integration branch, and the ceiling is 358 measured on canonical, NOT the 359 inherited from the old branch."
+      }
+    },
+    {
+      "id": "BF-04",
+      "severity": "blocking-for-acceptance-criteria",
+      "surface": "lint tooling",
+      "title": "No ESLint configuration exists anywhere in the canonical tree",
+      "detail": "eslint ^9.18.0 is a devDependency of apps/desktop and its lint script is 'eslint src/', but git ls-tree -r 84a57b3 finds no eslint.config.js|mjs|cjs and no .eslintrc*. ESLint 9 removed implicit eslintrc discovery, so the script fails with exit 2 before linting a single file.",
+      "impact": "The lint gate is non-functional on canonical. This is the single largest genuine gap between canonical and the old feature branch.",
+      "remedy": "Port eslint.config.mjs (147 lines) from 959e2d2 — see portQueue PQ-01.",
+      "resolution": {
+        "status": "RESOLVED",
+        "resolvedBy": "ed437c6",
+        "resolvedAt": "2026-07-29T04:20:00Z",
+        "resolvedUnder": "programme gate PQ-01, W0 lease on package manifests",
+        "portedWith": "3 deliberate deviations from the old-branch config, each verified against canonical rather than copied: (1) wikilink.ts removed from the no-control-regex exemption list because that file does NOT exist at canonical, and naming a non-existent file in a scoped override is dead config; (2) added '**/release-*/**' to ignores because canonical carries release-15, release-cmr206-trial and release-hotfix build output directories; (3) the per-rule baseline comment was replaced with counts actually measured on canonical.",
+        "measuredOnCanonical": {
+          "errors": 0,
+          "warnings": 358,
+          "filesLinted": 284,
+          "filesWithFindings": 59,
+          "byRule": {
+            "@typescript-eslint/no-explicit-any": 306,
+            "@typescript-eslint/no-unused-vars": 31,
+            "react-hooks/exhaustive-deps": 7,
+            "@typescript-eslint/no-require-imports": 7,
+            "no-useless-escape": 5,
+            "unused-eslint-disable-directive": 2
+          },
+          "note": "358, not the 359 the old branch used. The old ceiling was measured on a different file set, so inheriting it would have silently allowed one free regression."
+        },
+        "gateProvenByNegativeTest": "A temporary `const __pq01Probe: any = null;` was appended to a source file: pnpm lint:ci then exited 1 with 'ESLint found too many warnings (maximum: 358)'. The probe was removed and the tree verified clean. The gate therefore fails on a NEW warning and is not decorative."
+      },
+      "preExisting": true,
+      "introducedByThisLoop": false
+    }
+  ],
+
+  "nonBlockingWarnings": [
+    {
+      "id": "W-01",
+      "surface": "build",
+      "detail": "vite reports a renderer chunk above 500 kB (index-B7j3vZGB.js = 985.22 kB, gzip 288.47 kB). Pre-existing bundle-size debt; relevant to the sweeper phase, not to domain modelling."
+    },
+    {
+      "id": "W-02",
+      "surface": "config",
+      "detail": "pnpm emits 'Failed to replace env in config: ${NODE_AUTH_TOKEN}' twice per command because .npmrc declares the @kentzu213 GitHub Packages scope and the token env var is unset locally. Verified harmless at canonical: no workspace package actually depends on @kentzu213/graph-view from that registry (apps/desktop consumes it from a vendored tarball, file:vendor/kentzu213-graph-view-0.1.1.tgz). Secret referenced by NAME only; no value was read, printed or logged."
+    },
+    {
+      "id": "W-03",
+      "surface": "code-intelligence",
+      "detail": "GitNexus indexed successfully but full-text/BM25 search is disabled (LadybugDB FTS extension unavailable offline; vector search also unavailable on this platform). Graph traversal — impact, callers, callees, context — works and returns 'exact' epistemic results. Prefer graph queries over text search in this worktree."
+    }
+  ],
+
+  "regressionsIntroducedByThisLoop": [],
+  "regressionStatement": "Loop 00 added three documentation artifacts and no source, config, schema or dependency changes. Therefore no regression is attributable to this loop. Every failure recorded above is either pre-existing at canonical (BF-02, BF-03, BF-04) or a property of the host environment (BF-01).",
+
+  "gitNexusIndexCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+  "gitNexusIndexMatchesCanonicalHead": true,
+  "gitNexus": {
+    "cliVersion": "1.6.9",
+    "indexedAt": "2026-07-28T08:09:39.722Z",
+    "indexPath": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline\\.gitnexus",
+    "gitignored": true,
+    "schemaVersion": 5,
+    "registeredRepoName": "izzi-ai",
+    "repoNameIsAmbiguous": true,
+    "requiredScopingFlag": "--repo \"F:\\\\Ai Tools\\\\_wt-starizzi-personal-office-baseline\"",
+    "stats": { "files": 450, "nodes": 6898, "edges": 15596, "communities": 347, "processes": 300, "embeddings": 0 },
+    "capabilities": { "graph": "available", "fts": "unavailable", "vectorSearch": "unavailable" },
+    "sideEffectNote": "gitnexus analyze rewrote its managed doc blocks in 8 tracked files (AGENTS.md, CLAUDE.md, 6 .claude/skills/gitnexus/*/SKILL.md). Loop 00 reverted all 8 to canonical content via git checkout, because canonical AGENTS.md was already correct with exactly one block. Expect this side effect on every re-index."
+  },
+
+  "portQueueSummary": {
+    "sourceBranch": "feature/aibase-my-graph-ui-sync",
+    "sourceBranchTip": "959e2d2",
+    "mergeBaseWithCanonical": "d1ff9652127865d6432a282f9db23a31db12058a",
+    "commitsUniqueToSourceBranch": 13,
+    "commitsUniqueToCanonical": 15,
+    "filesAddedBySourceBranchNotInCanonical": 1,
+    "netNewFileList": ["eslint.config.mjs"],
+    "headlineFinding": "Canonical beta.3 is AHEAD of the old branch on every feature subsystem. Subsystem diffs from canonical to the old tip are predominantly deletions, meaning the old branch LACKS content canonical has. The only genuinely new asset on the old branch is the ESLint 9 flat config and its lint gate.",
+    "counts": { "mustPort": 1, "alreadyEquivalentInCanonical": 4, "doNotPort": 3, "needsManualReview": 2 },
+    "cherryPickPerformed": false,
+    "cherryPickDeferredTo": "a later loop — Loop 00 is inventory-only by mandate"
+  },
+
+  "portQueue": [
+    {
+      "id": "PQ-01",
+      "verdict": "MUST_PORT",
+      "subsystem": "lint / CI quality gate",
+      "items": [
+        "eslint.config.mjs (147 lines, from 2d0aed3, refined by 54f20cd/d7bcaa9/31e6dcb)",
+        "root scripts: lint, lint:ci (--max-warnings 359), lint:fix, lint:strict",
+        "root devDependencies: @eslint/js ^9.39.4, eslint ^9.39.4, eslint-plugin-react-hooks ^7.1.1, globals ^16.5.0, typescript-eslint ^8.65.0",
+        ".github/workflows/desktop-ci.yml: the Lint step (pnpm lint:ci) and the report-only 'pnpm audit --prod || true' step"
+      ],
+      "why": "Resolves BF-03 and BF-04. Without it no Personal Office loop can satisfy a lint-based acceptance criterion, because lint cannot run at all on canonical.",
+      "risk": "LOW — additive tooling only; touches no runtime source.",
+      "caution": "Port ONLY the lint keys from the old package.json. Do NOT take the file wholesale (see PQ-05/PQ-06).",
+      "warningBudgetCaveat": "The 359 ceiling was measured on the old branch's file set. Re-measure on canonical and record the new number before enforcing it.",
+      "relevantTests": "none — verify by running pnpm lint:ci and capturing the warning count."
+    },
+    {
+      "id": "PQ-02",
+      "verdict": "ALREADY_IN_CANONICAL",
+      "subsystem": "Customer AI Marketing Room",
+      "oldCommit": "066b2d9",
+      "canonicalEquivalent": "3b338d3",
+      "evidence": "Identical commit subject. patch-id differs (rebased/adjusted on the canonical lineage), and canonical/old subsystem diff is 2 files / 6 insertions / 51 deletions — canonical carries MORE. customer-marketing-service.ts and all sibling modules present at 84a57b3.",
+      "action": "do not port",
+      "relevantTests": "src/main/customer-marketing/*.test.ts (all pass at canonical)"
+    },
+    {
+      "id": "PQ-03",
+      "verdict": "ALREADY_IN_CANONICAL",
+      "subsystem": "CMR-007 commercial voice licence gate",
+      "oldCommit": "e3a3e5e",
+      "canonicalEquivalent": "644b901",
+      "evidence": "git patch-id --stable IDENTICAL on both sides (f5eced54027b894d97ff1dfc1f1c6dc493e08d26). Byte-for-byte the same change.",
+      "action": "do not port",
+      "relevantTests": "commercial-voice-license.test.ts, customer-video-studio-service.test.ts (see BF-02 flake)"
+    },
+    {
+      "id": "PQ-04",
+      "verdict": "ALREADY_IN_CANONICAL",
+      "subsystem": "Scheduled sessions, CMR-404 audit, updater contract test",
+      "oldCommits": ["33609a8", "d698a28", "528f0c8", "4e4a204", "31e6dcb"],
+      "canonicalEquivalent": "ef10653 (scheduled sessions) plus the audit/test files carried forward",
+      "evidence": "apps/desktop/src/main/scheduler is IDENTICAL between canonical and the old tip (zero delta). schedule-service.ts, schedule-planner.ts, playbook-types.ts and the scheduled_sessions + scheduled_session_runs tables all present at canonical. docs/compliance/cmr-404-dependency-audit.md and src/main/updater/updater-dependency-contract.test.ts also present; the builder-util-runtime 9.7.0 exact pin is live in canonical overrides.",
+      "action": "do not port the feature/audit/test files; only the lint portion of the CMR-404 commits is still missing, and that is folded into PQ-01",
+      "relevantTests": "src/main/scheduler/schedule-planner.test.ts, src/main/updater/updater-dependency-contract.test.ts (both pass at canonical)"
+    },
+    {
+      "id": "PQ-05",
+      "verdict": "DO_NOT_PORT",
+      "subsystem": "package identity / versions",
+      "detail": "The old branch would revert root name izzi-ai to starizzi-app, revert description and repo URLs, downgrade apps/desktop version 1.14.0-beta.3 to 1.12.0, revert apps/desktop description 'Izzi AI Desktop App' to 'Izzi OpenClaw Desktop App', and downgrade axios ^1.16.0 to ^1.15.1.",
+      "why": "The old branch forked before 824e2e5 'feat(brand): rename desktop app to Izzi AI'. Porting reverts a deliberate rebrand and downgrades a dependency.",
+      "risk": "HIGH if ported blindly — a silent brand and version regression."
+    },
+    {
+      "id": "PQ-06",
+      "verdict": "DO_NOT_PORT",
+      "subsystem": "dependency overrides / supply chain",
+      "detail": "The old branch loosens exact pins to carets (fast-uri ^3.1.4, js-yaml ^4.3.0, lodash ^4.18.0, form-data ^4.0.6) and DROPS the ws 8.21.0, sharp 0.35.3 and adm-zip 0.6.0 pins entirely. It also declares overrides in package.json while canonical declares them in pnpm-workspace.yaml.",
+      "why": "Canonical's posture is strictly stronger: exact pins on security-relevant transitive packages. Porting would widen the resolution range on packages that were pinned deliberately.",
+      "risk": "HIGH (security regression) if ported.",
+      "exception": "@hono/node-server ^1.19.13 exists only on the old branch and is absent from canonical — that single entry needs a decision on its own merits, not a wholesale port."
+    },
+    {
+      "id": "PQ-07",
+      "verdict": "DO_NOT_PORT",
+      "subsystem": "pnpm-workspace allowBuilds comments",
+      "detail": "The old branch adds explanatory comments to allowBuilds. Canonical has the same functional allowBuilds map without comments.",
+      "why": "Comment-only delta with no behavioural effect. Not worth a port commit; would only add diff noise. Recorded for completeness."
+    },
+    {
+      "id": "PQ-08",
+      "verdict": "NEEDS_MANUAL_REVIEW",
+      "priority": "HIGHEST",
+      "subsystem": "Personal Office domain model — UNCOMMITTED, ACTIVELY-BUILDING work in the dirty worktree",
+      "status": "LIVE — a concurrent session was still writing to these files during Loop 00 verification (see CHK-15)",
+      "detail": "The dirty worktree carries a substantial Personal Office implementation on a DIFFERENT loop numbering than these briefs. It exists in no commit on any branch, it is being extended right now, and it would be lost entirely if that worktree were cleaned. This is NOT a dormant sketch: it ships its own tests and is already being wired into the main process and the renderer.",
+      "loop03SharedContracts": [
+        "apps/desktop/src/shared/work-model.ts (16,657 B) — Run/Step/Artifact/Approval/Event/Checkpoint/ContextSnapshot/Workspace types, WORK_RUN_TRANSITIONS state machine, canonicalJson, action-hash binding, WORK_SCHEMA_VERSION = 1",
+        "apps/desktop/src/shared/work-model.test.ts (3,315 B)",
+        "apps/desktop/src/shared/work-redaction.ts (7,465 B) — secret-by-shape plus PII redaction, prototype-pollution safe",
+        "apps/desktop/src/shared/work-redaction.test.ts (2,908 B)"
+      ],
+      "loop03ExecutionPlane": [
+        "apps/desktop/src/main/work/work-service.ts (31,149 B) + work-service.test.ts (15,384 B)",
+        "apps/desktop/src/main/work/run-repository.ts (37,864 B)",
+        "apps/desktop/src/main/work/work-adapters.ts (12,499 B) + work-adapters.test.ts (6,103 B)",
+        "apps/desktop/src/main/work/work-migration.ts (12,086 B) + work-migration.test.ts (4,625 B)",
+        "apps/desktop/src/main/work/work-ipc.ts (6,261 B)",
+        "apps/desktop/src/main/work/work-approvals.ts, work-hash.ts, work-sqlite.ts, work-backup.ts, test-support.ts"
+      ],
+      "loop03IntegrationAlreadyWired": {
+        "note": "These four tracked files were rewritten at 2026-07-28 15:26:06 and are the reason the dirty worktree's modified count moved from 31 to 35.",
+        "files": [
+          "apps/desktop/src/main/db/database.ts — imports runWorkModelMigration + backupSqliteFile + WorkService, holds workService and workEventSink fields, runs the migration during schema setup with a pre-change snapshot and a log-and-proceed (not fail-closed) error path documented as safe only because v1 is purely additive",
+          "apps/desktop/src/main/index.ts — service init wiring",
+          "apps/desktop/src/main/preload.ts — IPC surface exposure",
+          "apps/desktop/src/renderer/App.tsx — renderer wiring"
+        ],
+        "securityNoteForReview": "The migration error path deliberately logs and continues rather than failing closed, justified by v1 being additive. That justification expires the moment any destructive migration step is added. Flag it for the security review of whichever loop owns this code."
+      },
+      "loop02Files": [
+        "apps/desktop/src/renderer/shell/{featureFlags,ShellIcons,types,workAdapter}",
+        "docs/product/personal-office-ia.md — 5-route IA behind feature flag izzi.shell.personalOffice (default ON)",
+        "apps/desktop/src/shared/{vault-ops,vault-types,wikilink}.ts + tests",
+        ".kiro/specs/graph-view-shared-package/"
+      ],
+      "criticalImplication": "docs/product/personal-office-ia.md states independently that Loop 00/01 artifacts never existed and that the shell was therefore typed against the EXISTING contract apps/desktop/src/main/agent/types.ts, with ApprovalRequest kept shell-local pending a real approval engine. Loop 01 must RECONCILE with work-model.ts rather than author a greenfield model, or the codebase ends up with two competing domain models for the same entities.",
+      "placementConflict": "The Loop 01 brief proposes apps/desktop/src/shared/personal-office/. The existing implementation already lives at apps/desktop/src/shared/work-model.ts with a main/work/ execution plane behind it. Deciding one home is a prerequisite, not a detail.",
+      "briefConflict": "Loop 01's brief says 'only schema/contracts/skeleton and tests; do not change UI and do not migrate the real database'. The concurrent Loop 03 session has ALREADY wired a real SQLite migration into database.ts and touched App.tsx. Loop 01 and Loop 03 are therefore issuing contradictory instructions over the same files. This must be resolved by the orchestrator before Loop 01 writes code, or the two will overwrite each other.",
+      "risk": "CRITICAL — three compounding hazards: (1) duplicate divergent domain models for the same entities; (2) permanent loss of roughly 190 KB of implementation plus five test files if the dirty worktree is ever cleaned, since none of it is committed anywhere; (3) two active loops editing the same files concurrently.",
+      "recommendedAction": "FIRST preserve the work — commit it to a branch or export a patch out of the dirty worktree — because it is currently unrecoverable. THEN have the orchestrator/Socrates rule on whether Loop 01 adopts, supersedes or refactors work-model.ts, and on which loop owns database.ts/index.ts/preload.ts/App.tsx.",
+      "relevantTests": "Loop 03 ships its own: work-model.test.ts, work-redaction.test.ts, work-adapters.test.ts, work-migration.test.ts, work-service.test.ts. Also present: vault-ops.test.ts, vault-types.test.ts, wikilink.test.ts. None of these run at canonical because none of the source exists there."
+    },
+    {
+      "id": "PQ-09",
+      "verdict": "NEEDS_MANUAL_REVIEW",
+      "subsystem": "dirty worktree modified tracked files (31) — feature work in flight",
+      "detail": "Uncommitted modifications concentrated in agent runtime and graph UI: src/main/agent/{agent-service,custom-openai-provider,host-agent,provider-settings-store}.ts, src/main/integrations/integrations-service.ts, src/renderer/store/{agentGateway,graphWorkspace}.ts, src/renderer/pages/{GraphWorkspace,KnowledgeUniverse,ModelConnections}.tsx, src/renderer/types/{agent-registry,model-catalog}.ts, vite.config.ts, plus 2 new tests (integrations-service.test.ts, budget-ipc-handlers.test.ts).",
+      "why": "agentGateway.ts is on the Loop 01 required-reading list AND is modified-uncommitted, so the version Loop 01 reads on canonical is not the version in flight. Note also that canonical already contains agentGateway-routing.ts plus its test, which the old branch lacks.",
+      "risk": "MEDIUM — reading only canonical may miss in-flight intent; porting blindly may revert canonical's newer routing split.",
+      "recommendedAction": "Diff these files three ways (canonical vs old committed vs dirty working copy) before treating any as source of truth."
+    }
+  ],
+
+  "domainSurfaceAtCanonical": {
+    "note": "Recorded so Loop 01 can reconcile a proposed model against what actually exists, rather than against an assumption.",
+    "sqliteTables": [
+      "settings", "user_data", "installed_extensions", "extension_settings", "sync_log",
+      "diagnostic_events", "chat_sessions", "chat_messages", "agent_state", "agent_tasks",
+      "agent_memories", "agent_runs", "agent_run_entries", "scheduled_sessions",
+      "scheduled_session_runs", "offline_queue"
+    ],
+    "schemaVersioning": "No schema_version table. Migration style is idempotent DDL plus an ensureColumn helper. A versionable schema is therefore a NET-NEW requirement, not an adjustment.",
+    "runSpine": "agent_runs (stage, status) plus agent_run_entries. agent_tasks keys off session_id, i.e. a chat session — so today the chat session is effectively the spine of task state. This is exactly what the Loop 01 constraint 'chat is not the source of truth of a Run' has to undo.",
+    "eventOrdering": "agent_run_entries orders only by created_at — no sequence number and no idempotency key. offline_queue already demonstrates the wanted pattern: seq INTEGER PRIMARY KEY AUTOINCREMENT plus base_updated_at for optimistic concurrency. Reuse that precedent.",
+    "sharedContracts": [
+      "agent-turn-events.ts — streaming turn events (delta / reasoning / step / done)",
+      "graph-types.ts — mirrors the backend personal-graph shapes served by api.izziapi.com/api/aibase/*, which the file names as the single source of truth",
+      "customer-marketing-types.ts (747 lines), customer-marketing-action-gate-types.ts, customer-marketing-capability-manifest.ts, customer-marketing-credential-types.ts",
+      "offline-queue.ts, universe-adapter.ts, graph-mapper.ts, marketing-types.ts, model-credit-policy.ts"
+    ],
+    "trustSurfaces": [
+      "apps/desktop/src/main/extensions/ocx-manifest.ts (429 lines) — extension manifest and permission declaration",
+      "apps/desktop/src/main/extensions/permissions.ts plus test",
+      "packages/agent-bundle/src/manifest.ts (375 lines) — agent bundle manifest",
+      "apps/desktop/src/main/agent/secret-store.ts, agent-permissions.ts",
+      "apps/desktop/src/main/infra/audit-log.ts, device-guard.ts"
+    ],
+    "planeEvidence": "graph-types.ts documents the cloud personal graph as authoritative and the desktop copy as a mirror — direct evidence for the two-plane split (IzziAPI cloud control plane vs desktop execution plane) that Loop 01 must formalise."
+  },
+
+  "constraintsForNextLoop": [
+    "Verify canonicalCommit equals HEAD before any design work; stop if it differs.",
+    "Do not treat BF-02 as a regression; it is a confirmed timing flake.",
+    "SATISFIED at ed437c6: PQ-01 landed and the ceiling was re-measured on canonical at 358 (not the old branch's 359). Consumers may now claim a lint warning budget, and MUST run 'pnpm lint:ci' as a real acceptance gate.",
+    "Resolve PQ-08 (adopt vs supersede work-model.ts) BEFORE writing new domain contracts.",
+    "Native SQLite cannot be exercised locally (BF-01) — keep new contracts unit-testable without a live better-sqlite3 binding.",
+    "Scope every GitNexus call with --repo <absolute worktree path>; the bare repo name is ambiguous on this host."
+  ],
+
+  "loop00Scope": {
+    "didNotDo": [
+      "cherry-pick or port any feature code",
+      "modify, reset, stash, clean or checkout anything in the dirty worktree",
+      "change navigation, UI, database schema or dependencies",
+      "delete any legacy type or store",
+      "advance to Loop 01"
+    ],
+    "artifactsProduced": [
+      "docs/architecture/source-of-truth-baseline.md",
+      "docs/architecture/source-of-truth-baseline.json",
+      "worklogs/personal-office-loop-00.md"
+    ]
+  }
+}

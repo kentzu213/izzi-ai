@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "03",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T07:10:00Z",
+  "subject": {
+    "title": "Unified work engine and secure workspace-scoped bridge",
+    "producerBranch": "feature/personal-office-loop-03-20260729",
+    "producerHead": "e57acae378af2cda9aee26e6e6e0e3584636f8de",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptanceRecord": "5a5219307b70d45a7e74df3ca5c35ae996069ce2"
+  },
+  "acceptedCommits": {
+    "phaseA": "b027ddb237c663701b3e63f937cc0b6a3eca75d1",
+    "phaseB": "5270060d3584e2456b40ed8c864baa8b67057526",
+    "handoff": "5a5219307b70d45a7e74df3ca5c35ae996069ce2"
+  },
+  "verification": [
+    { "check": "work tests", "result": "PASS", "evidence": "W0: 7 files, 106/106 tests." },
+    { "check": "full desktop suite", "result": "PASS", "evidence": "W0: 81 files, 1052/1052 tests." },
+    { "check": "desktop build", "result": "PASS", "evidence": "1167 modules transformed; existing renderer chunk-size warning only." },
+    { "check": "lint", "result": "PASS", "evidence": "0 errors, 358 warnings at canonical ceiling." },
+    { "check": "ownership", "result": "PASS", "evidence": "26 integrated paths; zero renderer, shared contract, manifest, quarantine or coordinator paths outside the handoff/worklog." },
+    { "check": "schema authority", "result": "PASS", "evidence": "PERSONAL_OFFICE_SCHEMA_VERSION is the only engine authority; unknown row versions fail closed; WORK_SCHEMA_VERSION is not defined or imported." },
+    { "check": "migration semantics", "result": "PASS", "evidence": "Archived outcome requires structured terminal event evidence; inconclusive becomes canceled with legacy_archived_outcome_unknown, archivedAt and legacyStatusRaw; repeat import is first-write-wins with exactly one audit event." },
+    { "check": "authorization", "result": "PASS", "evidence": "Every work IPC operation and event stream is workspace-scoped; auth transitions clear stale tenant bindings." },
+    { "check": "privacy", "result": "PASS", "evidence": "Approval create/edit inputs are redacted before both hashing and persistence; regression coverage includes secret-shaped edits." },
+    { "check": "migration startup", "result": "PASS", "evidence": "Production database is backed up before first work DDL and initialization fails closed on migration error." }
+  ],
+  "socratesReview": {
+    "decision": "ACCEPT",
+    "blockersFoundAndFixed": [
+      "free-text archived evidence could fabricate success/failure",
+      "changed-evidence reimport could create idempotency conflict",
+      "account switch could inherit stale workspace authorization",
+      "approval hash differed before/after redaction",
+      "edited approval input could persist raw secrets"
+    ]
+  },
+  "gitnexus": {
+    "index": "Re-indexed on integration at 5a52193: 7934 nodes, 18049 edges, 397 clusters, 300 flows.",
+    "detectChanges": "CLI repository resolution is ambiguous across multiple same-name Starizzi indexes and returned the quarantined worktree despite an explicit path. That output was rejected. Ownership plus direct graph-informed Socrates review and full verification are the acceptance basis.",
+    "risk": "CRITICAL blast radius expected for database.ts/index.ts/preload.ts; mitigated by additive wiring and full-suite verification."
+  },
+  "gateEffects": [
+    { "gate": "PO-VERSION-COLLISION", "before": "OPEN", "after": "CLOSED" },
+    { "gate": "PO-LOOP04-DEPENDENCY", "before": "OPEN", "after": "CLOSED" },
+    { "gate": "LEASE-L03-EXEC-WIRING-20260729", "before": "ACTIVE", "after": "REVOKED" }
+  ],
+  "unblocks": [
+    { "loop": "04", "effect": "May start source work under the vault/live/graph lease." },
+    { "loop": "05", "effect": "Dependency now becomes [03,04]; waits for Loop 04 acceptance." },
+    { "loop": "07", "effect": "May start in parallel under a disjoint capability/package-adapter lease." }
+  ]
+}

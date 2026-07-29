@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "07",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T09:06:13Z",
+  "authority": "W0 exact-path integrated the producer output and accepted it only after an independent Socrates PASS and integration verification.",
+  "subject": {
+    "title": "Deterministic capability registry and least-privilege package adapters",
+    "producerBranch": "feature/personal-office-loop-07-20260729",
+    "producerImplementation": "cf3b25af7d1504c0232575648ce9ce6338a6d572",
+    "producerHandoff": "8c486bf9fbac4bdfdd593061d5ffc1cd79544a65",
+    "registryVersion": "1.1.0",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "d8fb1a0a5bc5b9bf51efcef54133769d41549dd1"
+  },
+  "integration": {
+    "method": "W0 restored an explicit list of 16 leased implementation/artifact paths from the reviewed correction commit, committed them as 012ffc1, then restored only the four coordinator handoff paths and committed them as fcb05e6. No merge, blind cherry-pick, manifest edit or quarantine byte was used.",
+    "implementationCommit": "012ffc16e8d926db9c907d429e34a31935344c10",
+    "handoffCommit": "fcb05e644c648d15e9401cbdfb542c81be513c07",
+    "formattingCorrection": "d8fb1a0a5bc5b9bf51efcef54133769d41549dd1"
+  },
+  "independentReview": {
+    "reviewer": "Socrates",
+    "decision": "PASS",
+    "closedFindings": [
+      "Registry audit re-derives authority from the trusted policy catalog and rejects attacker-rehashed permission or version mutations.",
+      "Capability invocation requires a trusted resolver and an accepted IntegrationGrant bound to exact tenant, user, workspace, package, capability and permission.",
+      "Approval action hashes bind capability, permission, policy and registry identity.",
+      "Managed local services reject arbitrary commands and environment references; only the constrained Docker Compose form is admitted."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted capability tests",
+      "result": "PASS",
+      "evidence": "4 files, 25/25 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "85 files, 1077/1077 tests on integration with --no-cache."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build; 1167 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "agent-bundle build and noEmit",
+      "result": "PASS",
+      "evidence": "CommonJS and ESM builds plus TypeScript noEmit passed."
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "Zero findings across shared/main capabilities and agent-bundle adapters."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 16 implementation paths inside LEASE-L07-CAPABILITY-ADAPTERS-20260729; coordinator phase contains only dispatch, change request, handoff and worklog. No renderer, DB, preload, main index, manifest, lockfile or package-root export."
+    },
+    {
+      "check": "hash reconciliation",
+      "result": "PASS",
+      "evidence": "Seven declared outputs are content-identical after LF normalization. Integration checkout uses CRLF while the producer working tree used LF; semantic content is unchanged and build/tests pass."
+    },
+    {
+      "check": "security",
+      "result": "PASS",
+      "evidence": "Production secret and process-execution scans clean; one fake credential-shaped string remains only as a validation test fixture."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L07-CAPABILITY-ADAPTERS-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-07",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    }
+  ],
+  "unblocks": [
+    {
+      "loop": "09",
+      "effect": "Marketplace and installer worktree/lease may now be created from the current integration ref."
+    }
+  ],
+  "residualRisks": [
+    "Trusted IntegrationGrant resolver wiring and runtime install/load execution remain future leased work.",
+    "Publisher signature verification remains a later execution-plane responsibility.",
+    "packages/agent-bundle/src/index.ts is unchanged; the producer barrel-export change request remains requested and unapproved.",
+    "Future runtime callers must supply trusted main-process time and validate package-controlled Compose content before execution."
+  ]
+}

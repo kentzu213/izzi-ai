@@ -1,8 +1,21 @@
 import axios from 'axios';
 import { randomUUID } from 'crypto';
+import {
+  ModelRouteResolutionError,
+  createNonStreamingRetryPayload,
+  hasAsciiControlCharacter,
+  isExactStreamingLimitation,
+  retryPolicyForEndpointClass,
+  type ModelRouteRetryPolicy,
+} from '../../shared/model-gateway';
 import type { ChatProvider, ProviderTestResult } from './chat-provider';
 import { readStreamBody, streamOpenAISse } from './openai-sse';
-import type { CustomProviderConfig } from './provider-settings-store';
+import {
+  parseOpenAICompatibleEndpoint,
+  validateCustomConfig,
+  type CustomProviderConfig,
+  type OpenAICompatibleEndpoint,
+} from './provider-settings-store';
 import { buildIzziRequestHeaders } from './izzi-request-headers';
 import type {
   ManagedAgentStatus,
@@ -33,10 +46,11 @@ function buildUserContent(message: string, images: string[]): unknown {
 
 /** Resolve the chat completions URL from a base URL, avoiding the double `/v1` bug. */
 export function resolveChatCompletionsUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/$/, '');
-  if (/\/chat\/completions$/.test(base)) return base;
-  if (/\/v1$/.test(base)) return `${base}/chat/completions`;
-  return `${base}/v1/chat/completions`;
+  const endpoint = parseOpenAICompatibleEndpoint(baseUrl);
+  if (!endpoint) {
+    throw new ModelRouteResolutionError('custom-config-invalid');
+  }
+  return endpoint.chatCompletionsUrl;
 }
 
 /** Build the auth header(s) for the given auth type (Bearer or x-api-key). */
@@ -46,39 +60,29 @@ export function buildAuthHeaders(authType: 'bearer' | 'x-api-key', apiKey: strin
 
 /** Resolve the models-list URL from a base URL, mirroring the chat URL rules. */
 export function resolveModelsUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/$/, '');
-  if (/\/models$/.test(base)) return base;
-  if (/\/v1$/.test(base)) return `${base}/models`;
-  return `${base}/v1/models`;
+  const endpoint = parseOpenAICompatibleEndpoint(baseUrl);
+  if (!endpoint) {
+    throw new ModelRouteResolutionError('custom-config-invalid');
+  }
+  return endpoint.modelsUrl;
 }
 
 /**
- * Map an HTTP/error condition into a concise, key-free message (R6).
- * `redact` is supplied by the caller (SecretStore.redact) so any key in the
- * raw body is scrubbed before the message is surfaced or logged.
+ * Map an HTTP condition into a concise error without reflecting response data.
  */
-function describeHttpError(status: number, rawBody: string, redact: (text: string) => string): string {
+function describeHttpError(status: number): string {
   if (status === 401 || status === 403) {
     return `Xác thực thất bại (HTTP ${status}) — kiểm tra API key/kiểu auth`;
   }
-  const summary = redact(rawBody).split('\n')[0]?.slice(0, 120) || '';
-  return summary
-    ? `Endpoint trả HTTP ${status}: ${summary}`
-    : `Endpoint trả HTTP ${status}`;
+  return `Endpoint trả HTTP ${status}`;
 }
 
-function describeNetworkError(error: unknown, redact: (text: string) => string): string {
+function describeNetworkError(error: unknown): string {
   const code = (error as { code?: string })?.code;
   if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
     return 'Không kết nối được tới endpoint / hết thời gian chờ';
   }
-  const message = error instanceof Error ? error.message : 'Lỗi mạng không xác định';
-  return redact(message) || 'Không kết nối được tới endpoint';
-}
-
-function isStreamingFallbackError(status: number, rawBody: string): boolean {
-  if (status !== 400) return false;
-  return /not supported/i.test(rawBody) || (/stream(?:ing)?/i.test(rawBody) && /temporarily unavailable/i.test(rawBody));
+  return 'Không kết nối được tới endpoint';
 }
 
 /**
@@ -87,19 +91,29 @@ function isStreamingFallbackError(status: number, rawBody: string): boolean {
  * resolver and is never persisted as durable state beyond this instance.
  */
 export class CustomOpenAIProvider implements ChatProvider {
-  private config: CustomProviderConfig;
-  private apiKey: string;
-  /** Redactor injected by the resolver so error messages never leak the key. */
-  private redact: (text: string) => string;
+  private readonly config: Readonly<CustomProviderConfig>;
+  private readonly endpoint: OpenAICompatibleEndpoint;
+  readonly #apiKey: string;
+  private readonly retryPolicy: ModelRouteRetryPolicy;
 
   constructor(
     config: CustomProviderConfig,
     apiKey: string,
     redact: (text: string) => string = (t) => t,
   ) {
-    this.config = config;
-    this.apiKey = apiKey;
-    this.redact = redact;
+    const validation = validateCustomConfig(config);
+    if (!validation.ok || !validation.config || !validation.endpoint) {
+      throw new ModelRouteResolutionError(validation.reasonCode ?? 'custom-config-invalid');
+    }
+
+    this.config = validation.config;
+    this.endpoint = validation.endpoint;
+    this.#apiKey = apiKey;
+    this.retryPolicy = retryPolicyForEndpointClass(this.endpoint.endpointClass);
+    // Retained for constructor compatibility. Provider errors no longer reflect
+    // remote bodies or transport messages, so there is nothing caller-derived
+    // to redact on this path.
+    void redact;
   }
 
   /**
@@ -109,7 +123,7 @@ export class CustomOpenAIProvider implements ChatProvider {
    * - otherwise → append `/v1/chat/completions`
    */
   private getChatUrl(): string {
-    return resolveChatCompletionsUrl(this.config.baseUrl);
+    return this.endpoint.chatCompletionsUrl;
   }
 
   private buildHeaders(
@@ -121,7 +135,7 @@ export class CustomOpenAIProvider implements ChatProvider {
       'Content-Type': 'application/json',
       Accept: accept,
       ...buildIzziRequestHeaders(url, idempotencyKey),
-      ...buildAuthHeaders(this.config.authType, this.apiKey),
+      ...buildAuthHeaders(this.config.authType, this.#apiKey),
     };
   }
 
@@ -136,44 +150,49 @@ export class CustomOpenAIProvider implements ChatProvider {
 
     const chatUrl = this.getChatUrl();
     const idempotencyKey = Object.keys(buildIzziRequestHeaders(chatUrl)).length > 0 ? randomUUID() : undefined;
+    const payload = {
+      model: this.config.selectedModel,
+      messages,
+      stream: true,
+    };
     let response;
     try {
       response = await axios.request<NodeJS.ReadableStream>({
         method: 'POST',
         url: chatUrl,
-        data: { model: this.config.selectedModel, messages, stream: true },
+        data: payload,
         responseType: 'stream',
         validateStatus: () => true,
         headers: this.buildHeaders('text/event-stream', chatUrl, idempotencyKey),
         timeout: REQUEST_TIMEOUT_MS,
       });
     } catch (error) {
-      throw new Error(describeNetworkError(error, this.redact));
+      throw new Error(describeNetworkError(error));
     }
 
     if (response.status >= 400) {
       const body = await readStreamBody(response.data);
-      if (isStreamingFallbackError(response.status, body)) {
+      const retryPayload = this.retryPolicy === 'same-route-exact-streaming-limitation-once'
+        && isExactStreamingLimitation(response.status, body)
+        ? createNonStreamingRetryPayload(payload)
+        : null;
+      if (retryPayload) {
         let fallback;
         try {
           fallback = await axios.request({
             method: 'POST',
             url: chatUrl,
-            data: { model: this.config.selectedModel, messages, stream: false },
+            data: retryPayload,
             validateStatus: () => true,
             headers: this.buildHeaders('application/json', chatUrl, idempotencyKey),
             timeout: REQUEST_TIMEOUT_MS,
           });
         } catch (error) {
-          throw new Error(describeNetworkError(error, this.redact));
+          throw new Error(describeNetworkError(error));
         }
 
         if (fallback.status >= 400) {
-          const rawBody =
-            typeof fallback.data === 'string'
-              ? fallback.data
-              : JSON.stringify(fallback.data ?? '');
-          throw new Error(describeHttpError(fallback.status, rawBody, this.redact));
+          throw new Error(describeHttpError(fallback.status));
         }
 
         const content = fallback.data?.choices?.[0]?.message?.content;
@@ -185,7 +204,7 @@ export class CustomOpenAIProvider implements ChatProvider {
         yield { type: 'assistant_done' };
         return;
       }
-      throw new Error(describeHttpError(response.status, body, this.redact));
+      throw new Error(describeHttpError(response.status));
     }
 
     yield { type: 'status', state: 'running' };
@@ -214,16 +233,13 @@ export class CustomOpenAIProvider implements ChatProvider {
         return { ok: true, model: this.config.selectedModel, httpStatus: response.status };
       }
 
-      const rawBody = typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data ?? '');
       return {
         ok: false,
         httpStatus: response.status,
-        message: describeHttpError(response.status, rawBody, this.redact),
+        message: describeHttpError(response.status),
       };
     } catch (error) {
-      return { ok: false, message: describeNetworkError(error, this.redact) };
+      return { ok: false, message: describeNetworkError(error) };
     }
   }
 
@@ -237,31 +253,33 @@ export class CustomOpenAIProvider implements ChatProvider {
     try {
       const response = await axios.request<unknown>({
         method: 'GET',
-        url: resolveModelsUrl(this.config.baseUrl),
+        url: this.endpoint.modelsUrl,
         validateStatus: () => true,
         headers: {
           Accept: 'application/json',
-          ...buildIzziRequestHeaders(resolveModelsUrl(this.config.baseUrl)),
-          ...buildAuthHeaders(this.config.authType, this.apiKey),
+          ...buildIzziRequestHeaders(this.endpoint.modelsUrl),
+          ...buildAuthHeaders(this.config.authType, this.#apiKey),
         },
         timeout: 15000,
       });
 
       if (response.status < 200 || response.status >= 300) {
-        const rawBody =
-          typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? '');
-        return { ok: false, error: describeHttpError(response.status, rawBody, this.redact) };
+        return { ok: false, error: describeHttpError(response.status) };
       }
 
       const data = response.data as { data?: Array<{ id?: unknown }> };
       const models = Array.isArray(data?.data)
         ? data.data
             .map((m) => (typeof m?.id === 'string' ? m.id : ''))
-            .filter((id): id is string => id.length > 0)
+            .filter((id): id is string =>
+              id.length > 0
+              && id.length <= 200
+              && !hasAsciiControlCharacter(id),
+            )
         : [];
       return { ok: true, models };
     } catch (error) {
-      return { ok: false, error: describeNetworkError(error, this.redact) };
+      return { ok: false, error: describeNetworkError(error) };
     }
   }
 

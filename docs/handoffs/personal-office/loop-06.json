@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "06",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED.",
+  "title": "Deterministic Personal Office model gateway and provider routing",
+  "producer": {
+    "window": "W3",
+    "role": "deterministic model gateway builder",
+    "branch": "feature/personal-office-loop-06-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop06",
+    "lease": "LEASE-L06-MODEL-GATEWAY-20260729"
+  },
+  "dispatchBase": "9736e30c2cc23fe8d30676ef655dbc2a0f85cc46",
+  "branchBase": "208ccbd11e5cac88977f2770684cb8a1f5d438b5",
+  "implementationCommit": {
+    "sha": "e36bb4a740a6626c8c58f55888419e0723a99e79",
+    "subject": "feat(agent): add deterministic model gateway",
+    "scope": "versioned model-route contract, fail-closed managed/custom resolution, request-frozen providers, strict endpoint validation, exact same-route retry, secret-free diagnostics, fake-only tests and product contract"
+  },
+  "handoffCommit": {
+    "sha": "THIS_PHASE_2_COMMIT",
+    "subject": "docs(personal-office): hand off Loop 06 model gateway",
+    "files": [
+      "docs/handoffs/personal-office/loop-06.json",
+      "worklogs/personal-office-loop-06.md"
+    ]
+  },
+  "contractCompliance": [
+    "Defines MODEL_ROUTE_CONTRACT_VERSION 1 with strict ModelRouteDecision and ModelRouteRequirements types.",
+    "Hashes canonical secret-free routing evidence with SHA-256; the hash is integrity evidence, not a signature or authority proof.",
+    "Custom disabled selects one explicit managed route. Custom enabled with missing or invalid config or a missing key throws a typed fail-closed reason and never falls back to managed.",
+    "Provider, endpoint, model, credential source and retry policy are resolved once and frozen for the request lifetime.",
+    "The sole retry is exact known JSON HTTP 400 streaming incompatibility, once, on the same endpoint, provider, model, messages and idempotency key; only stream changes to false.",
+    "Custom URL parsing rejects credentials, query, fragment, controls, backslashes, encoded or ambiguous paths, unsupported schemes, remote HTTP and non-exact textual loopback aliases.",
+    "Official Izzi classification requires canonical HTTPS on the default port and exact izziapi.com or api.izziapi.com host; source and idempotency headers are not attached elsewhere.",
+    "Managed routing accepts only official Izzi HTTPS, reads local configuration once, ignores gateway-auth fields and uses only the provider key or authenticated access token.",
+    "Provider errors, diagnostics and route decisions do not include raw response bodies, transport messages, URLs, queries, fragments, credentials or authorization headers.",
+    "Persisted custom configuration is normalized before save; getConfig returns only validated normalized configuration or null, while getConfigValidation preserves typed missing versus invalid state without returning raw bytes.",
+    "AgentService resolves one route, records one secret-free agent.model-route diagnostic and does not add a second context path.",
+    "The protected customProvider:chat host seam remains byte-identical, custom-only and outside managed/custom selection; invalid stored config is blocked before it reaches the shared URL helper."
+  ],
+  "ownedPaths": [
+    "apps/desktop/src/shared/model-gateway/**",
+    "apps/desktop/src/main/agent/provider-resolver.ts",
+    "apps/desktop/src/main/agent/provider-settings-store.ts",
+    "apps/desktop/src/main/agent/custom-openai-provider.ts",
+    "apps/desktop/src/main/agent/managed-agent-provider.ts",
+    "apps/desktop/src/main/agent/izzi-request-headers.ts",
+    "apps/desktop/src/main/agent/agent-service.ts",
+    "apps/desktop/src/main/agent/custom-provider.test.ts",
+    "apps/desktop/src/main/agent/managed-agent-provider.test.ts",
+    "apps/desktop/src/main/agent/managed-agent-provider.production.test.ts",
+    "apps/desktop/src/main/agent/izzi-request-headers.test.ts",
+    "apps/desktop/src/main/agent/agent-service.routing.test.ts",
+    "docs/product/personal-office-model-gateway.md",
+    "docs/handoffs/personal-office/loop-06.json",
+    "worklogs/personal-office-loop-06.md"
+  ],
+  "implementationFiles": {
+    "count": 18,
+    "allInsideLease": true,
+    "diff": "1675 insertions, 299 deletions from 208ccbd through e36bb4a"
+  },
+  "prohibitedPathsRespected": [
+    "package manifests and lockfiles",
+    "apps/desktop/src/main/db/**",
+    "apps/desktop/src/main/index.ts",
+    "apps/desktop/src/main/preload.ts",
+    "apps/desktop/src/main/agent/host-agent.ts",
+    "apps/desktop/src/main/agent/secret-store.ts",
+    "apps/desktop/src/main/agent/agent-tools.ts",
+    "apps/desktop/src/renderer/**",
+    "integration ledger, lease registry and quarantine",
+    "deployment, publish and real provider/network side effects"
+  ],
+  "protectedLoop05Blobs": [
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.ts",
+      "gitBlobSha1": "b1130560b15a27b22b709e845b4b2069cd123cb9"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.context.test.ts",
+      "gitBlobSha1": "775f1980675babdd706dc5ab8fabd094ec63b548"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.streaming-fallback.test.ts",
+      "gitBlobSha1": "f5ab0bc46fdd60d106bae429279f96c3bf14d408"
+    }
+  ],
+  "securityGate": {
+    "decision": "PASS_FOR_W0_REVIEW",
+    "surfaces": [
+      "provider and billing-boundary fallback",
+      "custom endpoint SSRF and URL smuggling",
+      "official Izzi header attribution",
+      "credential source and secret reflection",
+      "persisted invalid configuration",
+      "retry widening and request identity",
+      "route diagnostics and decision serialization",
+      "protected host-agent boundary"
+    ],
+    "controls": [
+      "Enabled-invalid custom state fails closed with stable typed reason codes.",
+      "Remote plain HTTP, userinfo, query, fragment, controls, encoded paths, dot segments, duplicate separators and loopback aliases are rejected.",
+      "Managed requests reject non-Izzi origins before network access and ignore gateway-auth configuration.",
+      "Provider HTTP and transport errors are sanitized and never reflect raw response or transport data.",
+      "Route evidence contains origin only and never contains path, query, fragment, userinfo, API key or authorization header.",
+      "Retry matching requires exact known JSON error.message text and preserves endpoint, model, messages and idempotency identity.",
+      "Raw persisted invalid URLs cannot cross getConfig, IPC configuration reads or host/provider construction.",
+      "Independent security follow-up returned PASS with no actionable blocker in authorized Loop 06 files."
+    ],
+    "secretScan": "PASS. Added-line scan found 0 secret-shaped literals; deliberate fake keys and query-secret fixtures remain test-only."
+  },
+  "verification": [
+    {
+      "check": "focused model-gateway and provider tests",
+      "result": "PASS",
+      "evidence": "6 files, 80/80 tests through the read-only baseline Vitest toolchain"
+    },
+    {
+      "check": "protected Loop 05 host regressions",
+      "result": "PASS",
+      "evidence": "2 files, 10/10 tests with a temporary test-only axios alias; the alias file was removed before commit"
+    },
+    {
+      "check": "targeted main/shared TypeScript",
+      "result": "PASS",
+      "evidence": "0 production diagnostics and 0 test diagnostics using the read-only baseline dependency/type graph"
+    },
+    {
+      "check": "targeted ESLint",
+      "result": "PASS",
+      "evidence": "All 17 changed TypeScript source/test files passed the read-only baseline ESLint configuration"
+    },
+    {
+      "check": "ownership, prohibited paths and whitespace",
+      "result": "PASS",
+      "evidence": "18/18 implementation paths authorized; 0 unauthorized; 0 prohibited; git diff --check clean"
+    },
+    {
+      "check": "secret-pattern scan",
+      "result": "PASS",
+      "evidence": "0 added-line matches for common API key, GitHub token, AWS key, private-key and JWT patterns"
+    },
+    {
+      "check": "independent security review",
+      "result": "PASS",
+      "evidence": "Follow-up confirmed normalized storage, strict routing, frozen managed requests, exact retry and the custom-only protected host boundary"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "REVIEWED_HIGH_EXPECTED",
+      "evidence": "Fresh index detected exactly 18 staged files and 12 affected processes, limited to managed request routing, AgentService send flow and the read-only host URL-helper call chain"
+    },
+    {
+      "check": "full desktop suite and production build",
+      "result": "DEFERRED_TO_W0_INTEGRATION",
+      "evidence": "The isolated worktree intentionally has no complete dependency install. Dispatch assigns full desktop tests/build to W0 integration; no install, package or lockfile mutation was performed."
+    }
+  ],
+  "outputHashMethod": "Each sha256 and bytes value is computed from the exact Phase 1 Git blob returned by git show e36bb4a:<path>, independent of checkout line endings.",
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/agent/agent-service.routing.test.ts",
+      "bytes": 4671,
+      "sha256": "ddef6b615cce2db100a90ab6b888895cf34bdba9f8fe4db4039b90ca9c34ada6"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/agent-service.ts",
+      "bytes": 16532,
+      "sha256": "9626ad0ae1a336df5e9b4a044945dd06bdd9909b75e7f87d48b0c61d1497b57f"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/custom-openai-provider.ts",
+      "bytes": 10189,
+      "sha256": "6076bc8a2a37aa46f4589486a7639c28d1ada8469f18b189299ef4605c3c713f"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/custom-provider.test.ts",
+      "bytes": 26980,
+      "sha256": "ea7d89399973093b92c02d308d7d0426b68201996fc794cd58952d64917c4e77"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/izzi-request-headers.test.ts",
+      "bytes": 1901,
+      "sha256": "8b7ac2bd8b810d79a277310d155084458489fd62d516658b5d2203da259a9a62"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/izzi-request-headers.ts",
+      "bytes": 1290,
+      "sha256": "c48104530bbb70b5aa2a67754b4fa86335bcf8b1d49711ffd7b988e2ff5a3d15"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/managed-agent-provider.production.test.ts",
+      "bytes": 7352,
+      "sha256": "10f2aa38e4db5480b2885f53fb4c309f9686dd17518fa32d2651d7be31d9e350"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/managed-agent-provider.test.ts",
+      "bytes": 2015,
+      "sha256": "8cab122487cd8c00a30ab46c9c22e3cd5f534206ec5fc233bc95dc304defcb2c"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/managed-agent-provider.ts",
+      "bytes": 12230,
+      "sha256": "29f15f890c5af1506fb3650376dc3951f68407910d48d0351e666989e4f6ae44"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/provider-resolver.ts",
+      "bytes": 4359,
+      "sha256": "4547b1950c17cbd78e0bd81fe888aaa3ee335689e58b121688a0569c83b24ecd"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/provider-settings-store.ts",
+      "bytes": 10344,
+      "sha256": "9be81712482abc3de2f1c9fd32ce6916ac02abc8187c9b64e47eb8500fcbeff1"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/contracts.ts",
+      "bytes": 3436,
+      "sha256": "1e20eddd733a3f3e3d8e3b0a818396cdd7a08e5a276fa0e67d1a162f5f9fcd00"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/decision.ts",
+      "bytes": 2668,
+      "sha256": "a08aa4aaba0d4e31bc9a8a8e6acb58c91b1886f79aa4ff0879325e584329c1dc"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/index.ts",
+      "bytes": 112,
+      "sha256": "09d4164146e0e69f058f595916cff73ce83aa37855ceb92ac4e7ef93c3c3c6d1"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/model-gateway.test.ts",
+      "bytes": 5370,
+      "sha256": "8d80f1bac4090e88a280edcf2e873e474b079164d9787e475a73e2cea397f0bf"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/retry.ts",
+      "bytes": 1815,
+      "sha256": "83169f7f909b64e2bb54ea49fa6c915cd6c5d5a3328a31d136bd9d53be52655b"
+    },
+    {
+      "path": "apps/desktop/src/shared/model-gateway/validation.ts",
+      "bytes": 317,
+      "sha256": "53dfd5c9a9e5d6dd04a6c5ff0c2906f8b3d8a0608cb3032597bf0a2de2b6a5de"
+    },
+    {
+      "path": "docs/product/personal-office-model-gateway.md",
+      "bytes": 8031,
+      "sha256": "0dcad22d57d92ca64a21698bd8dd26816f739573ee811876c86588535c0abcae"
+    }
+  ],
+  "reviewHistory": {
+    "initialSecurityReview": {
+      "decision": "BLOCK",
+      "findings": [
+        "The protected custom-only IPC/host-agent seam did not emit ProviderResolver route diagnostics.",
+        "Raw persisted invalid custom URLs could escape through getConfig."
+      ]
+    },
+    "correction": [
+      "getConfigValidation now preserves typed invalid reasons while getConfig returns only normalized valid config or null.",
+      "Legacy migration reads raw storage privately only for the retired connection disablement.",
+      "Shared chat/models URL helpers now fail closed on invalid input.",
+      "Tests cover raw query-secret persistence and strict host URL resolution.",
+      "The product contract explicitly documents the existing custom-only host boundary and its lack of v1 route diagnostics."
+    ],
+    "followUpSecurityReview": "PASS — no actionable blocker remains in authorized Loop 06 files.",
+    "socratesChallenge": "PASS for e36bb4a. The committed selector meets the deterministic decision, fail-closed routing, frozen-route, exact retry, endpoint, secret and no-second-context-path requirements. The protected host seam is custom-only and cannot select or fall back to managed; its missing v1 diagnostic, limited response-body reflection and broader legacy retry remain documented residuals outside the Loop 06 selector. The reviewer performed read-only commit/diff/scope checks and did not independently assert producer test counts."
+  },
+  "residualRisks": [
+    "The protected Loop 05 customProvider:chat/runHostAgentTurn path does not emit the version-1 agent.model-route diagnostic, may reflect a bounded portion of a remote response body in legacy errors, and retains its older broader streaming downgrade behavior. It is custom-only, cannot select managed and requires a future exact lease to change.",
+    "The route decision SHA-256 is deterministic integrity/content-addressing evidence, not an authentication signature or authorization source.",
+    "Full desktop suite, production build and integration-level GitNexus checks remain W0 duties on a complete dependency installation.",
+    "A custom configuration targeting an official Izzi host remains provider-native for credit/billing classification because its credential relationship is user-configured, even though strict official headers and exact retry policy apply."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify the Phase 1 commit and all 18 Git-blob hashes, replay onto the current integration tip, run full desktop tests/build, then accept or return concrete findings."
+    },
+    {
+      "owner": "future host-agent routing lease",
+      "action": "If v1 route diagnostics or exact retry are required on customProvider:chat, grant an exact lease for main/index.ts and host-agent.ts; do not infer that authority from Loop 06."
+    }
+  ],
+  "skillAudit": {
+    "verification-loop": "USED for tests, typecheck, lint, security smoke, diff and scope gates.",
+    "security-review": "USED through an independent security_reviewer follow-up.",
+    "backend-patterns": "APPLIED in the committed provider, validation and fail-closed routing design inherited from the implementation phase.",
+    "frontend-patterns": "BOUNDARY_ONLY — no renderer or UI output.",
+    "deployment-patterns": "BOUNDARY_ONLY — no package, deploy or production mutation.",
+    "design-skills": "BOUNDARY_ONLY — no visual surface."
+  },
+  "agentAudit": {
+    "orchestrator": "W0 controlled dispatch, lease, sole-writer scope, two-phase commits and acceptance authority.",
+    "builder": "Codex implemented, verified and committed only the 18 Phase 1 leased paths, then authored only the two Phase 2 artifacts.",
+    "securityReviewer": "Initial BLOCK identified raw persisted configuration exposure and the protected custom-only host boundary; follow-up returned PASS after correction and documentation.",
+    "socrates": "Final read-only challenge returned PASS for e36bb4a. It confirmed the core selector and classified the protected host response reflection, broad matcher and observability gaps as future exact-lease residuals."
+  }
+}

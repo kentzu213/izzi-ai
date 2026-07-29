@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R",
+  "decision": "READY_FOR_PLATFORM_VALIDATION",
+  "patchDisposition": "ACCEPTED_FOR_PLATFORM_VALIDATION",
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T16:33:50Z",
+  "authority": "W0 accepts the bounded dependency, signing, notarization and publish-safety correction after independent security and Socrates PASS. This record does not authorize push, tag, publish, stable promotion, deployment or installer execution.",
+  "subject": {
+    "title": "Desktop dependency, signing, notarization and publish safety",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "lease": "LEASE-R-DEPENDENCY-SIGNING-20260729",
+    "implementationCommits": [
+      "845d8da98204b214f2978525166e1abafe62e954",
+      "1b82dc6095b277b56decfe27230b1c45c4648200"
+    ],
+    "handoffCommit": "c98dd2a2064f07781d08900ed46ac16eaa938f3f",
+    "handoff": "docs/handoffs/personal-office/release-gate-r.json"
+  },
+  "independentReview": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS_FOR_READY_FOR_PLATFORM_VALIDATION",
+    "reviewedCommit": "1b82dc6095b277b56decfe27230b1c45c4648200",
+    "closedFinding": "Automatic stable publishing from v* tag pushes was removed. Publishing now requires manual dispatch, explicit confirmation, draft/prerelease selection, a desktop-release environment and job-scoped write permission."
+  },
+  "verification": [
+    {
+      "check": "tests, lint and builds",
+      "result": "PASS_WITH_EXISTING_WARNINGS",
+      "evidence": "Desktop 1288/1288; lint 0 errors and 347 warnings below ceiling 358; workspace, Marketplace API and CLI builds pass."
+    },
+    {
+      "check": "dependency resolution and packaged content",
+      "result": "PASS_WITH_AUDIT_METADATA_EXCEPTION",
+      "evidence": "Hono resolves and packages at 2.0.12. ASAR contains no brace-expansion. pnpm audit exits 1 for brace-expansion@2.1.3, whose exact installed source and bounded 128 MB test demonstrate the CVE maxLength backport; no audit-clean claim is made."
+    },
+    {
+      "check": "Windows package and runtime",
+      "result": "PASS_FOR_PLATFORM_HANDOFF",
+      "evidence": "Unsigned NSIS packaging with --publish never passed; the unpacked app launched with a temporary profile and mounted the fail-closed login boundary."
+    },
+    {
+      "check": "macOS and publish configuration",
+      "result": "PASS_STATIC_POLICY_ONLY",
+      "evidence": "Signing secret presence is fail-closed, notarization/hardened runtime are enabled, workflow is manual-only and stable publication is technically excluded."
+    },
+    {
+      "check": "ownership, secret, prohibited-path and impact audit",
+      "result": "PASS",
+      "evidence": "Five implementation/config paths only; no product feature, DB/schema, auth, updater runtime or secret value changed; GitNexus risk LOW with zero affected processes."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 status entries."
+    }
+  ],
+  "conditionsBeforeStableAcceptance": [
+    "Verify desktop-release required reviewers and self-review prevention in GitHub repository settings.",
+    "Run Windows fresh install, launch, prior-version upgrade and uninstall with data-retention checks.",
+    "Produce real signed/notarized macOS x64 and arm64 artifacts.",
+    "Pass codesign --verify, stapler validate and spctl --assess on the macOS deliverables.",
+    "Use an approved RC tag for platform validation.",
+    "Promote the validated draft/prerelease only through a separate explicit admin action."
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-R-DEPENDENCY-SIGNING-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "RELEASE-GATE-R",
+      "before": "SECURITY_CORRECTION_IN_PROGRESS",
+      "after": "READY_FOR_PLATFORM_VALIDATION"
+    },
+    {
+      "gate": "STABLE-RELEASE",
+      "before": "BLOCKED",
+      "after": "BLOCKED_PENDING_PLATFORM_EVIDENCE"
+    }
+  ]
+}
