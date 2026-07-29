@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T04:15:00Z",
+  "updatedAt": "2026-07-29T09:06:13Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -340,29 +340,36 @@
       "loop": "06",
       "title": "Model gateway and provider routing",
       "window": "W3",
-      "status": "READY_TO_START",
-      "branch": "feature/personal-office-loop-07-20260729",
-      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop07",
-      "commitSha": null,
-      "handoff": null,
-      "dependsOn": [
-        "05"
-      ],
-      "worktreeCreationBlocked": false
-    },
-    {
-      "loop": "07",
-      "title": "Capability registry and package adapters",
-      "window": "W1",
       "status": "PROVISIONAL",
       "branch": null,
       "worktree": null,
       "commitSha": null,
       "handoff": null,
       "dependsOn": [
-        "01"
+        "05"
       ],
       "worktreeCreationBlocked": true
+    },
+    {
+      "loop": "07",
+      "title": "Capability registry and package adapters",
+      "window": "W1",
+      "status": "ACCEPTED",
+      "branch": "feature/personal-office-loop-07-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop07",
+      "commitSha": "d8fb1a0a5bc5b9bf51efcef54133769d41549dd1",
+      "handoff": "docs/handoffs/personal-office/loop-07.json",
+      "dependsOn": [
+        "01"
+      ],
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 01 and Loop 07 are ACCEPTED.",
+      "acceptanceRecord": "docs/handoffs/personal-office/acceptance/loop-07.json",
+      "acceptedProducerImplementation": "cf3b25af7d1504c0232575648ce9ce6338a6d572",
+      "acceptedProducerHandoff": "8c486bf9fbac4bdfdd593061d5ffc1cd79544a65",
+      "integrationImplementationCommit": "012ffc16e8d926db9c907d429e34a31935344c10",
+      "integrationHandoffCommit": "fcb05e644c648d15e9401cbdfb542c81be513c07",
+      "verificationSummary": "Independent Socrates PASS; targeted 25/25 and full desktop 1077/1077 tests PASS; desktop and agent-bundle builds PASS; targeted lint and typechecks PASS; exact lease, prohibited-path, secret, hash and ancestry audits PASS."
     },
     {
       "loop": "08",
@@ -390,7 +397,8 @@
       "dependsOn": [
         "07"
       ],
-      "worktreeCreationBlocked": true
+      "worktreeCreationBlocked": false,
+      "dependencyStatus": "SATISFIED — Loop 07 is ACCEPTED. W0 may create an isolated worktree and lease."
     },
     {
       "loop": "10",
