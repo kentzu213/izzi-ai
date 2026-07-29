@@ -49,7 +49,10 @@ touched.
 - Initial handoff: `fd35f97049f4c64f9064994a78fef3632561d29c`
 - Socrates disposition: SEND-BACK with four blocking findings.
 - Security correction implementation: `67be7fe1b2570500e599066b7e3f69274ba6bce0`
-- Revised handoff/worklog: recorded by the next commit.
+- Security correction handoff: `5621d34fc7995b323f53e9292559f6569320d320`
+- Product-contract formula correction:
+  `e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7`
+- Final revised handoff/worklog: recorded by the next commit.
 
 ## Socrates correction
 
@@ -64,5 +67,14 @@ All four findings were addressed inside the original lease:
    identifiers and numeric prerelease identifiers with leading zero.
 4. Secret-shaped id detection now rejects AWS `AKIA` and `ASIA` access-key
    forms without including the rejected value in the error.
+
+## Documentation correction
+
+The independent security PASS remained valid for source. Its final non-blocking
+note identified that the product contract described the old, narrower plan-id
+formula. The product document now matches code: canonical plan identity binds
+exact scope, trusted evidence digest, requested apps/packages, integration
+grant refs, classifications, trust zones, expected effects and approval
+meaning. No source or test changed in this correction.
 
 Only W0 may mark Loop 08 ACCEPTED.

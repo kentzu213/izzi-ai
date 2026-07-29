@@ -6,7 +6,9 @@
   "producer": "Codex builder",
   "lease": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
   "baseCommit": "b2fee9f0955dff5df6f86fbaa519f78261d69787",
-  "implementationCommit": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+  "implementationCommit": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+  "codeImplementationCommit": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+  "documentationCorrectionCommit": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
   "objective": "Strict deterministic workspace blueprints and exact scoped plan-only provisioning receipts.",
   "contractDecisions": [
     "Only host-validated descriptors with matching sha256 evidence can create a plan.",
@@ -37,10 +39,10 @@
     {"path":"apps/desktop/src/shared/workspace-blueprint/types.ts","sha256":"816e502115f342615ca516a642e5fd974627cbcc2bf1a8a0b77f1633a1c0faaf","bytes":3941},
     {"path":"apps/desktop/src/shared/workspace-blueprint/validation.ts","sha256":"0e214364f50dbdb6679fef3b5c6d0aa83ba945fe5bc1b53d047c1477cc409fed","bytes":12515},
     {"path":"apps/desktop/src/shared/workspace-blueprint/workspace-blueprint.test.ts","sha256":"a20f850e20e52977afdeb2b37fc8948fac54ab6c541508eabb98c13d6effc099","bytes":3071},
-    {"path":"docs/product/personal-office-workspace-blueprints.md","sha256":"4eb351f4a6cdbd910795dfd2084eb1b1b4f2a4aaba076cee2c37fe19761f19d7","bytes":3592}
+    {"path":"docs/product/personal-office-workspace-blueprints.md","sha256":"6b4ebe8935cb021f66b5b74c1dde149529b6243b4889292651edb0c2661bf1ef","bytes":3827}
   ],
   "twoPhaseCommit": {
-    "phase1": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+    "phase1": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
     "phase2Scope": [
       "docs/handoffs/personal-office/loop-08.json",
       "worklogs/personal-office-loop-08.md"
@@ -57,10 +59,15 @@
       "Credential-shaped identifiers now include AWS AKIA and ASIA access-key forms."
     ]
   },
+  "documentationReviewDisposition": {
+    "decision": "NON_BLOCKING_NOTE_CLOSED",
+    "codeSecurityDecision": "PASS remains valid",
+    "correction": "Product contract now states that planId binds exact scope, trusted evidenceDigest, and all material derived authority fields through canonical JSON."
+  },
   "residualRisks": [
     "Full desktop build/test/lint remains W0 integration work because this producer worktree has no local dependency tree and install was prohibited.",
     "No renderer was created, so no visual claim or design review is required.",
     "Operational provisioning, persistence, IPC, download, install, grant and activation remain unimplemented and unleased."
   ],
-  "submittedAt": "2026-07-29T12:03:00Z"
+  "submittedAt": "2026-07-29T12:10:00Z"
 }
