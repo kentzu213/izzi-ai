@@ -1,5 +1,21 @@
 # Changelog — Izzi AI Desktop
 
+## 1.14.0-beta.8
+
+Customer Marketing reviewer-identity patch.
+
+- Show the authenticated account name that will sign the next Product Marketing
+  Context revision before the user saves it.
+- Keep reviewer authority in the main process, expose only the display name and
+  save permission, and disable context saving for roles that cannot update it.
+- Bind the displayed signer and backend-confirmed role to an opaque,
+  revision-bound authority contract; stale identity, role, workspace, or
+  context revisions now fail closed without changing the draft.
+- Reset unsaved context state when the authenticated account or workspace scope
+  changes, preventing a draft from crossing tenant boundaries.
+- Add a direct account-settings action so the signer name can be corrected before
+  a new evidence digest and revision are created.
+
 ## 1.14.0-beta.7
 
 Customer Marketing quota-label patch.

@@ -11,6 +11,7 @@ import {
 
 function draft(): CustomerProductMarketingContextSaveInput {
   return {
+    authorityToken: `v1.${'a'.repeat(64)}`,
     expectedRevision: 0,
     product: {
       productName: 'IzziAPI',
@@ -182,9 +183,15 @@ describe('Customer Product Marketing Context contract', () => {
     expect(original.sha256).not.toBe(changed.sha256);
   });
 
-  it('rejects renderer authority, digest, reviewer, and unknown nested keys', () => {
+  it('accepts only an opaque authority token and rejects renderer-owned signer fields', () => {
     const valid = draft();
 
+    const { authorityToken: _authorityToken, ...missingAuthorityToken } = valid;
+    expect(parseCustomerProductMarketingContextSaveInput(missingAuthorityToken)).toBeNull();
+    expect(parseCustomerProductMarketingContextSaveInput({
+      ...valid,
+      authorityToken: 'renderer-controlled',
+    })).toBeNull();
     expect(parseCustomerProductMarketingContextSaveInput({
       ...valid,
       workspaceId: 'renderer-controlled',

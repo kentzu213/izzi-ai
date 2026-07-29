@@ -168,6 +168,7 @@ describe('customer marketing media IPC', () => {
 
 describe('customer marketing Product Marketing Context IPC', () => {
   const input = {
+    authorityToken: `v1.${'a'.repeat(64)}`,
     expectedRevision: 0,
     product: {
       productName: 'IzziAPI',
@@ -236,7 +237,7 @@ describe('customer marketing Product Marketing Context IPC', () => {
     expect(service.getProductMarketingContext).toHaveBeenCalledTimes(1);
   });
 
-  it('passes only the strict context draft and rejects renderer-owned authority fields', async () => {
+  it('passes only the strict context draft with an opaque main-issued authority token', async () => {
     const service = serviceMock();
     registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
     const handler = electronMocks.handlers.get('customerMarketing:saveProductMarketingContext');
@@ -248,6 +249,10 @@ describe('customer marketing Product Marketing Context IPC', () => {
     });
     expect(service.saveProductMarketingContext).toHaveBeenCalledWith(input);
 
+    await expect(handler!(event(), {
+      ...input,
+      authorityToken: 'renderer-controlled',
+    })).rejects.toThrow('Payload Product Marketing Context không hợp lệ');
     await expect(handler!(event(), {
       ...input,
       workspaceId: 'renderer-controlled',

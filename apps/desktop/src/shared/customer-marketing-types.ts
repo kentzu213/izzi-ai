@@ -313,6 +313,13 @@ export interface CustomerMarketingSnapshot {
   workspace: CustomerWorkspaceSummary;
   onboarding: CustomerOnboardingProfile | null;
   productMarketingContext: CustomerProductMarketingContextV1 | null;
+  productMarketingContextAuthority: {
+    reviewerName: string;
+    canSave: boolean;
+    status: 'confirmed' | 'local' | 'forbidden' | 'unavailable';
+    scopeToken: string;
+    authorityToken: string | null;
+  };
   capabilityCatalog: CustomerCapabilityCatalogSummary;
   capabilities: CustomerCapability[];
   runs: CustomerRun[];

@@ -17,4 +17,22 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).toContain("monthlyQuota.toLocaleString('vi-VN')} credit/tháng");
     expect(roomSource).not.toContain("monthlyQuota.toLocaleString('vi-VN')} tháng");
   });
+
+  it('shows the main-process context signer before save and keeps reviewer authority outside the form', () => {
+    expect(roomSource).toContain('Revision mới sẽ được ký bằng tài khoản');
+    expect(roomSource).toContain('contextAuthority.reviewerName');
+    expect(roomSource).toContain('https://izziapi.com/dashboard/settings');
+    expect(roomSource).toContain('|| !contextAuthority.canSave');
+    expect(roomSource).toContain('authorityToken: contextAuthority.authorityToken');
+    expect(roomSource).toContain("contextAuthority.status === 'confirmed'");
+    expect(roomSource).toContain('key={snapshot.productMarketingContextAuthority.scopeToken}');
+    expect(roomSource).toContain('aria-describedby="cmr-context-signer"');
+    expect(roomSource).not.toContain('reviewer: contextAuthority.reviewerName');
+  });
+
+  it('keeps the renderer strict-typecheck path free of stale capability wiring', () => {
+    expect(roomSource).not.toContain('customer-marketing-voice-preview');
+    expect(roomSource).toContain('onOpen={openCapabilityView}');
+    expect(roomSource).not.toContain("openCapabilityView(action, 'apps')");
+  });
 });

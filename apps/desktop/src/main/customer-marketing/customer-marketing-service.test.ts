@@ -5,6 +5,7 @@ import type {
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingResource,
   CustomerMarketingResourceCreateInput,
+  CustomerMarketingSnapshot,
   CustomerMarketingWorkflowTarget,
   CustomerMediaToolchain,
   CustomerOnboardingInput,
@@ -363,8 +364,10 @@ function marketingWorkflowGateway(
 function productMarketingContext(
   expectedRevision = 0,
   productName = 'IzziAPI',
+  authorityToken = `v1.${'0'.repeat(64)}`,
 ): CustomerProductMarketingContextSaveInput {
   return {
+    authorityToken,
     expectedRevision,
     product: {
       productName,
@@ -446,6 +449,14 @@ function customerExtensionDefinition(
     outputs: ['approved_video'],
     ...overrides,
   };
+}
+
+function productMarketingAuthorityToken(
+  snapshot: CustomerMarketingSnapshot | undefined,
+): string {
+  const authorityToken = snapshot?.productMarketingContextAuthority.authorityToken;
+  if (!authorityToken) throw new Error('Expected Product Marketing Context save authority.');
+  return authorityToken;
 }
 
 function customerRuntimeExtension(
@@ -568,13 +579,73 @@ async function completeOnboarding(service: CustomerMarketingService, name = 'Acm
   const result = await service.saveOnboarding(onboarding(name));
   expect(result.ok).toBe(true);
   expect(result.snapshot?.onboarding?.completed).toBe(true);
-  const context = await service.saveProductMarketingContext(productMarketingContext());
+  const context = await service.saveProductMarketingContext(productMarketingContext(
+    0,
+    'IzziAPI',
+    productMarketingAuthorityToken(result.snapshot),
+  ));
   expect(context.ok).toBe(true);
   expect(context.context?.revision).toBe(1);
   return result;
 }
 
 describe('CustomerMarketingService tenant boundary', () => {
+  it.each([
+    ['owner', true, 'local'],
+    ['manager', true, 'local'],
+    ['editor', true, 'local'],
+    ['reviewer', false, 'forbidden'],
+    ['viewer', false, 'forbidden'],
+  ] as const)('exposes the authenticated context signer and %s save authority', async (
+    role,
+    canSave,
+    status,
+  ) => {
+    const context = setup({
+      identity: { id: 'tenant-a', name: 'Nguyễn Nghĩa', plan: 'pro', balance: 75 },
+    });
+    await context.service.saveOnboarding(onboarding());
+    context.db.updateOnlyRecord({ role });
+
+    const snapshot = await context.service.getSnapshot();
+
+    expect(snapshot.productMarketingContextAuthority).toMatchObject({
+      reviewerName: 'Nguyễn Nghĩa',
+      canSave,
+      status,
+      scopeToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+    });
+    if (canSave) {
+      expect(snapshot.productMarketingContextAuthority.authorityToken)
+        .toMatch(/^v1\.[a-f0-9]{64}$/);
+    } else {
+      expect(snapshot.productMarketingContextAuthority.authorityToken).toBeNull();
+    }
+    expect(JSON.stringify(snapshot.productMarketingContextAuthority)).not.toContain('tenant-a');
+  });
+
+  it('rotates the opaque draft scope when the authenticated tenant changes', async () => {
+    const context = setup({
+      identity: { id: 'tenant-a', name: 'Same Display Name', plan: 'pro', balance: 75 },
+    });
+    const tenantA = await context.service.saveOnboarding(onboarding('Tenant A'));
+    const tenantAScope = tenantA.snapshot?.productMarketingContextAuthority.scopeToken;
+
+    context.setIdentity({
+      id: 'tenant-b',
+      name: 'Same Display Name',
+      plan: 'pro',
+      balance: 75,
+    });
+    const tenantB = await context.service.saveOnboarding(onboarding('Tenant B'));
+    const tenantBScope = tenantB.snapshot?.productMarketingContextAuthority.scopeToken;
+
+    expect(tenantAScope).toMatch(/^v1\.[a-f0-9]{64}$/);
+    expect(tenantBScope).toMatch(/^v1\.[a-f0-9]{64}$/);
+    expect(tenantBScope).not.toBe(tenantAScope);
+    expect(`${tenantAScope}${tenantBScope}`).not.toContain('tenant-');
+  });
+
   it('isolates onboarding and workflows by authenticated user', async () => {
     const context = setup();
     await completeOnboarding(context.service, 'Tenant A');
@@ -651,7 +722,11 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     const onboardingResult = await context.service.saveOnboarding(onboarding());
     expect(onboardingResult.ok).toBe(true);
 
-    const saved = await context.service.saveProductMarketingContext(productMarketingContext());
+    const saved = await context.service.saveProductMarketingContext(productMarketingContext(
+      0,
+      'IzziAPI',
+      productMarketingAuthorityToken(onboardingResult.snapshot),
+    ));
 
     expect(saved).toMatchObject({
       ok: true,
@@ -677,11 +752,19 @@ describe('CustomerMarketingService onboarding and workflow', () => {
 
   it('replays an identical save without revision churn and rejects a stale conflicting writer', async () => {
     const context = setup();
-    await context.service.saveOnboarding(onboarding());
-    const first = await context.service.saveProductMarketingContext(productMarketingContext());
+    const onboardingResult = await context.service.saveOnboarding(onboarding());
+    const first = await context.service.saveProductMarketingContext(productMarketingContext(
+      0,
+      'IzziAPI',
+      productMarketingAuthorityToken(onboardingResult.snapshot),
+    ));
     const firstSha = first.context?.sha256;
 
-    const replay = await context.service.saveProductMarketingContext(productMarketingContext());
+    const replay = await context.service.saveProductMarketingContext(productMarketingContext(
+      0,
+      'IzziAPI',
+      productMarketingAuthorityToken(first.snapshot),
+    ));
     expect(replay).toMatchObject({
       ok: true,
       status: 'saved',
@@ -689,7 +772,11 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       context: { revision: 1, sha256: firstSha },
     });
 
-    const conflictingDraft = productMarketingContext(0, 'Conflicting product');
+    const conflictingDraft = productMarketingContext(
+      0,
+      'Conflicting product',
+      productMarketingAuthorityToken(replay.snapshot),
+    );
     const conflict = await context.service.saveProductMarketingContext(conflictingDraft);
     expect(conflict).toMatchObject({
       ok: false,
@@ -699,7 +786,11 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect((await context.service.getProductMarketingContext())?.product.productName).toBe('IzziAPI');
 
     const updated = await context.service.saveProductMarketingContext(
-      productMarketingContext(1, 'IzziAPI Platform'),
+      productMarketingContext(
+        1,
+        'IzziAPI Platform',
+        productMarketingAuthorityToken(conflict.snapshot),
+      ),
     );
     expect(updated).toMatchObject({
       ok: true,
@@ -710,10 +801,15 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(updated.context?.sha256).not.toBe(firstSha);
   });
 
-  it('records a new revision when the authenticated reviewer changes on identical content', async () => {
+  it('rejects a stale signer token and signs only after the refreshed authority is reviewed', async () => {
     const context = setup();
-    await context.service.saveOnboarding(onboarding());
-    const first = await context.service.saveProductMarketingContext(productMarketingContext());
+    const onboardingResult = await context.service.saveOnboarding(onboarding());
+    const first = await context.service.saveProductMarketingContext(productMarketingContext(
+      0,
+      'IzziAPI',
+      productMarketingAuthorityToken(onboardingResult.snapshot),
+    ));
+    const staleAuthorityToken = productMarketingAuthorityToken(first.snapshot);
 
     context.setIdentity({
       id: 'tenant-a',
@@ -721,7 +817,32 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       plan: 'pro',
       balance: 75,
     });
-    const reviewed = await context.service.saveProductMarketingContext(productMarketingContext(1));
+    const stale = await context.service.saveProductMarketingContext(productMarketingContext(
+      1,
+      'IzziAPI',
+      staleAuthorityToken,
+    ));
+
+    expect(stale).toMatchObject({
+      ok: false,
+      status: 'conflict',
+      context: { revision: 1, reviewer: { name: 'Owner A' } },
+      snapshot: {
+        productMarketingContextAuthority: {
+          reviewerName: 'Manager B',
+          canSave: true,
+          status: 'local',
+        },
+      },
+    });
+    expect(productMarketingAuthorityToken(stale.snapshot)).not.toBe(staleAuthorityToken);
+    expect((await context.service.getProductMarketingContext())?.revision).toBe(1);
+
+    const reviewed = await context.service.saveProductMarketingContext(productMarketingContext(
+      1,
+      'IzziAPI',
+      productMarketingAuthorityToken(stale.snapshot),
+    ));
 
     expect(reviewed).toMatchObject({
       ok: true,
@@ -1374,8 +1495,13 @@ describe('customer capability catalog', () => {
     const approvalId = created.snapshot?.approvals[0].id;
     expect(approvalId).toBeTruthy();
 
+    const currentSnapshot = await context.service.getSnapshot();
     const updated = await context.service.saveProductMarketingContext(
-      productMarketingContext(1, 'IzziAPI Updated'),
+      productMarketingContext(
+        1,
+        'IzziAPI Updated',
+        productMarketingAuthorityToken(currentSnapshot),
+      ),
     );
     expect(updated.context?.revision).toBe(2);
 
@@ -1818,6 +1944,12 @@ describe('CustomerMarketingService backend workspace sync', () => {
     });
     expect(snapshot.capabilityCatalog).toEqual({ status: 'synced', revision: 1 });
     expect(snapshot.capabilities.length).toBeGreaterThan(0);
+    expect(snapshot.productMarketingContextAuthority).toMatchObject({
+      reviewerName: 'Owner A',
+      canSave: true,
+      status: 'confirmed',
+      authorityToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+    });
     expect(gateway.getCapabilities).toHaveBeenCalledWith(workspace.id);
     expect(gateway.getCurrent).toHaveBeenCalledTimes(1);
     expect(gateway.ensureWorkspace).not.toHaveBeenCalled();
@@ -1837,7 +1969,113 @@ describe('CustomerMarketingService backend workspace sync', () => {
     expect(snapshot.workspace.id).toMatch(/^customer-/);
     expect(snapshot.workspace.syncStatus).toBe('unavailable');
     expect(snapshot.workspace.role).toBe('owner');
+    expect(snapshot.productMarketingContextAuthority).toEqual({
+      reviewerName: 'Owner A',
+      canSave: false,
+      status: 'unavailable',
+      scopeToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+      authorityToken: null,
+    });
   });
+
+  it('fails closed when a cached local owner loses backend authority confirmation', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-authority-offline',
+      name: 'Nguyễn Nghĩa',
+      plan: 'pro',
+      balance: 75,
+    };
+    const local = setup({ identity });
+    const onboardingResult = await local.service.saveOnboarding(onboarding());
+    const staleLocalAuthority = productMarketingAuthorityToken(onboardingResult.snapshot);
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
+      reserveQuota: vi.fn(async () => ({ status: 'unavailable', quota: null })),
+    };
+    const connected = new CustomerMarketingService(
+      local.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      gateway,
+    );
+
+    const snapshot = await connected.getSnapshot();
+    const save = await connected.saveProductMarketingContext(productMarketingContext(
+      0,
+      'IzziAPI',
+      staleLocalAuthority,
+    ));
+
+    expect(snapshot.productMarketingContextAuthority).toEqual({
+      reviewerName: 'Nguyễn Nghĩa',
+      canSave: false,
+      status: 'unavailable',
+      scopeToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+      authorityToken: null,
+    });
+    expect(save).toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      context: null,
+      snapshot: {
+        productMarketingContextAuthority: {
+          canSave: false,
+          status: 'unavailable',
+          authorityToken: null,
+        },
+      },
+    });
+    expect(await connected.getProductMarketingContext()).toBeNull();
+  });
+
+  it.each<CustomerRole>(['reviewer', 'viewer'])(
+    'revalidates a backend %s role before signing Product Marketing Context',
+    async (role) => {
+      let activeRole: CustomerRole = 'owner';
+      const currentWorkspace = () => remoteWorkspace({ role: activeRole });
+      const gateway: CustomerMarketingWorkspaceGateway = {
+        ...memberGatewayMethods(),
+        getCurrent: vi.fn(async () => ({
+          status: 'synced',
+          workspace: currentWorkspace(),
+        })),
+        ensureWorkspace: vi.fn(async () => ({
+          status: 'synced',
+          workspace: currentWorkspace(),
+        })),
+        reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+      };
+      const context = setup({ workspaceGateway: gateway });
+      const onboardingResult = await context.service.saveOnboarding(onboarding());
+      const ownerAuthority = productMarketingAuthorityToken(onboardingResult.snapshot);
+      activeRole = role;
+
+      const result = await context.service.saveProductMarketingContext(productMarketingContext(
+        0,
+        'IzziAPI',
+        ownerAuthority,
+      ));
+
+      expect(result).toMatchObject({
+        ok: false,
+        status: 'forbidden',
+        context: null,
+        snapshot: {
+          workspace: { role },
+          productMarketingContextAuthority: {
+            canSave: false,
+            status: 'forbidden',
+            authorityToken: null,
+          },
+        },
+      });
+      expect(await context.service.getProductMarketingContext()).toBeNull();
+    },
+  );
 
   it.each([
     ['unavailable', 'unavailable'],

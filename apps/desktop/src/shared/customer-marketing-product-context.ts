@@ -4,6 +4,7 @@ export const CUSTOMER_PRODUCT_MARKETING_CONTEXT_LOCALES = ['vi', 'en'] as const;
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const AUTHORITY_TOKEN_PATTERN = /^v1\.[a-f0-9]{64}$/;
 
 export interface CustomerMarketingLocalizedText {
   vi: string;
@@ -47,6 +48,7 @@ export interface CustomerProductMarketingProfileV1 {
 }
 
 export interface CustomerProductMarketingContextSaveInput {
+  authorityToken: string;
   expectedRevision: number;
   product: CustomerProductMarketingProfileV1;
   sources: CustomerProductMarketingEvidenceSourceInput[];
@@ -78,13 +80,19 @@ export type CustomerProductMarketingContextUnsignedV1 =
 export function parseCustomerProductMarketingContextSaveInput(
   value: unknown,
 ): CustomerProductMarketingContextSaveInput | null {
-  if (!isRecordWithExactKeys(value, ['expectedRevision', 'product', 'sources'])) return null;
+  if (!isRecordWithExactKeys(value, ['authorityToken', 'expectedRevision', 'product', 'sources'])) {
+    return null;
+  }
+  const authorityToken = typeof value.authorityToken === 'string'
+    && AUTHORITY_TOKEN_PATTERN.test(value.authorityToken)
+    ? value.authorityToken
+    : null;
   const expectedRevision = nonNegativeInteger(value.expectedRevision);
   const product = parseProduct(value.product);
   const sources = parseSourceInputs(value.sources);
-  if (expectedRevision === null || !product || !sources) return null;
+  if (!authorityToken || expectedRevision === null || !product || !sources) return null;
   if (!proofSourcesExist(product.proofClaims, sources)) return null;
-  return { expectedRevision, product, sources };
+  return { authorityToken, expectedRevision, product, sources };
 }
 
 export function parseCustomerProductMarketingContext(

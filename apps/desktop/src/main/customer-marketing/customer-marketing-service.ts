@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseManager } from '../db/database';
 import type { IzziAgentChatPayload, IzziAgentChatResult } from '../agents/izzi-agent';
 import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
@@ -1041,6 +1041,7 @@ export class CustomerMarketingService {
     expiresAt: string;
   } | null = null;
   private readonly marketingCreateRequests = new Map<string, { idempotencyKey: string; expiresAt: number }>();
+  private readonly productMarketingAuthorityKey = randomUUID();
 
   constructor(
     private readonly db: Pick<DatabaseManager, 'getSetting' | 'setSetting' | 'deleteSetting'>,
@@ -1058,6 +1059,57 @@ export class CustomerMarketingService {
       'listStatuses' | 'revokeCredential'
     > | null = null,
   ) {}
+
+  private productMarketingContextAuthority(
+    identity: CustomerIdentity,
+    record: CustomerTenantRecord,
+    workspaceState: CustomerMarketingWorkspaceState,
+  ): CustomerMarketingSnapshot['productMarketingContextAuthority'] {
+    const reviewerName = productMarketingReviewerName(identity);
+    let status: CustomerMarketingSnapshot['productMarketingContextAuthority']['status'];
+    if (
+      this.workspaceGateway
+      && (workspaceState.status !== 'synced' || !workspaceState.workspace)
+    ) {
+      status = 'unavailable';
+    } else if (!MARKETING_AUTHOR_ROLES.has(record.role)) {
+      status = 'forbidden';
+    } else {
+      status = this.workspaceGateway ? 'confirmed' : 'local';
+    }
+    const canSave = status === 'confirmed' || status === 'local';
+    const scopeToken = `v1.${createHmac('sha256', this.productMarketingAuthorityKey)
+      .update(JSON.stringify([
+        'product-marketing-draft-scope',
+        identity.id,
+        record.workspaceId,
+      ]), 'utf8')
+      .digest('hex')}`;
+    const authorityToken = canSave
+      ? `v1.${createHmac('sha256', this.productMarketingAuthorityKey)
+        .update(JSON.stringify([
+          identity.id,
+          reviewerName,
+          record.workspaceId,
+          record.role,
+          record.productMarketingContext?.revision ?? 0,
+          status,
+        ]), 'utf8')
+        .digest('hex')}`
+      : null;
+    return { reviewerName, canSave, status, scopeToken, authorityToken };
+  }
+
+  private productMarketingAuthorityMatches(
+    received: string,
+    expected: string | null,
+  ): boolean {
+    if (!expected) return false;
+    const receivedBytes = Buffer.from(received, 'utf8');
+    const expectedBytes = Buffer.from(expected, 'utf8');
+    return receivedBytes.length === expectedBytes.length
+      && timingSafeEqual(receivedBytes, expectedBytes);
+  }
 
   private marketingCreateRequest(
     workspaceId: string,
@@ -2075,9 +2127,9 @@ export class CustomerMarketingService {
   async saveProductMarketingContext(
     input: CustomerProductMarketingContextSaveInput,
   ): Promise<CustomerProductMarketingContextMutationResult> {
-    const identity = this.requireIdentity();
+    const requestIdentity = this.requireIdentity();
     const parsed = parseCustomerProductMarketingContextSaveInput(input);
-    let record = this.readRecord(identity);
+    let record = this.readRecord(requestIdentity);
     if (!parsed || !record.onboarding?.completed) {
       return {
         ok: false,
@@ -2089,6 +2141,15 @@ export class CustomerMarketingService {
       };
     }
     const workspaceState = await this.resolveWorkspaceState(record);
+    const identity = this.requireIdentity();
+    if (identity.id !== requestIdentity.id) {
+      return {
+        ok: false,
+        status: 'conflict',
+        context: null,
+        error: 'Phiên đăng nhập đã thay đổi; tải lại Product Marketing Context trước khi lưu.',
+      };
+    }
     if (
       workspaceState.status === 'unavailable'
       || (workspaceState.status === 'synced' && !workspaceState.workspace)
@@ -2097,6 +2158,7 @@ export class CustomerMarketingService {
         ok: false,
         status: 'unavailable',
         context: record.productMarketingContext,
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
         error: 'Không thể xác nhận quyền workspace; Product Marketing Context chưa được lưu.',
       };
     }
@@ -2112,11 +2174,22 @@ export class CustomerMarketingService {
         ok: false,
         status: 'forbidden',
         context: record.productMarketingContext,
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
         error: 'Vai trò hiện tại không có quyền cập nhật Product Marketing Context.',
       };
     }
 
     const current = record.productMarketingContext;
+    const authority = this.productMarketingContextAuthority(identity, record, workspaceState);
+    if (!this.productMarketingAuthorityMatches(parsed.authorityToken, authority.authorityToken)) {
+      return {
+        ok: false,
+        status: 'conflict',
+        context: current,
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
+        error: 'Quyền hoặc người ký đã thay đổi; bản nháp được giữ lại. Hãy rà soát người ký mới trước khi lưu.',
+      };
+    }
     if (
       current
       && sameProductMarketingDraft(current, parsed)
@@ -3245,6 +3318,11 @@ export class CustomerMarketingService {
       },
       onboarding: record.onboarding,
       productMarketingContext: record.productMarketingContext,
+      productMarketingContextAuthority: this.productMarketingContextAuthority(
+        identity,
+        record,
+        workspaceState,
+      ),
       capabilityCatalog,
       capabilities,
       runs: record.runs,

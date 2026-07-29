@@ -44,7 +44,6 @@ import type {
   CustomerWorkspaceMembersResult,
   CustomerWorkspaceInvitationAcceptanceResult,
 } from '../../shared/customer-marketing-types';
-import { CUSTOMER_MARKETING_VOICE_PREVIEW_CAPABILITY_ID } from '../../shared/customer-marketing-voice-preview';
 import { CustomerMarketingResources } from './CustomerMarketingResources';
 import { CustomerMarketingChannels } from './CustomerMarketingChannels';
 import { CustomerMarketingCapabilityWorkbench } from './CustomerMarketingCapabilityWorkbenches';
@@ -270,7 +269,7 @@ function profileToInput(profile: CustomerOnboardingProfile): CustomerOnboardingI
   };
 }
 
-type ProductContextDraft = CustomerProductMarketingContextSaveInput;
+type ProductContextDraft = Omit<CustomerProductMarketingContextSaveInput, 'authorityToken'>;
 type ProductContextLocalizedKey =
   | 'category'
   | 'positioning'
@@ -2142,6 +2141,7 @@ interface BrandViewProps {
   setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
   onSave: () => Promise<void>;
   context: CustomerProductMarketingContextV1 | null;
+  contextAuthority: CustomerMarketingSnapshot['productMarketingContextAuthority'];
   onSnapshot: (snapshot: CustomerMarketingSnapshot) => void;
   busy: boolean;
 }
@@ -2183,6 +2183,7 @@ function BrandView({
   setForm,
   onSave,
   context,
+  contextAuthority,
   onSnapshot,
   busy,
 }: BrandViewProps) {
@@ -2395,11 +2396,22 @@ function BrandView({
       setContextError('Product Marketing Context cần chạy trong Izzi AI Desktop.');
       return;
     }
+    if (!contextAuthority.canSave || !contextAuthority.authorityToken) {
+      setContextError(
+        contextAuthority.status === 'forbidden'
+          ? 'Vai trò hiện tại không có quyền lưu Product Marketing Context.'
+          : 'IzziAPI chưa xác nhận quyền lưu. Bản nháp vẫn được giữ trên màn hình.',
+      );
+      return;
+    }
     setContextBusy(true);
     setContextError('');
     setContextNotice('');
     try {
-      const result = await api.saveProductMarketingContext(contextDraft);
+      const result = await api.saveProductMarketingContext({
+        ...contextDraft,
+        authorityToken: contextAuthority.authorityToken,
+      });
       if (result.snapshot) onSnapshot(result.snapshot);
       if (result.ok && result.context) {
         const savedDraft = productContextToDraft(result.context);
@@ -2409,8 +2421,8 @@ function BrandView({
         setServerConflict(null);
         setContextNotice(
           result.duplicate
-            ? `Context revision ${result.context.revision} không đổi vì nội dung trùng khớp.`
-            : `Đã khóa Product Marketing Context revision ${result.context.revision}.`,
+            ? `Context revision ${result.context.revision} không đổi; người ký vẫn là ${result.context.reviewer.name}.`
+            : `Đã lưu và ký Product Marketing Context revision ${result.context.revision} bằng ${result.context.reviewer.name}.`,
         );
         return;
       }
@@ -2427,6 +2439,23 @@ function BrandView({
       );
     } finally {
       setContextBusy(false);
+    }
+  };
+
+  const openAccountSettings = async () => {
+    const openExternal = window.electronAPI?.shell.openExternal;
+    if (!openExternal) {
+      setContextError('Không mở được trang tài khoản trong phiên này.');
+      return;
+    }
+    try {
+      await openExternal('https://izziapi.com/dashboard/settings');
+    } catch (reason) {
+      setContextError(
+        reason instanceof Error
+          ? reason.message
+          : 'Không mở được trang tài khoản IzziAPI.',
+      );
     }
   };
 
@@ -2505,7 +2534,7 @@ function BrandView({
 
         <dl className="cmr-context-receipt">
           <div><dt>Revision</dt><dd>{receiptContext?.revision ?? 0}</dd></div>
-          <div><dt>Reviewer</dt><dd>{receiptContext?.reviewer.name ?? 'Chưa xác nhận'}</dd></div>
+          <div><dt>Người ký revision hiện tại</dt><dd>{receiptContext?.reviewer.name ?? 'Chưa có revision đã ký'}</dd></div>
           <div>
             <dt>Digest</dt>
             <dd><code>{receiptContext ? `${receiptContext.sha256.slice(0, 16)}…` : 'Chưa có'}</code></dd>
@@ -2793,19 +2822,57 @@ function BrandView({
         </div>
 
         <div className="cmr-product-context__footer">
-          <div>
-            <ReviewIcon className="cmr-icon" />
-            <span>
-              Lưu context tạo evidence digest mới. Approval chiến lược cũ sẽ không được dùng cho revision mới.
-            </span>
+          <div className="cmr-product-context__footer-info">
+            <div className="cmr-context-signature" id="cmr-context-signer">
+              <ReviewIcon className="cmr-icon" />
+              <div>
+                <span>Revision mới sẽ được ký bằng tài khoản</span>
+                <strong>{contextAuthority.reviewerName}</strong>
+                <small>
+                  {contextAuthority.status === 'confirmed'
+                    ? 'IzziAPI đã xác nhận tên và quyền ký cho lần lưu này.'
+                    : contextAuthority.status === 'local'
+                      ? 'Tên và quyền ký đang được xác nhận bởi phiên local.'
+                      : contextAuthority.status === 'forbidden'
+                        ? 'Vai trò hiện tại không có quyền tạo revision mới.'
+                        : 'IzziAPI chưa xác nhận quyền; chức năng lưu đang khóa.'}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="cmr-button cmr-button--quiet"
+                onClick={() => void openAccountSettings()}
+                aria-label="Mở cài đặt tài khoản trên IzziAPI, mở cửa sổ mới"
+              >
+                Mở cài đặt tài khoản
+                <SettingsIcon className="cmr-button__icon" />
+              </button>
+            </div>
+            <div className="cmr-context-impact">
+              <StatusIcon className="cmr-icon" />
+              <span>
+                Lưu context tạo evidence digest mới. Approval chiến lược cũ sẽ không được dùng cho revision mới.
+              </span>
+            </div>
           </div>
           <button
             type="button"
             className="cmr-button cmr-button--primary"
             onClick={() => void saveProductContext()}
-            disabled={busy || contextBusy || !contextDirty || Boolean(serverConflict)}
+            aria-describedby="cmr-context-signer"
+            disabled={
+              busy
+              || contextBusy
+              || !contextDirty
+              || Boolean(serverConflict)
+              || !contextAuthority.canSave
+            }
           >
-            {contextBusy ? 'Đang khóa context...' : 'Lưu Product Context'}
+            {!contextAuthority.canSave
+              ? 'Không có quyền lưu'
+              : contextBusy
+                ? 'Đang lưu và ký...'
+                : 'Lưu và ký Product Context'}
             <StatusIcon className="cmr-button__icon" />
           </button>
         </div>
@@ -2980,7 +3047,7 @@ function CustomerRoom({
                 capabilities={snapshot.capabilities}
                 catalog={snapshot.capabilityCatalog}
                 workspace={snapshot.workspace}
-                onOpen={(action) => openCapabilityView(action, 'apps')}
+                onOpen={openCapabilityView}
               />
             )
           )}
@@ -2989,10 +3056,12 @@ function CustomerRoom({
             aria-hidden={activeView !== 'brand'}
           >
             <BrandView
+              key={snapshot.productMarketingContextAuthority.scopeToken}
               form={form}
               setForm={setForm}
               onSave={saveBrand}
               context={snapshot.productMarketingContext}
+              contextAuthority={snapshot.productMarketingContextAuthority}
               onSnapshot={onSnapshot}
               busy={busy}
             />
