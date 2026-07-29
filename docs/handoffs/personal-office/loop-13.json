@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "13",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff enables no push, deployment, package installation, browser automation, secret retrieval or external effect.",
+  "title": "Real shell-to-Work bridge and first workspace",
+  "producer": {
+    "window": "W0-Codex",
+    "role": "Codex builder; Kiro and subagents had no writer authority",
+    "branch": "feature/personal-office-loop-13-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop13",
+    "lease": "LEASE-L13-REAL-WORK-BRIDGE-20260729"
+  },
+  "canonicalBase": "03a2397911b5a6e81103f148ab76d52d034bd11e",
+  "implementationCommit": "25c6a945b5b1c3178b46a14b2d374c54f021226e",
+  "handoffCommitNote": "The producer handoff commit contains only this JSON and worklogs/personal-office-loop-13.md.",
+  "inputs": [
+    {
+      "producerLoop": "02",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-02.json",
+      "sha256": "6b635cc365efe4dc09f8a7f4206f6e1a5fde7c93c3a72a058cd1645578991cb4",
+      "bytes": 5311
+    },
+    {
+      "producerLoop": "03",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-03.json",
+      "sha256": "189daa2edc4da2f326117e03f0a062a8e6bfb7b59c98ab9d76202754c4c349f3",
+      "bytes": 4010
+    }
+  ],
+  "outcome": {
+    "workspaceBootstrap": "Main idempotently ensures the canonical personal workspace during Work IPC registration.",
+    "authorization": "Main derives trusted sender, reviewer identity and accessible workspace scope. Renderer cannot supply tenant or user authority.",
+    "rendererBridge": "The shell lists only authorized workspaces, maps bounded Work DTOs into minimal read records, creates durable runs and reloads on scoped Work events.",
+    "truthfulness": "Demo remains opt-in. Missing Electron bridge, missing workspace and denied create-run requests fail closed instead of fabricating data.",
+    "privacy": "Engine externalPath is not copied into renderer state."
+  },
+  "ownership": {
+    "allInsideLease": true,
+    "implementationPathCount": 7,
+    "prohibitedPathChanges": 0,
+    "untouched": [
+      "apps/desktop/src/main/index.ts",
+      "apps/desktop/src/main/db/**",
+      "apps/desktop/src/main/auth/**",
+      "apps/desktop/src/main/runtime/**",
+      "apps/desktop/src/shared/personal-office/**",
+      "apps/desktop/src/renderer/App.tsx",
+      "package.json",
+      "apps/desktop/package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml"
+    ]
+  },
+  "securityGate": {
+    "decision": "PASS_FOR_W0_REVIEW",
+    "surfaces": [
+      "trusted renderer sender",
+      "workspace and identity authorization",
+      "renderer data minimization",
+      "durable create-run denial",
+      "quarantine and toolchain isolation"
+    ],
+    "controls": [
+      "listWorkspaces validates the trusted top-level renderer before resolving current authority",
+      "accessible workspace ids are derived in main and every subsequent Work request remains workspace-scoped",
+      "renderer receives no tenant/user authority and no artifact externalPath",
+      "delegate rejects missing workspace and null createRun responses",
+      "no DB/schema, auth, runtime, package, installer, deploy, browser automation or secret surface changed"
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted Work bridge tests",
+      "result": "PASS",
+      "evidence": "2 files, 35/35 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "123 files, 1370/1370 tests on canonical exact-path replay."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors, 350 warnings, below max 358."
+    },
+    {
+      "check": "ownership, prohibited paths, whitespace and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly 7 implementation paths, all leased; git diff --check clean; no added-line credential assignment or key material."
+    },
+    {
+      "check": "producer/canonical provenance",
+      "result": "PASS",
+      "evidence": "All 7 canonical staged Git blobs equal implementation commit 25c6a94."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "CRITICAL_REVIEW_SCOPE",
+      "evidence": "7 files, 6 indexed changed symbols and 265 affected processes; full tests, both typechecks, build and lint were therefore mandatory."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Read-only HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5; 459 status entries; status SHA-256 b8b124cd1de43b73ef1cf3697df519f1049ccd923ecb024dd9bf166be82c1c8d."
+    }
+  ],
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/main/preload.ts",
+      "sha256": "13b75130e13342c830c7084d60eaaeaaa1d32c60ab5db1b242fed2fd6f24bbf7",
+      "bytes": 36051
+    },
+    {
+      "path": "apps/desktop/src/main/work/work-ipc-authz.test.ts",
+      "sha256": "7d2b1f247c15902df106c51734bffacaf31c33a9480aad2ddabb28f047896f28",
+      "bytes": 19208
+    },
+    {
+      "path": "apps/desktop/src/main/work/work-ipc.ts",
+      "sha256": "47c973b1a49c3b782204c528eba10278d5c9b1164c4385580ddeae9d785f920f",
+      "bytes": 14309
+    },
+    {
+      "path": "apps/desktop/src/main/work/work-preload-api.ts",
+      "sha256": "f0efc439b01847dff8006fc2d4140f8c3fc6643bb839daef1c2b0401e0f8d693",
+      "bytes": 3712
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/useWorkSnapshot.ts",
+      "sha256": "29ab1509e290d6d431a55fd40e561d008369e242342177c166d96233402c3d96",
+      "bytes": 4978
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/workAdapter.ts",
+      "sha256": "721aaa8ec5ef4aa15c4ced58db2086936a24639d3915cd5ad6e45ff0edd92b32",
+      "bytes": 21115
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/workAdapter.test.ts",
+      "sha256": "1f31038e9462d2b710bf2c9b2b43f5fbe6a53b3f102a9a5d01074aa9039b6ff4",
+      "bytes": 6209
+    }
+  ],
+  "nextConsumer": {
+    "owner": "W0",
+    "action": "Commit the already verified exact-path replay, reconcile this handoff only, create acceptance/loop-13.json, update the ledger and revoke the lease in separate governance commits."
+  }
+}
