@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T23:35:00Z",
+  "updatedAt": "2026-07-29T23:50:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -960,10 +960,18 @@
     {
       "loop": "15",
       "title": "Host-validated Marketplace operation",
-      "status": "BLOCKED_GATE",
+      "status": "PROVISIONAL",
+      "gate": "PO-PRODUCT-MARKETPLACE-OPERATION",
+      "branch": "feature/personal-office-loop-15-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop15",
+      "baseCommit": "e82eb30168ad08d3865e8348b8f4080487846a99",
+      "lease": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-15-marketplace-operation.md",
       "dependsOn": [
         "13"
-      ]
+      ],
+      "dependencyStatus": "SATISFIED — Loop 13 and Loop 14 are ACCEPTED.",
+      "securityGate": "Trusted sender, main-derived scope, audited catalog/registry, unchanged plan, package-byte/signature evidence, Work approval, exact grants and truthful stage receipts; production effect ports remain fail-closed."
     },
     {
       "loop": "16",
