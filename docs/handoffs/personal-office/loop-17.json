@@ -31,21 +31,37 @@
     "bounded text, response and screenshot evidence",
     "query-stripped custom audit trace and screenshot digest-only evidence",
     "idempotent browser/context cleanup on cancellation, timeout and open failure"
+    ,
+    "main-authoritative Marketplace completed receipts persisted only after encrypted durable recording",
+    "main-authoritative IntegrationGrant connected receipts bound to exact tenant and user authority",
+    "encrypted revocation tombstones persisted before remote, vault or metadata cleanup",
+    "truthful Marketplace blocked receipts when authoritative persistence is unavailable",
+    "truthful IntegrationGrant compensation receipts with explicit incomplete-cleanup status",
+    "authoritative receipt restart revalidation and cached-evidence removal after revocation",
+    "mandatory evidence authority before workspace provisioning, package installation, grant connect or grant revoke effects"
   ],
-  "latestImplementationCommit": "0c31987db0c14e2da83a6edc5d179d83e25511d9",
+  "latestImplementationCommit": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+  "offlineAuthoritativeReceiptSubphase": {
+    "status": "REVIEWED_PASS",
+    "implementationCommit": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+    "lease": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
+    "independentReview": "PASS",
+    "scope": "Offline authoritative receipt persistence, revocation invalidation and runtime evidence revalidation only. No production composition or external browser/network effect."
+  },
   "verification": {
-    "focusedTests": "37/37",
-    "fullTests": "135 files, 1435/1435",
+    "focusedTests": "8 files, 55/55",
+    "fullTests": "136 files, 1447/1447",
     "mainTypeScript": "PASS",
     "rendererTypeScript": "PASS",
     "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
     "changedLint": "0 warnings",
-    "repositoryLint": "0 errors, 350 warnings"
+    "repositoryLint": "0 errors, 350 warnings",
+    "ownershipAndSecurity": "PASS — 13/13 paths in active lease; prohibited paths 0; diff secret hits 0; quarantine unchanged.",
+    "gitNexus": "DEGRADED_REVIEWED — stale baseline index reported 11 changed files but zero indexed symbols; focused/full tests and manual dependency review cover the isolated delta."
   },
   "remainingBeforeReview": [
     "W0-approved declared Playwright dependency and lockfile provenance",
     "audited production port registration and compatible executable provenance",
-    "main-authoritative hooks that record only Marketplace and grant operation outputs",
     "exact W0 leases for main composition seams",
     "separate WebSocket authority if a production workflow requires sockets",
     "real production-adapter install-to-open-to-delegate-to-artifact evidence"

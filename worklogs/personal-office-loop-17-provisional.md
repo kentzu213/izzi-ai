@@ -38,6 +38,31 @@ Added a dependency-injected managed Playwright-compatible driver in commit
 and therefore cannot silently rely on a transitive dependency. A future adapter
 must supply the exact browser type port and executable verifier.
 
+Added the offline authoritative operation-receipt lifecycle in commit
+`d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da`. Completed Marketplace receipts and
+connected IntegrationGrant receipts are now stored in a separate encrypted,
+digest-validated authority store keyed without raw tenant, user, workspace,
+package or grant identifiers in filenames. Connected grant receipts carry
+main-derived tenant and user authority. Revocation writes an encrypted tombstone
+before remote disconnect, vault cleanup or metadata mutation, so restart and
+execute-time revalidation deny stale grants.
+
+Marketplace now requires the authoritative receipt sink before workspace
+provisioning or package installation. A successful install is returned as
+`completed` only after the exact completed receipt is durably recorded. If
+recording fails after installation, the returned receipt remains truthfully
+`blocked`, preserves the real workspace/package evidence and ends at the
+`operational_evidence` stage.
+
+IntegrationGrant connect and revoke now fail closed before connector effects
+when the evidence authority is unavailable. If connected-receipt persistence
+fails, the service records a tombstone first, attempts remote and credential
+cleanup, marks repository metadata invalid, and returns
+`EVIDENCE_COMPENSATION_FAILED` whenever any compensation step is incomplete.
+The operational browser service calls authoritative `ensure()` before both
+prepare and execute and removes stale cached evidence when authoritative
+receipts are absent or revoked.
+
 The managed boundary requires an exact absolute executable path and matching
 SHA-256 verification before launch. Launch is headed and sandboxed. Every open
 creates one fixed-viewport non-persistent context with service workers blocked,
@@ -62,19 +87,25 @@ It requests, but does not grant, the package/lockfile provenance lease,
 `main/index.ts` composition lease, authoritative operation-to-evidence hooks
 and real adapter-backed E2E authority.
 
-Verification: focused 37/37; full desktop 135 files / 1435 tests; main and
+Verification: focused 8 files / 55 tests; full desktop 136 files / 1447 tests; main and
 renderer TypeScript pass; production build passes with the existing large-chunk
 advisory; changed-surface lint 0 warnings; repository lint 0 errors / 350
 warnings. Ownership, prohibited-path, undeclared-import, secret and diff checks
-pass. Canonical remains clean. Quarantine remains read-only at
+pass. All 13 implementation paths are covered by the active exact-path lease.
+Independent read-only review initially found that the Marketplace evidence gate
+ran after workspace provisioning; it was moved before provisioning and the
+re-review passed. GitNexus remained degraded because the baseline index returned
+11 changed files but zero changed symbols, so manual dependency review plus the
+focused/full gates were used. Canonical remains clean. Quarantine remains read-only at
 `959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5`, 459 entries, fingerprint
 `b8b124cd1de43b73ef1cf3697df519f1049ccd923ecb024dd9bf166be82c1c8d`
 using the established LF/no-trailing-newline method.
 
-This is intentionally not READY_FOR_REVIEW or ACCEPTED. Production Playwright
-registration, authoritative operation-to-store hooks, main composition and the real
-adapter-backed Market → install → provision → open → delegate → artifact proof
-remain missing.
+The offline authoritative-receipt subphase is `REVIEWED_PASS`, but Loop 17 as a
+whole intentionally remains `PROVISIONAL`, not ACCEPTED. Production Playwright
+dependency/lock provenance, audited `main/index.ts` composition, production
+adapter registration and the real adapter-backed Market → install → provision
+→ open → delegate → artifact proof remain missing.
 No browser, network, install, secret or external effect was used.
 
 Method: Codex-only under the `security-review`, `backend-patterns` and
