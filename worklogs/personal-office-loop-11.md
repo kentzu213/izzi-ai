@@ -1,9 +1,9 @@
 # Loop 11 — runtime manager and isolated browser foundation
 
-**Status:** `READY_FOR_REVIEW`  
-**Branch:** `feature/personal-office-loop-11-20260729`  
-**Canonical base:** `c562c7f45e72c6de5c2f93b259c04c11d63e7b73`  
-**Implementation:** `d1a1d152597bec8a1d172075c18145aea91fea4d`  
+**Status:** `READY_FOR_REVIEW`
+**Branch:** `feature/personal-office-loop-11-20260729`
+**Canonical base:** `c562c7f45e72c6de5c2f93b259c04c11d63e7b73`
+**Implementation:** `d1a1d152597bec8a1d172075c18145aea91fea4d`
 **Lease:** `LEASE-L11-RUNTIME-BROWSER-20260729`
 
 ## Outcome
