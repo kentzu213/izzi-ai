@@ -46,7 +46,7 @@ import {
   type Workspace,
   type WorkspaceKind,
 } from './work-types';
-import { redactText } from './work-redaction';
+import { redactDeep, redactText } from './work-redaction';
 import { RunRepository, type AppendEventResult } from './run-repository';
 import { WorkDb, type WorkSqliteDatabase } from './work-sqlite';
 import {
@@ -66,6 +66,22 @@ import {
 
 /** Default approval window. Short enough that a stale gate closes on its own. */
 export const DEFAULT_APPROVAL_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Redact an approval action input once at the service boundary.
+ *
+ * The returned value is the exact value used for both hashing and persistence,
+ * so request-time and edit-time approvals cannot disagree about the consented
+ * action and neither path can durably store a live credential.
+ */
+function redactApprovalInput(input: unknown): unknown {
+  const redacted = redactDeep(input);
+  return redacted.value !== null
+    && typeof redacted.value === 'object'
+    && !Array.isArray(redacted.value)
+    ? { ...(redacted.value as Record<string, unknown>), _redacted: redacted.kinds }
+    : redacted.value;
+}
 
 export interface WorkServiceOptions {
   db: WorkSqliteDatabase | WorkDb;
@@ -324,12 +340,12 @@ export class WorkService {
     return this.repo.listEvents(runId, afterRunSeq, limit);
   }
 
-  listEventsSince(afterSeq = 0, limit = 500): WorkEvent[] {
-    return this.repo.listEventsSince(afterSeq, limit);
+  listEventsSince(workspaceId: string, afterSeq = 0, limit = 500): WorkEvent[] {
+    return this.repo.listEventsSince(workspaceId, afterSeq, limit);
   }
 
-  latestEventSeq(): number {
-    return this.repo.latestEventSeq();
+  latestEventSeq(workspaceId: string): number {
+    return this.repo.latestEventSeq(workspaceId);
   }
 
   listLineage(runId: string): WorkRun[] {
@@ -576,9 +592,12 @@ export class WorkService {
 
       const id = newWorkId('approval');
       const idempotencyKey = input.idempotencyKey ?? id;
+      // Normalize once at the boundary. The exact redacted binding is both
+      // hashed and persisted, so decision-time verification sees the same
+      // bytes even when the original input contained a secret-shaped value.
       const binding: WorkActionBinding = {
         target: redactText(input.target).value,
-        input: input.input,
+        input: redactApprovalInput(input.input),
         artifactId: toArtifactIdOrNull(artifact?.id ?? null),
         artifactVersion: artifact?.version ?? null,
         estimatedSideEffect: redactText(input.estimatedSideEffect).value,
@@ -679,9 +698,11 @@ export class WorkService {
 
       // An edit changes the action, so it gets its own hash. The receipt keeps
       // both, so an audit can see what was proposed and what was consented to.
+      const editedInput =
+        input.decision === 'edit' ? redactApprovalInput(input.editedInput) : undefined;
       const decidedBinding: WorkActionBinding =
         input.decision === 'edit'
-          ? { ...approval.binding, input: input.editedInput }
+          ? { ...approval.binding, input: editedInput }
           : approval.binding;
       const decidedActionHash =
         input.decision === 'edit' ? computeActionHash(decidedBinding) : approval.actionHash;
@@ -701,7 +722,7 @@ export class WorkService {
         decidedAt,
         decidedBy: input.decidedBy,
         decisionNote: input.note ?? null,
-        ...(input.decision === 'edit' ? { editedInput: input.editedInput } : {}),
+        ...(input.decision === 'edit' ? { editedInput } : {}),
         receiptDigest,
         receipt,
       });
@@ -1001,10 +1022,20 @@ export class WorkService {
     evidence: 'conclusive' | 'inconclusive' | 'not_applicable';
     evidenceNote?: string;
   }): AppendEventResult {
+    const idempotencyKey = `legacy-migrated:${input.legacySource}:${input.legacyId}`;
+    const existing = this.repo
+      .listEvents(input.runId)
+      .find((event) => event.idempotencyKey === idempotencyKey);
+    if (existing) {
+      // Migration conclusions are first-write-wins. A later import may have a
+      // different evidence window, but rewriting history or emitting a second
+      // conclusion would violate the exactly-one audit ruling.
+      return { event: existing, duplicate: true };
+    }
     return this.append({
       runId: input.runId,
       type: 'run.migrated',
-      idempotencyKey: `legacy-migrated:${input.legacySource}:${input.legacyId}`,
+      idempotencyKey,
       payload: {
         legacySource: input.legacySource,
         legacyStatusRaw: input.legacyStatusRaw,

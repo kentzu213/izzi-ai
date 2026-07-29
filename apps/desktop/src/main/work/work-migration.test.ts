@@ -4,6 +4,7 @@ import { WorkDb, tableExists } from './work-sqlite';
 import {
   readWorkModelVersion,
   runWorkModelMigration,
+  UnsupportedWorkModelVersionError,
   WORK_MODEL_TARGET_VERSION,
 } from './work-migration';
 import { createNodeSqliteDatabase } from './test-support';
@@ -96,6 +97,47 @@ describe('work-model migration', () => {
       const second = runWorkModelMigration(db, { backup: () => (calls += 1) });
       expect(second.backedUp).toBe(false);
       expect(calls).toBe(1);
+    } finally {
+      close();
+    }
+  });
+
+  it('takes the backup before creating the migration ledger or unified tables', () => {
+    const { db, close } = createNodeSqliteDatabase();
+    try {
+      const work = new WorkDb(db);
+      let observedBeforeDdl = false;
+      runWorkModelMigration(db, {
+        backup: () => {
+          observedBeforeDdl =
+            !tableExists(work, 'work_migrations') && !tableExists(work, 'work_runs');
+        },
+      });
+      expect(observedBeforeDdl).toBe(true);
+      expect(tableExists(work, 'work_migrations')).toBe(true);
+      expect(tableExists(work, 'work_runs')).toBe(true);
+    } finally {
+      close();
+    }
+  });
+
+  it('fails closed when the database was written by a newer work-model version', () => {
+    const { db, close } = createNodeSqliteDatabase();
+    try {
+      runWorkModelMigration(db);
+      const work = new WorkDb(db);
+      work.run(
+        'INSERT INTO work_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+        WORK_MODEL_TARGET_VERSION + 1,
+        'future-shape',
+        new Date().toISOString(),
+      );
+
+      let backupCalls = 0;
+      expect(() =>
+        runWorkModelMigration(db, { backup: () => (backupCalls += 1) }),
+      ).toThrow(UnsupportedWorkModelVersionError);
+      expect(backupCalls).toBe(0);
     } finally {
       close();
     }

@@ -21,6 +21,10 @@ import type {
 import { runLegacyStoreMigration } from './migrations';
 import { ensureSqliteSchema } from './sqlite-schema';
 import type { QueueOp } from '../../shared/offline-queue';
+import { runWorkModelMigration } from '../work/work-migration';
+import { backupSqliteFile } from '../work/work-backup';
+import { WorkService } from '../work/work-service';
+import type { WorkEvent } from '../work/work-types';
 
 type SqliteDatabase = Database.Database;
 
@@ -161,6 +165,10 @@ export class DatabaseManager {
   private db!: SqliteDatabase;
   private dbPath: string;
   private legacyStorePath: string;
+  /** Built lazily so a caller that never touches work does not pay for it. */
+  private workService: WorkService | null = null;
+  /** Live fan-out hook, installed by main once a window exists. */
+  private workEventSink: ((event: WorkEvent) => void) | null = null;
 
   constructor() {
     const userDataPath = app.getPath('userData');
@@ -173,15 +181,60 @@ export class DatabaseManager {
     this.legacyStorePath = path.join(dbDir, 'openclaw-store.json');
   }
 
-  initialize() {
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
+  initialize(): void {
+    try {
+      this.db = new Database(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('foreign_keys = ON');
 
-    ensureSqliteSchema(this.db);
-    runLegacyStoreMigration(this.db, this.legacyStorePath);
+      ensureSqliteSchema(this.db);
+      runLegacyStoreMigration(this.db, this.legacyStorePath);
 
-    console.log('[DB] Initialized SQLite store at:', this.dbPath);
+      // Unified work model (Loop 03). Additive tables in the same file, so a
+      // failure here is NOT survivable by carrying on: the work surfaces would
+      // read from a half-built schema and a later write could land against the
+      // wrong shape. It throws, and startup stops with the reason intact.
+      const migration = runWorkModelMigration(this.db, {
+        backup: (fromVersion) => {
+          // A failed backup aborts the migration by throwing out of this hook.
+          // Proceeding without a snapshot is exactly the case recovery exists for.
+          backupSqliteFile(this.db, this.dbPath, fromVersion);
+        },
+      });
+
+      console.log(`[DB] Initialized SQLite store; work model v${migration.toVersion}`);
+    } catch (error) {
+      // Fail closed and release the file lock. Main will not register IPC or
+      // create a renderer after this error escapes initServices().
+      this.workService = null;
+      this.workEventSink = null;
+      try {
+        if (this.db?.open) this.db.close();
+      } catch {
+        // Preserve the original migration/initialization error.
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The unified work engine over this same connection. One SQLite handle keeps
+   * legacy and work writes in a single transaction domain, so an adapter that
+   * reads a legacy row and writes a run cannot interleave with another writer.
+   */
+  getWorkService(): WorkService {
+    if (!this.workService) {
+      this.workService = new WorkService({
+        db: this.db,
+        onEvent: (event) => this.workEventSink?.(event),
+      });
+    }
+    return this.workService;
+  }
+
+  /** Install the live event fan-out (main → renderer). Replaces any previous sink. */
+  setWorkEventSink(sink: ((event: WorkEvent) => void) | null): void {
+    this.workEventSink = sink;
   }
 
   getSetting(key: string): string | null {
@@ -956,7 +1009,9 @@ export class DatabaseManager {
       .run(backendId, seq);
   }
 
-  close() {
+  close(): void {
+    this.workEventSink = null;
+    this.workService = null;
     if (this.db?.open) {
       this.db.close();
     }

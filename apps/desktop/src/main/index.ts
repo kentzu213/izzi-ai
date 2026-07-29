@@ -72,6 +72,14 @@ import {
 } from './customer-marketing/commercial-voice-license';
 import { createStreamCollector } from '../shared/agent-turn-events';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
+import {
+  createWorkEventForwarder,
+  createWorkEventVisibility,
+  registerWorkIpc,
+  reviewerHashFromUserId,
+  type WorkIpcIdentity,
+  type WorkTenantWorkspaceBinding,
+} from './work/work-ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let authManager: AuthManager;
@@ -98,7 +106,13 @@ let dockerAgentService: DockerAgentService;
 let customerMarketingService: CustomerMarketingService;
 let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
 let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
+let workTenantWorkspaceBinding: WorkTenantWorkspaceBinding | null = null;
 const queuedProtocolUrls: string[] = [];
+
+function clearWorkTenantAuthorization(): void {
+  workTenantWorkspaceBinding = null;
+  if (autopostAuth) autopostAuth.clear();
+}
 
 /**
  * Resolve the Izzi credential for the LLM proxy, never logged / never sent to the
@@ -281,6 +295,33 @@ function setupIPC() {
   );
   registerMarketingIpc(marketingWorkspace);
 
+  // Personal Office work bridge. Identity and tenant scope are resolved fresh
+  // in main for every request/event; no renderer-supplied user claim is trusted.
+  const workService = dbManager.getWorkService();
+  const workIdentity: WorkIpcIdentity = {
+    resolveReviewerHash: () =>
+      reviewerHashFromUserId(authManager.getCurrentUser()?.id),
+    resolveTenantWorkspaceBindings: () => {
+      const reviewerHash = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+      const workspaceId = autopostAuth.getWorkspaceId();
+      if (!reviewerHash || !workspaceId) return [];
+      if (
+        !workTenantWorkspaceBinding
+        || workTenantWorkspaceBinding.workspaceId !== workspaceId
+      ) {
+        workTenantWorkspaceBinding = { reviewerHash, workspaceId };
+      }
+      return [workTenantWorkspaceBinding];
+    },
+  };
+  registerWorkIpc(workService, workIdentity);
+  dbManager.setWorkEventSink(
+    createWorkEventForwarder(
+      () => mainWindow?.webContents ?? null,
+      createWorkEventVisibility(workService, workIdentity),
+    ),
+  );
+
   // ── Window controls ──
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
@@ -295,21 +336,25 @@ function setupIPC() {
 
   // ── Auth (Supabase) ──
   ipcMain.handle('auth:login', async (_event, credentials: { email: string; password: string }) => {
+    clearWorkTenantAuthorization();
     const result = await authManager.login(credentials.email, credentials.password);
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:loginWithGoogle', async () => {
+    clearWorkTenantAuthorization();
     const result = await authManager.loginWithGoogle();
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:signup', async (_event, data: { email: string; password: string; name: string }) => {
+    clearWorkTenantAuthorization();
     const result = await authManager.signup(data.email, data.password, data.name);
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:logout', async () => {
+    clearWorkTenantAuthorization();
     customerMarketingService.clearPendingWorkspaceInvitationCopy();
     customerMarketingInvitationCoordinator?.clearPending();
     bufferedCustomerMarketingInvitationStatus = null;
@@ -1009,7 +1054,7 @@ function setupIPC() {
   ipcMain.handle('autopost:setEnabled', async (_event, enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> => {
     dbManager.setSetting('autopost_enabled', enabled ? '1' : '0');
     if (enabled) await syncAutopostExtensionCredentials();
-    else autopostAuth.clear();
+    else clearWorkTenantAuthorization();
     return { ok: true, enabled: !!enabled };
   });
   // Read surfaces for the in-app Auto-Post page (native, over the same REST bridge
@@ -1449,6 +1494,7 @@ async function initServices() {
 // Handle OAuth callback from custom protocol
 function handleOAuthCallback(url: string) {
   if (url.startsWith('openclaw://auth/callback')) {
+    clearWorkTenantAuthorization();
     authManager.handleOAuthCallback(url).then(async (result) => {
       if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
       if (result.success && mainWindow) {
@@ -1572,7 +1618,14 @@ app.whenReady().then(async () => {
       // Silent fail — profile refresh is best-effort
     }
   });
-
+}).catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : 'unknown startup error';
+  console.error('[OpenClaw] Startup initialization failed:', message);
+  dialog.showErrorBox(
+    'Izzi AI could not start',
+    'The local workspace could not be initialized safely. No work commands were enabled. Restart the app or restore the latest local database backup.',
+  );
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
@@ -1619,6 +1672,7 @@ app.on('before-quit', async () => {
     await izziLlmProxy.stop();
   }
   if (dbManager) {
+    dbManager.setWorkEventSink(null);
     dbManager.close();
   }
 });

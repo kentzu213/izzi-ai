@@ -53,8 +53,13 @@ function legacyRun(status: LegacyAgentRun['status'], id = 'legacy-1'): LegacyAge
   return { id, goal: 'Ship the thing', stage: 'build', status, createdAt: AT, updatedAt: AT };
 }
 
-function entry(content: string, id = 'e1'): LegacyAgentRunEntry {
-  return { id, runId: 'legacy-1', kind: 'note', content, createdAt: AT };
+function entry(
+  content: string,
+  id = 'e1',
+  kind: LegacyAgentRunEntry['kind'] = 'note',
+  stage?: string,
+): LegacyAgentRunEntry {
+  return { id, runId: 'legacy-1', kind, ...(stage ? { stage } : {}), content, createdAt: AT };
 }
 
 function customerRun(status: CustomerRun['status']): CustomerRun {
@@ -152,14 +157,14 @@ describe('MAP-BLOCKED: legacy blocked is recoverable, never terminal', () => {
 
 describe('MAP-ARCHIVED: a terminal state is derived, never assumed', () => {
   it('derives completed only from conclusive completion evidence', () => {
-    const outcome = deriveArchivedOutcome([entry('Deliverable shipped and verified')]);
+    const outcome = deriveArchivedOutcome([entry('status=completed', 'e1', 'event')]);
     expect(outcome.state).toBe('completed');
     expect(outcome.conclusive).toBe(true);
     expect(outcome.canceledReason).toBeUndefined();
   });
 
   it('derives failed only from conclusive failure evidence', () => {
-    const outcome = deriveArchivedOutcome([entry('Build failed, unrecoverable')]);
+    const outcome = deriveArchivedOutcome([entry('run.failed', 'e1', 'event')]);
     expect(outcome.state).toBe('failed');
     expect(outcome.conclusive).toBe(true);
   });
@@ -184,10 +189,29 @@ describe('MAP-ARCHIVED: a terminal state is derived, never assumed', () => {
 
   it('prefers the latest entry when earlier ones disagree', () => {
     const outcome = deriveArchivedOutcome([
-      { id: 'old', runId: 'legacy-1', kind: 'note', content: 'failed to connect', createdAt: '2025-01-01T00:00:00.000Z' },
-      { id: 'new', runId: 'legacy-1', kind: 'note', content: 'retried and completed', createdAt: '2025-01-02T00:00:00.000Z' },
+      { id: 'old', runId: 'legacy-1', kind: 'event', content: 'run.failed', createdAt: '2025-01-01T00:00:00.000Z' },
+      { id: 'new', runId: 'legacy-1', kind: 'event', content: 'run.completed', createdAt: '2025-01-02T00:00:00.000Z' },
     ]);
     expect(outcome.state).toBe('completed');
+  });
+
+  it('does not treat negated or transient prose as terminal evidence', () => {
+    const outcome = deriveArchivedOutcome([
+      entry('not completed; waiting for review'),
+      entry('failed to connect to the provider', 'e2'),
+      entry('draft delivered to review', 'e3'),
+    ]);
+    expect(outcome.state).toBe('canceled');
+    expect(outcome.conclusive).toBe(false);
+    expect(outcome.canceledReason).toBe('legacy_archived_outcome_unknown');
+  });
+
+  it('does not treat the free-form lifecycle stage as terminal evidence', () => {
+    const outcome = deriveArchivedOutcome([
+      entry('provider acknowledged the handoff', 'stage-done', 'note', 'done'),
+    ]);
+    expect(outcome.state).toBe('canceled');
+    expect(outcome.conclusive).toBe(false);
   });
 
   it('always sets the archivedAt tombstone and keeps the raw status', () => {
@@ -204,7 +228,7 @@ describe('MAP-ARCHIVED: a terminal state is derived, never assumed', () => {
   it('reaches a terminal state for every archived run', () => {
     const { service, close } = setup();
     const conclusive = importLegacyAgentRun(service, legacyRun('archived', 'arch-done'), {
-      entries: [entry('work completed')],
+      entries: [entry('run.completed', 'e1', 'event')],
     });
     const inconclusive = importLegacyAgentRun(service, legacyRun('archived', 'arch-unknown'));
 
@@ -226,6 +250,23 @@ describe('MAP-ARCHIVED: a terminal state is derived, never assumed', () => {
       .listEvents(first.id)
       .filter((event) => event.type === 'run.migrated');
     expect(audits).toHaveLength(1);
+    close();
+  });
+
+  it('keeps the first migration conclusion when later evidence changes', () => {
+    const { service, close } = setup();
+    const first = importLegacyAgentRun(service, legacyRun('archived', 'evidence-shifts'));
+    const second = importLegacyAgentRun(service, legacyRun('archived', 'evidence-shifts'), {
+      entries: [entry('run.completed', 'later', 'event')],
+    });
+    expect(second.state).toBe('canceled');
+    expect(first.state).toBe('canceled');
+
+    const audits = service
+      .listEvents(first.id)
+      .filter((event) => event.type === 'run.migrated');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.payload).toMatchObject({ derivedState: 'canceled' });
     close();
   });
 

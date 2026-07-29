@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InvalidWorkTransitionError, type WorkEvent } from './work-types';
+import { computeActionHash } from './work-hash';
 import { runWorkModelMigration } from './work-migration';
 import { WorkService } from './work-service';
 import { createNodeSqliteDatabase } from './test-support';
@@ -116,7 +117,7 @@ describe('WorkService — event ordering + idempotency', () => {
     const b = ctx.service.createRun({ title: 'B', brief: 'b' });
     ctx.service.queue(a.id);
     ctx.service.queue(b.id);
-    const all = ctx.service.listEventsSince(0);
+    const all = ctx.service.listEventsSince('personal', 0);
     const seqs = all.map((e) => e.seq);
     expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
     expect(new Set(seqs).size).toBe(seqs.length);
@@ -208,6 +209,29 @@ describe('WorkService — approvals', () => {
     }
   });
 
+  it('hashes the redacted action binding so secret-bearing approvals remain decidable', () => {
+    const run = runningRun();
+    const rawSecret = 'sk-live-secret-value-that-must-not-persist';
+    const approval = ctx.service.requestApproval({
+      runId: run.id,
+      kind: 'external_publish',
+      title: 'Publish',
+      summary: 'secret-bearing action',
+      risk: 'high',
+      target: 'provider/account',
+      input: { apiKey: rawSecret, body: 'safe copy' },
+      estimatedSideEffect: 'publish one item',
+    });
+    expect(JSON.stringify(approval.binding.input)).not.toContain(rawSecret);
+
+    const result = ctx.service.decideApproval({
+      approvalId: approval.id,
+      decision: 'approve',
+      decidedBy: 'reviewer-hash',
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('edit binds a different action hash than the proposal', () => {
     const run = runningRun();
     const approval = ctx.service.requestApproval({
@@ -231,6 +255,45 @@ describe('WorkService — approvals', () => {
       expect(result.approval.status).toBe('edited');
       expect(result.receipt.decidedActionHash).not.toBe(result.receipt.proposedActionHash);
     }
+  });
+
+  it('redacts an edited action before hashing and persistence', () => {
+    const run = runningRun();
+    const approval = ctx.service.requestApproval({
+      runId: run.id,
+      kind: 'external_publish',
+      title: 'Publish',
+      summary: 's',
+      risk: 'high',
+      target: 'provider/account',
+      input: { body: 'original' },
+      estimatedSideEffect: 'publish',
+    });
+    const rawSecret = 'sk-edited-secret-value-that-must-not-persist';
+    const result = ctx.service.decideApproval({
+      approvalId: approval.id,
+      decision: 'edit',
+      decidedBy: 'reviewer',
+      editedInput: { apiKey: rawSecret, body: 'edited copy' },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(JSON.stringify(result.approval.editedInput)).not.toContain(rawSecret);
+      expect(result.approval.editedInput).toMatchObject({
+        apiKey: '[redacted]',
+        body: 'edited copy',
+        _redacted: ['secret-key-name'],
+      });
+      expect(result.receipt.decidedActionHash).toBe(
+        computeActionHash({
+          ...approval.binding,
+          input: result.approval.editedInput,
+        }),
+      );
+    }
+
+    expect(JSON.stringify(ctx.service.getApproval(approval.id))).not.toContain(rawSecret);
   });
 
   it('edit without editedInput is refused', () => {

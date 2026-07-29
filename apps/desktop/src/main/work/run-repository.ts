@@ -1023,19 +1023,31 @@ export class RunRepository {
       .map(mapEvent);
   }
 
-  /** Global stream read — the cursor a live subscriber resumes from. */
-  listEventsSince(afterSeq = 0, limit = 500): WorkEvent[] {
+  /**
+   * Workspace-scoped stream read — the cursor a live subscriber resumes from.
+   *
+   * Scope is applied in SQL, before rows are materialized, so main never loads
+   * another workspace's payload merely to filter it afterwards.
+   */
+  listEventsSince(workspaceId: string, afterSeq = 0, limit = 500): WorkEvent[] {
     return this.db
       .all<EventRow>(
-        'SELECT * FROM work_events WHERE seq > ? ORDER BY seq ASC LIMIT ?',
+        `SELECT * FROM work_events
+         WHERE workspace_id = ? AND seq > ?
+         ORDER BY seq ASC
+         LIMIT ?`,
+        workspaceId,
         afterSeq,
         Math.min(Math.max(limit, 1), 2_000),
       )
       .map(mapEvent);
   }
 
-  latestEventSeq(): number {
-    const row = this.db.get<{ last: number | null }>('SELECT MAX(seq) AS last FROM work_events');
+  latestEventSeq(workspaceId: string): number {
+    const row = this.db.get<{ last: number | null }>(
+      'SELECT MAX(seq) AS last FROM work_events WHERE workspace_id = ?',
+      workspaceId,
+    );
     return row?.last ?? 0;
   }
 
