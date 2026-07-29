@@ -85,10 +85,12 @@
     "scope": "Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition only. No driver, browser, connector or network effect."
   },
   "dependencyProvenanceGate": {
-    "status": "BLOCKED_NO_OFFLINE_PROVENANCE",
+    "status": "OFFLINE_PROVENANCE_VERIFIED_AWAITING_INSTALL_AUTHORITY",
     "artifact": "docs/handoffs/personal-office/gate-loop-17-playwright-provenance.md",
-    "evidence": "No Playwright package is declared, resolved in pnpm-lock.yaml or present in canonical node_modules/.pnpm. Vitest mentions only an optional browser-playwright peer.",
-    "decision": "No package lease, lockfile edit, install or production driver registration until authorized reproducible provenance exists."
+    "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-playwright-dependency.md",
+    "candidate": "playwright@1.59.1 / Chromium revision 1217",
+    "evidence": "Exact package integrity, Apache-2.0 license, pnpm content-addressed store entries, materialized package metadata, browsers.json mapping and a complete SHA-256-pinned Chromium executable were verified offline.",
+    "decision": "No package lease, lockfile edit, install or production driver registration until dependency installation/package writes are explicitly authorized."
   },
   "remainingBeforeReview": [
     "W0-approved declared Playwright dependency and lockfile provenance",

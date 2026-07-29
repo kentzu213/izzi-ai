@@ -1052,7 +1052,7 @@
         "decision": "CANONICAL_INTEGRATED_REVIEWED_PASS"
       },
       "remainingGates": [
-        "declared Playwright dependency and lockfile provenance under a new package lease — BLOCKED_NO_OFFLINE_PROVENANCE; see gate-loop-17-playwright-provenance.md",
+        "declared Playwright dependency and lockfile provenance under a new package lease — offline 1.59.1 provenance verified; awaiting install/package-write authority",
         "audited production browser-driver registration and executable provenance under new exact leases",
         "real authorized browser/network install-to-artifact E2E",
         "separate WebSocket effect authority if required"
@@ -1063,7 +1063,7 @@
         "16"
       ],
       "dependencyStatus": "SATISFIED — Loops 14, 15 and 16 are ACCEPTED.",
-      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright provenance is explicitly blocked because no declared/resolved/local package exists. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
+      "securityGate": "Offline authority persistence and bounded safeStorage-backed main composition are integrated and fail-closed. Playwright 1.59.1 offline package/browser provenance is verified, but dependency installation and package writes remain unauthorized. No package/lockfile, preload, renderer, DB/schema, browser launch, driver registration, connector, network action, install, secret retrieval or external effect was authorised."
     }
   ],
   "releaseGateR": {

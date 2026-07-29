@@ -161,8 +161,19 @@ declared, resolved in `pnpm-lock.yaml`, present in desktop/root `node_modules`,
 or present in the canonical `.pnpm` package directory. The Vitest lock entry is
 only optional peer metadata. W0 recorded
 `gate-loop-17-playwright-provenance.md` as
-`BLOCKED_NO_OFFLINE_PROVENANCE`; no package lease was granted and no lockfile,
-install or driver-registration write was attempted.
+`BLOCKED_NO_OFFLINE_PROVENANCE`.
+
+A broader machine-wide search then found a complete offline Playwright `1.59.1`
+chain in the pnpm content-addressed store and the `open-design` lockfile.
+Package integrity, Apache-2.0 metadata and exact `playwright-core` dependency
+match. Its `browsers.json` selects Chromium revision `1217`; the local complete
+browser executable hashes to
+`392187401C8583B0312798976FB8D50EDB93F143195F3DCA7CBF64B9BB314697`.
+The gate was revised to
+`OFFLINE_PROVENANCE_VERIFIED_AWAITING_INSTALL_AUTHORITY`, and
+`change-request-loop-17-playwright-dependency.md` records the exact future
+offline operation. No package lease was granted and no lockfile, install or
+driver-registration write was attempted.
 
 Method: Codex-only under the `security-review`, `backend-patterns` and
 `verification-loop` skills; Kiro held no writer authority.
