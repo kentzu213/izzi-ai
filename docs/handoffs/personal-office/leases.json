@@ -23,17 +23,43 @@
         "apps/desktop/electron-builder.json",
         "docs/desktop-release-checklist.md",
         "package.json",
-        "pnpm-lock.yaml"
+        "pnpm-lock.yaml",
+        "apps/desktop/scripts/release-win.ps1",
+        "apps/desktop/scripts/release-win.bat",
+        "apps/desktop/src/shared/app-branding.test.ts"
       ],
       "constraints": [
         "Preserve beta.8 version, icon-build, updater, marketing and branding changes.",
         "No whole-file package manifest or lockfile replacement from beta.3.",
+        "A correction commit must enforce exact tag-object/package-version checks, fail-closed Windows signing, and local --publish never scripts.",
         "No push, tag, publish, deploy, installer execution, environment creation, secret retrieval or quarantine mutation."
+      ]
+    },
+    {
+      "leaseId": "LEASE-R3-CUSTOMER-MARKETING-MERGE-20260729",
+      "gate": "R3",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T16:55:00Z",
+      "baseRef": "feature/release-gate-r-main-reconcile-20260729",
+      "baseCommit": "5529757013ffb19b898db6983c1e875d45fe774e",
+      "branch": "feature/personal-office-reconciled-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-reconciled-20260729",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r3-customer-marketing-merge.md",
+      "ownedPaths": [
+        "apps/desktop/src/main/customer-marketing/customer-marketing-ipc.ts",
+        "apps/desktop/src/main/customer-marketing/customer-marketing-service.ts",
+        "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
+        "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx"
+      ],
+      "constraints": [
+        "Preserve both beta.8 Product Marketing Context authority and Loop 12 reference-workspace bridge.",
+        "No package, lockfile, DB/schema, secret, installer, publish, tag, push, deploy or quarantine changes."
       ]
     }
   ],
-  "activeLeaseCount": 1,
-  "statement": "One Codex-only R2 lease is active to reconcile the accepted release hardening onto current origin/main. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution and secret retrieval remain unauthorised.",
+  "activeLeaseCount": 2,
+  "statement": "Two isolated Codex leases are active: R2 ports release hardening onto beta.8 and R3 reconciles the four Customer Marketing conflicts without dropping either authority-bound context or reference-workspace behavior. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution and secret retrieval remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R-DEPENDENCY-SIGNING-20260729",
