@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T22:00:00Z",
+  "updatedAt": "2026-07-29T23:35:00Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -835,26 +835,26 @@
       "at": "2026-07-29T21:30:00Z",
       "action": "Verified and ACCEPTED Loop 13 after exact-path integration, main-authoritative workspace security review, 1370/1370 tests, both TypeScript gates, production build, lint ceiling, provenance and quarantine isolation checks.",
       "record": "acceptance/loop-13.json"
+    },
+    {
+      "at": "2026-07-29T23:30:00Z",
+      "action": "Verified and ACCEPTED Loop 14 after exact-path integration, authenticated owner/workspace review, closure of error-path leakage and active-turn sender-trust findings, 1376/1376 tests, both TypeScript gates, production build, lint ceiling, provenance and quarantine isolation checks.",
+      "record": "acceptance/loop-14.json"
     }
   ],
   "nextActionsForW0": [
     {
       "priority": 1,
-      "action": "Open Loop 14 after Loop 13: wire Live profile/context compilation into an authenticated workspace-bound agent turn with trusted safety-prompt and raw-request binding.",
-      "gate": "PO-PRODUCT-CONTEXT-RUNTIME"
-    },
-    {
-      "priority": 2,
       "action": "Open Loop 15: replace the non-installable demo Marketplace path with a host-validated catalog and approval-bound install/provisioning orchestrator.",
       "gate": "PO-PRODUCT-MARKETPLACE-OPERATION"
     },
     {
-      "priority": 3,
+      "priority": 2,
       "action": "Open Loop 16: operationalize izziapi account scope, OAuth/connect/revoke and IntegrationGrant persistence through SecretRef-only vault boundaries.",
       "gate": "PO-PRODUCT-ACCOUNT-GRANTS"
     },
     {
-      "priority": 4,
+      "priority": 3,
       "action": "Open Loop 17: register attested local/browser runtime adapters and verify the complete install-to-open-to-delegate-to-artifact path before platform release gates.",
       "gate": "PO-PRODUCT-RUNTIME-E2E"
     }
@@ -889,10 +889,10 @@
       "capability, provisioning, marketplace, grant and runtime foundations",
       "Marketing reference workspace",
       "R6 local build and security baseline",
-      "real shell-to-Work data source and first-workspace bootstrap"
+      "real shell-to-Work data source and first-workspace bootstrap",
+      "authenticated Live.md context in host-agent turns"
     ],
     "notYetOperational": [
-      "Live context in authenticated production agent turns",
       "host-validated Marketplace catalog and install execution",
       "account/OAuth and persistent IntegrationGrant operation",
       "production Playwright/native/runtime adapters",
@@ -931,13 +931,27 @@
     {
       "loop": "14",
       "title": "Authenticated Live/context agent turn",
-      "status": "PROVISIONAL",
+      "status": "ACCEPTED",
       "gate": "PO-PRODUCT-CONTEXT-RUNTIME",
       "branch": "feature/personal-office-loop-14-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop14",
       "baseCommit": "63c979a9ae7c3f3addf104b08de417a4222445c9",
       "lease": "LEASE-L14-CONTEXT-RUNTIME-20260729",
       "changeRequest": "docs/handoffs/personal-office/change-request-loop-14-context-runtime.md",
+      "producerImplementationCommits": [
+        "e903540014b25a3407c021b3a67dffb71aee5ca2",
+        "3c4b112"
+      ],
+      "producerHandoff": "cef4930548382ffcee40dd994a11b845e9217c18",
+      "producerNormalization": "01edbe61483b197a6d1dea82162ad8f4828c4cc7",
+      "integrationImplementationCommits": [
+        "80545a232881187a80d9d425ffb1bc0d43bed5a5",
+        "80038bb"
+      ],
+      "integrationHandoff": "a206397e2b6a9937fe86b133dca0290120a11287",
+      "integrationNormalization": "8487c0e051055b81aa3ca195ecdf5b60ac749bcf",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-14.json",
+      "acceptanceCommit": "e51003895ce7b7ef8b97abba516084cb1393bab0",
       "dependsOn": [
         "13"
       ],
