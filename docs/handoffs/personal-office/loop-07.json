@@ -5,6 +5,7 @@
   "status": "READY_FOR_REVIEW",
   "statusAuthority": "Only W0 may set ACCEPTED. This producer handoff grants no lease and authorizes no runtime wiring.",
   "title": "Deterministic capability registry and least-privilege package adapters",
+  "registryVersion": "1.1.0",
   "producer": {
     "window": "W1",
     "role": "capability registry and package adapters",
@@ -21,9 +22,21 @@
       "phase": "implementation",
       "subject": "feat(personal-office): add capability registry adapters",
       "scope": "versioned contracts, strict validation, policy catalog, audited registry, invocation and approval gates, .ocx/.oab adapters, tests and product documentation"
+    },
+    {
+      "sha": "99cf37637bfa46165c9b13626114f7576559e446",
+      "phase": "initial_handoff",
+      "subject": "docs(personal-office): hand off Loop 07 for review",
+      "scope": "initial producer handoff, worklog and agent-bundle root-export change request"
+    },
+    {
+      "sha": "cf3b25af7d1504c0232575648ce9ce6338a6d572",
+      "phase": "correction_implementation",
+      "subject": "fix(personal-office): harden capability authorization",
+      "scope": "trusted-policy audit reconstruction, accepted IntegrationGrant resolver boundary, approval action-hash identity binding, managed-service allowlists, regression tests and registry version 1.1.0"
     }
   ],
-  "handoffCommitNote": "This JSON, worklogs/personal-office-loop-07.md and change-request-loop-07-agent-bundle-export.md are the only files in the phase-2 handoff commit.",
+  "handoffCommitNote": "The initial handoff is 99cf376. This correction handoff commit contains only this JSON and worklogs/personal-office-loop-07.md; the existing change request remains unchanged.",
   "ownedPaths": [
     "apps/desktop/src/shared/capabilities/**",
     "apps/desktop/src/main/capabilities/**",
@@ -36,7 +49,13 @@
   "implementationFiles": {
     "count": 16,
     "diff": "2425 insertions, 0 deletions",
-    "allInsideLease": true
+    "allInsideLease": true,
+    "correction": {
+      "commit": "cf3b25af7d1504c0232575648ce9ce6338a6d572",
+      "changedFiles": 10,
+      "diff": "1015 insertions, 69 deletions",
+      "allInsideLease": true
+    }
   },
   "contractCompliance": [
     "Accepted shared/personal-office entities remain read-only and authoritative.",
@@ -56,6 +75,10 @@
       "Network egress is limited to public_metadata.",
       "Invocation requires an exact permission; wildcard grants do not satisfy it.",
       "Capability fingerprints and whole-registry digest are verified before authorization.",
+      "Audit verification re-derives supported versions, object relationships and every authority-bearing field from the trusted policy catalog; recomputed public hashes cannot mint authority.",
+      "Invocation accepts no caller-owned grantedPermissions. A trusted resolver must return an accepted IntegrationGrant bound exactly to tenant, user, workspace, package, capability and permission.",
+      "Capability, policy and registry identity is embedded in Loop 03 hashed input and estimated-side-effect fields.",
+      "Managed services allow only the host-controlled Docker Compose launch form and package-bound backend URL environment variables.",
       "Side effects become Loop 03 approval inputs and are never executed by the adapter."
     ],
     "secretScan": "Production files clean. One deliberate fake sk-... string exists only in the validation tripwire test."
@@ -64,17 +87,22 @@
     {
       "check": "targeted capability tests",
       "result": "PASS",
-      "evidence": "4 files, 17/17 tests"
+      "evidence": "4 files, 25/25 tests including all four independent-review exploit classes"
     },
     {
       "check": "full desktop tests",
       "result": "PASS",
-      "evidence": "85 files, 1069/1069 tests"
+      "evidence": "85 files, 1077/1077 tests"
     },
     {
       "check": "desktop production build",
       "result": "PASS",
       "evidence": "tsc main + Vite; 1167 modules transformed"
+    },
+    {
+      "check": "desktop main/shared typecheck",
+      "result": "PASS",
+      "evidence": "tsc -p tsconfig.main.json --noEmit and production build typecheck"
     },
     {
       "check": "agent-bundle build",
@@ -89,30 +117,47 @@
     {
       "check": "ownership and prohibited paths",
       "result": "PASS",
-      "evidence": "16/16 implementation files inside the active lease; no renderer, DB, index/preload, contract, manifest, package, lockfile or quarantine change"
+      "evidence": "16/16 original implementation files and 10/10 correction files inside the active lease; no renderer, DB, Electron index/preload, accepted contract, manifest, package, lockfile or quarantine change"
     },
     {
       "check": "git diff --check",
       "result": "PASS",
-      "evidence": "Implementation commit range clean"
+      "evidence": "Original implementation, correction implementation and both handoff ranges clean"
     },
     {
       "check": "GitNexus detect_changes",
       "result": "PASS_WITH_INDEX_LIMIT",
-      "evidence": "Baseline index plus explicit Loop 07 worktree: low risk, 16 changed files, zero changed indexed symbols and zero affected processes. New symbols are absent from the baseline index."
+      "evidence": "Baseline index plus explicit Loop 07 worktree: correction low risk, 10 changed files, zero changed indexed symbols and zero affected processes. Loop 07 symbols remain absent from the baseline index."
     }
   ],
   "toolingNotes": [
     "CodeGraph was not initialized in the Loop 07 linked worktree.",
     "The required Socrates and orchestrator spawns both returned agent thread limit reached; W0 authorized equivalent in-process checks and an independent post-implementation review.",
+    "The independent review returned CHANGES_REQUIRED with four blocking security findings. Commit cf3b25a resolves all four and adds regression tests.",
     "No dependency install ran. Temporary node_modules junctions to the accepted baseline toolchain were removed before commit.",
+    "Correction verification recreated the same three exact junctions, ran fresh tests/builds, then removed them with non-recursive .NET directory deletion after the shell safety layer rejected combined Remove-Item cleanup commands. All baseline targets were verified preserved.",
     "The unset NODE_AUTH_TOKEN placeholder warning exposed no value."
   ],
   "outputHashes": [
     {
       "path": "apps/desktop/src/main/capabilities/registry.ts",
-      "sha256": "bf0f91fc4aad3ed6fc8f47f23a7730e3257c3ec29e4705de47b662915b0e3947",
-      "bytes": 10631
+      "sha256": "763eba6493ec5cb0db2543d26c594dddc11198032be852c22cc1e66080e7d567",
+      "bytes": 25574
+    },
+    {
+      "path": "apps/desktop/src/main/capabilities/work-approval-adapter.ts",
+      "sha256": "d888d2df934d2b8c062169774d5c84b1d053905c39f9b562dd8e56c783582b85",
+      "bytes": 4166
+    },
+    {
+      "path": "apps/desktop/src/main/capabilities/ocx-adapter.ts",
+      "sha256": "27fca1849f5af5605b950d031b9ac1e6041681e41386eb1d07a7d663ee3a4904",
+      "bytes": 5933
+    },
+    {
+      "path": "apps/desktop/src/shared/capabilities/types.ts",
+      "sha256": "d1efb991d7b30a9fba458f5d5ba57cfa5fbf0addbe4a597ffe0667357a28e685",
+      "bytes": 5449
     },
     {
       "path": "apps/desktop/src/shared/capabilities/validation.ts",
@@ -126,8 +171,30 @@
     },
     {
       "path": "docs/product/personal-office-capabilities.md",
-      "sha256": "c9dbf20ea0536979d30d3ac228a7c58ea4916e4a9204201476dab45304570bf6",
-      "bytes": 8806
+      "sha256": "7ad14adcb622f8659b61da98e66674475ab12e57bbe1f62ce711c38fb24c197e",
+      "bytes": 11142
+    }
+  ],
+  "reviewCorrections": [
+    {
+      "finding": "Registry audit was self-authenticating after recomputing public hashes.",
+      "status": "RESOLVED",
+      "evidence": "Verification now rejects unsupported registry/schema versions and reconstructs package, capability and trusted-policy invariants including policyFingerprint. Permission, policy version/fingerprint and registry-version mutations remain AUDIT_INVALID after all hashes are recomputed."
+    },
+    {
+      "finding": "Invocation trusted caller-supplied grantedPermissions without accepted grant scope.",
+      "status": "RESOLVED",
+      "evidence": "The old field is removed. A trusted resolver must return an accepted IntegrationGrant exactly bound to tenant, user, workspace, package, capability and permission; cross-workspace, cross-tenant, wildcard, malformed and forged grants are denied."
+    },
+    {
+      "finding": "Loop 03 action hash omitted capability, policy and registry identity.",
+      "status": "RESOLVED",
+      "evidence": "The approval adapter consumes an audited snapshot and places capability id/fingerprint, permission, policy version/fingerprint and registry version/digest in hashed input and estimated effect. Changing any identity changes the action hash and makes the old approval binding invalid."
+    },
+    {
+      "finding": "managed_local_service admitted arbitrary commands and fallback environment names.",
+      "status": "RESOLVED",
+      "evidence": "Node/binary services and hidden command fields fail closed. Docker Compose fallback variables must be exactly the package-bound BACKEND_URL or BASE_URL name; NODE_AUTH_TOKEN and arbitrary names are rejected."
     }
   ],
   "changeRequests": [
@@ -142,12 +209,12 @@
     "Publisher signature verification is declared by the accepted model but remains a later execution-plane responsibility.",
     "Automation and integration scopes remain fail-closed until explicit scoped policies and IntegrationGrant wiring exist.",
     "The .oab adapter is not package-root exported until W0 grants the requested barrel lease.",
-    "Runtime install/load wiring is outside this loop's lease and must consume the registry before grant or invocation."
+    "Runtime install/load wiring and the trusted IntegrationGrant resolver implementation are outside this loop's lease. They must source accepted grants from the authoritative store and consume registry version 1.1.0 before invocation."
   ],
   "nextConsumers": [
     {
       "owner": "W0",
-      "action": "Independently review commit 767fb57, verify exact paths/hashes, rerun tests/build/GitNexus on integration, decide the barrel export change request, then accept or return concrete findings."
+      "action": "Review original implementation 767fb57 plus correction cf3b25a, verify exact paths/hashes, rerun the 25 targeted tests/full suite/build/GitNexus on integration, decide the barrel export change request, then accept or return concrete findings."
     },
     {
       "owner": "future install/runtime owner",
@@ -157,7 +224,7 @@
   "agentAudit": {
     "builder": "Loop 07 implemented and verified only leased capability and adapter paths.",
     "orchestrator": "Equivalent short plan executed in-process after the role spawn failed with agent thread limit reached.",
-    "socrates": "Equivalent challenge executed in-process; W0 was notified to perform the independent post-implementation review.",
+    "socrates": "Equivalent initial challenge executed in-process. The independent W0/Socrates probe returned four concrete findings; all are resolved in cf3b25a with exploit regressions.",
     "decisionAuthority": "W0 only"
   },
   "skillAudit": [
