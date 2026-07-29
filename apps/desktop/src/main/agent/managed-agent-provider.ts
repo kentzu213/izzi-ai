@@ -1,29 +1,29 @@
 import axios from 'axios';
 import { randomUUID } from 'crypto';
-import { parseManagedAgentStream } from './stream-parser';
-import { readStreamBody, streamOpenAISse } from './openai-sse';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import {
+  ModelRouteResolutionError,
+  createNonStreamingRetryPayload,
+  hasAsciiControlCharacter,
+  isExactStreamingLimitation,
+  type ModelEndpointClass,
+} from '../../shared/model-gateway';
 import type { ChatProvider } from './chat-provider';
-import { buildIzziRequestHeaders, isOfficialIzziApiUrl } from './izzi-request-headers';
+import { buildIzziRequestHeaders } from './izzi-request-headers';
+import { readStreamBody, streamOpenAISse } from './openai-sse';
+import { parseOpenAICompatibleEndpoint } from './provider-settings-store';
+import { parseManagedAgentStream } from './stream-parser';
 import type {
   ManagedAgentStatus,
   ManagedAgentStreamRequest,
   ManagedProviderStreamChunk,
 } from './types';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
-// IzziAPI cloud endpoint — OpenAI-compatible REST API for chat completions
-// Note: The local OpenClaw Gateway (port 18789) is WebSocket-based and does NOT
-// serve HTTP POST /v1/chat/completions. Chat must go through izziapi.com REST API.
-//
-// IMPORTANT: izziapi.com uses `x-api-key` header (NOT `Authorization: Bearer`)
-// IMPORTANT: openclaw.json baseUrl already includes `/v1`, so we must NOT append it again
-// See TROUBLESHOOTING.md Issue #1 for the /v1/v1/chat/completions double-path bug
-
-// Canonical SmartRouter trigger. The server can select Grok/Codex or another
-// healthy candidate without requiring a desktop release for each route change.
 const DEFAULT_MODEL = 'izzi-smart';
+const DEFAULT_MANAGED_BASE_URL = 'https://api.izziapi.com/v1';
+const REQUEST_TIMEOUT_MS = 120000;
 
 /** Normalize legacy UI aliases while preserving every explicit model id. */
 export function normalizeManagedModel(model: string | null | undefined): string {
@@ -35,79 +35,140 @@ export function normalizeManagedModel(model: string | null | undefined): string 
 }
 
 const MOCK_AGENT_MODE =
-  process.env.STARIZZI_MOCK_AGENT_MODE === 'true' ||
-  process.env.STARIZZI_MOCK_AGENT_MODE === '1';
+  process.env.STARIZZI_MOCK_AGENT_MODE === 'true'
+  || process.env.STARIZZI_MOCK_AGENT_MODE === '1';
 
-function normalizeStatusPayload(payload: unknown): ManagedAgentStatus | null {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
+interface LocalManagedConfig {
+  readonly apiKey: string | null;
+  readonly baseUrl: string | null;
+  readonly model: string | null;
+}
 
-  const data = payload as Record<string, unknown>;
-  const state = String(data.state ?? data.status ?? '').toLowerCase();
+type LocalManagedConfigResult =
+  | { readonly ok: true; readonly config: LocalManagedConfig }
+  | { readonly ok: false };
 
-  if (state !== 'idle' && state !== 'connecting' && state !== 'running' && state !== 'error') {
-    return null;
-  }
+interface ManagedRequestSnapshot {
+  readonly apiKey: string | null;
+  readonly chatCompletionsUrl: string;
+  readonly endpointOrigin: string;
+  readonly endpointClass: Extract<ModelEndpointClass, 'official-izzi-https'>;
+  readonly modelId: string;
+}
 
-  return {
-    state,
-    lastError: typeof data.lastError === 'string'
-      ? data.lastError
-      : typeof data.error === 'string'
-        ? data.error
-        : undefined,
-    updatedAt: typeof data.updatedAt === 'string'
-      ? data.updatedAt
-      : typeof data.updated_at === 'string'
-        ? data.updated_at
-        : new Date().toISOString(),
-  };
+export interface ManagedRequestRoute {
+  readonly provider: ChatProvider;
+  readonly endpointOrigin: string;
+  readonly endpointClass: Extract<ModelEndpointClass, 'official-izzi-https'>;
+  readonly modelId: string;
 }
 
 /**
- * Read local ~/.openclaw/openclaw.json for IzziAPI credentials and config.
- * Returns { apiKey, baseUrl, model } from ninerouter provider config.
- * 
- * IMPORTANT: baseUrl in openclaw.json already includes `/v1`!
- * Do NOT append `/v1` again or you get 404 from /v1/v1/chat/completions.
- * See TROUBLESHOOTING.md Issue #1.
+ * Read local ~/.openclaw/openclaw.json once for a request-scoped route.
+ * Gateway auth is deliberately ignored; only the model-provider credential is
+ * eligible for the direct Izzi API request.
  */
-function getLocalConfig(): { apiKey: string | null; baseUrl: string | null; model: string | null } {
+function getLocalConfig(): LocalManagedConfigResult {
   try {
     const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(configPath)) return { apiKey: null, baseUrl: null, model: null };
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    const config = JSON.parse(raw);
+    if (!fs.existsSync(configPath)) {
+      return {
+        ok: true,
+        config: { apiKey: null, baseUrl: null, model: null },
+      };
+    }
 
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      apiKey?: unknown;
+      models?: {
+        providers?: {
+          ninerouter?: {
+            apiKey?: unknown;
+            baseUrl?: unknown;
+          };
+        };
+      };
+      agents?: {
+        defaults?: {
+          model?: {
+            primary?: unknown;
+          };
+        };
+      };
+    };
     const ninerouter = config?.models?.providers?.ninerouter;
-    const apiKey = ninerouter?.apiKey || config?.apiKey || null;
-    const baseUrl = ninerouter?.baseUrl || null; // e.g. "https://api.izziapi.com/v1"
-    
-    // Get the primary model from agents config
-    const primaryModel = config?.agents?.defaults?.model?.primary || null;
+    if (
+      (ninerouter?.baseUrl !== undefined && typeof ninerouter.baseUrl !== 'string')
+      || (
+        config?.agents?.defaults?.model?.primary !== undefined
+        && typeof config.agents.defaults.model.primary !== 'string'
+      )
+    ) {
+      return { ok: false };
+    }
 
-    return { apiKey, baseUrl, model: primaryModel };
+    const apiKey = typeof ninerouter?.apiKey === 'string' && ninerouter.apiKey.length > 0
+      ? ninerouter.apiKey
+      : typeof config?.apiKey === 'string' && config.apiKey.length > 0
+        ? config.apiKey
+        : null;
+    const baseUrl = typeof ninerouter?.baseUrl === 'string' ? ninerouter.baseUrl : null;
+    const primaryModel = config?.agents?.defaults?.model?.primary;
+    const model = typeof primaryModel === 'string' ? primaryModel : null;
+
+    return {
+      ok: true,
+      config: { apiKey, baseUrl, model },
+    };
   } catch {
-    return { apiKey: null, baseUrl: null, model: null };
+    return { ok: false };
   }
 }
 
-/**
- * Build OpenAI-compatible /v1/chat/completions payload.
- * 
- * izziapi.com exposes OpenAI-compatible endpoints:
- * - /v1/chat/completions (streaming SSE)  
- * - /v1/models
- * 
- * Auth: x-api-key header (NOT Authorization: Bearer)
- * Model: uses configured model or falls back to DEFAULT_MODEL
- */
-function buildOpenAIPayload(request: ManagedAgentStreamRequest, model: string, stream: boolean) {
+function createManagedRequestSnapshot(mockMode: boolean): ManagedRequestSnapshot {
+  const result: LocalManagedConfigResult = mockMode
+    ? {
+        ok: true,
+        config: {
+          apiKey: null,
+          baseUrl: DEFAULT_MANAGED_BASE_URL,
+          model: DEFAULT_MODEL,
+        },
+      }
+    : getLocalConfig();
+  if (!result.ok) {
+    throw new ModelRouteResolutionError('managed-config-invalid');
+  }
+
+  const config = result.config;
+  const endpoint = parseOpenAICompatibleEndpoint(config.baseUrl ?? DEFAULT_MANAGED_BASE_URL);
+  if (!endpoint || endpoint.endpointClass !== 'official-izzi-https') {
+    throw new ModelRouteResolutionError('managed-endpoint-invalid');
+  }
+
+  const modelId = normalizeManagedModel(config.model);
+  if (modelId.length > 200 || hasAsciiControlCharacter(modelId)) {
+    throw new ModelRouteResolutionError('managed-model-invalid');
+  }
+
+  return Object.freeze({
+    apiKey: config.apiKey,
+    chatCompletionsUrl: endpoint.chatCompletionsUrl,
+    endpointOrigin: endpoint.origin,
+    endpointClass: 'official-izzi-https',
+    modelId,
+  });
+}
+
+function buildOpenAIPayload(
+  request: ManagedAgentStreamRequest,
+  modelId: string,
+  stream: boolean,
+) {
   const messages = [
-    ...request.history.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
+    ...request.history.map((message) => ({
+      role: message.role,
+      content: message.content,
     })),
     {
       role: 'user' as const,
@@ -116,15 +177,46 @@ function buildOpenAIPayload(request: ManagedAgentStreamRequest, model: string, s
   ];
 
   return {
-    model,
+    model: modelId,
     messages,
     stream,
   };
 }
 
+function managedHttpError(status: number): Error {
+  if (status === 401 || status === 403) {
+    return new Error(`Managed provider authentication failed (HTTP ${status}).`);
+  }
+  return new Error(`Managed provider returned HTTP ${status}.`);
+}
+
+function managedNetworkError(error: unknown): Error {
+  const code = (error as { code?: string })?.code;
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+    return new Error('Managed provider request timed out.');
+  }
+  return new Error('Managed provider request failed.');
+}
+
+async function* sanitizeManagedStream(
+  stream: AsyncGenerator<ManagedProviderStreamChunk>,
+): AsyncGenerator<ManagedProviderStreamChunk> {
+  for await (const event of stream) {
+    if (event.type === 'error') {
+      yield { type: 'error', error: 'Managed provider stream failed.' };
+      continue;
+    }
+    if (event.type === 'status' && event.error) {
+      yield { ...event, error: 'Managed provider stream failed.' };
+      continue;
+    }
+    yield event;
+  }
+}
+
 export class ManagedAgentProvider implements ChatProvider {
-  private getAccessToken: () => Promise<string | null>;
-  private mockMode: boolean;
+  private readonly getAccessToken: () => Promise<string | null>;
+  private readonly mockMode: boolean;
 
   constructor(options: {
     getAccessToken: () => Promise<string | null>;
@@ -134,22 +226,36 @@ export class ManagedAgentProvider implements ChatProvider {
   }
 
   /**
-   * Resolve chat URL from openclaw.json config.
-   * baseUrl already includes /v1 (e.g. "https://api.izziapi.com/v1")
-   * so we only append /chat/completions.
+   * Resolve and freeze one managed route before the request starts. The returned
+   * provider closes over the snapshot so later config changes cannot alter the
+   * endpoint, model, credential source, or retry policy for that request.
    */
-  private getChatUrl(): string {
-    const config = getLocalConfig();
-    if (config.baseUrl) {
-      // baseUrl = "https://api.izziapi.com/v1" → append /chat/completions
-      return `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-    }
-    // Fallback: hardcoded URL
-    return 'https://api.izziapi.com/v1/chat/completions';
+  createRequestRoute(): ManagedRequestRoute {
+    const snapshot = createManagedRequestSnapshot(this.mockMode);
+    const provider: ChatProvider = Object.freeze({
+      streamChat: (request: ManagedAgentStreamRequest) =>
+        this.streamChatWithSnapshot(request, snapshot),
+      getStatus: (sessionId?: string) => this.getStatus(sessionId),
+    });
+
+    return Object.freeze({
+      provider,
+      endpointOrigin: snapshot.endpointOrigin,
+      endpointClass: snapshot.endpointClass,
+      modelId: snapshot.modelId,
+    });
   }
 
   async *streamChat(
     request: ManagedAgentStreamRequest,
+  ): AsyncGenerator<ManagedProviderStreamChunk> {
+    const snapshot = createManagedRequestSnapshot(this.mockMode);
+    yield* this.streamChatWithSnapshot(request, snapshot);
+  }
+
+  private async *streamChatWithSnapshot(
+    request: ManagedAgentStreamRequest,
+    snapshot: ManagedRequestSnapshot,
   ): AsyncGenerator<ManagedProviderStreamChunk> {
     if (this.mockMode) {
       yield { type: 'status', state: 'connecting' };
@@ -192,71 +298,66 @@ export class ManagedAgentProvider implements ChatProvider {
       return;
     }
 
-    // Get API key and config from local OpenClaw config (set by installer)
-    const config = getLocalConfig();
-    const localApiKey = config.apiKey;
     const accessToken = await this.getAccessToken();
-    const chatUrl = this.getChatUrl();
-    const officialIzziOrigin = isOfficialIzziApiUrl(chatUrl);
-
-    if (!localApiKey && (!accessToken || !officialIzziOrigin)) {
-      throw new Error('Missing IzziAPI API key. Run the izzi-openclaw installer first.');
+    if (!snapshot.apiKey && !accessToken) {
+      throw new Error('Managed provider credential is unavailable.');
     }
 
-    // Resolve model: legacy SmartRouter aliases → canonical izzi-smart; explicit
-    // ids such as grok-4.5-high pass through unchanged.
-    const model = normalizeManagedModel(config.model);
-
-    // Build auth headers
-    // CRITICAL: izziapi.com uses `x-api-key` header, NOT `Authorization: Bearer`
-    const idempotencyKey = officialIzziOrigin ? randomUUID() : undefined;
+    const idempotencyKey = randomUUID();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
-      ...buildIzziRequestHeaders(chatUrl, idempotencyKey),
+      ...buildIzziRequestHeaders(snapshot.chatCompletionsUrl, idempotencyKey),
     };
-
-    if (localApiKey) {
-      headers['x-api-key'] = localApiKey;
+    if (snapshot.apiKey) {
+      headers['x-api-key'] = snapshot.apiKey;
     } else if (accessToken) {
-      // Fallback to Bearer for Supabase token (if server supports it)
-      headers['Authorization'] = `Bearer ${accessToken}`;
+      headers.Authorization = `Bearer ${accessToken}`;
     }
 
-    console.log(`[ManagedAgentProvider] POST ${chatUrl} model=${model}`);
-
-    const response = await axios.request<NodeJS.ReadableStream>({
-      method: 'POST',
-      url: chatUrl,
-      data: buildOpenAIPayload(request, model, true),
-      responseType: 'stream',
-      validateStatus: () => true,
-      headers,
-      timeout: 120000,
-    });
+    const payload = buildOpenAIPayload(request, snapshot.modelId, true);
+    let response;
+    try {
+      response = await axios.request<NodeJS.ReadableStream>({
+        method: 'POST',
+        url: snapshot.chatCompletionsUrl,
+        data: payload,
+        responseType: 'stream',
+        validateStatus: () => true,
+        headers,
+        timeout: REQUEST_TIMEOUT_MS,
+      });
+    } catch (error) {
+      throw managedNetworkError(error);
+    }
 
     if (response.status >= 400) {
-      const body = await readStreamBody(response.data);
-      const shouldRetryNonStreaming =
-        response.status === 400 &&
-        (/not supported/i.test(body) || (/stream(?:ing)?/i.test(body) && /temporarily unavailable/i.test(body)));
-      if (!shouldRetryNonStreaming) {
-        throw new Error(body || `Chat completions endpoint returned HTTP ${response.status}`);
+      const rawBody = await readStreamBody(response.data);
+      const retryPayload = isExactStreamingLimitation(response.status, rawBody)
+        ? createNonStreamingRetryPayload(payload)
+        : null;
+      if (!retryPayload) {
+        throw managedHttpError(response.status);
       }
 
-      const fallback = await axios.request({
-        method: 'POST',
-        url: chatUrl,
-        data: buildOpenAIPayload(request, model, false),
-        validateStatus: () => true,
-        headers: { ...headers, Accept: 'application/json' },
-        timeout: 120000,
-      });
-      if (fallback.status >= 400) {
-        const rawBody =
-          typeof fallback.data === 'string' ? fallback.data : JSON.stringify(fallback.data ?? '');
-        throw new Error(rawBody || `Chat completions endpoint returned HTTP ${fallback.status}`);
+      let fallback;
+      try {
+        fallback = await axios.request({
+          method: 'POST',
+          url: snapshot.chatCompletionsUrl,
+          data: retryPayload,
+          validateStatus: () => true,
+          headers: { ...headers, Accept: 'application/json' },
+          timeout: REQUEST_TIMEOUT_MS,
+        });
+      } catch (error) {
+        throw managedNetworkError(error);
       }
+
+      if (fallback.status >= 400) {
+        throw managedHttpError(fallback.status);
+      }
+
       const content = fallback.data?.choices?.[0]?.message?.content;
       yield { type: 'status', state: 'running' };
       yield { type: 'assistant_start' };
@@ -268,28 +369,17 @@ export class ManagedAgentProvider implements ChatProvider {
     }
 
     const contentType = String(response.headers['content-type'] ?? '');
-
-    // Handle OpenAI SSE format: data: {"choices":[{"delta":{"content":"..."}}]}
     if (contentType.includes('text/event-stream') || contentType.includes('text/plain')) {
       yield { type: 'status', state: 'running' };
       yield { type: 'assistant_start' };
       yield* streamOpenAISse(response.data);
-    } else {
-      // Fallback: try the original stream parser for non-SSE responses
-      yield* parseManagedAgentStream(response.data, contentType);
+      return;
     }
+
+    yield* sanitizeManagedStream(parseManagedAgentStream(response.data, contentType));
   }
 
   async getStatus(_sessionId?: string): Promise<ManagedAgentStatus | null> {
-    if (this.mockMode) {
-      return {
-        state: 'idle',
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    // Status is managed locally — no /api/agent/status endpoint exists
-    // Return idle status since we use direct /v1/chat/completions streaming
     return {
       state: 'idle',
       updatedAt: new Date().toISOString(),

@@ -1,9 +1,29 @@
+import { hasAsciiControlCharacter } from '../../shared/model-gateway';
+
 const IZZI_API_HOSTS = new Set(['api.izziapi.com', 'izziapi.com']);
 
 export function isOfficialIzziApiUrl(value: string): boolean {
+  if (
+    typeof value !== 'string'
+    || value.length === 0
+    || value !== value.trim()
+    || hasAsciiControlCharacter(value)
+    || value.includes('\\')
+  ) {
+    return false;
+  }
+
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && IZZI_API_HOSTS.has(url.hostname.toLowerCase());
+    return (
+      url.protocol === 'https:'
+      && url.port === ''
+      && url.username === ''
+      && url.password === ''
+      && url.search === ''
+      && url.hash === ''
+      && IZZI_API_HOSTS.has(url.hostname.toLowerCase())
+    );
   } catch {
     return false;
   }

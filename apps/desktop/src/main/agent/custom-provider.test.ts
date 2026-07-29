@@ -18,12 +18,17 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { CustomOpenAIProvider } from './custom-openai-provider';
+import {
+  CustomOpenAIProvider,
+  resolveChatCompletionsUrl,
+} from './custom-openai-provider';
 import { ProviderResolver } from './provider-resolver';
 import { SecretStore } from './secret-store';
+import { ModelRouteResolutionError } from '../../shared/model-gateway';
 import {
   ALLOWED_MODELS,
   ProviderSettingsStore,
+  parseOpenAICompatibleEndpoint,
   validateCustomConfig,
   type CustomProviderConfig,
 } from './provider-settings-store';
@@ -149,6 +154,44 @@ describe('validateCustomConfig', () => {
     expect(res.ok).toBe(false);
   });
 
+  it('normalizes supported endpoint shapes and a trimmed model exactly once', () => {
+    const validation = validateCustomConfig({
+      ...VALID_CONFIG,
+      baseUrl: 'https://cpab.example.dev/openai/v1/',
+      selectedModel: '  gpt-5.4  ',
+    });
+
+    expect(validation.ok).toBe(true);
+    expect(validation.config).toEqual({
+      ...VALID_CONFIG,
+      baseUrl: 'https://cpab.example.dev/openai/v1',
+      selectedModel: 'gpt-5.4',
+    });
+    expect(validation.endpoint).toMatchObject({
+      chatCompletionsUrl: 'https://cpab.example.dev/openai/v1/chat/completions',
+      modelsUrl: 'https://cpab.example.dev/openai/v1/models',
+      origin: 'https://cpab.example.dev',
+      endpointClass: 'custom-https',
+    });
+  });
+
+  it.each([
+    'https://user:pass@cpab.example.dev/v1',
+    'https://cpab.example.dev/v1?api_key=secret',
+    'https://cpab.example.dev/v1#fragment',
+    'https://cpab.example.dev/v1%2fchat%2fcompletions',
+    'https://cpab.example.dev/a/../v1',
+    'https://cpab.example.dev//v1',
+    'https:\\\\cpab.example.dev\\v1',
+    'http://127.1:2455/v1',
+    'http://host.docker.internal:2455/v1',
+  ])('rejects credential-bearing or ambiguous endpoint input: %s', (baseUrl: string) => {
+    expect(parseOpenAICompatibleEndpoint(baseUrl)).toBeNull();
+    expect(validateCustomConfig({ ...VALID_CONFIG, baseUrl }).reasonCode).toBe(
+      'custom-config-invalid',
+    );
+  });
+
   it('every ALLOWED_MODELS entry validates', () => {
     for (const model of ALLOWED_MODELS) {
       expect(validateCustomConfig({ ...VALID_CONFIG, selectedModel: model }).ok).toBe(true);
@@ -166,31 +209,74 @@ describe('ProviderResolver.resolve', () => {
     settings.setEnabled(opts.enabled);
     if (opts.key) secrets.setKey(opts.key);
     const managed = { __managed: true } as any;
-    return { resolver: new ProviderResolver(settings, secrets, managed), managed };
+    const managedRoot = {
+      createRequestRoute: () => ({
+        provider: managed,
+        endpointOrigin: 'https://api.izziapi.com',
+        endpointClass: 'official-izzi-https',
+        modelId: 'izzi-smart',
+      }),
+    } as any;
+    return {
+      resolver: new ProviderResolver(settings, secrets, managedRoot),
+      managed,
+    };
   }
 
-  it('enabled=false ⇒ returns the managed provider instance (R8)', () => {
+  it('enabled=false ⇒ resolves an explicit managed decision', () => {
     const { resolver, managed } = setup({ enabled: false, config: VALID_CONFIG, key: FAKE_KEY });
-    expect(resolver.resolve()).toBe(managed);
+    const route = resolver.resolveRoute();
+    expect(route.provider).toBe(managed);
+    expect(route.decision).toMatchObject({
+      routeKind: 'managed',
+      providerKind: 'izzi-managed',
+      endpointOrigin: 'https://api.izziapi.com',
+      endpointClass: 'official-izzi-https',
+      modelId: 'izzi-smart',
+      retryPolicy: 'same-route-exact-streaming-limitation-once',
+      reasonCode: 'custom-disabled-managed-selected',
+    });
   });
 
-  it('enabled=true + valid config + key ⇒ CustomOpenAIProvider', () => {
+  it('enabled=true + valid config + key ⇒ frozen custom route decision', () => {
     const { resolver } = setup({ enabled: true, config: VALID_CONFIG, key: FAKE_KEY });
-    expect(resolver.resolve()).toBeInstanceOf(CustomOpenAIProvider);
+    const route = resolver.resolveRoute();
+    expect(route.provider).toBeInstanceOf(CustomOpenAIProvider);
+    expect(route.decision).toMatchObject({
+      routeKind: 'custom',
+      providerKind: 'openai-compatible-custom',
+      endpointOrigin: 'https://cpab.example.dev',
+      endpointClass: 'custom-https',
+      modelId: 'gpt-5.4',
+      creditPolicyClass: 'provider-native',
+      retryPolicy: 'none',
+      reasonCode: 'custom-enabled-valid-selected',
+    });
+    expect(JSON.stringify(route.decision)).not.toContain(FAKE_KEY);
   });
 
-  it('enabled=true but missing key ⇒ falls back to managed', () => {
-    const { resolver, managed } = setup({ enabled: true, config: VALID_CONFIG, key: null });
-    expect(resolver.resolve()).toBe(managed);
+  it('enabled=true but missing key ⇒ typed fail-closed rejection', () => {
+    const { resolver } = setup({ enabled: true, config: VALID_CONFIG, key: null });
+    expect(() => resolver.resolveRoute()).toThrowError(ModelRouteResolutionError);
+    try {
+      resolver.resolveRoute();
+    } catch (error) {
+      expect((error as ModelRouteResolutionError).reasonCode).toBe('custom-key-missing');
+    }
   });
 
-  it('enabled=true but invalid config ⇒ falls back to managed', () => {
-    const { resolver, managed } = setup({
+  it('enabled=true but invalid config ⇒ typed fail-closed rejection', () => {
+    const { resolver } = setup({
       enabled: true,
       config: { ...VALID_CONFIG, baseUrl: 'http://insecure.dev' },
       key: FAKE_KEY,
     });
-    expect(resolver.resolve()).toBe(managed);
+    expect(() => resolver.resolveRoute()).toThrowError(ModelRouteResolutionError);
+    try {
+      resolver.resolveRoute();
+    } catch (error) {
+      expect((error as ModelRouteResolutionError).reasonCode).toBe('custom-config-invalid');
+    }
   });
 });
 
@@ -221,6 +307,12 @@ describe('CustomOpenAIProvider.getChatUrl (via request URL)', () => {
 
   it('trailing slash is normalized (no double path)', async () => {
     expect(await captureUrl('https://x.dev/v1/')).toBe('https://x.dev/v1/chat/completions');
+  });
+
+  it('the shared host URL helper fails closed for invalid persisted input', () => {
+    expect(() => resolveChatCompletionsUrl(
+      'https://user:secret@x.dev/v1?api_key=secret',
+    )).toThrowError(ModelRouteResolutionError);
   });
 });
 
@@ -315,8 +407,12 @@ describe('CustomOpenAIProvider streaming fallback', () => {
     const events = await collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] }));
 
     expect(axiosRequest).toHaveBeenCalledTimes(2);
-    expect(axiosRequest.mock.calls.map(([request]) => request.data.stream)).toEqual([true, false]);
-    expect(axiosRequest.mock.calls.map(([request]) => request.data.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol']);
+    expect(axiosRequest.mock.calls.map((call: any[]) => call[0].data.stream)).toEqual([true, false]);
+    expect(axiosRequest.mock.calls.map((call: any[]) => call[0].data.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol']);
+    expect(axiosRequest.mock.calls[1][0].url).toBe(axiosRequest.mock.calls[0][0].url);
+    expect(axiosRequest.mock.calls[1][0].data.messages).toBe(
+      axiosRequest.mock.calls[0][0].data.messages,
+    );
     const firstHeaders = axiosRequest.mock.calls[0][0].headers;
     const retryHeaders = axiosRequest.mock.calls[1][0].headers;
     expect(firstHeaders['X-Source-Platform']).toBe('starizzi');
@@ -324,6 +420,45 @@ describe('CustomOpenAIProvider streaming fallback', () => {
     expect(retryHeaders['Idempotency-Key']).toBe(firstHeaders['Idempotency-Key']);
     expect(events.filter((e) => e.type === 'assistant_delta').map((e) => e.delta)).toEqual(['fallback ok']);
     expect(events.at(-1)).toMatchObject({ type: 'assistant_done' });
+  });
+
+  it('does not retry the exact Izzi message on a custom origin', async () => {
+    axiosRequest.mockResolvedValue({
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+      data: fakeStream([
+        '{"error":{"message":"Streaming is temporarily unavailable for fixed-price models; retry with stream=false."}}',
+      ]),
+    });
+    const provider = new CustomOpenAIProvider(VALID_CONFIG, FAKE_KEY);
+
+    await expect(
+      collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] })),
+    ).rejects.toThrow('Endpoint trả HTTP 400');
+    expect(axiosRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry broad or non-JSON HTTP 400 text on an official origin', async () => {
+    for (const body of [
+      '{"error":{"message":"streaming not supported"}}',
+      'streaming temporarily unavailable for this model',
+    ]) {
+      axiosRequest.mockReset();
+      axiosRequest.mockResolvedValue({
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+        data: fakeStream([body]),
+      });
+      const provider = new CustomOpenAIProvider(
+        { ...VALID_CONFIG, baseUrl: 'https://api.izziapi.com/v1' },
+        FAKE_KEY,
+      );
+
+      await expect(
+        collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] })),
+      ).rejects.toThrow('Endpoint trả HTTP 400');
+      expect(axiosRequest).toHaveBeenCalledTimes(1);
+    }
   });
 });
 
@@ -369,6 +504,29 @@ describe('CustomOpenAIProvider error mapping', () => {
   });
 });
 
+describe('CustomOpenAIProvider model listing', () => {
+  it('returns only bounded control-free model ids', async () => {
+    axiosRequest.mockResolvedValue({
+      status: 200,
+      headers: {},
+      data: {
+        data: [
+          { id: 'gpt-5.4' },
+          { id: `unsafe${String.fromCharCode(10)}model` },
+          { id: 'x'.repeat(201) },
+          { id: 42 },
+        ],
+      },
+    });
+    const provider = new CustomOpenAIProvider(VALID_CONFIG, FAKE_KEY);
+
+    await expect(provider.listModels()).resolves.toEqual({
+      ok: true,
+      models: ['gpt-5.4'],
+    });
+  });
+});
+
 // 8. Store smoke + safeStorage branches ─────────────────────────────────────────
 describe('ProviderSettingsStore + SecretStore smoke (in-memory db)', () => {
   it('set→get→delete config and enabled flag', () => {
@@ -386,6 +544,23 @@ describe('ProviderSettingsStore + SecretStore smoke (in-memory db)', () => {
 
     settings.clearConfig();
     expect(settings.getConfig()).toBeNull();
+  });
+
+  it('does not return invalid persisted URL bytes to IPC or provider callers', () => {
+    const db = createFakeDb();
+    const settings = new ProviderSettingsStore(db);
+    const rawSecret = 'query-secret-fixture';
+    db.setSetting('custom_provider_config', JSON.stringify({
+      ...VALID_CONFIG,
+      baseUrl: `https://cpab.example.dev/v1?api_key=${rawSecret}`,
+    }));
+
+    expect(settings.getConfig()).toBeNull();
+    expect(settings.getConfigValidation()).toMatchObject({
+      ok: false,
+      reasonCode: 'custom-config-invalid',
+    });
+    expect(JSON.stringify(settings.getConfigValidation())).not.toContain(rawSecret);
   });
 
   it('migrates an enabled legacy loopback :2455 connection exactly once without touching config or key', () => {
