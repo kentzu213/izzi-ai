@@ -3,7 +3,7 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T07:10:00Z",
+  "updatedAt": "2026-07-29T09:01:48Z",
   "updatedBy": "W0",
   "integrationCommit": "16f25b28820d829b3050981e8d60db433194059b",
   "activeLeases": [
@@ -19,6 +19,7 @@
         "apps/desktop/src/shared/live-*.ts",
         "apps/desktop/src/shared/vault-*.ts",
         "apps/desktop/src/shared/wikilink.ts",
+        "apps/desktop/src/shared/wikilink.test.ts",
         "apps/desktop/src/renderer/components/live/**",
         "apps/desktop/src/renderer/components/vault/**",
         "apps/desktop/src/renderer/store/liveProfile.ts",
@@ -45,6 +46,14 @@
         "Graph writes must retain provenance, classification and workspace/user scope.",
         "Consume Loop 03 work APIs read-only; request a lease before any main/index/preload/database change.",
         "Salvage vault/live/wikilink files selectively from the preserved quarantine snapshot; never write quarantine."
+      ],
+      "amendments": [
+        {
+          "at": "2026-07-29T09:01:48Z",
+          "by": "W0",
+          "change": "Added apps/desktop/src/shared/wikilink.test.ts explicitly.",
+          "reason": "The Loop 04 dispatch mandates focused wikilink tests, but the original exact-path lease named only wikilink.ts. The test path is granted before producer commit so ownership verification remains fail-closed."
+        }
       ],
       "expiresOn": "Loop 04 acceptance or W0 revocation"
     },
