@@ -1,7 +1,7 @@
 # Personal Office Live Profile, Vault and MyGraph
 
-Status: implementation artifact for Loop 04  
-Schema authority: `PERSONAL_OFFICE_SCHEMA_VERSION`  
+Status: implementation artifact for Loop 04
+Schema authority: `PERSONAL_OFFICE_SCHEMA_VERSION`
 Storage boundary: local workspace, exact workspace and owner scope
 
 ## Product contract
@@ -110,4 +110,3 @@ Loop 04-owned component paths without changing the persistence contract.
   integration. Producer verification is limited to no-cache tests, isolated
   TypeScript checks, lint, ownership and security scans so no dependency
   junction can write into another worktree.
-
