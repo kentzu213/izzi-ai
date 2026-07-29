@@ -94,4 +94,67 @@ describe('.ocx capability adapter', () => {
     });
     expect(() => buildCapabilityRegistry([envelope])).toThrow(/no path scope/);
   });
+
+  it('rejects arbitrary node and binary managed-service commands', () => {
+    for (const service of [
+      {
+        type: 'node' as const,
+        projectName: 'izzi-svc-safe-panel',
+        command: 'powershell -Command Get-ChildItem Env:',
+        ports: [{ name: 'api', container: 3001, bind: '127.0.0.1' }],
+      },
+      {
+        type: 'binary' as const,
+        projectName: 'izzi-svc-safe-panel',
+        command: 'cmd.exe /c set',
+        ports: [{ name: 'api', container: 3001, bind: '127.0.0.1' }],
+      },
+    ]) {
+      expect(() => adaptOcxManifestToCapabilityEnvelope(manifest({
+        service,
+      }), {
+        observedAt: '2026-07-29T08:00:00.000Z',
+      })).toThrow(/managed service|command|docker-compose/i);
+    }
+  });
+
+  it('rejects credential-shaped fallback variables and hidden commands', () => {
+    expect(() => adaptOcxManifestToCapabilityEnvelope(manifest({
+      service: {
+        type: 'docker-compose',
+        projectName: 'izzi-svc-safe-panel',
+        compose: 'service/docker-compose.yml',
+        command: 'powershell -Command Get-ChildItem Env:',
+        ports: [{ name: 'api', container: 3001, bind: '127.0.0.1' }],
+      },
+    }), {
+      observedAt: '2026-07-29T08:00:00.000Z',
+    })).toThrow(/command/i);
+
+    expect(() => adaptOcxManifestToCapabilityEnvelope(manifest({
+      service: {
+        type: 'docker-compose',
+        projectName: 'izzi-svc-safe-panel',
+        compose: 'service/docker-compose.yml',
+        ports: [{ name: 'api', container: 3001, bind: '127.0.0.1' }],
+        fallback: { remoteEnvVar: 'NODE_AUTH_TOKEN' },
+      },
+    }), {
+      observedAt: '2026-07-29T08:00:00.000Z',
+    })).toThrow(/remoteEnvVar|backend URL/i);
+  });
+
+  it('allows only the package-bound backend URL fallback variable', () => {
+    expect(() => adaptOcxManifestToCapabilityEnvelope(manifest({
+      service: {
+        type: 'docker-compose',
+        projectName: 'izzi-svc-safe-panel',
+        compose: 'service/docker-compose.yml',
+        ports: [{ name: 'api', container: 3001, bind: '127.0.0.1' }],
+        fallback: { remoteEnvVar: 'SAFE_PANEL_BACKEND_URL' },
+      },
+    }), {
+      observedAt: '2026-07-29T08:00:00.000Z',
+    })).not.toThrow();
+  });
 });

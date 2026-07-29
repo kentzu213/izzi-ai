@@ -16,7 +16,7 @@ import type {
 export const CAPABILITY_REGISTRY_SCHEMA_VERSION = 1 as const;
 export type CapabilityRegistrySchemaVersion = 1;
 
-export const CAPABILITY_REGISTRY_VERSION = '1.0.0' as const;
+export const CAPABILITY_REGISTRY_VERSION = '1.1.0' as const;
 export const CAPABILITY_ADAPTER_VERSION = '1.0.0' as const;
 
 export type CapabilityManifestSourceKind = 'agent_bundle' | 'ocx_extension';
@@ -120,6 +120,8 @@ export interface RegisteredCapability {
   readonly sideEffects: readonly CapabilitySideEffect[];
   readonly permissionRisk: CapabilityPermissionRisk;
   readonly policyVersion: string;
+  /** sha256 over the exact trusted host policy that assigned this authority. */
+  readonly policyFingerprint: string;
   readonly sourceDeclaration: CapabilityManifestDeclaration;
   /** sha256 over the canonical capability record without this field. */
   readonly auditFingerprint: string;
@@ -137,7 +139,7 @@ export interface CapabilityRegistrySnapshot {
 export type CapabilityDenialCode =
   | 'AUDIT_INVALID'
   | 'UNKNOWN_CAPABILITY'
-  | 'MISSING_PERMISSION'
+  | 'GRANT_DENIED'
   | 'CLASSIFICATION_DENIED'
   | 'EGRESS_DENIED';
 

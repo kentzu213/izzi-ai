@@ -20,7 +20,8 @@ export type OcxCapabilityAdapterErrorCode =
   | 'DUPLICATE_PERMISSION'
   | 'UNKNOWN_PERMISSION'
   | 'OVER_PRIVILEGED_PERMISSION'
-  | 'MISSING_REQUIRED_PERMISSION';
+  | 'MISSING_REQUIRED_PERMISSION'
+  | 'UNSAFE_MANAGED_SERVICE';
 
 export class OcxCapabilityAdapterError extends Error {
   constructor(
@@ -54,6 +55,45 @@ function findDuplicate(values: readonly string[]): string | null {
   return null;
 }
 
+function assertManagedServicePolicy(manifest: OcxManifest): void {
+  const service = manifest.service;
+  if (!service) return;
+
+  // Node/binary commands are arbitrary process execution. Until a host-owned
+  // executable + argv schema exists, only the fixed docker-compose launch form
+  // is eligible for the managed-service capability.
+  if (service.type !== 'docker-compose') {
+    throw new OcxCapabilityAdapterError(
+      'UNSAFE_MANAGED_SERVICE',
+      'Managed services must use the host-controlled docker-compose launch form',
+    );
+  }
+  if (service.command !== undefined) {
+    throw new OcxCapabilityAdapterError(
+      'UNSAFE_MANAGED_SERVICE',
+      '`service.command` is forbidden for managed docker-compose services',
+    );
+  }
+
+  const remoteEnvVar = service.fallback?.remoteEnvVar;
+  if (remoteEnvVar !== undefined) {
+    const packagePrefix = manifest.name.replace(/-/g, '_').toUpperCase();
+    const allowed = new Set([
+      `${packagePrefix}_BACKEND_URL`,
+      `${packagePrefix}_BASE_URL`,
+    ]);
+    if (!allowed.has(remoteEnvVar)) {
+      throw new OcxCapabilityAdapterError(
+        'UNSAFE_MANAGED_SERVICE',
+        (
+          '`service.fallback.remoteEnvVar` must be a package-bound backend URL '
+          + `variable (${[...allowed].sort().join(' or ')})`
+        ),
+      );
+    }
+  }
+}
+
 /** Adapt an .ocx manifest without granting any permission named by it. */
 export function adaptOcxManifestToCapabilityEnvelope(
   manifest: OcxManifest,
@@ -67,6 +107,7 @@ export function adaptOcxManifestToCapabilityEnvelope(
       validation.errors.join('; '),
     );
   }
+  assertManagedServicePolicy(manifest);
   if (!manifest.permissions.every((permission) => typeof permission === 'string')) {
     throw new OcxCapabilityAdapterError(
       'INVALID_MANIFEST',

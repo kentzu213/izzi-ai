@@ -2,10 +2,13 @@ export { DEFAULT_CAPABILITY_POLICIES } from './policy-catalog';
 export {
   CapabilityRegistryError,
   buildCapabilityRegistry,
+  capabilityGrantScopes,
   evaluateCapabilityInvocation,
   verifyCapabilityRegistryAudit,
 } from './registry';
 export type {
+  CapabilityGrantResolver,
+  CapabilityGrantScope,
   CapabilityInvocationRequest,
   CapabilityRegistryErrorCode,
 } from './registry';

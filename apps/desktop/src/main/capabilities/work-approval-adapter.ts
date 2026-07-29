@@ -1,5 +1,10 @@
-import type { RegisteredCapability } from '../../shared/capabilities';
+import {
+  type CapabilityRegistrySnapshot,
+  type RegisteredCapability,
+} from '../../shared/capabilities';
+import { canonicalJson } from '../../shared/personal-office';
 import type { RequestApprovalInput } from '../work/work-service';
+import { verifyCapabilityRegistryAudit } from './registry';
 
 export interface CapabilityApprovalContext {
   readonly runId: string;
@@ -26,6 +31,7 @@ const APPROVAL_SIDE_EFFECTS = new Set([
   'process_execution',
   'secret_access',
 ]);
+const SHA256_REGEX = /^sha256:[a-f0-9]{64}$/;
 
 function approvalKind(
   capability: RegisteredCapability,
@@ -44,31 +50,69 @@ function approvalKind(
  * and decides the approval, and it never executes the external action itself.
  */
 export function buildCapabilityApprovalRequest(
+  snapshot: CapabilityRegistrySnapshot,
   capability: RegisteredCapability,
   context: CapabilityApprovalContext,
 ): RequestApprovalInput {
-  if (!capability.sideEffects.some((effect) => APPROVAL_SIDE_EFFECTS.has(effect))) {
+  if (!verifyCapabilityRegistryAudit(snapshot)) {
+    throw new CapabilityApprovalAdapterError('Capability registry audit is invalid');
+  }
+  const registered = snapshot.capabilities.find(
+    (candidate) => candidate.tool.id === capability.tool.id,
+  );
+  if (
+    !registered
+    || registered.auditFingerprint !== capability.auditFingerprint
+    || registered.policyFingerprint !== capability.policyFingerprint
+  ) {
     throw new CapabilityApprovalAdapterError(
-      `Capability ${capability.tool.id} does not require a Loop 03 approval`,
+      `Capability ${capability.tool.id} is not the audited registry record`,
+    );
+  }
+  if (!registered.sideEffects.some((effect) => APPROVAL_SIDE_EFFECTS.has(effect))) {
+    throw new CapabilityApprovalAdapterError(
+      `Capability ${registered.tool.id} does not require a Loop 03 approval`,
     );
   }
   if (!context.idempotencyKey.trim()) {
     throw new CapabilityApprovalAdapterError('idempotencyKey is required');
   }
+  if (!SHA256_REGEX.test(snapshot.auditDigest)) {
+    throw new CapabilityApprovalAdapterError('registryDigest is invalid');
+  }
+
+  const capabilityAuthorization = Object.freeze({
+    schemaVersion: 1,
+    registrySchemaVersion: registered.registrySchemaVersion,
+    registryVersion: registered.registryVersion,
+    registryDigest: snapshot.auditDigest,
+    packageId: registered.packageId,
+    capabilityId: registered.tool.id,
+    capabilityFingerprint: registered.auditFingerprint,
+    requiredPermission: registered.tool.requiredPermission,
+    policyVersion: registered.policyVersion,
+    policyFingerprint: registered.policyFingerprint,
+  });
 
   return {
     runId: context.runId,
-    kind: approvalKind(capability),
-    title: `Approve ${capability.tool.name}`,
+    kind: approvalKind(registered),
+    title: `Approve ${registered.tool.name}`,
     summary: (
-      `Permission ${capability.tool.requiredPermission}; `
-      + `trust zone ${capability.trustZone}; `
-      + `classifications ${capability.dataClassifications.join(', ')}`
+      `Permission ${registered.tool.requiredPermission}; `
+      + `trust zone ${registered.trustZone}; `
+      + `classifications ${registered.dataClassifications.join(', ')}`
     ),
-    risk: capability.permissionRisk,
+    risk: registered.permissionRisk,
     target: context.target,
-    input: context.input,
-    estimatedSideEffect: capability.sideEffects.join(', '),
+    input: Object.freeze({
+      capabilityAuthorization,
+      invocationInput: context.input,
+    }),
+    estimatedSideEffect: canonicalJson({
+      capabilityAuthorization,
+      sideEffects: registered.sideEffects,
+    }),
     idempotencyKey: context.idempotencyKey,
     ...(context.artifactId ? { artifactId: context.artifactId } : {}),
     ...(context.stepId ? { stepId: context.stepId } : {}),

@@ -2,7 +2,7 @@
 
 Status: Loop 07 implementation artifact
 Registry schema: `1`
-Registry version: `1.0.0`
+Registry version: `1.1.0`
 Adapter envelope version: `1.0.0`
 
 ## Purpose
@@ -71,7 +71,11 @@ accepted SkillPackage + ToolDefinition records
 canonical fingerprints + registry audit digest
         |
         v
-exact grant + classification + egress invocation gate
+trusted resolver -> accepted IntegrationGrant with exact
+tenant/user/workspace/package/capability/permission scopes
+        |
+        v
+classification + egress invocation gate
         |
         v
 Loop 03 RequestApprovalInput for side effects
@@ -79,7 +83,11 @@ Loop 03 RequestApprovalInput for side effects
 
 The approval adapter only builds `RequestApprovalInput`. `WorkService` remains
 the authority that redacts, hashes, persists and decides approval records. The
-adapter never performs the effect.
+adapter never performs the effect. Capability id, package id, required
+permission, capability fingerprint, policy version/fingerprint, registry
+version and registry digest are copied into the hashed action input and
+estimated-side-effect binding. A stale approval therefore cannot authorize the
+same human-readable action under different capability or policy authority.
 
 ## Deterministic and versioned output
 
@@ -96,12 +104,16 @@ Normalization rules:
    name, package version, declaration kind and declaration key.
 4. Every `SkillPackage` and `ToolDefinition` timestamp is the supplied
    `observedAt`.
-5. Every capability receives a `sha256:` fingerprint over its canonical record.
-6. The snapshot receives a `sha256:` digest over all package and capability
+5. Every capability records a `sha256:` fingerprint of the exact trusted policy
+   that assigned its permission, classification, trust and side effects.
+6. Every capability receives a `sha256:` fingerprint over its canonical record.
+7. The snapshot receives a `sha256:` digest over all package and capability
    records.
-7. Invocation verifies the snapshot digest and every capability fingerprint
-   before checking authority. A modified deserialized snapshot is denied with
-   `AUDIT_INVALID`.
+8. Invocation verifies supported schema/registry/adapter versions, exact object
+   shapes, package/capability relationships, trusted policy equality, policy
+   fingerprints, capability fingerprints and the registry digest before
+   checking authority. Recomputing public hashes after changing a permission or
+   version is still denied with `AUDIT_INVALID`.
 
 The canonical byte format uses the accepted
 `shared/personal-office/canonicalJson` helper. Cryptographic hashing stays in the
@@ -142,6 +154,11 @@ It rejects:
 - unknown permissions;
 - contributed panels without `ui.panel`;
 - managed local services without `net.http`;
+- `node` and `binary` managed-service commands until a host-owned executable and
+  argument schema exists;
+- hidden `command` fields on Docker Compose services;
+- fallback environment variables other than the package-bound
+  `<PACKAGE>_BACKEND_URL` or `<PACKAGE>_BASE_URL`;
 - invalid managed-service namespace, path or bind declarations through the
   existing service validator.
 
@@ -149,7 +166,8 @@ A validated managed service adds the derived
 `runtime:managed_local_service` declaration. Its trusted policy requires the
 exact `runtime.local_service` permission and a Loop 03 approval. The existing
 validator has already constrained it to the `izzi-svc-` namespace and loopback
-binds.
+binds. Admission currently permits only the host-controlled Docker Compose
+launch form; arbitrary shell, Node and binary commands fail closed.
 
 ## Built-in policy
 
@@ -179,14 +197,29 @@ and state a reason when blocked. Wildcard policy permissions are invalid.
 An invocation request names:
 
 - the registered capability id;
-- exact granted permissions;
+- tenant, user and workspace identity;
+- an explicit UTC evaluation time;
 - every data classification the invocation will touch.
+
+Permission strings in the request are never authorization. The main process
+supplies a trusted resolver that reads an accepted `IntegrationGrant`. The
+returned grant must:
+
+- use the accepted Personal Office schema and a valid `SecretRef`;
+- be active, unrevoked and unexpired at the supplied evaluation time;
+- match the workspace and package (`integration`) exactly;
+- contain no wildcard or duplicate scopes;
+- contain exactly one capability binding for each of tenant, user, workspace,
+  package, capability id and required permission.
 
 Authorization is denied when:
 
 - the registry audit is invalid;
 - the capability id is absent;
-- only a wildcard or different permission was granted;
+- the request is incomplete or includes the old caller-owned permission shape;
+- the trusted resolver returns no accepted grant;
+- any tenant/user/workspace/package/capability/permission binding differs;
+- the grant is malformed, forged, revoked, expired, duplicated or wildcarded;
 - an input classification is outside the policy;
 - network egress is attempted with anything other than freely egressable
   `public_metadata`.
@@ -211,6 +244,12 @@ The registry returns no partial snapshot when any package contains:
 
 The admission operation is stateless and atomic: either every input validates
 and the complete immutable snapshot is returned, or the call throws.
+
+Registry hashes are audit evidence, not a trust root. Verification always
+re-derives authority-bearing fields from the trusted policy catalog. Invocation
+then requires a separately accepted and exactly scoped `IntegrationGrant`, so a
+modified snapshot cannot become executable merely by recomputing its public
+hashes.
 
 ## Integration boundary
 

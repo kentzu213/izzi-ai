@@ -34,5 +34,6 @@ export type {
 } from './validation';
 export {
   canonicalCapabilityPayload,
+  canonicalCapabilityPolicyPayload,
   canonicalCapabilityRegistryPayload,
 } from './canonical';
