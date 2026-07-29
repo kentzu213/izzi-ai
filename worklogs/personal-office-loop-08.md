@@ -34,7 +34,7 @@ touched.
 ## Evidence
 
 - RED: both new suites failed before modules existed.
-- GREEN: 4 test files, 25/25 tests.
+- GREEN after security correction: 4 test files, 27/27 tests.
 - Targeted strict TypeScript: PASS.
 - GitNexus detect changes: LOW, 2 touched indexed symbols, 0 affected flows.
 - Exact ownership: 12 implementation paths, all leased.
@@ -45,7 +45,24 @@ touched.
 
 ## Commits
 
-- Phase 1 implementation: `55c396b0e976d5f184092a19d726bc2f7eb11dea`
-- Phase 2 handoff/worklog: recorded by the next commit.
+- Initial implementation: `55c396b0e976d5f184092a19d726bc2f7eb11dea`
+- Initial handoff: `fd35f97049f4c64f9064994a78fef3632561d29c`
+- Socrates disposition: SEND-BACK with four blocking findings.
+- Security correction implementation: `67be7fe1b2570500e599066b7e3f69274ba6bce0`
+- Revised handoff/worklog: recorded by the next commit.
+
+## Socrates correction
+
+All four findings were addressed inside the original lease:
+
+1. Every public planning boundary re-parses unknown descriptor input with
+   explicit trusted provenance. A forged TypeScript cast no longer bypasses
+   descriptor validation.
+2. Plan identity includes the evidence digest and all derived apps, packages,
+   grant refs, classifications, trust zones, side effects and approval meaning.
+3. SemVer validation rejects leading-zero core values, empty prerelease
+   identifiers and numeric prerelease identifiers with leading zero.
+4. Secret-shaped id detection now rejects AWS `AKIA` and `ASIA` access-key
+   forms without including the rejected value in the error.
 
 Only W0 may mark Loop 08 ACCEPTED.
