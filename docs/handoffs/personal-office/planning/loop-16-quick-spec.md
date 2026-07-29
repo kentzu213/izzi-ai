@@ -1,6 +1,6 @@
 # Loop 16 quick spec — account and IntegrationGrant operation
 
-Status: `IMPLEMENTING`
+Status: `IMPLEMENTED_READY_FOR_REVIEW`
 
 Canonical base: `8fbb27fec5cc3a203fcfa659179a925b7187479e`
 
