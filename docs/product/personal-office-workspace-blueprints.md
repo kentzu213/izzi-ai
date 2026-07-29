@@ -48,9 +48,12 @@ A plan binds:
 - exact blueprint version;
 - immutable deterministic plan id.
 
-The plan id is derived only from plan version, blueprint identity/version and
-the three scope identifiers. `plannedAt` records review time but does not alter
-identity.
+The plan id is the encoded canonical JSON binding of plan version, exact
+blueprint identity/version, trusted `evidenceDigest`, the three scope
+identifiers, and every material derived authority field: requested apps and
+packages, integration-grant references, data classifications, trust zones,
+expected side effects and approval requirement. `plannedAt` records review time
+but does not alter identity.
 
 Plan contents are re-derived from the reviewed blueprint:
 
