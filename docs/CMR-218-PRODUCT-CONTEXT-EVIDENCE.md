@@ -47,8 +47,24 @@ Reviewer authority: authenticated workspace identity, derived in Electron main
 - `tsc -p apps/desktop/tsconfig.main.json --noEmit`: passed.
 - `pnpm --dir apps/desktop build`: passed.
 - `git diff --check`: passed after line-ending normalization.
-- Packaged runtime and visual smoke: pending until the verified commit is
-  pushed, per the release loop.
+- Verified commit `2e245150c6a724124df1946d1da1dd7826c128df` was pushed to
+  `origin/main` and published as `v1.14.0-beta.5`.
+- GitHub Actions release run `30456270222` completed successfully for Windows
+  and macOS. The public release includes Windows x64 plus macOS x64 and arm64
+  artifacts.
+- The packaged Windows runtime reports product title `Izzi AI`, version
+  `1.14.0-beta.5`, and launches to the production login boundary without an
+  authentication bypass.
+- Production-renderer smoke passed in the network-free Customer Marketing
+  harness. A dirty Product Context draft survived Brand Center to Overview and
+  back to Brand Center.
+- Responsive smoke passed at desktop `1440x900` and mobile `390x844` with no
+  horizontal overflow or button-label overflow.
+- At the mobile form end, `Lưu Product Context` remained fully visible and
+  enabled. Its bottom edge was `119.75px` above the fixed navigation top after
+  scrolling to the maximum page offset, so no CSS patch was required.
+- CodeGraph was re-indexed against the release worktree and reports 317 files,
+  4,639 nodes, 13,159 edges, and an up-to-date index.
 
 ## Safety status
 
