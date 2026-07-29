@@ -3,9 +3,9 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T19:10:00Z",
+  "updatedAt": "2026-07-29T19:25:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "5382fc04f11ddadb2b20d0d3368312c162f6ce46",
+  "integrationCommit": "5ee399e3bccbe5b395ecb4b386b8c2f2e06ea2b5",
   "activeLeases": [
     {
       "leaseId": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
@@ -23,6 +23,8 @@
         "apps/desktop/package.json",
         "apps/desktop/src/main/customer-marketing/customer-marketing-service.ts",
         "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
         "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx",
         "docs/handoffs/personal-office/release-gate-r6-beta11.json",
         "worklogs/personal-office-release-gate-r6-beta11.md"
@@ -30,13 +32,11 @@
       "prohibitedPaths": [
         "pnpm-lock.yaml",
         "apps/desktop/src/main/db/**",
-        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts",
-        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
         "apps/desktop/src/main/index.ts",
         "apps/desktop/src/main/preload.ts",
         "apps/desktop/release-beta*-20260729/**"
       ],
-      "securityDecision": "Manifest-declared legacy_ids are excluded. Replacement authority is exact canonical projectId equality only."
+      "securityDecision": "Manifest-declared projectId and legacy_ids are excluded as replacement authority. Replacement requires a workspace-bound source identity derived by the runtime from the canonical real path."
     }
   ],
   "activeLeaseCount": 1,
