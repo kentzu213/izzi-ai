@@ -3,12 +3,45 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T13:09:22Z",
+  "updatedAt": "2026-07-29T13:17:16Z",
   "updatedBy": "W0",
-  "integrationCommit": "85c0655dd0bf632ba765311ae1333f91cf86eeee",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No producer lease is active. Loop 06 is accepted and its lease is revoked. Loop 11 remains read-only until W0 creates an isolated worktree and grants an exact runtime/browser lease. Kiro has no writer authority.",
+  "integrationCommit": "1b6215052e06d85a6b77bf140519d1d38583f85b",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "loop": "11",
+      "window": "W3",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T13:17:16Z",
+      "grantedBy": "W0",
+      "branch": "feature/personal-office-loop-11-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop11",
+      "baseCommit": "1b6215052e06d85a6b77bf140519d1d38583f85b",
+      "changeRequest": "docs/handoffs/personal-office/dispatch-loop-11.md",
+      "ownedPaths": [
+        "apps/desktop/src/shared/runtime/**",
+        "apps/desktop/src/main/runtime/**",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/src/renderer/types/global.d.ts",
+        "apps/desktop/src/renderer/shell/RuntimeHealthPanel.tsx",
+        "apps/desktop/src/renderer/shell/RuntimeHealthPanel.test.tsx",
+        "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx",
+        "docs/architecture/local-and-browser-runtime.md",
+        "worklogs/personal-office-loop-11.md",
+        "docs/handoffs/personal-office/loop-11.json"
+      ],
+      "constraints": [
+        "Kiro has no writer authority; one Codex builder is the only producer",
+        "No package/lockfile, database/schema or customer-marketing edits",
+        "LocalServiceManager and WorkService are read-only dependencies",
+        "main/index.ts and preload.ts changes are additive runtime wiring only",
+        "No production automation, host profile attachment or real external effect"
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Loop 11 is the only active producer under LEASE-L11-RUNTIME-BROWSER-20260729. Kiro has no writer authority. Loop 12 remains blocked until Loop 11 is accepted.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
@@ -217,8 +250,8 @@
         "10",
         "11"
       ],
-      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
-      "note": "Loops 10 and 11 may write only under an explicit lease. ALREADY MODIFIED-UNCOMMITTED in the dirty worktree.",
+      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "note": "Loop 11 may add runtime construction and IPC registration only. Quarantine remains read-only.",
       "leasedAt": "2026-07-29T04:20:00Z"
     },
     {
@@ -229,9 +262,20 @@
         "11",
         "12"
       ],
-      "currentLease": "LEASE-L03-EXEC-WIRING-20260729",
-      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree.",
+      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "note": "Loop 11 may add an additive runtime namespace only. Quarantine remains read-only.",
       "leasedAt": "2026-07-29T04:20:00Z"
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx",
+      "ownerOrder": [
+        "02",
+        "11",
+        "12"
+      ],
+      "currentLease": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "note": "Loop 11 may mount RuntimeHealthPanel only; broader shell changes remain forbidden.",
+      "leasedAt": "2026-07-29T13:17:16Z"
     },
     {
       "path": "apps/desktop/src/renderer/store/agentGateway.ts",
