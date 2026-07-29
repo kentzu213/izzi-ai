@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "11",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff enables no production browser driver, runtime adapter, package trust resolver, live grant resolver, external account automation or real external effect.",
+  "title": "Fail-closed local runtime and isolated browser foundation",
+  "producer": {
+    "window": "W3",
+    "role": "Codex builder; Kiro had no writer authority",
+    "branch": "feature/personal-office-loop-11-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop11",
+    "lease": "LEASE-L11-RUNTIME-BROWSER-20260729"
+  },
+  "canonicalBase": "c562c7f45e72c6de5c2f93b259c04c11d63e7b73",
+  "canonicalIsAncestor": true,
+  "commits": [
+    {
+      "sha": "d1a1d152597bec8a1d172075c18145aea91fea4d",
+      "phase": "implementation",
+      "subject": "feat(runtime): add safe local and browser foundation",
+      "scope": "versioned runtime contracts, trusted main-process authorization, local/native/docker adapter boundaries, encrypted isolated browser POC, atomic effect claims, Work approval/artifact/receipt integration, exact health IPC and read-only shell health UI"
+    }
+  ],
+  "handoffCommitNote": "The second producer commit contains only this JSON and worklogs/personal-office-loop-11.md.",
+  "inputs": [
+    {
+      "producerLoop": "03",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-03.json",
+      "sha256": "bb84cc642315a06d47556341a0963778799934559428660e91094223b6b0e1c1",
+      "bytes": 4067
+    },
+    {
+      "producerLoop": "06",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-06.json",
+      "sha256": "c6aaae4f97b04e3002571ba571baa35f569fd95f43211a6996a666e16136a8e0",
+      "bytes": 5684
+    },
+    {
+      "producerLoop": "07",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-07.json",
+      "sha256": "987b48bdc90370cfe9b05b19f5a56d1a5ca73282ff35158116e1bbb25b7080f3",
+      "bytes": 4706
+    },
+    {
+      "producerLoop": "09",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-09.json",
+      "sha256": "9cf9e315918fa6c4cf9a8e89b879e6e05549a6230434ba3954ba78211b5659be",
+      "bytes": 5054
+    },
+    {
+      "producerLoop": "10",
+      "status": "ACCEPTED",
+      "path": "docs/handoffs/personal-office/acceptance/loop-10.json",
+      "sha256": "22e0e5709f2842feed3f1b7041402d637088f0599eb34f52823be803434bcccd",
+      "bytes": 5276
+    }
+  ],
+  "ownership": {
+    "allInsideLease": true,
+    "implementationPathCount": 33,
+    "prohibitedPathChanges": 0,
+    "forbiddenPathsUntouched": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "apps/desktop/package.json",
+      "apps/desktop/src/main/db/**",
+      "apps/desktop/src/main/customer-marketing/**",
+      "apps/desktop/src/shared/customer-marketing-*",
+      "apps/desktop/src/main/extensions/local-service-manager.ts",
+      "apps/desktop/src/main/work/**"
+    ]
+  },
+  "securityGate": {
+    "surfaces": [
+      "native process execution",
+      "filesystem paths",
+      "network egress and redirects",
+      "browser sessions and encrypted state",
+      "secrets and logs",
+      "tenant/user/workspace authorization",
+      "approval-bound external effects and replay"
+    ],
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "trusted main-process package/grant resolver; shared spec carries identities only",
+      "exact live grant, tenant, user, workspace, integration, grant and run binding",
+      "verified executable, literal argv, shell:false and explicit SecretRef environment",
+      "realpath containment, loopback bind and deny-default exact origin/port policy",
+      "canonical tenant/user/workspace/package/integration/grant/storage-state key",
+      "Work redaction plus bearer/cookie/password handling",
+      "persisted approved binding projection is the only submitted body",
+      "reserved-key and persisted-row tamper rejection for object and array inputs",
+      "atomic persisted effect claim with uncertain outcome denying automatic retry",
+      "production wiring has zero adapters, deny-all execution authorization and zero health scopes"
+    ],
+    "independentReview": {
+      "security": "PASS on d1a1d15",
+      "socrates": "PASS on d1a1d15 after iterative send-backs"
+    }
+  },
+  "verification": [
+    {
+      "check": "targeted runtime tests",
+      "result": "PASS",
+      "evidence": "Vitest 4.1.2, --no-cache, 9 files / 50 tests."
+    },
+    {
+      "check": "changed-source syntax transpilation",
+      "result": "PASS",
+      "evidence": "TypeScript transpileModule reported zero syntax diagnostics during implementation."
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS",
+      "evidence": "Implementation range c562c7f..d1a1d15 is whitespace-clean."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "33/33 paths inside lease; zero package/lockfile, DB/schema or customer-marketing change; production-source secret scan clean."
+    },
+    {
+      "check": "GitNexus detect changes",
+      "result": "REQUIRES_FULL_INTEGRATION_VERIFICATION",
+      "evidence": "33 files, 10 changed indexed symbols, 19 affected processes, CRITICAL due additive touches to setupIPC/initServices/preload/ShellSettingsPanel."
+    },
+    {
+      "check": "producer full typecheck/build/full tests/lint",
+      "result": "DEFERRED_TRUTHFULLY",
+      "evidence": "Producer lacks a local dependency tree. Temporary junction verification was blocked before execution; W0 must run all gates on canonical after exact-path integration."
+    }
+  ],
+  "outputHashes": [
+    {"path":"apps/desktop/src/main/index.ts","sha256":"6a69366eeab05d3dbe64d1595112e69204aa59cbb3757413954146fb4cca9091","bytes":68889},
+    {"path":"apps/desktop/src/main/preload.ts","sha256":"2af8150f8cfeba3ebd692d350744362c7089d10a48a9a5ab052f97c7bfde83a6","bytes":34846},
+    {"path":"apps/desktop/src/main/runtime/browser-runtime.test.ts","sha256":"b2711fe66cd0e6e9bf1531d613080671deb5a70b252220e5b36eff42f409e127","bytes":22226},
+    {"path":"apps/desktop/src/main/runtime/browser-runtime.ts","sha256":"320d1d1b704a93c95f194c41f66a3226f826e7aa503b570e2f866023db9050f4","bytes":16140},
+    {"path":"apps/desktop/src/main/runtime/docker-compose-adapter.ts","sha256":"7b86c77c183a5ce4d6e6d990fa67bf523cbc72f194e81452ff8116d6971cbdb4","bytes":2677},
+    {"path":"apps/desktop/src/main/runtime/effect-claim-store.test.ts","sha256":"ee20bb3b6cea7d60ddb2540e1502e169b89b0586f0942a6ded3a512aef5bbcd8","bytes":2511},
+    {"path":"apps/desktop/src/main/runtime/effect-claim-store.ts","sha256":"0a388965940890c4f3ba6efd32e4dd097a8d843cc5f2be3b6149c341d88ca31b","bytes":5969},
+    {"path":"apps/desktop/src/main/runtime/encrypted-state-store.test.ts","sha256":"b0ceb46fd351f65edbbd495ef99a7e78704854d98c079ef9067b6db31ee80bf3","bytes":1842},
+    {"path":"apps/desktop/src/main/runtime/encrypted-state-store.ts","sha256":"a3c67b07dad30df935d777de4abecced078ee625b334ce7a6e55dc923b5a8208","bytes":1800},
+    {"path":"apps/desktop/src/main/runtime/index.ts","sha256":"f44d79d777c68e57fea251f733eda50a6baaac9023e38e96f89c352facd09881","bytes":449},
+    {"path":"apps/desktop/src/main/runtime/native-process-adapter.ts","sha256":"e97b55b59769124985a7aa1c175fc701475e4028fcdfed15874ae4a9d5e5e16b","bytes":4504},
+    {"path":"apps/desktop/src/main/runtime/path-security.test.ts","sha256":"c7a8490f6127fc1a08af144721f683f2988ca23337fa43cf73a7e6aa2a92ab85","bytes":694},
+    {"path":"apps/desktop/src/main/runtime/path-security.ts","sha256":"715f9c0d443fe344226f482962735fc687e4f7bb803bffba8c077b8348666229","bytes":1427},
+    {"path":"apps/desktop/src/main/runtime/redaction.test.ts","sha256":"3d27c92b642dd8e409c4788d1d1a2693191be1090266a789f4bc64c5888072f9","bytes":1071},
+    {"path":"apps/desktop/src/main/runtime/redaction.ts","sha256":"aa9eea24aedab20e07caa931d605c6a488222ca5c28dd93c58b88d6f80557abd","bytes":828},
+    {"path":"apps/desktop/src/main/runtime/runtime-authorizer.test.ts","sha256":"b2c29edada64e150476c4c63a2e392b48a774b26ce8e3780cdb20b82b0219185","bytes":3770},
+    {"path":"apps/desktop/src/main/runtime/runtime-authorizer.ts","sha256":"0058a5f5c368bf5e069aeb52afc878064ce0fa868dfeae4760bb05198ae6ca2e","bytes":4015},
+    {"path":"apps/desktop/src/main/runtime/runtime-health-authorization.ts","sha256":"5c30ca04fb27c85ba10fb69ec7802b7160563e66163c731c4f436d3e1ecf995b","bytes":706},
+    {"path":"apps/desktop/src/main/runtime/runtime-health-panel.test.ts","sha256":"44808a0d53f75f6838cb94d0027c2bfb6197582257e3ca222930d75ab72d531e","bytes":562},
+    {"path":"apps/desktop/src/main/runtime/runtime-ipc.test.ts","sha256":"3a1dc0e66b38c890440ec2f86a2318590a8f8ef25300ece5e956f2dc9945346b","bytes":1301},
+    {"path":"apps/desktop/src/main/runtime/runtime-ipc.ts","sha256":"ef668d75f1f0e586a53b18c0ac1c65a90dbbfe49171eee7105870afca510bf55","bytes":1270},
+    {"path":"apps/desktop/src/main/runtime/runtime-manager.test.ts","sha256":"d52d9a74e102c5696b5d3e99d69ff094adb683a57171665db60479c35ad11c76","bytes":6873},
+    {"path":"apps/desktop/src/main/runtime/runtime-manager.ts","sha256":"12c3a4266ceff21a3b193499f0de952252f3f658ec47514ee94533d495b21cfa","bytes":5858},
+    {"path":"apps/desktop/src/main/runtime/work-runtime-port.ts","sha256":"2d79a20c152e7bb2f875d34eb58f5921a94d129a95a1926386068c163a704aa3","bytes":1339},
+    {"path":"apps/desktop/src/renderer/shell/RuntimeHealthPanel.tsx","sha256":"4b8a0884a127dcb7bc77636c4a5ee32429a42e81e4e6359eb3c7519be5de7a52","bytes":2240},
+    {"path":"apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx","sha256":"76e7a6bdc58fe3994ae86f378d6d92f745ed79dd1523c068f2d986121024454e","bytes":5071},
+    {"path":"apps/desktop/src/renderer/types/global.d.ts","sha256":"91037c570723b2080b8e7d59aeb22d0de8801a253fa338be2af3a1a307aa0e4a","bytes":9550},
+    {"path":"apps/desktop/src/shared/runtime/index.ts","sha256":"e24ff672e5ff704021f8b270e31da17dc2dc71f1cceb7317209dc28d1e7eb4c5","bytes":78},
+    {"path":"apps/desktop/src/shared/runtime/ipc.ts","sha256":"3aba0929dd0358ddca37aad894237b3c839ea6457baaee7ca1543817d7f219ae","bytes":383},
+    {"path":"apps/desktop/src/shared/runtime/types.ts","sha256":"d546d55b4ada720d05cd4eb0cb77b3a30260620f115edf3d7c8f5e363da298dd","bytes":3468},
+    {"path":"apps/desktop/src/shared/runtime/validation.test.ts","sha256":"1a50abbbb1746755ccc40db609ac1a1434f57b19bc2f0fabc22c01d4a46c99b9","bytes":5879},
+    {"path":"apps/desktop/src/shared/runtime/validation.ts","sha256":"da02ecc35a0fc47f536a7e7cbde07289a366f59e77831c17fb4dbeae5f42f46f","bytes":8056},
+    {"path":"docs/architecture/local-and-browser-runtime.md","sha256":"b024e3ac0ab00e4764c5a74ed85beb22e8208cd0ca68d110c7a0787ab1093f0f","bytes":8523}
+  ],
+  "gitnexus": {
+    "status": "CRITICAL_REVIEW_SCOPE",
+    "changedFiles": 33,
+    "changedIndexedSymbols": 10,
+    "affectedProcesses": 19,
+    "reason": "Additive hot-file edits touch setupIPC, initServices, preload and ShellSettingsPanel; full canonical integration verification is mandatory."
+  },
+  "agentAudit": {
+    "socrates": "USED_WITH_REPEATED_SEND_BACKS_AND_FINAL_PASS",
+    "orchestrator": "USED_IN_ROOT_CONTROL_THREAD",
+    "builder": "CODEX_ONLY_WRITER",
+    "decisionAuthority": "W0 only"
+  },
+  "skillAudit": [
+    {"skill":"/search-first","status":"USED"},
+    {"skill":"/context-gatherer","status":"USED"},
+    {"skill":"/understand-codebase","status":"USED"},
+    {"skill":"/quick-spec","status":"USED_BY_DISPATCH"},
+    {"skill":"/backend-patterns","status":"USED"},
+    {"skill":"/frontend-patterns","status":"USED_FOR_READ_ONLY_HEALTH_PANEL"},
+    {"skill":"/deployment-patterns","status":"USED_FOR_LIFECYCLE_FAIL_CLOSED_AND_ROLLBACK_BOUNDARIES"},
+    {"skill":"/security-review","status":"USED_WITH_FINAL_PASS"},
+    {"skill":"/verification-loop","status":"USED"},
+    {"skill":"Design","status":"BOUNDARY_ONLY_EXISTING_SHELL"},
+    {"skill":"/gpt-taste","status":"BOUNDARY_ONLY_NAMING_AND_COPY"},
+    {"skill":"/design-taste-frontend","status":"BOUNDARY_ONLY_EXISTING_SHELL"},
+    {"skill":"/stitch-design-taste","status":"BOUNDARY_ONLY_NO_STITCH_OUTPUT"}
+  ],
+  "residualRisks": [
+    "No production runtime adapter, browser driver, trust resolver or live grant resolver is enabled.",
+    "Full main/renderer typecheck, desktop tests, build and repository lint must pass after exact-path canonical integration.",
+    "GitNexus marks the integration review scope CRITICAL because existing hub functions are touched additively.",
+    "The production bundle retains any pre-existing warning ceiling until W0 remeasures it."
+  ],
+  "nextConsumers": [
+    {
+      "owner": "W0",
+      "action": "Verify all 33 Git blob hashes, exact-path integrate implementation then handoff, run full canonical gates, create acceptance/loop-11.json, update ledger and revoke the lease only after PASS."
+    },
+    {
+      "owner": "Loop 12",
+      "action": "Do not start until W0 records Loop 11 ACCEPTED and grants the broad Customer Marketing plus shell leases."
+    }
+  ]
+}
