@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "15",
+  "status": "READY_FOR_REVIEW",
+  "statusAuthority": "Only W0 may set ACCEPTED. This handoff authorizes no push, deployment, installation, browser automation, secret retrieval or external effect.",
+  "title": "Host-validated Marketplace operation",
+  "producer": {
+    "window": "W0-Codex",
+    "role": "Codex builder plus in-process security, verification and Socrates review; Kiro and subagents had no writer authority",
+    "branch": "feature/personal-office-loop-15-20260729",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop15",
+    "lease": "LEASE-L15-MARKETPLACE-OPERATION-20260729"
+  },
+  "canonicalBase": "fefe740a046723f9b0dc91e2ac51afb19f680736",
+  "implementationCommits": [
+    "bee907cc59109175401de8e4fda97e9414646e75"
+  ],
+  "handoffCommitNote": "The producer handoff commit contains only this JSON and worklogs/personal-office-loop-15.md.",
+  "outcome": {
+    "catalog": "Renderer loads only through the trusted host bridge. Production has no demo fallback and returns catalog unavailable until an audited authority is registered.",
+    "scope": "Main derives an opaque reviewer reference and fixes authority to the canonical personal workspace; renderer submits only a package key or unchanged host-created plan.",
+    "operation": "Plan revalidation, package/signature verification, Work approval, exact grants, workspace provisioning and installation run in strict order through injected ports.",
+    "receipts": "Strict staged receipts preserve partial truth and cannot claim completed installation without exact workspace and package evidence.",
+    "productionGate": "Catalog, verifier, grant, provisioner and installer ports remain fail-closed and are not connected to the legacy extension installer."
+  },
+  "closedSecurityFindings": [
+    {
+      "finding": "Approval resume trusted binding digest but did not also require the returned approval id to equal the requested id.",
+      "resolution": "Resume now rejects any approval id or binding mismatch before grants, provisioning or installation."
+    },
+    {
+      "finding": "Typed service receipts were returned over IPC without strict boundary re-parsing.",
+      "resolution": "IPC now parses every request/resume receipt and rejects invalid stage order, timestamps, evidence bindings or status claims."
+    },
+    {
+      "finding": "Renderer store retained dead identity-scope mutation code after scope authority moved to main.",
+      "resolution": "The unused selected-package helper and setScopeField mutation were removed."
+    }
+  ],
+  "ownership": {
+    "allInsideLease": true,
+    "implementationPathCount": 17,
+    "prohibitedPathChanges": 0,
+    "paths": [
+      "apps/desktop/src/main/index.ts",
+      "apps/desktop/src/main/marketplace/index.ts",
+      "apps/desktop/src/main/marketplace/marketplace-ipc.test.ts",
+      "apps/desktop/src/main/marketplace/marketplace-ipc.ts",
+      "apps/desktop/src/main/marketplace/operation-service.test.ts",
+      "apps/desktop/src/main/marketplace/operation-service.ts",
+      "apps/desktop/src/main/preload.ts",
+      "apps/desktop/src/renderer/components/marketplace/MarketplacePageView.test.ts",
+      "apps/desktop/src/renderer/components/marketplace/MarketplacePageView.tsx",
+      "apps/desktop/src/renderer/pages/Marketplace.tsx",
+      "apps/desktop/src/renderer/store/marketplacePersonalOffice.test.ts",
+      "apps/desktop/src/renderer/store/marketplacePersonalOffice.ts",
+      "apps/desktop/src/renderer/types/global.d.ts",
+      "apps/desktop/src/shared/marketplace/index.ts",
+      "apps/desktop/src/shared/marketplace/operation.test.ts",
+      "apps/desktop/src/shared/marketplace/operation.ts",
+      "docs/product/personal-office-marketplace.md"
+    ]
+  },
+  "securityGate": {
+    "decision": "PASS_FOR_W0_REVIEW",
+    "controls": [
+      "trusted top-level renderer checked before parsing or service execution",
+      "authenticated opaque reviewer and canonical personal workspace resolved only in main",
+      "submitted plan strictly parsed and recreated from current authority",
+      "package byte and publisher-signature evidence bind exact approval",
+      "approval, grants, provisioning and installation stop fail-closed in stage order",
+      "no package handle, raw user id, token, URL or local path crosses preload",
+      "production ports remain unavailable instead of falling back to legacy execution"
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused final Marketplace tests",
+      "result": "PASS",
+      "evidence": "5 files, 20/20 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "127 files, 1388/1388 tests after the final implementation commit."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "production renderer build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only. Cache was redirected to producer dist and the canonical toolchain timestamp did not change."
+    },
+    {
+      "check": "lint",
+      "result": "PASS_WITH_BASELINE_WARNINGS",
+      "evidence": "Changed Marketplace surface passed at --max-warnings 0. Repository lint:ci passed with 0 errors and 350 warnings under the maximum 358."
+    },
+    {
+      "check": "ownership, prohibited paths, whitespace and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly 17 implementation paths, all leased; no prohibited path; git diff --check clean; no credential-shaped content hit."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEGRADED_LOW",
+      "evidence": "The stale canonical index mapped 11 changed symbols and no affected process. New unindexed Marketplace files were reviewed manually and covered by full tests, both typechecks, build and lint."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Read-only HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5; 459 expanded entries; status SHA-256 07f2e713c57599d4787c36d67394f6573dfab702a42e454f1c0f3b8e09160ca5."
+    }
+  ],
+  "outputs": [
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "bytes": 74613,
+      "producerWorkingTreeSha256": "805fb252844664030083b3e18fafc61633aa4f5b236a6c94bd4049db9b5678b6",
+      "gitBlob": "c20b320cdc6598dea79a3bbddffa9bbbdf1e3848"
+    },
+    {
+      "path": "apps/desktop/src/main/marketplace/marketplace-ipc.ts",
+      "bytes": 3101,
+      "producerWorkingTreeSha256": "b2df18f2c2174e23e386d9b7e9337eedc684a7ac486049970808fb49f9f6c5e5",
+      "gitBlob": "e57cfe96d3b34091028dcb3f8bf13d24070b4376"
+    },
+    {
+      "path": "apps/desktop/src/main/marketplace/operation-service.ts",
+      "bytes": 19554,
+      "producerWorkingTreeSha256": "e7880936e229d22dca7961491911efd7a36405c4038fc02ae7facb9e56f0e0a4",
+      "gitBlob": "40c51e01743d44cb05463eb2ae444c92af28ce10"
+    },
+    {
+      "path": "apps/desktop/src/renderer/pages/Marketplace.tsx",
+      "bytes": 6084,
+      "producerWorkingTreeSha256": "e5a0f9269bfcc03ae5c20bf3c3bcf5f0800a20465cf53c7489d6b904fd1a7a5d",
+      "gitBlob": "697c6bc9bbd53be2b85656bf56892aa2849aa21d"
+    },
+    {
+      "path": "apps/desktop/src/shared/marketplace/operation.ts",
+      "bytes": 13346,
+      "producerWorkingTreeSha256": "9984ea801f0e2179bf332fa7c237a9e0f59f77213ceb71c677f81dc6cf9ddbca",
+      "gitBlob": "e1708bc7f4994746233e6cf679f3fbc4a57611ec"
+    },
+    {
+      "path": "docs/product/personal-office-marketplace.md",
+      "bytes": 10890,
+      "producerWorkingTreeSha256": "c9fc1a1e5500c053b75cf957da674658c41920ee70669e9414d507cc9f0d5d23",
+      "gitBlob": "1ba615a54f229fda1abe97d0f4adc505db685bdd"
+    }
+  ],
+  "nextConsumer": {
+    "owner": "W0",
+    "action": "Exact-path replay the 17 implementation paths into the current integration ref, verify all producer/canonical Git blobs, then reconcile only this handoff and worklog, create acceptance/loop-15.json, update the integration ledger and revoke LEASE-L15-MARKETPLACE-OPERATION-20260729 in separate governance commits."
+  }
+}
