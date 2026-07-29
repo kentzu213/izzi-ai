@@ -13,9 +13,15 @@ Read-only GitHub verification on 2026-07-29 found that:
   every `v*` tag push with repository-wide `contents: write`;
 - the GitHub API reports zero repository environments, so
   `desktop-release` has no verified required-reviewer protection.
+- GitHub Actions run `30465599108` published `v1.14.0-beta.8` as a public
+  prerelease. Its macOS job explicitly logged that application code signing
+  was skipped because identity auto-discovery was disabled. Those beta.8
+  artifacts are not acceptable as Gate R signing/notarization evidence.
 
 The earlier Gate R result remains valid for the Personal Office integration
 ref, but it cannot be treated as protection for the current default branch.
+No attempt is authorised to delete, replace, promote, or otherwise mutate the
+existing GitHub prerelease.
 
 ## Lease
 

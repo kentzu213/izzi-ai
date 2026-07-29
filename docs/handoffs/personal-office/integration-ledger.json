@@ -893,6 +893,7 @@
       "integrationBehind": 10,
       "releaseWorkflowFinding": "origin/main still triggers on v* tag pushes with root contents:write and releaseType=release.",
       "environmentFinding": "GitHub API reports zero repository environments; desktop-release protection is not configured.",
+      "publishedArtifactFinding": "GitHub Actions run 30465599108 published v1.14.0-beta.8 as a public prerelease; the macOS job logged skipped application code signing because identity auto-discovery was disabled. These artifacts are non-authoritative for Gate R.",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r2-main-reconciliation.md",
       "activeLease": "LEASE-R2-MAIN-RECONCILIATION-20260729"
     },
