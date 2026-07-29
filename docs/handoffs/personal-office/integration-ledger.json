@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T16:33:50Z",
+  "updatedAt": "2026-07-29T16:48:15Z",
   "updatedBy": "W0",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -865,7 +865,7 @@
   },
   "loop01AcceptanceCommit": "16f25b28820d829b3050981e8d60db433194059b",
   "releaseGateR": {
-    "decision": "READY_FOR_PLATFORM_VALIDATION",
+    "decision": "BLOCKED_MAIN_DIVERGENCE_RECONCILIATION_ACTIVE",
     "stableReleaseAccepted": false,
     "acceptedPatchCommits": [
       "845d8da98204b214f2978525166e1abafe62e954",
@@ -883,8 +883,22 @@
       "macOS signing/notarization secret fail-open behavior",
       "automatic stable publishing from v* tag pushes"
     ],
+    "scopeCaveat": "The closed findings are verified only on feature/personal-office-baseline-20260728. Read-only GitHub verification found that current origin/main does not contain the accepted hardening.",
+    "defaultBranchDrift": {
+      "observedAt": "2026-07-29T16:48:15Z",
+      "defaultBranch": "main",
+      "commit": "7e265286bacf367da4423914d338233c1e47f936",
+      "versionLineage": "v1.14.0-beta.8",
+      "integrationAhead": 95,
+      "integrationBehind": 10,
+      "releaseWorkflowFinding": "origin/main still triggers on v* tag pushes with root contents:write and releaseType=release.",
+      "environmentFinding": "GitHub API reports zero repository environments; desktop-release protection is not configured.",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r2-main-reconciliation.md",
+      "activeLease": "LEASE-R2-MAIN-RECONCILIATION-20260729"
+    },
     "remainingPlatformGates": [
-      "GitHub desktop-release environment required-reviewer settings",
+      "Reconcile the accepted Gate R hardening onto current origin/main without losing beta.8 changes",
+      "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled",
       "Windows install/launch/upgrade/uninstall and data-retention checks",
       "real macOS x64 and arm64 codesign/notarization/stapling/Gatekeeper evidence",
       "approved RC tag platform run",

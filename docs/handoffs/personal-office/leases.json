@@ -3,12 +3,37 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T16:33:50Z",
+  "updatedAt": "2026-07-29T16:48:15Z",
   "updatedBy": "W0",
-  "integrationCommit": "c98dd2a2064f07781d08900ed46ac16eaa938f3f",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No active producer lease. Loops 00-12 remain ACCEPTED. Release Gate R is READY_FOR_PLATFORM_VALIDATION; stable release, push, tag, publish and deployment remain unauthorised.",
+  "integrationCommit": "749535af88a25289c84694e5a6adc54e154405de",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-R2-MAIN-RECONCILIATION-20260729",
+      "gate": "R2",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T16:48:15Z",
+      "baseRef": "origin/main",
+      "baseCommit": "7e265286bacf367da4423914d338233c1e47f936",
+      "branch": "feature/release-gate-r-main-reconcile-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r2",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r2-main-reconciliation.md",
+      "ownedPaths": [
+        ".github/workflows/release-desktop.yml",
+        "apps/desktop/electron-builder.json",
+        "docs/desktop-release-checklist.md",
+        "package.json",
+        "pnpm-lock.yaml"
+      ],
+      "constraints": [
+        "Preserve beta.8 version, icon-build, updater, marketing and branding changes.",
+        "No whole-file package manifest or lockfile replacement from beta.3.",
+        "No push, tag, publish, deploy, installer execution, environment creation, secret retrieval or quarantine mutation."
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "One Codex-only R2 lease is active to reconcile the accepted release hardening onto current origin/main. Loops 00-12 remain ACCEPTED. Stable release, push, tag, publish, deployment, installer execution and secret retrieval remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R-DEPENDENCY-SIGNING-20260729",
@@ -389,9 +414,9 @@
       "ownerOrder": [
         "lease-only"
       ],
-      "currentLease": null,
+      "currentLease": "LEASE-R2-MAIN-RECONCILIATION-20260729",
       "singleOwnerAtATime": true,
-      "note": "PQ-01 will need this lease to add the root eslint devDependencies and the lint scripts. Grant it to exactly one loop at a time.",
+      "note": "LEASE-R2-MAIN-RECONCILIATION-20260729 is the only active manifest/lockfile writer and may port only the reviewed dependency overrides while preserving beta.8 changes.",
       "violationObserved": {
         "at": "2026-07-29T04:20:00Z",
         "observedBy": "W0 during Loop 01 acceptance",
