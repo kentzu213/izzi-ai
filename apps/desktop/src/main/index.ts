@@ -1316,7 +1316,8 @@ function setupIPC() {
 
   // Stop an in-flight agent turn (Stop button). Aborts the streaming fetch; the
   // turn returns error 'aborted' and the partial answer already streamed stays.
-  ipcMain.handle('customProvider:abort', (_event, turnId: string): { ok: boolean } => {
+  ipcMain.handle('customProvider:abort', (event, turnId: string): { ok: boolean } => {
+    if (!isTrustedMarketingSender(event)) return { ok: false };
     const c = typeof turnId === 'string' ? activeAgentTurns.get(turnId) : undefined;
     if (!c) return { ok: false };
     c.controller.abort();
@@ -1325,7 +1326,8 @@ function setupIPC() {
 
   // Inject a user "steering" message into a running turn; the agent folds it in
   // before its next model round so it can course-correct without a new turn.
-  ipcMain.handle('customProvider:inject', (_event, turnId: string, text: string): { ok: boolean } => {
+  ipcMain.handle('customProvider:inject', (event, turnId: string, text: string): { ok: boolean } => {
+    if (!isTrustedMarketingSender(event)) return { ok: false };
     const c = typeof turnId === 'string' ? activeAgentTurns.get(turnId) : undefined;
     const t = typeof text === 'string' ? text.trim() : '';
     if (!c || !t) return { ok: false };
