@@ -1,9 +1,9 @@
 # Loop 10 — integration grants and grant-vault boundary
 
-**Status:** `READY_FOR_REVIEW`  
-**Branch:** `feature/personal-office-loop-10-20260729`  
-**Base:** `93cc3b11149b99854237fd2890a4cec993de29c1`  
-**Implementation:** `0528fbb1c30998a08292ada990d66f72fd3fdd21`  
+**Status:** `READY_FOR_REVIEW`
+**Branch:** `feature/personal-office-loop-10-20260729`
+**Base:** `93cc3b11149b99854237fd2890a4cec993de29c1`
+**Implementation:** `0528fbb1c30998a08292ada990d66f72fd3fdd21`
 **Lease:** `LEASE-L10-INTEGRATION-GRANTS-20260729`
 
 ## Outcome
