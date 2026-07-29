@@ -3,12 +3,44 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T18:55:00Z",
+  "updatedAt": "2026-07-29T19:10:00Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "5d7b3cb407ab3e828c9516145785af0b32e7edee",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No writer lease is active. Loops 00-12 and the local R5 beta.10 reconciliation are accepted. Stable release, push, tag, publish, deployment, installer execution, package installation, GitHub environment mutation, browser automation enablement and secret retrieval remain unauthorised. Current quarantine/source read-only drift is recorded in the R5 acceptance record and does not reopen writer ownership.",
+  "integrationCommit": "5382fc04f11ddadb2b20d0d3368312c162f6ce46",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
+      "gate": "R6",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-29T19:10:00Z",
+      "baseRef": "feature/personal-office-baseline-20260728",
+      "baseCommit": "5382fc04f11ddadb2b20d0d3368312c162f6ce46",
+      "branch": "feature/personal-office-beta11-reconcile-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-beta11-reconcile",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r6-beta11-reconciliation.md",
+      "ownedPaths": [
+        "apps/desktop/CHANGELOG.md",
+        "apps/desktop/package.json",
+        "apps/desktop/src/main/customer-marketing/customer-marketing-service.ts",
+        "apps/desktop/src/main/customer-marketing/customer-marketing-service.test.ts",
+        "apps/desktop/src/renderer/pages/CustomerMarketingRoom.tsx",
+        "docs/handoffs/personal-office/release-gate-r6-beta11.json",
+        "worklogs/personal-office-release-gate-r6-beta11.md"
+      ],
+      "prohibitedPaths": [
+        "pnpm-lock.yaml",
+        "apps/desktop/src/main/db/**",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts",
+        "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts",
+        "apps/desktop/release-beta*-20260729/**"
+      ],
+      "securityDecision": "Manifest-declared legacy_ids are excluded. Replacement authority is exact canonical projectId equality only."
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "One isolated Codex writer lease is active for R6 safe beta.11 re-import reconciliation. The mutable beta.11 source and quarantine remain read-only. Stable release, push, tag, publish, deployment, installer execution, package installation, GitHub environment mutation, browser automation enablement and secret retrieval remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R5-BETA10-RECONCILIATION-20260729",
