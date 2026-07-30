@@ -3,17 +3,17 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-29T23:59:59.999Z",
+  "updatedAt": "2026-07-30T00:16:15.329Z",
   "updatedBy": "W0 Control Tower / Codex",
   "integrationCommit": "95a645d8ab49a6e40834e77a4aead4d2b61b1f7d",
   "activeLeases": [
     {
-      "leaseId": "LEASE-R8-E2E-EVIDENCE-20260729",
+      "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
       "gate": "RELEASE-GATE-R8-E2E-EVIDENCE",
       "window": "W0-Codex",
       "status": "ACTIVE",
-      "grantedAt": "2026-07-29T23:59:59.999Z",
-      "branch": "feature/release-gate-r8-e2e-evidence-20260729",
+      "grantedAt": "2026-07-30T00:16:15.329Z",
+      "branch": "feature/release-gate-r8-e2e-evidence-20260730",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r8-e2e-evidence",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r8-e2e-evidence.md",
       "paths": [
