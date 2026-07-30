@@ -3,38 +3,31 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-30T00:50:12.388Z",
+  "updatedAt": "2026-07-30T01:07:59.3039715Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "99c3c568b59c6575b0fea01313b2203f3860b906",
-  "activeLeases": [
+  "integrationCommit": "1cf51cc8b5ec7d42fb981baa6064109c85580fbf",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. Release Gate R9 is accepted only for detached signature verification against caller-pinned public keys; trust-anchor approval, evidence authentication for gate purposes, platform execution, secrets, GitHub mutation, release-gate advancement and stable promotion remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R9-TRUST-ENVELOPE-20260730",
       "gate": "RELEASE-GATE-R9-TRUST-ENVELOPE",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-30T00:50:12.388Z",
+      "revokedAt": "2026-07-30T01:07:59.3039715Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/release-gate-r9-trust-envelope-20260730",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r9-trust-envelope",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r9-trust-envelope.md",
-      "paths": [
-        "apps/desktop/scripts/platform-e2e-trust-envelope-validator.mjs",
-        "apps/desktop/scripts/platform-e2e-trust-envelope-validator.test.mjs",
-        "docs/desktop-platform-e2e-trust-envelope-playbook.md",
-        "docs/handoffs/personal-office/release-gate-r9-trust-envelope.json",
-        "worklogs/personal-office-release-gate-r9-trust-envelope.md"
-      ],
-      "constraints": [
-        "Detached Ed25519 verification, tests and documentation only; all leased paths are new and R7/R8 are read-only dependencies.",
-        "Public-key material and caller-pinned fingerprints only. No private key, signing secret, credential or personal operator identity may be read, generated, logged or stored.",
-        "Successful signature verification must still emit trustAnchorAccepted:false, evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false.",
-        "No package/lockfile, workflow, release config, product source, DB/schema, auth, preload or renderer change.",
-        "No install, workflow, installer/application/browser/platform-verifier/network execution, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Release Gate R9 holds one isolated five-file lease for a dependency-free pinned-key trust-envelope verifier. It may verify detached signatures with public keys only; trust-anchor approval, evidence authentication for gate purposes, platform execution, secrets, GitHub mutation, release-gate advancement and stable promotion remain unauthorised.",
-  "leaseHistory": [
+      "producerImplementation": "fd21814d0a610a472c46246dc8fab4058f216c89",
+      "producerHandoff": "b092dda0f09f15b8a51ff0786ec5ab33738b0f5f",
+      "canonicalImplementation": "35601ab9a581f27ba6b2f8948173739ede8b6de7",
+      "canonicalHandoff": "1cf51cc8b5ec7d42fb981baa6064109c85580fbf",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r9-trust-envelope.json",
+      "reason": "The pinned-key trust-envelope verifier passed independent correctness, security and bounded-claim review, 9/9 focused tests with RFC 8032 real-crypto coverage, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. Caller pins remain unapproved trust anchors, so evidence authentication, release-gate advancement and stable release remain blocked."
+    },
     {
       "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
       "gate": "RELEASE-GATE-R8-E2E-EVIDENCE",

@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R9",
+  "decision": "ACCEPTED_PINNED_KEY_SIGNATURE_VERIFICATION_WITHOUT_TRUST_ANCHOR",
+  "signatureVerificationSucceeded": true,
+  "trustAnchorAccepted": false,
+  "evidenceAuthenticated": false,
+  "releaseGateAdvanceAllowed": false,
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-30T01:07:59.3039715Z",
+  "authority": "This record accepts only the dependency-free R9 verifier for detached Ed25519 signatures against two distinct caller-pinned public keys. Caller-selected pins are not approved trust anchors, so the evidence is not authenticated for release-gate purposes, Release Gate R does not advance, and stable release remains blocked.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "1cf51cc8b5ec7d42fb981baa6064109c85580fbf",
+    "canonicalGovernanceCommit": "2223c88f48b7c2725d457ab267bb8fe6d0d16304",
+    "canonicalImplementationCommit": "35601ab9a581f27ba6b2f8948173739ede8b6de7",
+    "canonicalHandoffCommit": "1cf51cc8b5ec7d42fb981baa6064109c85580fbf",
+    "producerImplementationCommit": "fd21814d0a610a472c46246dc8fab4058f216c89",
+    "producerHandoffCommit": "b092dda0f09f15b8a51ff0786ec5ab33738b0f5f",
+    "lease": "LEASE-R9-TRUST-ENVELOPE-20260730",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r9-trust-envelope.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r9-trust-envelope.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "Three reviewed implementation artifacts were restored from the immutable producer implementation commit, followed by the two corrected handoff artifacts from the final producer head. No merge, cherry-pick, whole-worktree restore, package write or quarantine byte was used.",
+    "changedImplementationPaths": 3,
+    "changedHandoffPaths": 2,
+    "sourceBlobMatches": 5,
+    "twoPhaseCommits": [
+      "35601ab9a581f27ba6b2f8948173739ede8b6de7",
+      "1cf51cc8b5ec7d42fb981baa6064109c85580fbf"
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused validator tests and real cryptography",
+      "result": "PASS",
+      "evidence": "9/9 Node tests passed. The RFC 8032 Ed25519 public test vector verified and the tampered-message control was rejected. Verifier coverage was 86.27% lines, 83.33% branches and 93.75% functions."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "137/137 test files and 1450/1450 tests passed on canonical."
+    },
+    {
+      "check": "main TypeScript and production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "tsconfig.main.json completed with zero errors. Production build passed; the existing renderer chunk advisory above 500 kB remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Changed-file ESLint passed with zero findings. Repository lint completed with 0 errors and 350 warnings, below the ceiling of 358."
+    },
+    {
+      "check": "security semantics",
+      "result": "PASS_FAIL_CLOSED",
+      "evidence": "Private-key material is rejected. Two distinct Ed25519 SPKI public keys must match exact caller pins and valid domain-separated detached signatures. Successful output still fixes trustAnchorAccepted:false, evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly five leased paths were integrated. No package/lockfile, workflow, release config, product source, DB/schema, preload, renderer or quarantine path changed. Secret-pattern and git diff checks passed."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_LOW_RISK",
+      "evidence": "The new standalone script produced no indexed process or symbol result. Exact-path and import/runtime audits found no existing caller or product-runtime coupling."
+    },
+    {
+      "check": "independent review",
+      "result": "PASS",
+      "evidence": "Independent correctness, security and Socrates-style claim review passed the final producer head. Review confirmed that the production CLI cannot inject the test verification seam and that the documentation does not overclaim the uncommitted TDD red phase."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 porcelain entries and fingerprint B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Run the R7 harness and real Windows/macOS platform checks under separate explicit authorization.",
+    "Approve trust-anchor fingerprints through an independently governed trust store or protected release environment.",
+    "Authenticate immutable R7 and operator E2E evidence only after the approved trust anchors and real platform evidence both exist.",
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Promote a validated draft or prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "workflow execution",
+    "dependency installation",
+    "installer or application execution",
+    "trust-anchor approval claim",
+    "evidence authentication claim",
+    "release-gate advancement",
+    "signing-secret retrieval",
+    "GitHub environment mutation",
+    "push",
+    "tag creation",
+    "publish",
+    "deployment",
+    "stable promotion"
+  ]
+}
