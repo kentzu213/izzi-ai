@@ -2,17 +2,17 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Izzi AI Desktop — Windows Build ^& Release Script
+REM  Izzi AI Desktop — Local Windows Build Script
 REM  
 REM  Usage:
-REM    1. Double-click to BUILD LOCAL only (no publish)
-REM    2. Set GH_TOKEN before running to PUBLISH to GitHub Releases
+REM    Double-click to build a LOCAL installer only.
+REM    Publishing is restricted to the protected GitHub Actions workflow.
 REM
 REM  Output: apps\desktop\release\
 REM ============================================================
 
 echo.
-echo ===== Izzi AI Desktop Release (Windows) =====
+echo ===== Izzi AI Desktop Local Build (Windows) =====
 echo.
 
 REM — Navigate to desktop app root
@@ -69,28 +69,15 @@ if errorlevel 1 (
 echo [OK] Build successful.
 echo.
 
-REM — Check if GH_TOKEN is set for publishing
-if defined GH_TOKEN (
-    echo [4/5] GH_TOKEN detected — will BUILD and PUBLISH to GitHub.
-    echo       Repo: kentzu213/izzi-ai
-    echo.
-    set PUBLISH_MODE=1
-) else (
-    echo [4/5] GH_TOKEN not set — building LOCAL installer only.
-    echo       To publish: set GH_TOKEN=ghp_your_token_here
-    echo.
-    set PUBLISH_MODE=0
-)
+REM — Publishing is intentionally unavailable from local scripts
+echo [4/5] Publishing disabled — building a LOCAL installer only.
+echo.
 
 REM — Run electron-builder
 echo [5/5] Packaging with electron-builder...
 echo.
 
-if !PUBLISH_MODE!==1 (
-    call npx electron-builder --win --publish always
-) else (
-    call npx electron-builder --win --publish never
-)
+call npx electron-builder --win --publish never
 
 if errorlevel 1 (
     echo.
@@ -113,12 +100,7 @@ if exist "release" (
     echo.
 )
 
-if !PUBLISH_MODE!==1 (
-    echo [PUBLISHED] Release uploaded to GitHub: https://github.com/kentzu213/izzi-ai/releases
-) else (
-    echo [LOCAL ONLY] Install the .exe from release\ folder.
-    echo To publish later: set GH_TOKEN=... and re-run this script.
-)
+echo [LOCAL ONLY] Install the .exe from release\ folder.
 
 echo.
 pause

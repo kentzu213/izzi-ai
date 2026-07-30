@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "02",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T06:29:08Z",
+  "authority": "W0 independently reviewed, integrated and re-verified the producer output. This record is separate from the producer handoff.",
+  "subject": {
+    "title": "Personal Office app shell and information architecture",
+    "window": "W2",
+    "producerBranch": "feature/personal-office-loop-02-20260729",
+    "producerWorktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop02",
+    "producerHead": "2fe8645570ccc6899074629d07960348446f7c6f",
+    "producerHandoff": "docs/handoffs/personal-office/loop-02.json",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptanceRecord": "d556d9c8120057108cde6948b23ed3d02161193a"
+  },
+  "integration": {
+    "base": "b2bfad3",
+    "method": "Each producer commit was path-audited before an exact ordered cherry-pick. No merge, quarantine commit or unreviewed path was used.",
+    "commits": [
+      "7c5d059373c58f3157b15788382a0d4799ebf0f4",
+      "c825fde24fc633e86c3349860c80c41f84d0f926",
+      "ed828c471885757915c4e22238c4578a6f7fce00",
+      "69e0a821a49c0c1772114fe52192001bf4fcc148",
+      "97c144a98e837f5f72b8668b77b38d8a0e742878",
+      "95a21dd613c06758adb27049a56f4d664db62727",
+      "d556d9c8120057108cde6948b23ed3d02161193a"
+    ],
+    "correctiveSourceCommit": "95a21dd613c06758adb27049a56f4d664db62727",
+    "finalHandoffCommit": "d556d9c8120057108cde6948b23ed3d02161193a"
+  },
+  "ownership": {
+    "lease": "LEASE-L02-SHELL-MOUNT-20260729",
+    "changedPaths": 25,
+    "forbiddenPaths": 0,
+    "result": "PASS",
+    "note": "All source paths are renderer shell/store/style/App plus the IA document. The additional two paths are the producer handoff and worklog. No main/**, shared/personal-office/**, manifest, lockfile, lease, ledger, acceptance or quarantine path came from W2."
+  },
+  "verification": [
+    {
+      "check": "declared output hashes",
+      "result": "PASS",
+      "evidence": "23/23 producer-declared source/artifact files match byte count and SHA-256; TodayPage.tsx is 5550 bytes with SHA-256 66f6c5914ed901e11137505f7056bff6bd36f7869ff1772ba953b558e65655ae."
+    },
+    {
+      "check": "desktop build on integration",
+      "result": "PASS",
+      "evidence": "1167 modules transformed; renderer bundle completed. Existing >500 kB chunk warning remains."
+    },
+    {
+      "check": "lint gate on integration",
+      "result": "PASS",
+      "evidence": "358 warnings, 0 errors, exactly at the canonical ceiling."
+    },
+    {
+      "check": "desktop tests on producer",
+      "result": "PASS",
+      "evidence": "74 files, 946/946 tests."
+    },
+    {
+      "check": "desktop tests on integration",
+      "result": "PASS_WITH_KNOWN_FLAKE",
+      "evidence": "Full run was 945/946 because registered BF-02 timed out at 5 seconds. Immediate isolated rerun of customer-video-studio-service.test.ts passed 14/14 in 3.85 seconds. No timeout was widened and W2 does not modify that subsystem."
+    },
+    {
+      "check": "visual and interaction verification",
+      "result": "PASS",
+      "evidence": "Post-fix desktop 1440x900 and mobile 390x844 screenshots captured. Ctrl+K focus trap and Escape focus restoration pass. Loading, empty, error, offline and degraded states render. Mobile 200% text zoom has no horizontal overflow; Delegate remains 44px; reduced-motion and focus-visible rules are present."
+    },
+    {
+      "check": "security and privacy",
+      "result": "PASS",
+      "evidence": "No secret-shaped literal in owned renderer outputs. Absolute localRef and Approval.binding.input are not rendered. Demo data is opt-in and badged; offline/degraded write affordances fail closed."
+    },
+    {
+      "check": "whitespace and coordinator JSON",
+      "result": "PASS",
+      "evidence": "git diff --check is clean and loop-02.json parses at schemaVersion 1."
+    }
+  ],
+  "residualRisks": [
+    "Pure shell helpers still lack dedicated unit tests; current protection is exhaustive typing, full desktop tests and browser smoke.",
+    "The shell remains intentionally unwired to the real work engine until Loop 03 is accepted.",
+    "The renderer bundle remains above Vite's 500 kB warning threshold; this is a later sweeper concern, not an acceptance blocker.",
+    "CR-UX-02, CR-UX-03 and CR-UX-05 remain contract change requests for a later W1-owned loop."
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L02-SHELL-MOUNT-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED",
+      "reason": "Loop 02 is accepted; W2 must not edit shell hot files without a new change request and lease."
+    },
+    {
+      "gate": "LOOP-02",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED",
+      "reason": "Independent integration verification passed with only registered BF-02 and documented non-blocking residuals."
+    }
+  ],
+  "unblocks": [
+    {
+      "loop": "03",
+      "effect": "The accepted shell is now a stable consumer target for the work-engine preload API; W3 still may not edit renderer paths."
+    },
+    {
+      "loop": "07",
+      "effect": "W1 may triage the recorded shell contract change requests in read-only/change-request mode."
+    }
+  ]
+}

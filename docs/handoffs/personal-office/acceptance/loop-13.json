@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "13",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T19:45:00Z",
+  "authority": "W0 accepted the real shell-to-Work bridge only after exact-path producer reconciliation, main-authoritative scope review and full canonical verification.",
+  "subject": {
+    "title": "Real shell-to-Work bridge and first workspace",
+    "producerBranch": "feature/personal-office-loop-13-20260729",
+    "producerImplementation": "25c6a945b5b1c3178b46a14b2d374c54f021226e",
+    "producerHandoff": "abd9d6bd4a4cba209dfa038c5279004947ff0466",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "f2c14d19aea04e6d261fb7c2f16dc5e66f46a3a1"
+  },
+  "integration": {
+    "method": "W0 replayed exactly seven leased implementation paths from the immutable producer commit, verified them with the canonical toolchain, committed them as fa930f9, then reconciled only the producer handoff artifacts as f2c14d1. No merge, blind cherry-pick, quarantine input or prohibited-path edit was used.",
+    "implementationCommit": "fa930f96dddbf00a3dfcd3663b72c36ae1cfbe29",
+    "handoffReconciliationCommit": "f2c14d19aea04e6d261fb7c2f16dc5e66f46a3a1",
+    "producerBlobEquality": "7/7 staged canonical Git blobs matched producer implementation 25c6a94 before integration commit."
+  },
+  "review": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "method": "Codex-only in-process review, per user direction; no Kiro or subagent writer/reviewer was used.",
+    "closedFindings": [
+      "Trusted top-level renderer validation precedes workspace listing.",
+      "Main derives current reviewer identity and accessible workspace ids; renderer cannot widen tenant or user authority.",
+      "Every downstream Work operation remains workspace-scoped and forbidden/missing workspaces remain indistinguishable.",
+      "Artifact externalPath is omitted from renderer state.",
+      "Missing bridge, missing workspace and null createRun responses fail closed.",
+      "No database/schema, auth, runtime, package, installer, browser automation, deployment or secret surface changed."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted Work bridge tests",
+      "result": "PASS",
+      "evidence": "2 files, 35/35 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "123 files, 1370/1370 tests."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors and 350 warnings, below maximum 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 7 implementation paths were integrated under LEASE-L13-REAL-WORK-BRIDGE-20260729; zero package/lockfile, DB/schema, auth, runtime, shared contract, App.tsx or main/index.ts paths."
+    },
+    {
+      "check": "diff and secret audit",
+      "result": "PASS",
+      "evidence": "git diff --check passed and added lines contained no credential assignment or private-key material."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_AFTER_CRITICAL_SCOPE_REVIEW",
+      "evidence": "7 files, 6 indexed changed symbols and 265 affected processes. Full tests, both typechecks, build and lint covered the broad interface blast radius."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 459 status entries and status SHA-256 b8b124cd1de43b73ef1cf3697df519f1049ccd923ecb024dd9bf166be82c1c8d."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "PO-PRODUCT-REAL-WORK-BRIDGE",
+      "before": "PROVISIONAL",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-14",
+      "before": "BLOCKED_BY_LOOP_13",
+      "after": "ELIGIBLE_FOR_GOVERNED_START"
+    },
+    {
+      "gate": "LOOP-15",
+      "before": "BLOCKED_BY_LOOP_13",
+      "after": "ELIGIBLE_FOR_GOVERNED_START"
+    }
+  ],
+  "residualRisks": [
+    "The production bundle retains the pre-existing large-chunk advisory.",
+    "This loop creates and observes durable Work records but does not yet execute an authenticated Live/context agent turn.",
+    "Marketplace install/provisioning, OAuth/grants and production runtime adapters remain future governed loops.",
+    "Push, deployment, installation, browser automation enablement and secret retrieval remain unauthorised."
+  ]
+}

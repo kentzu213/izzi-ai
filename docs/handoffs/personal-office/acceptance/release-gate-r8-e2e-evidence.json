@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R8",
+  "decision": "ACCEPTED_UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_VALIDATOR",
+  "evidenceAuthenticated": false,
+  "releaseGateAdvanceAllowed": false,
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-30T00:45:24.532Z",
+  "authority": "This record accepts only the dependency-free R8 evidence structure and internal-binding validator into the local Personal Office integration ref. It does not authenticate R7 or operator evidence, advance the release gate, authorize platform execution, or accept a stable release.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+    "canonicalGovernanceCommit": "66d897ea66a0195d6e5e4a9320e3eff4111911d2",
+    "canonicalImplementationCommit": "3d74094dae653c94682420af196d9a54d0ea9480",
+    "canonicalHandoffCommit": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+    "producerImplementationCommit": "8fb2bdb5aa679225176c8673bc0c19c6b57ddd04",
+    "producerHandoffCommit": "c3e082fcf0ea0342cfc44d58b8611d084e72af52",
+    "lease": "LEASE-R8-E2E-EVIDENCE-20260730",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r8-e2e-evidence.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r8-e2e-evidence.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "Three reviewed implementation artifacts were restored from the final producer implementation commit, followed by the two immutable handoff artifacts from the producer handoff commit. No merge, cherry-pick, whole-worktree restore, package write or quarantine byte was used.",
+    "changedImplementationPaths": 3,
+    "changedHandoffPaths": 2,
+    "sourceBlobMatches": 5,
+    "twoPhaseCommits": [
+      "3d74094dae653c94682420af196d9a54d0ea9480",
+      "a77a0784875cee8d3331602b3a94bbed0baf9244"
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused validator tests and syntax",
+      "result": "PASS",
+      "evidence": "8/8 Node tests passed; node --check passed for validator and test. Coverage includes exact R7 Windows signed-evidence compatibility plus fail-closed Windows script and macOS argv drift."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "137/137 test files and 1450/1450 tests passed on canonical."
+    },
+    {
+      "check": "main TypeScript and production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "tsconfig.main.json completed with zero errors. Vite transformed 1176 modules; the existing renderer chunk advisory above 500 kB remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Changed-file lint passed with zero findings. Repository lint completed with 0 errors and 350 warnings, below the ceiling of 358."
+    },
+    {
+      "check": "security semantics",
+      "result": "PASS_FAIL_CLOSED",
+      "evidence": "Output is UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS with evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false. Exact R7 probe shapes, canonical containment, create-only output and secret-like denial remain enforced."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly five leased paths were integrated. No package/lockfile, workflow, release config, product source, DB/schema, preload, renderer or quarantine path changed. Secret-pattern and git diff checks passed."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_LOW_RISK",
+      "evidence": "Staged analysis reported three changed files, zero indexed changed symbols, zero affected processes and low risk."
+    },
+    {
+      "check": "independent review",
+      "result": "PASS",
+      "evidence": "Independent correctness and security reviewers passed the final producer head after exact R7 probe binding and unauthenticated/non-advancing output corrections."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 porcelain entries and fingerprint B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Run the R7 harness and real Windows/macOS platform checks under separate explicit authorization.",
+    "Authenticate the immutable R7 and operator E2E evidence through a separate trust step.",
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Promote a validated draft or prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "workflow execution",
+    "dependency installation",
+    "installer or application execution",
+    "evidence authentication claim",
+    "release-gate advancement",
+    "signing-secret retrieval",
+    "GitHub environment mutation",
+    "push",
+    "tag creation",
+    "publish",
+    "deployment",
+    "stable promotion"
+  ]
+}

@@ -35,4 +35,12 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).toContain('onOpen={openCapabilityView}');
     expect(roomSource).not.toContain("openCapabilityView(action, 'apps')");
   });
+
+  it('keeps Video Studio and F5-TTS controls on the default reference surface', () => {
+    expect(roomSource).toMatch(
+      /deliverableKind !== 'media'[\s\S]*?<VideoStudioView[\s\S]*?onPreview=\{previewMedia\}/,
+    );
+    expect(roomSource).toContain("['F5-TTS', toolchain.f5Tts]");
+    expect(roomSource).toContain('Commercial render');
+  });
 });

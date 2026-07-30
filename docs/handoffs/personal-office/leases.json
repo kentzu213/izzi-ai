@@ -1,0 +1,748 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "hot-file-lease-registry",
+  "owner": "W0 Control Tower",
+  "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
+  "updatedAt": "2026-07-30T01:31:13.6727925Z",
+  "updatedBy": "W0 Control Tower / Codex",
+  "integrationCommit": "4471fe1b62b85ba7009c0002003a645617effd24",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. Local-only Release Gate R preparation is exhausted at the external trust-authority boundary; approved external trust anchors and authorized real platform evidence are required before any evidence-authentication or gate-advancement claim.",
+  "leaseHistory": [
+    {
+      "leaseId": "LEASE-R10-EXTERNAL-TRUST-AUTHORITY-20260730",
+      "gate": "RELEASE-GATE-R10-EXTERNAL-TRUST-AUTHORITY",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-30T01:16:46.6488774Z",
+      "revokedAt": "2026-07-30T01:31:13.6727925Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/release-gate-r10-external-trust-authority-20260730",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r10-external-trust-authority",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r10-external-trust-authority.md",
+      "producerImplementation": "2701429cca132bfcff3b52164dd682c8b05fa1f1",
+      "producerHandoff": "2439cffe10274ad63f5163ed86bd77e8cd9d131a",
+      "canonicalImplementation": "d6d2a99c6408a79aac6047c9ca7074daa26521b7",
+      "canonicalHandoff": "4471fe1b62b85ba7009c0002003a645617effd24",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r10-external-trust-authority.json",
+      "reason": "The docs-only external trust-authority boundary passed independent correctness, security and Socrates review, full canonical tests/build/lint, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. It approves no key and records that local-only automation is exhausted until external trust anchors and real platform evidence are authorized."
+    },
+    {
+      "leaseId": "LEASE-R9-TRUST-ENVELOPE-20260730",
+      "gate": "RELEASE-GATE-R9-TRUST-ENVELOPE",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-30T00:50:12.388Z",
+      "revokedAt": "2026-07-30T01:07:59.3039715Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/release-gate-r9-trust-envelope-20260730",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r9-trust-envelope",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r9-trust-envelope.md",
+      "producerImplementation": "fd21814d0a610a472c46246dc8fab4058f216c89",
+      "producerHandoff": "b092dda0f09f15b8a51ff0786ec5ab33738b0f5f",
+      "canonicalImplementation": "35601ab9a581f27ba6b2f8948173739ede8b6de7",
+      "canonicalHandoff": "1cf51cc8b5ec7d42fb981baa6064109c85580fbf",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r9-trust-envelope.json",
+      "reason": "The pinned-key trust-envelope verifier passed independent correctness, security and bounded-claim review, 9/9 focused tests with RFC 8032 real-crypto coverage, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. Caller pins remain unapproved trust anchors, so evidence authentication, release-gate advancement and stable release remain blocked."
+    },
+    {
+      "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
+      "gate": "RELEASE-GATE-R8-E2E-EVIDENCE",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-30T00:16:15.329Z",
+      "revokedAt": "2026-07-30T00:45:24.532Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/release-gate-r8-e2e-evidence-20260730",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r8-e2e-evidence",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r8-e2e-evidence.md",
+      "producerImplementation": "8fb2bdb5aa679225176c8673bc0c19c6b57ddd04",
+      "producerHandoff": "c3e082fcf0ea0342cfc44d58b8611d084e72af52",
+      "canonicalImplementation": "3d74094dae653c94682420af196d9a54d0ea9480",
+      "canonicalHandoff": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r8-e2e-evidence.json",
+      "reason": "The unauthenticated E2E evidence structure validator passed independent correctness and security review, 8/8 focused tests, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. It cannot authenticate evidence or advance Release Gate R; stable release remains blocked."
+    },
+    {
+      "leaseId": "LEASE-R7-PLATFORM-VALIDATION-20260729",
+      "gate": "RELEASE-GATE-R7-PLATFORM-VALIDATION",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T23:39:44.725Z",
+      "revokedAt": "2026-07-29T23:59:59.999Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/release-gate-r7-platform-validation-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
+      "producerImplementation": "4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d",
+      "producerHandoff": "293075bf4b005236e68c9abf49178e1430a131e7",
+      "canonicalImplementation": "c28221eeba48eff67690f1fe1e78c8f12b0907ee",
+      "canonicalHandoff": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r7-platform-validation.json",
+      "reason": "The non-publishing platform-validation harness passed independent correctness and security review, 8/8 focused tests, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, workflow policy, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. Stable release remains blocked."
+    },
+    {
+      "leaseId": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
+      "loop": "17",
+      "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T23:59:59.996Z",
+      "revokedAt": "2026-07-29T23:59:59.999Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/personal-office-loop-17-composition-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17-composition",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-offline-composition.md",
+      "paths": [
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/runtime/operational-runtime-composition.ts",
+        "apps/desktop/src/main/runtime/operational-runtime-composition.test.ts"
+      ],
+      "constraints": [
+        "Only Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition are authorised.",
+        "The composition must remain fail-closed when OS-backed encryption, catalog, grant, installer, driver or runtime authority is unavailable.",
+        "No package manifest, lockfile, dependency install, Playwright import, browser launch, network request, connector registration, preload, renderer, DB/schema, auth, secret retrieval or quarantine write is authorised."
+      ],
+      "producerImplementation": "09a6f183f03ded042239ab6d9d38b91f759a1529",
+      "canonicalImplementation": "8434b735a62d39e8d13266ca28c4cda594960d18",
+      "reason": "Exact-path integration passed 34/34 focused runtime tests, 1450/1450 full desktop tests, both TypeScript gates, production build, repository lint ceiling, independent security and Socrates review, producer/canonical blob equality, ownership, prohibited-path, secret and quarantine-isolation checks. Loop 17 remains PROVISIONAL because production dependency provenance, driver registration and real authorized browser/network E2E remain open."
+    },
+    {
+      "leaseId": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
+      "loop": "17",
+      "gate": "PO-PRODUCT-OPERATIONAL-RUNTIME",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T23:59:59.900Z",
+      "revokedAt": "2026-07-29T23:59:59.990Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/personal-office-loop-17-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
+      "producerImplementation": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+      "producerHandoff": "8766096413a780b740175a33be5d92ef6ef87f86",
+      "canonicalImplementationCommits": [
+        "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
+        "30e9ad315418ff37a6af620493c871f10bfea9e9"
+      ],
+      "canonicalHandoffCommits": [
+        "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
+        "16e980e214b86bf7868f59434e4acdfcd61cab32"
+      ],
+      "leaseExtension": "67e36b091c8268588a1412e0207faa622a7830b9",
+      "reason": "The offline authoritative receipt lifecycle and immutable isolated runtime dependency closure passed independent review, 69/69 focused tests, 1447/1447 full desktop tests, both TypeScript gates, production build, changed-file lint, repository lint ceiling, exact producer-blob, ownership, prohibited-path, secret and quarantine-isolation checks. Loop 17 remains PROVISIONAL because production dependency provenance, main composition and real browser/network E2E are still absent."
+    },
+    {
+      "leaseId": "LEASE-L15-MARKETPLACE-OPERATION-20260729",
+      "loop": "15",
+      "gate": "PO-PRODUCT-MARKETPLACE-OPERATION",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T23:50:00Z",
+      "revokedAt": "2026-07-29T23:59:55Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/personal-office-loop-15-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop15",
+      "changeRequest": "docs/handoffs/personal-office/change-request-loop-15-marketplace-operation.md",
+      "producerImplementation": "bee907cc59109175401de8e4fda97e9414646e75",
+      "producerHandoff": "b48603efa430740e3ca5edffb621cc4afe3e80d1",
+      "canonicalImplementation": "ee783578da3910ecca3e462a67fc309c36d73967",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-15.json",
+      "reason": "Loop 15 exact-path integration passed 1388/1388 tests, both TypeScript gates, production build, lint ceiling, strict Marketplace security review, 17/17 producer blob equality, provenance, prohibited-path, secret and quarantine-isolation checks."
+    },
+    {
+      "leaseId": "LEASE-L14-CONTEXT-RUNTIME-20260729",
+      "loop": "14",
+      "gate": "PO-PRODUCT-CONTEXT-RUNTIME",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T22:00:00Z",
+      "revokedAt": "2026-07-29T23:40:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/personal-office-loop-14-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop14",
+      "producerImplementationCommits": [
+        "e903540014b25a3407c021b3a67dffb71aee5ca2",
+        "3c4b112"
+      ],
+      "producerHandoff": "cef4930548382ffcee40dd994a11b845e9217c18",
+      "canonicalImplementationCommits": [
+        "80545a232881187a80d9d425ffb1bc0d43bed5a5",
+        "80038bb"
+      ],
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-14.json",
+      "reason": "Loop 14 exact-path integration passed context and full desktop tests, both TypeScript gates, production build, lint ceiling, authenticated owner/workspace review, error-leak and active-turn sender-trust corrections, provenance, prohibited-path, secret and quarantine-isolation checks."
+    },
+    {
+      "leaseId": "LEASE-L13-REAL-WORK-BRIDGE-20260729",
+      "loop": "13",
+      "gate": "PO-PRODUCT-REAL-WORK-BRIDGE",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T21:00:00Z",
+      "revokedAt": "2026-07-29T21:35:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "branch": "feature/personal-office-loop-13-20260729",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop13",
+      "producerImplementation": "25c6a945b5b1c3178b46a14b2d374c54f021226e",
+      "producerHandoff": "abd9d6bd4a4cba209dfa038c5279004947ff0466",
+      "canonicalImplementation": "fa930f96dddbf00a3dfcd3663b72c36ae1cfbe29",
+      "acceptance": "docs/handoffs/personal-office/acceptance/loop-13.json",
+      "reason": "Loop 13 exact-path integration passed targeted and full tests, both TypeScript gates, production build, lint ceiling, main-authoritative scope review, provenance, prohibited-path, secret and quarantine-isolation checks."
+    },
+    {
+      "leaseId": "LEASE-R6-BETA11-SAFE-REIMPORT-20260729",
+      "gate": "R6",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T19:10:00Z",
+      "revokedAt": "2026-07-29T20:20:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "reason": "The beta.11 safe Customer Marketing re-import refresh was integrated through exact-path replay, passed canonical focused/full tests, TypeScript, production build, lint, ownership, provenance, tenant/source-identity, stale-preview, renderer-exposure, prohibited-path and secret gates, and was accepted at acceptance/release-gate-r6-beta11.json in commit 64efaf4edb9f0bf6e2f469bbad334a08226e72a9."
+    },
+    {
+      "leaseId": "LEASE-R5-BETA10-RECONCILIATION-20260729",
+      "gate": "R5",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T18:10:00Z",
+      "revokedAt": "2026-07-29T18:55:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "reason": "The beta.10 HyperFrames short-path patch was reconciled through exact-path replay, passed canonical focused/full tests, TypeScript, production build, lint, ownership, provenance, secret and scratch gates, and was accepted at acceptance/release-gate-r5-beta10.json. External read-only drift in the quarantine/source worktrees was recorded there without reopening the lease."
+    },
+    {
+      "leaseId": "LEASE-R4-IPC-SENDER-TRUST-20260729",
+      "gate": "R4",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T17:15:21Z",
+      "revokedAt": "2026-07-29T17:45:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "reason": "All work/runtime invoke handlers now fail closed on unknown or child-frame senders before parsing or authorization. Focused tests passed 34/34 and independent security re-review passed."
+    },
+    {
+      "leaseId": "LEASE-R2-MAIN-RECONCILIATION-20260729",
+      "gate": "R2",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T16:48:15Z",
+      "revokedAt": "2026-07-29T17:45:00Z",
+      "revokedBy": "W0 Control Tower / Codex",
+      "reason": "The independently reviewed release-security patch was applied onto the beta.9 reconciliation candidate with matching patch-id, then passed release contract, full tests, main TypeScript, renderer build, lint and security checks."
+    },
+    {
+      "leaseId": "LEASE-R3-CUSTOMER-MARKETING-MERGE-20260729",
+      "gate": "R3",
+      "window": "W0-Codex",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T16:55:00Z",
+      "revokedAt": "2026-07-29T17:15:21Z",
+      "revokedBy": "W0",
+      "reason": "The four conflict files were resolved without markers, focused Customer Marketing tests passed 163/163, and independent correctness review passed. Candidate acceptance remains blocked by the separate R4 sender-trust finding."
+    },
+    {
+      "leaseId": "LEASE-R-DEPENDENCY-SIGNING-20260729",
+      "loop": "R",
+      "window": "W0",
+      "status": "REVOKED",
+      "grantedAt": "2026-07-29T16:06:25Z",
+      "revokedAt": "2026-07-29T16:33:50Z",
+      "revokedBy": "W0",
+      "reason": "The bounded dependency/signing/publish-safety patch passed independent security and Socrates review at 1b82dc6 and was recorded at release-gate-r.json. The patch is accepted for platform validation only; stable release remains blocked."
+    },
+    {
+      "leaseId": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "loop": "12",
+      "window": "W2",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T15:54:00Z",
+      "revokedBy": "W0",
+      "reason": "Loop 12 accepted at docs/handoffs/personal-office/acceptance/loop-12.json after independent security and Socrates PASS, exact-path integration, full canonical verification and browser smoke evidence."
+    },
+    {
+      "leaseId": "LEASE-L11-RUNTIME-BROWSER-20260729",
+      "loop": "11",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T14:27:56Z",
+      "revokedBy": "W0",
+      "reason": "Loop 11 accepted at docs/handoffs/personal-office/acceptance/loop-11.json after independent security and Socrates PASS plus full canonical integration verification."
+    },
+    {
+      "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
+      "loop": "02",
+      "window": "W2",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T06:29:08Z",
+      "revokedBy": "W0",
+      "reason": "Loop 02 accepted at docs/handoffs/personal-office/acceptance/loop-02.json."
+    },
+    {
+      "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
+      "loop": "03",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T07:10:00Z",
+      "revokedBy": "W0",
+      "reason": "Loop 03 accepted at docs/handoffs/personal-office/acceptance/loop-03.json."
+    },
+    {
+      "leaseId": "LEASE-L07-CAPABILITY-ADAPTERS-20260729",
+      "loop": "07",
+      "window": "W1",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T09:06:13Z",
+      "revokedBy": "W0",
+      "reason": "Loop 07 accepted at docs/handoffs/personal-office/acceptance/loop-07.json after independent Socrates review and integration verification."
+    },
+    {
+      "leaseId": "LEASE-L04-LIVE-VAULT-GRAPH-20260729",
+      "loop": "04",
+      "window": "W4",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T09:28:26Z",
+      "revokedBy": "W0",
+      "reason": "Loop 04 accepted at docs/handoffs/personal-office/acceptance/loop-04.json after Socrates corrections and integration verification."
+    },
+    {
+      "leaseId": "LEASE-L09-MARKETPLACE-UI-20260729",
+      "loop": "09",
+      "window": "W4",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T11:30:03Z",
+      "revokedBy": "W0",
+      "reason": "Loop 09 accepted at docs/handoffs/personal-office/acceptance/loop-09.json after independent security and design review plus integration verification."
+    },
+    {
+      "leaseId": "LEASE-L05-CONTEXT-KERNEL-20260729",
+      "loop": "05",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T11:50:19Z",
+      "revokedBy": "W0",
+      "reason": "Loop 05 accepted at docs/handoffs/personal-office/acceptance/loop-05.json after independent security review, Git-blob provenance reconciliation and integration verification."
+    },
+    {
+      "leaseId": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+      "loop": "08",
+      "window": "W4",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T12:20:13Z",
+      "revokedBy": "W0",
+      "reason": "Loop 08 accepted at docs/handoffs/personal-office/acceptance/loop-08.json after independent security review, canonical Git-blob provenance reconciliation and full integration verification."
+    },
+    {
+      "leaseId": "LEASE-L10-INTEGRATION-GRANTS-20260729",
+      "loop": "10",
+      "window": "W4",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T12:57:09Z",
+      "revokedBy": "W0",
+      "reason": "Loop 10 accepted at docs/handoffs/personal-office/acceptance/loop-10.json after independent security review, tenant/user authority-binding correction, exact-path integration and full verification."
+    },
+    {
+      "leaseId": "LEASE-L06-MODEL-GATEWAY-20260729",
+      "loop": "06",
+      "window": "W3",
+      "status": "REVOKED",
+      "revokedAt": "2026-07-29T13:09:22Z",
+      "revokedBy": "W0",
+      "reason": "Loop 06 accepted at docs/handoffs/personal-office/acceptance/loop-06.json after independent Socrates review, exact-path integration, 18/18 Git-blob reconciliation and full verification."
+    }
+  ],
+  "preApprovedOnLoop01Acceptance": {
+    "note": "Consequences of the PQ-08 two-layer ruling. These are NOT active leases — each still requires an explicit W0 grant, and none may be granted before Loop 01 is ACCEPTED. Listed so producers can plan and so no one claims a hot file by assuming.",
+    "queue": [
+      {
+        "loop": "03",
+        "window": "W3",
+        "paths": [
+          "apps/desktop/src/main/db/database.ts",
+          "apps/desktop/src/main/index.ts",
+          "apps/desktop/src/main/preload.ts"
+        ],
+        "reason": "Wire the adopted execution core. The quarantine draft already modified all three WITHOUT a lease; that must not be replicated.",
+        "blockedBy": [
+          "retire WORK_SCHEMA_VERSION before persisting (condition, not a block on the grant)"
+        ],
+        "granted": true,
+        "leaseId": "LEASE-L03-EXEC-WIRING-20260729",
+        "grantedAt": "2026-07-29T04:20:00Z"
+      },
+      {
+        "loop": "02",
+        "window": "W2",
+        "paths": [
+          "apps/desktop/src/renderer/App.tsx",
+          "apps/desktop/src/renderer/components/Sidebar.tsx"
+        ],
+        "reason": "Mount the salvaged Personal Office shell behind the izzi.shell.personalOffice flag.",
+        "blockedBy": [],
+        "note": "Loop 02 is first owner of App.tsx under §8.1, so W3 must NOT take it even though the quarantine draft modified it.",
+        "granted": true,
+        "leaseId": "LEASE-L02-SHELL-MOUNT-20260729",
+        "grantedAt": "2026-07-29T04:20:00Z"
+      },
+      {
+        "loop": "W0-HISTORICAL",
+        "window": "W0",
+        "paths": [
+          "package.json",
+          "pnpm-workspace.yaml",
+          "pnpm-lock.yaml"
+        ],
+        "reason": "Close PQ-01 by porting eslint.config.mjs and the lint scripts, then re-measure the warning ceiling on canonical.",
+        "constraint": "Single owner at a time. Grant to exactly one loop.",
+        "granted": false,
+        "status": "CLOSED_WITH_NONCONFORMANCE",
+        "note": "No retroactive lease was invented. The historical unleased write is preserved under gate PO-LEASE-VIOLATION-PQ01; canonical is clean, PQ-01 technical work is verified, and all later package/lockfile changes require lease-first ordering."
+      }
+    ]
+  },
+  "contestedFileResolution": {
+    "note": "PQ-08 resolved by layering rather than by picking a winner. Recorded here because it changes who may write which shared path.",
+    "rulings": [
+      {
+        "path": "apps/desktop/src/shared/personal-office/**",
+        "owner": "W1 / Loop 01",
+        "role": "contract of record — governance/catalog layer",
+        "otherLoops": "read-only; changes via contract change request"
+      },
+      {
+        "path": "apps/desktop/src/main/work/**",
+        "owner": "W3 / Loop 03",
+        "role": "execution core",
+        "constraint": "must import contracts from shared/personal-office/, never define a parallel model"
+      },
+      {
+        "path": "apps/desktop/src/shared/work-model.ts",
+        "owner": "none — SUPERSEDED",
+        "role": "salvage content only",
+        "instruction": "Do not land as a second contract. Promote its lineage types, canonicalJson and action-hash binding into shared/personal-office/ under a W1 contract change request."
+      },
+      {
+        "path": "apps/desktop/src/shared/{vault-ops,vault-types,wikilink}.ts",
+        "owner": "W4 / Loop 04",
+        "role": "vault / Live-profile adjacent",
+        "instruction": "RESOLVED per gate PO-VAULT-OWNERSHIP: these are Loop 04 inputs, not Loop 02 shell salvage. No other producer may claim them."
+      }
+    ]
+  },
+  "pendingRequests": [],
+  "hotFiles": [
+    {
+      "path": "apps/desktop/src/renderer/App.tsx",
+      "ownerOrder": [
+        "02",
+        "12"
+      ],
+      "currentLease": null,
+      "note": "Loop 12 may change only Customer Marketing route compatibility and final shell integration.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T15:54:00Z"
+    },
+    {
+      "path": "apps/desktop/src/renderer/components/Sidebar.tsx",
+      "ownerOrder": [
+        "02",
+        "12"
+      ],
+      "currentLease": null,
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T15:54:00Z"
+    },
+    {
+      "path": "apps/desktop/src/main/db/sqlite-schema.ts",
+      "ownerOrder": [
+        "03"
+      ],
+      "currentLease": null,
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T07:10:00Z"
+    },
+    {
+      "path": "apps/desktop/src/main/db/database.ts",
+      "ownerOrder": [
+        "03"
+      ],
+      "currentLease": null,
+      "laterLoopsRequireChangeRequest": true,
+      "note": "ALREADY MODIFIED-UNCOMMITTED in the dirty worktree: the Loop 03 draft wired runWorkModelMigration, backupSqliteFile, WorkService and a workEventSink into it. Security review must cover the log-and-proceed migration error path before this is accepted.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T07:10:00Z"
+    },
+    {
+      "path": "apps/desktop/src/main/index.ts",
+      "ownerOrder": [
+        "03",
+        "10",
+        "11",
+        "14"
+      ],
+      "currentLease": null,
+      "note": "Loop 14 context and active-turn sender-trust wiring is accepted and its bounded lease is revoked. Any later main/index.ts edit requires a new W0 change request and lease.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T23:40:00Z"
+    },
+    {
+      "path": "apps/desktop/src/main/preload.ts",
+      "ownerOrder": [
+        "03",
+        "10",
+        "11",
+        "12"
+      ],
+      "currentLease": null,
+      "note": "Loop 12 may add only Customer Marketing reference-workspace IPC/preload bridge methods.",
+      "leasedAt": "2026-07-29T04:20:00Z",
+      "releasedAt": "2026-07-29T15:54:00Z"
+    },
+    {
+      "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx",
+      "ownerOrder": [
+        "02",
+        "11",
+        "12"
+      ],
+      "currentLease": null,
+      "note": "Loop 11 accepted and lease revoked. Loop 12 or any later shell change requires a new W0 change request and lease.",
+      "leasedAt": "2026-07-29T13:17:16Z"
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/agentGateway.ts",
+      "ownerOrder": [
+        "06"
+      ],
+      "currentLease": null,
+      "otherLoopsReadOnly": true,
+      "note": "PQ-09. Modified-uncommitted in the dirty worktree AND on the Loop 01 required-reading list, so the canonical copy is not the copy in flight. Canonical also has agentGateway-routing.ts plus its test, which the old branch lacks."
+    },
+    {
+      "path": "apps/desktop/src/renderer/store/agentWorkspace.ts",
+      "ownerOrder": [
+        "02"
+      ],
+      "currentLease": null,
+      "compatibilityReadOnlyFor": "02",
+      "semanticChangesRequireChangeRequest": true
+    },
+    {
+      "path": "apps/desktop/src/main/agent/agent-service.ts",
+      "ownerOrder": [
+        "05",
+        "06"
+      ],
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree.",
+      "releasedAt": "2026-07-29T11:50:19Z"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/host-agent.ts",
+      "ownerOrder": [
+        "05",
+        "06"
+      ],
+      "currentLease": null,
+      "note": "Modified-uncommitted in the dirty worktree.",
+      "releasedAt": "2026-07-29T11:50:19Z"
+    },
+    {
+      "path": "apps/desktop/src/main/agent/agent-tools.ts",
+      "ownerOrder": [
+        "05",
+        "07",
+        "11"
+      ],
+      "currentLease": null
+    },
+    {
+      "path": "extension manifests / manager / permissions",
+      "resolvedPaths": [
+        "apps/desktop/src/main/extensions/ocx-manifest.ts",
+        "apps/desktop/src/main/extensions/manager.ts",
+        "apps/desktop/src/main/extensions/permissions.ts",
+        "packages/agent-bundle/src/manifest.ts"
+      ],
+      "ownerOrder": [
+        "07",
+        "09",
+        "11"
+      ],
+      "currentLease": null
+    },
+    {
+      "path": "Marketplace UI / API",
+      "resolvedPaths": [
+        "apps/marketplace-api/**",
+        "apps/desktop/src/renderer/pages/Marketplace.tsx"
+      ],
+      "ownerOrder": [
+        "09",
+        "12"
+      ],
+      "currentLease": null,
+      "leasedAt": "2026-07-29T09:12:14Z",
+      "note": "Loop 12 lease covered Marketplace.tsx and new Personal Office marketplace modules only. apps/marketplace-api and installer execution seams remained read-only.",
+      "releasedAt": "2026-07-29T15:54:00Z"
+    },
+    {
+      "path": "Graph workspace / pages / store",
+      "resolvedPaths": [
+        "apps/desktop/src/renderer/pages/GraphWorkspace.tsx",
+        "apps/desktop/src/renderer/pages/KnowledgeUniverse.tsx",
+        "apps/desktop/src/renderer/store/graphWorkspace.ts"
+      ],
+      "ownerOrder": [
+        "04"
+      ],
+      "currentLease": null,
+      "note": "All three are modified-uncommitted in the dirty worktree."
+    },
+    {
+      "path": "Customer Marketing broad migration",
+      "resolvedPaths": [
+        "apps/desktop/src/main/customer-marketing/**",
+        "apps/desktop/src/shared/customer-marketing-*.ts"
+      ],
+      "ownerOrder": [
+        "12"
+      ],
+      "currentLease": null,
+      "note": "Loop 12 broad reference migration is accepted. Later changes require a new W0 change request and exact lease.",
+      "releasedAt": "2026-07-29T15:54:00Z"
+    },
+    {
+      "path": "package manifests / lockfile",
+      "resolvedPaths": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json"
+      ],
+      "ownerOrder": [
+        "lease-only"
+      ],
+      "currentLease": null,
+      "singleOwnerAtATime": true,
+      "note": "R2 reconciliation is accepted and its lease is revoked. Any later package manifest or lockfile change requires a new W0 change request and lease.",
+      "releasedAt": "2026-07-29T17:45:00Z",
+      "violationObserved": {
+        "at": "2026-07-29T04:20:00Z",
+        "observedBy": "W0 during Loop 01 acceptance",
+        "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline",
+        "files": [
+          "package.json (modified)",
+          "pnpm-lock.yaml (modified)",
+          "eslint.config.mjs (untracked, 7261 bytes)",
+          ".github/workflows/desktop-ci.yml (modified)"
+        ],
+        "detail": "Historical PQ-01 work appeared in the integration worktree with no lease granted. It was later isolated, verified and committed as ed437c6; the process-order violation remains documented.",
+        "status": "CLOSED_WITH_NONCONFORMANCE",
+        "requiredAction": "Do not invent retroactive compliance. Require a new W0 change request and explicit single-owner lease before every future package manifest or lockfile write."
+      }
+    },
+    {
+      "path": "GitNexus index and managed doc blocks",
+      "resolvedPaths": [
+        ".gitnexus/**",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/skills/gitnexus/**"
+      ],
+      "ownerOrder": [
+        "W0"
+      ],
+      "currentLease": "W0 (permanent)",
+      "note": "Reserved to W0 permanently. gitnexus analyze rewrites the managed blocks in 8 tracked files; W0 reverts them so producer diffs stay honest. No producer may commit those rewrites."
+    }
+  ],
+  "quarantine": {
+    "path": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+    "branch": "feature/aibase-my-graph-ui-sync",
+    "head": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+    "mode": "READ-ONLY for the entire programme",
+    "prohibited": [
+      "reset",
+      "stash",
+      "clean",
+      "overwriting checkout",
+      "move",
+      "delete",
+      "commit",
+      "continuing implementation"
+    ],
+    "unstable": true,
+    "observedGrowth": [
+      {
+        "at": "Loop 00 start",
+        "entries": 83,
+        "modifiedTracked": 31,
+        "untracked": 52
+      },
+      {
+        "at": "Loop 00 end",
+        "entries": 113,
+        "modifiedTracked": 35,
+        "untracked": 78
+      },
+      {
+        "at": "Loop 00 acceptance",
+        "entries": 118,
+        "modifiedTracked": 36,
+        "untracked": 82
+      },
+      {
+        "at": "Loop 01 acceptance",
+        "entries": 119,
+        "note": "HEAD still 959e2d28; status hash B4850D68 verified unchanged before and after the isolated toolchain build, so no W0 or W1 action wrote here."
+      }
+    ],
+    "warning": "A session outside W0 control is still writing here. Any consumer that diffs against this worktree must re-snapshot immediately before use; a stale snapshot is wrong within minutes.",
+    "salvageRule": "No blind cherry-pick. Salvage must be applied selectively by the owning producer inside that producer's own Loop worktree, then reviewed and committed as new code.",
+    "preserved": true,
+    "preservationRecord": "docs/handoffs/personal-office/quarantine/dirty-state.json",
+    "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728",
+    "preservationNote": "Content is now copied out-of-repo and hashed, so a git clean in quarantine no longer destroys the draft. Per-file manifests: quarantine/loop-02-dirty-salvage.json and quarantine/loop-03-dirty-salvage.json."
+  },
+  "contractOwnership": {
+    "note": "Recorded at Loop 01 acceptance. W1 owns the governance/catalog contract layer; W3 owns the execution core beneath it. Dependency direction is one-way: engine imports contract, never the reverse.",
+    "W1": {
+      "window": "W1",
+      "loop": "01",
+      "scope": "governance/catalog contract of record",
+      "ownedPaths": [
+        "apps/desktop/src/shared/personal-office/**",
+        "docs/architecture/personal-office-os.md",
+        "docs/architecture/legacy-personal-office-mapping.md",
+        "docs/architecture/adr/ADR-PO-00{1,2,3,4}-*.md"
+      ],
+      "accessForOthers": "read-only; changes only via contract change request approved by W0",
+      "status": "ACCEPTED and FROZEN as of acceptance/loop-01.json"
+    },
+    "W3": {
+      "window": "W3",
+      "loop": "03",
+      "scope": "execution core + wired seams",
+      "ownedPaths": [
+        "apps/desktop/src/main/work/**",
+        "apps/desktop/src/main/db/database.ts",
+        "apps/desktop/src/main/db/sqlite-schema.ts",
+        "apps/desktop/src/main/index.ts",
+        "apps/desktop/src/main/preload.ts"
+      ],
+      "mustDependOn": "apps/desktop/src/shared/personal-office/** - never a parallel model"
+    },
+    "W2": {
+      "window": "W2",
+      "loop": "02",
+      "scope": "product shell / reference UX",
+      "ownedPaths": [
+        "apps/desktop/src/renderer/shell/**",
+        "apps/desktop/src/renderer/App.tsx",
+        "apps/desktop/src/renderer/components/Sidebar.tsx"
+      ],
+      "note": "First owner of App.tsx and Sidebar.tsx per section 8.1 ownerOrder [02, 12]."
+    }
+  }
+}

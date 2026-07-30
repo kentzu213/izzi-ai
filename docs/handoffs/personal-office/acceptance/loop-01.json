@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "01",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T04:07:20Z",
+  "authority": "Only W0 may set ACCEPTED, and only after independent integration verification. This record is the audit evidence for that decision, kept separate from the producer handoff so the reviewer's basis is never mixed with the producer's claim. Every check below was re-executed by W0; none was accepted on the producer's word.",
+
+  "subject": {
+    "title": "Domain model, contracts and ADRs",
+    "window": "W1",
+    "producerBranch": "feature/personal-office-loop-01-20260728",
+    "producerWorktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop01",
+    "producerHandoff": "docs/handoffs/personal-office/loop-01.json",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "refIsAuthoritativeNotSha": "Any SHA recorded in a coordinator artifact is one commit stale by construction, because writing the record is itself a commit. Consumers must resolve the ref."
+  },
+
+  "acceptedImplementationCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+  "acceptedHandoffCommit": "07e5ac386467945999513268306e70b06c2d9097",
+  "integrationCommit": "07e5ac386467945999513268306e70b06c2d9097",
+  "integrationCommitNote": "At acceptance time the integration ref and the producer branch both resolve to 07e5ac3 — the series was already fast-forwarded onto integration, so no separate merge commit exists. This acceptance record is itself the next commit on the integration ref.",
+
+  "baseCommit": "d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258",
+  "acceptedLoop00Ancestor": "0cbf88863180b761dae1366eefe99c8338b4aad0",
+  "canonicalAncestor": "84a57b38117ee7544691115be5aca7a141af1abf",
+
+  "twoPhaseCommit": {
+    "required": true,
+    "satisfied": true,
+    "phase1": {
+      "kind": "implementation/artifact",
+      "commit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+      "scope": "contract source under shared/personal-office/**, four ADRs, architecture doc, legacy mapping doc"
+    },
+    "phase2": {
+      "kind": "handoff/worklog",
+      "commit": "07e5ac386467945999513268306e70b06c2d9097",
+      "scope": "producer handoff and worklog only"
+    },
+    "verification": "git diff --name-only 830a12c..07e5ac3 returns exactly two paths: docs/handoffs/personal-office/loop-01.json and worklogs/personal-office-loop-01.md. No source or architecture file moved in phase 2, which is the property the two-phase rule exists to guarantee: the artifact bytes were already immutable and hashed before any document asserted a status about them.",
+    "lastSourceCommit": "0eacbc51cc8c9cdde6e659f2d9ccf7ebbf47db61",
+    "lastArchitectureDocCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71"
+  },
+
+  "remainingConditionsResolution": {
+    "note": "The integration ledger recorded six conditions blocking Loop 01 acceptance. W0 re-verified each against the tree rather than against the producer's assertion.",
+    "conditions": [
+      {
+        "condition": "Add waiting_external as a first-class RunState per gate PO-RUNSTATE-CONTRACT-GAP, or record a reasoned rejection addressing the Loop 02 'Waiting for me' lane argument",
+        "status": "MET",
+        "evidence": "entities.ts RunState includes waiting_external; state-machine.ts models it; RunPauseReason narrowed to exactly 'stuck' | 'guardrail', confirming the state was promoted rather than left as an optional reason field. Landed in commit 0eacbc5 'model external dependency waits'. W1 accepted the contract change request rather than rejecting it, so no counter-argument was required.",
+        "gate": "PO-RUNSTATE-CONTRACT-GAP"
+      },
+      {
+        "condition": "Update legacy-personal-office-mapping.md §3.6 to the AMENDED archived ruling",
+        "status": "MET",
+        "evidence": "§3.6 at line 310 reads 'Decision (W0 MAP-ARCHIVED ruling)' and encodes the amendment verbatim: derive the terminal from agent_run_entries, inconclusive maps to canceled with canceledReason='legacy_archived_outcome_unknown', with an explicit 'never default to completed'. Required metadata is present: archivedAt always set, legacyStatusRaw='archived' preserved, exactly one migration.archived_status WorkEvent classified as audit_events. The A1 row in the mapping table (line 116) matches. This was the hardest condition because it required W1 to reverse its own recorded proposal.",
+        "gate": "MAP-ARCHIVED"
+      },
+      {
+        "condition": "Absorb the promoted lineage / canonicalJson / action-hash content under a contract change request, or record a reasoned rejection",
+        "status": "MET",
+        "evidence": "entities.ts contains lineage; canonical.ts and canonical.test.ts exist as dependency-free modules. Handoff contractDecisions records 'canonical JSON and immutable approval action binding are shared dependency-free contracts'.",
+        "gate": "PQ-08"
+      },
+      {
+        "condition": "Commit Loop 01's owned paths",
+        "status": "MET",
+        "evidence": "Producer worktree is clean: git status --porcelain --untracked-files=all returns zero lines. Twelve commits form the series from 5abafad to 07e5ac3."
+      },
+      {
+        "condition": "Submit docs/handoffs/personal-office/loop-01.json per the §10 schema",
+        "status": "MET",
+        "evidence": "Present, parses at schemaVersion 1, artifactKind producer-handoff."
+      },
+      {
+        "condition": "Confirm PERSONAL_OFFICE_SCHEMA_VERSION remains the single version authority",
+        "status": "MET",
+        "evidence": "version.ts is the sole declaration. No competing constant was introduced in the owned tree. Handoff records it as the sole authority. Note this only closes W1's half of PO-VERSION-COLLISION — Loop 03 must still retire WORK_SCHEMA_VERSION, and that gate stays OPEN against Loop 03.",
+        "gate": "PO-VERSION-COLLISION"
+      }
+    ]
+  },
+
+  "verificationBasis": [
+    {
+      "check": "ancestry — accepted Loop 00, coordinator replay base, and producer implementation commit are all ancestors of the accepted head",
+      "result": "pass",
+      "evidence": "git merge-base --is-ancestor exit 0 for d711fd96, 0cbf8886 and 830a12ca"
+    },
+    {
+      "check": "ownership audit — every changed path inside declared Loop 01 ownership",
+      "result": "pass",
+      "evidence": "23 paths in d711fd96..07e5ac3: 15 under apps/desktop/src/shared/personal-office/, 4 ADRs, 2 architecture docs, 1 handoff, 1 worklog. Zero paths under main/, renderer/, packages/, extensions/. No package.json, pnpm-workspace.yaml, pnpm-lock.yaml, database.ts, index.ts, preload.ts or App.tsx. No hot file touched, therefore no lease was required and none was held."
+    },
+    {
+      "check": "output SHA-256 verification against the producer's declared hashes",
+      "result": "pass",
+      "evidence": "7 of 7 match with zero mismatches: canonical.ts, entities.ts, state-machine.ts, serialization.ts, ADR-PO-002, legacy-personal-office-mapping.md, personal-office-os.md"
+    },
+    {
+      "check": "input artifact SHA-256 verification — the producer worked from the accepted inputs, not drifted copies",
+      "result": "pass",
+      "evidence": "3 of 3 match: acceptance/loop-00.json, quarantine/loop-02-dirty-salvage.json, quarantine/loop-03-dirty-salvage.json"
+    },
+    {
+      "check": "worklog rename integrity",
+      "result": "pass",
+      "evidence": "personal-office-loop-01.md present at 40198 bytes; SHA-256 feed9dfa2899fecc13db799c211dd6cd708accfc9bff9b412d1de6440498a90b matches the newWorklogSha256 declared in the handoff preservation block. The -provisional variant is gone, so the rename completed rather than duplicating."
+      },
+    {
+      "check": "independent TypeScript main profile compile",
+      "result": "pass",
+      "evidence": "tsc --noEmit on the isolated toolchain, exit 0. Re-executed by W0, not inherited from the producer's claim."
+    },
+    {
+      "check": "independent Vitest run on the contract test files",
+      "result": "pass",
+      "evidence": "4 test files, 45 of 45 tests passed, 1.34s. Exactly matches the producer's claim of 4 files and 45 tests, including the two added waiting_external transition tests."
+    },
+    {
+      "check": "full desktop suite on the isolated toolchain",
+      "result": "pass",
+      "evidence": "74 test files, 946 of 946 tests passed, 6.67s. Notably this is 946/946 with no flake, where Loop 00 acceptance recorded 900/901 with BF-02 failing on a 5040ms-vs-5000ms timeout. BF-02 did not reproduce here."
+    },
+    {
+      "check": "git diff --check",
+      "result": "pass",
+      "evidence": "exit 0, zero output lines — no conflict markers, no whitespace errors"
+    },
+    {
+      "check": "all coordinator JSON parse at schemaVersion 1",
+      "result": "pass",
+      "evidence": "8 of 8: integration-ledger, leases, loop-00, loop-01, acceptance/loop-00, and the three quarantine manifests"
+    },
+    {
+      "check": "secret-shaped literal scan across owned source",
+      "result": "pass",
+      "evidence": "15 files scanned, 1 hit, adjudicated benign: classification.test.ts line 86 is expect(looksLikeRawSecret('sk-abcdef0123456789')).toBe(true) — a deliberate dummy fixture asserting that the detector fires. A secret detector cannot be tested without a secret-shaped literal. The string is not a credential, targets no real provider account, and grants no access."
+    },
+    {
+      "check": "quarantine not written by the producer",
+      "result": "pass",
+      "evidence": "git log d711fd96..07e5ac3 -- docs/handoffs/personal-office/quarantine returns zero commits"
+    },
+    {
+      "check": "quarantined dirty source worktree still untouched",
+      "result": "pass",
+      "evidence": "HEAD unchanged at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5; 119 status lines; normalized status SHA-256 B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0 identical to the pre-toolchain baseline; node_modules mtimes unchanged at 2026-07-27T12:39:21Z and 2026-07-27T08:30:43Z"
+    },
+    {
+      "check": "isolated toolchain contains no writeback path into the quarantine",
+      "result": "pass",
+      "evidence": "Zero reparse points remain in the producer worktree, down from 2 junctions that both targeted the dirty repo. Store, cache, tmp and the Electron cache all resolve under F:\\Ai Tools\\_starizzi-toolchain. Full evidence in F:\\Ai Tools\\_starizzi-toolchain-evidence\\ISOLATED-TOOLCHAIN-EVIDENCE.md. This closes the BLOCKED_TOOLCHAIN condition that made the producer's own verification claims unverifiable."
+    },
+    {
+      "check": "lint gate",
+      "result": "NOT RUNNABLE",
+      "evidence": "Inherited BF-03 (no lint:ci script) and BF-04 (no ESLint config anywhere at canonical). No lint claim is made and no pass is fabricated. Identical to the Loop 00 position."
+    }
+  ],
+
+  "toolchainRemediation": {
+    "condition": "BLOCKED_TOOLCHAIN",
+    "status": "CLOSED",
+    "problem": "Both node_modules paths in the producer worktree were NTFS junctions into the quarantined dirty repo. Any install, test or build command could therefore write into a read-only quarantine, and no verification result from that worktree could be trusted.",
+    "resolution": "Junctions removed link-only via cmd rmdir, never Remove-Item -Recurse, so the junction targets were not followed and the quarantine's node_modules survived intact. A real dependency tree was installed from an isolated store on the same volume as the worktree, so pnpm hardlinks rather than copies.",
+    "toolchainRoot": "F:\\Ai Tools\\_starizzi-toolchain",
+    "redirection": "Environment variables only — npm_config_store_dir, npm_config_cache, npm_config_tmp. The repo's .npmrc is git-tracked and carries the GitHub Packages registry line, so editing it would have dirtied the worktree and broken the clean-tree acceptance condition. It was left untouched.",
+    "electronNote": "Install ran with --ignore-scripts, so Electron's postinstall was skipped and the binary was missing. Resolved by copying the already-present electron-v34.5.8-win32-x64.zip into the isolated cache and running Electron's own install.js offline. No network fetch, and no other package's lifecycle script was executed.",
+    "noWriteProof": "Dirty repo git status hash, HEAD, line count and both node_modules mtimes are byte-identical before and after a full install plus typecheck plus 946-test run.",
+    "measurementCorrection": "An intermediate no-write comparison appeared to fail. Cause was the measurement, not the tree: sorting the status lines before hashing produced 9EC81452..., while natural git order produced B4850D68... which matches the baseline. Line-by-line diff of two snapshots taken 41 seconds apart returned zero differing lines. Recorded because a coordinator artifact must not hide a check that first read as a failure."
+  },
+
+  "unmetCriteriaAtAcceptance": [
+    {
+      "criterion": "roadmap: lint gate must run and its result be recorded",
+      "status": "NOT MET",
+      "cause": "BF-03 and BF-04, both pre-existing at canonical",
+      "resolutionOwner": "whichever loop receives the package-manifest lease via PQ-01",
+      "acceptedAnyway": true,
+      "justification": "The defect is in the canonical tree, not in Loop 01's output, and Loop 01 holds no lease over package manifests so it could not have fixed it without violating the lease rule. Blocking here would strand Loop 02, Loop 03 and Loop 04 behind a lint config. Same disposition as Loop 00."
+    }
+  ],
+
+  "contractChangeAccepted": {
+    "id": "PO-RUNSTATE-CONTRACT-GAP",
+    "type": "breaking",
+    "acceptedBy": "W0",
+    "change": "waiting_external added as a first-class RunState. Transitions: running -> waiting_external, and waiting_external -> running | canceled, mirroring paused. RunPauseReason narrowed to 'stuck' | 'guardrail'.",
+    "versionImpact": "PERSONAL_OFFICE_SCHEMA_VERSION stays 1. No shipped build carries v1, so this is a version note and NOT a migration.",
+    "migrationCost": "zero today",
+    "sequencingConstraint": "Must land before Loop 03 persists anything, together with PO-VERSION-COLLISION. If waiting_external landed after the version tagged persisted rows, the version would stop discriminating shapes.",
+    "consumers": [
+      "Loop 03 / W3 — imports RunState; must handle waiting_external in transitions and adapters",
+      "Loop 02 / W2 — Today lanes render off this state; the 'Waiting for me' lane is now backed by a modelled state rather than an optional field",
+      "Loop 12 / W2 — CustomerRunStatus 'blocked' maps to waiting_external"
+    ],
+    "testEvidence": "state-machine.test.ts covers valid running->waiting_external->running|canceled and invalid waiting_external->paused|completed|failed plus created/awaiting_approval->waiting_external. Verified independently at 45/45."
+  },
+
+  "gateEffects": [
+    {
+      "gate": "PO-RUNSTATE-CONTRACT-GAP",
+      "before": "OPEN",
+      "after": "CLOSED",
+      "reason": "waiting_external is a first-class RunState with modelled transitions and regression coverage. Loop 03 can now meet its own §4 minimum state machine by importing the contract instead of forking it."
+    },
+    {
+      "gate": "PQ-08",
+      "before": "RULED",
+      "after": "CLOSED",
+      "reason": "The two-layer ruling is now realised in committed code. shared/personal-office/** is the contract of record, dependency-free and importable from both main and renderer. The superseded draft's lineage types and canonicalJson were promoted upward rather than lost."
+    },
+    {
+      "gate": "PO-VERSION-COLLISION",
+      "before": "OPEN",
+      "after": "OPEN",
+      "reason": "W1's half is closed — PERSONAL_OFFICE_SCHEMA_VERSION is the sole authority in the contract layer. The gate stays OPEN because Loop 03 must still delete WORK_SCHEMA_VERSION and prove with a serialization test that the engine's envelope passes W1's version guard while an unknown version is rejected rather than coerced. Not W1's to close."
+    },
+    {
+      "gate": "BLOCKED_TOOLCHAIN",
+      "before": "OPEN",
+      "after": "CLOSED",
+      "reason": "Isolated toolchain in place with no-write proof. Verification in the Loop 01 worktree is now trustworthy, which is a precondition for trusting any producer claim from it."
+    },
+    {
+      "gate": "PQ-01",
+      "before": "OPEN",
+      "after": "OPEN",
+      "reason": "Lint still not runnable. Needs the package-manifest lease, which Loop 01 never held."
+    },
+    {
+      "gate": "QUARANTINE-DRIFT",
+      "before": "MITIGATED",
+      "after": "MITIGATED",
+      "reason": "Still unchanged at 959e2d2 with 119 status lines and matching hash. The concurrent session remains outside W0 control, so any consumer diffing against the quarantine must re-snapshot immediately before use."
+    }
+  ],
+
+  "acceptedOutputHashes": [
+    { "path": "apps/desktop/src/shared/personal-office/canonical.ts", "sha256": "f1a53cbbe9025d5d1b44b761b072163a8eb6618d9b2c930ae1b0a3a3f2f9ffe0" },
+    { "path": "apps/desktop/src/shared/personal-office/entities.ts", "sha256": "35ac2b90572f10cb5736ffcbce98d82a444689c0a2aee2038e42bdb7b2a340bb" },
+    { "path": "apps/desktop/src/shared/personal-office/state-machine.ts", "sha256": "3e85165421b50a938fa94156417e5fd982decbe4be6bfb7c896f9aaaecdc23eb" },
+    { "path": "apps/desktop/src/shared/personal-office/serialization.ts", "sha256": "3a7ae873acb872c40c84e56e7c1f445921cc6c99173e5ae43d8423c40dba662c" },
+    { "path": "docs/architecture/adr/ADR-PO-002-unified-work-model.md", "sha256": "af3c60fca17c00665fbfa18fa43d878adce099accc3f541617c9a9a57969a5fe" },
+    { "path": "docs/architecture/legacy-personal-office-mapping.md", "sha256": "5963cb24be0c099d54cdb2cfb8ca0b86f81d962500ed64e1d3689dee925b9909" },
+    { "path": "docs/architecture/personal-office-os.md", "sha256": "949fd87173d74516346d90f9005235c817fa1666fb27aba78cdec2bc644f5e3d" },
+    { "path": "worklogs/personal-office-loop-01.md", "sha256": "feed9dfa2899fecc13db799c211dd6cd708accfc9bff9b412d1de6440498a90b" }
+  ],
+
+  "hashPolicy": "Hashes are measured on working-tree bytes at the accepted commits. .gitattributes may normalise line endings on a fresh checkout, which changes file bytes and therefore hashes — compare working-tree to working-tree, never working-tree to a fresh clone. If a hash disagrees, re-hash from the ref before treating it as tampering.",
+
+  "contractOfRecord": {
+    "path": "apps/desktop/src/shared/personal-office/**",
+    "owner": "W1 / Loop 01",
+    "status": "FROZEN as of this acceptance",
+    "changePolicy": "Read-only for every other loop. Any change requires a contract change request to W0, which routes it to W1. A consumer must never define a parallel model.",
+    "dependencyDirection": "one-way — execution depends on contract, never the reverse",
+    "modules": [
+      "entities.ts — entity shapes including RunState with waiting_external, and lineage",
+      "state-machine.ts — legal transitions",
+      "events.ts — event contract",
+      "ids.ts — identifier rules",
+      "classification.ts — data classification taxonomy",
+      "secret-ref.ts — secret reference discipline",
+      "trust.ts — trust and package/runtime boundaries",
+      "serialization.ts + version.ts — envelope and version guards",
+      "canonical.ts — deterministic JSON for stable hashing",
+      "index.ts — public surface"
+    ]
+  },
+
+  "unblocks": [
+    { "loop": "02", "window": "W2", "effect": "Worktree creation authorised. Loop 02 may leave read-only." },
+    { "loop": "03", "window": "W3", "effect": "Worktree creation authorised. Loop 03 may leave read-only, subject to PO-VERSION-COLLISION before any persistence." },
+    { "loop": "04", "window": "W4", "effect": "Contract dependency satisfied, but PO-LOOP04-DEPENDENCY means the true edge is 01 -> 03 -> 04. Loop 04 stays research/spec only until Loop 03 is ACCEPTED." },
+    { "loop": "07", "window": "W1", "effect": "Contract dependency satisfied. W1's next loop." }
+  ],
+
+  "conditionsCarriedForward": [
+    "Loop 03 must retire WORK_SCHEMA_VERSION and import PERSONAL_OFFICE_SCHEMA_VERSION before persisting anything, with a serialization test proving the engine envelope passes W1's version guard and that an unknown version is rejected rather than coerced.",
+    "Loop 03 owns and must test exactly-one archived migration event emission, and must never map archived to completed without conclusive entry evidence, nor to failed unless entries prove failure.",
+    "Loop 03 must implement MAP-BLOCKED so that no legacy blocked value ever produces failed.",
+    "Loop 04 must remain inside the resolved PO-VAULT-OWNERSHIP boundary for vault-ops, vault-types, wikilink and renderer/components/vault/*.",
+    "PQ-01 stays open. Grant the package-manifest lease to exactly one loop, then re-measure the lint warning ceiling on canonical rather than adopting the stale 359 figure.",
+    "Salvage remains selective and producer-applied inside the producer's own worktree. No blind cherry-pick from quarantine, and any consumer diffing against the quarantine must re-snapshot first.",
+    "Hot files still require an explicit W0 lease. The quarantine draft wired four of them without one; that must not be replicated.",
+    "Every producer must use the isolated toolchain. No package, test or build command may run through a junction into the quarantined repo."
+  ],
+
+  "residualRisks": [
+    "PQ-01 remains open, so no loop may assert that lint does not increase the warning budget — there is no runnable baseline to compare against.",
+    "The quarantine is still under concurrent write by a session outside W0 control. Preservation is hashed, so drift is detectable rather than merely suspected, but the worktree is not a stable reference.",
+    "BF-01 stands: no MSVC toolchain on this host, so better-sqlite3 cannot compile locally. SQLite-facing contracts must stay unit-testable without a live native binding, and CI is authoritative for native builds. This will bind Loop 03 harder than it bound Loop 01, because Loop 01 was dependency-free by design.",
+    "BF-02 did not reproduce in W0's run (946/946 rather than 900/901). Absence in one run is not proof of a fix, so the flake stays on the register."
+  ]
+}

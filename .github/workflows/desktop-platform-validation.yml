@@ -1,0 +1,185 @@
+name: Desktop Platform Validation (Non-Publishing)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Existing branch, tag or commit to validate without publishing
+        required: true
+        type: string
+      target:
+        description: Platform preflight to run
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - windows
+          - macos
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: desktop-platform-validation-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  harness-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run dependency-free harness tests
+        run: node --test apps/desktop/scripts/platform-validation-harness.test.mjs
+
+  windows-static-preflight:
+    if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
+    needs: harness-tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test desktop
+        run: |
+          pnpm --filter @openclaw/desktop build
+          pnpm --filter @openclaw/desktop test
+
+      - name: Package unsigned static preflight only
+        working-directory: apps/desktop
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm exec electron-builder --win --x64 --config electron-builder.json --publish never
+
+      - name: Collect Windows artifact evidence
+        shell: pwsh
+        run: |
+          $evidenceDirectory = Join-Path (Resolve-Path '.').Path 'platform-evidence'
+          if (Test-Path -LiteralPath $evidenceDirectory) {
+            throw 'platform-evidence path must not pre-exist'
+          }
+          New-Item -ItemType Directory -Path $evidenceDirectory -ErrorAction Stop | Out-Null
+          $version = node -p "require('./apps/desktop/package.json').version"
+          $commit = git rev-parse HEAD
+          $artifact = "Izzi AI-$version-win-x64.exe"
+          node apps/desktop/scripts/platform-validation-harness.mjs `
+            --platform windows `
+            --arch x64 `
+            --version $version `
+            --source-commit $commit `
+            --release-root "$((Resolve-Path 'apps/desktop/release').Path)" `
+            --artifact $artifact `
+            --output "$((Resolve-Path '.').Path)\platform-evidence\windows-x64.json"
+
+      - name: Retain evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-static-preflight-evidence
+          path: platform-evidence/windows-x64.json
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-static-preflight:
+    if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
+    needs: harness-tests
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x64
+          - arm64
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test desktop
+        run: |
+          pnpm --filter @openclaw/desktop build
+          pnpm --filter @openclaw/desktop test
+
+      - name: Package unsigned static preflight only
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: >-
+          pnpm exec electron-builder --mac dmg
+          --${{ matrix.arch }}
+          --config electron-builder.json
+          --config.mac.notarize=false
+          --publish never
+
+      - name: Collect macOS artifact evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e platform-evidence || -L platform-evidence ]]; then
+            echo 'platform-evidence path must not pre-exist' >&2
+            exit 1
+          fi
+          mkdir platform-evidence
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          commit="$(git rev-parse HEAD)"
+          artifact="Izzi AI-${version}-mac-${{ matrix.arch }}.dmg"
+          node apps/desktop/scripts/platform-validation-harness.mjs \
+            --platform macos \
+            --arch "${{ matrix.arch }}" \
+            --version "$version" \
+            --source-commit "$commit" \
+            --release-root "$(pwd)/apps/desktop/release" \
+            --artifact "$artifact" \
+            --output "$(pwd)/platform-evidence/macos-${{ matrix.arch }}.json"
+
+      - name: Retain evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-static-preflight-evidence
+          path: platform-evidence/macos-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14

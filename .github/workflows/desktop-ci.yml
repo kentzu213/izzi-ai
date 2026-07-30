@@ -47,6 +47,14 @@ jobs:
           # Consumed by root .npmrc (${NODE_AUTH_TOKEN}).
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      # PQ-01: lint is a real gate. `lint:ci` caps warnings at 358 — the count measured on this
+      # canonical checkout, which is exactly what CI lints — so any NEW warning fails the build
+      # while the existing debt stays visible and countable. Local `pnpm lint` has no ceiling on
+      # purpose: a developer tree carries untracked files, so a fixed total is not reproducible
+      # there. Errors are always a hard failure regardless of the ceiling.
+      - name: Lint
+        run: pnpm lint:ci
+
       - name: Build workspace
         run: pnpm build:all
 

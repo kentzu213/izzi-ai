@@ -48,10 +48,6 @@ const SERVICE_OWNED_ROOT_FILES = new Set(['starizzi-import.json']);
 const SERVICE_OWNED_ROOT_DIRECTORIES = new Set(['snapshots', 'receipts']);
 const BLOCKED_EXTENSIONS = new Set(['.bat', '.cmd', '.com', '.dll', '.exe', '.msi', '.ps1', '.sh']);
 const SECRET_ENV_PATTERN = /(token|secret|password|credential|api[_-]?key|auth|supabase|openai|izzi)/i;
-const MAX_LEGACY_PROJECT_IDS = 20;
-const APPROVED_LEGACY_PROJECT_IDS = new Map<string, ReadonlySet<string>>([
-  ['izziapi-izzi-ai-howto', new Set(['izziapi-starizzi-howto'])],
-]);
 
 interface CommandResult {
   stdout: string;
@@ -165,7 +161,7 @@ export interface CustomerMediaArtifactDraft {
 export interface CustomerMediaImportedProject {
   runtimeProjectId: string;
   projectId: string;
-  legacyProjectIds?: string[];
+  sourceIdentity?: string;
   title: string;
   width: number;
   height: number;
@@ -312,25 +308,15 @@ function slug(value: string): string {
     .slice(0, 64) || 'video-project';
 }
 
-function approvedLegacyProjectIds(projectId: string, value: unknown): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > MAX_LEGACY_PROJECT_IDS) {
-    throw new Error('Danh sách legacy project ID không hợp lệ.');
-  }
-  const normalized = Array.from(new Set(value.map((entry) => {
-    const declared = textValue(entry, 100);
-    if (!declared) throw new Error('Danh sách legacy project ID không hợp lệ.');
-    return slug(declared);
-  }))).filter((candidate) => candidate !== projectId);
-  const approved = APPROVED_LEGACY_PROJECT_IDS.get(projectId);
-  if (normalized.some((candidate) => !approved?.has(candidate))) {
-    throw new Error('Project khai báo legacy project ID chưa được Izzi AI cho phép.');
-  }
-  return normalized;
-}
-
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+export function deriveImportedSourceIdentity(
+  workspaceId: string,
+  canonicalSourceRoot: string,
+): string {
+  return sha256(workspaceId + '\0' + path.normalize(path.resolve(canonicalSourceRoot)));
 }
 
 function isNonCommercialLicense(license: string): boolean {
@@ -749,7 +735,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     const scenes = Array.isArray(workflow.data.scenes) ? workflow.data.scenes : [];
     const runtimeProjectId = randomUUID();
     const projectId = slug(textValue(project.id, 100) || path.basename(sourceRoot));
-    const legacyProjectIds = approvedLegacyProjectIds(projectId, project.legacy_ids);
+    const sourceIdentity = deriveImportedSourceIdentity(workspaceId, sourceRoot);
     const importedAt = new Date().toISOString();
     const destinationRoot = this.projectRoot(workspaceId, runtimeProjectId);
 
@@ -774,7 +760,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         version: 1,
         runtimeProjectId,
         projectId,
-        legacyProjectIds,
+        sourceIdentity,
         evidenceDigest,
         importedAt,
       }, null, 2), 'utf8');
@@ -795,7 +781,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       return {
         runtimeProjectId,
         projectId,
-        legacyProjectIds,
+        sourceIdentity,
         title: textValue(workflow.data.title, 160) || projectId,
         width: numberValue(project.width, 1080, 320, 7680),
         height: numberValue(project.height, 1920, 320, 7680),

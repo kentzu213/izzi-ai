@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "loop": "00",
+  "status": "ACCEPTED",
+  "statusSetBy": "W0 after post-commit integration verification",
+  "statusSetAt": "2026-07-28T09:04:00Z",
+  "title": "Canonical source-of-truth baseline for the Personal Office OS programme",
+  "producer": {
+    "window": "W0",
+    "lane": "Control Tower / Integration",
+    "branch": "feature/personal-office-baseline-20260728",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-baseline"
+  },
+  "base": {
+    "integrationCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+    "canonicalRelease": "v1.14.0-beta.3",
+    "installedReferenceTag": "v1.14.0-beta.2",
+    "installedReferenceCommit": "824e2e50b2de08458138f823802c2268546c930f",
+    "integrationCommitIsAncestorOfBranch": true
+  },
+  "inputs": [
+    {
+      "producerLoop": "none",
+      "status": "N/A",
+      "note": "Loop 00 is the programme root. It has no producer dependency by construction; its inputs are the canonical git objects at v1.14.0-beta.3 plus read-only inspection of the quarantined dirty source worktree."
+    }
+  ],
+  "ownership": {
+    "ownedPaths": [
+      "docs/architecture/source-of-truth-baseline.md",
+      "docs/architecture/source-of-truth-baseline.json",
+      "worklogs/personal-office-loop-00.md",
+      "docs/handoffs/personal-office/integration-ledger.json",
+      "docs/handoffs/personal-office/leases.json",
+      "docs/handoffs/personal-office/loop-00.json"
+    ],
+    "forbiddenPaths": [
+      "all feature source under apps/**",
+      "all packages/**",
+      "package manifests and pnpm-lock.yaml",
+      "GitNexus managed doc blocks in AGENTS.md, CLAUDE.md and .claude/skills/gitnexus/**",
+      "everything inside the dirty source worktree"
+    ],
+    "leasedHotFiles": []
+  },
+  "filesChanged": [
+    { "path": "docs/architecture/source-of-truth-baseline.md", "change": "added", "sha256": "097d0c0169280a86fa1e06b39ab84058f013956e58e2424a3536c9dac852f9e3", "bytes": 20824 },
+    { "path": "docs/architecture/source-of-truth-baseline.json", "change": "added", "sha256": "8fd106c149290c57248961be00dbcd5f275304fddc596bfc69235fb40aab2d4a", "bytes": 33668 },
+    { "path": "worklogs/personal-office-loop-00.md", "change": "added", "sha256": "d4b692c5a83beef21b0dce349b5cc8411ae2adc4a6f3a0b30a23f156687642a1", "bytes": 21127, "hashNote": "Superseded the earlier 5c32d22c…/11175 B value when the mandated skill audit and agent conclusions were appended. See integration-ledger.json hashPolicy." },
+    { "path": "docs/handoffs/personal-office/integration-ledger.json", "change": "added", "sha256": "a610ffd1269347639cd25ccbfaab89965f5722c90a5e4202708692fccc5936d9", "bytes": 12327, "hashNote": "measured at commit bb23185; the file was amended in the acceptance pass that followed, so re-hash before relying on it" },
+    { "path": "docs/handoffs/personal-office/leases.json", "change": "added", "sha256": "a3a4228af20788f90eb5c94b733b61bb971a92ce1cf46ac7cb7bfa07aaad3a2c", "bytes": 6693 },
+    { "path": "docs/handoffs/personal-office/loop-00.json", "change": "added", "sha256": "746279b8141c208967feb6a5ac7c57a0426384a02cbc9e7911fe5eb8185e19fd", "bytes": 12552, "hashNote": "self-referential; this is the hash at commit bb23185, before the acceptance amendment" }
+  ],
+  "contractChanges": {
+    "schemaVersion": 1,
+    "breaking": false,
+    "items": [],
+    "note": "Loop 00 introduces no code contract. It introduces two coordinator data formats (integration-ledger.json, leases.json) at schemaVersion 1, both W0-owned."
+  },
+  "migrations": [],
+  "compatibility": [
+    "No runtime, schema, or API surface was touched. Compatibility is unaffected by construction.",
+    "Loop 01 branch feature/personal-office-loop-01-20260728 currently sits at the same commit as this branch (84a57b3). After this commit it will be exactly one commit behind integration; see outputs.w1SyncCommand."
+  ],
+  "securityGate": {
+    "surfaces": ["A: secret & config", "E: dependencies & supply chain"],
+    "risksChecked": [
+      "Reading .npmrc could expose a GitHub Packages token value",
+      "pnpm install executes lifecycle scripts for better-sqlite3, electron, esbuild, onnxruntime-node, sharp",
+      "Baseline artifacts could leak secret values while documenting configuration"
+    ],
+    "controls": [
+      "The .npmrc token was referenced by variable NAME only (NODE_AUTH_TOKEN) and redacted at the point of read; no value was printed, copied, logged, or committed.",
+      "Install ran from the lockfile committed at the canonical release tag, preserving provenance; --frozen-lockfile was retained and --ignore-scripts was used to avoid the failing native compile.",
+      "All three artifacts were re-read after writing and contain no credential material; verified again by the pre-commit secret scan recorded in verification.",
+      "No production account, deploy, push, or publish path was touched."
+    ],
+    "residualRisks": [
+      "The host has no MSVC toolchain, so native better-sqlite3 cannot be built or exercised locally (BF-01). CI remains the authoritative gate for native builds.",
+      "The dirty source worktree is being written by a concurrent session outside W0 control; its state is not a stable reference for any consumer."
+    ],
+    "decision": "pass"
+  },
+  "verification": [
+    { "command": "git rev-parse HEAD (baseline worktree)", "status": "pass", "evidence": "84a57b38117ee7544691115be5aca7a141af1abf, matches expected canonical commit" },
+    { "command": "git tag --points-at HEAD", "status": "pass", "evidence": "v1.14.0-beta.3" },
+    { "command": "git merge-base --is-ancestor 84a57b3 HEAD", "status": "pass", "evidence": "exit 0 — integration commit is an ancestor of the branch" },
+    { "command": "git diff --check", "status": "pass", "evidence": "exit 0, no whitespace or conflict-marker errors" },
+    { "command": "git status --porcelain (ownership audit)", "status": "pass", "evidence": "Only docs/architecture/ and worklogs/personal-office-loop-00.md untracked; zero tracked files modified. No file outside Loop 00 ownership was changed." },
+    { "command": "ConvertFrom-Json on source-of-truth-baseline.json", "status": "pass", "evidence": "Parses; canonicalCommit, canonicalTag, integrationBranch and gitNexusIndexCommit all read back correct" },
+    { "command": "Get-FileHash -Algorithm SHA256 on all three baseline artifacts", "status": "pass", "evidence": "Hashes recorded in filesChanged above" },
+    { "command": "pnpm --filter @openclaw/desktop build", "status": "pass", "evidence": "Loop 00 evidence: tsc + vite exit 0, 1136 modules, 14.90s. Re-verified as unchanged since no source was touched." },
+    { "command": "pnpm --filter @openclaw/desktop test", "status": "pass-with-known-flake", "evidence": "900/901 pass. The single failure is BF-02, a 5040ms-vs-5000ms timeout that passes in isolation 14/14. Classified as a pre-existing flake, not a regression." },
+    { "command": "pnpm lint:ci / pnpm -r lint", "status": "fail-baseline", "evidence": "BF-03 script absent; BF-04 no ESLint config exists anywhere at canonical, so ESLint 9 exits 2. The canonical lint gate is NOT runnable, therefore no lint claim is made for this loop." },
+    { "command": "dirty source worktree integrity (read-only)", "status": "pass-with-finding", "evidence": "W0 wrote nothing there. HEAD unchanged at 959e2d2 and the PQ-08 drafts are intact (work-model.ts 16,657 B; work-service.ts 31,149 B; run-repository.ts 37,864 B). However a concurrent session continues to grow it: 83 entries at Loop 00 start, 113 at Loop 00 end, 118 at this acceptance check." }
+  ],
+  "gitnexus": {
+    "status": "read-only evidence",
+    "indexCommit": "84a57b38117ee7544691115be5aca7a141af1abf",
+    "indexMatchesCanonicalHead": true,
+    "cliVersion": "1.6.9",
+    "stats": { "files": 450, "nodes": 6898, "edges": 15596, "communities": 347, "processes": 300 },
+    "impact": [
+      {
+        "target": "ensureSqliteSchema",
+        "file": "apps/desktop/src/main/db/sqlite-schema.ts",
+        "direction": "upstream",
+        "impactedCount": 3,
+        "risk": "LOW",
+        "epistemic": "exact",
+        "affectedProcess": "initServices (apps/desktop/src/main/index.ts)",
+        "note": "Probe query only, to prove the index answers graph questions. Loop 00 changed no symbol, so no impact analysis was required for its own edits."
+      }
+    ],
+    "detectChanges": {
+      "command": "gitnexus detect-changes --scope compare --base-ref 84a57b38117ee7544691115be5aca7a141af1abf --repo \"F:\\Ai Tools\\_wt-starizzi-personal-office-baseline\"",
+      "result": "No changes detected.",
+      "changedSymbols": 0,
+      "affectedProcesses": 0,
+      "affectedModules": 0,
+      "risk": "NONE",
+      "interpretation": "Correct rather than a tooling miss: all six committed files are Markdown and JSON, so no indexed code symbol was touched. Independently corroborates the ownership audit and the byte-identical build assets."
+    },
+    "limitations": [
+      "Full-text/BM25 search unavailable (LadybugDB FTS extension needs network); vector search unavailable on this platform. Graph traversal works and returns exact results. The roadmap's step-7 sub-requirement that FTS be working is therefore NOT met; the acceptance criterion, which requires only that queries return results, is met.",
+      "The bare repository name is ambiguous on this host — three registered repos are named izzi-ai. Every query must pass --repo with the absolute worktree path.",
+      "gitnexus analyze rewrites its managed doc blocks in 8 tracked files. W0 reverted all 8 to canonical; only W0 may mutate the index or those blocks."
+    ]
+  },
+  "outputs": [
+    {
+      "kind": "baseline",
+      "path": "docs/architecture/source-of-truth-baseline.md",
+      "purpose": "Human-readable canonical baseline: commit identity, environment, verified command set, 15 checks, 4 baseline failures, port matrix, domain surface, carry-forward constraints."
+    },
+    {
+      "kind": "baseline",
+      "path": "docs/architecture/source-of-truth-baseline.json",
+      "purpose": "Machine-readable twin. 13 required fields, 15 checkResults, 4 baselineFailures, 9 portQueue entries."
+    },
+    {
+      "kind": "worklog",
+      "path": "worklogs/personal-office-loop-00.md",
+      "purpose": "Narrative record including the concurrent-writer discovery and its correction."
+    },
+    {
+      "kind": "coordinator",
+      "path": "docs/handoffs/personal-office/integration-ledger.json",
+      "purpose": "Single source of truth for per-loop status across the programme. Only W0 writes it."
+    },
+    {
+      "kind": "coordinator",
+      "path": "docs/handoffs/personal-office/leases.json",
+      "purpose": "Hot-file lease registry. Only W0 grants or revokes."
+    },
+    {
+      "kind": "handoff",
+      "path": "docs/handoffs/personal-office/loop-00.json",
+      "purpose": "This document."
+    }
+  ],
+  "keyFindingsForConsumers": {
+    "PQ-01": "MUST PORT. eslint.config.mjs (147 lines) plus lint:ci/lint:fix/lint:strict and the root eslint devDependencies exist only on feature/aibase-my-graph-ui-sync. Canonical has ESLint installed but zero config, so the lint gate cannot run at all. Until this lands, no loop may assert a lint warning budget.",
+    "PQ-08": "CRITICAL GATE. An uncommitted second Personal Office implementation lives in the quarantined dirty worktree: shared/work-model.ts (state machine, canonicalJson, action-hash, WORK_SCHEMA_VERSION=1), shared/work-redaction.ts, 13 modules under main/work/ (~160 KB incl. work-service.ts 31 KB and run-repository.ts 38 KB), five test files, and live wiring already applied to main/db/database.ts, main/index.ts, main/preload.ts and renderer/App.tsx. It is committed nowhere and a git clean destroys it. Loop 01 must reconcile with it rather than author a greenfield model.",
+    "PQ-09": "agentGateway.ts is on the Loop 01 required-reading list AND is modified-uncommitted in the dirty worktree, so the canonical copy is not the copy in flight. Canonical additionally contains agentGateway-routing.ts plus its test, which the old branch lacks. Diff three ways before treating any version as source of truth.",
+    "canonicalIsAhead": "Canonical beta.3 is ahead of the old feature branch on every subsystem. Only one file is net-new on the old branch: eslint.config.mjs. Do NOT port the old package.json wholesale — it would revert the izzi-ai rebrand, downgrade desktop 1.14.0-beta.3 to 1.12.0, downgrade axios, loosen exact security pins to carets, and drop the ws/sharp/adm-zip pins.",
+    "securityNoteForLoop03Owner": "The already-wired work-model migration in database.ts logs and proceeds on error instead of failing closed, justified in-comment only because v1 is purely additive. That justification expires the moment a destructive migration step is added."
+  },
+  "roadmapReconciliation": {
+    "roadmapSection": "LOOP 00 — Release và source-of-truth reconciliation",
+    "canonicalOverride": {
+      "roadmapTarget": "v1.14.0-beta.2",
+      "constitutionTarget": "v1.14.0-beta.3 / 84a57b38117ee7544691115be5aca7a141af1abf",
+      "followed": "constitution",
+      "rationale": "The Constitution and orchestration doc are later and more specific, and name the exact commit. The choice is also defensible on evidence: beta.2 is a verified ancestor of beta.3 so nothing is lost; beta.3 carries the Voice Studio hotfix and the exact security pins; and origin/main points at beta.3, so building on beta.2 would fork off the shared line immediately.",
+      "recordedNotSilent": true
+    },
+    "beta2ShaApparentConflictResolved": {
+      "roadmapValue": "6db5e9937bbdf0955884140aaf602ed78caf7a44",
+      "baselineValue": "824e2e50b2de08458138f823802c2268546c930f",
+      "explanation": "Both correct. git cat-file -t reports 6db5e993 as type 'tag' — it is the annotated tag OBJECT — while 824e2e5 is the COMMIT it points at (feat(brand): rename desktop app to Izzi AI). No correction required; recorded so a later loop does not 'fix' a non-bug."
+    },
+    "installedReferenceVerifiedEmpirically": {
+      "path": "F:\\Ai Tools\\Teset izzi tool\\Izzi AI",
+      "binary": "Izzi AI.exe",
+      "fileVersion": "1.14.0-beta.2",
+      "productName": "Izzi AI",
+      "conclusion": "Confirms the two-role split the baseline asserts: beta.2 is the installed reference, beta.3 is the canonical build base."
+    },
+    "thirdWitnessForBF04": "worklogs/izzi-current-state.md at canonical records CMR-404 as 'PARTIAL — audit 74 -> 20; ESLint still absent'. Combined with the git ls-tree scan and the ESLint 9 exit-2 failure, the missing lint config is corroborated three independent ways.",
+    "unmetAcceptanceCriteria": [
+      {
+        "criterion": "pnpm lint:ci or the current lint gate runs and its result is recorded",
+        "status": "NOT MET — unmeetable at canonical",
+        "cause": "BF-03 (no lint:ci script) and BF-04 (no ESLint config anywhere), so ESLint 9 exits 2 before linting a file.",
+        "resolutionPath": "PQ-01, which requires the package-manifest/lockfile lease.",
+        "note": "The result is recorded as a gate that cannot run. No pass was fabricated."
+      },
+      {
+        "criterion": "roadmap step 7 sub-requirement that GitNexus FTS be working",
+        "status": "NOT MET",
+        "cause": "LadybugDB FTS extension requires network and is unavailable offline; vector search unavailable on this platform.",
+        "note": "The corresponding acceptance criterion — index at correct HEAD and queries returning results — IS met. Tracked as W-03."
+      }
+    ],
+    "statement": "Two roadmap acceptance criteria are unmet. Both are pre-existing conditions of the canonical tree rather than products of this loop, and both are reported rather than presented as green."
+  },
+  "blockers": [],
+  "residualRisks": [
+    "BF-01 — no MSVC toolchain on this host, so native better-sqlite3 cannot be compiled or exercised locally. Keep new contracts unit-testable without a live binding; treat CI as authoritative.",
+    "BF-02 — one known timeout flake in customer-video-studio-service.test.ts. Do not read it as a regression.",
+    "BF-03/BF-04 — the canonical lint gate is non-functional until PQ-01 lands, and the 359 warning ceiling must be re-measured on canonical before being enforced.",
+    "The dirty source worktree remains under concurrent write by a session outside W0 control. Any consumer diffing against it must re-snapshot first; a snapshot goes stale within minutes."
+  ],
+  "nextConsumers": [
+    {
+      "window": "W1",
+      "loop": "01",
+      "needs": [
+        "integration commit SHA of this accepted Loop 00",
+        "the three baseline artifact SHA-256 values",
+        "the PQ-08 reconciliation gate ruling before writing domain contracts",
+        "the safe branch sync command",
+        "confirmation that no hot-file lease is held"
+      ]
+    }
+  ],
+  "commitSha": "bb231856343e59e492d6d25701e171844f459d34",
+  "commitShaShort": "bb23185",
+  "integrationHead": "bb231856343e59e492d6d25701e171844f459d34",
+  "w1SyncCommand": "cd \"F:\\Ai Tools\\_wt-starizzi-personal-office-loop01\"  →  commit Loop 01 owned paths first  →  git rebase feature/personal-office-baseline-20260728",
+  "w1SyncNote": "Rebase onto the integration REF, not onto a SHA copied from this file. The acceptance write is itself a commit, so any SHA recorded in a coordinator artifact is one commit stale by construction. The ref always points at the true tip.",
+  "leaseStatusAtHandoff": "No hot-file lease is held by any window. All hot files are unclaimed except the GitNexus index and its managed doc blocks, which are permanently reserved to W0."
+}

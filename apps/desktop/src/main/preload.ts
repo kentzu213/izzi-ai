@@ -84,6 +84,75 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../shared/customer-marketing-action-gate-types';
+import {
+  WORK_IPC_CHANNELS,
+  type WorkPreloadApi,
+} from './work/work-preload-api';
+import type { WorkEvent } from './work/work-types';
+import {
+  RUNTIME_IPC_CHANNELS,
+  type RuntimePreloadApi,
+} from '../shared/runtime/ipc';
+import type {
+  MarketingWorkspaceEvidenceResult,
+  MarketingWorkspaceProvisionRequest,
+  MarketingWorkspaceProvisionResult,
+} from '../shared/marketing-workspace';
+import {
+  MARKETPLACE_IPC_CHANNELS,
+  type MarketplacePreloadApi,
+} from '../shared/marketplace';
+
+/**
+ * Published first-class preload shape for the unified work engine.
+ *
+ * Main performs authorization. The additional exact-workspace filter here
+ * keeps one workspace listener from receiving another authorized workspace's
+ * event inside the same renderer.
+ */
+const workApi: WorkPreloadApi = {
+  listWorkspaces: () => ipcRenderer.invoke(WORK_IPC_CHANNELS.listWorkspaces),
+  listRuns: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listRuns, input),
+  getRun: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.getRun, input),
+  listEvents: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listEvents, input),
+  listEventsSince: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.listEventsSince, input),
+  latestEventSeq: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.latestEventSeq, input),
+  listLineage: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.listLineage, input),
+  listPendingApprovals: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.listPendingApprovals, input),
+  createRun: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.createRun, input),
+  decideApproval: (input) =>
+    ipcRenderer.invoke(WORK_IPC_CHANNELS.decideApproval, input),
+  resume: (input) => ipcRenderer.invoke(WORK_IPC_CHANNELS.resume, input),
+  onEvent: (workspaceId, listener) => {
+    const requestedWorkspace = workspaceId.trim();
+    const handler = (_event: unknown, event: WorkEvent) => {
+      if (requestedWorkspace && event?.workspaceId === requestedWorkspace) {
+        listener(event);
+      }
+    };
+    ipcRenderer.on(WORK_IPC_CHANNELS.event, handler);
+    return () => {
+      ipcRenderer.removeListener(WORK_IPC_CHANNELS.event, handler);
+    };
+  },
+};
+
+const marketplacePersonalOfficeApi: MarketplacePreloadApi = {
+  loadCatalog: () => ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.loadCatalog),
+  createPlan: (packageKey) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.createPlan, packageKey),
+  requestInstall: (input) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.requestInstall, input),
+  resumeInstall: (input) =>
+    ipcRenderer.invoke(MARKETPLACE_IPC_CHANNELS.resumeInstall, input),
+};
+
+const runtimeApi: RuntimePreloadApi = {
+  listHealth: (input) => ipcRenderer.invoke(RUNTIME_IPC_CHANNELS.listHealth, input),
+};
 
 const electronAPI = {
   window: {
@@ -121,6 +190,8 @@ const electronAPI = {
     uninstall: (extensionId: string) => ipcRenderer.invoke('extensions:uninstall', extensionId),
     marketplace: (query?: string) => ipcRenderer.invoke('extensions:marketplace', query),
   },
+
+  marketplacePersonalOffice: marketplacePersonalOfficeApi,
 
   extensionRuntime: {
     list: () => ipcRenderer.invoke('extensions:runtime:list'),
@@ -609,6 +680,14 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:runMediaPreview', input),
     reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:reviewApproval', input),
+    getReferenceWorkspaceEvidence: (
+      packageKey: string,
+    ): Promise<MarketingWorkspaceEvidenceResult> =>
+      ipcRenderer.invoke('customerMarketing:getReferenceWorkspaceEvidence', packageKey),
+    provisionReferenceWorkspace: (
+      input: MarketingWorkspaceProvisionRequest,
+    ): Promise<MarketingWorkspaceProvisionResult> =>
+      ipcRenderer.invoke('customerMarketing:provisionReferenceWorkspace', input),
   },
 
   affiliate: {
@@ -643,6 +722,9 @@ const electronAPI = {
       ipcRenderer.invoke('schedule:openProfile', profileDir, url),
   },
 
+  work: workApi,
+  runtime: runtimeApi,
+
   platform: {
     isElectron: true,
     os: process.platform,
@@ -652,3 +734,5 @@ const electronAPI = {
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
 export type ElectronAPI = typeof electronAPI;
+export type { WorkPreloadApi } from './work/work-preload-api';
+export type { RuntimePreloadApi } from '../shared/runtime/ipc';

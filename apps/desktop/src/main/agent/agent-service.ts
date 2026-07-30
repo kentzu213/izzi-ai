@@ -155,11 +155,11 @@ export class AgentService extends EventEmitter {
       selectedModel: input.selectedModel,
     };
     const validation = validateCustomConfig(config);
-    if (!validation.ok) {
+    if (!validation.ok || !validation.config) {
       return { ok: false, errors: validation.errors };
     }
 
-    this.settingsStore.saveConfig(config);
+    this.settingsStore.saveConfig(validation.config);
     if (input.apiKey && input.apiKey.length > 0) {
       this.secrets.setKey(input.apiKey);
     }
@@ -180,7 +180,7 @@ export class AgentService extends EventEmitter {
       return { ok: true, activeProvider: 'managed' };
     }
 
-    const validation = validateCustomConfig(this.settingsStore.getConfig());
+    const validation = this.settingsStore.getConfigValidation();
     const errors = [...validation.errors];
     if (!this.secrets.hasKey()) {
       errors.push('Chưa có API key — vui lòng nhập key trước khi bật');
@@ -211,9 +211,8 @@ export class AgentService extends EventEmitter {
    * The result message is redacted of any key value.
    */
   async testProviderConnection(input?: { apiKey?: string }): Promise<ProviderTestResult> {
-    const config = this.settingsStore.getConfig();
-    const validation = validateCustomConfig(config);
-    if (!validation.ok || !config) {
+    const validation = this.settingsStore.getConfigValidation();
+    if (!validation.ok || !validation.config) {
       return { ok: false, message: validation.errors.join('; ') || 'Cấu hình không hợp lệ' };
     }
 
@@ -223,7 +222,7 @@ export class AgentService extends EventEmitter {
       return { ok: false, message: 'Chưa có API key để kiểm tra' };
     }
 
-    const provider = new CustomOpenAIProvider(config, key, (text) =>
+    const provider = new CustomOpenAIProvider(validation.config, key, (text) =>
       this.secrets.redact(text, transientKey),
     );
     return provider.testConnection();
@@ -235,16 +234,19 @@ export class AgentService extends EventEmitter {
    * appear automatically. Uses the stored config + key; errors are redacted.
    */
   async listProviderModels(): Promise<{ ok: boolean; models?: string[]; error?: string }> {
-    const config = this.settingsStore.getConfig();
-    const validation = validateCustomConfig(config);
-    if (!validation.ok || !config) {
+    const validation = this.settingsStore.getConfigValidation();
+    if (!validation.ok || !validation.config) {
       return { ok: false, error: validation.errors.join('; ') || 'Chưa cấu hình kết nối' };
     }
     const key = this.secrets.getKey();
     if (!key) {
       return { ok: false, error: 'Chưa có API key' };
     }
-    const provider = new CustomOpenAIProvider(config, key, (text) => this.secrets.redact(text));
+    const provider = new CustomOpenAIProvider(
+      validation.config,
+      key,
+      (text) => this.secrets.redact(text),
+    );
     return provider.listModels();
   }
 
@@ -293,7 +295,7 @@ export class AgentService extends EventEmitter {
     this.db.appendDiagnosticEvent({
       type: 'agent.chat',
       status: 'info',
-      detail: `Started managed request ${requestId}`,
+      detail: `Started model request ${requestId}`,
       meta: { sessionId },
     });
 
@@ -341,7 +343,19 @@ export class AgentService extends EventEmitter {
 
       this.emitStatus(input.requestId, input.sessionId, 'running');
 
-      const provider = this.resolver.resolve();
+      const route = this.resolver.resolveRoute();
+      this.db.appendDiagnosticEvent({
+        type: 'agent.model-route',
+        status: 'info',
+        detail: `Resolved model route ${route.decision.decisionHash}`,
+        meta: {
+          sessionId: input.sessionId,
+          requestId: input.requestId,
+          decision: route.decision,
+        },
+      });
+
+      const provider = route.provider;
       for await (const event of provider.streamChat({
         sessionId: input.sessionId,
         message: input.message,
@@ -428,7 +442,7 @@ export class AgentService extends EventEmitter {
           this.db.appendDiagnosticEvent({
             type: 'agent.chat',
             status: 'success',
-            detail: `Managed request ${input.requestId} completed`,
+            detail: `Model request ${input.requestId} completed`,
             meta: { sessionId: input.sessionId },
           });
           return;
@@ -451,7 +465,7 @@ export class AgentService extends EventEmitter {
         this.db.appendDiagnosticEvent({
           type: 'agent.chat',
           status: 'success',
-          detail: `Managed request ${input.requestId} completed without explicit done event`,
+          detail: `Model request ${input.requestId} completed without explicit done event`,
           meta: { sessionId: input.sessionId },
         });
         return;

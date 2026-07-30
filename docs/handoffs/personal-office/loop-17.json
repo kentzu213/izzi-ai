@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-checkpoint",
+  "loop": "17",
+  "status": "PROVISIONAL",
+  "title": "Operational attested browser runtime boundary",
+  "canonicalBase": "0f32a0ca2d3155af0ff103a5fe0239e0f0e62091",
+  "branch": "feature/personal-office-loop-17-20260729",
+  "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop17",
+  "implemented": [
+    "current SHA-256 driver attestation validation",
+    "exact package binding",
+    "visible review and encrypted-state requirements",
+    "runtime origin containment",
+    "idempotent replay requirement",
+    "strict completed Marketplace receipt validation",
+    "connected IntegrationGrant and least-privilege scope validation",
+    "tenant/user/workspace/package/integration/grant/run launch binding",
+    "local Work run, approval, idempotent effect claim and artifact E2E",
+    "mandatory authoritative receipt resolution before prepare and execute",
+    "authorization drift denial with exact receipt and exact-scope digest binding",
+    "encrypted atomic operational evidence store keyed by exact runtime authority and runtime digest",
+    "dependency-injected Electron safeStorage encryption adapter",
+    "dependency-injected managed Playwright-compatible driver without an undeclared package import",
+    "exact executable path and SHA-256 verifier gate",
+    "headed sandboxed fixed-viewport isolated BrowserContext",
+    "service-worker blocking and downloads disabled",
+    "phase-aware HTTP method/origin routing with read-only preparation",
+    "WebSockets denied by v1 governance because no accepted workflow requires socket authority",
+    "explicit endpoint idempotency authority before submit",
+    "bounded text, response and screenshot evidence",
+    "query-stripped custom audit trace and screenshot digest-only evidence",
+    "idempotent browser/context cleanup on cancellation, timeout and open failure"
+    ,
+    "main-authoritative Marketplace completed receipts persisted only after encrypted durable recording",
+    "main-authoritative IntegrationGrant connected receipts bound to exact tenant and user authority",
+    "encrypted revocation tombstones persisted before remote, vault or metadata cleanup",
+    "truthful Marketplace blocked receipts when authoritative persistence is unavailable",
+    "truthful IntegrationGrant compensation receipts with explicit incomplete-cleanup status",
+    "authoritative receipt restart revalidation and cached-evidence removal after revocation",
+    "mandatory evidence authority before workspace provisioning, package installation, grant connect or grant revoke effects",
+    "offline production composition of Electron safeStorage, encrypted authoritative receipt storage and Marketplace completed-receipt persistence",
+    "exact canonical absolute runtime-root enforcement before authority-store construction"
+  ],
+  "latestImplementationCommit": "09a6f183f03ded042239ab6d9d38b91f759a1529",
+  "offlineAuthoritativeReceiptSubphase": {
+    "status": "CANONICAL_INTEGRATED_REVIEWED_PASS",
+    "implementationCommit": "d863c03afe7bf93faa73d8ab4a86f6f1a5ff44da",
+    "lease": "LEASE-L17-AUTHORITATIVE-RECEIPTS-20260729",
+    "independentReview": "PASS",
+    "canonicalImplementationCommits": [
+      "08b5dcdaf0c04191fe461fbad3d1737a2b2abc68",
+      "30e9ad315418ff37a6af620493c871f10bfea9e9"
+    ],
+    "canonicalHandoffCommits": [
+      "296c5255fa852cd5af7c87a1ad21d3cec24e2e4e",
+      "16e980e214b86bf7868f59434e4acdfcd61cab32"
+    ],
+    "scope": "Offline authoritative receipt persistence, revocation invalidation and runtime evidence revalidation only. No production composition or external browser/network effect."
+  },
+  "verification": {
+    "focusedTests": "offline composition and direct runtime dependencies: 7 files, 34/34",
+    "fullTests": "137 files, 1450/1450",
+    "mainTypeScript": "PASS",
+    "rendererTypeScript": "PASS",
+    "build": "PASS_WITH_EXISTING_CHUNK_ADVISORY",
+    "changedLint": "0 warnings",
+    "repositoryLint": "0 errors, 350 warnings",
+    "ownershipAndSecurity": "PASS — offline composition exact-path replay was limited to 3 leased source/test paths; producer/canonical Git blobs matched; prohibited paths 0; diff secret hits 0; quarantine remained read-only despite independently observed drift.",
+    "gitNexus": "DEGRADED_REVIEWED — stale baseline index reported 26 changed files but zero indexed symbols; focused/full tests and manual dependency review cover the isolated delta."
+  },
+  "canonicalCheckpoint": {
+    "decision": "PROVISIONAL_CHECKPOINT_INTEGRATED",
+    "leaseRevokedAfterPass": true,
+    "note": "The authoritative receipt dependency closure and the bounded offline main composition are now integrated. The composition injects Electron safeStorage and only the Marketplace completed-receipt sink; no production browser driver, connector or network effect is registered."
+  },
+  "offlineProductionCompositionSubphase": {
+    "status": "CANONICAL_INTEGRATED_REVIEWED_PASS",
+    "lease": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
+    "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-offline-composition.md",
+    "producerImplementation": "09a6f183f03ded042239ab6d9d38b91f759a1529",
+    "canonicalImplementation": "8434b735a62d39e8d13266ca28c4cda594960d18",
+    "independentSecurityReview": "PASS",
+    "independentSocratesReview": "PASS",
+    "scope": "Electron safeStorage injection, encrypted authority-store construction and Marketplace completed-receipt sink composition only. No driver, browser, connector or network effect."
+  },
+  "dependencyProvenanceGate": {
+    "status": "OFFLINE_PROVENANCE_VERIFIED_AWAITING_INSTALL_AUTHORITY",
+    "artifact": "docs/handoffs/personal-office/gate-loop-17-playwright-provenance.md",
+    "securityReview": "docs/handoffs/personal-office/gate-loop-17-playwright-security-review.md",
+    "changeRequest": "docs/handoffs/personal-office/change-request-loop-17-playwright-dependency.md",
+    "candidate": "playwright@1.59.1 / Chromium revision 1217",
+    "evidence": "Exact package integrity, Apache-2.0 license, pnpm content-addressed store entries, materialized package metadata, browsers.json mapping and a complete SHA-256-pinned Chromium executable were verified offline. File-by-file verification matched 133/133 Playwright and 465/465 Playwright Core payload files with zero hash, size or extra-payload failures; both packages declare no lifecycle scripts or build side effects.",
+    "residualSecurityGate": "No advisory network query was authorized, so current vulnerability-database freshness must be checked after approved materialization.",
+    "decision": "No package lease, lockfile edit, install or production driver registration until dependency installation/package writes are explicitly authorized."
+  },
+  "webSocketAuthorityDecision": {
+    "status": "WEBSOCKET_AUTHORITY_NOT_REQUIRED_FOR_V1",
+    "artifact": "docs/handoffs/personal-office/decision-loop-17-websocket-authority.md",
+    "scope": "Personal Office managed browser runtime only",
+    "consumerInventory": "No accepted Marketplace, IntegrationGrant, Work, workspace-blueprint or v1 product workflow declares or requires ws/wss. BrowserRuntimeSpec contains no socket authority.",
+    "enforcement": "The managed driver keeps deny-all routeWebSocket handling. HTTP origin approval and the separate .ocx net.websocket capability do not grant browser-runtime socket authority.",
+    "reopenRule": "A future concrete socket consumer requires a new contract change request, security model, tests, independent review and exact-path lease before implementation."
+  },
+  "remainingBeforeReview": [
+    "W0-approved declared Playwright dependency and lockfile provenance",
+    "audited production port registration and compatible executable provenance",
+    "real production-adapter install-to-open-to-delegate-to-artifact evidence"
+  ],
+  "requestedChange": "docs/handoffs/personal-office/change-request-loop-17-production-runtime.md",
+  "authorization": "No push, deployment, install, browser launch, network action, secret retrieval or external effect is authorized."
+}

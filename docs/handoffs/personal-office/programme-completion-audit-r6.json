@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "programme-completion-audit",
+  "status": "LOCAL_FOUNDATION_ACCEPTED_PRODUCT_INCOMPLETE",
+  "auditedAt": "2026-07-29T20:45:00Z",
+  "canonicalRef": "feature/personal-office-baseline-20260728",
+  "auditedHead": "b2a67941ae476778cb26fd5e78f6af42fc9762bd",
+  "requirements": [
+    {
+      "id": "PO-PRODUCT-01",
+      "requirement": "Deeply personalized single-operator office",
+      "status": "PARTIAL",
+      "evidence": [
+        "Loop 02 five-route shell and four workspace surfaces",
+        "Loop 04 revisioned Live profile and MyGraph projection",
+        "Loop 08 workspace blueprint planning"
+      ],
+      "gap": "Production shell data source is empty and no real workspace bootstrap/create flow exists.",
+      "nextLoop": "13"
+    },
+    {
+      "id": "PO-PRODUCT-02",
+      "requirement": "Delegate work while agents execute and UI exposes progress",
+      "status": "PARTIAL",
+      "evidence": [
+        "Loop 03 durable Work engine",
+        "Authorized Work IPC and preload API",
+        "Run/event/approval/lineage/artifact tests"
+      ],
+      "gap": "Renderer shell does not consume the real Work preload API.",
+      "nextLoop": "13"
+    },
+    {
+      "id": "PO-PRODUCT-03",
+      "requirement": "MyGraph, Live.md and skills guide every job",
+      "status": "PARTIAL",
+      "evidence": [
+        "Loop 04 Live profile and graph contracts",
+        "Loop 05 deterministic context kernel",
+        "Loop 07 capability registry"
+      ],
+      "gap": "No authenticated production agent-turn caller supplies workspace, owner and trusted safety prompt to the context compiler.",
+      "nextLoop": "14"
+    },
+    {
+      "id": "PO-PRODUCT-04",
+      "requirement": "Market install automatically synchronizes account and creates a Custom Workspace",
+      "status": "NOT_ACHIEVED",
+      "evidence": [
+        "Loop 08 plan-only provisioning",
+        "Loop 09 plan-only install intent",
+        "Loop 10 plan-only grants",
+        "Loop 12 open-intent for an already installed Marketing package"
+      ],
+      "gap": "No host-validated live catalog, package install execution, account/OAuth sync, grant persistence, workspace provisioning or activation.",
+      "nextLoops": [
+        "15",
+        "16"
+      ]
+    },
+    {
+      "id": "PO-PRODUCT-05",
+      "requirement": "Safe localhost or isolated browser runtime for agent operation",
+      "status": "PARTIAL_FOUNDATION",
+      "evidence": [
+        "Loop 11 runtime contracts and security foundation",
+        "Encrypted browser state",
+        "Atomic effect claims"
+      ],
+      "gap": "RuntimeManager has no production adapters and deny-all authorization; no production Playwright driver is registered.",
+      "nextLoop": "17"
+    },
+    {
+      "id": "PO-QUALITY-01",
+      "requirement": "Local build and security baseline",
+      "status": "ACHIEVED_LOCALLY",
+      "evidence": [
+        "R6 focused tests 164/164",
+        "R6 full desktop tests 1364/1364",
+        "TypeScript and production build PASS",
+        "Lint 350 warnings under ceiling 358",
+        "Ownership, provenance, secret and prohibited-path scans PASS"
+      ],
+      "gap": "Installer, signing, protected release environment and platform promotion remain external gates."
+    }
+  ],
+  "continuationOrder": [
+    "13-real-work-bridge-and-first-workspace",
+    "14-live-context-authenticated-agent-turn",
+    "15-marketplace-install-and-provisioning",
+    "16-account-and-integration-grant-operation",
+    "17-production-runtime-adapters-and-e2e"
+  ],
+  "stableReleaseAccepted": false
+}

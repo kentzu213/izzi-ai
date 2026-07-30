@@ -17,19 +17,16 @@ Customer Marketing local F5-TTS discovery patch.
 
 ## 1.14.0-beta.11
 
-Customer Marketing media re-import refresh patch.
+Customer Marketing safe project refresh patch.
 
-- Refresh an existing canonical media project on re-import by replacing its
-  prior jobs and linked approval/artifact evidence with one fresh pending
-  preview chain while preserving unrelated workspace state.
-- Allow an explicitly declared legacy project ID to migrate a renamed guide
-  without leaving the old branded job visible, and label the result as an
-  update in Video Studio.
-- Restrict legacy replacement to the app-approved Izzi AI guide migration and
-  merge completed imports into the latest tenant record so concurrent imports
-  cannot delete one another.
-- Discard an in-flight preview result when the project was re-imported before
-  that preview finished, preventing stale jobs or evidence from returning.
+- Replace the prior media job, manifest artifact, and preview approval only
+  when the runtime confirms the same workspace-bound source identity.
+- Discard preview success or failure results that finish after their media job
+  was replaced, preventing stale artifacts and states from being restored.
+- Ignore manifest-declared aliases as replacement authority. A renamed project
+  updates in place only when it comes from the same canonical source folder.
+- Show the service-provided import/update result in the Customer Marketing
+  workspace.
 
 ## 1.14.0-beta.10
 

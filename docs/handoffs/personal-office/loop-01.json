@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "producer-handoff",
+  "loop": "01",
+  "status": "READY_FOR_REVIEW",
+  "producer": {
+    "window": "W1",
+    "branch": "feature/personal-office-loop-01-20260728",
+    "worktree": "F:\\Ai Tools\\_wt-starizzi-personal-office-loop01"
+  },
+  "baseCommit": "d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258",
+  "acceptedLoop00Ancestor": "0cbf88863180b761dae1366eefe99c8338b4aad0",
+  "implementationCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+  "ownershipInventory": {
+    "basis": "git diff --name-only d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258..producer-tip",
+    "statement": "filesChangedFromBase and ownedPaths describe W1 changes after the coordinator replay base, not inherited W0 planning changes since the accepted Loop 00 ancestor",
+    "inheritedW0Commits": [
+      "aa96a8f",
+      "d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258"
+    ],
+    "inheritedW0Paths": [
+      "docs/handoffs/personal-office/integration-ledger.json",
+      "docs/handoffs/personal-office/planning/loops-01-04-provisional-plan.md",
+      "docs/handoffs/personal-office/planning/wave-dispatch-w1-w4.md"
+    ],
+    "ownershipTransferred": false
+  },
+  "preservation": {
+    "rollbackCommit": "94fbdc6908b64ac07d498327a890f337738a6d24",
+    "rollbackBranch": "backup/personal-office-loop-01-draft-20260728",
+    "replayedDraftCommit": "8592fd9",
+    "oldWorklogPath": "worklogs/personal-office-loop-01-provisional.md",
+    "oldWorklogSha256": "a26a7359f4d6ff187713c85eb838811ee3293ce156dd2d80d4591f45dc335811",
+    "newWorklogPath": "worklogs/personal-office-loop-01.md",
+    "newWorklogSha256": "feed9dfa2899fecc13db799c211dd6cd708accfc9bff9b412d1de6440498a90b"
+  },
+  "reviewHistory": [
+    {
+      "rejectedProducerRecordCommit": "9d82ed0",
+      "decision": "REJECTED_BEFORE_INTEGRATION",
+      "finding": "decode validated the envelope schemaVersion but not the aggregate schemaVersion"
+    },
+    {
+      "correctiveImplementationCommit": "4cf77f34d28bc6a377d691ee2db2df6a4064239d",
+      "resolution": "Versioned generic constraints plus fail-closed validation of the upgraded aggregate; two regression tests"
+    },
+    {
+      "contractAmendmentCommit": "0eacbc51cc8c9cdde6e659f2d9ccf7ebbf47db61",
+      "resolution": "PO-RUNSTATE-CONTRACT-GAP closed with first-class waiting_external, explicit transitions, mapping updates, and two regression tests"
+    },
+    {
+      "documentationCorrectionCommit": "0b5645651db263cfb06a49c77fb72cf6a873737f",
+      "resolution": "Socrates finding closed: AgentRun stuck/guardrail pause semantics are separated from external dependency waits, and runtime provisioning health is separated from associated WorkRun state"
+    },
+    {
+      "finalDocumentationCorrectionCommit": "830a12ca75bba6d78f0e3ba8fea8353c84353d71",
+      "resolution": "Socrates final findings closed: only health placement remains Blocked; W0 rulings are represented as resolved; W1 owns canonical fields while Loop 03 owns adapters and storage",
+      "reviewVerdict": "ACCEPT"
+    }
+  ],
+  "coordinatorRebase": {
+    "reason": "Concurrent W0 added documentation-only planning commits before acceptance and rebased the W1 series",
+    "newBaseCommit": "d711fd96a8c0a3944dd1bdeb048ba9eeb85ec258",
+    "shaMap": {
+      "b81da77c3c48f014966e54972ab8bd73379649c4": "8592fd9",
+      "a72d29d57e05fc1fcbda839eb059f08da88f6cc0": "5abafad",
+      "15ab87743fc73a51af79531d33cba26cb3f0effe": "9d82ed0",
+      "89d77435e5bc7bb3535ed0815fe3af470ebda03a": "4cf77f34d28bc6a377d691ee2db2df6a4064239d",
+      "7956503c56c5ee03108b8444f38dcfba0d2e4195": "4890a0a"
+    },
+    "contentHashesChanged": false
+  },
+  "inputArtifactHashes": [
+    {
+      "path": "docs/handoffs/personal-office/acceptance/loop-00.json",
+      "sha256": "12164c13b65d00efee599255887d966d52caf21575cddd1c41e56df8a4e3b46a"
+    },
+    {
+      "path": "docs/handoffs/personal-office/quarantine/loop-02-dirty-salvage.json",
+      "sha256": "110c79fd73f6387537fded66b37ad64e69288f64dccd4789786ec0974033fbe3"
+    },
+    {
+      "path": "docs/handoffs/personal-office/quarantine/loop-03-dirty-salvage.json",
+      "sha256": "151becf9373a36e27c4fbc7228cebeb0ca3661f43b0ee9338584cb6b0b7c5642"
+    }
+  ],
+  "ownedPaths": [
+    "apps/desktop/src/shared/personal-office/**",
+    "docs/architecture/personal-office-os.md",
+    "docs/architecture/legacy-personal-office-mapping.md",
+    "docs/architecture/adr/ADR-PO-001-control-and-execution-plane.md",
+    "docs/architecture/adr/ADR-PO-002-unified-work-model.md",
+    "docs/architecture/adr/ADR-PO-003-context-and-live-profile.md",
+    "docs/architecture/adr/ADR-PO-004-package-and-runtime-trust.md",
+    "worklogs/personal-office-loop-01.md",
+    "docs/handoffs/personal-office/loop-01.json"
+  ],
+  "filesChangedFromBase": [
+    "apps/desktop/src/shared/personal-office/canonical.test.ts",
+    "apps/desktop/src/shared/personal-office/canonical.ts",
+    "apps/desktop/src/shared/personal-office/classification.test.ts",
+    "apps/desktop/src/shared/personal-office/classification.ts",
+    "apps/desktop/src/shared/personal-office/entities.ts",
+    "apps/desktop/src/shared/personal-office/events.ts",
+    "apps/desktop/src/shared/personal-office/ids.ts",
+    "apps/desktop/src/shared/personal-office/index.ts",
+    "apps/desktop/src/shared/personal-office/secret-ref.ts",
+    "apps/desktop/src/shared/personal-office/serialization.test.ts",
+    "apps/desktop/src/shared/personal-office/serialization.ts",
+    "apps/desktop/src/shared/personal-office/state-machine.test.ts",
+    "apps/desktop/src/shared/personal-office/state-machine.ts",
+    "apps/desktop/src/shared/personal-office/trust.ts",
+    "apps/desktop/src/shared/personal-office/version.ts",
+    "docs/architecture/adr/ADR-PO-001-control-and-execution-plane.md",
+    "docs/architecture/adr/ADR-PO-002-unified-work-model.md",
+    "docs/architecture/adr/ADR-PO-003-context-and-live-profile.md",
+    "docs/architecture/adr/ADR-PO-004-package-and-runtime-trust.md",
+    "docs/architecture/legacy-personal-office-mapping.md",
+    "docs/architecture/personal-office-os.md",
+    "docs/handoffs/personal-office/loop-01.json",
+    "worklogs/personal-office-loop-01.md"
+  ],
+  "contractDecisions": [
+    "shared/personal-office is the governance/catalog contract of record; Loop 03 execution imports it",
+    "PERSONAL_OFFICE_SCHEMA_VERSION is the sole Personal Office version authority",
+    "failed is terminal; retry/fork creates a new run with explicit lineage",
+    "AgentRun stuck blocked maps to paused; customer/runtime/media dependency blocked maps to waiting_external; neither maps to failed",
+    "archived derives a terminal from evidence; inconclusive archives map to canceled with legacy_archived_outcome_unknown",
+    "canonical JSON and immutable approval action binding are shared dependency-free contracts",
+    "waiting_external is a first-class RunState (not a pausedReason) per gate PO-RUNSTATE-CONTRACT-GAP"
+  ],
+  "contractChanges": [
+    {
+      "id": "PO-RUNSTATE-CONTRACT-GAP",
+      "type": "breaking",
+      "shipped": false,
+      "change": "Added waiting_external as a first-class RunState. Transitions: running -> waiting_external, and waiting_external -> running | canceled (mirrors paused). Removed 'waiting_external' from RunPauseReason, which now covers only 'stuck' | 'guardrail'.",
+      "reason": "Roadmap Loop 03 §4 minimum state machine requires it, and Loop 02 §3 Today lanes (Active work / Waiting for me / Delivered) need a modelled state for integration/runtime blocks; a primary always-visible lane cannot be built on an optional field. Accepted W0 -> W1 contract change request; W1 mapping §3.4 migration-scoped rejection did not weigh these product requirements.",
+      "versionImpact": "PERSONAL_OFFICE_SCHEMA_VERSION stays 1 (single authority, gate PO-VERSION-COLLISION). No shipped build carries v1, so this is a version note, NOT a migration.",
+      "sequencing": "Must land before Loop 03 persists anything and together with PO-VERSION-COLLISION, else the version stops being a reliable discriminator.",
+      "consumers": [
+        "Loop 03 / W3 work engine (imports RunState; must handle waiting_external in transitions and adapters)",
+        "Loop 02 / W2 Today shell (Waiting-for-me vs blocked lanes render off this state)",
+        "Loop 12 / W2 customer marketing (CustomerRunStatus 'blocked' -> waiting_external)"
+      ],
+      "tests": "state-machine.test.ts adds valid (running->waiting_external->running|canceled) and invalid (waiting_external->paused|completed|failed; created/awaiting_approval->waiting_external) coverage. 45/45 pass."
+    }
+  ],
+  "verification": [
+    {
+      "check": "isolated Vitest",
+      "result": "PASS",
+      "evidence": "4 files, 45/45 tests (added 2 waiting_external transition tests); cache disabled; clean Loop 00 toolchain"
+    },
+    {
+      "check": "isolated TypeScript main profile",
+      "result": "PASS",
+      "evidence": "CommonJS, ES2022, no DOM, strict; exit 0"
+    },
+    {
+      "check": "isolated TypeScript renderer profile",
+      "result": "PASS",
+      "evidence": "ESNext, bundler, DOM, isolatedModules, strict; exit 0"
+    },
+    {
+      "check": "git diff --check",
+      "result": "PASS"
+    },
+    {
+      "check": "GitNexus detect_changes",
+      "result": "PASS_WITH_NEW_FILES",
+      "evidence": "risk low; 0 indexed changed symbols or affected processes because the contract files are new"
+    },
+    {
+      "check": "lint",
+      "result": "NOT_RUNNABLE",
+      "evidence": "inherited PQ-01/BF-03/BF-04; no lint-green claim"
+    }
+  ],
+  "securityGate": {
+    "surfaces": [
+      "junction writeback",
+      "DB migration",
+      "schema-version collision",
+      "false-completed archived mapping",
+      "approval TOCTOU/replay",
+      "hot-file leases"
+    ],
+    "decision": "PASS",
+    "controls": [
+      "No package/test/build command ran through W1 node_modules junctions",
+      "No DB, main, preload, renderer, package, lockfile, or quarantine path changed",
+      "Schema authority is singular and explicit",
+      "Archived fallback cannot fabricate success",
+      "Approval binding includes immutable side-effect identity and idempotency",
+      "No hot-file lease was required"
+    ]
+  },
+  "outputHashes": [
+    {
+      "path": "apps/desktop/src/shared/personal-office/canonical.ts",
+      "sha256": "f1a53cbbe9025d5d1b44b761b072163a8eb6618d9b2c930ae1b0a3a3f2f9ffe0"
+    },
+    {
+      "path": "apps/desktop/src/shared/personal-office/entities.ts",
+      "sha256": "35ac2b90572f10cb5736ffcbce98d82a444689c0a2aee2038e42bdb7b2a340bb"
+    },
+    {
+      "path": "apps/desktop/src/shared/personal-office/state-machine.ts",
+      "sha256": "3e85165421b50a938fa94156417e5fd982decbe4be6bfb7c896f9aaaecdc23eb"
+    },
+    {
+      "path": "apps/desktop/src/shared/personal-office/serialization.ts",
+      "sha256": "3a7ae873acb872c40c84e56e7c1f445921cc6c99173e5ae43d8423c40dba662c"
+    },
+    {
+      "path": "docs/architecture/adr/ADR-PO-002-unified-work-model.md",
+      "sha256": "af3c60fca17c00665fbfa18fa43d878adce099accc3f541617c9a9a57969a5fe"
+    },
+    {
+      "path": "docs/architecture/legacy-personal-office-mapping.md",
+      "sha256": "5963cb24be0c099d54cdb2cfb8ca0b86f81d962500ed64e1d3689dee925b9909"
+    },
+    {
+      "path": "docs/architecture/personal-office-os.md",
+      "sha256": "949fd87173d74516346d90f9005235c817fa1666fb27aba78cdec2bc644f5e3d"
+    }
+  ],
+  "blockers": [],
+  "residualRisks": [
+    "PQ-01 remains open: canonical lint is not runnable",
+    "Loop 03 must retire WORK_SCHEMA_VERSION before any persistence",
+    "Loop 03 owns and must test exactly-one archived migration event emission",
+    "Loop 04 must remain inside the resolved W4 vault/live/wikilink/graph ownership boundary"
+  ],
+  "nextConsumers": [
+    "W0 review/integration and acceptance/loop-01.json",
+    "W2 Loop 02 shell after Loop 01 acceptance",
+    "W3 Loop 03 execution core after Loop 01 acceptance",
+    "W4 Loop 04 context/vault after Loop 01 acceptance under resolved PO-VAULT-OWNERSHIP"
+  ]
+}

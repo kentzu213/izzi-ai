@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "06",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T13:09:22Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent Socrates PASS plus full integration verification.",
+  "subject": {
+    "title": "Deterministic model gateway and provider routing",
+    "producerBranch": "feature/personal-office-loop-06-20260729",
+    "producerImplementation": "e36bb4a740a6626c8c58f55888419e0723a99e79",
+    "producerHandoff": "10fa8c955fcdfa283b9ba67bd3671641fd888247",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "85c0655dd0bf632ba765311ae1333f91cf86eeee"
+  },
+  "integration": {
+    "method": "W0 restored exactly 18 reviewed implementation paths from producer commit e36bb4a and committed them as c9b1337, then restored only loop-06.json and the Loop 06 worklog from 10fa8c9 and committed them as 85c0655. No merge, blind cherry-pick, package edit, DB/schema edit, main/index/preload edit, renderer edit, host-agent edit, secret-store edit or quarantine byte was used.",
+    "implementationCommit": "c9b13370d706475306c780881d2dc010c3bff3ba",
+    "handoffCommit": "85c0655dd0bf632ba765311ae1333f91cf86eeee"
+  },
+  "independentReview": {
+    "socratesDecision": "PASS",
+    "closedFindings": [
+      "Explicitly enabled custom routing fails closed on missing or invalid configuration and missing credentials without managed fallback.",
+      "Managed and custom routes freeze provider, endpoint, model, credential source and retry policy for the request lifetime.",
+      "Only exact known JSON HTTP 400 streaming incompatibility may retry once on the same route and idempotency identity.",
+      "Custom endpoint parsing rejects remote HTTP, credentials, query, fragment, control characters, backslashes, encoded or ambiguous paths and non-exact loopback aliases.",
+      "Persisted invalid custom configuration cannot escape through getConfig, IPC reads or provider construction.",
+      "Route decisions, diagnostics and provider errors remain secret-free and do not reflect raw response bodies or transport messages."
+    ],
+    "residualBoundary": "The protected custom-only host-agent seam remains byte-identical, lacks the version-1 route diagnostic and retains its older broad streaming matcher. It cannot select or fall back to managed and requires a future exact lease to change."
+  },
+  "verification": [
+    {
+      "check": "targeted model-gateway and protected host tests",
+      "result": "PASS",
+      "evidence": "8 files, 90/90 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "107 files, 1217/1217 tests on integration with --no-cache."
+    },
+    {
+      "check": "main-process TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p tsconfig.main.json --noEmit --incremental false exited 0."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1174 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 350 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 18 implementation paths inside LEASE-L06-MODEL-GATEWAY-20260729 and exactly two producer handoff paths. No package, lockfile, DB/schema, main/index/preload, renderer, host-agent, secret-store or quarantine change."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All 18 declared SHA-256 values and byte counts match producer Git blobs at e36bb4a and the staged integration blobs before commit."
+    },
+    {
+      "check": "security and route boundary",
+      "result": "PASS",
+      "evidence": "Production secret scan found zero hits; explicit custom fail-closed behavior, strict official Izzi URL classification, request-frozen routing and same-route-only retry are covered by tests and independent review."
+    },
+    {
+      "check": "GitNexus",
+      "result": "REVIEWED_HIGH",
+      "evidence": "Producer index reported 18 files and 12 real routing processes at HIGH risk. The older integration index reported CRITICAL because same-named validateCustomConfig symbols were fuzzily joined into unrelated processes; exact impact analysis identified five direct ProviderResolver dependents, all covered by the targeted and full suites."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L06-MODEL-GATEWAY-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-06",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-11-WORKTREE",
+      "before": "BLOCKED_BY_LOOP_06",
+      "after": "AVAILABLE_FOR_W0_DISPATCH"
+    }
+  ],
+  "residualRisks": [
+    "The protected custom-only host-agent seam needs a future exact lease if version-1 route diagnostics or the exact retry matcher must cover that IPC path.",
+    "The route decision SHA-256 is deterministic integrity evidence, not an authentication signature or authorization source.",
+    "A user-configured custom route to an official Izzi host remains provider-native for credit classification.",
+    "The production bundle retains the pre-existing large-chunk warning."
+  ]
+}

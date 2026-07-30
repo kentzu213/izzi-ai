@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R5",
+  "decision": "ACCEPTED_IN_LOCAL_RECONCILIATION",
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T18:55:00Z",
+  "authority": "This record accepts the beta.10 HyperFrames short-path patch into the local Personal Office integration ref. It does not authorize push, tag creation, publish, deployment, installer execution, secret retrieval, GitHub environment mutation, browser automation enablement, or stable promotion.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "5d7b3cb407ab3e828c9516145785af0b32e7edee",
+    "canonicalImplementationCommit": "be252ca3f82246252a34e3ad06ec948259088949",
+    "canonicalHandoffCommit": "5d7b3cb407ab3e828c9516145785af0b32e7edee",
+    "producerImplementationCommit": "f8df559f002d9ff4d8535854bc38fd781807e99e",
+    "producerHandoffCommit": "8c827584a499da7f488cbcb3dc1c8becbc81a733",
+    "sourceCommit": "bc0d5d6b88fdab1936ad78be00a0dbec8d4f87e8",
+    "sourceVersionLineage": "v1.14.0-beta.10",
+    "lease": "LEASE-R5-BETA10-RECONCILIATION-20260729",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r5-beta10-reconciliation.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r5-beta10.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "Six non-conflicting files were restored from the exact beta.10 Git objects. The canonical main/index.ts was preserved and received only runtimeScratchParent: app.getPath('temp'). No merge, blind cherry-pick, whole-file index replacement, or untracked packaging input was used.",
+    "changedSourcePaths": 7,
+    "sourceBlobMatches": 6,
+    "indexPatch": "Exactly one added constructor option and zero removed lines.",
+    "twoPhaseCommits": [
+      "be252ca3f82246252a34e3ad06ec948259088949",
+      "5d7b3cb407ab3e828c9516145785af0b32e7edee"
+    ],
+    "externalSourceDriftResolution": "The source worktree was initially verified at the pinned beta.10 commit bc0d5d6 with seven standard porcelain entries and digest 9a8d3964a9e12fb4b7b55944e15e65636986334cff2b09667451e704268500f0. During governance review it began receiving a separate uncommitted beta.11 successor draft, including semantic changes to four R5 paths. From that point forward the mutable source worktree was excluded as an input and no final-stability claim is made. R5 remains anchored to immutable Git objects at the tagged beta.10 source commit and the already verified producer/canonical commits. No beta.11 working-tree byte is accepted by this record."
+  },
+  "excludedSuccessorWork": {
+    "detectedVersion": "1.14.0-beta.11",
+    "status": "UNCOMMITTED_EXTERNAL_DRAFT",
+    "overlappingR5Paths": [
+      "apps/desktop/CHANGELOG.md",
+      "apps/desktop/package.json",
+      "apps/desktop/src/main/customer-marketing/customer-video-studio-service.test.ts",
+      "apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts"
+    ],
+    "disposition": "EXCLUDED_FROM_R5",
+    "requiredNextGate": "A separate reconciliation gate is required after the successor work is committed, pinned and independently reviewed."
+  },
+  "verification": [
+    {
+      "check": "focused HyperFrames tests",
+      "result": "PASS",
+      "evidence": "32/32 producer tests passed; the same canonical source passed 32/32 before the implementation commit."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "122/122 files and 1359/1359 tests passed on the canonical source before commit."
+    },
+    {
+      "check": "main TypeScript and renderer production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "Post-integration canonical pnpm --filter @openclaw/desktop build passed. TypeScript completed with zero errors; Vite transformed 1176 modules. The existing >500 kB chunk advisory remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Canonical lint completed with 0 errors and 350 warnings, below the ceiling of 358."
+    },
+    {
+      "check": "ownership and provenance",
+      "result": "PASS",
+      "evidence": "Exactly seven leased source paths changed. All six non-index staged blobs matched bc0d5d6; main/index.ts matched the reviewed producer blob and its canonical diff contained one added option."
+    },
+    {
+      "check": "filesystem and process security",
+      "result": "PASS",
+      "evidence": "Trusted real-path containment, link rejection, atomic temporary profile creation, before/after snapshot validation, no-overwrite durable copy and finally cleanup were covered by focused and full tests."
+    },
+    {
+      "check": "diff and secret audit",
+      "result": "PASS",
+      "evidence": "git diff --check, conflict-marker scan, diff-only secret scan and scratch-status scan were clean. No real credential or secret value was introduced."
+    },
+    {
+      "check": "quarantine and beta.10 source isolation",
+      "result": "PASS_WITH_SUCCESSOR_DRAFT_EXCLUDED",
+      "evidence": "Quarantine remained at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 standard porcelain entries and governed digest b4850d68cb264c51ba7ae519c0faf4131b5316280b912dc3ed9e62dc76d27be0. The beta.10 source worktree became externally mutable after its initial pinned fingerprint and now contains an uncommitted beta.11 successor draft. Its later entry count and digest are deliberately not treated as R5 evidence. Four overlapping working-tree paths were identified and explicitly excluded. All accepted R5 source blobs came from immutable bc0d5d6 Git objects and match the canonical implementation commit."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "REVIEWED_CRITICAL",
+      "evidence": "Producer analysis reported 3 changed symbols and 139 affected indexed processes. The critical scope was covered by focused tests, the full desktop suite, TypeScript, production build, lint, exact-path provenance and filesystem security review."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Run Windows fresh install, launch, prior-version upgrade and uninstall with data-retention checks.",
+    "Produce real signed/notarized macOS x64 and arm64 artifacts.",
+    "Pass codesign --verify, stapler validate and spctl --assess on the macOS deliverables.",
+    "Run an approved RC tag through platform validation.",
+    "Promote a validated draft or prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "push",
+    "tag creation",
+    "publish",
+    "stable promotion",
+    "deployment",
+    "installer execution",
+    "secret retrieval",
+    "GitHub environment mutation",
+    "browser automation enablement"
+  ]
+}

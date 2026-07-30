@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "04",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T09:28:26Z",
+  "authority": "W0 exact-path integrated and independently verified the producer output after a final Socrates PASS.",
+  "subject": {
+    "title": "Workspace-scoped Live profile, vault, wikilinks and MyGraph projection",
+    "producerBranch": "feature/personal-office-loop-04-20260729",
+    "producerImplementation": "c2551f180dca9eb241f2ba79b5ae0c5d27a30c05",
+    "producerHandoff": "6d9edbeec03631acd8ee98513d637b83c2975437",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "5750c4b6f5929db347c0466e2773950121d99dcf"
+  },
+  "integration": {
+    "method": "W0 restored exactly 13 leased implementation/artifact paths from the reviewed producer commit and committed them as 9a7b216, then restored only loop-04.json and the worklog and committed them as 5750c4b. No merge, blind cherry-pick, quarantine byte, hot seam or package manifest was used.",
+    "implementationCommit": "9a7b216b0717a417efe5cd985c7e61bde8b3a26b",
+    "handoffCommit": "5750c4b6f5929db347c0466e2773950121d99dcf"
+  },
+  "independentReview": {
+    "reviewer": "Socrates",
+    "decision": "PASS",
+    "initialDecision": "CHANGES_REQUIRED",
+    "closedFindings": [
+      "Accepting a learned proposal now rechecks current per-source consent; rejection remains available after revocation.",
+      "Unknown runtime decision values now fail closed instead of falling through to acceptance."
+    ],
+    "correctionCommit": "c2551f180dca9eb241f2ba79b5ae0c5d27a30c05"
+  },
+  "verification": [
+    {
+      "check": "targeted Loop 04 tests",
+      "result": "PASS",
+      "evidence": "6 files, 40/40 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "91 files, 1117/1117 tests on integration with --no-cache."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build; 1167 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "Zero findings across all Loop 04 TypeScript source and tests."
+    },
+    {
+      "check": "hash reconciliation",
+      "result": "PASS",
+      "evidence": "7/7 declared outputs are content-identical after LF normalization."
+    },
+    {
+      "check": "ownership and security",
+      "result": "PASS",
+      "evidence": "Exactly 13 implementation/artifact paths within the amended Loop 04 lease; no DB, index, preload, App, shell, work engine, manifest, secret, process execution or quarantine change."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L04-LIVE-VAULT-GRAPH-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-04",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    }
+  ],
+  "unblocks": [
+    {
+      "loop": "05",
+      "effect": "Context compiler and agent kernel may be dispatched."
+    },
+    {
+      "loop": "08",
+      "effect": "Workspace blueprint and provisioning may be scheduled when a producer slot is available."
+    },
+    {
+      "loop": "10",
+      "effect": "Auth, integrations and grant vault may be scheduled when a producer slot is available."
+    }
+  ],
+  "residualRisks": [
+    "Future arbitrary-root authorization must canonicalize symlinks.",
+    "Later runtime wiring needs stale-lock recovery.",
+    "Graph consumers must honor expiry metadata for historical facts."
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "08",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T12:20:13Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent security PASS plus full integration verification.",
+  "subject": {
+    "title": "Deterministic workspace blueprints and scoped plan-only provisioning",
+    "producerBranch": "feature/personal-office-loop-08-20260729",
+    "producerImplementation": "e25eca01ea1b6184a8f8fee2fbd4af3aa86338c7",
+    "producerCodeCorrection": "67be7fe1b2570500e599066b7e3f69274ba6bce0",
+    "producerHandoff": "fb497ffdb291e89a8461ed74a9413e191667c5d3",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "c192c39"
+  },
+  "integration": {
+    "method": "W0 restored the explicit 12-path implementation tree from producer commit e25eca0 and committed it as 8078eb7, then restored only loop-08.json and the Loop 08 worklog, with final canonical Git-blob provenance reconciled at c192c39. No merge, blind cherry-pick, package edit, DB/schema edit, IPC/runtime seam, renderer shell edit or quarantine byte was used.",
+    "implementationCommit": "8078eb7",
+    "handoffCommit": "c192c39"
+  },
+  "independentReview": {
+    "securityDecision": "PASS",
+    "confidence": "medium",
+    "closedFindings": [
+      "Every public planning entry re-parses descriptor input with explicit trusted provenance before using authority-bearing fields.",
+      "Plan identity binds exact scope, trusted evidence digest and all material derived authority fields through canonical JSON.",
+      "Strict SemVer 2.0 validation rejects leading-zero core versions and empty prerelease identifiers.",
+      "Credential-shaped identifiers, including AWS AKIA and ASIA forms, fail closed without value disclosure.",
+      "Exact tenant, user and workspace scope, plan-only output and tamper revalidation remain fail-closed.",
+      "WorkspaceInstance.health is optional and independent from workspace and provisioning lifecycle state."
+    ],
+    "reviewExecutionGap": "The independent reviewer could not rerun tools in the producer checkout because it had no dependency tree. W0 closed this gap by rerunning targeted tests, TypeScript, the full desktop suite, lint and build on integration."
+  },
+  "verification": [
+    {
+      "check": "targeted workspace-blueprint tests",
+      "result": "PASS",
+      "evidence": "4 files, 27/27 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "103 files, 1173/1173 tests on integration with --no-cache."
+    },
+    {
+      "check": "main-process TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p tsconfig.main.json --noEmit --incremental false exited 0."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1174 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 298 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 12 implementation paths inside LEASE-L08-WORKSPACE-BLUEPRINTS-20260729 and exactly two coordinator handoff paths. No manifest, lockfile, DB/schema, main index/preload, agent/provider, extensions runtime, renderer shell or quarantine change."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All 12 declared SHA-256 values and byte counts match canonical Git blob bytes at producer implementation e25eca0 and integration implementation 8078eb7. Producer and integration blobs are byte-identical."
+    },
+    {
+      "check": "security and side-effect boundary",
+      "result": "PASS",
+      "evidence": "Refined production-secret scan clean; exact tenant/user/workspace scope enforced; output remains effect: plan_only; no download, install, process, grant, activation, account mutation, persistence or network side effect."
+    },
+    {
+      "check": "design boundary",
+      "result": "NOT_APPLICABLE",
+      "evidence": "Loop 08 created no renderer output. Frontend and design skills were applied as no-renderer boundary checks; no visual claim was made."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L08-WORKSPACE-BLUEPRINTS-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-08",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-10-PRODUCER-SLOT",
+      "before": "WAITING_FOR_SLOT",
+      "after": "AVAILABLE_FOR_W0_DISPATCH"
+    }
+  ],
+  "residualRisks": [
+    "Operational provisioning, persistence, IPC, download, install, permission grant and activation remain unimplemented and require new exact leases.",
+    "Remote blueprint verification and marketplace-to-blueprint orchestration remain future integration work.",
+    "The production bundle retains the pre-existing large-chunk warning.",
+    "The root .npmrc emits a non-blocking warning when NODE_AUTH_TOKEN is absent; no install or registry access occurred."
+  ]
+}

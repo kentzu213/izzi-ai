@@ -1,7 +1,16 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  dialog,
+  nativeImage,
+  clipboard,
+  safeStorage,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'node:net';
@@ -37,7 +46,10 @@ import { AgentService } from './agent/agent-service';
 import { ProviderSettingsStore } from './agent/provider-settings-store';
 import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
-import { runHostAgentTurn } from './agent/host-agent';
+import {
+  buildHostAgentSystemPrompt,
+  runHostAgentTurn,
+} from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
 import { AutopostAuth } from './autopost/autopost-auth';
 import { AutopostClient } from './autopost/autopost-client';
@@ -55,7 +67,10 @@ import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
 import { IzziLlmProxy } from './agents/izzi-llm-proxy';
 import { AgentSessionCapturer } from './agents/agent-session-graph';
 import { SessionRecorder } from './agents/agent-session-recorder';
-import { registerMarketingIpc } from './marketing/marketing-ipc';
+import {
+  isTrustedMarketingSender,
+  registerMarketingIpc,
+} from './marketing/marketing-ipc';
 import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
@@ -74,6 +89,31 @@ import {
 import { createStreamCollector } from '../shared/agent-turn-events';
 import { APP_ID, APP_NAME } from '../shared/app-branding';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
+import {
+  createWorkEventForwarder,
+  createWorkEventVisibility,
+  registerWorkIpc,
+  reviewerHashFromUserId,
+  type WorkIpcIdentity,
+  type WorkTenantWorkspaceBinding,
+} from './work/work-ipc';
+import { DEFAULT_WORKSPACE_ID } from './work/work-types';
+import { PersonalOfficeAgentContextRuntime } from './context/agent-turn-context';
+import { ContextCompilationError } from './context/context-error';
+import type { ContextKernelInput } from '../shared/context';
+import {
+  denyAllRuntimeAuthorization,
+  registerRuntimeIpc,
+  RuntimeManager,
+} from './runtime';
+import {
+  MarketplaceOperationService,
+  registerMarketplaceIpc,
+} from './marketplace';
+import { SafeStorageRuntimeEncryptionProvider } from './runtime/safe-storage-encryption';
+import {
+  createOfflineOperationalRuntimeComposition,
+} from './runtime/operational-runtime-composition';
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
@@ -90,6 +130,7 @@ let syncEngine: SyncEngine;
 let extensionManager: ExtensionManager;
 let extensionLoader: ExtensionLoader;
 let localServiceManager: LocalServiceManager;
+let runtimeManager: RuntimeManager;
 let updateChecker: ExtensionUpdateChecker;
 let agentService: AgentService;
 let autopostAuth: AutopostAuth;
@@ -104,7 +145,13 @@ let dockerAgentService: DockerAgentService;
 let customerMarketingService: CustomerMarketingService;
 let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
 let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
+let workTenantWorkspaceBinding: WorkTenantWorkspaceBinding | null = null;
 const queuedProtocolUrls: string[] = [];
+
+function clearWorkTenantAuthorization(): void {
+  workTenantWorkspaceBinding = null;
+  if (autopostAuth) autopostAuth.clear();
+}
 
 /**
  * Resolve the Izzi credential for the LLM proxy, never logged / never sent to the
@@ -280,6 +327,113 @@ function setupIPC() {
   );
   registerMarketingIpc(marketingWorkspace);
 
+  // Personal Office work bridge. Identity and tenant scope are resolved fresh
+  // in main for every request/event; no renderer-supplied user claim is trusted.
+  const workService = dbManager.getWorkService();
+  const workIdentity: WorkIpcIdentity = {
+    resolveReviewerHash: () =>
+      reviewerHashFromUserId(authManager.getCurrentUser()?.id),
+    resolveTenantWorkspaceBindings: () => {
+      const reviewerHash = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+      const workspaceId = autopostAuth.getWorkspaceId();
+      if (!reviewerHash || !workspaceId) return [];
+      if (
+        !workTenantWorkspaceBinding
+        || workTenantWorkspaceBinding.workspaceId !== workspaceId
+      ) {
+        workTenantWorkspaceBinding = { reviewerHash, workspaceId };
+      }
+      return [workTenantWorkspaceBinding];
+    },
+  };
+  registerWorkIpc(workService, workIdentity);
+  const operationalRuntimeComposition = createOfflineOperationalRuntimeComposition({
+    rootDir: path.join(
+      app.getPath('userData'),
+      'personal-office',
+      'operational-runtime',
+    ),
+    encryption: new SafeStorageRuntimeEncryptionProvider(safeStorage),
+  });
+  const marketplaceOperationService = new MarketplaceOperationService({
+    // Loop 15 deliberately does not trust the legacy Marketplace API or
+    // fallback extension catalog. Loop 16/17 will register these authorities
+    // behind their own leases; until then the bridge is visibly unavailable.
+    catalogAuthority: {
+      load: async () => null,
+    },
+    identityAuthority: {
+      resolveScope: async () => {
+        const reviewerHash = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+        const workspace = workService.repo.getWorkspace(DEFAULT_WORKSPACE_ID);
+        if (
+          !reviewerHash
+          || !workspace
+          || workspace.kind !== 'personal'
+          || workspace.id !== DEFAULT_WORKSPACE_ID
+        ) {
+          return null;
+        }
+        return {
+          tenantId: `personal:${reviewerHash}`,
+          userId: reviewerHash,
+          workspaceInstanceId: workspace.id,
+        };
+      },
+    },
+    packageVerifier: {
+      verify: async () => {
+        throw new Error('PACKAGE_VERIFIER_NOT_REGISTERED');
+      },
+    },
+    approvals: {
+      request: async () => ({
+        approvalId: 'unavailable',
+        state: 'unavailable' as const,
+        bindingDigest: 'unavailable',
+      }),
+      get: async () => null,
+    },
+    grants: {
+      resolve: async () => ({
+        status: 'unavailable' as const,
+        code: 'GRANT_AUTHORITY_NOT_REGISTERED',
+      }),
+    },
+    provisioner: {
+      provision: async () => ({
+        status: 'unavailable' as const,
+        code: 'PROVISIONER_NOT_REGISTERED',
+      }),
+    },
+    installer: {
+      install: async () => ({
+        status: 'unavailable' as const,
+        code: 'INSTALLER_NOT_REGISTERED',
+      }),
+    },
+    completedReceiptSink:
+      operationalRuntimeComposition.marketplaceCompletedReceiptSink,
+  });
+  registerMarketplaceIpc(marketplaceOperationService);
+  const agentContextRuntime = new PersonalOfficeAgentContextRuntime({
+    rootDir: path.join(app.getPath('userData'), 'personal-office', 'live'),
+    resolveWorkspace: (workspaceId) => workService.repo.getWorkspace(workspaceId),
+    snapshotWriter: workService.repo,
+  });
+  dbManager.setWorkEventSink(
+    createWorkEventForwarder(
+      () => mainWindow?.webContents ?? null,
+      createWorkEventVisibility(workService, workIdentity),
+    ),
+  );
+  registerRuntimeIpc(runtimeManager, {
+    // Runtime execution is production-disabled in Loop 11 (no adapters and a
+    // deny-all authorizer), so health visibility is also empty until a future
+    // exact tenant/user/workspace authority adapter is explicitly leased.
+    listAuthorizedRuntimeScopes: () => [],
+  });
+
   // ── Window controls ──
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
@@ -294,21 +448,25 @@ function setupIPC() {
 
   // ── Auth (Supabase) ──
   ipcMain.handle('auth:login', async (_event, credentials: { email: string; password: string }) => {
+    clearWorkTenantAuthorization();
     const result = await authManager.login(credentials.email, credentials.password);
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:loginWithGoogle', async () => {
+    clearWorkTenantAuthorization();
     const result = await authManager.loginWithGoogle();
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:signup', async (_event, data: { email: string; password: string; name: string }) => {
+    clearWorkTenantAuthorization();
     const result = await authManager.signup(data.email, data.password, data.name);
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
   ipcMain.handle('auth:logout', async () => {
+    clearWorkTenantAuthorization();
     customerMarketingService.clearPendingWorkspaceInvitationCopy();
     customerMarketingInvitationCoordinator?.clearPending();
     bufferedCustomerMarketingInvitationStatus = null;
@@ -437,6 +595,7 @@ function setupIPC() {
       manifest: {
         displayName: extension.manifest.displayName,
         description: extension.manifest.description,
+        version: extension.manifest.version,
         private: extension.manifest.private === true,
         customerMarketing: extension.manifest.customerMarketing === true,
         customerMarketingCapability: extension.manifest.customerMarketingCapability,
@@ -448,6 +607,7 @@ function setupIPC() {
     customerMarketingWorkspaceClient,
     (value) => clipboard.writeText(value),
     customerMarketingCredentialVault,
+    workService,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
@@ -1010,7 +1170,7 @@ function setupIPC() {
   ipcMain.handle('autopost:setEnabled', async (_event, enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> => {
     dbManager.setSetting('autopost_enabled', enabled ? '1' : '0');
     if (enabled) await syncAutopostExtensionCredentials();
-    else autopostAuth.clear();
+    else clearWorkTenantAuthorization();
     return { ok: true, enabled: !!enabled };
   });
   // Read surfaces for the in-app Auto-Post page (native, over the same REST bridge
@@ -1083,7 +1243,9 @@ function setupIPC() {
         images?: string[];
       },
     ): Promise<{ reply?: string; error?: string }> => {
-      const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
+      if (!isTrustedMarketingSender(event)) return { error: 'untrusted-sender' };
+      const rawMessage = typeof payload?.message === 'string' ? payload.message : '';
+      const message = rawMessage.trim();
       const turnId = typeof payload?.turnId === 'string' ? payload.turnId : '';
       const images = Array.isArray(payload?.images)
         ? payload.images.filter((u): u is string => typeof u === 'string' && u.startsWith('data:image/'))
@@ -1114,6 +1276,29 @@ function setupIPC() {
       const permStore = new AgentPermissionStore(dbManager);
       const permMode = permStore.getMode();
       if (permMode === 'agent' || permMode === 'agent-full') {
+        if (images.length > 0) {
+          return { error: 'multimodal-context-binding-unsupported' };
+        }
+        const ownerId = reviewerHashFromUserId(authManager.getCurrentUser()?.id);
+        if (!ownerId) return { error: 'authentication-required' };
+        const workingDir = permStore.getWorkingDir();
+        let context: ContextKernelInput;
+        try {
+          context = (await agentContextRuntime.prepare({
+            scope: {
+              workspaceId: DEFAULT_WORKSPACE_ID,
+              ownerId,
+            },
+            safetySystemPrompt: buildHostAgentSystemPrompt(workingDir),
+            rawRequest: rawMessage,
+          })).context;
+        } catch (error) {
+          return {
+            error: error instanceof ContextCompilationError
+              ? error.code
+              : 'context-preparation-failed',
+          };
+        }
         const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
         // Auto-Post tools: enabled by the manual flag OR by installing the Social
         // Auto Poster marketplace product. Gives the agent list/draft/schedule via
@@ -1126,11 +1311,11 @@ function setupIPC() {
         const result = await runHostAgentTurn({
           config: cfg,
           apiKey: key,
-          message,
-          history,
+          message: rawMessage,
+          history: history.filter((entry) => entry.role !== 'system'),
           images,
           mode: permMode,
-          workingDir: permStore.getWorkingDir(),
+          workingDir,
           turnId,
           signal: controller.signal,
           pollInjection: () => control.queue.shift(),
@@ -1142,6 +1327,7 @@ function setupIPC() {
           classifyExtraRisk: autopostClient
             ? (name) => (isAutopostTool(name) ? classifyAutopostRisk(name) : undefined)
             : undefined,
+          context,
           // The agent's live plan → real tasks on the Replay board (Todo/In-Progress/
           // Done). Written to the shared agent_tasks table + pushed live via the
           // 'agent:stream' task_upsert channel the board already listens on.
@@ -1209,7 +1395,8 @@ function setupIPC() {
 
   // Stop an in-flight agent turn (Stop button). Aborts the streaming fetch; the
   // turn returns error 'aborted' and the partial answer already streamed stays.
-  ipcMain.handle('customProvider:abort', (_event, turnId: string): { ok: boolean } => {
+  ipcMain.handle('customProvider:abort', (event, turnId: string): { ok: boolean } => {
+    if (!isTrustedMarketingSender(event)) return { ok: false };
     const c = typeof turnId === 'string' ? activeAgentTurns.get(turnId) : undefined;
     if (!c) return { ok: false };
     c.controller.abort();
@@ -1218,7 +1405,8 @@ function setupIPC() {
 
   // Inject a user "steering" message into a running turn; the agent folds it in
   // before its next model round so it can course-correct without a new turn.
-  ipcMain.handle('customProvider:inject', (_event, turnId: string, text: string): { ok: boolean } => {
+  ipcMain.handle('customProvider:inject', (event, turnId: string, text: string): { ok: boolean } => {
+    if (!isTrustedMarketingSender(event)) return { ok: false };
     const c = typeof turnId === 'string' ? activeAgentTurns.get(turnId) : undefined;
     const t = typeof text === 'string' ? text.trim() : '';
     if (!c || !t) return { ok: false };
@@ -1401,6 +1589,11 @@ async function initServices() {
   // `service` block, the loader boots its backend (docker compose) via this
   // manager, then injects the resolved backendUrl into the extension's settings.
   localServiceManager = new LocalServiceManager();
+  // Loop 11 control plane. Adapters are registered only when their execution
+  // requirements can be proven; an empty registry is intentionally fail-closed.
+  // The safe browser POC uses an injected fake driver in tests and does not
+  // globally enable browser.automation or production account access.
+  runtimeManager = new RuntimeManager([], denyAllRuntimeAuthorization);
   extensionLoader.setServiceManager(localServiceManager);
   extensionLoader.onServiceLog = (extensionId, line) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1450,6 +1643,7 @@ async function initServices() {
 // Handle OAuth callback from custom protocol
 function handleOAuthCallback(url: string) {
   if (url.startsWith('openclaw://auth/callback')) {
+    clearWorkTenantAuthorization();
     authManager.handleOAuthCallback(url).then(async (result) => {
       if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
       if (result.success && mainWindow) {
@@ -1573,7 +1767,14 @@ app.whenReady().then(async () => {
       // Silent fail — profile refresh is best-effort
     }
   });
-
+}).catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : 'unknown startup error';
+  console.error('[OpenClaw] Startup initialization failed:', message);
+  dialog.showErrorBox(
+    'Izzi AI could not start',
+    'The local workspace could not be initialized safely. No work commands were enabled. Restart the app or restore the latest local database backup.',
+  );
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
@@ -1620,6 +1821,7 @@ app.on('before-quit', async () => {
     await izziLlmProxy.stop();
   }
   if (dbManager) {
+    dbManager.setWorkEventSink(null);
     dbManager.close();
   }
 });

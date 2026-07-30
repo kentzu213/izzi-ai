@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "14",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T23:30:00Z",
+  "authority": "W0 accepted authenticated Live.md context wiring only after exact-path producer reconciliation, two blocking security corrections and the complete canonical verification matrix.",
+  "subject": {
+    "title": "Authenticated Live.md context for host-agent turns",
+    "producerBranch": "feature/personal-office-loop-14-20260729",
+    "producerImplementationCommits": [
+      "e903540014b25a3407c021b3a67dffb71aee5ca2",
+      "3c4b112"
+    ],
+    "producerHandoffCommit": "cef4930548382ffcee40dd994a11b845e9217c18",
+    "producerNormalizationCommit": "01edbe61483b197a6d1dea82162ad8f4828c4cc7",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "8487c0e051055b81aa3ca195ecdf5b60ac749bcf"
+  },
+  "integration": {
+    "method": "W0 replayed exactly three leased implementation paths from immutable producer commits, verified them with the canonical toolchain, expanded the hot-file change request before the sender-trust correction, and reconciled only the handoff JSON/worklog. No merge, blind cherry-pick, quarantine input or prohibited-path edit was used.",
+    "implementationCommits": [
+      "80545a232881187a80d9d425ffb1bc0d43bed5a5",
+      "80038bb"
+    ],
+    "changeRequestAmendmentCommit": "cf91cc1922a836a0ede0b554a64ad14afc22d7d4",
+    "handoffReconciliationCommit": "a206397e2b6a9937fe86b133dca0290120a11287",
+    "handoffNormalizationCommit": "8487c0e051055b81aa3ca195ecdf5b60ac749bcf",
+    "producerBlobEquality": "3/3 final Git blobs matched producer commit 3c4b112 at canonical commit 80038bb."
+  },
+  "review": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "method": "Codex-only in-process review, per user direction; no Kiro or subagent writer/reviewer was used.",
+    "closedFindings": [
+      "Unknown Live/filesystem failures no longer return arbitrary error.message or absolute userData paths to renderer.",
+      "customProvider:abort and customProvider:inject now reject unknown and child-frame senders before active-turn lookup or input parsing.",
+      "Owner authority is derived only from the authenticated main-process session and converted to the existing opaque reviewer hash.",
+      "Workspace authority is fixed to the persisted personal workspace and verified as kind personal.",
+      "Live.md storage uses a fixed-width scope hash and contains no raw user id or renderer path input.",
+      "Only public_metadata and personal_graph content may enter the compiler; local_files and secrets fail closed.",
+      "Renderer-supplied system history is removed in agent mode and multimodal context is rejected before provider access.",
+      "Only Work snapshot metadata is persisted; safety prompt, raw request and rendered context are not stored."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted context and host-agent tests",
+      "result": "PASS",
+      "evidence": "Final correction: 2 files, 11/11 tests. Complete context matrix: 6 files, 28/28 tests."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "124 files, 1376/1376 tests after final correction."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit after final correction."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors and 350 warnings, below maximum 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly three implementation paths were integrated under LEASE-L14-CONTEXT-RUNTIME-20260729; zero auth implementation, DB/schema, Work/Live/compiler/kernel contract, host-agent, preload, renderer, runtime, package or lockfile paths changed."
+    },
+    {
+      "check": "diff and secret audit",
+      "result": "PASS",
+      "evidence": "git diff --check passed after the handoff normalization commit and added lines contained no credential assignment or private-key material."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEGRADED_REVIEWED",
+      "evidence": "The index recognized three changed files but was seven commits stale and could not map setupIPC symbols. Re-index was not run because it rewrites W0-reserved managed files. Manual hot-file review plus full tests, both typechecks, build and lint covered the residual risk."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 459 status entries and status SHA-256 b8b124cd1de43b73ef1cf3697df519f1049ccd923ecb024dd9bf166be82c1c8d."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "PO-PRODUCT-CONTEXT-RUNTIME",
+      "before": "PROVISIONAL",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-15",
+      "before": "BLOCKED_BY_LOOP_14",
+      "after": "ELIGIBLE_FOR_GOVERNED_START"
+    }
+  ],
+  "residualRisks": [
+    "The production bundle retains the pre-existing large-chunk advisory.",
+    "GitNexus must be refreshed in a future W0-owned maintenance window before its symbol/process mapping can be treated as current.",
+    "This loop does not authorize runtime adapters, installation, deployment, browser automation enablement, push, secret retrieval or external effects."
+  ]
+}

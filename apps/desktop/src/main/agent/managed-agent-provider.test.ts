@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('axios', () => ({
+  default: { request: vi.fn() },
+}));
+
 describe('ManagedAgentProvider mock mode', () => {
   afterEach(() => {
     delete process.env.STARIZZI_MOCK_AGENT_MODE;

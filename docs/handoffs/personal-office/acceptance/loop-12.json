@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "12",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T15:54:00Z",
+  "authority": "W0 reconciled the final reviewed producer output by exact path and accepted it only after independent security and Socrates PASS plus full canonical verification and browser smoke evidence.",
+  "subject": {
+    "title": "Marketing Workspace reference and final shell bridge",
+    "producerBranch": "feature/personal-office-loop-12-20260729",
+    "producerImplementation": "f54aba342a774abac1c663224d2618fd0de6b5d3",
+    "producerHandoff": "517dc1805cdaa8958f05e0970a6050ca9a1ad540",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "e58a56d"
+  },
+  "integration": {
+    "method": "W0 exact-path integrated the initial reviewed implementation as af6e57f, applied only the five final blocker-fix source paths as dbd686e, and reconciled the final producer handoff package as e58a56d. No merge, blind cherry-pick, package/lockfile edit, database/schema edit, auth, updater, deployment or quarantine write was used.",
+    "implementationCommits": [
+      "af6e57f",
+      "dbd686e"
+    ],
+    "handoffReconciliationCommit": "e58a56d",
+    "producerHandoffProvenance": "517dc1805cdaa8958f05e0970a6050ca9a1ad540"
+  },
+  "independentReview": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "reviewedProducerCommit": "f54aba342a774abac1c663224d2618fd0de6b5d3",
+    "closedFindings": [
+      "Trusted IPC sender validation precedes payload processing and service execution.",
+      "Host evidence requires strict schema, digest, freshness, exact installed package identity and authenticated tenant, user and workspace scope.",
+      "Local or API-disabled workspace mode fails closed with workspace_unavailable and cannot provision Unified Work.",
+      "Customer Marketing remains approval and write authority; Unified Work is an append-only, idempotent projection and performs no external effect.",
+      "Runtime extension version is sourced from candidate.manifest.version, matching the main-process candidate shape.",
+      "Malformed or non-object Customer Marketing source records remain byte-preserved; saveOnboarding returns a recoverable error before any remote workspace call and the central write guard prevents overwrite.",
+      "The Setup drawer traps Tab and Shift+Tab within the dialog and restores the previously focused element on close.",
+      "No real publish, spend, send, delete, credential exposure, package installation, database migration, auth, updater or deployment action was introduced."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted Loop 12 regression tests",
+      "result": "PASS",
+      "evidence": "115 tests passed, covering malformed-source preservation, runtime manifest version, local-workspace denial and focus cycling."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "119 files, 1288/1288 tests on canonical."
+    },
+    {
+      "check": "main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and renderer tsconfig.json both passed with no emit."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "Vite production build passed with 1176 modules transformed; the existing large-chunk warning remains."
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors and 37 warnings; remaining warnings are existing hub-file any debt and an ignored global typings surface."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 19 implementation paths are inside LEASE-L12-MARKETING-REFERENCE-20260729. No package manifest, lockfile, database/schema, auth, updater, deployment or secret file changed."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS_WITH_NORMALIZATION_NOTE",
+      "evidence": "All 19 canonical Git blobs equal the producer f54aba3 blobs. Raw working-tree SHA-256 differed on 13 paths only because of CRLF/LF checkout normalization; Git object identity is authoritative for source equality."
+    },
+    {
+      "check": "security and authority boundary",
+      "result": "PASS",
+      "evidence": "Exact authenticated tenant/user/workspace scope, strict host evidence and installed-package validation, local-workspace denial, malformed-source preservation, append-only idempotency and no external-effect execution were independently verified."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_AFTER_CRITICAL_SCOPE_REVIEW",
+      "evidence": "Canonical compare reported 95 changed symbols and 147 affected symbols at CRITICAL risk. The expected main/preload/Customer Marketing/renderer hub blast radius was covered by the full test suite, both typechecks, production build, lint and independent reviews."
+    },
+    {
+      "check": "browser smoke",
+      "result": "PASS_WITH_HOSTED_DRAWER_LIMIT",
+      "evidence": "Desktop Vite loaded, command palette and Customer Marketing room opened, non-Electron fallback truthfully showed workspace_unavailable, Marketplace demo remained non-installable, and 390x844 had no horizontal overflow. Electron-hosted Setup drawer interaction was not directly exercised; its focus behavior is covered by unit tests."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5."
+    }
+  ],
+  "writerIsolationIncident": {
+    "detected": true,
+    "unauthorizedReviewerCommits": [
+      "35845da",
+      "fccb95c",
+      "7d33295"
+    ],
+    "resolution": "W0 traced all producer worktree movement through reflog, stopped reviewer writers, preserved the reviewed source correction in f54aba3, retained a handoff-only final producer phase at 517dc18, and reran ownership, security and full canonical verification. No concurrent writer remained at acceptance."
+  },
+  "gateEffects": [
+    {
+      "gate": "LEASE-L12-MARKETING-REFERENCE-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-12",
+      "before": "PROVISIONAL",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "RELEASE-GATE-R",
+      "before": "BLOCKED_BY_LOOP_12",
+      "after": "ELIGIBLE_FOR_SEPARATE_REVIEW"
+    }
+  ],
+  "residualRisks": [
+    "The Electron-hosted Setup drawer was not visually exercised in the final browser smoke; focus trapping and restoration are covered by regression tests.",
+    "The production bundle retains the pre-existing large-chunk warning.",
+    "Marketplace demo/catalog fallback remains intentionally non-installable, and local/API-disabled workspace mode cannot provision.",
+    "Release, push and deployment remain separate unauthorised actions; this acceptance only closes Loop 12."
+  ]
+}

@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   CustomerVideoStudioService,
+  deriveImportedSourceIdentity,
   resolveConfiguredBinaryPath,
   supportsManagedHyperframesPreview,
 } from './customer-video-studio-service';
@@ -256,6 +257,19 @@ describe('CustomerVideoStudioService F5-TTS capability boundary', () => {
 });
 
 describe('CustomerVideoStudioService import boundary', () => {
+  it('does not collapse distinct canonical paths that differ only by case', () => {
+    const upper = deriveImportedSourceIdentity(
+      'customer-abcdef123456',
+      'C:\\workspace\\Project',
+    );
+    const lower = deriveImportedSourceIdentity(
+      'customer-abcdef123456',
+      'C:\\workspace\\project',
+    );
+
+    expect(upper).not.toBe(lower);
+  });
+
   it('copies only the project surface into a tenant root and returns no source path', async () => {
     const root = await makeRoot();
     const source = await createProject(root);
@@ -271,6 +285,7 @@ describe('CustomerVideoStudioService import boundary', () => {
 
     expect(imported).toEqual(expect.objectContaining({
       projectId: 'izziapi-walkthrough',
+      sourceIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
       width: 1080,
       height: 1920,
       sceneCount: 2,
@@ -294,49 +309,11 @@ describe('CustomerVideoStudioService import boundary', () => {
     const first = await service.importProject('customer-abcdef123456', source);
     await fs.writeFile(path.join(source, 'assets', 'logo.txt'), 'changed', 'utf8');
     const second = await service.importProject('customer-abcdef123456', source);
+    const otherWorkspace = await service.importProject('customer-fedcba654321', source);
 
     expect(first.evidenceDigest).not.toBe(second.evidenceDigest);
-  });
-
-  it('normalizes declared legacy project ids for an explicit re-import migration', async () => {
-    const root = await makeRoot();
-    const source = await createProject(root);
-    const workflowPath = path.join(source, 'video-workflow.json');
-    const workflow = JSON.parse(await fs.readFile(workflowPath, 'utf8'));
-    workflow.project.id = 'izziapi-izzi-ai-howto';
-    workflow.project.legacy_ids = [
-      'izziapi-starizzi-howto',
-      'IZZIAPI STARIZZI HOWTO',
-      'izziapi-izzi-ai-howto',
-    ];
-    await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), 'utf8');
-    const service = new CustomerVideoStudioService({
-      rootPath: path.join(root, 'runtime'),
-      appRoot: path.join(root, 'app'),
-    });
-
-    const imported = await service.importProject('customer-abcdef123456', source);
-
-    expect(imported.legacyProjectIds).toEqual(['izziapi-starizzi-howto']);
-  });
-
-  it('rejects legacy project ids that are not approved for the canonical project', async () => {
-    const root = await makeRoot();
-    const source = await createProject(root);
-    const workflowPath = path.join(source, 'video-workflow.json');
-    const workflow = JSON.parse(await fs.readFile(workflowPath, 'utf8'));
-    workflow.project.id = 'izziapi-izzi-ai-howto';
-    workflow.project.legacy_ids = ['unrelated-project'];
-    await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), 'utf8');
-    const runtimeRoot = path.join(root, 'runtime');
-    const service = new CustomerVideoStudioService({
-      rootPath: runtimeRoot,
-      appRoot: path.join(root, 'app'),
-    });
-
-    await expect(service.importProject('customer-abcdef123456', source))
-      .rejects.toThrow('legacy project ID chưa được Izzi AI cho phép');
-    await expect(fs.stat(runtimeRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(first.sourceIdentity).toBe(second.sourceIdentity);
+    expect(otherWorkspace.sourceIdentity).not.toBe(first.sourceIdentity);
   });
 
   it('rejects secret files nested in copied project directories', async () => {

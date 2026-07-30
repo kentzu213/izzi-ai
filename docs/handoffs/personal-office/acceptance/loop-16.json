@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "16",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T23:59:57Z",
+  "authority": "W0 accepted the account and IntegrationGrant operation boundary only after exact-path producer reconciliation, security corrections and the complete canonical verification matrix. Production OAuth/account adapters remain outside this acceptance.",
+  "subject": {
+    "title": "Account and IntegrationGrant operation boundary",
+    "producerBranch": "feature/personal-office-loop-16-20260729",
+    "producerImplementationCommits": [
+      "22a8a089673d67183d6f93d9d310688da57482a3",
+      "40a8a3c077ea2e799913545322ada3bd4f56bb73",
+      "f992302aff3a07ecf00aeab0616550e0c9c57f1b"
+    ],
+    "producerHandoffCommit": "fe71bb6151f210d0a5bc4730d9c714af86a4ff76",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "9f0fccabe80c88ca4f309148e4a589ff7967e9b0"
+  },
+  "integration": {
+    "method": "W0 replayed exactly six implementation paths from the immutable producer branch, verified every staged Git blob, committed them as d7bb1b7, then reconciled only the producer handoff JSON and worklog as 9f0fcca. No merge, blind cherry-pick, quarantine input or prohibited-path edit was used.",
+    "implementationCommit": "d7bb1b70e00cf3b98cbeaf863cbc4e5a655bf1bd",
+    "handoffReconciliationCommit": "9f0fccabe80c88ca4f309148e4a589ff7967e9b0",
+    "producerBlobEquality": "6/6 implementation Git blobs matched producer commit f992302 at canonical commit d7bb1b7."
+  },
+  "review": {
+    "securityDecision": "PASS",
+    "socratesDecision": "PASS",
+    "method": "Codex-only in-process review under the security-review, backend-patterns and verification-loop skills; Kiro and child agents had no writer authority.",
+    "closedFindings": [
+      "Authenticated main authority owns tenant, user, workspace, grant id, integration and exact scopes.",
+      "Every connect or revoke effect requires an approval digest bound to action, deterministic operation id and exact scope.",
+      "The connector may return only an integration_vault SecretRef; raw credentials and malformed evidence cannot cross the receipt or repository boundary.",
+      "Adapter exceptions map to stable codes and do not return exception text.",
+      "A grant is persisted only after exact GrantVault scope and resolvability checks pass.",
+      "Post-connect vault or persistence failure attempts compensating remote revocation and vault invalidation.",
+      "Revocation order is remote, vault, metadata; partial cleanup remains failed and marks metadata invalid when possible.",
+      "No hot file, auth implementation, DB/schema, renderer, preload, package, runtime adapter or legacy integrations service changed."
+    ]
+  },
+  "verification": [
+    {
+      "check": "focused grant operation tests",
+      "result": "PASS",
+      "evidence": "1 file, 10/10 tests."
+    },
+    {
+      "check": "full canonical desktop tests",
+      "result": "PASS",
+      "evidence": "128 files, 1398/1398 tests."
+    },
+    {
+      "check": "canonical main and renderer TypeScript",
+      "result": "PASS",
+      "evidence": "tsconfig.main.json and tsconfig.json passed with --noEmit."
+    },
+    {
+      "check": "canonical production build",
+      "result": "PASS_WITH_EXISTING_ADVISORY",
+      "evidence": "Vite 6.4.1 transformed 1176 modules; existing large-chunk advisory only."
+    },
+    {
+      "check": "canonical lint ceiling",
+      "result": "PASS_WITH_WARNINGS",
+      "evidence": "0 errors and 350 warnings, below maximum 358. The changed grant-operation surface passed with zero warnings."
+    },
+    {
+      "check": "ownership, provenance, whitespace and secret audit",
+      "result": "PASS",
+      "evidence": "Exactly six implementation paths; 6/6 producer blob equality; zero prohibited paths; git diff --check clean; no credential-shaped added assignment or private-key material."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "DEGRADED_REVIEWED",
+      "evidence": "The local CLI required a disambiguated repository id and did not accept the displayed path-qualified label. No index rewrite was attempted. Manual dependency review plus focused/full tests, both typechecks, build and lint covered the new isolated module."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at HEAD 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 459 entries and fingerprint 90f36adf09cbdbae401a7b1abbf8406ffcde5bbbe4106e576ff63374d89d2f05."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "PO-PRODUCT-INTEGRATION-GRANT-BOUNDARY",
+      "before": "PROVISIONAL",
+      "after": "ACCEPTED"
+    },
+    {
+      "gate": "LOOP-17",
+      "before": "BLOCKED_BY_LOOP_16",
+      "after": "ELIGIBLE_FOR_GOVERNED_START"
+    }
+  ],
+  "residualRisks": [
+    "Production OAuth/account, Work-approval, repository and vault adapters remain unregistered and no real connect/revoke action was performed.",
+    "The service is not exposed through renderer/preload IPC; composition requires a separate hot-file lease and an audited izziapi server contract.",
+    "The production bundle retains the pre-existing large-chunk advisory.",
+    "GitNexus must be refreshed or its duplicate repository labels repaired in a W0-owned maintenance window."
+  ]
+}

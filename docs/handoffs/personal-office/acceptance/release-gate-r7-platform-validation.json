@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R7",
+  "decision": "ACCEPTED_NON_PUBLISHING_PLATFORM_VALIDATION_HARNESS",
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-29T23:59:59.999Z",
+  "authority": "This record accepts the non-publishing Windows/macOS platform-validation harness, tests, manual read-only workflow and playbook into the local Personal Office integration ref. It does not authorize workflow execution, dependency installation, installer or application execution, signing-secret retrieval, GitHub mutation, push, tag, publish, deploy or stable promotion.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+    "canonicalImplementationCommit": "c28221eeba48eff67690f1fe1e78c8f12b0907ee",
+    "canonicalHandoffCommit": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+    "producerImplementationCommit": "4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d",
+    "producerHandoffCommit": "293075bf4b005236e68c9abf49178e1430a131e7",
+    "lease": "LEASE-R7-PLATFORM-VALIDATION-20260729",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r7-platform-validation.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "Four implementation artifacts were restored from the final reviewed producer implementation commit, followed by the two immutable handoff artifacts from the producer handoff commit. No merge, cherry-pick, whole-worktree restore, package write or quarantine byte was used.",
+    "changedImplementationPaths": 4,
+    "changedHandoffPaths": 2,
+    "sourceBlobMatches": 4,
+    "twoPhaseCommits": [
+      "c28221eeba48eff67690f1fe1e78c8f12b0907ee",
+      "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0"
+    ],
+    "lineEndingNote": "All four canonical staged Git blobs exactly matched the reviewed producer blobs. Producer handoff SHA-256 values describe producer working-tree bytes; canonical CRLF checkout bytes may differ, so immutable Git blob equality is the integration provenance authority."
+  },
+  "verification": [
+    {
+      "check": "focused harness tests and syntax",
+      "result": "PASS",
+      "evidence": "8/8 Node tests passed; node --check passed for the harness and test."
+    },
+    {
+      "check": "workflow policy parse",
+      "result": "PASS",
+      "evidence": "YAML parsed successfully. The workflow has only workflow_dispatch, contents/packages read permissions, three checkout steps with persist-credentials:false, two electron-builder commands each containing --publish never, and no release action or shell-visible secret/token reference."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "137/137 test files and 1450/1450 tests passed on canonical."
+    },
+    {
+      "check": "main TypeScript and production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "tsconfig.main.json completed with zero errors. Vite transformed 1176 modules; the existing renderer chunk advisory above 500 kB remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Changed-file lint passed with zero findings. Repository lint completed with 0 errors and 350 warnings, below the ceiling of 358."
+    },
+    {
+      "check": "security invariants",
+      "result": "PASS",
+      "evidence": "Signature probes are fixed argv with shell:false, require and record the expected Windows certificate thumbprint or Apple Team ID, re-hash artifacts after probes, reject traversal/junctions and constrain create-only evidence output under a canonical pre-existing root. Static evidence and signed evidence both keep stableReleaseAccepted:false."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly six leased paths changed. No package/lockfile, existing release workflow/config, product source, DB/schema, preload, renderer or quarantine path changed. Secret-pattern and git diff checks passed."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_LOW_RISK",
+      "evidence": "Staged analysis reported four changed files, zero indexed changed symbols, zero affected processes and low risk."
+    },
+    {
+      "check": "independent review",
+      "result": "PASS",
+      "evidence": "Independent correctness and security reviewers passed the final producer head after corrections for checkout-token wording, per-command workflow assertions, signer identity, post-probe TOCTOU, output containment and lint."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 porcelain entries and fingerprint B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0."
+    }
+  ],
+  "remainingPlatformGates": [
+    "Run the manual workflow on an explicitly authorized candidate ref.",
+    "Provide expected public signer identity metadata for signed-mode probes.",
+    "Run Windows fresh install, launch, prior-version upgrade and uninstall with data-retention checks.",
+    "Produce real signed/notarized macOS x64 and arm64 artifacts.",
+    "Pass codesign, stapler and Gatekeeper checks on the macOS deliverables.",
+    "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled.",
+    "Promote a validated draft or prerelease only through a separate explicit admin action."
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "workflow execution",
+    "dependency installation",
+    "installer or application execution",
+    "signing-secret retrieval",
+    "GitHub environment mutation",
+    "push",
+    "tag creation",
+    "publish",
+    "deployment",
+    "stable promotion"
+  ]
+}

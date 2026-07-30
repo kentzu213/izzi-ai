@@ -13,8 +13,6 @@ import type {
   CustomerMarketingResourceMutationResult,
   CustomerMarketingWorkflowListResult,
   CustomerMarketingWorkflowMutationResult,
-  CustomerMarketingWorkflowPrepareRequest,
-  CustomerMarketingWorkflowReviewRequest,
   CustomerMarketingWorkflowSourceListResult,
   CustomerMediaPreviewInput,
   CustomerMediaProjectSelectionResult,
@@ -40,6 +38,11 @@ import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
+import {
+  parseMarketingWorkspaceProvisionRequest,
+  type MarketingWorkspaceEvidenceResult,
+  type MarketingWorkspaceProvisionResult,
+} from '../../shared/marketing-workspace';
 import {
   parseMarketingCalendarInput,
   parseMarketingAnalyticsWindow,
@@ -134,6 +137,27 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerProductMarketingContextSaveInput(payload);
     if (!parsed) throw new Error('Payload Product Marketing Context không hợp lệ.');
     return service.saveProductMarketingContext(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:getReferenceWorkspaceEvidence', async (
+    event,
+    packageKey: unknown,
+  ): Promise<MarketingWorkspaceEvidenceResult> => {
+    trusted(event);
+    if (typeof packageKey !== 'string') {
+      return { ok: false, reason: 'package_not_installed' };
+    }
+    return service.getReferenceWorkspaceEvidence(packageKey);
+  });
+
+  ipcMain.handle('customerMarketing:provisionReferenceWorkspace', async (
+    event,
+    payload: unknown,
+  ): Promise<MarketingWorkspaceProvisionResult> => {
+    trusted(event);
+    const parsed = parseMarketingWorkspaceProvisionRequest(payload);
+    if (!parsed) return { ok: false, reason: 'invalid_request' };
+    return service.provisionReferenceWorkspace(parsed);
   });
 
   ipcMain.handle('customerMarketing:listIntegrationCredentials', async (

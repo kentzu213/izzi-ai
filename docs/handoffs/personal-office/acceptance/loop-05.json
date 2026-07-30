@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "loop": "05",
+  "decision": "ACCEPTED",
+  "decidedBy": "W0 Control Tower",
+  "decidedAt": "2026-07-29T11:50:19Z",
+  "authority": "W0 exact-path integrated the reviewed producer output and accepted it only after independent security review, provenance reconciliation and integration verification.",
+  "subject": {
+    "title": "Deterministic Personal Office context compiler and bounded text-only host kernel",
+    "producerBranch": "feature/personal-office-loop-05-20260729",
+    "producerImplementation": "f69ff7d3b0415480a7ef217ce142d0f71f727e6b",
+    "producerHandoff": "d4dd17c864bf9e92aed1f10e0447f154be2c7cb0",
+    "integrationRef": "feature/personal-office-baseline-20260728",
+    "integrationHeadBeforeAcceptance": "4f01bedddaf6eab18a87e4f814587eaef96ef667"
+  },
+  "integration": {
+    "method": "W0 restored the explicit 14-path implementation range from producer commit f69ff7d and committed it as fd2ed1d, then restored only loop-05.json and the Loop 05 worklog from d4dd17c and committed them as 4f01bed. No merge, blind cherry-pick, package edit, DB/schema edit, provider-routing edit, renderer edit or quarantine byte was used.",
+    "implementationCommit": "fd2ed1d5e7561174e5af5ab3e473b51433606c35",
+    "handoffCommit": "4f01bedddaf6eab18a87e4f814587eaef96ef667"
+  },
+  "independentReview": {
+    "decision": "PASS",
+    "closedFindings": [
+      "The managed AgentService seam was removed because accepted code lacks an authoritative managed safety message and session workspace binding.",
+      "Context-bearing multimodal turns fail before provider access until a canonical full text-and-image payload binding exists.",
+      "The current user request is bound as the exact raw string serialized identically by compiler and verifier; trailing whitespace and NFC/NFD aliases fail before fetch.",
+      "All six handoff hashes and byte counts were corrected to exact Git blob bytes rather than CRLF checkout bytes."
+    ]
+  },
+  "verification": [
+    {
+      "check": "targeted context and host tests",
+      "result": "PASS",
+      "evidence": "4 files, 19/19 tests on integration with --no-cache."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "100 files, 1159/1159 tests on integration with --no-cache."
+    },
+    {
+      "check": "main-process TypeScript",
+      "result": "PASS",
+      "evidence": "tsc -p tsconfig.main.json --noEmit --incremental false exited 0."
+    },
+    {
+      "check": "desktop production build",
+      "result": "PASS",
+      "evidence": "tsc main and Vite build passed; 1174 modules transformed. Existing renderer chunk-size warning only."
+    },
+    {
+      "check": "targeted lint",
+      "result": "PASS",
+      "evidence": "Zero warnings/errors across shared context, main context and the host seam."
+    },
+    {
+      "check": "repository lint ceiling",
+      "result": "PASS",
+      "evidence": "0 errors and 349 warnings, below the configured maximum of 358."
+    },
+    {
+      "check": "ownership and prohibited paths",
+      "result": "PASS",
+      "evidence": "Exactly 14 implementation paths inside LEASE-L05-CONTEXT-KERNEL-20260729 and exactly two coordinator handoff paths. AgentService, provider routing, DB/work engine, main index/preload, renderer, manifests and lockfiles have zero diff."
+    },
+    {
+      "check": "hash and provenance reconciliation",
+      "result": "PASS",
+      "evidence": "All six declared hashes and byte counts match raw git cat-file blob bytes at f69ff7d; phase-2 changes only the handoff JSON and worklog."
+    },
+    {
+      "check": "security",
+      "result": "PASS",
+      "evidence": "Exact workspace/owner scope, protected prompt roles, deterministic budgets, tamper reconstruction, raw-request binding, image fail-closed ordering and snapshot metadata binding reviewed; refined production-secret scan clean."
+    }
+  ],
+  "gateEffects": [
+    {
+      "gate": "LEASE-L05-CONTEXT-KERNEL-20260729",
+      "before": "ACTIVE",
+      "after": "REVOKED"
+    },
+    {
+      "gate": "LOOP-05",
+      "before": "READY_FOR_REVIEW",
+      "after": "ACCEPTED"
+    }
+  ],
+  "unblocks": [
+    {
+      "loop": "06",
+      "effect": "Model gateway and provider-routing work may be dispatched under a separate exact lease."
+    }
+  ],
+  "residualRisks": [
+    "No production caller currently supplies authenticated owner/workspace scope and exact safety prompt to the optional host seam; runtime wiring remains deliberately deferred.",
+    "Managed AgentService context requires a future trusted safety-prompt and session-workspace contract.",
+    "The unkeyed content hash proves deterministic integrity, not origin authenticity across a new trust boundary.",
+    "Multimodal context remains disabled until the complete text-and-image payload has a canonical binding."
+  ]
+}

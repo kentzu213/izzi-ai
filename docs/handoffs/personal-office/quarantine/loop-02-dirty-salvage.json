@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "quarantine-salvage-manifest",
+  "targetLoop": "02",
+  "targetWindow": "W2",
+  "layer": "product shell / reference UX",
+  "owner": "W0 Control Tower (manifest) / W2 (salvage application)",
+  "capturedAt": "2026-07-28T09:20:00Z",
+  "sourceQuarantine": "F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw",
+  "sourceHead": "959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5",
+  "snapshotPath": "F:\\Ai Tools\\_po-quarantine-snapshot-20260728\\untracked",
+  "committedAnywhere": false,
+  "recoverableOnlyFromSnapshot": true,
+
+  "assessment": "Larger than the initial PQ-08 estimate. This is a near-complete Personal Office shell — 19 files, ~106 KB — not a sketch. It includes a shell container, five routed pages, a command palette, a delegate composer, a work lane, and its own state/adapter layer with a feature flag and rollback path.",
+
+  "shell": {
+    "fileCount": 19,
+    "totalBytes": 105805,
+    "files": [
+      { "path": "apps/desktop/src/renderer/shell/PersonalOfficeShell.tsx", "sha256": "080acf88d95eb5e38bece1cead9744c217acdb2712a08db7fa2aaa40d14b7df2", "bytes": 9884, "verdict": "SALVAGE_PRIMARY", "role": "shell container" },
+      { "path": "apps/desktop/src/renderer/shell/ShellNav.tsx", "sha256": "10fec8d9d5a626cc1dc6447efbeed99d019d76f4ce8fb61357e16e8c605345ad", "bytes": 5928, "verdict": "SALVAGE", "role": "5-route navigation" },
+      { "path": "apps/desktop/src/renderer/shell/ShellTopBar.tsx", "sha256": "2cfb42c67ba182157926ae8825430618f01a56518184efbd75972d18fe4cd2e3", "bytes": 2887, "verdict": "SALVAGE" },
+      { "path": "apps/desktop/src/renderer/shell/ShellSettingsPanel.tsx", "sha256": "0ced38888929002875e6ee6beb59beaa27ddcb0fe715f1c95cce0bada8d7c9e8", "bytes": 3916, "verdict": "SALVAGE", "role": "includes the shell rollback toggle" },
+      { "path": "apps/desktop/src/renderer/shell/ShellIcons.tsx", "sha256": "3d5ca2a050b4cf32eeda706ecdfeacd3e807c9f27891353235581e08f9b6d3ac", "bytes": 2316, "verdict": "SALVAGE" },
+      { "path": "apps/desktop/src/renderer/shell/TodayPage.tsx", "sha256": "0e5295f8c13bf257c0ee4d4ef57edc0566b8d59c446c095066a4ee4d37d3cc06", "bytes": 4339, "verdict": "SALVAGE", "role": "default daily cockpit route" },
+      { "path": "apps/desktop/src/renderer/shell/WorkspacesPage.tsx", "sha256": "f6ab1eeb9ac6c86c32d36679fef4611c5da064b6393e530babd671db9a261d2a", "bytes": 7173, "verdict": "SALVAGE" },
+      { "path": "apps/desktop/src/renderer/shell/WorkspaceHome.tsx", "sha256": "d3be7a1c989eb6eaa8f4128dc6837026488b0a40a38f056eafaef46d0301584b", "bytes": 13115, "verdict": "SALVAGE" },
+      { "path": "apps/desktop/src/renderer/shell/WorkLane.tsx", "sha256": "eb836da8cb4a8d82a676ddf1dc893fb6990e1c8b679ee6fbae17ae80fd2e5a53", "bytes": 7177, "verdict": "SALVAGE", "role": "run/step progress surface" },
+      { "path": "apps/desktop/src/renderer/shell/CommandPalette.tsx", "sha256": "89884be46504a6e63364e5b21ed069d5f4a2d7aa6ac9e1c5fd3731c6cf838426", "bytes": 7444, "verdict": "SALVAGE_ACCESSIBILITY_REVIEW", "note": "Command palettes are focus-trap and keyboard-nav sensitive. W2 must verify keyboard/focus, text zoom 200% and reduced motion per the Constitution's UI verification list." },
+      { "path": "apps/desktop/src/renderer/shell/DelegateComposer.tsx", "sha256": "8fdc628b2a9a0243e3ab0d93ebaf6b986b121fa7c63cb79e1d503947aac7056b", "bytes": 3548, "verdict": "SALVAGE", "role": "the 'delegate a goal' entry point" },
+      { "path": "apps/desktop/src/renderer/shell/MyGraphRoute.tsx", "sha256": "db16db51ae64eef4a33f5b76c2ce03545469d2c30e3ee9b9ee963f66d0d79910", "bytes": 2358, "verdict": "SALVAGE_COORDINATE_WITH_LOOP_04", "note": "Graph surfaces are Loop 04 ownership. This route is a shell-side wrapper; the graph itself is not W2's to change." },
+      { "path": "apps/desktop/src/renderer/shell/SurfaceState.tsx", "sha256": "9c12bf961ca597d5de7848f1399be1931f704d85892a1508303596b5bd4dab7e", "bytes": 5355, "verdict": "SALVAGE", "role": "loading/empty/error/offline state handling — maps directly to the Constitution's required UI states" },
+      { "path": "apps/desktop/src/renderer/shell/useWorkSnapshot.ts", "sha256": "d53225532482c8c9d7fa93fae8ce0abfdb670748a2c651e90ef20f41d61c97e9", "bytes": 4602, "verdict": "SALVAGE_RETARGET" },
+      { "path": "apps/desktop/src/renderer/shell/workAdapter.ts", "sha256": "a7109dd319529e9c2a44eece4f35349da1176530f57b03fdfc1a9b80bbd66b8e", "bytes": 11862, "verdict": "SALVAGE_RETARGET", "note": "Typed against the legacy main/agent/types.ts because Loop 00/01 contracts did not exist when it was written. Must be retargeted onto shared/personal-office/ once Loop 01 is ACCEPTED. Its Loop-02-local ApprovalRequest is superseded by W3's work-approvals.ts plus W1's Approval contract." },
+      { "path": "apps/desktop/src/renderer/shell/types.ts", "sha256": "03cdc9781bc05f73b710b2596aad6ad424d5c2366940e147a7c28556c6b33429", "bytes": 4173, "verdict": "SALVAGE_RETARGET" },
+      { "path": "apps/desktop/src/renderer/shell/legacySurfaces.ts", "sha256": "0d05ccb3f617da0af03f93150271be2d8a1ff818280298a4f23530ec5841927a", "bytes": 2244, "verdict": "SALVAGE", "note": "Keeps legacy surfaces reachable — consistent with 'do not delete legacy before proof'." },
+      { "path": "apps/desktop/src/renderer/shell/featureFlags.ts", "sha256": "dc959ab3ff37fd55eefc2d1752196988f0ec63300a0998df0d0d6699d6165c22", "bytes": 4119, "verdict": "SALVAGE_HIGH_VALUE", "note": "Flag izzi.shell.personalOffice with a rollback path. This is what makes the shell landable without a big-bang cutover." },
+      { "path": "apps/desktop/src/renderer/shell/format.ts", "sha256": "5e1b2e81844a6b6a667c0946c5d674fad314aaec709b95ec9518cd20055a7b38", "bytes": 1865, "verdict": "SALVAGE" }
+    ]
+  },
+
+  "vaultAndWiki": {
+    "note": "Historical adjacent drafts found in shared/. Ownership was formally assigned to Loop 04 / W4 by gate PO-VAULT-OWNERSHIP. Loop 04 implemented and accepted the canonical vault/wiki contracts; these snapshot hashes remain provenance only and are not a source for later replay.",
+    "ownershipUnresolved": false,
+    "resolvedOwner": "Loop 04 / W4",
+    "resolutionRecord": "docs/handoffs/personal-office/acceptance/loop-04.json",
+    "canonicalDisposition": "IMPLEMENTED_AND_ACCEPTED_BY_LOOP_04",
+    "files": [
+      { "path": "apps/desktop/src/shared/vault-types.ts", "sha256": "da8296d91a0c54387841416f6362b9d5607ae142b182bb8358f94ea4610e5534", "bytes": 4751, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-types.test.ts", "sha256": "6ca87824b1b5aaddb9813b128c978582daf3b52383b1b27dcf1feb3b05d158f7", "bytes": 2174, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-ops.ts", "sha256": "10657d70892d09fa9ee5ff2a0d0144228de5fa80aa7ff948cb5becf7d57b40ab", "bytes": 2891, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/vault-ops.test.ts", "sha256": "09c50a4fbc6f4b6ca66814f9e4a5b17c770fa9c7bf7064411e856092f3d73f85", "bytes": 1903, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/wikilink.ts", "sha256": "31c365752d31b95aa581ccf41e65417c2bf18bd3b74dcb119db58ca930b13516", "bytes": 4740, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" },
+      { "path": "apps/desktop/src/shared/wikilink.test.ts", "sha256": "cf718a01762b90600d0d09e45a8efe10ddc60611618a3e366a4437856feb46c3", "bytes": 1852, "verdict": "HISTORICAL_INPUT_OWNED_BY_LOOP_04" }
+    ]
+  },
+
+  "designDoc": {
+    "path": "docs/product/personal-office-ia.md",
+    "sha256": "edaaa3984d03a8dfd6719c4b68d44dfac4749122d0d64d59bd9c9a225d3e5994",
+    "bytes": 12642,
+    "verdict": "SALVAGE_AS_INPUT",
+    "note": "Records the 5-route IA, the audience decision (one operator, not a multi-tenant console) and the primary workflow delegate → watch → approve → collect. Its own §0 states it could not inherit Loop 00/01 contracts because they did not exist, and it therefore typed against main/agent/types.ts. That section is now obsolete and must be rewritten against the accepted contracts, not deleted."
+  },
+
+  "integrationWiring": {
+    "verdict": "LEASE_REQUIRED",
+    "path": "apps/desktop/src/renderer/App.tsx",
+    "sha256": "2e86c9a9c962df092ffcac3816e296a40128f189d8a11eed7f245cbd431d0fd6",
+    "hotFileOwnerOrder": ["02", "12"],
+    "note": "Loop 02 is first owner, so this is W2's to take — but only under an explicit W0 lease, and only after Loop 01 is ACCEPTED. The quarantine draft modified it without a lease.",
+    "patchReference": { "file": "dirty-tracked.patch", "sha256": "b330acd70d6abd91f8965aefa003f1333bd92fe66056ae6d6e2b2b98a2db2ea4" }
+  },
+
+  "conditionsBeforeW2MayImplement": [
+    "Loop 01 must be ACCEPTED — no Loop 02 worktree may be created before then.",
+    "Retarget workAdapter.ts, types.ts and useWorkSnapshot.ts from main/agent/types.ts onto shared/personal-office/.",
+    "Drop the Loop-02-local ApprovalRequest in favour of W1's Approval contract plus W3's work-approvals.ts.",
+    "Request a W0 lease for App.tsx and Sidebar.tsx before touching either.",
+    "Run the full UI verification set: desktop plus narrow/mobile, keyboard/focus, text zoom 200%, reduced motion, and loading/empty/error/offline/degraded states. CommandPalette.tsx needs specific focus-trap attention.",
+    "Rewrite §0 of personal-office-ia.md against the accepted contracts instead of the pre-baseline assumption."
+  ]
+}

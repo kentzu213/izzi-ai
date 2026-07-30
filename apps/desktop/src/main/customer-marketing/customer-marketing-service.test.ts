@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCapability,
@@ -26,10 +27,7 @@ import {
   type CustomerIdentity,
   type CustomerRuntimeExtension,
 } from './customer-marketing-service';
-import type {
-  CustomerMediaImportedProject,
-  CustomerVideoStudioRuntime,
-} from './customer-video-studio-service';
+import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
 import type {
   CustomerMarketingWorkspaceGateway,
@@ -37,6 +35,9 @@ import type {
   RemoteMarketingProfile,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
+import { runWorkModelMigration } from '../work/work-migration';
+import { WorkService } from '../work/work-service';
+import { createNodeSqliteDatabase } from '../work/test-support';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -472,6 +473,7 @@ function customerRuntimeExtension(
     manifest: {
       displayName: 'Video Studio',
       description: 'Creates approved campaign videos.',
+      version: '1.2.3',
       private: false,
       customerMarketing: true,
       customerMarketingCapability: customerExtensionDefinition(),
@@ -495,6 +497,7 @@ function setup(options?: {
     workspaceGateway?: CustomerMarketingWorkspaceGateway;
     writeClipboardText?: (value: string) => void | Promise<void>;
     credentialVault?: Pick<CustomerMarketingCredentialVault, 'listStatuses' | 'revokeCredential'>;
+    workService?: WorkService;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -513,6 +516,7 @@ function setup(options?: {
     options?.workspaceGateway ?? null,
     options?.writeClipboardText,
     options?.credentialVault ?? null,
+    options?.workService ?? null,
   );
   return {
     db,
@@ -539,6 +543,7 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
     importProject: vi.fn(async () => ({
       runtimeProjectId: '11111111-1111-4111-8111-111111111111',
       projectId: 'izziapi-demo',
+      sourceIdentity: '1'.repeat(64),
       title: 'IzziAPI demo',
       width: 1080,
       height: 1920,
@@ -578,6 +583,46 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
     })),
   };
 }
+
+type ImportedMediaProject = Awaited<ReturnType<CustomerVideoStudioRuntime['importProject']>>;
+
+function importedMediaProject(
+  overrides: Partial<ImportedMediaProject> = {},
+): ImportedMediaProject {
+  const base: ImportedMediaProject = {
+    runtimeProjectId: '11111111-1111-4111-8111-111111111111',
+    projectId: 'izziapi-demo',
+    sourceIdentity: '1'.repeat(64),
+    title: 'IzziAPI demo',
+    width: 1080,
+    height: 1920,
+    fps: 30,
+    durationSeconds: 45,
+    sceneCount: 7,
+    voice: {
+      provider: 'f5-tts',
+      license: 'CC-BY-NC-SA-4.0',
+      commercialUseAllowed: false,
+      referenceVoiceConsent: true,
+    },
+    evidenceDigest: 'a'.repeat(64),
+    importedAt: '2026-07-19T10:00:00.000Z',
+    artifact: {
+      kind: 'project_manifest',
+      name: 'video-workflow.json',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 512,
+      createdAt: '2026-07-19T10:00:00.000Z',
+    },
+  };
+  return {
+    ...base,
+    ...overrides,
+    voice: { ...base.voice, ...overrides.voice },
+    artifact: { ...base.artifact, ...overrides.artifact },
+  };
+}
+
 async function completeOnboarding(service: CustomerMarketingService, name = 'Acme') {
   const result = await service.saveOnboarding(onboarding(name));
   expect(result.ok).toBe(true);
@@ -590,6 +635,15 @@ async function completeOnboarding(service: CustomerMarketingService, name = 'Acm
   expect(context.ok).toBe(true);
   expect(context.context?.revision).toBe(1);
   return result;
+}
+
+function setupWorkService() {
+  const { db, close } = createNodeSqliteDatabase();
+  runWorkModelMigration(db);
+  return {
+    service: new WorkService({ db, now: () => new Date() }),
+    close,
+  };
 }
 
 describe('CustomerMarketingService tenant boundary', () => {
@@ -693,25 +747,6 @@ describe('CustomerMarketingService tenant boundary', () => {
         completedSteps: [1, 2, 3, 4, 5, 6, 7],
       },
     });
-
-    await expect(context.service.getSnapshot()).resolves.toMatchObject({
-      onboarding: null,
-      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
-    });
-  });
-
-  it('deletes syntactically malformed tenant cache and recovers on subsequent reads', async () => {
-    const context = setup();
-    await completeOnboarding(context.service);
-    const key = Array.from(context.db.values.keys())[0];
-    if (!key) throw new Error('Expected a tenant record.');
-    context.db.values.set(key, '{invalid-json');
-
-    await expect(context.service.getSnapshot()).resolves.toMatchObject({
-      onboarding: null,
-      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
-    });
-    expect(context.db.values.has(key)).toBe(false);
 
     await expect(context.service.getSnapshot()).resolves.toMatchObject({
       onboarding: null,
@@ -905,6 +940,295 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       .some((key) => key.startsWith('customer_marketing_workflows:v1:'))).toBe(false);
   });
 
+});
+
+  it('preserves syntactically malformed tenant cache while returning a safe empty view', async () => {
+    const context = setup();
+    await completeOnboarding(context.service);
+    const key = Array.from(context.db.values.keys())[0];
+    if (!key) throw new Error('Expected a tenant record.');
+    const malformedSource = '{invalid-json';
+    context.db.values.set(key, malformedSource);
+
+    await expect(context.service.getSnapshot()).resolves.toMatchObject({
+      onboarding: null,
+      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
+    });
+    expect(context.db.values.get(key)).toBe(malformedSource);
+
+    await expect(context.service.getSnapshot()).resolves.toMatchObject({
+      onboarding: null,
+      workspace: { onboardingComplete: false, profileSyncStatus: 'local' },
+    });
+    expect(context.db.values.get(key)).toBe(malformedSource);
+  });
+
+  it.each(['{invalid-json', 'null'])(
+    'fails closed without overwriting malformed source bytes during onboarding mutation (%s)',
+    async (malformedSource) => {
+      const remote = marketingResourceGateway('owner');
+      const context = setup({ workspaceGateway: remote.gateway });
+      await completeOnboarding(context.service);
+      const key = Array.from(context.db.values.keys()).find((item) => (
+        item.startsWith('customer_marketing:v1:')
+      ));
+      if (!key) throw new Error('Expected a tenant record.');
+      context.db.values.set(key, malformedSource);
+      vi.mocked(remote.gateway.ensureWorkspace).mockClear();
+
+      await expect(context.service.saveOnboarding(onboarding('Replacement tenant'))).resolves.toEqual({
+        ok: false,
+        error: 'Không thể lưu vì dữ liệu Customer Marketing cũ đang bị lỗi. Dữ liệu gốc đã được giữ nguyên để khôi phục.',
+      });
+      expect(remote.gateway.ensureWorkspace).not.toHaveBeenCalled();
+      expect(context.db.values.get(key)).toBe(malformedSource);
+    },
+  );
+
+describe('CustomerMarketingService reference workspace bridge', () => {
+  it('denies uninstalled and non-marketing packages before issuing host evidence', async () => {
+    const missing = setup({
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+    await expect(missing.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'package_not_installed' });
+
+    const incapable = setup({
+      extensions: [customerRuntimeExtension({
+        manifest: { customerMarketing: false },
+      })],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+    await expect(incapable.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'package_not_marketing_capable' });
+  });
+
+  it('matches the installed package version from the runtime manifest shape used by main', async () => {
+    const context = setup({
+      extensions: [{
+        id: 'ext-video-runtime',
+        name: 'video-runtime',
+        state: 'installed',
+        manifest: {
+          displayName: 'Video Studio',
+          description: 'Creates approved campaign videos.',
+          version: '1.2.3',
+          private: false,
+          customerMarketing: true,
+          customerMarketingCapability: customerExtensionDefinition(),
+        },
+      }],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toMatchObject({
+      ok: true,
+      evidence: {
+        installedPackage: {
+          extensionId: 'ext-video-runtime',
+          version: '1.2.3',
+        },
+      },
+    });
+  });
+
+  it('refuses host evidence when the current workspace is only local', async () => {
+    const context = setup({
+      extensions: [customerRuntimeExtension()],
+    });
+
+    await expect(context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    )).resolves.toEqual({ ok: false, reason: 'workspace_unavailable' });
+  });
+
+  it('rejects stale, future and scope-tampered evidence', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-07-29T10:00:00.000Z'));
+      const context = setup({
+        extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
+      });
+      const result = await context.service.getReferenceWorkspaceEvidence(
+        'ocx_extension:video-runtime@1.2.3',
+      );
+      if (!result.ok) throw new Error(`Expected host evidence, received ${result.reason}.`);
+
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: {
+          ...result.evidence,
+          scope: { ...result.evidence.scope, userId: 'other-user' },
+        },
+      })).resolves.toEqual({ ok: false, reason: 'scope_mismatch' });
+
+      vi.setSystemTime(new Date('2026-07-29T10:06:00.000Z'));
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toEqual({ ok: false, reason: 'stale_evidence' });
+
+      vi.setSystemTime(new Date('2026-07-29T09:59:00.000Z'));
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toEqual({ ok: false, reason: 'stale_evidence' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects renderer-forged evidence made only from public host fields', async () => {
+    const context = setup({
+      extensions: [customerRuntimeExtension()],
+      workspaceGateway: marketingResourceGateway('owner').gateway,
+    });
+    const result = await context.service.getReferenceWorkspaceEvidence(
+      'ocx_extension:video-runtime@1.2.3',
+    );
+    if (!result.ok) throw new Error(`Expected host evidence, received ${result.reason}.`);
+
+    const forgedMaterial = JSON.stringify({
+      installedPackage: result.evidence.installedPackage,
+      issuedAt: result.evidence.issuedAt,
+      role: result.evidence.role,
+      scope: result.evidence.scope,
+    });
+    const rendererForgedDigest = `sha256:${createHash('sha256')
+      .update(forgedMaterial)
+      .digest('hex')}`;
+
+    await expect(context.service.provisionReferenceWorkspace({
+      evidence: {
+        ...result.evidence,
+        evidenceDigest: rendererForgedDigest,
+      },
+    })).resolves.toEqual({ ok: false, reason: 'scope_mismatch' });
+  });
+
+  it('provisions once and reuses the exact scoped workspace on replay', async () => {
+    const work = setupWorkService();
+    try {
+      const context = setup({
+        extensions: [customerRuntimeExtension()],
+        workspaceGateway: marketingResourceGateway('owner').gateway,
+        workService: work.service,
+      });
+      const result = await context.service.getReferenceWorkspaceEvidence(
+        'ocx_extension:video-runtime@1.2.3',
+      );
+      if (!result.ok) throw new Error(`Expected host evidence, received ${result.reason}.`);
+
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toMatchObject({
+        ok: true,
+        reused: false,
+        intent: {
+          kind: 'open_customer_marketing_workspace',
+          workspaceInstanceId: result.evidence.scope.workspaceInstanceId,
+        },
+      });
+      await expect(context.service.provisionReferenceWorkspace({
+        evidence: result.evidence,
+      })).resolves.toMatchObject({ ok: true, reused: true });
+      expect(work.service.listWorkspaces().filter((item) => (
+        item.id === result.evidence.scope.workspaceInstanceId
+      ))).toHaveLength(1);
+    } finally {
+      work.close();
+    }
+  });
+
+  it.each([
+    ['approved', 'completed', 'approved'],
+    ['rejected', 'canceled', 'rejected'],
+  ] as const)('projects a %s Customer Marketing decision exactly once', async (
+    decision,
+    expectedRunState,
+    expectedApprovalState,
+  ) => {
+    const work = setupWorkService();
+    try {
+      const context = setup({ workService: work.service });
+      await completeOnboarding(context.service);
+      const created = await context.service.createGoal({
+        goal: 'Launch a focused reference workspace campaign',
+        channels: ['facebook'],
+      });
+      const approvalId = created.snapshot?.approvals[0]?.id;
+      if (!approvalId) throw new Error('Expected a Customer Marketing approval.');
+
+      const projectedBefore = work.service.listRuns().find((run) => (
+        run.origin === 'customer_marketing'
+      ));
+      if (!projectedBefore) throw new Error('Expected a projected unified run.');
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listApprovals(projectedBefore.id)[0].status).toBe('pending');
+
+      await expect(context.service.reviewApproval({
+        approvalId,
+        decision,
+      })).resolves.toMatchObject({ ok: true });
+
+      expect(work.service.getRun(projectedBefore.id)?.state).toBe(expectedRunState);
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listApprovals(projectedBefore.id)[0].status).toBe(expectedApprovalState);
+      const eventCount = work.service.listEvents(projectedBefore.id).length;
+
+      const restarted = new CustomerMarketingService(
+        context.db,
+        () => ({ id: 'tenant-a', name: 'Owner A', plan: 'pro', balance: 75 }),
+        () => [],
+        undefined,
+        null,
+        null,
+        undefined,
+        null,
+        work.service,
+      );
+      await restarted.getSnapshot();
+      await restarted.getSnapshot();
+      expect(work.service.listApprovals(projectedBefore.id)).toHaveLength(1);
+      expect(work.service.listEvents(projectedBefore.id)).toHaveLength(eventCount);
+    } finally {
+      work.close();
+    }
+  });
+
+  it('does not let unified projection bypass Customer Marketing role authority', async () => {
+    const work = setupWorkService();
+    try {
+      const context = setup({ workService: work.service });
+      await completeOnboarding(context.service);
+      context.db.updateOnlyRecord({ role: 'editor' });
+      const created = await context.service.createGoal({
+        goal: 'Prepare a role-gated launch campaign',
+        channels: ['facebook'],
+      });
+      const approvalId = created.snapshot?.approvals[0]?.id;
+      if (!approvalId) throw new Error('Expected a Customer Marketing approval.');
+      const projected = work.service.listRuns().find((run) => run.origin === 'customer_marketing');
+      if (!projected) throw new Error('Expected a projected unified run.');
+
+      await expect(context.service.reviewApproval({
+        approvalId,
+        decision: 'approved',
+      })).resolves.toMatchObject({
+        ok: false,
+        error: expect.stringContaining('không có quyền duyệt'),
+      });
+      expect(work.service.listApprovals(projected.id)[0].status).toBe('pending');
+      expect(work.service.getRun(projected.id)?.state).toBe('awaiting_approval');
+    } finally {
+      work.close();
+    }
+  });
+});
+
+describe('CustomerMarketingService onboarding and workflow', () => {
   it('persists all seven numeric onboarding steps', async () => {
     const context = setup();
     const result = await completeOnboarding(context.service);
@@ -1719,49 +2043,16 @@ describe('Customer Marketing Video Studio', () => {
     expect((await context.service.getSnapshot()).media.jobs).toEqual([]);
   });
 
-  it('refreshes the current media chain when the same canonical project is re-imported', async () => {
+  it('refreshes only the prior chain for the same runtime-derived source identity', async () => {
     const mediaRuntime = mediaRuntimeFixture();
     vi.mocked(mediaRuntime.importProject)
-      .mockResolvedValueOnce({
-        runtimeProjectId: '11111111-1111-4111-8111-111111111111',
-        projectId: 'izziapi-demo',
-        title: 'IzziAPI demo v1',
-        width: 1080,
-        height: 1920,
-        fps: 30,
-        durationSeconds: 45,
-        sceneCount: 7,
-        voice: {
-          provider: 'f5-tts',
-          license: 'CC-BY-NC-SA-4.0',
-          commercialUseAllowed: false,
-          referenceVoiceConsent: true,
-        },
-        evidenceDigest: 'a'.repeat(64),
-        importedAt: '2026-07-19T10:00:00.000Z',
-        artifact: {
-          kind: 'project_manifest',
-          name: 'video-workflow.json',
-          sha256: 'a'.repeat(64),
-          sizeBytes: 512,
-          createdAt: '2026-07-19T10:00:00.000Z',
-        },
-      })
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(importedMediaProject())
+      .mockResolvedValueOnce(importedMediaProject({
         runtimeProjectId: '33333333-3333-4333-8333-333333333333',
-        projectId: 'izziapi-demo',
+        projectId: 'izziapi-demo-renamed',
         title: 'IzziAPI demo refreshed',
-        width: 1080,
-        height: 1920,
-        fps: 30,
         durationSeconds: 50,
         sceneCount: 8,
-        voice: {
-          provider: 'f5-tts',
-          license: 'CC-BY-NC-SA-4.0',
-          commercialUseAllowed: false,
-          referenceVoiceConsent: true,
-        },
         evidenceDigest: 'c'.repeat(64),
         importedAt: '2026-07-29T10:00:00.000Z',
         artifact: {
@@ -1771,356 +2062,155 @@ describe('Customer Marketing Video Studio', () => {
           sizeBytes: 640,
           createdAt: '2026-07-29T10:00:00.000Z',
         },
-      });
+      }));
     const context = setup({ mediaRuntime });
     await completeOnboarding(context.service);
 
     const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
     const oldJobId = first.snapshot!.media.jobs[0].id;
     const oldApprovalId = first.snapshot!.approvals[0].id;
-    await context.service.reviewApproval({ approvalId: oldApprovalId, decision: 'approved' });
-    const previewed = await context.service.runMediaPreview({ jobId: oldJobId });
-    expect(previewed.ok).toBe(true);
-
-    const [recordKey, rawRecord] = Array.from(context.db.values.entries())[0];
-    const record = JSON.parse(rawRecord);
-    const oldArtifactIds = record.mediaArtifacts
-      .filter((artifact: { jobId: string }) => artifact.jobId === oldJobId)
-      .map((artifact: { id: string }) => artifact.id);
-    const unrelatedJobId = 'media-unrelated';
-    const unrelatedApprovalId = 'approval-unrelated';
-    const unrelatedArtifactId = 'artifact-unrelated';
-    record.mediaJobs.push({
-      ...record.mediaJobs[0],
-      id: unrelatedJobId,
-      runtimeProjectId: '22222222-2222-4222-8222-222222222222',
-      evidenceDigest: 'd'.repeat(64),
-      previewApprovalId: unrelatedApprovalId,
-      projectId: 'unrelated-project',
-      title: 'Unrelated project',
-    });
-    record.approvals.push({
-      ...record.approvals[0],
-      id: unrelatedApprovalId,
-      runId: 'media-run-' + unrelatedJobId,
-      mediaJobId: unrelatedJobId,
-      evidenceDigest: 'd'.repeat(64),
-    });
-    record.mediaArtifacts.push({
-      ...record.mediaArtifacts[0],
-      id: unrelatedArtifactId,
-      jobId: unrelatedJobId,
-      sha256: 'd'.repeat(64),
-    });
-    context.db.values.set(recordKey, JSON.stringify(record));
+    const oldArtifactId = first.snapshot!.media.artifacts[0].id;
 
     const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
-    const currentJobs = refreshed.snapshot!.media.jobs.filter((job) => job.projectId === 'izziapi-demo');
-    const currentJob = currentJobs[0];
-    const currentApproval = refreshed.snapshot!.approvals.find((approval) => approval.mediaJobId === currentJob.id);
-    const currentArtifacts = refreshed.snapshot!.media.artifacts.filter((artifact) => artifact.jobId === currentJob.id);
-
-    expect(refreshed.ok).toBe(true);
-    expect(currentJobs).toHaveLength(1);
-    expect(currentJob).toEqual(expect.objectContaining({
-      title: 'IzziAPI demo refreshed',
-      status: 'awaiting_preview_approval',
-      durationSeconds: 50,
-      sceneCount: 8,
-      gates: expect.objectContaining({ previewApproved: false, renderApproved: false, publishApproved: false }),
-    }));
-    expect(currentJob.id).not.toBe(oldJobId);
-    expect(currentApproval).toEqual(expect.objectContaining({
-      evidenceDigest: 'c'.repeat(64),
-      status: 'pending',
-    }));
-    expect(currentApproval?.id).not.toBe(oldApprovalId);
-    expect(currentArtifacts).toEqual([
-      expect.objectContaining({
-        kind: 'project_manifest',
-        sha256: 'c'.repeat(64),
-        sizeBytes: 640,
-      }),
-    ]);
-    expect(refreshed.snapshot!.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
-    expect(refreshed.snapshot!.approvals.some((approval) => approval.id === oldApprovalId)).toBe(false);
-    expect(refreshed.snapshot!.media.artifacts.some((artifact) => oldArtifactIds.includes(artifact.id))).toBe(false);
-    expect(refreshed.snapshot!.media.jobs.some((job) => job.id === unrelatedJobId)).toBe(true);
-    expect(refreshed.snapshot!.approvals.some((approval) => approval.id === unrelatedApprovalId)).toBe(true);
-    expect(refreshed.snapshot!.media.artifacts.some((artifact) => artifact.id === unrelatedArtifactId)).toBe(true);
-
-    const persisted = JSON.parse(context.db.values.get(recordKey)!);
-    expect(persisted.mediaJobs.find((job: { id: string }) => job.id === currentJob.id).runtimeProjectId)
-      .toBe('33333333-3333-4333-8333-333333333333');
-    expect(JSON.stringify(refreshed.snapshot)).not.toContain('11111111-1111-4111-8111-111111111111');
-    expect(JSON.stringify(refreshed.snapshot)).not.toContain('33333333-3333-4333-8333-333333333333');
-    expect(JSON.stringify(refreshed.snapshot)).not.toContain('C:\\private\\izziapi-video-project-v2');
-  });
-
-  it('preserves an unrelated import when a concurrent refresh finishes last', async () => {
-    const mediaRuntime = mediaRuntimeFixture();
-    const context = setup({ mediaRuntime });
-    await completeOnboarding(context.service);
-    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
-    const oldJobId = first.snapshot!.media.jobs[0].id;
-
-    let finishRefresh!: (value: CustomerMediaImportedProject) => void;
-    let finishUnrelated!: (value: CustomerMediaImportedProject) => void;
-    const refreshImport = new Promise<CustomerMediaImportedProject>((resolve) => {
-      finishRefresh = resolve;
-    });
-    const unrelatedImport = new Promise<CustomerMediaImportedProject>((resolve) => {
-      finishUnrelated = resolve;
-    });
-    vi.mocked(mediaRuntime.importProject)
-      .mockReturnValueOnce(refreshImport)
-      .mockReturnValueOnce(unrelatedImport);
-
-    const refreshRequest = context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
-    const unrelatedRequest = context.service.importMediaProject('C:\\private\\unrelated-project');
-    await vi.waitFor(() => expect(mediaRuntime.importProject).toHaveBeenCalledTimes(3));
-
-    finishUnrelated({
-      runtimeProjectId: '66666666-6666-4666-8666-666666666666',
-      projectId: 'unrelated-project',
-      title: 'Unrelated project',
-      width: 1920,
-      height: 1080,
-      fps: 24,
-      durationSeconds: 30,
-      sceneCount: 4,
-      voice: {
-        provider: 'local-voice',
-        license: 'Apache-2.0',
-        commercialUseAllowed: false,
-        referenceVoiceConsent: false,
-      },
-      evidenceDigest: '6'.repeat(64),
-      importedAt: '2026-07-29T14:00:00.000Z',
-      artifact: {
-        kind: 'project_manifest',
-        name: 'video-workflow.json',
-        sha256: '6'.repeat(64),
-        sizeBytes: 600,
-        createdAt: '2026-07-29T14:00:00.000Z',
-      },
-    });
-    const unrelated = await unrelatedRequest;
-    expect(unrelated.ok).toBe(true);
-
-    finishRefresh({
-      runtimeProjectId: '77777777-7777-4777-8777-777777777777',
-      projectId: 'izziapi-demo',
-      title: 'IzziAPI demo refreshed last',
-      width: 1080,
-      height: 1920,
-      fps: 30,
-      durationSeconds: 60,
-      sceneCount: 8,
-      voice: {
-        provider: 'f5-tts',
-        license: 'CC-BY-NC-SA-4.0',
-        commercialUseAllowed: false,
-        referenceVoiceConsent: true,
-      },
-      evidenceDigest: '7'.repeat(64),
-      importedAt: '2026-07-29T14:01:00.000Z',
-      artifact: {
-        kind: 'project_manifest',
-        name: 'video-workflow.json',
-        sha256: '7'.repeat(64),
-        sizeBytes: 700,
-        createdAt: '2026-07-29T14:01:00.000Z',
-      },
-    });
-    const refreshed = await refreshRequest;
-    expect(refreshed.ok).toBe(true);
-
-    const finalSnapshot = await context.service.getSnapshot();
-    expect(finalSnapshot.media.jobs).toHaveLength(2);
-    expect(finalSnapshot.media.jobs).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        projectId: 'izziapi-demo',
-        title: 'IzziAPI demo refreshed last',
-        status: 'awaiting_preview_approval',
-      }),
-      expect.objectContaining({
-        projectId: 'unrelated-project',
-        title: 'Unrelated project',
-        status: 'awaiting_preview_approval',
-      }),
-    ]));
-    expect(finalSnapshot.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
-    expect(finalSnapshot.approvals.filter((approval) => approval.kind === 'media_preview')).toHaveLength(2);
-    expect(finalSnapshot.media.artifacts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sha256: '6'.repeat(64) }),
-      expect.objectContaining({ sha256: '7'.repeat(64) }),
-    ]));
-  });
-
-  it('replaces a legacy project id when a renamed project declares its lineage', async () => {
-    const mediaRuntime = mediaRuntimeFixture();
-    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
-      runtimeProjectId: '22222222-2222-4222-8222-222222222222',
-      projectId: 'izziapi-starizzi-howto',
-      title: 'IzziAPI + Starizzi walkthrough',
-      width: 1080,
-      height: 1920,
-      fps: 30,
-      durationSeconds: 60,
-      sceneCount: 8,
-      voice: {
-        provider: 'f5-tts-vietnamese-vivoice',
-        license: 'CC-BY-NC-SA-4.0',
-        commercialUseAllowed: false,
-        referenceVoiceConsent: false,
-      },
-      evidenceDigest: 'd'.repeat(64),
-      importedAt: '2026-07-19T12:00:00.000Z',
-      artifact: {
-        kind: 'project_manifest',
-        name: 'video-workflow.json',
-        sha256: 'd'.repeat(64),
-        sizeBytes: 700,
-        createdAt: '2026-07-19T12:00:00.000Z',
-      },
-    });
-    const context = setup({ mediaRuntime });
-    await completeOnboarding(context.service);
-    const first = await context.service.importMediaProject('C:\\private\\izziapi-starizzi-howto');
-    const oldJobId = first.snapshot!.media.jobs[0].id;
-    const oldApprovalId = first.snapshot!.approvals.find((item) => item.mediaJobId === oldJobId)!.id;
-
-    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
-      runtimeProjectId: '44444444-4444-4444-8444-444444444444',
-      projectId: 'izziapi-izzi-ai-howto',
-      legacyProjectIds: ['izziapi-starizzi-howto'],
-      title: 'IzziAPI + Izzi AI walkthrough',
-      width: 1080,
-      height: 1920,
-      fps: 30,
-      durationSeconds: 60,
-      sceneCount: 8,
-      voice: {
-        provider: 'f5-tts-vietnamese-vivoice',
-        license: 'CC-BY-NC-SA-4.0',
-        commercialUseAllowed: false,
-        referenceVoiceConsent: false,
-      },
-      evidenceDigest: 'e'.repeat(64),
-      importedAt: '2026-07-29T12:00:00.000Z',
-      artifact: {
-        kind: 'project_manifest',
-        name: 'video-workflow.json',
-        sha256: 'e'.repeat(64),
-        sizeBytes: 768,
-        createdAt: '2026-07-29T12:00:00.000Z',
-      },
-    });
-
-    const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-izzi-ai-howto');
     const currentJob = refreshed.snapshot!.media.jobs[0];
-    const currentApproval = refreshed.snapshot!.approvals.find((item) => item.mediaJobId === currentJob.id);
 
     expect(refreshed.ok).toBe(true);
     expect(refreshed.reply).toContain('Đã cập nhật project');
     expect(refreshed.snapshot!.media.jobs).toHaveLength(1);
     expect(currentJob).toEqual(expect.objectContaining({
-      projectId: 'izziapi-izzi-ai-howto',
-      title: 'IzziAPI + Izzi AI walkthrough',
+      projectId: 'izziapi-demo-renamed',
+      title: 'IzziAPI demo refreshed',
       status: 'awaiting_preview_approval',
+      durationSeconds: 50,
+      sceneCount: 8,
     }));
     expect(currentJob.id).not.toBe(oldJobId);
     expect(refreshed.snapshot!.approvals.some((item) => item.id === oldApprovalId)).toBe(false);
-    expect(currentApproval).toEqual(expect.objectContaining({
-      evidenceDigest: 'e'.repeat(64),
-      status: 'pending',
-    }));
+    expect(refreshed.snapshot!.media.artifacts.some((item) => item.id === oldArtifactId)).toBe(false);
+    expect(refreshed.snapshot!.approvals).toEqual([
+      expect.objectContaining({
+        mediaJobId: currentJob.id,
+        evidenceDigest: 'c'.repeat(64),
+        status: 'pending',
+      }),
+    ]);
     expect(refreshed.snapshot!.media.artifacts).toEqual([
       expect.objectContaining({
         jobId: currentJob.id,
-        sha256: 'e'.repeat(64),
+        sha256: 'c'.repeat(64),
+        sizeBytes: 640,
       }),
     ]);
   });
 
-  it('does not let an in-flight preview restore a project after re-import', async () => {
+  it('does not trust manifest-declared project identity or lineage to remove unrelated history', async () => {
     const mediaRuntime = mediaRuntimeFixture();
-    let finishPreview!: (
-      value: Awaited<ReturnType<CustomerVideoStudioRuntime['runPreview']>>,
-    ) => void;
-    const deferredPreview = new Promise<
-      Awaited<ReturnType<CustomerVideoStudioRuntime['runPreview']>>
-    >((resolve) => {
-      finishPreview = resolve;
-    });
-    vi.mocked(mediaRuntime.runPreview).mockReturnValueOnce(deferredPreview);
     const context = setup({ mediaRuntime });
     await completeOnboarding(context.service);
-    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
-    const oldJobId = first.snapshot!.media.jobs[0].id;
-    const approvalId = first.snapshot!.approvals.find((item) => item.mediaJobId === oldJobId)!.id;
-    await context.service.reviewApproval({ approvalId, decision: 'approved' });
+    const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project');
+    const originalJobId = first.snapshot!.media.jobs[0].id;
+    const originalApprovalId = first.snapshot!.approvals[0].id;
+    const originalArtifactId = first.snapshot!.media.artifacts[0].id;
+    const forgedImport = {
+      ...importedMediaProject({
+        runtimeProjectId: '44444444-4444-4444-8444-444444444444',
+        projectId: 'izziapi-demo',
+        sourceIdentity: '4'.repeat(64),
+        title: 'Forged duplicate identity',
+        evidenceDigest: 'd'.repeat(64),
+        importedAt: '2026-07-29T11:00:00.000Z',
+        artifact: {
+          kind: 'project_manifest',
+          name: 'video-workflow.json',
+          sha256: 'd'.repeat(64),
+          createdAt: '2026-07-29T11:00:00.000Z',
+        },
+      }),
+      legacyProjectIds: ['izziapi-demo'],
+    };
+    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce(forgedImport);
 
-    const stalePreviewPromise = context.service.runMediaPreview({ jobId: oldJobId });
-    await vi.waitFor(() => expect(mediaRuntime.runPreview).toHaveBeenCalledTimes(1));
-    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
-      runtimeProjectId: '55555555-5555-4555-8555-555555555555',
-      projectId: 'izziapi-demo',
-      title: 'IzziAPI demo current',
-      width: 1080,
-      height: 1920,
-      fps: 30,
-      durationSeconds: 60,
-      sceneCount: 8,
-      voice: {
-        provider: 'f5-tts',
-        license: 'CC-BY-NC-SA-4.0',
-        commercialUseAllowed: false,
-        referenceVoiceConsent: true,
-      },
-      evidenceDigest: 'f'.repeat(64),
-      importedAt: '2026-07-29T13:00:00.000Z',
-      artifact: {
-        kind: 'project_manifest',
-        name: 'video-workflow.json',
-        sha256: 'f'.repeat(64),
-        sizeBytes: 896,
-        createdAt: '2026-07-29T13:00:00.000Z',
-      },
-    });
-    const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
-    const currentJobId = refreshed.snapshot!.media.jobs[0].id;
+    const result = await context.service.importMediaProject('C:\\private\\renamed-project');
 
-    finishPreview({
-      receipt: {
-        checkedAt: '2026-07-29T13:01:00.000Z',
-        passed: true,
-        summary: 'Stale preview result.',
-        snapshotCount: 1,
-      },
-      artifacts: [{
-        kind: 'snapshot',
-        name: 'stale-frame.png',
-        sha256: '9'.repeat(64),
-        sizeBytes: 128,
-        createdAt: '2026-07-29T13:01:00.000Z',
-      }],
-    });
-    const stalePreview = await stalePreviewPromise;
-    const finalSnapshot = await context.service.getSnapshot();
-
-    expect(stalePreview.ok).toBe(false);
-    expect(stalePreview.error).toContain('đã được cập nhật');
-    expect(finalSnapshot.media.jobs).toHaveLength(1);
-    expect(finalSnapshot.media.jobs[0]).toEqual(expect.objectContaining({
-      id: currentJobId,
-      title: 'IzziAPI demo current',
-      status: 'awaiting_preview_approval',
-    }));
-    expect(finalSnapshot.media.jobs.some((job) => job.id === oldJobId)).toBe(false);
-    expect(finalSnapshot.media.artifacts.some((artifact) => artifact.name === 'stale-frame.png')).toBe(false);
+    expect(result.ok).toBe(true);
+    expect(result.reply).toContain('Đã import project');
+    expect(result.snapshot!.media.jobs).toHaveLength(2);
+    expect(result.snapshot!.media.jobs.some((item) => item.id === originalJobId)).toBe(true);
+    expect(result.snapshot!.approvals.some((item) => item.id === originalApprovalId)).toBe(true);
+    expect(result.snapshot!.media.artifacts.some((item) => item.id === originalArtifactId)).toBe(true);
   });
+
+  it.each(['success', 'failure'] as const)(
+    'discards a stale preview %s result after the project is refreshed',
+    async (outcome) => {
+      const mediaRuntime = mediaRuntimeFixture();
+      let settlePreview!: () => void;
+      const deferredPreview = new Promise<
+        Awaited<ReturnType<CustomerVideoStudioRuntime['runPreview']>>
+      >((resolve, reject) => {
+        settlePreview = () => {
+          if (outcome === 'failure') {
+            reject(new Error('stale preview failed'));
+            return;
+          }
+          resolve({
+            receipt: {
+              checkedAt: '2026-07-29T13:01:00.000Z',
+              passed: true,
+              summary: 'Stale preview result.',
+              snapshotCount: 1,
+            },
+            artifacts: [{
+              kind: 'snapshot',
+              name: 'stale-frame.png',
+              sha256: '9'.repeat(64),
+              sizeBytes: 128,
+              createdAt: '2026-07-29T13:01:00.000Z',
+            }],
+          });
+        };
+      });
+      vi.mocked(mediaRuntime.runPreview).mockReturnValueOnce(deferredPreview);
+      const context = setup({ mediaRuntime });
+      await completeOnboarding(context.service);
+      const first = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v1');
+      const oldJobId = first.snapshot!.media.jobs[0].id;
+      const approvalId = first.snapshot!.approvals[0].id;
+      await context.service.reviewApproval({ approvalId, decision: 'approved' });
+
+      const stalePreviewPromise = context.service.runMediaPreview({ jobId: oldJobId });
+      await vi.waitFor(() => expect(mediaRuntime.runPreview).toHaveBeenCalledTimes(1));
+      vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce(importedMediaProject({
+        runtimeProjectId: '55555555-5555-4555-8555-555555555555',
+        title: 'IzziAPI demo current',
+        evidenceDigest: 'f'.repeat(64),
+        importedAt: '2026-07-29T13:00:00.000Z',
+        artifact: {
+          kind: 'project_manifest',
+          name: 'video-workflow.json',
+          sha256: 'f'.repeat(64),
+          createdAt: '2026-07-29T13:00:00.000Z',
+        },
+      }));
+      const refreshed = await context.service.importMediaProject('C:\\private\\izziapi-video-project-v2');
+      const currentJobId = refreshed.snapshot!.media.jobs[0].id;
+
+      settlePreview();
+      const stalePreview = await stalePreviewPromise;
+      const finalSnapshot = await context.service.getSnapshot();
+
+      expect(stalePreview.ok).toBe(false);
+      expect(stalePreview.error).toContain('đã được cập nhật');
+      expect(finalSnapshot.media.jobs).toHaveLength(1);
+      expect(finalSnapshot.media.jobs[0]).toEqual(expect.objectContaining({
+        id: currentJobId,
+        title: 'IzziAPI demo current',
+        status: 'awaiting_preview_approval',
+      }));
+      expect(finalSnapshot.media.jobs.some((item) => item.id === oldJobId)).toBe(false);
+      expect(finalSnapshot.media.artifacts.some((item) => item.name === 'stale-frame.png')).toBe(false);
+    },
+  );
 
   it.each([
     { role: 'viewer' as const, plan: 'pro' as const, expected: 'không có quyền import' },

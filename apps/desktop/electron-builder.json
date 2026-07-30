@@ -79,6 +79,7 @@
     "icon": "build/icon.icns",
     "category": "public.app-category.developer-tools",
     "hardenedRuntime": true,
+    "notarize": true,
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
@@ -117,7 +118,7 @@
     "provider": "github",
     "owner": "kentzu213",
     "repo": "izzi-ai",
-    "releaseType": "release",
+    "releaseType": "draft",
     "vPrefixedTagName": true
   },
 
