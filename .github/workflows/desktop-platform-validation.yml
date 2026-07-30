@@ -83,6 +83,11 @@ jobs:
       - name: Collect Windows artifact evidence
         shell: pwsh
         run: |
+          $evidenceDirectory = Join-Path (Resolve-Path '.').Path 'platform-evidence'
+          if (Test-Path -LiteralPath $evidenceDirectory) {
+            throw 'platform-evidence path must not pre-exist'
+          }
+          New-Item -ItemType Directory -Path $evidenceDirectory -ErrorAction Stop | Out-Null
           $version = node -p "require('./apps/desktop/package.json').version"
           $commit = git rev-parse HEAD
           $artifact = "Izzi AI-$version-win-x64.exe"
@@ -154,6 +159,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -e platform-evidence || -L platform-evidence ]]; then
+            echo 'platform-evidence path must not pre-exist' >&2
+            exit 1
+          fi
+          mkdir platform-evidence
           version="$(node -p "require('./apps/desktop/package.json').version")"
           commit="$(git rev-parse HEAD)"
           artifact="Izzi AI-${version}-mac-${{ matrix.arch }}.dmg"

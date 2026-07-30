@@ -26,8 +26,9 @@ The harness:
 
 The R7 workflow is manual-only, has read-only repository/package permissions,
 packages with `--publish never` and retains only evidence JSON as an internal
-workflow artifact. It does not expose repository or package tokens to checkout,
-install, build, package or validation commands.
+workflow artifact. Checkout uses the workflow's scoped `contents: read` token
+inside `actions/checkout`, with `persist-credentials: false`; no token or secret
+is passed to install, build, package or validation shell commands.
 
 ## Static Windows preflight
 
@@ -37,6 +38,7 @@ After a local or CI package has been produced without publishing:
 $version = node -p "require('./apps/desktop/package.json').version"
 $commit = git rev-parse HEAD
 $releaseRoot = (Resolve-Path 'apps/desktop/release').Path
+New-Item -ItemType Directory -Path "$PWD/platform-evidence" -ErrorAction Stop
 node apps/desktop/scripts/platform-validation-harness.mjs `
   --platform windows `
   --arch x64 `
@@ -57,6 +59,7 @@ Only after signing and platform-run authority are explicitly granted, add:
 
 ```powershell
   --application "Izzi AI-$version-win-x64.exe" `
+  --expected-signer-id "<EXPECTED_CERTIFICATE_SHA1_THUMBPRINT>" `
   --probe-signatures
 ```
 
@@ -73,6 +76,7 @@ For each architecture:
 ```bash
 version="$(node -p "require('./apps/desktop/package.json').version")"
 commit="$(git rev-parse HEAD)"
+mkdir platform-evidence
 node apps/desktop/scripts/platform-validation-harness.mjs \
   --platform macos \
   --arch arm64 \
@@ -98,6 +102,7 @@ node apps/desktop/scripts/platform-validation-harness.mjs \
   --release-root "$(pwd)/apps/desktop/release" \
   --artifact "Izzi AI-${version}-mac-arm64.dmg" \
   --application "Izzi AI-${version}-mac-arm64.dmg" \
+  --expected-signer-id "<EXPECTED_APPLE_TEAM_ID>" \
   --probe-signatures \
   --output "$(pwd)/platform-evidence/macos-arm64-signed.json"
 ```
@@ -110,6 +115,10 @@ All three probes must pass:
 
 Expected decision: `SIGNED_PLATFORM_EVIDENCE_PASS`. This still does not prove
 DMG open/copy behavior or product workflows.
+
+The expected certificate thumbprint or Apple Team ID is public signer metadata,
+not a signing secret. The harness records both expected and observed identity
+and fails closed on a mismatch.
 
 ## Stable platform acceptance
 

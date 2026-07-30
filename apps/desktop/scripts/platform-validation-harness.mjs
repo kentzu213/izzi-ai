@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {
   lstat,
-  mkdir,
   readFile,
   realpath,
   writeFile,
@@ -14,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const COMMIT = /^[a-f0-9]{40}$/;
+const WINDOWS_SIGNER_ID = /^[A-F0-9]{40}$/;
+const MACOS_TEAM_ID = /^[A-Z0-9]{10}$/;
 const ARCHES = new Set(['x64', 'arm64']);
 const PLATFORMS = new Set(['windows', 'macos']);
 const MAX_PROBE_OUTPUT_BYTES = 64 * 1024;
@@ -22,15 +23,19 @@ const PROBE_TIMEOUT_MS = 120_000;
 const WINDOWS_SIGNATURE_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   '$target = $env:IZZI_VALIDATION_TARGET',
+  '$expected = [string]$env:IZZI_EXPECTED_SIGNER_ID',
   "if ([string]::IsNullOrWhiteSpace($target)) { throw 'validation target missing' }",
+  "if ([string]::IsNullOrWhiteSpace($expected)) { throw 'expected signer missing' }",
   '$signature = Get-AuthenticodeSignature -LiteralPath $target',
+  '$thumbprint = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Thumbprint } else { $null }',
   '[pscustomobject]@{',
   '  status = [string]$signature.Status',
   '  statusMessage = [string]$signature.StatusMessage',
   '  signerSubject = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Subject } else { $null }',
-  '  signerThumbprint = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Thumbprint } else { $null }',
+  '  signerThumbprint = $thumbprint',
   '} | ConvertTo-Json -Compress',
   "if ([string]$signature.Status -ne 'Valid') { exit 1 }",
+  'if ([string]$thumbprint -ne $expected) { exit 2 }',
 ].join('; ');
 
 export function parseArguments(argv) {
@@ -82,6 +87,7 @@ export function parseArguments(argv) {
     releaseRoot: values.get('--release-root'),
     output: values.get('--output'),
     application: values.get('--application'),
+    expectedSignerId: values.get('--expected-signer-id'),
     artifacts,
     probeSignatures,
   };
@@ -93,26 +99,21 @@ export async function validatePlatformArtifacts(
 ) {
   const options = normalizeOptions(rawOptions);
   const root = await trustedRoot(options.releaseRoot);
-  const artifactEvidence = [];
-  for (const relativePath of [...options.artifacts].sort()) {
-    const artifact = await trustedArtifact(root, relativePath);
-    validateArtifactIdentity(relativePath, options);
-    const bytes = await readFile(artifact.absolutePath);
-    artifactEvidence.push(Object.freeze({
-      relativePath: artifact.relativePath,
-      bytes: bytes.byteLength,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-    }));
-  }
-
-  const probes = options.probeSignatures
+  const artifactEvidence = await collectArtifactEvidence(root, options);
+  const signatureEvidence = options.probeSignatures
     ? await collectSignatureEvidence(
       options,
       root,
       dependencies.runVerifier ?? runFixedVerifier,
       dependencies.hostPlatform ?? process.platform,
     )
-    : [];
+    : { signerIdentity: null, probes: [] };
+  if (options.probeSignatures) {
+    const postProbeEvidence = await collectArtifactEvidence(root, options);
+    if (JSON.stringify(postProbeEvidence) !== JSON.stringify(artifactEvidence)) {
+      throw new Error('Artifact changed during signature verification');
+    }
+  }
 
   return Object.freeze({
     schemaVersion: 1,
@@ -127,7 +128,8 @@ export async function validatePlatformArtifacts(
     sourceCommit: options.sourceCommit,
     artifacts: Object.freeze(artifactEvidence),
     verificationTarget: options.probeSignatures ? options.application : null,
-    probes: Object.freeze(probes),
+    signerIdentity: signatureEvidence.signerIdentity,
+    probes: Object.freeze(signatureEvidence.probes),
     prohibitions: Object.freeze([
       'installer_or_application_execution',
       'release_publish',
@@ -136,11 +138,27 @@ export async function validatePlatformArtifacts(
   });
 }
 
-export async function writeEvidence(outputPath, evidence) {
+export async function writeEvidence(
+  outputPath,
+  evidence,
+  outputRoot = process.cwd(),
+) {
   const exact = exactPathInput(outputPath, 'Evidence output path');
   const resolved = path.resolve(exact);
+  const root = await trustedRoot(outputRoot);
+  if (!isContained(root, resolved)) {
+    throw new Error('Evidence output escapes the allowed root');
+  }
   const parent = path.dirname(resolved);
-  await mkdir(parent, { recursive: true });
+  await assertNoSymlinkSegments(root, parent);
+  const parentStat = await lstat(parent);
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) {
+    throw new Error('Evidence output parent must be a real directory');
+  }
+  const canonicalParent = await realpath(parent);
+  if (!samePath(canonicalParent, parent)) {
+    throw new Error('Evidence output parent must already be canonical');
+  }
   const body = `${JSON.stringify(evidence, null, 2)}\n`;
   await writeFile(resolved, body, { encoding: 'utf8', flag: 'wx' });
   return resolved;
@@ -152,6 +170,9 @@ function normalizeOptions(raw) {
   const arch = String(raw.arch ?? '');
   const version = String(raw.version ?? '');
   const sourceCommit = String(raw.sourceCommit ?? '').toLowerCase();
+  const expectedSignerId = raw.expectedSignerId
+    ? exactPathInput(raw.expectedSignerId, 'Expected signer identity').toUpperCase()
+    : undefined;
   if (!PLATFORMS.has(platform)) throw new Error('Unsupported platform');
   if (!ARCHES.has(arch)) throw new Error('Unsupported architecture');
   if (!VERSION.test(version)) throw new Error('Invalid release version');
@@ -162,6 +183,18 @@ function normalizeOptions(raw) {
   const artifacts = raw.artifacts.map((value) => exactRelativePath(value));
   if (new Set(artifacts).size !== artifacts.length) {
     throw new Error('Duplicate artifact path');
+  }
+  if (raw.probeSignatures === true && !expectedSignerId) {
+    throw new Error('Expected signer identity is required with signature probes');
+  }
+  if (
+    expectedSignerId
+    && (
+      (platform === 'windows' && !WINDOWS_SIGNER_ID.test(expectedSignerId))
+      || (platform === 'macos' && !MACOS_TEAM_ID.test(expectedSignerId))
+    )
+  ) {
+    throw new Error('Invalid expected signer identity');
   }
   return Object.freeze({
     platform,
@@ -175,9 +208,25 @@ function normalizeOptions(raw) {
     application: raw.application
       ? exactRelativePath(raw.application)
       : undefined,
+    expectedSignerId,
     artifacts: Object.freeze(artifacts),
     probeSignatures: raw.probeSignatures === true,
   });
+}
+
+async function collectArtifactEvidence(root, options) {
+  const evidence = [];
+  for (const relativePath of [...options.artifacts].sort()) {
+    const artifact = await trustedArtifact(root, relativePath);
+    validateArtifactIdentity(relativePath, options);
+    const bytes = await readFile(artifact.absolutePath);
+    evidence.push(Object.freeze({
+      relativePath: artifact.relativePath,
+      bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    }));
+  }
+  return evidence;
 }
 
 async function trustedRoot(rootInput) {
@@ -279,19 +328,54 @@ async function collectSignatureEvidence(
     root,
     options.application,
   );
-  const requests = options.platform === 'windows'
-    ? [{
+  if (options.platform === 'windows') {
+    const request = {
       name: 'authenticode',
       command: 'powershell.exe',
       args: ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_SIGNATURE_SCRIPT],
-      env: { IZZI_VALIDATION_TARGET: application },
-    }]
-    : [
-      {
-        name: 'codesign',
-        command: 'codesign',
-        args: ['--verify', '--strict', '--verbose=2', application],
+      env: {
+        IZZI_VALIDATION_TARGET: application,
+        IZZI_EXPECTED_SIGNER_ID: options.expectedSignerId,
       },
+    };
+    const result = await executeVerifier(request, runVerifier);
+    let parsed;
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      throw new Error('Authenticode verifier returned invalid evidence');
+    }
+    const observed = String(parsed.signerThumbprint ?? '').toUpperCase();
+    if (observed !== options.expectedSignerId) {
+      throw new Error('Authenticode signer identity mismatch');
+    }
+    return {
+      signerIdentity: Object.freeze({
+        kind: 'windows-certificate-thumbprint-sha1',
+        expected: options.expectedSignerId,
+        observed,
+      }),
+      probes: [createProbeEvidence(request, result, application)],
+    };
+  }
+
+  const identityRequest = {
+    name: 'codesign-identity',
+    command: 'codesign',
+    args: ['-dv', '--verbose=4', application],
+  };
+  const identityResult = await executeVerifier(identityRequest, runVerifier);
+  const identityOutput = `${identityResult.stdout}\n${identityResult.stderr}`;
+  const observedTeamId = identityOutput.match(/TeamIdentifier=([A-Z0-9]{10})/)?.[1];
+  if (observedTeamId !== options.expectedSignerId) {
+    throw new Error('macOS signer identity mismatch');
+  }
+  const requests = [
+    {
+      name: 'codesign',
+      command: 'codesign',
+      args: ['--verify', '--strict', '--verbose=2', application],
+    },
       {
         name: 'stapler',
         command: 'xcrun',
@@ -310,25 +394,43 @@ async function collectSignatureEvidence(
           application,
         ],
       },
-    ];
-  const evidence = [];
+  ];
+  const evidence = [
+    createProbeEvidence(identityRequest, identityResult, application),
+  ];
   for (const request of requests) {
-    const result = await runVerifier(request);
-    if (!result || result.exitCode !== 0) {
-      throw new Error(`${request.name} verification failed`);
-    }
-    evidence.push(Object.freeze({
-      name: request.name,
-      status: 'PASS',
-      command: request.command,
-      args: Object.freeze(request.args.map((value) => (
-        value === application ? '<application>' : value
-      ))),
-      stdoutSha256: digestText(result.stdout ?? ''),
-      stderrSha256: digestText(result.stderr ?? ''),
-    }));
+    const result = await executeVerifier(request, runVerifier);
+    evidence.push(createProbeEvidence(request, result, application));
   }
-  return evidence;
+  return {
+    signerIdentity: Object.freeze({
+      kind: 'apple-developer-team-id',
+      expected: options.expectedSignerId,
+      observed: observedTeamId,
+    }),
+    probes: evidence,
+  };
+}
+
+async function executeVerifier(request, runVerifier) {
+  const result = await runVerifier(request);
+  if (!result || result.exitCode !== 0) {
+    throw new Error(`${request.name} verification failed`);
+  }
+  return result;
+}
+
+function createProbeEvidence(request, result, application) {
+  return Object.freeze({
+    name: request.name,
+    status: 'PASS',
+    command: request.command,
+    args: Object.freeze(request.args.map((value) => (
+      value === application ? '<application>' : value
+    ))),
+    stdoutSha256: digestText(result.stdout ?? ''),
+    stderrSha256: digestText(result.stderr ?? ''),
+  });
 }
 
 export function runFixedVerifier(request) {

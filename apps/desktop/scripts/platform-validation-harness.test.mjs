@@ -19,6 +19,8 @@ import {
 } from './platform-validation-harness.mjs';
 
 const SOURCE_COMMIT = 'a'.repeat(40);
+const WINDOWS_SIGNER_ID = 'B'.repeat(40);
+const MACOS_TEAM_ID = 'ABCDE12345';
 
 async function fixture(t) {
   const temporary = await mkdtemp(
@@ -43,6 +45,7 @@ test('parses repeated artifacts and rejects missing or duplicate options', () =>
     '--output', 'evidence.json',
     '--probe-signatures',
     '--application', 'Izzi AI.exe',
+    '--expected-signer-id', WINDOWS_SIGNER_ID,
   ]);
   assert.deepEqual(parsed.artifacts, ['a.exe', 'b.exe']);
   assert.equal(parsed.probeSignatures, true);
@@ -159,13 +162,21 @@ test('signature probes use fixed argv and fail on false signed evidence', async 
     releaseRoot: root,
     artifacts: [artifact],
     application: artifact,
+    expectedSignerId: WINDOWS_SIGNER_ID,
     probeSignatures: true,
   };
   const evidence = await validatePlatformArtifacts(input, {
     hostPlatform: 'win32',
     runVerifier: async (request) => {
       requests.push(request);
-      return { exitCode: 0, stdout: '{"status":"Valid"}', stderr: '' };
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          status: 'Valid',
+          signerThumbprint: WINDOWS_SIGNER_ID,
+        }),
+        stderr: '',
+      };
     },
   });
   assert.equal(evidence.decision, 'SIGNED_PLATFORM_EVIDENCE_PASS');
@@ -173,6 +184,8 @@ test('signature probes use fixed argv and fail on false signed evidence', async 
   assert.equal(requests[0].command, 'powershell.exe');
   assert.equal(requests[0].args.includes(artifact), false);
   assert.equal(requests[0].env.IZZI_VALIDATION_TARGET, path.join(root, artifact));
+  assert.equal(requests[0].env.IZZI_EXPECTED_SIGNER_ID, WINDOWS_SIGNER_ID);
+  assert.equal(evidence.signerIdentity.observed, WINDOWS_SIGNER_ID);
 
   await assert.rejects(
     validatePlatformArtifacts(input, {
@@ -191,9 +204,40 @@ test('signature probes use fixed argv and fail on false signed evidence', async 
     }),
     /must be one of the validated artifacts/,
   );
+  await assert.rejects(
+    validatePlatformArtifacts(input, {
+      hostPlatform: 'win32',
+      runVerifier: async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          status: 'Valid',
+          signerThumbprint: 'C'.repeat(40),
+        }),
+        stderr: '',
+      }),
+    }),
+    /signer identity mismatch/,
+  );
+  await assert.rejects(
+    validatePlatformArtifacts(input, {
+      hostPlatform: 'win32',
+      runVerifier: async () => {
+        await writeFile(path.join(root, artifact), 'swapped bytes');
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            status: 'Valid',
+            signerThumbprint: WINDOWS_SIGNER_ID,
+          }),
+          stderr: '',
+        };
+      },
+    }),
+    /changed during signature verification/,
+  );
 });
 
-test('macOS signed evidence requires all three verifier passes', async (t) => {
+test('macOS signed evidence requires signer identity and all platform probes', async (t) => {
   const temporary = await mkdtemp(
     path.join(os.tmpdir(), 'izzi-platform-macos-'),
   );
@@ -210,23 +254,32 @@ test('macOS signed evidence requires all three verifier passes', async (t) => {
     releaseRoot: root,
     artifacts: [artifact],
     application: artifact,
+    expectedSignerId: MACOS_TEAM_ID,
     probeSignatures: true,
   }, {
     hostPlatform: 'darwin',
     runVerifier: async (request) => {
       requests.push(request);
+      if (request.name === 'codesign-identity') {
+        return {
+          exitCode: 0,
+          stdout: '',
+          stderr: `TeamIdentifier=${MACOS_TEAM_ID}`,
+        };
+      }
       return { exitCode: 0, stdout: 'accepted', stderr: '' };
     },
   });
   assert.deepEqual(
     requests.map((request) => request.command),
-    ['codesign', 'xcrun', 'spctl'],
+    ['codesign', 'codesign', 'xcrun', 'spctl'],
   );
   assert.deepEqual(
     evidence.probes.map((probe) => probe.name),
-    ['codesign', 'stapler', 'gatekeeper'],
+    ['codesign-identity', 'codesign', 'stapler', 'gatekeeper'],
   );
   assert.equal(evidence.verificationTarget, artifact);
+  assert.equal(evidence.signerIdentity.observed, MACOS_TEAM_ID);
   assert.deepEqual(
     requests.find((request) => request.name === 'gatekeeper').args.slice(0, 5),
     ['--assess', '--type', 'open', '--context', 'context:primary-signature'],
@@ -244,9 +297,27 @@ test('writes evidence once and refuses overwrite', async (t) => {
     artifacts: [artifact],
   });
   const output = path.join(root, 'evidence', 'windows.json');
-  await writeEvidence(output, evidence);
+  await mkdir(path.dirname(output));
+  await writeEvidence(output, evidence, root);
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')), evidence);
-  await assert.rejects(writeEvidence(output, evidence), /EEXIST/);
+  await assert.rejects(writeEvidence(output, evidence, root), /EEXIST/);
+
+  const outsideTemporary = await mkdtemp(
+    path.join(os.tmpdir(), 'izzi-platform-evidence-outside-'),
+  );
+  const outside = await realpath(outsideTemporary);
+  t.after(() => rm(outside, { force: true, recursive: true }));
+  const redirect = path.join(root, 'redirect');
+  try {
+    await symlink(outside, redirect, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (error?.code === 'EPERM') return;
+    throw error;
+  }
+  await assert.rejects(
+    writeEvidence(path.join(redirect, 'escaped.json'), evidence, root),
+    /Symlinked|canonical|escapes/,
+  );
 });
 
 test('workflow is manual, read-only and contains no release publishing', async () => {
@@ -266,7 +337,21 @@ test('workflow is manual, read-only and contains no release publishing', async (
   assert.match(workflow, /permissions:\s*\n\s+contents: read\s*\n\s+packages: read/);
   assert.doesNotMatch(workflow, /contents: write/);
   assert.doesNotMatch(workflow, /--publish always/);
-  assert.match(workflow, /--publish never/g);
+  const checkoutSteps = workflow.match(
+    /uses: actions\/checkout@v4[\s\S]*?(?=\n {6}- name:|\n\S|$)/g,
+  ) ?? [];
+  assert.equal(checkoutSteps.length, 3);
+  for (const step of checkoutSteps) {
+    assert.match(step, /persist-credentials: false/);
+    assert.doesNotMatch(step, /\n\s+token:/);
+  }
+  const builderCommands = workflow.match(
+    /pnpm exec electron-builder[\s\S]*?(?=\n {6}- name:|\n\S|$)/g,
+  ) ?? [];
+  assert.equal(builderCommands.length, 2);
+  for (const command of builderCommands) {
+    assert.match(command, /--publish never/);
+  }
   assert.doesNotMatch(
     workflow,
     /softprops\/action-gh-release|gh release|GH_TOKEN|GITHUB_TOKEN|NODE_AUTH_TOKEN|secrets\./,
