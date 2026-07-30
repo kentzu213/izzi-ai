@@ -3,15 +3,16 @@
   "artifactKind": "release-gate-producer-handoff",
   "gate": "R8",
   "status": "READY_FOR_REVIEW",
-  "title": "Platform E2E evidence validator",
+  "title": "Unauthenticated platform E2E evidence structure validator",
   "baseCommit": "5eb0a36b4f4850af86fb481fb6f6f1a68f2793a2",
   "branch": "feature/release-gate-r8-e2e-evidence-20260730",
   "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r8-e2e-evidence",
   "lease": "LEASE-R8-E2E-EVIDENCE-20260730",
-  "producerImplementationCommit": "d7e872695f92d77c6b502295ce9fb5e4116c4061",
+  "producerImplementationCommit": "8fb2bdb5aa679225176c8673bc0c19c6b57ddd04",
   "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r8-e2e-evidence.md",
   "implemented": [
-    "strict R7 signed-evidence and platform E2E evidence schemas",
+    "strict R7 signed-evidence shape and platform E2E evidence schemas",
+    "exact fixed R7 verifier command and argv catalog",
     "artifact, signer, platform, architecture, version and source-commit binding",
     "Windows install/launch/upgrade/uninstall/data-retention check catalog",
     "macOS DMG/copy/first-launch/Gatekeeper/removal check catalog",
@@ -22,31 +23,31 @@
     "operator evidence collection playbook"
   ],
   "verification": {
-    "focusedTests": "PASS — 8/8 built-in Node tests, including exact R7 Windows signed-evidence compatibility",
+    "focusedTests": "PASS — 8/8 built-in Node tests, including exact R7 Windows signed-evidence compatibility and fail-closed Windows-script/macOS-argv drift cases",
     "syntax": "PASS — node --check on validator and test",
     "diffCheck": "PASS",
     "secretScan": "PASS",
     "ownership": "PASS — five exact leased paths only; implementation commit contains three artifact paths",
     "lint": "Pending canonical replay — isolated producer has no node_modules and no install or junction is authorized",
-    "security": "READY FOR INDEPENDENT REVIEW — strict schemas, exact R7 probe catalog, full raw-input canonical digests, artifact/signer/commit binding, failed-check and secret-like denial, canonical input/output containment, create-only output and stableReleaseAccepted:false"
+    "security": "READY FOR INDEPENDENT RE-REVIEW — R8 now makes no authenticity claim: output is UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS with evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false. Exact R7 command/argv shapes, full raw-input canonical digests, artifact/signer/commit binding, failed-check and secret-like denial, canonical containment and create-only output remain enforced."
   },
   "artifacts": [
     {
       "path": "apps/desktop/scripts/platform-e2e-evidence-validator.mjs",
-      "sha256": "0f630c6c8b9f569a7d6a5c9d8a1fbd03dfdca924b0d9329fd3dfa9729ba69421",
-      "bytes": 23615
+      "sha256": "27257b3c8bcafd9d1e84a37b14101a44e796b9a082a18edad768040d9494ef44",
+      "bytes": 24566
     },
     {
       "path": "apps/desktop/scripts/platform-e2e-evidence-validator.test.mjs",
-      "sha256": "b6a6c11e42482cf3e5429ec09da076c975d50d14de1aac9e2a6fb7b006c08236",
-      "bytes": 11744
+      "sha256": "c17bd459478dbf36c88af9cc0f93baabfd4f56582e53968609bd1c32b84cf5dc",
+      "bytes": 13742
     },
     {
       "path": "docs/desktop-platform-e2e-evidence-playbook.md",
-      "sha256": "1e66c9974f29aea4255782a84a395f48e4f49794a7dc1339abd8f1dd424aa771",
-      "bytes": 2614
+      "sha256": "9775341646343e949ffbdc2ef22915f4a2e1750275858cda7b94b3cb3b199c05",
+      "bytes": 2906
     }
   ],
   "stableReleaseAccepted": false,
-  "authorization": "No workflow, installer, application, browser, platform verifier or network action was executed. No secret, push, tag, publish, deploy or stable promotion is authorized."
+  "authorization": "No workflow, installer, application, browser, platform verifier or network action was executed. R8 does not authenticate evidence and cannot advance the release gate. No secret, push, tag, publish, deploy or stable promotion is authorized."
 }
