@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-30T01:07:59.3039715Z",
+  "updatedAt": "2026-07-30T01:31:13.6727925Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -1138,6 +1138,29 @@
       },
       "scope": "Detached Ed25519 verification against two distinct caller-pinned public keys only. Caller pins are not approved trust anchors, so R9 does not authenticate evidence, advance Release Gate R or accept stable.",
       "residualGate": "Approved trust anchors and explicitly authorized real Windows/macOS evidence are both still required before any evidence-authentication or release-gate advancement claim."
+    },
+    "r10ExternalTrustAuthorityBoundary": {
+      "status": "ACCEPTED_EXTERNAL_TRUST_AUTHORITY_BOUNDARY_CHECKPOINT",
+      "checkpointStatus": "BLOCKED_AWAITING_APPROVED_TRUST_ANCHORS",
+      "lease": "LEASE-R10-EXTERNAL-TRUST-AUTHORITY-20260730",
+      "trustAnchorAccepted": false,
+      "evidenceAuthenticated": false,
+      "releaseGateAdvanceAllowed": false,
+      "stableReleaseAccepted": false,
+      "producerImplementation": "2701429cca132bfcff3b52164dd682c8b05fa1f1",
+      "producerHandoff": "2439cffe10274ad63f5163ed86bd77e8cd9d131a",
+      "canonicalGovernance": "6e2f8db66f61a7c79be7aede2b04bc84a8a314e8",
+      "canonicalImplementation": "d6d2a99c6408a79aac6047c9ca7074daa26521b7",
+      "canonicalHandoff": "4471fe1b62b85ba7009c0002003a645617effd24",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r10-external-trust-authority.json",
+      "verification": "Documentation-only checkpoint; full desktop 137 files and 1450/1450 tests; main TypeScript and production build PASS; repository lint 0 errors/350 warnings below ceiling 358; exact blob, ownership, prohibited-path, secret, GitNexus and quarantine gates PASS.",
+      "independentReview": {
+        "correctness": "PASS",
+        "security": "PASS",
+        "socrates": "PASS_FAIL_CLOSED_AT_EXTERNAL_AUTHORITY_BOUNDARY"
+      },
+      "scope": "Defines the external approval record, separation-of-duty, protected-environment, validity, rotation and revocation evidence required for a later trust-anchor decision. R10 approves no key, authenticates no evidence, advances no release gate and accepts no stable release.",
+      "residualGate": "Local-only automation is exhausted. Approved external trust anchors, authorized protected-environment evidence and real Windows/macOS platform evidence are required before any further authority claim."
     },
     "acceptedPatchCommits": [
       "845d8da98204b214f2978525166e1abafe62e954",

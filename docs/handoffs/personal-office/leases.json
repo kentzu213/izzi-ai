@@ -3,36 +3,31 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-30T01:16:46.6488774Z",
+  "updatedAt": "2026-07-30T01:31:13.6727925Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "d3cd917c3080f42d43cb0aa7e8daefa757cdf2ab",
-  "activeLeases": [
+  "integrationCommit": "4471fe1b62b85ba7009c0002003a645617effd24",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. Local-only Release Gate R preparation is exhausted at the external trust-authority boundary; approved external trust anchors and authorized real platform evidence are required before any evidence-authentication or gate-advancement claim.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R10-EXTERNAL-TRUST-AUTHORITY-20260730",
       "gate": "RELEASE-GATE-R10-EXTERNAL-TRUST-AUTHORITY",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-30T01:16:46.6488774Z",
+      "revokedAt": "2026-07-30T01:31:13.6727925Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/release-gate-r10-external-trust-authority-20260730",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r10-external-trust-authority",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r10-external-trust-authority.md",
-      "paths": [
-        "docs/desktop-external-trust-authority-playbook.md",
-        "docs/handoffs/personal-office/release-gate-r10-external-trust-authority.json",
-        "worklogs/personal-office-release-gate-r10-external-trust-authority.md"
-      ],
-      "constraints": [
-        "Documentation-only external-authority boundary. R7-R9 artifacts and all source are read-only.",
-        "No real public key, fingerprint, private key, signing secret, credential, personal operator identity or token may be read, generated, logged or stored.",
-        "The handoff must remain BLOCKED_AWAITING_APPROVED_TRUST_ANCHORS with trustAnchorAccepted:false, evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false.",
-        "No package/lockfile, workflow, release config, product source, DB/schema, auth, preload or renderer change.",
-        "No install, workflow, installer/application/browser/platform-verifier/network action, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Release Gate R10 holds one isolated three-file documentation lease to define the external trust-authority boundary. It cannot approve a trust anchor, authenticate evidence, execute platform work, advance Release Gate R or accept stable.",
-  "leaseHistory": [
+      "producerImplementation": "2701429cca132bfcff3b52164dd682c8b05fa1f1",
+      "producerHandoff": "2439cffe10274ad63f5163ed86bd77e8cd9d131a",
+      "canonicalImplementation": "d6d2a99c6408a79aac6047c9ca7074daa26521b7",
+      "canonicalHandoff": "4471fe1b62b85ba7009c0002003a645617effd24",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r10-external-trust-authority.json",
+      "reason": "The docs-only external trust-authority boundary passed independent correctness, security and Socrates review, full canonical tests/build/lint, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. It approves no key and records that local-only automation is exhausted until external trust anchors and real platform evidence are authorized."
+    },
     {
       "leaseId": "LEASE-R9-TRUST-ENVELOPE-20260730",
       "gate": "RELEASE-GATE-R9-TRUST-ENVELOPE",

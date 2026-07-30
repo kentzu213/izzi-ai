@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "acceptance-record",
+  "gate": "R10",
+  "decision": "ACCEPTED_EXTERNAL_TRUST_AUTHORITY_BOUNDARY_CHECKPOINT",
+  "checkpointStatus": "BLOCKED_AWAITING_APPROVED_TRUST_ANCHORS",
+  "trustAnchorAccepted": false,
+  "evidenceAuthenticated": false,
+  "releaseGateAdvanceAllowed": false,
+  "stableReleaseAccepted": false,
+  "decidedBy": "W0 Control Tower / Codex",
+  "decidedAt": "2026-07-30T01:31:13.6727925Z",
+  "authority": "This record accepts only the documentation checkpoint that defines where repository-local authority ends and which external evidence a later trust-anchor decision must provide. It approves no key or fingerprint, authenticates no evidence, advances no release gate and accepts no stable release.",
+  "subject": {
+    "canonicalIntegrationRef": "feature/personal-office-baseline-20260728",
+    "verifiedHead": "4471fe1b62b85ba7009c0002003a645617effd24",
+    "canonicalGovernanceCommit": "6e2f8db66f61a7c79be7aede2b04bc84a8a314e8",
+    "canonicalImplementationCommit": "d6d2a99c6408a79aac6047c9ca7074daa26521b7",
+    "canonicalHandoffCommit": "4471fe1b62b85ba7009c0002003a645617effd24",
+    "producerImplementationCommit": "2701429cca132bfcff3b52164dd682c8b05fa1f1",
+    "producerHandoffCommit": "2439cffe10274ad63f5163ed86bd77e8cd9d131a",
+    "lease": "LEASE-R10-EXTERNAL-TRUST-AUTHORITY-20260730",
+    "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r10-external-trust-authority.md",
+    "handoff": "docs/handoffs/personal-office/release-gate-r10-external-trust-authority.json"
+  },
+  "integration": {
+    "method": "EXACT_PATH_REPLAY",
+    "result": "The reviewed playbook was restored from the immutable producer implementation commit, followed by the JSON handoff and worklog from the producer handoff commit. No merge, cherry-pick, whole-worktree restore, source write, package write or quarantine byte was used.",
+    "changedImplementationPaths": 1,
+    "changedHandoffPaths": 2,
+    "sourceBlobMatches": 3,
+    "twoPhaseCommits": [
+      "d6d2a99c6408a79aac6047c9ca7074daa26521b7",
+      "4471fe1b62b85ba7009c0002003a645617effd24"
+    ]
+  },
+  "verification": [
+    {
+      "check": "authority claim boundary",
+      "result": "PASS_FAIL_CLOSED",
+      "evidence": "The playbook explicitly rejects repository-local commits, fixtures, configuration, self-authored approval records and additional local validators as sources of external trust."
+    },
+    {
+      "check": "external approval requirements",
+      "result": "PASS",
+      "evidence": "The checkpoint requires exact fingerprint, Ed25519 algorithm, signer role, repository/product/release scope, authority, validity, revocation state, immutable external reference and protected-environment policy observation."
+    },
+    {
+      "check": "separation of duties and lifecycle",
+      "result": "PASS",
+      "evidence": "Sole-producer approval and self-review are rejected; signer roles require distinct keys. Expiry, rotation, revocation, compromise and historical-evidence preservation are defined."
+    },
+    {
+      "check": "full desktop tests",
+      "result": "PASS",
+      "evidence": "137/137 test files and 1450/1450 tests passed on canonical."
+    },
+    {
+      "check": "main TypeScript and production build",
+      "result": "PASS_WITH_EXISTING_SIZE_WARNING",
+      "evidence": "Desktop build completed TypeScript with zero errors and Vite transformed 1176 modules. The existing renderer chunk advisory above 500 kB remains."
+    },
+    {
+      "check": "lint ceiling",
+      "result": "PASS",
+      "evidence": "Repository lint completed with 0 errors and 350 warnings, below the ceiling of 358."
+    },
+    {
+      "check": "ownership, prohibited paths and secret scan",
+      "result": "PASS",
+      "evidence": "Exactly three leased documentation paths were integrated. No source, package/lockfile, workflow, release configuration, DB/schema, preload, renderer or quarantine path changed. Secret-pattern and diff checks passed."
+    },
+    {
+      "check": "GitNexus impact",
+      "result": "PASS_NONE",
+      "evidence": "The documentation-only checkpoint produced no indexed process, symbol or runtime-coupling result."
+    },
+    {
+      "check": "independent review",
+      "result": "PASS",
+      "evidence": "Independent correctness review and independent security/Socrates review passed the final producer head. Review confirmed that no wording or example can be treated as an approved production trust anchor."
+    },
+    {
+      "check": "quarantine isolation",
+      "result": "PASS",
+      "evidence": "Quarantine remained read-only at 959e2d28ece81ceaa1a0f51dde5cc8a0b8d330c5 with 119 porcelain entries and fingerprint B4850D68CB264C51BA7AE519C0FAF4131B5316280B912DC3ED9E62DC76D27BE0."
+    }
+  ],
+  "requiredExternalInputs": [
+    "independently approved exact trust-anchor fingerprints and immutable approval references",
+    "authorized protected-environment observation proving required reviewers and self-review prevention",
+    "real Windows and macOS platform evidence produced under separate authority",
+    "independent review of the combined R7, R8, R9 and external-authority evidence"
+  ],
+  "prohibitedUntilSeparateApproval": [
+    "real key or fingerprint approval claim",
+    "network or GitHub inspection",
+    "GitHub environment creation or mutation",
+    "workflow execution",
+    "dependency installation",
+    "installer, application, browser or platform-verifier execution",
+    "evidence authentication claim",
+    "release-gate advancement",
+    "signing-secret retrieval",
+    "push",
+    "tag creation",
+    "publish",
+    "deployment",
+    "stable promotion"
+  ]
+}
