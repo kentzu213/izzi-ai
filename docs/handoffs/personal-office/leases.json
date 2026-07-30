@@ -3,9 +3,9 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-30T00:16:15.329Z",
+  "updatedAt": "2026-07-30T00:36:20.797Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "95a645d8ab49a6e40834e77a4aead4d2b61b1f7d",
+  "integrationCommit": "604f389daddccde001abd1232d43d633263ea5bc",
   "activeLeases": [
     {
       "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
@@ -24,14 +24,15 @@
         "worklogs/personal-office-release-gate-r8-e2e-evidence.md"
       ],
       "constraints": [
-        "Evidence schema, validator, tests and documentation only; all leased paths are new.",
+        "Unauthenticated evidence structure schema, validator, tests and documentation only; all leased paths are new.",
+        "R8 may verify exact R7 probe shapes and internal evidence binding, but it must emit evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false.",
         "No package/lockfile, workflow, release config, product source, DB/schema, auth, preload or renderer change.",
         "No install, workflow, installer/application/browser/verifier/network execution, secret retrieval, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
       ]
     }
   ],
   "activeLeaseCount": 1,
-  "statement": "Release Gate R8 holds one isolated five-file lease for a dependency-free platform E2E evidence validator and playbook. It may validate externally collected records only; workflow/package/product writes, platform execution, secrets, GitHub mutation and stable promotion remain unauthorised.",
+  "statement": "Release Gate R8 holds one isolated five-file lease for a dependency-free unauthenticated platform E2E evidence structure validator and playbook. It may validate exact record shapes and internal binding only; a separate trust step must authenticate immutable evidence before release-gate advancement. Workflow/package/product writes, platform execution, secrets, GitHub mutation, release-gate advancement and stable promotion remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R7-PLATFORM-VALIDATION-20260729",

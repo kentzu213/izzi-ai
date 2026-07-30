@@ -1,4 +1,4 @@
-# CHANGE_REQUEST — Release Gate R8 platform E2E evidence validator
+# CHANGE_REQUEST — Release Gate R8 unauthenticated E2E evidence structure validator
 
 Status: `APPROVED_FOR_ISOLATED_PRODUCER`
 
@@ -12,9 +12,11 @@ Canonical base: `95a645d8ab49a6e40834e77a4aead4d2b61b1f7d`
 
 R7 can produce immutable static or signed artifact evidence, but stable release
 still requires separately authorized Windows/macOS install and product-flow
-checks. R8 adds a dependency-free validator for the resulting operator
-evidence. It prepares a fail-closed acceptance record without executing an
-installer, application, workflow, browser or network action.
+checks. R8 adds a dependency-free structural and internal-binding validator for
+the resulting operator evidence. It cannot authenticate who produced a
+self-consistent JSON bundle and cannot advance the release gate. It prepares a
+fail-closed review record without executing an installer, application,
+workflow, browser or network action.
 
 ## Exact producer paths
 
@@ -29,7 +31,9 @@ All five paths are new. No existing hot file is included.
 ## Authorized implementation
 
 1. Validate one R7 signed-platform evidence JSON and one platform E2E evidence
-   JSON using exact schemas and no new dependency.
+   JSON using exact schemas and no new dependency. Require the exact R7
+   verifier command and argv arrays for macOS; for Windows, require the exact
+   fixed flags and SHA-256 of the complete embedded Authenticode script.
 2. Bind platform, architecture, version, source commit, artifact path, SHA-256
    and byte size across both evidence inputs.
 3. Require every platform-specific install, launch, upgrade/uninstall or DMG,
@@ -38,8 +42,12 @@ All five paths are new. No existing hot file is included.
    attestation digest and Windows data-retention policy evidence.
 5. Reject unknown fields, duplicate checks, secret-like fields/values,
    symlink/junction inputs, mismatched artifacts and mutable output paths.
-6. Emit deterministic create-only validation evidence with
-   `stableReleaseAccepted: false`; only W0 may later accept a stable candidate.
+6. Emit deterministic create-only structure evidence with decision
+   `UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS`,
+   `evidenceAuthenticated: false`, `releaseGateAdvanceAllowed: false` and
+   `stableReleaseAccepted: false`.
+7. Require a separate trust step to authenticate immutable R7 and operator
+   evidence before W0 may consider release-gate advancement.
 
 ## Constraints
 
@@ -48,6 +56,8 @@ All five paths are new. No existing hot file is included.
 - Do not install dependencies or execute any workflow, installer, application,
   browser, connector, platform verifier or network action.
 - Do not retrieve signing secrets or personal operator identity.
+- Do not claim evidence authenticity, release-gate acceptance or stable
+  acceptance from structural validation alone.
 - Do not push, tag, publish, deploy, mutate GitHub or promote stable.
 - Do not write, reset, stash, clean or commit the quarantine worktree.
 - The producer may write only the five exact paths above.
