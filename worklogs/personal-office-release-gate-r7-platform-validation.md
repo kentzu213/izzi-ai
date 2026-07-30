@@ -28,7 +28,8 @@ install/upgrade/uninstall acceptance as three separate claims.
 ## Producer verification
 
 - Implementation commit:
-  `a68efbf03925fa78993150f1b1ec7f843250c596`.
+  `0e7247c97b5e2dd167f881e9115f339d95119fac` (initial implementation
+  `a68efbf03925fa78993150f1b1ec7f843250c596`, then review corrections).
 - Focused Node tests: PASS, 8/8.
 - Node syntax checks: PASS for harness and test.
 - Workflow YAML parse/policy assertions: PASS; only `workflow_dispatch`,
@@ -49,6 +50,23 @@ Security corrections made before the implementation commit:
 - bound every signed-mode target to an artifact already hashed;
 - changed macOS signed evidence to verify the DMG itself with codesign,
   stapler and Gatekeeper `type open`, preventing a PASS on an unrelated app.
+
+Independent correctness and security review then found four blocking evidence
+issues. Correction commit `0e7247c97b5e2dd167f881e9115f339d95119fac`:
+
+- requires and records the expected Windows certificate SHA-1 thumbprint or
+  Apple Developer Team ID, so a valid signature by the wrong publisher fails;
+- re-hashes every artifact after platform probes and fails on any byte drift;
+- constrains evidence writes to a canonical, pre-existing directory under the
+  allowed output root and rejects junction/symlink redirection;
+- narrows the checkout-token statement: `actions/checkout` uses scoped
+  `contents: read` authority with `persist-credentials: false`, while no token
+  is passed to source-controlled shell commands;
+- verifies every checkout block and every electron-builder command rather than
+  relying on one global text match.
+
+Focused tests remain 8/8 PASS after these corrections. Independent re-review is
+required before integration.
 
 Artifact SHA-256 values are recorded in the producer handoff JSON.
 

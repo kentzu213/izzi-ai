@@ -8,49 +8,53 @@
   "branch": "feature/release-gate-r7-platform-validation-20260729",
   "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
   "lease": "LEASE-R7-PLATFORM-VALIDATION-20260729",
-  "producerImplementationCommit": "a68efbf03925fa78993150f1b1ec7f843250c596",
+  "producerImplementationCommit": "0e7247c97b5e2dd167f881e9115f339d95119fac",
+  "producerInitialImplementationCommit": "a68efbf03925fa78993150f1b1ec7f843250c596",
   "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
   "implemented": [
     "dependency-free artifact containment, identity, hash and size validation",
     "traversal, symlink/junction and non-file denial",
     "deterministic static-preflight evidence",
     "signature target binding to an artifact already hashed by static preflight",
+    "expected Windows certificate thumbprint or Apple Team ID enforcement and evidence",
+    "post-probe artifact re-hash to close hash/signature TOCTOU",
+    "create-only evidence writes contained under a canonical pre-existing output root with junction denial",
     "fixed-command shell-free Authenticode, codesign, stapler and Gatekeeper verifier ports",
     "manual-only contents-read platform preflight workflow",
     "electron-builder packaging constrained to --publish never",
-    "no secret or token exposure to checkout, install, build, packaging or validation commands",
+    "checkout token limited to contents:read and never persisted; no token or secret passed to install, build, packaging or validation shell commands",
     "Windows/macOS static versus signed versus stable-acceptance playbook"
   ],
   "verification": {
-    "focusedTests": "PASS — node --test apps/desktop/scripts/platform-validation-harness.test.mjs; 8/8 tests",
+    "focusedTests": "PASS after independent-review corrections — node --test apps/desktop/scripts/platform-validation-harness.test.mjs; 8/8 tests",
     "syntax": "PASS — node --check on harness and test",
-    "workflowPolicy": "PASS — js-yaml parse; only workflow_dispatch, read-only permissions, two electron-builder commands both --publish never, no release action/token/secret reference",
+    "workflowPolicy": "PASS — js-yaml parse; only workflow_dispatch, read-only permissions, all three checkout steps persist-credentials:false, two electron-builder commands each contain --publish never, no release action or shell-visible token/secret reference",
     "ownership": "PASS — six exact leased paths only; implementation commit contains four artifact paths",
     "diffCheck": "PASS",
     "secretScan": "PASS — no private-key, AWS, OpenAI or GitHub token patterns",
     "lint": "NOT RUN in producer — isolated worktree has no node_modules and using the canonical eslint binary cannot resolve producer-local ESM config dependencies; no install or junction was authorized. Canonical lint is required after exact-path replay.",
-    "security": "PASS producer preflight — signature target is one validated artifact; fixed argv uses shell:false; evidence output is create-only; no package/lockfile, existing release workflow/config, installer execution, secrets, publishing or quarantine write"
+    "security": "READY FOR INDEPENDENT RE-REVIEW — first review findings were corrected: exact signer identity required/recorded, artifacts re-hashed after probes, output constrained to canonical pre-existing root, checkout-token claim narrowed, and per-command workflow assertions added. No package/lockfile, existing release workflow/config, installer execution, signing-secret retrieval, publishing or quarantine write."
   },
   "artifacts": [
     {
       "path": ".github/workflows/desktop-platform-validation.yml",
-      "sha256": "d0e788cb2eed0fd4941d297e37531c57d1f40ed13635b93de095ac50671e9ca0",
-      "bytes": 5223
+      "sha256": "d9411c3d380b30e77964b31990baa932cf797dd09713a7a24f11f586a4f934e7",
+      "bytes": 5735
     },
     {
       "path": "apps/desktop/scripts/platform-validation-harness.mjs",
-      "sha256": "5e42c1c7edd069b1b61e52fb69306293321179928a6c1d9b7450f526c0590b82",
-      "bytes": 14373
+      "sha256": "6c7f6d60ad94ce0a510190d391b671dfde0e2c8629ca40d116d98d01e362a113",
+      "bytes": 18111
     },
     {
       "path": "apps/desktop/scripts/platform-validation-harness.test.mjs",
-      "sha256": "36b367fa0b91d698c3dfa7821ce9bd19af95ad0d7d0ec3c8c325a56ee7ea2b02",
-      "bytes": 8662
+      "sha256": "c419ee75183bdc3b872708d239575ec3fcf1550b5d684328d009b630d3733104",
+      "bytes": 11367
     },
     {
       "path": "docs/desktop-platform-validation-playbook.md",
-      "sha256": "89e644bd6e3c0d86d2590a513ee26f94bbf754df02cb58b32df034f10fe11b76",
-      "bytes": 4747
+      "sha256": "43d57f22d9fb659d272868b0becd6352b43b58ae882f4422d30e733c64748db8",
+      "bytes": 5256
     }
   ],
   "stableReleaseAccepted": false,
