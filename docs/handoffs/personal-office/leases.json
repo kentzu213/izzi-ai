@@ -3,37 +3,31 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-30T00:36:20.797Z",
+  "updatedAt": "2026-07-30T00:45:24.532Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "604f389daddccde001abd1232d43d633263ea5bc",
-  "activeLeases": [
+  "integrationCommit": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. R8's unauthenticated structure validator is integrated and accepted locally, but real platform execution, evidence authentication, release-gate advancement, secrets, GitHub mutation, publish, deploy and stable promotion remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
       "gate": "RELEASE-GATE-R8-E2E-EVIDENCE",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-30T00:16:15.329Z",
+      "revokedAt": "2026-07-30T00:45:24.532Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/release-gate-r8-e2e-evidence-20260730",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r8-e2e-evidence",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r8-e2e-evidence.md",
-      "paths": [
-        "apps/desktop/scripts/platform-e2e-evidence-validator.mjs",
-        "apps/desktop/scripts/platform-e2e-evidence-validator.test.mjs",
-        "docs/desktop-platform-e2e-evidence-playbook.md",
-        "docs/handoffs/personal-office/release-gate-r8-e2e-evidence.json",
-        "worklogs/personal-office-release-gate-r8-e2e-evidence.md"
-      ],
-      "constraints": [
-        "Unauthenticated evidence structure schema, validator, tests and documentation only; all leased paths are new.",
-        "R8 may verify exact R7 probe shapes and internal evidence binding, but it must emit evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false.",
-        "No package/lockfile, workflow, release config, product source, DB/schema, auth, preload or renderer change.",
-        "No install, workflow, installer/application/browser/verifier/network execution, secret retrieval, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Release Gate R8 holds one isolated five-file lease for a dependency-free unauthenticated platform E2E evidence structure validator and playbook. It may validate exact record shapes and internal binding only; a separate trust step must authenticate immutable evidence before release-gate advancement. Workflow/package/product writes, platform execution, secrets, GitHub mutation, release-gate advancement and stable promotion remain unauthorised.",
-  "leaseHistory": [
+      "producerImplementation": "8fb2bdb5aa679225176c8673bc0c19c6b57ddd04",
+      "producerHandoff": "c3e082fcf0ea0342cfc44d58b8611d084e72af52",
+      "canonicalImplementation": "3d74094dae653c94682420af196d9a54d0ea9480",
+      "canonicalHandoff": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r8-e2e-evidence.json",
+      "reason": "The unauthenticated E2E evidence structure validator passed independent correctness and security review, 8/8 focused tests, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. It cannot authenticate evidence or advance Release Gate R; stable release remains blocked."
+    },
     {
       "leaseId": "LEASE-R7-PLATFORM-VALIDATION-20260729",
       "gate": "RELEASE-GATE-R7-PLATFORM-VALIDATION",

@@ -4,7 +4,7 @@
   "programme": "Starizzi Personal Office OS",
   "owner": "W0 Control Tower",
   "rule": "This ledger is the single source of truth for loop status. Only W0 writes it. Only W0 may set ACCEPTED, and only after integration verification. A producer claiming done in prose does not change status.",
-  "updatedAt": "2026-07-29T23:59:59.999Z",
+  "updatedAt": "2026-07-30T00:45:24.532Z",
   "updatedBy": "W0 Control Tower / Codex",
   "canonicalRelease": {
     "tag": "v1.14.0-beta.3",
@@ -1096,6 +1096,26 @@
       },
       "scope": "Non-publishing static/signed platform evidence only. The workflow was not executed and stable release remains blocked."
     },
+    "r8E2EEvidenceStructureValidation": {
+      "status": "ACCEPTED_UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_VALIDATOR",
+      "lease": "LEASE-R8-E2E-EVIDENCE-20260730",
+      "evidenceAuthenticated": false,
+      "releaseGateAdvanceAllowed": false,
+      "stableReleaseAccepted": false,
+      "producerImplementation": "8fb2bdb5aa679225176c8673bc0c19c6b57ddd04",
+      "producerHandoff": "c3e082fcf0ea0342cfc44d58b8611d084e72af52",
+      "canonicalGovernance": "66d897ea66a0195d6e5e4a9320e3eff4111911d2",
+      "canonicalImplementation": "3d74094dae653c94682420af196d9a54d0ea9480",
+      "canonicalHandoff": "a77a0784875cee8d3331602b3a94bbed0baf9244",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r8-e2e-evidence.json",
+      "verification": "Focused validator 8/8; full desktop 137 files and 1450/1450 tests; main TypeScript and production build PASS; changed-file lint PASS; repository lint 0 errors/350 warnings below ceiling 358; exact blob, ownership, prohibited-path, secret, GitNexus and quarantine gates PASS.",
+      "independentReview": {
+        "correctness": "PASS",
+        "security": "PASS"
+      },
+      "scope": "Dependency-free structure and internal-binding validation only. R8 does not authenticate evidence and cannot advance Release Gate R or accept stable.",
+      "residualGate": "A separate trust step must authenticate immutable R7 and operator evidence after explicitly authorized real platform execution."
+    },
     "acceptedPatchCommits": [
       "845d8da98204b214f2978525166e1abafe62e954",
       "1b82dc6095b277b56decfe27230b1c45c4648200"
@@ -1179,6 +1199,7 @@
       "gitNexusImpact": "CRITICAL — 186 changed symbols, 157 affected symbols, 49 indexed files; explicitly reviewed and covered by focused plus full canonical gates."
     },
     "remainingPlatformGates": [
+      "authenticate immutable R7 and operator E2E evidence through a separate trust step",
       "Create and protect the GitHub desktop-release environment with required reviewers and self-review disabled",
       "Windows install/launch/upgrade/uninstall and data-retention checks",
       "real macOS x64 and arm64 codesign/notarization/stapling/Gatekeeper evidence",
