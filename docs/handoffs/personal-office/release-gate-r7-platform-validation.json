@@ -8,7 +8,8 @@
   "branch": "feature/release-gate-r7-platform-validation-20260729",
   "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
   "lease": "LEASE-R7-PLATFORM-VALIDATION-20260729",
-  "producerImplementationCommit": "0e7247c97b5e2dd167f881e9115f339d95119fac",
+  "producerImplementationCommit": "4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d",
+  "producerSecurityHardeningCommit": "0e7247c97b5e2dd167f881e9115f339d95119fac",
   "producerInitialImplementationCommit": "a68efbf03925fa78993150f1b1ec7f843250c596",
   "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
   "implemented": [
@@ -48,8 +49,8 @@
     },
     {
       "path": "apps/desktop/scripts/platform-validation-harness.test.mjs",
-      "sha256": "c419ee75183bdc3b872708d239575ec3fcf1550b5d684328d009b630d3733104",
-      "bytes": 11367
+      "sha256": "278b3962e68d446690277cd81e959c0ef29303c4b3e6bf82465ca05d293ffd32",
+      "bytes": 11373
     },
     {
       "path": "docs/desktop-platform-validation-playbook.md",

@@ -28,8 +28,9 @@ install/upgrade/uninstall acceptance as three separate claims.
 ## Producer verification
 
 - Implementation commit:
-  `0e7247c97b5e2dd167f881e9115f339d95119fac` (initial implementation
-  `a68efbf03925fa78993150f1b1ec7f843250c596`, then review corrections).
+  `4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d` (initial implementation
+  `a68efbf03925fa78993150f1b1ec7f843250c596`, security hardening
+  `0e7247c97b5e2dd167f881e9115f339d95119fac`, then lint correction).
 - Focused Node tests: PASS, 8/8.
 - Node syntax checks: PASS for harness and test.
 - Workflow YAML parse/policy assertions: PASS; only `workflow_dispatch`,
@@ -67,6 +68,12 @@ issues. Correction commit `0e7247c97b5e2dd167f881e9115f339d95119fac`:
 
 Focused tests remain 8/8 PASS after these corrections. Independent re-review is
 required before integration.
+
+The first canonical replay exposed three `no-regex-spaces` errors in the
+workflow-policy test. Integration was restored clean before any commit, and
+producer correction `4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d` replaced the
+literal two-space regexes with counted quantifiers. Focused tests and syntax
+checks remained PASS; canonical lint must be rerun after the next exact replay.
 
 Artifact SHA-256 values are recorded in the producer handoff JSON.
 
