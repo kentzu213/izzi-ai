@@ -23,6 +23,8 @@ const ARCHES = new Set(['x64', 'arm64']);
 const METHODS = new Set(['manual', 'automation']);
 const MAX_INPUT_BYTES = 1024 * 1024;
 const MAX_RUN_DURATION_MS = 24 * 60 * 60 * 1000;
+const R7_WINDOWS_SCRIPT_SHA256 =
+  'eb9b38a4a989f1263a28d588edd4e7654260aba54052e788b17507ef6445f26c';
 
 const SHARED_CHECKS = Object.freeze([
   'extensions_render',
@@ -139,8 +141,10 @@ export function validatePlatformE2EEvidence(
 
   return Object.freeze({
     schemaVersion: 1,
-    artifactKind: 'desktop-platform-e2e-validation',
-    decision: 'PLATFORM_E2E_EVIDENCE_VALIDATED',
+    artifactKind: 'desktop-platform-e2e-structure-validation',
+    decision: 'UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS',
+    evidenceAuthenticated: false,
+    releaseGateAdvanceAllowed: false,
     stableReleaseAccepted: false,
     platform: e2eEvidence.platform,
     arch: e2eEvidence.arch,
@@ -161,6 +165,7 @@ export function validatePlatformE2EEvidence(
     }),
     requiredChecks: Object.freeze(requiredChecks),
     prohibitions: Object.freeze([
+      'release_gate_advancement',
       'stable_promotion',
       'publish',
       'deployment',
@@ -401,12 +406,38 @@ function validateArtifactIdentity(relativePath, identity) {
 
 function validateProbeCatalog(probes, platform) {
   const expected = platform === 'windows'
-    ? new Map([['authenticode', 'powershell.exe']])
+    ? new Map([[
+      'authenticode',
+      {
+        command: 'powershell.exe',
+        args: ['-NoProfile', '-NonInteractive', '-Command'],
+      },
+    ]])
     : new Map([
-      ['codesign-identity', 'codesign'],
-      ['codesign', 'codesign'],
-      ['stapler', 'xcrun'],
-      ['gatekeeper', 'spctl'],
+      ['codesign-identity', {
+        command: 'codesign',
+        args: ['-dv', '--verbose=4', '<application>'],
+      }],
+      ['codesign', {
+        command: 'codesign',
+        args: ['--verify', '--strict', '--verbose=2', '<application>'],
+      }],
+      ['stapler', {
+        command: 'xcrun',
+        args: ['stapler', 'validate', '<application>'],
+      }],
+      ['gatekeeper', {
+        command: 'spctl',
+        args: [
+          '--assess',
+          '--type',
+          'open',
+          '--context',
+          'context:primary-signature',
+          '--verbose=4',
+          '<application>',
+        ],
+      }],
     ]);
   const names = probes.map((probe) => {
     assertRecord(probe, 'Platform probe');
@@ -418,24 +449,25 @@ function validateProbeCatalog(probes, platform) {
       'stderrSha256',
       'stdoutSha256',
     ], 'Platform probe');
+    const expectedProbe = expected.get(probe.name);
     const argsAreArray = Array.isArray(probe.args);
-    const targetBindingValid = argsAreArray && (
-      platform === 'windows'
-        ? (
-        probe.name === 'authenticode'
-        && probe.args[0] === '-NoProfile'
-        && probe.args[1] === '-NonInteractive'
-        && probe.args[2] === '-Command'
+    const targetBindingValid = platform === 'windows'
+      ? (
+        argsAreArray
+        && probe.args.length === 4
+        && JSON.stringify(probe.args.slice(0, 3))
+          === JSON.stringify(expectedProbe?.args)
         && typeof probe.args[3] === 'string'
-        && probe.args[3].includes('Get-AuthenticodeSignature')
-        && probe.args[3].includes('IZZI_EXPECTED_SIGNER_ID')
-        )
-        : probe.args.includes('<application>')
-    );
+        && digestText(probe.args[3]) === R7_WINDOWS_SCRIPT_SHA256
+      )
+      : (
+        argsAreArray
+        && JSON.stringify(probe.args) === JSON.stringify(expectedProbe?.args)
+      );
     if (
       typeof probe.name !== 'string'
       || probe.status !== 'PASS'
-      || probe.command !== expected.get(probe.name)
+      || probe.command !== expectedProbe?.command
       || !argsAreArray
       || !targetBindingValid
       || typeof probe.stdoutSha256 !== 'string'
@@ -700,6 +732,10 @@ function comparablePath(value) {
 
 function digestCanonical(value) {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+function digestText(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function canonicalJson(value) {

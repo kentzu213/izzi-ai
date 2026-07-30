@@ -2,9 +2,10 @@
 
 Status: Release Gate R8 evidence preparation
 
-R8 validates records from a separately authorized platform run. It does not
-install, launch, upgrade, uninstall, sign, notarize, publish or promote
-anything.
+R8 validates the structure and internal binding of records from a separately
+authorized platform run. It does not authenticate who produced those records,
+and it does not install, launch, upgrade, uninstall, sign, notarize, publish or
+promote anything.
 
 ## Evidence chain
 
@@ -12,9 +13,10 @@ anything.
 2. An authorized operator performs the platform run and creates one strict E2E
    evidence JSON.
 3. R8 binds both inputs and emits
-   `PLATFORM_E2E_EVIDENCE_VALIDATED`.
-4. W0 independently reviews the immutable inputs and decides whether a release
-   candidate may advance. R8 output always keeps
+   `UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS`.
+4. An external trust step must authenticate the immutable R7 and operator
+   evidence before W0 can consider release-gate advancement. R8 output sets
+   `evidenceAuthenticated: false`, `releaseGateAdvanceAllowed: false` and
    `stableReleaseAccepted: false`.
 
 ## Shared required checks
@@ -71,10 +73,11 @@ node apps/desktop/scripts/platform-e2e-evidence-validator.mjs `
   --output "windows-validated.json"
 ```
 
-Expected decision: `PLATFORM_E2E_EVIDENCE_VALIDATED`.
+Expected decision: `UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS`.
 
-This decision validates evidence structure and binding only. It is not stable
-release acceptance.
+This decision validates evidence structure and internal binding only. A forged
+but self-consistent JSON bundle is not authenticated by R8 and cannot advance
+the release gate.
 
 ## Failure handling
 

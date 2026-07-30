@@ -24,6 +24,37 @@ const SOURCE_COMMIT = 'a'.repeat(40);
 const ARTIFACT_SHA = 'b'.repeat(64);
 const ATTESTATION_SHA = 'c'.repeat(64);
 const EVIDENCE_SHA = 'd'.repeat(64);
+const R7_WINDOWS_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  '$target = $env:IZZI_VALIDATION_TARGET',
+  '$expected = [string]$env:IZZI_EXPECTED_SIGNER_ID',
+  "if ([string]::IsNullOrWhiteSpace($target)) { throw 'validation target missing' }",
+  "if ([string]::IsNullOrWhiteSpace($expected)) { throw 'expected signer missing' }",
+  '$signature = Get-AuthenticodeSignature -LiteralPath $target',
+  '$thumbprint = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Thumbprint } else { $null }',
+  '[pscustomobject]@{',
+  '  status = [string]$signature.Status',
+  '  statusMessage = [string]$signature.StatusMessage',
+  '  signerSubject = if ($signature.SignerCertificate) { [string]$signature.SignerCertificate.Subject } else { $null }',
+  '  signerThumbprint = $thumbprint',
+  '} | ConvertTo-Json -Compress',
+  "if ([string]$signature.Status -ne 'Valid') { exit 1 }",
+  'if ([string]$thumbprint -ne $expected) { exit 2 }',
+].join('; ');
+const R7_MACOS_PROBE_ARGS = Object.freeze({
+  'codesign-identity': ['-dv', '--verbose=4', '<application>'],
+  codesign: ['--verify', '--strict', '--verbose=2', '<application>'],
+  stapler: ['stapler', 'validate', '<application>'],
+  gatekeeper: [
+    '--assess',
+    '--type',
+    'open',
+    '--context',
+    'context:primary-signature',
+    '--verbose=4',
+    '<application>',
+  ],
+});
 
 const SHARED = [
   'extensions_render',
@@ -72,9 +103,9 @@ function platformEvidence(platform = 'windows', arch = 'x64') {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        'Get-AuthenticodeSignature; IZZI_EXPECTED_SIGNER_ID',
+        R7_WINDOWS_SCRIPT,
       ]
-      : ['--verify', '<application>'],
+      : [...R7_MACOS_PROBE_ARGS[name]],
     stdoutSha256: '1'.repeat(64),
     stderrSha256: '2'.repeat(64),
   });
@@ -178,7 +209,12 @@ test('validates deterministic Windows evidence without granting stable', () => {
     structuredClone(e2e),
   );
   assert.deepEqual(first, replay);
-  assert.equal(first.decision, 'PLATFORM_E2E_EVIDENCE_VALIDATED');
+  assert.equal(
+    first.decision,
+    'UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS',
+  );
+  assert.equal(first.evidenceAuthenticated, false);
+  assert.equal(first.releaseGateAdvanceAllowed, false);
   assert.equal(first.stableReleaseAccepted, false);
   assert.equal(first.run.checkCount, SHARED.length + WINDOWS.length);
   assert.equal(first.artifact.sha256, ARTIFACT_SHA);
@@ -189,6 +225,13 @@ test('validates deterministic Windows evidence without granting stable', () => {
   assert.notEqual(
     first.inputDigests.platformEvidenceSha256,
     changed.inputDigests.platformEvidenceSha256,
+  );
+
+  const changedScript = structuredClone(platform);
+  changedScript.probes[0].args[3] += '; Write-Output tampered';
+  assert.throws(
+    () => validatePlatformE2EEvidence(changedScript, e2e),
+    /Platform probe is invalid/,
   );
 });
 
@@ -224,7 +267,10 @@ test('accepts the exact R7 Windows signed-evidence shape', async (t) => {
   const e2e = e2eEvidence();
   e2e.artifact = { ...signed.artifacts[0] };
   const validation = validatePlatformE2EEvidence(signed, e2e);
-  assert.equal(validation.decision, 'PLATFORM_E2E_EVIDENCE_VALIDATED');
+  assert.equal(
+    validation.decision,
+    'UNAUTHENTICATED_E2E_EVIDENCE_STRUCTURE_PASS',
+  );
 });
 
 test('validates macOS evidence with DMG and Gatekeeper checks', () => {
@@ -236,6 +282,16 @@ test('validates macOS evidence with DMG and Gatekeeper checks', () => {
   assert.equal(result.arch, 'arm64');
   assert.equal(result.run.checkCount, SHARED.length + MACOS.length);
   assert.ok(result.requiredChecks.includes('gatekeeper_acceptance'));
+
+  const changedArgv = platformEvidence('macos', 'arm64');
+  changedArgv.probes.find((probe) => probe.name === 'gatekeeper').args.pop();
+  assert.throws(
+    () => validatePlatformE2EEvidence(
+      changedArgv,
+      e2eEvidence('macos', 'arm64'),
+    ),
+    /Platform probe is invalid/,
+  );
 });
 
 test('rejects unsigned, mismatched or unrelated artifact evidence', () => {
