@@ -3,12 +3,37 @@
   "artifactKind": "hot-file-lease-registry",
   "owner": "W0 Control Tower",
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
-  "updatedAt": "2026-07-30T00:45:24.532Z",
+  "updatedAt": "2026-07-30T00:50:12.388Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "a77a0784875cee8d3331602b3a94bbed0baf9244",
-  "activeLeases": [],
-  "activeLeaseCount": 0,
-  "statement": "No active producer lease. R8's unauthenticated structure validator is integrated and accepted locally, but real platform execution, evidence authentication, release-gate advancement, secrets, GitHub mutation, publish, deploy and stable promotion remain unauthorised.",
+  "integrationCommit": "99c3c568b59c6575b0fea01313b2203f3860b906",
+  "activeLeases": [
+    {
+      "leaseId": "LEASE-R9-TRUST-ENVELOPE-20260730",
+      "gate": "RELEASE-GATE-R9-TRUST-ENVELOPE",
+      "window": "W0-Codex",
+      "status": "ACTIVE",
+      "grantedAt": "2026-07-30T00:50:12.388Z",
+      "branch": "feature/release-gate-r9-trust-envelope-20260730",
+      "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r9-trust-envelope",
+      "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r9-trust-envelope.md",
+      "paths": [
+        "apps/desktop/scripts/platform-e2e-trust-envelope-validator.mjs",
+        "apps/desktop/scripts/platform-e2e-trust-envelope-validator.test.mjs",
+        "docs/desktop-platform-e2e-trust-envelope-playbook.md",
+        "docs/handoffs/personal-office/release-gate-r9-trust-envelope.json",
+        "worklogs/personal-office-release-gate-r9-trust-envelope.md"
+      ],
+      "constraints": [
+        "Detached Ed25519 verification, tests and documentation only; all leased paths are new and R7/R8 are read-only dependencies.",
+        "Public-key material and caller-pinned fingerprints only. No private key, signing secret, credential or personal operator identity may be read, generated, logged or stored.",
+        "Successful signature verification must still emit trustAnchorAccepted:false, evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false.",
+        "No package/lockfile, workflow, release config, product source, DB/schema, auth, preload or renderer change.",
+        "No install, workflow, installer/application/browser/platform-verifier/network execution, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
+      ]
+    }
+  ],
+  "activeLeaseCount": 1,
+  "statement": "Release Gate R9 holds one isolated five-file lease for a dependency-free pinned-key trust-envelope verifier. It may verify detached signatures with public keys only; trust-anchor approval, evidence authentication for gate purposes, platform execution, secrets, GitHub mutation, release-gate advancement and stable promotion remain unauthorised.",
   "leaseHistory": [
     {
       "leaseId": "LEASE-R8-E2E-EVIDENCE-20260730",
