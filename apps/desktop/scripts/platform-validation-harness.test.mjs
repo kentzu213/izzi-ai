@@ -331,9 +331,9 @@ test('workflow is manual, read-only and contains no release publishing', async (
     path.join(repositoryRoot, '.github', 'workflows', 'desktop-platform-validation.yml'),
     'utf8',
   );
-  assert.match(workflow, /\n  workflow_dispatch:\s*\n/);
-  assert.doesNotMatch(workflow, /\n  push:/);
-  assert.doesNotMatch(workflow, /\n  pull_request:/);
+  assert.match(workflow, /\n {2}workflow_dispatch:\s*\n/);
+  assert.doesNotMatch(workflow, /\n {2}push:/);
+  assert.doesNotMatch(workflow, /\n {2}pull_request:/);
   assert.match(workflow, /permissions:\s*\n\s+contents: read\s*\n\s+packages: read/);
   assert.doesNotMatch(workflow, /contents: write/);
   assert.doesNotMatch(workflow, /--publish always/);
