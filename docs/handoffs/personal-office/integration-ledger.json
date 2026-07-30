@@ -1081,6 +1081,21 @@
   "releaseGateR": {
     "decision": "READY_FOR_PLATFORM_VALIDATION",
     "stableReleaseAccepted": false,
+    "r7PlatformValidation": {
+      "status": "ACCEPTED_NON_PUBLISHING_PLATFORM_VALIDATION_HARNESS",
+      "lease": "LEASE-R7-PLATFORM-VALIDATION-20260729",
+      "producerImplementation": "4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d",
+      "producerHandoff": "293075bf4b005236e68c9abf49178e1430a131e7",
+      "canonicalImplementation": "c28221eeba48eff67690f1fe1e78c8f12b0907ee",
+      "canonicalHandoff": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r7-platform-validation.json",
+      "verification": "Focused harness 8/8; full desktop 137 files and 1450/1450 tests; main TypeScript and production build PASS; changed-file lint PASS; repository lint 0 errors/350 warnings below ceiling 358; YAML policy, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine gates PASS.",
+      "independentReview": {
+        "correctness": "PASS",
+        "security": "PASS"
+      },
+      "scope": "Non-publishing static/signed platform evidence only. The workflow was not executed and stable release remains blocked."
+    },
     "acceptedPatchCommits": [
       "845d8da98204b214f2978525166e1abafe62e954",
       "1b82dc6095b277b56decfe27230b1c45c4648200"

@@ -5,35 +5,29 @@
   "rule": "Only W0 grants, extends, or revokes a lease. A producer must never write a hot file without holding an active lease. Requesting a lease requires a CHANGE_REQUEST naming the symbol, the reason, the intended patch, and the test that proves it.",
   "updatedAt": "2026-07-29T23:59:59.999Z",
   "updatedBy": "W0 Control Tower / Codex",
-  "integrationCommit": "c8f616ed206d43ab79e90cf27c0034a46ef09f00",
-  "activeLeases": [
+  "integrationCommit": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+  "activeLeases": [],
+  "activeLeaseCount": 0,
+  "statement": "No active producer lease. Release Gate R7's non-publishing platform-validation harness is integrated and independently reviewed; workflow execution, package/lockfile changes, dependency installation, existing release workflow/config changes, installer/application execution, signing-secret retrieval, GitHub mutation, push, tag, publish, deployment, stable promotion and quarantine writes remain unauthorised.",
+  "leaseHistory": [
     {
       "leaseId": "LEASE-R7-PLATFORM-VALIDATION-20260729",
       "gate": "RELEASE-GATE-R7-PLATFORM-VALIDATION",
       "window": "W0-Codex",
-      "status": "ACTIVE",
+      "status": "REVOKED",
       "grantedAt": "2026-07-29T23:39:44.725Z",
+      "revokedAt": "2026-07-29T23:59:59.999Z",
+      "revokedBy": "W0 Control Tower / Codex",
       "branch": "feature/release-gate-r7-platform-validation-20260729",
       "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r7-platform-validation",
       "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r7-platform-validation.md",
-      "paths": [
-        ".github/workflows/desktop-platform-validation.yml",
-        "apps/desktop/scripts/platform-validation-harness.mjs",
-        "apps/desktop/scripts/platform-validation-harness.test.mjs",
-        "docs/desktop-platform-validation-playbook.md",
-        "docs/handoffs/personal-office/release-gate-r7-platform-validation.json",
-        "worklogs/personal-office-release-gate-r7-platform-validation.md"
-      ],
-      "constraints": [
-        "Non-publishing artifact validation and documentation only; no existing hot file is leased.",
-        "No package/lockfile, release-desktop workflow, electron-builder config, product source, DB/schema, auth, preload or renderer change.",
-        "No install, installer/application execution, secret retrieval, GitHub mutation, push, tag, publish, deploy, stable promotion or quarantine write."
-      ]
-    }
-  ],
-  "activeLeaseCount": 1,
-  "statement": "Release Gate R7 holds one isolated exact-path lease for a non-publishing Windows/macOS artifact validation harness, tests, manual read-only workflow and playbook. Package/lockfile changes, dependency installation, existing release workflow/config changes, installer/application execution, secret retrieval, GitHub mutation, push, tag, publish, deployment, stable promotion and quarantine writes remain unauthorised.",
-  "leaseHistory": [
+      "producerImplementation": "4693a36ba0ff4f65f753e6bb7aee3c00870e1f0d",
+      "producerHandoff": "293075bf4b005236e68c9abf49178e1430a131e7",
+      "canonicalImplementation": "c28221eeba48eff67690f1fe1e78c8f12b0907ee",
+      "canonicalHandoff": "e573f87cf7aa8e2ec98e37abb1de0aa2391834b0",
+      "acceptance": "docs/handoffs/personal-office/acceptance/release-gate-r7-platform-validation.json",
+      "reason": "The non-publishing platform-validation harness passed independent correctness and security review, 8/8 focused tests, 1450/1450 full desktop tests, main TypeScript, production build, changed-file lint, repository lint ceiling, workflow policy, exact blob, ownership, prohibited-path, secret, GitNexus and quarantine-isolation gates. Stable release remains blocked."
+    },
     {
       "leaseId": "LEASE-L17-OFFLINE-COMPOSITION-20260729",
       "loop": "17",
