@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "release-gate-producer-handoff",
+  "gate": "R9",
+  "status": "READY_FOR_REVIEW",
+  "title": "Pinned-key trust-envelope verifier",
+  "baseCommit": "2223c88f48b7c2725d457ab267bb8fe6d0d16304",
+  "branch": "feature/release-gate-r9-trust-envelope-20260730",
+  "worktree": "F:\\Ai Tools\\_wt-starizzi-release-gate-r9-trust-envelope",
+  "lease": "LEASE-R9-TRUST-ENVELOPE-20260730",
+  "producerImplementationCommit": "fd21814d0a610a472c46246dc8fab4058f216c89",
+  "changeRequest": "docs/handoffs/personal-office/change-request-release-gate-r9-trust-envelope.md",
+  "implemented": [
+    "strict R7, raw operator E2E, R8 replay and detached-signature envelope binding",
+    "Ed25519 SPKI public-key parsing with private-key-material rejection",
+    "caller-pinned SHA-256 public-key fingerprint verification",
+    "two distinct signer roles, key ids and key fingerprints",
+    "domain-separated detached signatures over full canonical evidence payloads",
+    "bounded post-run signing timestamps",
+    "canonical input containment, junction denial and create-only output",
+    "explicit trust-anchor and release-gate fail-closed output semantics",
+    "public-key-only reviewer playbook"
+  ],
+  "verification": {
+    "tdd": "SESSION_EVIDENCE — the test command was observed failing with ERR_MODULE_NOT_FOUND before implementation in this producer session; the red phase was not preserved as a separate Git commit and is not independently reconstructible from branch history",
+    "focusedTests": "PASS — 9/9 built-in Node tests",
+    "coverage": "PASS — new verifier 86.27% lines, 83.33% branches and 93.75% functions",
+    "realCryptoVector": "PASS — RFC 8032 Ed25519 public test vector verifies; tampered message is rejected",
+    "syntax": "PASS — node --check on verifier and test",
+    "diffCheck": "PASS",
+    "secretScan": "PASS — no private-key block, credential, token or secret-like value",
+    "ownership": "PASS — three implementation artifacts only; no prohibited path",
+    "gitNexus": "No indexed symbol result for new untracked files before commit; shell ownership and exact-path audit are authoritative",
+    "lint": "Pending canonical replay — isolated producer has no node_modules and no install or junction is authorized",
+    "security": "READY FOR INDEPENDENT REVIEW — private keys are rejected, public keys must be distinct Ed25519 SPKI with exact caller pins, R8 is replayed, signatures cover domain-separated canonical evidence, output keeps trustAnchorAccepted:false, evidenceAuthenticated:false, releaseGateAdvanceAllowed:false and stableReleaseAccepted:false"
+  },
+  "artifacts": [
+    {
+      "path": "apps/desktop/scripts/platform-e2e-trust-envelope-validator.mjs",
+      "sha256": "404bbc73a9c310d452c2ee47c55c2aecad8e8586d56964f039ccf4b423942992",
+      "bytes": 18842
+    },
+    {
+      "path": "apps/desktop/scripts/platform-e2e-trust-envelope-validator.test.mjs",
+      "sha256": "4b96ef0559bed16ae3eb44555bcf21dedd8bd72a824d1201ae884a479a476873",
+      "bytes": 17255
+    },
+    {
+      "path": "docs/desktop-platform-e2e-trust-envelope-playbook.md",
+      "sha256": "bbdb7b99938d57483d30b7036827cd93904d1dc92f4ddcd1471ab0214c0c19ae",
+      "bytes": 3716
+    }
+  ],
+  "signatureVerificationSucceeded": true,
+  "trustAnchorAccepted": false,
+  "evidenceAuthenticated": false,
+  "releaseGateAdvanceAllowed": false,
+  "stableReleaseAccepted": false,
+  "authorization": "No private key, signing secret, credential or personal operator identity was read, generated, logged or stored. No workflow, installer, application, browser, platform verifier or network action was executed. No package write, GitHub mutation, push, tag, publish, deploy, release-gate advancement or stable promotion is authorized."
+}
