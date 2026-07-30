@@ -33,8 +33,10 @@ Successful output therefore reports:
 
 ## TDD and verification
 
-- Red phase: test file was added first and failed with
-  `ERR_MODULE_NOT_FOUND`.
+- Red phase session observation: the test file was added first and the test
+  command failed with `ERR_MODULE_NOT_FOUND` before implementation. This was not
+  preserved as a separate Git commit, so branch history cannot independently
+  reconstruct the red phase.
 - Green phase: 9/9 built-in Node tests pass.
 - Real crypto: RFC 8032 Ed25519 public test vector passes and a tampered message
   fails.

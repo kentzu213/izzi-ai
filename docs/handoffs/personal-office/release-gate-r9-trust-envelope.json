@@ -22,7 +22,7 @@
     "public-key-only reviewer playbook"
   ],
   "verification": {
-    "tdd": "PASS — test suite was created first and failed with ERR_MODULE_NOT_FOUND before implementation",
+    "tdd": "SESSION_EVIDENCE — the test command was observed failing with ERR_MODULE_NOT_FOUND before implementation in this producer session; the red phase was not preserved as a separate Git commit and is not independently reconstructible from branch history",
     "focusedTests": "PASS — 9/9 built-in Node tests",
     "coverage": "PASS — new verifier 86.27% lines, 83.33% branches and 93.75% functions",
     "realCryptoVector": "PASS — RFC 8032 Ed25519 public test vector verifies; tampered message is rejected",
