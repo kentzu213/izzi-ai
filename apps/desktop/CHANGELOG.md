@@ -1,4 +1,15 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.15
+Memory trace layer, first slice.
+- Add the trace unit contract: an append-only observation that must carry a
+  resolvable origin. A unit without provenance is refused, not stored with a gap.
+- Add `Live.md` in the user data directory as the one memory file the operator
+  edits by hand. It is created from a template on first run, and an existing or
+  unreadable file is never overwritten.
+- Add a narrow data classification for this layer: the live profile never leaves
+  the machine, and an interaction trace may only ever leave as redacted metadata.
+- No language model participates in reading or writing memory. Every operation
+  here is deterministic.
 ## 1.14.0-beta.14
 Customer Marketing guardrail hardening patch.
 - Halt every gated action when no guardrail reader was wired, instead of running

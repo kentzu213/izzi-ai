@@ -61,6 +61,7 @@ import { registerCustomerMarketingIpc } from './customer-marketing/customer-mark
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
+import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
 import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
 import {
@@ -104,6 +105,7 @@ let izziLlmProxy: IzziLlmProxy;
 let dockerAgentService: DockerAgentService;
 let customerMarketingService: CustomerMarketingService;
 let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
+let liveProfileStore: LiveProfileStore | null = null;
 let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
 const queuedProtocolUrls: string[] = [];
 
@@ -423,6 +425,13 @@ function setupIPC() {
   app.on('before-quit', () => customerVideoStudio.killAll());
   const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
+  // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
+  // from the template on first run; never overwrite an existing or unreadable file.
+  liveProfileStore = new LiveProfileStore({ directory: app.getPath('userData') });
+  const liveProfileState = liveProfileStore.ensure();
+  if (liveProfileState.status !== 'ok') {
+    console.warn('[memory-trace] Live.md is not readable at', liveProfileState.filePath);
+  }
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
   customerMarketingService = new CustomerMarketingService(
     dbManager,
