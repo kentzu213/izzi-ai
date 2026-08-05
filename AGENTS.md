@@ -68,6 +68,31 @@ Before completing any code modification task, verify:
 2. No HIGH/CRITICAL risk warnings were ignored
 3. `gitnexus_detect_changes()` confirms changes match expected scope
 4. All d=1 (WILL BREAK) dependents were updated
+5. Every markdown file you added or changed passes the document check below
+
+## Document Check (deterministic, zero tokens)
+
+Evidence records, runbooks, and worklogs are read during incidents, so a wrong
+path or an unsourced number in them fails silently until it matters. Before
+finishing, run:
+
+```
+node tools/socrates-tier1.mjs --changed
+```
+
+It costs nothing when no document changed. It blocks on 4 shapes: a quoted
+path that does not exist, a version or tag that does not resolve in this
+repository, a measured number with no command or citation beside it, and a
+claim that something is absent with no count to back it.
+
+Two conventions it enforces in practice:
+
+- A file that now exists only inside a frozen tag must be cited as
+  `<tag>:<path>`, not as a bare path.
+- A number you did not measure in this session does not belong in a record.
+
+This is the deterministic half of review. Send to a reviewing model only what
+this check cannot decide.
 
 ## Small Release Operating Loop
 
