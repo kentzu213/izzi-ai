@@ -115,11 +115,11 @@ export function readCustomerMarketingKillSwitch(
 ): CustomerMarketingKillSwitchState {
   const env = options.env ?? process.env;
   const flag = env[KILL_SWITCH_ENV_KEY];
-  if (typeof flag === 'string') {
-    const normalized = flag.trim().toLowerCase();
-    if (normalized.length > 0 && !KILL_SWITCH_OFF_VALUES.has(normalized)) {
-      return { engaged: true, source: 'env' };
-    }
+  // Setting the variable at all is treated as intent to halt, including setting
+  // it to an empty value, which is easy to do from a GUI or a CI form. Only an
+  // explicit off value leaves the halt clear.
+  if (typeof flag === 'string' && !KILL_SWITCH_OFF_VALUES.has(flag.trim().toLowerCase())) {
+    return { engaged: true, source: 'env' };
   }
 
   const filePath = options.killSwitchFilePath;

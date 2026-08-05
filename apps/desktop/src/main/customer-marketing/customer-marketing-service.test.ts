@@ -3860,6 +3860,33 @@ describe('CustomerMarketingService CMR-402 external action gate', () => {
     expect(listStatuses).not.toHaveBeenCalled();
   });
 
+  it('CMR-222 halts when no guardrail reader was wired at all', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const unguarded = new CustomerMarketingService(
+      new MemorySettings(),
+      () => ({ id: 'tenant-a', name: 'Owner A', plan: 'pro', balance: 75 }),
+      () => [],
+      vi.fn(async () => ({ reply: '', error: 'not-configured' })),
+      null,
+      remote.gateway,
+    );
+
+    await expect(unguarded.checkExternalActionGate({
+      action: 'publish',
+      target: 'social',
+      workflowId: 'workflow-1',
+      approvalId: 'approval-1',
+      manifestDigest: 'a'.repeat(64),
+      provider: 'facebook',
+      metadata: { itemCount: 1, recipientCount: 0, spendVnd: 0 },
+    })).resolves.toEqual({
+      allowed: false,
+      executed: false,
+      denialReason: 'kill_switch_engaged',
+    });
+    expect(remote.getCurrent).not.toHaveBeenCalled();
+  });
+
   it('CMR-222 denies a spend above the product cap without reading the source', async () => {
     const remote = marketingWorkflowGateway('manager');
     const context = setup({ workspaceGateway: remote.gateway });

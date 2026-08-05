@@ -64,13 +64,20 @@ describe('CMR-222 operator halt', () => {
     }
   });
 
-  it('stays off for explicit off values, empty strings, and an unset variable', () => {
-    for (const raw of ['0', 'false', 'no', 'off', 'OFF', '', '   ']) {
+  it('stays off only for explicit off values', () => {
+    for (const raw of ['0', 'false', 'no', 'off', 'OFF', ' No ']) {
       expect(readCustomerMarketingKillSwitch({ env: { IZZI_MARKETING_KILL_SWITCH: raw } }).engaged)
         .toBe(false);
     }
     expect(readCustomerMarketingKillSwitch({ env: {} }))
       .toEqual({ engaged: false, source: 'none' });
+  });
+
+  it('treats a set-but-empty variable as intent to halt', () => {
+    for (const raw of ['', '   ']) {
+      expect(readCustomerMarketingKillSwitch({ env: { IZZI_MARKETING_KILL_SWITCH: raw } }))
+        .toEqual({ engaged: true, source: 'env' });
+    }
   });
 
   it('engages from a flag file on disk and clears when it is absent', () => {

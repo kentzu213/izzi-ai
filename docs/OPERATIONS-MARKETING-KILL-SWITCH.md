@@ -41,8 +41,9 @@ present path as engaged.
 
 ## Alternative: environment flag
 
-Set `IZZI_MARKETING_KILL_SWITCH` before launching the app. Any non-empty value
-engages the halt except the explicit off values `0`, `false`, `no`, and `off`.
+Set `IZZI_MARKETING_KILL_SWITCH` before launching the app. Setting the variable
+at all engages the halt, including setting it to an empty value. Only the explicit
+off values `0`, `false`, `no`, and `off` leave the halt clear.
 This survives deletion of the flag file but requires a restart to change.
 
 ## What a halt looks like

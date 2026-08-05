@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.14
+Customer Marketing guardrail hardening patch.
+- Halt every gated action when no guardrail reader was wired, instead of running
+  the gate unguarded. This was the only fail-open path in the guardrail.
+- Treat a set-but-empty `IZZI_MARKETING_KILL_SWITCH` as intent to halt, so a
+  variable set from a form or CI field cannot read as no halt.
+- Contain a cap evaluation failure as a policy denial rather than letting it
+  surface as a rejected call.
 ## 1.14.0-beta.13
 Customer Marketing loop guardrails patch.
 - Add an operator halt that stops every gated marketing action - publish, spend,
