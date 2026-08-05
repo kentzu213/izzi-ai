@@ -11,22 +11,28 @@ Its contents are ignored; only its presence matters. The halt is re-read on
 every gated request, so it takes effect immediately, with no restart and no
 rebuild.
 
+The user data directory is derived from the package name `@openclaw/desktop`,
+not from the display name, so the path is:
+
 | Platform | Path |
 |---|---|
-| Windows | `%APPDATA%\Izzi AI\marketing-kill-switch` |
-| macOS | `~/Library/Application Support/Izzi AI/marketing-kill-switch` |
-| Linux | `~/.config/Izzi AI/marketing-kill-switch` |
+| Windows | `%APPDATA%\@openclaw\desktop\marketing-kill-switch` |
+| macOS | `~/Library/Application Support/@openclaw/desktop/marketing-kill-switch` |
+| Linux | `~/.config/@openclaw/desktop/marketing-kill-switch` |
+
+If you are unsure, the correct directory is the one that already contains
+`marketing-room.json`.
 
 Windows PowerShell:
 
 ```powershell
-New-Item -ItemType File -Path "$env:APPDATA\Izzi AI\marketing-kill-switch" -Force
+New-Item -ItemType File -Path "$env:APPDATA\@openclaw\desktop\marketing-kill-switch" -Force
 ```
 
-macOS or Linux:
+macOS:
 
 ```bash
-touch "$HOME/Library/Application Support/Izzi AI/marketing-kill-switch"
+touch "$HOME/Library/Application Support/@openclaw/desktop/marketing-kill-switch"
 ```
 
 Deleting the file lifts the halt. To make the halt harder to remove by accident,
