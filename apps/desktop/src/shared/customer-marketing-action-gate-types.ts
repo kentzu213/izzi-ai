@@ -44,6 +44,11 @@ export const CUSTOMER_MARKETING_ACTION_GATE_PUBLIC_DENIAL_REASONS = [
   'manifest_mismatch',
   'provider_unavailable',
   'policy_denied',
+  // CMR-222: the operator halt is the only new public reason. It says an operator
+  // stopped gated actions, without saying where the halt came from. Spend and
+  // volume caps reuse `policy_denied` on purpose so the response cannot be used
+  // to read back how those caps are configured.
+  'kill_switch_engaged',
 ] as const;
 
 export type CustomerMarketingActionGatePublicDenialReason =

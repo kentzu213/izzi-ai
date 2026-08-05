@@ -113,6 +113,12 @@ import {
 } from '../../shared/customer-marketing-action-gate-types';
 import { parseCustomerExtensionCapabilityDefinition } from '../../shared/customer-marketing-capability-manifest';
 import {
+  createCustomerMarketingGuardrailStateReader,
+  evaluateCustomerMarketingKillSwitch,
+  evaluateCustomerMarketingSpendAndVolumeCaps,
+  type CustomerMarketingGuardrailState,
+} from './customer-marketing-loop-guardrails';
+import {
   evaluateCustomerMarketingActionGate,
   preflightCustomerMarketingActionGateRequest,
   validateCustomerMarketingActionGateApproval,
@@ -1058,6 +1064,12 @@ export class CustomerMarketingService {
       CustomerMarketingCredentialVault,
       'listStatuses' | 'revokeCredential'
     > | null = null,
+    // CMR-222: the operator halt is re-read in main on every gated request, so a
+    // halt takes effect without restarting the app. The caps come from the process
+    // environment and are fixed for the life of this process.
+    // A reader without a halt file path is env-only; production wiring passes one.
+    private readonly readGuardrailState: () => CustomerMarketingGuardrailState =
+    createCustomerMarketingGuardrailStateReader(),
   ) {}
 
   private productMarketingContextAuthority(
@@ -1537,6 +1549,18 @@ export class CustomerMarketingService {
     if (!request) {
       return { allowed: false, executed: false, denialReason: 'invalid_request' };
     }
+    // CMR-222: the operator halt is read before request preflight so an incident
+    // stop is unambiguous, costs no database or gateway access, and beats a valid
+    // approval. A guardrail read failure denies as a policy decision.
+    let guardrails: CustomerMarketingGuardrailState;
+    try {
+      guardrails = this.readGuardrailState();
+    } catch {
+      return { allowed: false, executed: false, denialReason: 'policy_denied' };
+    }
+    const haltDenial = evaluateCustomerMarketingKillSwitch(guardrails);
+    if (haltDenial) return haltDenial;
+
     const requestDenial = preflightCustomerMarketingActionGateRequest(request);
     if (requestDenial) return requestDenial;
 
@@ -1547,6 +1571,11 @@ export class CustomerMarketingService {
     if (authority.status !== 'synced') {
       return { allowed: false, executed: false, denialReason: 'approval_invalid' };
     }
+
+    // CMR-222: spend and volume caps are checked only once the caller's authority
+    // is established, so an unauthorised caller cannot probe the configured caps.
+    const capDenial = evaluateCustomerMarketingSpendAndVolumeCaps(request, guardrails);
+    if (capDenial) return capDenial;
 
     try {
       const wrappers = createCustomerMarketingWorkflowWrappers(

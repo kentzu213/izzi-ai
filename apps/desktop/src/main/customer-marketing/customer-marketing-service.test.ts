@@ -21,6 +21,11 @@ import type {
   CustomerExtensionCapabilityDefinition,
 } from '../../shared/customer-marketing-capability-manifest';
 import {
+  CUSTOMER_MARKETING_GUARDRAIL_DEFAULT_POLICY,
+  createCustomerMarketingGuardrailStateReader,
+  type CustomerMarketingGuardrailState,
+} from './customer-marketing-loop-guardrails';
+import {
   buildCustomerCapabilities,
   CustomerMarketingService,
   type CustomerIdentity,
@@ -495,6 +500,7 @@ function setup(options?: {
     workspaceGateway?: CustomerMarketingWorkspaceGateway;
     writeClipboardText?: (value: string) => void | Promise<void>;
     credentialVault?: Pick<CustomerMarketingCredentialVault, 'listStatuses' | 'revokeCredential'>;
+    readGuardrailState?: () => CustomerMarketingGuardrailState;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -513,6 +519,8 @@ function setup(options?: {
     options?.workspaceGateway ?? null,
     options?.writeClipboardText,
     options?.credentialVault ?? null,
+    options?.readGuardrailState
+      ?? createCustomerMarketingGuardrailStateReader({ env: {}, spendVndUsedInWindow: () => 0 }),
   );
   return {
     db,
@@ -3788,6 +3796,93 @@ describe('CustomerMarketingService CMR-402 external action gate', () => {
       provider: 'facebook',
       metadata: { itemCount: 1, recipientCount: 0, spendVnd: 0 },
     })).resolves.toMatchObject({ denialReason: 'manifest_mismatch' });
+  });
+
+  it('CMR-222 halts an action that would otherwise pass approval', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const listStatuses = vi.fn();
+    let engaged = false;
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn() },
+      readGuardrailState: () => ({
+        killSwitch: engaged ? { engaged: true, source: 'file' } : { engaged: false, source: 'none' },
+        policy: CUSTOMER_MARKETING_GUARDRAIL_DEFAULT_POLICY,
+        spendVndUsedInWindow: 0,
+      }),
+    });
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social',
+      resourceId: remote.resource.id,
+      expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social',
+      workflowId: workflow.workflowId,
+      approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest,
+      decision: 'approved',
+    });
+
+    // The same approved request reaches the wave policy while the halt is off.
+    await expect(context.service.checkExternalActionGate({
+      action: 'publish',
+      target: 'social',
+      workflowId: workflow.workflowId,
+      approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest,
+      provider: 'facebook',
+      metadata: { itemCount: 1, recipientCount: 0, spendVnd: 0 },
+    })).resolves.toEqual({
+      allowed: false,
+      executed: false,
+      denialReason: 'policy_denied',
+    });
+
+    engaged = true;
+    const gatewayCallsBefore = remote.getCurrent.mock.calls.length;
+
+    await expect(context.service.checkExternalActionGate({
+      action: 'publish',
+      target: 'social',
+      workflowId: workflow.workflowId,
+      approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest,
+      provider: 'facebook',
+      metadata: { itemCount: 1, recipientCount: 0, spendVnd: 0 },
+    })).resolves.toEqual({
+      allowed: false,
+      executed: false,
+      denialReason: 'kill_switch_engaged',
+    });
+    expect(remote.getCurrent.mock.calls.length).toBe(gatewayCallsBefore);
+    expect(listStatuses).not.toHaveBeenCalled();
+  });
+
+  it('CMR-222 denies a spend above the product cap without reading the source', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const context = setup({ workspaceGateway: remote.gateway });
+
+    await expect(context.service.checkExternalActionGate({
+      action: 'spend',
+      target: 'social',
+      workflowId: 'workflow-1',
+      approvalId: 'approval-1',
+      manifestDigest: 'a'.repeat(64),
+      provider: 'facebook',
+      metadata: {
+        itemCount: 0,
+        recipientCount: 0,
+        spendVnd: CUSTOMER_MARKETING_GUARDRAIL_DEFAULT_POLICY.maxSpendVndPerRun + 1,
+      },
+    })).resolves.toEqual({
+      allowed: false,
+      executed: false,
+      denialReason: 'policy_denied',
+    });
+    // The cap denial happens once authority is known, before the source is read.
+    expect(remote.getMarketingResource).not.toHaveBeenCalled();
   });
 
   it('hard-denies archive without any workspace gateway call', async () => {

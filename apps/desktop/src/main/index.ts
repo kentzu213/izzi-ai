@@ -60,6 +60,7 @@ import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
+import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
 import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
 import {
@@ -448,6 +449,11 @@ function setupIPC() {
     customerMarketingWorkspaceClient,
     (value) => clipboard.writeText(value),
     customerMarketingCredentialVault,
+    // CMR-222: creating this file halts every gated marketing action immediately,
+    // with no restart and no rebuild. Deleting it restores the normal gates.
+    createCustomerMarketingGuardrailStateReader({
+      killSwitchFilePath: path.join(app.getPath('userData'), 'marketing-kill-switch'),
+    }),
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

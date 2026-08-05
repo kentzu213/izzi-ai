@@ -1,4 +1,19 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.13
+Customer Marketing loop guardrails patch.
+- Add an operator halt that stops every gated marketing action - publish, spend,
+  bulk email, destructive - from a flag file in the user data directory or an
+  environment flag. The halt is re-read on every gated request, so it applies
+  immediately and outranks a valid approval.
+- Read the halt before request validation and before any database, authority, or
+  gateway access, and engage it when the flag cannot be read.
+- Add product spend and volume caps well below the structural request maxima,
+  checked only after the caller's authority is established so the response cannot
+  be used to read the configured limits back out.
+- Refuse spend while no spend ledger exists instead of treating a missing ledger
+  as zero spend for the window ceiling.
+- Document the halt, the caps, and their known limits in
+  docs/OPERATIONS-MARKETING-KILL-SWITCH.md.
 
 ## 1.14.0-beta.12
 
