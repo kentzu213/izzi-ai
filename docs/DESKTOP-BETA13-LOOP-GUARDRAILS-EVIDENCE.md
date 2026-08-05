@@ -34,8 +34,9 @@ Two checks with deliberately different placement in
 `CustomerMarketingService.checkExternalActionGate`:
 
 1. **Operator halt** — read before request preflight and before any authority,
-   database, or gateway access, so an incident stop costs no I/O and outranks a
-   valid approval. Engaged by a flag file in the user data directory or by the
+   database, or gateway access, so an incident stop costs no I/O. Outranking a
+   valid approval is proven by the unit suite, not by the packaged run below —
+   see the limits section. Engaged by a flag file in the user data directory or by the
    `IZZI_MARKETING_KILL_SWITCH` environment variable. Denies with the new public
    reason `kill_switch_engaged`.
 2. **Spend and volume caps** — read only after the caller's authority is
@@ -107,6 +108,29 @@ test that did not actually hold a valid approval.
   before `Package and Publish` produced the artifact under test.
 - Scoped secret scan over the new and changed files: clean.
 
+## Round two: conditions from the final review
+
+The final reviewer approved with conditions and found one remaining fail-open
+path plus one repeat of an already-fixed class of bug. Both were fixed and
+released as `1.14.0-beta.14` (commit `b4b39f6`, workflow `30991778584`,
+installer `fd4be2cc792fab8a0fbd8bb7bb05505a56887c244c56e81823d56f23fffb6766`).
+
+- The service constructor previously defaulted to an environment-only reader, so
+  a construction site that forgot the halt path would run with the halt file
+  inert and report no halt. Every other branch of the guardrail fails closed;
+  this one failed open. The reader is now optional-but-required in effect: a
+  service built without one denies every gated action.
+- A set-but-empty `IZZI_MARKETING_KILL_SWITCH` read as no halt, the same class
+  of bug as the earlier allowlist finding. Setting the variable at all now
+  engages the halt; only explicit off values leave it clear. Proven on the
+  installed `1.14.0-beta.14` build with no flag file present: all three probes
+  returned `kill_switch_engaged` (`cmr222-halt-on-env-empty.json`).
+- A cap evaluation failure is now contained as a policy denial instead of
+  surfacing as a rejected call.
+
+Full desktop suite after round two: 75 files, 1007 tests passed. Main typecheck
+exit 0, production build exit 0.
+
 ## Limits of this evidence
 
 - No spend ledger exists yet, so the window ceiling is not yet exercised against
@@ -121,5 +145,15 @@ test that did not actually hold a valid approval.
   production construction site passes the flag path; a future site could omit it.
 - Installer remains `NotSigned`, and clean-machine install, upgrade, and
   uninstall proof stays open under CMR-214 and CMR-216.
+- The packaged probes all died at approval validation, so the packaged run proves
+  the halt beats the earliest gate, not that it beats a fully valid approval.
+  That case is covered by the unit suite only. The spend and volume caps are
+  likewise unit-tested only, because reaching them needs a real approved
+  workflow against a workspace gateway.
+- The halt is read before authority, so a caller without authority can observe
+  whether a halt is currently engaged. This is a deliberate trade: halting
+  before any I/O is the point of the control.
+- Nothing logs or counts a cap denial, so a legitimate run refused by a cap is
+  currently indistinguishable from any other policy denial in the response.
 - Status: `local_verified_only`. No staging or production deploy was performed,
   and no external action was executed.
