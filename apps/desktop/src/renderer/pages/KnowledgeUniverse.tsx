@@ -8,6 +8,7 @@ import "../styles/graph-view-scoped.css";
 
 import { MyGraphView, type GraphApi } from "@kentzu213/graph-view";
 import * as bridge from "../lib/aibase-api";
+import { LiveProfilePanel } from "../components/LiveProfilePanel";
 
 /**
  * Desktop "Knowledge Universe" page — a thin host around the shared
@@ -46,12 +47,18 @@ export default function MyGraphPage() {
   // (b) is the positioning context: formerly-`fixed` toolbars/panels are now
   // `absolute`, so they anchor to this box (inside <main>) instead of the viewport
   // and no longer overlap the sidebar.
+  // The Live.md panel sits OUTSIDE `.graphview-scope` on purpose: that scoped
+  // stylesheet redefines the desktop's token names, and the panel should not
+  // change appearance because of where it is mounted.
   return (
-    <div
-      className="graphview-scope"
-      style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
-    >
-      <MyGraphView api={api} navigate={navigate} detached={false} />
+    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}>
+      <div
+        className="graphview-scope"
+        style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
+      >
+        <MyGraphView api={api} navigate={navigate} detached={false} />
+      </div>
+      <LiveProfilePanel />
     </div>
   );
 }

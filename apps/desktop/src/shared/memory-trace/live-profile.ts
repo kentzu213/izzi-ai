@@ -153,3 +153,25 @@ export function nextLiveProfileRevision(
 export function liveProfileSourceId(profile: LiveProfile): string {
   return `${LIVE_PROFILE_FILE_NAME}#rev${profile.revision}`;
 }
+
+// ── Store results ─────────────────────────────────────────────────────────────
+//
+// These live in `shared` rather than beside the store because the renderer needs
+// them too: Slice 2 lets the operator read and edit Live.md from the UI, and the
+// renderer must be able to tell "no file yet" from "a file I refused to parse".
+
+export type LiveProfileReadStatus = 'ok' | 'absent' | 'unreadable';
+
+export interface LiveProfileReadResult {
+  readonly status: LiveProfileReadStatus;
+  readonly profile: LiveProfile | null;
+  /** Absolute path, so the UI can show the operator which file this is. */
+  readonly filePath: string;
+}
+
+export type LiveProfileWriteStatus = 'ok' | 'rejected' | 'unreadable' | 'io_error';
+
+export interface LiveProfileWriteResult {
+  readonly status: LiveProfileWriteStatus;
+  readonly profile: LiveProfile | null;
+}

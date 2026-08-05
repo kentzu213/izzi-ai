@@ -62,6 +62,7 @@ import { CustomerMarketingService } from './customer-marketing/customer-marketin
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import { LiveProfileStore } from './memory-trace/live-profile-store';
+import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
 import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
 import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
 import {
@@ -432,6 +433,9 @@ function setupIPC() {
   if (liveProfileState.status !== 'ok') {
     console.warn('[memory-trace] Live.md is not readable at', liveProfileState.filePath);
   }
+  // Slice 2: the renderer reads and edits Live.md through these local channels.
+  // They never touch GraphClient — `live_profile` egress is forbidden.
+  registerLiveProfileIpc(liveProfileStore);
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
   customerMarketingService = new CustomerMarketingService(
     dbManager,

@@ -13,27 +13,13 @@ import {
   nextLiveProfileRevision,
   parseLiveProfile,
   serializeLiveProfile,
-  type LiveProfile,
+  type LiveProfileReadResult,
+  type LiveProfileWriteResult,
 } from '../../shared/memory-trace/live-profile';
 import {
   parseTraceUnit,
   type TraceUnit,
 } from '../../shared/memory-trace/trace-unit';
-
-export type LiveProfileReadStatus = 'ok' | 'absent' | 'unreadable';
-
-export interface LiveProfileReadResult {
-  readonly status: LiveProfileReadStatus;
-  readonly profile: LiveProfile | null;
-  readonly filePath: string;
-}
-
-export type LiveProfileWriteStatus = 'ok' | 'rejected' | 'unreadable' | 'io_error';
-
-export interface LiveProfileWriteResult {
-  readonly status: LiveProfileWriteStatus;
-  readonly profile: LiveProfile | null;
-}
 
 export interface LiveProfileStoreOptions {
   /** Directory that holds Live.md. Normally the Electron userData path. */

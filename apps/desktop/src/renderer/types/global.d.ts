@@ -1,4 +1,8 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
+import type {
+  LiveProfileReadResult,
+  LiveProfileWriteResult,
+} from '../../shared/memory-trace/live-profile';
 import type { BranchClassification } from './graph-workspace';
 import type { UniverseNodeDetail } from '../../shared/universe-adapter';
 import type {
@@ -78,6 +82,17 @@ declare global {
   /** Renderer-facing memory IPC surface — mirrors the preload `memory` namespace (Req 7.2, 7.5). */
   interface ElectronMemoryApi {
     list: (agentId: string, limit?: number) => Promise<MemoryItemDTO[]>;
+  }
+
+  /**
+   * Renderer-facing Live.md surface — mirrors the preload `liveProfile`
+   * namespace (CMR-224 Slice 2). Local only: `live_profile` egress is forbidden,
+   * so nothing here reaches the shared backend.
+   */
+  interface ElectronLiveProfileApi {
+    read: () => Promise<LiveProfileReadResult>;
+    write: (body: string) => Promise<LiveProfileWriteResult>;
+    reveal: () => Promise<{ ok: boolean; filePath: string }>;
   }
 
   /**
@@ -203,6 +218,7 @@ declare global {
   interface ElectronApi {
     graph?: ElectronGraphApi;
     memory?: ElectronMemoryApi;
+    liveProfile?: ElectronLiveProfileApi;
     graphAgent?: ElectronGraphAgentApi;
     izziAgent?: ElectronIzziAgentApi;
     affiliate?: ElectronAffiliateApi;

@@ -1,0 +1,153 @@
+/*
+ * LiveProfilePanel — CMR-224 Slice 2.
+ *
+ * Values are explicit rather than token-based on purpose: this panel is rendered
+ * next to `.graphview-scope`, and that scoped stylesheet redefines the same token
+ * names the desktop uses. Reading tokens here would make the panel change colour
+ * depending on which subtree it happened to be mounted in.
+ */
+
+.lp-launcher {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 8px 14px;
+  border: 1px solid #3a3f4b;
+  border-radius: 8px;
+  background: #1b1e25;
+  color: #e6e8ee;
+  font: 500 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.lp-launcher:hover,
+.lp-launcher:focus-visible {
+  border-color: #5b6070;
+  background: #22262f;
+}
+
+.lp-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100% - 32px));
+  max-height: min(560px, calc(100% - 32px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #3a3f4b;
+  border-radius: 12px;
+  background: #14171d;
+  color: #e6e8ee;
+  font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+.lp-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lp-panel__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lp-panel__revision {
+  color: #9aa1ad;
+  font-size: 12px;
+}
+
+.lp-panel__hint {
+  margin: 0;
+  color: #9aa1ad;
+}
+
+.lp-panel__hint--warning {
+  color: #f0b45f;
+}
+
+.lp-panel__label {
+  color: #9aa1ad;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lp-panel__editor {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #343945;
+  border-radius: 8px;
+  background: #0f1116;
+  color: #e6e8ee;
+  font: 400 13px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  resize: vertical;
+}
+
+.lp-panel__editor:disabled {
+  color: #6d7482;
+  cursor: not-allowed;
+}
+
+.lp-panel__notice {
+  margin: 0;
+  color: #8fd39a;
+}
+
+.lp-panel__notice--warning {
+  color: #f0b45f;
+}
+
+.lp-panel__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lp-panel__path {
+  flex: 1 1 100%;
+  overflow: hidden;
+  color: #6d7482;
+  font: 400 11px/1.4 ui-monospace, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-btn {
+  padding: 7px 14px;
+  border: 1px solid #3f4a63;
+  border-radius: 8px;
+  background: #27324a;
+  color: #e6e8ee;
+  font: 500 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.lp-btn:disabled {
+  border-color: #2c3038;
+  background: #1a1d23;
+  color: #6d7482;
+  cursor: not-allowed;
+}
+
+.lp-btn--ghost {
+  border-color: #3a3f4b;
+  background: transparent;
+}
+
+.lp-btn:hover:not(:disabled),
+.lp-btn:focus-visible:not(:disabled) {
+  border-color: #55648a;
+  background: #2e3a55;
+}

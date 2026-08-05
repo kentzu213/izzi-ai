@@ -26,6 +26,10 @@ import type {
   ExtractDocumentResult,
   SynthesizeTopicResult,
 } from '../shared/graph-types';
+import type {
+  LiveProfileReadResult,
+  LiveProfileWriteResult,
+} from '../shared/memory-trace/live-profile';
 import type { ParsedClassification } from './graph/graph-agent-core';
 import type { UniverseNodeDetail } from '../shared/universe-adapter';
 import type { AgentTurnEvent } from '../shared/agent-turn-events';
@@ -407,6 +411,16 @@ const electronAPI = {
         ipcRenderer.removeListener('agents:event', handler);
       };
     },
+  },
+
+  // Live.md — the operator's own memory file. Local only: these channels never
+  // reach the shared backend, because `live_profile` egress is forbidden.
+  liveProfile: {
+    read: (): Promise<LiveProfileReadResult> => ipcRenderer.invoke('liveProfile:read'),
+    write: (body: string): Promise<LiveProfileWriteResult> =>
+      ipcRenderer.invoke('liveProfile:write', body),
+    reveal: (): Promise<{ ok: boolean; filePath: string }> =>
+      ipcRenderer.invoke('liveProfile:reveal'),
   },
 
   graph: {
