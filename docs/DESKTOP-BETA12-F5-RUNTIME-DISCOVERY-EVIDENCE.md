@@ -62,26 +62,42 @@ No import, preview, publish, spend, credential, or workspace mutation was
 performed. Both runs were captured at desktop `1280x800` and mobile
 `390x844`.
 
+The environment claim is not taken from what the launching shell believed it
+removed. Each run also attached to the main process over the Node inspector and
+listed the `STARIZZI_F5_TTS_*` key names present in `process.env` inside that
+process. Only key names were collected; no value was read or recorded. Main
+process fingerprint in both runs: Electron `34.5.8`, Node `20.19.1`, `win32`.
+
 ### Mode A — discovery only
 
-The app was launched with every `STARIZZI_F5_TTS_*` variable removed from the
-process environment, so no explicit configuration could satisfy the status.
-
-- `F5-TTS` card version: `ViVoice 50228cc`, the discovery constant. This value
-  can only come from the filesystem discovery path.
+- Main process held **zero** `STARIZZI_F5_TTS_*` keys, measured inside the main
+  process, not in the parent shell.
+- `F5-TTS` card version: `ViVoice 50228cc`, which equals the discovery constant
+  in `f5-tts-runtime.ts`.
+- Because no key was present, `explicitCandidate` could not return a candidate,
+  so the reported status must come from the filesystem discovery branch. The
+  version string alone would not prove this: `statusForCandidate` falls back to
+  the same constant when `STARIZZI_F5_TTS_VERSION` is empty, so the zero-key
+  measurement is the part that closes the argument.
 - `F5-TTS` card status: `Cần thiết lập`, detail `F5-TTS local đã cài nhưng
   service chưa chạy. Commercial render vẫn khóa.`
 - Evidence: `artifacts/starizzi-marketing-room/cmr-220/discovery-only/cmr220-f5-discovery-smoke.json`
 
 ### Mode B — explicit environment configuration
 
-The app was launched with the machine's user-level `STARIZZI_F5_TTS_*`
-configuration intact.
-
-- `F5-TTS` card version: `ViVoice 50228ccc`, taken from the configured
-  version variable, which confirms the explicit override stays authoritative
-  and the previous environment path did not regress.
+- Main process held all **eleven** configured `STARIZZI_F5_TTS_*` keys.
+- `F5-TTS` card version: `ViVoice 50228ccc`, which differs from the discovery
+  constant, so the explicit version override still wins over discovery.
+- Scope of this claim: it covers the version field only. The run did not
+  cross-check `modelHash`, `license`, `licenseSource`, or the endpoint probe
+  against their configured values, so mode B is evidence that the explicit
+  override path still applies, not a full contract test of it.
 - Evidence: `artifacts/starizzi-marketing-room/cmr-220/env-configured/cmr220-f5-discovery-smoke.json`
+
+The smoke script asserts the mode explicitly: mode A requires zero keys in the
+main process and an exact match with the discovery constant, mode B requires a
+non-empty key set and a version different from that constant. A discovery
+regression can therefore no longer pass as a success.
 
 ### Shared observations in both modes
 
@@ -102,8 +118,22 @@ configuration intact.
   5/5 passed.
 - Full desktop suite in the default parallel mode: 74 files, 976 tests passed,
   Vitest `4.1.2`.
-- Release workflow already ran the desktop tests and the Windows and macOS
-  packaging on CI for this exact commit.
+- CI for this exact commit ran the `Build desktop app` and `Run desktop tests`
+  steps in the `build-windows` job before the `Package and Publish` step that
+  produced the artifact under test, per
+  `.github/workflows/release-desktop.yml`.
+- That workflow triggers only on `tags: v*`, so the documentation-only commit
+  pushed to `main` for this record cannot start a build or create a release.
+
+## Rollback path
+
+- `v1.14.0-beta.11` remains a non-draft public release with all three Windows
+  artifacts in `uploaded` state: installer
+  `85571c870bdb516f6662d5764197b00fc2e2d681af09b643357677a2bfe147d1`
+  at `184551752` bytes, its blockmap, and `latest.yml`. Reinstalling that
+  installer returns the machine to the previous build.
+- After the proof runs, every `Izzi AI` process was terminated and both debug
+  ports `9222` and `9229` were confirmed no longer listening.
 
 ## Limits of this evidence
 
