@@ -3,6 +3,10 @@ import type { DatabaseManager } from '../db/database';
 import type { IzziAgentChatPayload, IzziAgentChatResult } from '../agents/izzi-agent';
 import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
+import type {
+  CustomerMarketingPageSpeedInput,
+  CustomerMarketingPageSpeedResult,
+} from '../../shared/customer-marketing-pagespeed';
 import { buildCustomerMarketingInvitationLink } from './customer-marketing-invitation-link';
 import {
   CustomerMarketingWorkflowStore,
@@ -222,6 +226,9 @@ const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'edito
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
 const MARKETING_EXTERNAL_ACTION_ROLES = new Set<CustomerRole>(['owner', 'manager']);
+const PAGESPEED_WORKSPACE_COOLDOWN_MS = 5_000;
+const PAGESPEED_TARGET_COOLDOWN_MS = 15_000;
+const PAGESPEED_THROTTLE_ENTRY_LIMIT = 128;
 const MARKETING_WORKFLOW_CAPABILITY: Readonly<Record<CustomerMarketingWorkflowTarget, string>> = Object.freeze({
   social: 'social-workflows',
   seo: 'seo-workspace',
@@ -1055,6 +1062,9 @@ export class CustomerMarketingService {
     expiresAt: string;
   } | null = null;
   private readonly marketingCreateRequests = new Map<string, { idempotencyKey: string; expiresAt: number }>();
+  private readonly pageSpeedInFlight = new Map<string, Promise<CustomerMarketingPageSpeedResult>>();
+  private readonly pageSpeedTargetNextRun = new Map<string, number>();
+  private readonly pageSpeedWorkspaceNextRun = new Map<string, number>();
   private readonly productMarketingAuthorityKey = randomUUID();
 
   constructor(
@@ -1079,6 +1089,9 @@ export class CustomerMarketingService {
     private readonly readGuardrailState?: () => CustomerMarketingGuardrailState,
     private readonly repairVoiceStudioRuntime?: () => Promise<CustomerVoiceStudioRuntimeOutcome>,
     private readonly getKnowledgeSkills: () => CustomerMarketingKnowledgeSkill[] = () => [],
+    private readonly pageSpeedRuntime?: (
+      input: CustomerMarketingPageSpeedInput,
+    ) => Promise<CustomerMarketingPageSpeedResult>,
   ) {}
 
   private knowledgeSkills(): CustomerMarketingKnowledgeSkill[] {
@@ -1178,6 +1191,130 @@ export class CustomerMarketingService {
       // The workflow store quarantines malformed state and the customer room remains fail-closed.
     }
     return this.snapshot(identity, record);
+  }
+
+  async measurePageSpeed(
+    input: CustomerMarketingPageSpeedInput,
+  ): Promise<CustomerMarketingPageSpeedResult> {
+    const identity = this.requireIdentity();
+    let record = this.readRecord(identity);
+    const workspaceState = await this.resolveWorkspaceAuthorization(record);
+    if (
+      workspaceState.status === 'unavailable'
+      || (workspaceState.status === 'synced' && !workspaceState.workspace)
+    ) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        error: 'Không thể xác nhận quyền SEO Workspace với IzziAPI.',
+      };
+    }
+    if (workspaceState.workspace) {
+      const syncedRecord = this.applyRemoteWorkspace(record, workspaceState.workspace);
+      if (syncedRecord !== record) {
+        record = syncedRecord;
+        this.writeRecord(identity, record);
+      }
+    }
+    if (!MARKETING_AUTHOR_ROLES.has(record.role)) {
+      return {
+        ok: false,
+        reason: 'forbidden',
+        error: 'Vai trò hiện tại không có quyền chạy phép đo SEO.',
+      };
+    }
+
+    let capabilities = buildCustomerCapabilities(this.getRuntimeExtensions());
+    if (workspaceState.status === 'synced' && workspaceState.workspace && this.workspaceGateway) {
+      let catalog: Awaited<ReturnType<CustomerMarketingWorkspaceGateway['getCapabilities']>>;
+      try {
+        catalog = await this.workspaceGateway.getCapabilities(workspaceState.workspace.id);
+      } catch {
+        catalog = { status: 'unavailable', revision: null, capabilities: [] };
+      }
+      if (catalog.status !== 'synced') {
+        return {
+          ok: false,
+          reason: catalog.status === 'forbidden' ? 'forbidden' : 'unavailable',
+          error: catalog.status === 'forbidden'
+            ? 'Workspace hiện tại không được cấp quyền xem SEO capability.'
+            : 'Không thể xác nhận SEO capability với IzziAPI.',
+        };
+      }
+      capabilities = buildCustomerCapabilities(this.getRuntimeExtensions(), catalog.capabilities);
+    }
+
+    const capability = capabilities.find((item) => item.id === 'seo-workspace');
+    if (
+      !capability
+      || capability.source !== 'core'
+      || capability.permission !== 'execute'
+      || !planMeetsMinimum(record.plan, capability.minimumPlan)
+    ) {
+      return {
+        ok: false,
+        reason: 'forbidden',
+        error: 'SEO Workspace chưa được cấp cho gói hoặc workspace hiện tại.',
+      };
+    }
+    if (!this.pageSpeedRuntime) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        error: 'PageSpeed chưa sẵn sàng trong phiên này.',
+      };
+    }
+
+    let normalizedUrl = input.url.trim();
+    try {
+      const parsedUrl = new URL(normalizedUrl);
+      parsedUrl.hash = '';
+      normalizedUrl = parsedUrl.toString();
+    } catch {
+      // The runtime owns URL rejection; this key remains bounded by the shared IPC parser.
+    }
+    const requestKey = `${record.workspaceId}\u0000${input.strategy}\u0000${normalizedUrl}`;
+    const existing = this.pageSpeedInFlight.get(requestKey);
+    if (existing) return existing;
+
+    const now = Date.now();
+    for (const [key, nextRun] of this.pageSpeedTargetNextRun) {
+      if (nextRun <= now) this.pageSpeedTargetNextRun.delete(key);
+    }
+    for (const [key, nextRun] of this.pageSpeedWorkspaceNextRun) {
+      if (nextRun <= now) this.pageSpeedWorkspaceNextRun.delete(key);
+    }
+    if (
+      (this.pageSpeedTargetNextRun.get(requestKey) ?? 0) > now
+      || (this.pageSpeedWorkspaceNextRun.get(record.workspaceId) ?? 0) > now
+    ) {
+      return {
+        ok: false,
+        reason: 'rate_limited',
+        error: 'Vui lòng chờ một chút trước khi chạy phép đo PageSpeed tiếp theo.',
+      };
+    }
+    if (this.pageSpeedTargetNextRun.size >= PAGESPEED_THROTTLE_ENTRY_LIMIT) {
+      const oldest = this.pageSpeedTargetNextRun.keys().next().value;
+      if (oldest) this.pageSpeedTargetNextRun.delete(oldest);
+    }
+    this.pageSpeedTargetNextRun.set(requestKey, now + PAGESPEED_TARGET_COOLDOWN_MS);
+    this.pageSpeedWorkspaceNextRun.set(record.workspaceId, now + PAGESPEED_WORKSPACE_COOLDOWN_MS);
+
+    const request = (async (): Promise<CustomerMarketingPageSpeedResult> => {
+      try {
+        return await this.pageSpeedRuntime!(input);
+      } catch {
+        return {
+          ok: false,
+          reason: 'api_error',
+          error: 'Không thể hoàn tất phép đo PageSpeed lúc này.',
+        };
+      }
+    })();
+    const tracked = request.finally(() => this.pageSpeedInFlight.delete(requestKey));
+    this.pageSpeedInFlight.set(requestKey, tracked);
+    return tracked;
   }
 
   async repairVoiceStudio(): Promise<CustomerVoiceStudioRepairResult> {

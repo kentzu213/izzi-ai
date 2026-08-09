@@ -66,6 +66,7 @@ import {
   loadCustomerMarketingKnowledgeSkills,
   resolveCustomerMarketingKnowledgeSkillsRoot,
 } from './customer-marketing/customer-marketing-knowledge-skills';
+import { runCustomerMarketingPageSpeedAudit } from './customer-marketing/customer-marketing-pagespeed';
 import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
 import { TraceStore } from './memory-trace/trace-store';
@@ -516,6 +517,7 @@ function setupIPC() {
     }),
     repairVoiceStudioRuntime,
     () => loadCustomerMarketingKnowledgeSkills(getCustomerMarketingKnowledgeSkillsRoot()),
+    (input) => runCustomerMarketingPageSpeedAudit(input),
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

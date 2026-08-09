@@ -72,6 +72,11 @@ function serviceMock() {
     saveOnboarding: vi.fn(),
     createGoal: vi.fn(),
     askDirector: vi.fn(),
+    measurePageSpeed: vi.fn(async () => ({
+      ok: false,
+      reason: 'rate_limited',
+      error: 'Google PageSpeed đang giới hạn số lần gọi.',
+    })),
     reviewApproval: vi.fn(),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
@@ -118,6 +123,46 @@ beforeEach(() => {
   electronMocks.fromWebContents.mockReset();
   electronMocks.isPackaged = false;
   delete process.env.OPENCLAW_FORCE_PROD_RENDERER;
+});
+
+describe('customer marketing PageSpeed IPC', () => {
+  const auditInput = { url: 'https://izziapi.com/', strategy: 'mobile' } as const;
+
+  it('passes only the exact read-only audit contract to the service', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:measurePageSpeed');
+
+    await expect(handler!(event(), auditInput)).resolves.toMatchObject({
+      ok: false,
+      reason: 'rate_limited',
+    });
+    expect(service.measurePageSpeed).toHaveBeenCalledWith(auditInput);
+  });
+
+  it.each([
+    { ...auditInput, token: 'renderer-secret' },
+    { ...auditInput, workspaceId: 'renderer-workspace' },
+    { ...auditInput, strategy: 'tablet' },
+    'https://izziapi.com/',
+  ])('rejects malformed or expanded input before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:measurePageSpeed');
+
+    await expect(handler!(event(), payload)).rejects.toThrow('Payload PageSpeed không hợp lệ');
+    expect(service.measurePageSpeed).not.toHaveBeenCalled();
+  });
+
+  it('rejects an untrusted renderer before parsing or service execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:measurePageSpeed');
+
+    await expect(handler!(event('https://attacker.example/customer-marketing'), auditInput))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.measurePageSpeed).not.toHaveBeenCalled();
+  });
 });
 
 describe('customer marketing media IPC', () => {

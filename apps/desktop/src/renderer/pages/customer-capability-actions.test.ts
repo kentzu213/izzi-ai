@@ -31,7 +31,6 @@ describe('customer capability action adapter', () => {
     ['strategy-planning', 'director', 'Tạo kế hoạch'],
     ['content-studio', 'content', 'Mở Nội dung & Lịch'],
     ['social-workflows', 'channels', 'Mở Kênh'],
-    ['seo-workspace', 'channels', 'Mở Kênh'],
     ['email-workflows', 'channels', 'Mở Kênh'],
     ['crm-workflows', 'channels', 'Mở Kênh'],
     ['approval-center', 'approvals', 'Mở Phê duyệt'],
@@ -55,6 +54,7 @@ describe('customer capability action adapter', () => {
   });
 
   it.each([
+    'seo-workspace',
     'creative-studio',
     'analytics-copilot',
     'brand-guardian',

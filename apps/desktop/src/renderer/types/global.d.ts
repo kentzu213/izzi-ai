@@ -54,6 +54,10 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
+import type {
+  CustomerMarketingPageSpeedInput,
+  CustomerMarketingPageSpeedResult,
+} from '../../shared/customer-marketing-pagespeed';
 
 export {};
 
@@ -175,6 +179,9 @@ declare global {
 
   interface ElectronCustomerMarketingApi {
     getSnapshot: () => Promise<CustomerMarketingSnapshot>;
+    measurePageSpeed: (
+      input: CustomerMarketingPageSpeedInput,
+    ) => Promise<CustomerMarketingPageSpeedResult>;
     getProductMarketingContext: () => Promise<CustomerProductMarketingContextV1 | null>;
     saveProductMarketingContext: (
       input: CustomerProductMarketingContextSaveInput,

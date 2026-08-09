@@ -38,6 +38,10 @@ import type {
 } from '../../shared/customer-marketing-credential-types';
 import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/customer-marketing-credential-types';
 import {
+  parseCustomerMarketingPageSpeedInput,
+  type CustomerMarketingPageSpeedResult,
+} from '../../shared/customer-marketing-pagespeed';
+import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateResult,
 } from '../../shared/customer-marketing-action-gate-types';
@@ -114,6 +118,16 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:getSnapshot', async (event): Promise<CustomerMarketingSnapshot> => {
     trusted(event);
     return service.getSnapshot();
+  });
+
+  ipcMain.handle('customerMarketing:measurePageSpeed', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingPageSpeedResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingPageSpeedInput(payload);
+    if (!parsed) throw new Error('Payload PageSpeed không hợp lệ.');
+    return service.measurePageSpeed(parsed);
   });
 
   ipcMain.handle('customerMarketing:getProductMarketingContext', async (

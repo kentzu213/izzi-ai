@@ -6,6 +6,7 @@ import {
   useState,
   type ComponentType,
   type FormEvent,
+  type KeyboardEvent,
 } from 'react';
 import {
   ContentIcon,
@@ -34,6 +35,12 @@ import type {
   CustomerOnboardingInput,
   CustomerRole,
 } from '../../shared/customer-marketing-types';
+import type {
+  CustomerMarketingPageSpeedMetric,
+  CustomerMarketingPageSpeedReport,
+  CustomerMarketingPageSpeedResult,
+  CustomerMarketingPageSpeedStrategy,
+} from '../../shared/customer-marketing-pagespeed';
 import type { CustomerCapabilityWorkbenchId } from './customer-capability-actions';
 
 export type CapabilityWorkbenchOpenView =
@@ -111,9 +118,12 @@ function formatDate(value: string | null | undefined, includeTime = false): stri
   }).format(date);
 }
 function statusTone(value: string): 'positive' | 'warning' | 'negative' | 'neutral' {
-  if (['synced', 'approved', 'ready', 'pass', 'available'].includes(value)) return 'positive';
-  if (['forbidden', 'blocked', 'rejected', 'unavailable', 'error'].includes(value)) return 'negative';
-  if (['pending', 'local', 'warning', 'draft', 'in_review', 'conflict'].includes(value)) return 'warning';
+  if (['synced', 'approved', 'ready', 'pass', 'available', 'good'].includes(value)) return 'positive';
+  if (['forbidden', 'blocked', 'rejected', 'unavailable', 'error', 'poor'].includes(value)) return 'negative';
+  if (
+    ['pending', 'local', 'warning', 'draft', 'in_review', 'conflict', 'needs-improvement']
+      .includes(value)
+  ) return 'warning';
   return 'neutral';
 }
 function WorkbenchPill({ value, label }: { value: string; label?: string }) {
@@ -206,6 +216,309 @@ function WorkbenchHeader({
           Back to Apps
         </button>
       </div>
+    </div>
+  );
+}
+
+const PAGESPEED_LAB_METRICS = [
+  ['LCP', 'lcp'],
+  ['CLS', 'cls'],
+  ['TBT', 'tbt'],
+  ['FCP', 'fcp'],
+  ['Speed Index', 'speedIndex'],
+  ['Server response', 'serverResponse'],
+] as const;
+const PAGESPEED_FIELD_METRICS = [
+  ['LCP', 'lcp'],
+  ['CLS', 'cls'],
+  ['INP', 'inp'],
+  ['TTFB', 'ttfb'],
+] as const;
+const PAGESPEED_STRATEGIES: CustomerMarketingPageSpeedStrategy[] = ['mobile', 'desktop'];
+
+export function pageSpeedStrategyForKey(
+  current: CustomerMarketingPageSpeedStrategy,
+  key: string,
+): CustomerMarketingPageSpeedStrategy | null {
+  const index = PAGESPEED_STRATEGIES.indexOf(current);
+  if (key === 'Home') return PAGESPEED_STRATEGIES[0];
+  if (key === 'End') return PAGESPEED_STRATEGIES[PAGESPEED_STRATEGIES.length - 1];
+  if (key === 'ArrowRight' || key === 'ArrowDown') {
+    return PAGESPEED_STRATEGIES[(index + 1) % PAGESPEED_STRATEGIES.length];
+  }
+  if (key === 'ArrowLeft' || key === 'ArrowUp') {
+    return PAGESPEED_STRATEGIES[(index - 1 + PAGESPEED_STRATEGIES.length)
+      % PAGESPEED_STRATEGIES.length];
+  }
+  return null;
+}
+
+export function pageSpeedReportAfterResult(
+  current: CustomerMarketingPageSpeedReport | null,
+  result: CustomerMarketingPageSpeedResult,
+): CustomerMarketingPageSpeedReport | null {
+  return result.ok ? result : current;
+}
+
+function pageSpeedScoreTone(score: number | null): 'positive' | 'warning' | 'negative' | 'neutral' {
+  if (score === null) return 'neutral';
+  if (score >= 90) return 'positive';
+  if (score >= 50) return 'warning';
+  return 'negative';
+}
+
+function PageSpeedMetricCell({
+  label,
+  metric,
+}: {
+  label: string;
+  metric: CustomerMarketingPageSpeedMetric;
+}) {
+  return (
+    <div className={`cmr-pagespeed-metric cmr-pagespeed-metric--${metric.rating}`}>
+      <span>{label}</span>
+      <strong>{metric.display}</strong>
+      <small>{metric.rating.replace('-', ' ')}</small>
+    </div>
+  );
+}
+
+export function PageSpeedReportView({ report }: { report: CustomerMarketingPageSpeedReport }) {
+  return (
+    <>
+      <section className="cmr-panel cmr-workbench-panel cmr-pagespeed-result" aria-label="PageSpeed lab result">
+        <div className="cmr-section-heading">
+          <div>
+            <span className="cmr-eyebrow">Lab / Lighthouse</span>
+            <h3>Kết quả hiệu năng</h3>
+          </div>
+          <div className={`cmr-pagespeed-score cmr-pagespeed-score--${pageSpeedScoreTone(report.performanceScore)}`}>
+            <strong>{report.performanceScore ?? '--'}</strong>
+            <span>/ 100</span>
+          </div>
+        </div>
+        <div className="cmr-pagespeed-meta">
+          <span>{report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}</span>
+          <span>{formatDate(report.measuredAt, true)}</span>
+        </div>
+        <div className="cmr-pagespeed-provenance">
+          <div>
+            <span>URL gửi tới Google</span>
+            <strong>{report.url}</strong>
+          </div>
+          <div>
+            <span>URL Lighthouse nhận</span>
+            <strong>{report.lighthouseRequestedUrl}</strong>
+          </div>
+          <div>
+            <span>URL cuối Lighthouse</span>
+            <strong>{report.finalUrl}</strong>
+          </div>
+        </div>
+        <div className="cmr-pagespeed-metrics">
+          {PAGESPEED_LAB_METRICS.map(([label, key]) => {
+            const metric = report.lab[key];
+            return metric ? <PageSpeedMetricCell key={key} label={label} metric={metric} /> : null;
+          })}
+        </div>
+      </section>
+
+      <section className="cmr-panel cmr-workbench-panel" aria-label="Chrome user experience result">
+        <div className="cmr-section-heading">
+          <div>
+            <span className="cmr-eyebrow">Field / CrUX</span>
+            <h3>Dữ liệu người dùng thật</h3>
+          </div>
+          {report.field && (
+            <div className="cmr-pagespeed-field-status">
+              <WorkbenchPill value={report.field.overall} />
+              <span>{report.field.scope === 'origin' ? 'Origin scope' : 'URL scope'}</span>
+            </div>
+          )}
+        </div>
+        {report.field ? (
+          <>
+            {report.field.scope === 'origin' && (
+              <p className="cmr-workbench-note cmr-pagespeed-origin-note">
+                URL này chưa đủ mẫu riêng; Google đã trả dữ liệu tổng hợp ở cấp origin.
+              </p>
+            )}
+            <div className="cmr-pagespeed-provenance cmr-pagespeed-provenance--field">
+              <div>
+                <span>Phạm vi dữ liệu</span>
+                <strong>{report.field.scope === 'origin' ? 'Origin tổng hợp' : 'URL cụ thể'}</strong>
+              </div>
+              <div>
+                <span>URL CrUX yêu cầu</span>
+                <strong>{report.field.initialUrl}</strong>
+              </div>
+              <div>
+                <span>Dataset CrUX</span>
+                <strong>{report.field.id}</strong>
+              </div>
+            </div>
+            <div className="cmr-pagespeed-metrics cmr-pagespeed-metrics--field">
+              {PAGESPEED_FIELD_METRICS.map(([label, key]) => {
+                const metric = report.field?.[key];
+                return metric ? <PageSpeedMetricCell key={key} label={label} metric={metric} /> : null;
+              })}
+            </div>
+          </>
+        ) : (
+          <WorkbenchEmpty
+            icon={TrendUpIcon}
+            title="Chưa có dữ liệu CrUX"
+            description="Google chưa có đủ dữ liệu người dùng thật cho URL này. Kết quả Lighthouse phía trên vẫn dùng được."
+          />
+        )}
+      </section>
+    </>
+  );
+}
+
+function SeoPageSpeedView({
+  form,
+  role,
+  onBack,
+}: {
+  form: CustomerOnboardingInput;
+  role: CustomerRole;
+  onBack: () => void;
+}) {
+  const [url, setUrl] = useState(form.business.website);
+  const [strategy, setStrategy] = useState<CustomerMarketingPageSpeedStrategy>('mobile');
+  const [report, setReport] = useState<CustomerMarketingPageSpeedReport | null>(null);
+  const [message, setMessage] = useState('');
+  const [announcement, setAnnouncement] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canExecute = roleCanEdit(role);
+
+  const changeStrategyFromKeyboard = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const next = pageSpeedStrategyForKey(strategy, event.key);
+    if (!next) return;
+    event.preventDefault();
+    setStrategy(next);
+    event.currentTarget.parentElement
+      ?.querySelector<HTMLButtonElement>(`[data-pagespeed-strategy="${next}"]`)
+      ?.focus();
+  };
+
+  const measure = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canExecute || busy) return;
+    const normalizedUrl = url.trim();
+    if (!normalizedUrl) {
+      setMessage('Nhập URL công khai cần đo.');
+      setAnnouncement('');
+      return;
+    }
+    const api = customerApi();
+    if (!api) {
+      setMessage('PageSpeed chưa sẵn sàng trong phiên này.');
+      setAnnouncement('');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    setAnnouncement('');
+    try {
+      const next = await api.measurePageSpeed({ url: normalizedUrl, strategy });
+      setReport((current) => pageSpeedReportAfterResult(current, next));
+      if (next.ok) {
+        setAnnouncement(
+          `Đã hoàn tất phép đo ${next.strategy === 'mobile' ? 'Mobile' : 'Desktop'} lúc ${formatDate(next.measuredAt, true)}.`,
+        );
+      } else {
+        setMessage(next.error);
+      }
+    } catch {
+      setMessage('Không thể hoàn tất phép đo PageSpeed lúc này.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cmr-view-stack cmr-workbench">
+      <WorkbenchHeader
+        eyebrow="SEO Workspace / Read-only audit"
+        title="Google PageSpeed"
+        description="Đo Lighthouse lab data và Core Web Vitals thực tế mà không thay đổi website hay tạo hành động bên ngoài."
+        icon={TrendUpIcon}
+        onBack={onBack}
+      />
+      <form className="cmr-panel cmr-workbench-panel cmr-pagespeed-form" onSubmit={measure}>
+        <div className="cmr-section-heading">
+          <div>
+            <span className="cmr-eyebrow">01 / Audit target</span>
+            <h3>Trang cần kiểm tra</h3>
+          </div>
+          <WorkbenchPill value="available" label="Read only" />
+        </div>
+        <div className="cmr-pagespeed-controls">
+          <WorkbenchField
+            label="URL công khai"
+            value={url}
+            onChange={setUrl}
+            placeholder="https://izziapi.com"
+            disabled={busy || !canExecute}
+          />
+          <fieldset className="cmr-pagespeed-strategy">
+            <legend>Thiết bị</legend>
+            <div role="radiogroup" aria-label="Chiến lược PageSpeed">
+              {PAGESPEED_STRATEGIES.map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  role="radio"
+                  data-pagespeed-strategy={value}
+                  className={strategy === value ? 'is-active' : ''}
+                  aria-checked={strategy === value}
+                  tabIndex={strategy === value ? 0 : -1}
+                  disabled={busy || !canExecute}
+                  onClick={() => setStrategy(value)}
+                  onKeyDown={changeStrategyFromKeyboard}
+                >
+                  {value === 'mobile' ? 'Mobile' : 'Desktop'}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+        <div className="cmr-pagespeed-disclosure">
+          <StatusIcon className="cmr-icon" />
+          <p>URL công khai sẽ được gửi tới Google PageSpeed để chạy phép đo theo yêu cầu. Không gửi cookie, credential hay dữ liệu workspace.</p>
+        </div>
+        <div className="cmr-workbench-form__footer">
+          <span className="cmr-workbench-note">Chỉ chạy khi bạn bấm nút. Kết quả không tự động xuất hiện trong chiến dịch.</span>
+          <button
+            type="submit"
+            className="cmr-button cmr-button--primary"
+            disabled={busy || !canExecute || !url.trim()}
+          >
+            {busy ? 'Đang đo...' : 'Đo tốc độ'} <TrendUpIcon className="cmr-button__icon" />
+          </button>
+        </div>
+        {!canExecute && (
+          <p className="cmr-permission-note">Vai trò hiện tại chỉ được xem và không thể chạy phép đo mới.</p>
+        )}
+      </form>
+      <div
+        className="cmr-pagespeed-live"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy={busy}
+      >
+        {busy && (
+          <div className="cmr-workbench-skeleton">
+            <span /><span /><span />
+          </div>
+        )}
+        {!busy && message && <p className="cmr-pagespeed-error">{message}</p>}
+        {!busy && announcement && <p className="cmr-pagespeed-success">{announcement}</p>}
+      </div>
+      {report && <PageSpeedReportView report={report} />}
     </div>
   );
 }
@@ -1441,6 +1754,15 @@ export function CustomerMarketingCapabilityWorkbench({
   onOpen,
   onDirector,
 }: CapabilityWorkbenchProps) {
+  if (id === 'seo-workspace') {
+    return (
+      <SeoPageSpeedView
+        form={form}
+        role={snapshot.workspace.role}
+        onBack={onBack}
+      />
+    );
+  }
   if (id === 'creative-studio') {
     return (
       <CreativeStudioView

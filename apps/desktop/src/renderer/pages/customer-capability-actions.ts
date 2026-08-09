@@ -14,6 +14,7 @@ export type CustomerCapabilityView =
   | 'capability';
 
 export type CustomerCapabilityWorkbenchId =
+  | 'seo-workspace'
   | 'creative-studio'
   | 'analytics-copilot'
   | 'brand-guardian'
@@ -46,7 +47,11 @@ const CORE_ACTIONS: ReadonlyMap<string, ActionDefinition> = new Map([
   ['strategy-planning', { view: 'director', label: 'Tạo kế hoạch' }],
   ['content-studio', { view: 'content', label: 'Mở Nội dung & Lịch' }],
   ['social-workflows', { view: 'channels', label: 'Mở Kênh' }],
-  ['seo-workspace', { view: 'channels', label: 'Mở Kênh' }],
+  ['seo-workspace', {
+    view: 'capability',
+    capabilityId: 'seo-workspace',
+    label: 'Mở SEO Workspace',
+  }],
   ['email-workflows', { view: 'channels', label: 'Mở Kênh' }],
   ['crm-workflows', { view: 'channels', label: 'Mở Kênh' }],
   ['approval-center', { view: 'approvals', label: 'Mở Phê duyệt' }],

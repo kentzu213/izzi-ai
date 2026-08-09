@@ -7,12 +7,16 @@ import type {
   CustomerMarketingSnapshot,
   CustomerOnboardingInput,
 } from '../../shared/customer-marketing-types';
+import type { CustomerMarketingPageSpeedReport } from '../../shared/customer-marketing-pagespeed';
 import {
   analyticsWindowFromDates,
   buildAnalyticsInsights,
   buildCreativeBriefBody,
   CustomerMarketingCapabilityWorkbench,
   currentMonthAnalyticsRange,
+  PageSpeedReportView,
+  pageSpeedReportAfterResult,
+  pageSpeedStrategyForKey,
   scanBrandContent,
 } from './CustomerMarketingCapabilityWorkbenches';
 
@@ -141,6 +145,7 @@ function analyticsReport(
 
 describe('Customer Marketing capability workbench helpers', () => {
   it.each([
+    ['seo-workspace', 'Google PageSpeed'],
     ['creative-studio', 'Create a content brief'],
     ['analytics-copilot', 'Verified workspace report'],
     ['brand-guardian', 'Current Brand Center'],
@@ -162,6 +167,96 @@ describe('Customer Marketing capability workbench helpers', () => {
     ));
 
     expect(html).toContain(marker);
+  });
+
+  it('prefills SEO Workspace from Brand Center and keeps the audit explicitly read-only', () => {
+    const html = renderToStaticMarkup(createElement(
+      CustomerMarketingCapabilityWorkbench,
+      {
+        id: 'seo-workspace',
+        snapshot: {
+          workspace: { role: 'owner' },
+          approvals: [],
+        } as unknown as CustomerMarketingSnapshot,
+        form,
+        onBack: () => undefined,
+        onOpen: () => undefined,
+        onDirector: async () => undefined,
+      },
+    ));
+
+    expect(html).toContain('value="https://izziapi.com"');
+    expect(html).toContain('URL công khai sẽ được gửi tới Google PageSpeed');
+    expect(html).toContain('Đo tốc độ');
+    expect(html).toContain('role="radiogroup"');
+    expect(html.match(/role="radio"/g)).toHaveLength(2);
+    expect(html).toContain('aria-checked="true"');
+    expect(html).not.toContain('Xuất bản');
+    expect(html).not.toContain('Chi tiêu');
+  });
+
+  it.each([
+    ['mobile', 'ArrowRight', 'desktop'],
+    ['desktop', 'ArrowRight', 'mobile'],
+    ['desktop', 'ArrowLeft', 'mobile'],
+    ['mobile', 'End', 'desktop'],
+    ['desktop', 'Home', 'mobile'],
+    ['mobile', 'Enter', null],
+  ] as const)('maps PageSpeed keyboard navigation from %s with %s', (current, key, expected) => {
+    expect(pageSpeedStrategyForKey(current, key)).toBe(expected);
+  });
+
+  it('renders requested/final URLs and the exact CrUX source provenance', () => {
+    const report: CustomerMarketingPageSpeedReport = {
+      ok: true,
+      url: 'https://izziapi.com/start',
+      lighthouseRequestedUrl: 'https://izziapi.com/start',
+      finalUrl: 'https://izziapi.com/',
+      strategy: 'mobile',
+      measuredAt: '2026-08-09T06:00:00.000Z',
+      performanceScore: 92,
+      lab: { lcp: { display: '2.1 s', rating: 'good' } },
+      field: {
+        scope: 'origin',
+        initialUrl: 'https://izziapi.com/start',
+        id: 'https://izziapi.com/',
+        overall: 'needs-improvement',
+        lcp: { display: '2.20 s', rating: 'good' },
+      },
+    };
+    const html = renderToStaticMarkup(createElement(PageSpeedReportView, { report }));
+
+    expect(html).toContain('URL gửi tới Google');
+    expect(html).toContain('https://izziapi.com/start');
+    expect(html).toContain('URL Lighthouse nhận');
+    expect(html).toContain('URL cuối Lighthouse');
+    expect(html).toContain('URL CrUX yêu cầu');
+    expect(html).toContain('Dataset CrUX');
+    expect(html).toContain('Origin tổng hợp');
+    expect(html).toContain('cmr-pill--warning');
+    expect(html.match(/https:\/\/izziapi.com\//g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps the last good PageSpeed report when a retry fails', () => {
+    const report: CustomerMarketingPageSpeedReport = {
+      ok: true,
+      url: 'https://izziapi.com/',
+      lighthouseRequestedUrl: 'https://izziapi.com/',
+      finalUrl: 'https://izziapi.com/',
+      strategy: 'mobile',
+      measuredAt: '2026-08-09T06:00:00.000Z',
+      performanceScore: 92,
+      lab: {},
+      field: null,
+    };
+    const failure = {
+      ok: false,
+      reason: 'rate_limited',
+      error: 'Google PageSpeed đang giới hạn số lần gọi.',
+    } as const;
+
+    expect(pageSpeedReportAfterResult(report, failure)).toBe(report);
+    expect(pageSpeedReportAfterResult(null, failure)).toBeNull();
   });
 
   it('builds a persisted creative brief from user input and Brand Center data', () => {

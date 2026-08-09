@@ -19,6 +19,10 @@ import type {
   CustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
 import type {
+  CustomerMarketingPageSpeedInput,
+  CustomerMarketingPageSpeedResult,
+} from '../../shared/customer-marketing-pagespeed';
+import type {
   CustomerExtensionCapabilityDefinition,
 } from '../../shared/customer-marketing-capability-manifest';
 import {
@@ -520,6 +524,9 @@ function setup(options?: {
       'ready' | 'not_installed' | 'docker_unavailable' | 'unhealthy'
     >;
   knowledgeSkills?: CustomerMarketingKnowledgeSkill[];
+  pageSpeedRuntime?: (
+    input: CustomerMarketingPageSpeedInput,
+  ) => Promise<CustomerMarketingPageSpeedResult>;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -542,6 +549,7 @@ function setup(options?: {
       ?? createCustomerMarketingGuardrailStateReader({ env: {}, spendVndUsedInWindow: () => 0 }),
     options?.repairVoiceStudioRuntime,
     () => options?.knowledgeSkills ?? [],
+    options?.pageSpeedRuntime,
   );
   return {
     db,
@@ -552,6 +560,100 @@ function setup(options?: {
     },
   };
 }
+
+describe('Customer Marketing PageSpeed authority', () => {
+  const auditInput = { url: 'https://izziapi.com/', strategy: 'mobile' } as const;
+  const report: CustomerMarketingPageSpeedResult = {
+    ok: true,
+    url: auditInput.url,
+    lighthouseRequestedUrl: auditInput.url,
+    finalUrl: auditInput.url,
+    strategy: auditInput.strategy,
+    measuredAt: '2026-08-09T06:00:00.000Z',
+    performanceScore: 92,
+    lab: {},
+    field: null,
+  };
+
+  it('runs the read-only audit for an entitled local owner', async () => {
+    const pageSpeedRuntime = vi.fn(async () => report);
+    const context = setup({ pageSpeedRuntime });
+
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toEqual(report);
+    expect(pageSpeedRuntime).toHaveBeenCalledWith(auditInput);
+  });
+
+  it('deduplicates an identical audit while its main-process request is in flight', async () => {
+    let finish!: (value: CustomerMarketingPageSpeedResult) => void;
+    const pageSpeedRuntime = vi.fn(() => new Promise<CustomerMarketingPageSpeedResult>((resolve) => {
+      finish = resolve;
+    }));
+    const context = setup({ pageSpeedRuntime });
+
+    const first = context.service.measurePageSpeed(auditInput);
+    const second = context.service.measurePageSpeed(auditInput);
+    await vi.waitFor(() => expect(pageSpeedRuntime).toHaveBeenCalledTimes(1));
+    finish(report);
+
+    await expect(Promise.all([first, second])).resolves.toEqual([report, report]);
+    expect(pageSpeedRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it('throttles an immediate repeated audit before spending another API request', async () => {
+    const pageSpeedRuntime = vi.fn(async () => report);
+    const context = setup({ pageSpeedRuntime });
+
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toEqual(report);
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toMatchObject({
+      ok: false,
+      reason: 'rate_limited',
+    });
+    expect(pageSpeedRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies a viewer before calling the external runtime', async () => {
+    const pageSpeedRuntime = vi.fn(async () => report);
+    const context = setup({ pageSpeedRuntime });
+    await context.service.saveOnboarding(onboarding());
+    context.db.updateOnlyRecord({ role: 'viewer' });
+
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toMatchObject({
+      ok: false,
+      reason: 'forbidden',
+    });
+    expect(pageSpeedRuntime).not.toHaveBeenCalled();
+  });
+
+  it('denies a synced catalog that does not entitle SEO Workspace', async () => {
+    const pageSpeedRuntime = vi.fn(async () => report);
+    const remote = marketingResourceGateway('manager');
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...remote.gateway,
+      getCapabilities: vi.fn(async () => ({
+        status: 'synced',
+        revision: 4,
+        capabilities: [remoteCapability({ id: 'content-studio' })],
+      })),
+    };
+    const context = setup({ workspaceGateway: gateway, pageSpeedRuntime });
+
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toMatchObject({
+      ok: false,
+      reason: 'forbidden',
+    });
+    expect(pageSpeedRuntime).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the main-process PageSpeed runtime is not wired', async () => {
+    const context = setup();
+
+    await expect(context.service.measurePageSpeed(auditInput)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+      error: 'PageSpeed chưa sẵn sàng trong phiên này.',
+    });
+  });
+});
 
 function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
   const toolchain: CustomerMediaToolchain = {

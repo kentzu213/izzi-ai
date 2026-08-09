@@ -89,6 +89,10 @@ import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
 } from '../shared/customer-marketing-action-gate-types';
+import type {
+  CustomerMarketingPageSpeedInput,
+  CustomerMarketingPageSpeedResult,
+} from '../shared/customer-marketing-pagespeed';
 
 const electronAPI = {
   window: {
@@ -554,6 +558,10 @@ const electronAPI = {
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
       ipcRenderer.invoke('customerMarketing:getSnapshot'),
+    measurePageSpeed: (
+      input: CustomerMarketingPageSpeedInput,
+    ): Promise<CustomerMarketingPageSpeedResult> =>
+      ipcRenderer.invoke('customerMarketing:measurePageSpeed', input),
     getProductMarketingContext: (): Promise<CustomerProductMarketingContextV1 | null> =>
       ipcRenderer.invoke('customerMarketing:getProductMarketingContext'),
     saveProductMarketingContext: (
