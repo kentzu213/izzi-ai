@@ -185,6 +185,38 @@ export function ensureSqliteSchema(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- CMR-224 Slice 3: append-only interaction traces. Nothing updates or deletes
+    -- these rows; a correction is a new observation, not an edit. The CHECK binds
+    -- each classification to its storage policy, including encrypted private data.
+    CREATE TABLE IF NOT EXISTS memory_trace_units (
+      id TEXT PRIMARY KEY,
+      schema_version INTEGER NOT NULL,
+      actor TEXT NOT NULL,
+      classification TEXT NOT NULL,
+      text_plain TEXT,
+      text_cipher TEXT,
+      source_id TEXT NOT NULL,
+      source_kind TEXT NOT NULL,
+      boundary_id TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      CHECK (
+        (
+          classification = 'public_metadata'
+          AND text_plain IS NOT NULL
+          AND length(text_plain) > 0
+          AND text_cipher IS NULL
+        )
+        OR
+        (
+          classification IN ('interaction_trace', 'live_profile', 'secret_reference')
+          AND text_plain IS NULL
+          AND text_cipher IS NOT NULL
+          AND length(text_cipher) > 0
+        )
+      )
+    );
+
     CREATE INDEX IF NOT EXISTS idx_scheduled_session_runs_session ON scheduled_session_runs(session_id, started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_user_data_type ON user_data(type);
     CREATE INDEX IF NOT EXISTS idx_installed_extensions_display_name ON installed_extensions(display_name);
@@ -199,6 +231,10 @@ export function ensureSqliteSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_offline_queue_seq ON offline_queue(seq ASC);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_updated_at ON agent_runs(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_entries_run_id ON agent_run_entries(run_id, created_at ASC);
+    -- Reads are always scoped to a boundary and ordered by when the interaction
+    -- was observed, so the index carries the tie-break too and stays deterministic.
+    CREATE INDEX IF NOT EXISTS idx_memory_trace_units_boundary ON memory_trace_units(boundary_id, observed_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_memory_trace_units_source ON memory_trace_units(source_kind, source_id);
   `);
 
   ensureColumn(db, 'agent_tasks', 'summary', 'TEXT');

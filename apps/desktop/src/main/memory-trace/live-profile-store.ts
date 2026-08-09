@@ -13,6 +13,7 @@ import {
   nextLiveProfileRevision,
   parseLiveProfile,
   serializeLiveProfile,
+  type LiveProfile,
   type LiveProfileReadResult,
   type LiveProfileWriteResult,
 } from '../../shared/memory-trace/live-profile';
@@ -106,19 +107,24 @@ export class LiveProfileStore {
   asTraceUnit(boundaryId: string): TraceUnit | null {
     const current = this.read();
     if (current.status !== 'ok' || !current.profile) return null;
-    if (current.profile.body.trim().length === 0) return null;
+    return this.toTraceUnit(current.profile, boundaryId);
+  }
+
+  /** Converts the exact accepted revision without rereading a newer file. */
+  toTraceUnit(profile: LiveProfile, boundaryId: string): TraceUnit | null {
+    if (profile.body.trim().length === 0) return null;
 
     return parseTraceUnit({
       schemaVersion: 1,
-      id: liveProfileSourceId(current.profile),
-      text: current.profile.body,
+      id: liveProfileSourceId(profile),
+      text: profile.body,
       actor: 'user',
       classification: 'live_profile',
       provenance: {
-        sourceId: liveProfileSourceId(current.profile),
+        sourceId: liveProfileSourceId(profile),
         sourceKind: 'live_profile',
         boundaryId,
-        observedAt: current.profile.updatedAt,
+        observedAt: profile.updatedAt,
       },
     });
   }

@@ -98,6 +98,19 @@ describe('CMR-224 LiveProfileStore', () => {
     expect(unit?.provenance.observedAt).toBe(NOW);
   });
 
+  it('converts the exact saved revision even after the file changes again', () => {
+    const store = freshStore();
+    store.ensure();
+    const firstWrite = store.write('first saved body');
+    expect(firstWrite.status).toBe('ok');
+    store.write('newer body');
+
+    const unit = store.toTraceUnit(firstWrite.profile!, 'workspace-local');
+
+    expect(unit?.text).toBe('first saved body');
+    expect(unit?.provenance.sourceId).toBe('Live.md#rev2');
+  });
+
   it('returns no trace unit when the profile is absent, unreadable, or empty', () => {
     const absent = freshStore();
     expect(absent.asTraceUnit('workspace-local')).toBeNull();

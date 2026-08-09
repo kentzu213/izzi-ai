@@ -51,6 +51,7 @@ function untrustedEvent(): IpcMainInvokeEvent {
 
 let directory: string;
 let store: LiveProfileStore;
+let onProfileWritten: ReturnType<typeof vi.fn>;
 
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = electronMocks.handlers.get(channel);
@@ -61,9 +62,10 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'live-profile-ipc-'));
   store = new LiveProfileStore({ directory });
+  onProfileWritten = vi.fn();
   electronMocks.handlers.clear();
   electronMocks.showItemInFolder.mockClear();
-  registerLiveProfileIpc(store);
+  registerLiveProfileIpc(store, { onProfileWritten });
 });
 
 afterEach(() => {
@@ -110,6 +112,41 @@ describe('registerLiveProfileIpc', () => {
     );
     expect(onDisk?.body).toBe(body);
     expect(onDisk?.revision).toBe(2);
+    expect(onProfileWritten).toHaveBeenCalledTimes(1);
+    expect(onProfileWritten).toHaveBeenCalledWith(written.profile);
+  });
+
+  it('does not report a revision until its file write succeeds', () => {
+    const filePath = path.join(directory, LIVE_PROFILE_FILE_NAME);
+    fs.mkdirSync(filePath, { recursive: true });
+
+    const result = invoke('liveProfile:write', trustedEvent(), 'anything') as {
+      status: string;
+    };
+
+    expect(result.status).toBe('unreadable');
+    expect(onProfileWritten).not.toHaveBeenCalled();
+  });
+
+  it('keeps a successful save successful when revision recording fails', () => {
+    invoke('liveProfile:read', trustedEvent());
+    onProfileWritten.mockImplementation(() => {
+      throw new Error('simulated trace storage failure');
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const result = invoke('liveProfile:write', trustedEvent(), 'durable body') as {
+      status: string;
+      profile: { revision: number; body: string } | null;
+    };
+
+    expect(result.status).toBe('ok');
+    expect(result.profile?.revision).toBe(2);
+    expect(store.read().profile?.body).toBe('durable body');
+    expect(warning).toHaveBeenCalledWith(
+      '[memory-trace] Live.md was saved but its trace revision was not recorded',
+    );
+    warning.mockRestore();
   });
 
   it('refuses a non-string body instead of coercing it', () => {

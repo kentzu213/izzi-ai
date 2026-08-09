@@ -63,6 +63,7 @@ import { CustomerMarketingCredentialVault } from './customer-marketing/customer-
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
+import { TraceStore } from './memory-trace/trace-store';
 import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
 import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
 import {
@@ -77,6 +78,11 @@ import {
 import { createStreamCollector } from '../shared/agent-turn-events';
 import { APP_ID, APP_NAME } from '../shared/app-branding';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
+import type { LiveProfile } from '../shared/memory-trace/live-profile';
+
+// Live.md is workspace-scoped rather than session-scoped: it outlives any one
+// chat, so its trace units share one boundary.
+const LIVE_PROFILE_BOUNDARY_ID = 'workspace:local';
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
@@ -428,14 +434,36 @@ function setupIPC() {
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
   // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
   // from the template on first run; never overwrite an existing or unreadable file.
-  liveProfileStore = new LiveProfileStore({ directory: app.getPath('userData') });
-  const liveProfileState = liveProfileStore.ensure();
+  const profileStore = new LiveProfileStore({ directory: app.getPath('userData') });
+  liveProfileStore = profileStore;
+  const liveProfileState = profileStore.ensure();
   if (liveProfileState.status !== 'ok') {
     console.warn('[memory-trace] Live.md is not readable at', liveProfileState.filePath);
   }
+  const profileTraceStore = new TraceStore(dbManager);
+  const recordLiveProfileRevision = (profile: LiveProfile): void => {
+    const unit = profileStore.toTraceUnit(profile, LIVE_PROFILE_BOUNDARY_ID);
+    if (!unit) return;
+    try {
+      const outcome = profileTraceStore.append(unit);
+      if (outcome === 'encryption_unavailable') {
+        console.warn('[memory-trace] Live.md revision not recorded: OS keychain unavailable');
+      } else if (outcome === 'rejected') {
+        console.warn('[memory-trace] Live.md revision not recorded: invalid trace unit');
+      }
+    } catch {
+      console.warn('[memory-trace] Live.md revision not recorded: local database unavailable');
+    }
+  };
+  // Slice 3: record the current revision once at startup, then each revision
+  // accepted by the app. The source id includes the revision, so restarts are
+  // idempotent. External-editor changes are captured on the next app launch.
+  if (liveProfileState.status === 'ok' && liveProfileState.profile) {
+    recordLiveProfileRevision(liveProfileState.profile);
+  }
   // Slice 2: the renderer reads and edits Live.md through these local channels.
   // They never touch GraphClient — `live_profile` egress is forbidden.
-  registerLiveProfileIpc(liveProfileStore);
+  registerLiveProfileIpc(profileStore, { onProfileWritten: recordLiveProfileRevision });
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
   customerMarketingService = new CustomerMarketingService(
     dbManager,

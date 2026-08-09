@@ -13,6 +13,7 @@
 
 import { ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import type {
+  LiveProfile,
   LiveProfileReadResult,
   LiveProfileWriteResult,
 } from '../../shared/memory-trace/live-profile';
@@ -26,12 +27,19 @@ export interface LiveProfileRevealResult {
   readonly filePath: string;
 }
 
+export interface LiveProfileIpcOptions {
+  readonly onProfileWritten?: (profile: LiveProfile) => void;
+}
+
 /**
  * Register the `liveProfile:*` channels. `reveal` opens the file in the OS file
  * manager: the operator owning a real file they can edit in any editor is the
  * whole reason Live.md is a file and not a database row.
  */
-export function registerLiveProfileIpc(store: LiveProfileStore): void {
+export function registerLiveProfileIpc(
+  store: LiveProfileStore,
+  options: LiveProfileIpcOptions = {},
+): void {
   ipcMain.handle('liveProfile:read', (event: IpcMainInvokeEvent): LiveProfileReadResult => {
     // Refuse rather than reveal whether a profile exists.
     if (!isTrustedRendererSender(event)) {
@@ -45,7 +53,17 @@ export function registerLiveProfileIpc(store: LiveProfileStore): void {
     (event: IpcMainInvokeEvent, body: unknown): LiveProfileWriteResult => {
       if (!isTrustedRendererSender(event)) return { status: 'rejected', profile: null };
       if (typeof body !== 'string') return { status: 'rejected', profile: null };
-      return store.write(body);
+      const result = store.write(body);
+      if (result.status === 'ok' && result.profile && options.onProfileWritten) {
+        try {
+          options.onProfileWritten(result.profile);
+        } catch {
+          // Live.md is already durable. A secondary trace failure must not turn
+          // a successful operator save into an ambiguous failed request.
+          console.warn('[memory-trace] Live.md was saved but its trace revision was not recorded');
+        }
+      }
+      return result;
     },
   );
 

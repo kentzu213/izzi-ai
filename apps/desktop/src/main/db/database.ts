@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import type { MemoryTraceUnitRow } from '../memory-trace/trace-record';
 import type {
   AgentMemory,
   AgentMemoryKind,
@@ -458,6 +459,57 @@ export class DatabaseManager {
         event.detail,
         event.meta ? JSON.stringify(event.meta) : null,
       );
+  }
+
+  // ── Memory trace units (CMR-224 Slice 3) ──
+  // Append-only by construction: there is no update and no delete here, and the
+  // insert ignores a repeat of the same id so replaying a source is safe.
+
+  insertMemoryTraceUnit(row: MemoryTraceUnitRow): 'stored' | 'duplicate' {
+    const result = this.db
+      .prepare(
+        `INSERT INTO memory_trace_units (
+           id, schema_version, actor, classification, text_plain, text_cipher,
+           source_id, source_kind, boundary_id, observed_at, recorded_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(
+        row.id,
+        row.schema_version,
+        row.actor,
+        row.classification,
+        row.text_plain,
+        row.text_cipher,
+        row.source_id,
+        row.source_kind,
+        row.boundary_id,
+        row.observed_at,
+        row.recorded_at,
+      );
+    return result.changes > 0 ? 'stored' : 'duplicate';
+  }
+
+  listMemoryTraceUnits(boundaryId: string, limit = 200): MemoryTraceUnitRow[] {
+    return this.db
+      .prepare<[string, number], MemoryTraceUnitRow>(
+        `SELECT id, schema_version, actor, classification, text_plain, text_cipher,
+                source_id, source_kind, boundary_id, observed_at, recorded_at
+         FROM memory_trace_units
+         WHERE boundary_id = ?
+         ORDER BY observed_at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(boundaryId, limit);
+  }
+
+  countMemoryTraceUnits(boundaryId: string): number {
+    const row = this.db
+      .prepare<[string], { count: number }>(
+        'SELECT COUNT(*) AS count FROM memory_trace_units WHERE boundary_id = ?',
+      )
+      .get(boundaryId);
+    return row?.count ?? 0;
   }
 
   getDiagnosticEvents(limit = 100): DiagnosticEvent[] {
