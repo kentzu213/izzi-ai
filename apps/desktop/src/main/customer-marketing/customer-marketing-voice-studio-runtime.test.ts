@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCustomerVoiceStudioRepair } from './customer-marketing-voice-studio-runtime';
+import {
+  createCustomerVoiceStudioExtensionEnsurer,
+  createCustomerVoiceStudioRepair,
+  VOICE_STUDIO_BUNDLED_VERSION,
+} from './customer-marketing-voice-studio-runtime';
 
-function trustedExtension() {
+function trustedExtension(version = VOICE_STUDIO_BUNDLED_VERSION) {
   return {
     id: 'ext-voice-studio',
     name: 'voice-studio',
     state: 'installed',
+    grantedPermissions: ['storage.local', 'ui.panel', 'net.http'],
     manifest: {
+      version,
+      permissions: ['storage.local', 'ui.notification', 'ui.panel', 'net.http'],
       customerMarketing: true,
       customerMarketingCapability: {
         id: 'voice-studio-local-preview',
@@ -20,6 +27,7 @@ function trustedExtension() {
 
 function dependencies(overrides: Record<string, unknown> = {}) {
   return {
+    ensureCurrentExtension: vi.fn(async () => undefined),
     listExtensions: vi.fn(() => [trustedExtension()]),
     isDockerAvailable: vi.fn(async () => true),
     startExtension: vi.fn(async () => undefined),
@@ -35,6 +43,109 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe('Customer Marketing Voice Studio repair runtime', () => {
+  it('installs the bundled extension when Voice Studio is absent before reading service status', async () => {
+    let installed: ReturnType<typeof trustedExtension> | undefined;
+    const bundledOcxPath = 'C:\\Program Files\\Izzi AI\\voice-studio-0.2.0.ocx';
+    const installFromOcx = vi.fn(async (_filePath: string, permissions?: string[]) => {
+      installed = trustedExtension();
+      installed.grantedPermissions = permissions ?? installed.grantedPermissions;
+      return installed;
+    });
+    const ensureCurrentExtension = createCustomerVoiceStudioExtensionEnsurer({
+      bundledOcxPath,
+      bundledOcxExists: vi.fn(() => true),
+      getExtension: vi.fn(() => installed),
+      installFromOcx,
+      stopExtension: vi.fn(async () => undefined),
+    });
+    const deps = dependencies({
+      ensureCurrentExtension,
+      listExtensions: vi.fn(() => installed ? [installed] : []),
+    });
+
+    await expect(createCustomerVoiceStudioRepair(deps)()).resolves.toBe('ready');
+    expect(installFromOcx).toHaveBeenCalledOnce();
+    expect(installFromOcx).toHaveBeenCalledWith(bundledOcxPath, undefined);
+    expect(deps.getServiceStatus).toHaveBeenCalledOnce();
+  });
+
+  it('upgrades an older running extension and preserves its granted permissions', async () => {
+    const bundledOcxPath = 'C:\\Program Files\\Izzi AI\\voice-studio-0.2.0.ocx';
+    const oldExtension = {
+      ...trustedExtension('0.1.0'),
+      state: 'running',
+      grantedPermissions: ['storage.local', 'system.shell'],
+    };
+    const stopExtension = vi.fn(async () => undefined);
+    const installFromOcx = vi.fn(async () => trustedExtension());
+    const ensure = createCustomerVoiceStudioExtensionEnsurer({
+      bundledOcxPath,
+      bundledOcxExists: vi.fn(() => true),
+      getExtension: vi.fn(() => oldExtension),
+      installFromOcx,
+      stopExtension,
+    });
+
+    await expect(ensure()).resolves.toBeUndefined();
+    expect(stopExtension).toHaveBeenCalledWith('ext-voice-studio');
+    expect(installFromOcx).toHaveBeenCalledWith(bundledOcxPath, ['storage.local']);
+  });
+
+  it('does not reinstall the current trusted bundled extension', async () => {
+    const bundledOcxExists = vi.fn(() => true);
+    const installFromOcx = vi.fn(async () => trustedExtension());
+    const ensure = createCustomerVoiceStudioExtensionEnsurer({
+      bundledOcxPath: 'voice-studio-0.2.0.ocx',
+      bundledOcxExists,
+      getExtension: vi.fn(() => trustedExtension()),
+      installFromOcx,
+      stopExtension: vi.fn(async () => undefined),
+    });
+
+    await expect(ensure()).resolves.toBeUndefined();
+    expect(bundledOcxExists).not.toHaveBeenCalled();
+    expect(installFromOcx).not.toHaveBeenCalled();
+  });
+
+  it('reinstalls the current version when it retains an undeclared permission', async () => {
+    const current = {
+      ...trustedExtension(),
+      grantedPermissions: ['storage.local', 'system.shell'],
+    };
+    const installFromOcx = vi.fn(async () => trustedExtension());
+    const ensure = createCustomerVoiceStudioExtensionEnsurer({
+      bundledOcxPath: 'voice-studio-0.2.0.ocx',
+      bundledOcxExists: vi.fn(() => true),
+      getExtension: vi.fn(() => current),
+      installFromOcx,
+      stopExtension: vi.fn(async () => undefined),
+    });
+
+    await expect(ensure()).resolves.toBeUndefined();
+    expect(installFromOcx).toHaveBeenCalledWith('voice-studio-0.2.0.ocx', ['storage.local']);
+  });
+
+  it('rejects a missing or mismatched bundled package before service startup', async () => {
+    const missing = dependencies({
+      ensureCurrentExtension: vi.fn(async () => { throw new Error('missing bundle'); }),
+    });
+    await expect(createCustomerVoiceStudioRepair(missing)()).resolves.toBe('not_installed');
+    expect(missing.getServiceStatus).not.toHaveBeenCalled();
+    expect(missing.isDockerAvailable).not.toHaveBeenCalled();
+
+    const ensure = createCustomerVoiceStudioExtensionEnsurer({
+      bundledOcxPath: 'voice-studio-0.2.0.ocx',
+      bundledOcxExists: vi.fn(() => true),
+      getExtension: vi.fn(() => undefined),
+      installFromOcx: vi.fn(async () => ({
+        ...trustedExtension(),
+        id: 'ext-unexpected',
+      })),
+      stopExtension: vi.fn(async () => undefined),
+    });
+    await expect(ensure()).rejects.toThrow('identity does not match');
+  });
+
   it('derives the trusted extension and coalesces concurrent starts', async () => {
     let finishStart!: () => void;
     const startPending = new Promise<void>((resolve) => { finishStart = resolve; });
@@ -54,6 +165,7 @@ describe('Customer Marketing Voice Studio repair runtime', () => {
     finishStart();
 
     await expect(Promise.all([first, second])).resolves.toEqual(['ready', 'ready']);
+    expect(deps.ensureCurrentExtension).toHaveBeenCalledTimes(1);
     expect(deps.getServiceStatus).toHaveBeenCalledTimes(4);
     expect(deps.wait).toHaveBeenCalledTimes(2);
     expect(deps.wait).toHaveBeenCalledWith(500);

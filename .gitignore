@@ -29,6 +29,11 @@ _izzi_openclaw_ref/
 # Backend source (server-side only)
 backend/src/
 
+# Local verification artifacts and Python bytecode
+.artifacts/
+__pycache__/
+*.py[cod]
+
 # ── Local tooling / generated indexes (not part of the repo) ──
 .codegraph/
 .claude/

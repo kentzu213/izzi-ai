@@ -1,4 +1,4 @@
-# Izzi OpenClaw — Voice Studio local backend (VieNeu-TTS).
+# Izzi AI — Voice Studio local backend (VieNeu-TTS).
 #
 # Booted by LocalServiceManager when the user opens the extension. Runs fully
 # on-device (CPU/ONNX) — no cloud, no secrets. Only the API port is published,
@@ -10,15 +10,12 @@ name: izzi-svc-voice-studio
 services:
   tts:
     # Prebuilt image published by CI (.github/workflows/publish-voice-image.yml).
-    # CMR-007: pinned by digest so the voice runtime (and therefore the TTS checkpoint lineage)
-    # cannot drift, so long as VOICE_TTS_IMAGE is left unset. Resolved 2026-07-27 from
-    # `docker buildx imagetools inspect ghcr.io/kentzu213/izzi-voice-tts:latest`.
-    # Override with VOICE_TTS_IMAGE for local builds; re-pin after publishing a new image and
-    # re-check docs/compliance/tts-model-license-evidence.md.
-    image: ${VOICE_TTS_IMAGE:-ghcr.io/kentzu213/izzi-voice-tts@sha256:746cead17f70b1c5fa67c6df8d46f2929c5424ef3e06fd9aab08fc55a184295f}
+    # CMR-007: immutable multi-arch image built from the hardened VieNeu 3.2.3
+    # runtime. Re-pin only after the publish workflow and runtime smoke checks.
+    image: ghcr.io/kentzu213/izzi-voice-tts@sha256:1190ac4eaaa75e45c37b783254d2180c1942a230c24039dc5e741950c4b6b832
     restart: unless-stopped
     ports:
-      - '${IZZI_BIND:-127.0.0.1}:${IZZI_PORT_API:-5111}:5111'
+      - '127.0.0.1:${IZZI_PORT_API:-5111}:5111'
     environment:
       PORT: '5111'
       # Cache dir for the downloaded model (mounted volume — see below).

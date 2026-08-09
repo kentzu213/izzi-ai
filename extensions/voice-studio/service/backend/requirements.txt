@@ -2,6 +2,9 @@
 # loads by default (3.2.x -> VieNeu-TTS v3 Turbo, Apache-2.0). An unpinned SDK could silently
 # move to a checkpoint with a different licence lineage. See
 # docs/compliance/tts-model-license-evidence.md before bumping this.
+# Version 3.2.3 also mis-declares optional audio watermarking as `perth>=0.2.0`.
+# The image applies the audited metadata-only compatibility patch documented in
+# vieneu_dependency_compat.py; never install the unrelated PyPI `perth` project.
 vieneu==3.2.3
-fastapi>=0.110
-uvicorn[standard]>=0.29
+fastapi==0.139.0
+uvicorn[standard]==0.51.0

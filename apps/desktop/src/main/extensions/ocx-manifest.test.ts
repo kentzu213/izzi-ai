@@ -81,6 +81,25 @@ describe('validateServiceSpec', () => {
     expect(validateServiceSpec({ ...validService(), secrets: [{ key: 'JWT_SECRET', gen: 'md5' }] }).valid).toBe(false);
   });
 
+  it('rejects host and Compose runtime names as generated secrets', () => {
+    for (const key of ['PATH', 'SYSTEMROOT', 'COMPOSE_PROJECT_NAME', 'DOCKER_HOST', 'IZZI_PORT_API']) {
+      const r = validateServiceSpec({ ...validService(), secrets: [{ key, gen: 'hex:64' }] });
+      expect(r.valid, key).toBe(false);
+      expect(r.errors.some((e) => e.includes('reserved')), key).toBe(true);
+    }
+  });
+
+  it('validates an exact readiness contract shape', () => {
+    expect(
+      validateServiceSpec({
+        ...validService(),
+        readyContract: { status: 'ready', sdk_version: '3.2.3' },
+      }).valid,
+    ).toBe(true);
+    expect(validateServiceSpec({ ...validService(), readyContract: [] }).valid).toBe(false);
+    expect(validateServiceSpec({ ...validService(), readyContract: { 'bad key': 'x' } }).valid).toBe(false);
+  });
+
   it('requires a command for node/binary services', () => {
     const r = validateServiceSpec({ type: 'node', projectName: 'izzi-svc-x', ports: [{ name: 'api', container: 3001 }] });
     expect(r.valid).toBe(false);

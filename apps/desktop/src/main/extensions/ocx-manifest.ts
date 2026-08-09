@@ -121,6 +121,9 @@ export interface OcxServiceFallback {
   remoteEnvVar?: string; // env var holding a hosted backend URL, e.g. "AUTOPOST_BACKEND_URL"
 }
 
+/** Exact JSON fields required before the host exposes a managed service. */
+export type OcxServiceReadyContract = Record<string, string>;
+
 export interface OcxServiceSpec {
   type: 'docker-compose' | 'node' | 'binary';
   projectName: string;   // MUST match /^izzi-svc-.../ — the host only ever touches these
@@ -132,6 +135,7 @@ export interface OcxServiceSpec {
   inject?: Record<string, string>; // settings written into the ext, e.g. { backendUrl: "http://127.0.0.1:${port.api}" }
   requires?: { docker?: boolean };
   fallback?: OcxServiceFallback;
+  readyContract?: OcxServiceReadyContract;
 }
 
 // ── Validation ──
@@ -153,6 +157,23 @@ const SERVICE_PROJECT_REGEX = /^izzi-svc-[a-z0-9][a-z0-9-]*$/;
 const SECRET_KEY_REGEX = /^[A-Z][A-Z0-9_]*$/;
 const SECRET_GEN_REGEX = /^(hex|base64):\d{1,4}$/;
 const SERVICE_TYPES = ['docker-compose', 'node', 'binary'];
+// These names are owned by the host/Compose launcher and cannot be generated
+// by an extension into the managed environment file.
+const RESERVED_SERVICE_SECRET_KEYS = new Set([
+  'PATH',
+  'PATHEXT',
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'IZZI_BIND',
+]);
 // Loopback only — a managed local backend must never be reachable from the LAN.
 const SERVICE_LOOPBACK_BINDS = ['127.0.0.1', 'localhost', '::1'];
 // Matches an absolute path on either OS (C:\ , / , \ , \\server) — rejected so a
@@ -365,6 +386,13 @@ export function validateServiceSpec(service: any): ValidationResult {
         }
         if (!s.key || typeof s.key !== 'string' || !SECRET_KEY_REGEX.test(s.key)) {
           errors.push(`\`service.secrets[${i}].key\` must be UPPER_SNAKE_CASE`);
+        } else if (
+          RESERVED_SERVICE_SECRET_KEYS.has(s.key) ||
+          s.key.startsWith('COMPOSE_') ||
+          s.key.startsWith('DOCKER_') ||
+          s.key.startsWith('IZZI_PORT_')
+        ) {
+          errors.push(`\`service.secrets[${i}].key\` is reserved for the host or Compose runtime`);
         }
         if (!s.gen || typeof s.gen !== 'string' || !SECRET_GEN_REGEX.test(s.gen)) {
           errors.push(`\`service.secrets[${i}].gen\` must look like "hex:64" or "base64:32"`);
@@ -384,6 +412,27 @@ export function validateServiceSpec(service: any): ValidationResult {
 
   if (service.requires !== undefined && (typeof service.requires !== 'object' || service.requires === null)) {
     errors.push('`service.requires` must be an object');
+  }
+
+  if (service.readyContract !== undefined) {
+    if (
+      typeof service.readyContract !== 'object' ||
+      service.readyContract === null ||
+      Array.isArray(service.readyContract)
+    ) {
+      errors.push('`service.readyContract` must be an object');
+    } else {
+      const entries = Object.entries(service.readyContract);
+      if (entries.length === 0 || entries.length > 32) {
+        errors.push('`service.readyContract` must contain 1-32 fields');
+      }
+      for (const [key, value] of entries) {
+        if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(key) || typeof value !== 'string' || value.length > 512) {
+          errors.push('`service.readyContract` keys and values must be bounded strings');
+          break;
+        }
+      }
+    }
   }
 
   // fallback

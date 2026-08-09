@@ -14,7 +14,7 @@ import { execFile } from 'child_process';
  */
 const BUNDLED_OCX: Record<string, string> = {
   'ext-social-auto-poster': 'social-auto-poster-0.3.0.ocx',
-  'ext-voice-studio': 'voice-studio-0.1.0.ocx',
+  'ext-voice-studio': 'voice-studio-0.2.0.ocx',
   'ext-github-trending-fb': 'github-trending-fb-1.0.0.ocx',
 };
 import { AuthManager } from './auth/auth-manager';
@@ -61,7 +61,11 @@ import { registerCustomerMarketingIpc } from './customer-marketing/customer-mark
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
-import { createCustomerVoiceStudioRepair } from './customer-marketing/customer-marketing-voice-studio-runtime';
+import {
+  createCustomerVoiceStudioExtensionEnsurer,
+  createCustomerVoiceStudioRepair,
+  VOICE_STUDIO_EXTENSION_ID,
+} from './customer-marketing/customer-marketing-voice-studio-runtime';
 import {
   loadCustomerMarketingKnowledgeSkills,
   resolveCustomerMarketingKnowledgeSkillsRoot,
@@ -479,7 +483,19 @@ function setupIPC() {
   // They never touch GraphClient — `live_profile` egress is forbidden.
   registerLiveProfileIpc(profileStore, { onProfileWritten: recordLiveProfileRevision });
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
+  const ensureCurrentVoiceStudioExtension = createCustomerVoiceStudioExtensionEnsurer({
+    bundledOcxPath: path.join(
+      process.resourcesPath,
+      'bundled-extensions',
+      BUNDLED_OCX[VOICE_STUDIO_EXTENSION_ID],
+    ),
+    bundledOcxExists: (filePath) => fs.existsSync(filePath),
+    getExtension: () => extensionLoader.getExtension(VOICE_STUDIO_EXTENSION_ID),
+    installFromOcx: (filePath, permissions) => extensionLoader.installFromOcx(filePath, permissions),
+    stopExtension: (extensionId) => extensionLoader.stopExtension(extensionId),
+  });
   const repairVoiceStudioRuntime = createCustomerVoiceStudioRepair({
+    ensureCurrentExtension: ensureCurrentVoiceStudioExtension,
     listExtensions: () => extensionLoader.getAllExtensions(),
     isDockerAvailable: () => localServiceManager.isDockerAvailable(),
     startExtension: (extensionId, options) => extensionLoader.startExtension(extensionId, options),

@@ -7,6 +7,7 @@ import {
   resolveInjectAll,
   buildComposeUpArgs,
   buildComposeDownArgs,
+  buildManagedComposeProcessEnv,
   parseComposePsRunning,
   checkPortFree,
   findFreePort,
@@ -20,8 +21,10 @@ describe('LocalServiceManager Docker availability', () => {
       .mockResolvedValueOnce({ code: 1, stdout: '', stderr: 'daemon unavailable' });
 
     await expect(manager.isDockerAvailable()).resolves.toBe(false);
-    expect(exec).toHaveBeenNthCalledWith(1, ['compose', 'version'], 10_000);
-    expect(exec).toHaveBeenNthCalledWith(2, ['version', '--format', '{{.Server.Version}}'], 10_000);
+    expect(exec.mock.calls[0]?.[0]).toEqual(['compose', 'version']);
+    expect(exec.mock.calls[0]?.[1]).toBe(10_000);
+    expect(exec.mock.calls[1]?.[0]).toEqual(['version', '--format', '{{.Server.Version}}']);
+    expect(exec.mock.calls[1]?.[1]).toBe(10_000);
   });
 
   it('reports Docker available only after the server answers', async () => {
@@ -88,6 +91,75 @@ describe('compose args (array-form, no shell interpolation)', () => {
     expect(args).toContain('down');
     expect(args).not.toContain('-v');
     expect(args).not.toContain('--volumes');
+  });
+});
+
+describe('managed compose environment', () => {
+  it('keeps generated service values authoritative and rejects remote Docker connection context', () => {
+    const env = buildManagedComposeProcessEnv(
+      {
+        PATH: 'docker-path',
+        TEMP: 'temp-path',
+        IZZI_PORT_API: '59999',
+        IZZI_BIND: '0.0.0.0',
+        VOICE_TTS_IMAGE: 'example.invalid/adversarial/voice:latest',
+        JWT_SECRET: 'ambient-secret',
+        COMPOSE_FILE: 'attacker.yml',
+        COMPOSE_PROJECT_NAME: 'attacker',
+        DOCKER_HOST: 'tcp://docker.example.invalid:2376',
+        DOCKER_CONTEXT: 'remote',
+        DOCKER_TLS_VERIFY: '1',
+        DOCKER_CERT_PATH: 'C:\\docker-certs',
+        DOCKER_CONFIG: 'C:\\docker-config',
+      },
+      ['IZZI_PORT_API', 'JWT_SECRET', 'PATH'],
+    );
+
+    expect(env).toEqual({
+      PATH: 'docker-path',
+      TEMP: 'temp-path',
+      DOCKER_CONTEXT: 'default',
+    });
+  });
+
+  it('preserves validated local Docker Desktop and loopback connection values', () => {
+    const contextEnv = buildManagedComposeProcessEnv(
+      { PATH: 'docker-path', DOCKER_CONTEXT: 'desktop-linux', DOCKER_CONFIG: 'C:\\docker-config' },
+      [],
+    );
+    expect(contextEnv).toEqual({
+      PATH: 'docker-path',
+      DOCKER_CONTEXT: 'desktop-linux',
+    });
+
+    const hostEnv = buildManagedComposeProcessEnv(
+      {
+        PATH: 'docker-path',
+        DOCKER_HOST: 'tcp://127.0.0.1:2376',
+        DOCKER_TLS_VERIFY: '1',
+        DOCKER_CERT_PATH: 'C:\\docker-certs',
+      },
+      [],
+    );
+    expect(hostEnv).toEqual({
+      PATH: 'docker-path',
+      DOCKER_HOST: 'tcp://127.0.0.1:2376',
+      DOCKER_TLS_VERIFY: '1',
+      DOCKER_CERT_PATH: 'C:\\docker-certs',
+    });
+  });
+
+  it('preserves process launch variables even if a malformed caller marks them managed', () => {
+    const env = buildManagedComposeProcessEnv({ PATH: 'docker-path', TEMP: 'temp-path' }, ['PATH', 'TEMP']);
+    expect(env).toEqual({ PATH: 'docker-path', TEMP: 'temp-path', DOCKER_CONTEXT: 'default' });
+  });
+
+  it('does not let a custom Docker config select a remote currentContext', () => {
+    const env = buildManagedComposeProcessEnv(
+      { PATH: 'docker-path', DOCKER_CONFIG: 'C:\\remote-config' },
+      [],
+    );
+    expect(env).toEqual({ PATH: 'docker-path', DOCKER_CONTEXT: 'default' });
   });
 });
 
