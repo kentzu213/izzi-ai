@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.23
+
+Windows background update delivery.
+
+- Configure installed packages to download an available desktop update in the
+  background after a successful update check.
+- Install a downloaded update on the next normal app quit while retaining the
+  existing Restart action for users who want to apply it immediately.
+- Preserve the unpacked-directory, development, and mock updater safeguards so
+  local builds never contact the public release channel unexpectedly.
+- Raise the patched `js-yaml`, `fast-uri`, and `nanoid` dependency floors used
+  by the updater, desktop settings validation, and bundled HyperFrames stack.
+
 ## 1.14.0-beta.15
 Memory trace layer, first slice.
 - Add the trace unit contract: an append-only observation that must carry a
@@ -321,5 +334,6 @@ system. Also ships the first sellable, agent-callable Marketplace utility.
 - A durable `izzi-` key is auto-minted for agent LLM calls; credentials stay in the
   main process and are never logged or written to the graph/persisted chat.
 
-_Baseline: 1.4.3. Verified with the full test suite (282 tests), main + renderer
-type-checks, and the renderer build._
+_Baseline: 1.4.3. Verified with the full test suite (282 tests from
+`pnpm --filter @openclaw/desktop test`), main + renderer type-checks, and the
+renderer build._

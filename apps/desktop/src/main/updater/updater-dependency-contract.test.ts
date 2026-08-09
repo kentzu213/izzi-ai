@@ -132,17 +132,17 @@ describe('CMR-404 auto-update dependency contract', () => {
     ).toBe(true);
   });
 
-  it('resolves a js-yaml that carries the merge-key CPU-exhaustion fix', () => {
-    // GHSA-52cp-r559-cp3m (high): js-yaml <4.3.0 lets chained YAML merge keys force quadratic CPU
-    // consumption. This is the parser AppUpdater runs on `latest.yml`, i.e. content fetched from the
-    // release host, so a hostile or compromised manifest reaches it. 4.3.0 stays inside the `^4.1.0`
+  it('resolves a js-yaml that carries the current CPU-exhaustion fixes', () => {
+    // GHSA-5p4m-2wfm-xmqj (high): js-yaml <4.3.1 can spend quadratic CPU resolving !!omap.
+    // This is the parser AppUpdater runs on `latest.yml`, i.e. content fetched from the release
+    // host, so a hostile or compromised manifest reaches it. 4.3.1 stays inside the `^4.1.0`
     // range electron-updater declares, so no override exemption is needed — only a floor.
     const resolved = resolvedVersionOf('js-yaml');
     expect(semver.valid(resolved), `unparseable version ${resolved}`).not.toBeNull();
     expect(
-      semver.gte(resolved, '4.3.0'),
-      `js-yaml resolved to ${resolved}, below the 4.3.0 floor that fixes GHSA-52cp-r559-cp3m `
-      + '(YAML merge-key chains force quadratic CPU consumption while parsing latest.yml).',
+      semver.gte(resolved, '4.3.1'),
+      `js-yaml resolved to ${resolved}, below the 4.3.1 floor that fixes GHSA-5p4m-2wfm-xmqj `
+      + '(quadratic CPU consumption while resolving !!omap in latest.yml).',
     ).toBe(true);
   });
 

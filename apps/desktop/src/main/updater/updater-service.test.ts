@@ -4,17 +4,23 @@ import { isElectronBuilderDirectoryPackage, UpdaterService } from './updater-ser
 
 class FakeUpdaterAdapter extends EventEmitter {
   autoDownload = false;
+  autoInstallOnAppQuit = false;
   currentVersion = { version: '0.1.0' };
   checkForUpdatesCalls = 0;
+  downloadUpdateCalls = 0;
   quitAndInstallCalls: Array<[boolean | undefined, boolean | undefined]> = [];
 
   async checkForUpdates(): Promise<void> {
     this.checkForUpdatesCalls += 1;
     this.emit('checking-for-update');
     this.emit('update-available', { version: '0.1.1' });
+    if (this.autoDownload) {
+      await this.downloadUpdate();
+    }
   }
 
   async downloadUpdate(): Promise<void> {
+    this.downloadUpdateCalls += 1;
     this.emit('download-progress', { percent: 40 });
     this.emit('update-downloaded', { version: '0.1.1' });
   }
@@ -37,6 +43,30 @@ class MissingConfigUpdaterAdapter extends FakeUpdaterAdapter {
 }
 
 describe('UpdaterService', () => {
+  it('downloads installed-package updates in the background and installs them on normal quit', async () => {
+    const adapter = new FakeUpdaterAdapter();
+    const service = new UpdaterService({
+      adapter,
+      appVersion: '0.1.0',
+      packaged: true,
+      mockMode: false,
+    });
+
+    expect(adapter.autoDownload).toBe(true);
+    expect(adapter.autoInstallOnAppQuit).toBe(true);
+
+    await service.check();
+
+    expect(adapter.autoDownload).toBe(true);
+    expect(adapter.autoInstallOnAppQuit).toBe(true);
+    expect(adapter.downloadUpdateCalls).toBe(1);
+    expect(service.getState()).toMatchObject({
+      state: 'downloaded',
+      availableVersion: '0.1.1',
+      progress: 100,
+    });
+  });
+
   it('detects electron-builder directory packages without matching installed app paths', () => {
     expect(isElectronBuilderDirectoryPackage(
       'F:\\repo\\apps\\desktop\\release\\win-unpacked\\Izzi AI.exe',
@@ -116,7 +146,8 @@ describe('UpdaterService', () => {
       mockMode: false,
     });
 
-    await service.check();
+    adapter.emit('checking-for-update');
+    adapter.emit('update-available', { version: '0.1.1' });
     expect(service.getState()).toMatchObject({
       state: 'available',
       version: '0.1.0',

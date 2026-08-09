@@ -7,6 +7,7 @@ import type { DesktopUpdaterState } from './types';
 
 interface UpdaterLike extends EventEmitter {
   autoDownload: boolean;
+  autoInstallOnAppQuit: boolean;
   currentVersion?: { version: string };
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
@@ -146,7 +147,8 @@ export class UpdaterService extends EventEmitter {
       return;
     }
 
-    this.adapter.autoDownload = false;
+    this.adapter.autoDownload = true;
+    this.adapter.autoInstallOnAppQuit = true;
     try {
       await this.adapter.checkForUpdates();
     } catch (err: unknown) {
@@ -201,7 +203,8 @@ export class UpdaterService extends EventEmitter {
       return;
     }
 
-    this.adapter.autoDownload = false;
+    this.adapter.autoDownload = true;
+    this.adapter.autoInstallOnAppQuit = true;
 
     this.adapter.on('checking-for-update', () => {
       this.setState({

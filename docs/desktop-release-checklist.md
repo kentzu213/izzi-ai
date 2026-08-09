@@ -39,7 +39,9 @@
 - Chat remains the default landing page after login.
 - Tasks, Memory, Status, Overview, Marketplace, Extensions, and Settings all render.
 - Integration status refreshes after returning from browser flows.
-- Auto-update can progress from `available` to `downloaded` and present restart CTA.
+- An installed package automatically progresses from `available` to
+  `downloaded` without a Download click, presents the restart CTA, and installs
+  the downloaded update on a normal zero-exit quit.
 
 ## Notes
 
