@@ -96,6 +96,7 @@ function serviceMock() {
     })),
     importMediaProject: vi.fn(async () => ({ ok: true })),
     runMediaPreview: vi.fn(async () => ({ ok: true })),
+    createMediaVoicePreview: vi.fn(async () => ({ ok: true })),
     repairVoiceStudio: vi.fn(async () => ({ ok: true, outcome: 'ready' })),
     listMarketingResources: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
     listMarketingCalendar: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
@@ -233,6 +234,44 @@ describe('customer marketing media IPC', () => {
 
     await expect(handler!(event(), 'media-job-id')).rejects.toThrow('Payload customer marketing không hợp lệ');
     expect(service.runMediaPreview).not.toHaveBeenCalled();
+  });
+
+  it('passes only an exact job id to the Voice Studio preview service', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:createMediaVoicePreview');
+
+    await expect(handler!(event(), { jobId: 'media-job-1' })).resolves.toEqual({ ok: true });
+    expect(service.createMediaVoicePreview).toHaveBeenCalledWith({ jobId: 'media-job-1' });
+  });
+
+  it.each([
+    'media-job-1',
+    { jobId: '' },
+    { jobId: 'x'.repeat(121) },
+    { jobId: 'media-job-1', text: 'renderer-controlled' },
+    { jobId: 'media-job-1', voice: 'renderer-controlled' },
+    { jobId: 'media-job-1', path: 'C:\\private' },
+    { jobId: 'media-job-1', workspaceId: 'renderer-controlled' },
+  ])('rejects expanded Voice Studio preview payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:createMediaVoicePreview');
+
+    await expect(handler!(event(), payload)).rejects.toThrow(/Payload (voice preview|customer marketing) không hợp lệ/);
+    expect(service.createMediaVoicePreview).not.toHaveBeenCalled();
+  });
+
+  it('rejects an untrusted renderer before parsing a Voice Studio preview request', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:createMediaVoicePreview');
+
+    await expect(handler!(
+      event('https://attacker.example/customer-marketing'),
+      { jobId: 'media-job-1', voice: 'attacker' },
+    )).rejects.toThrow('sender không hợp lệ');
+    expect(service.createMediaVoicePreview).not.toHaveBeenCalled();
   });
 });
 

@@ -3182,6 +3182,12 @@
 .cmr-media-receipt > div {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.cmr-media-receipt strong,
+.cmr-media-receipt span {
+  overflow-wrap: anywhere;
 }
 
 .cmr-media-receipt strong {

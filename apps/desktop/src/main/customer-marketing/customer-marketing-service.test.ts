@@ -707,6 +707,32 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
         createdAt: '2026-07-19T10:05:00.000Z',
       }],
     })),
+    createVoicePreview: vi.fn(async () => ({
+      receipt: {
+        generatedAt: '2026-07-19T10:06:00.000Z',
+        provider: 'voice-studio' as const,
+        voiceId: 'pham-tuyen',
+        clipCount: 2,
+        totalBytes: 192,
+        commercialUseAllowed: false,
+      },
+      artifacts: [
+        {
+          kind: 'voice_preview' as const,
+          name: 'voice-preview/voice-01.wav',
+          sha256: '1'.repeat(64),
+          sizeBytes: 96,
+          createdAt: '2026-07-19T10:06:00.000Z',
+        },
+        {
+          kind: 'voice_preview' as const,
+          name: 'voice-preview/voice-02.wav',
+          sha256: '2'.repeat(64),
+          sizeBytes: 96,
+          createdAt: '2026-07-19T10:06:00.000Z',
+        },
+      ],
+    })),
   };
 }
 async function completeOnboarding(service: CustomerMarketingService, name = 'Acme') {
@@ -2679,6 +2705,261 @@ describe('Customer Marketing Video Studio', () => {
     expect(gateway.getCurrent).toHaveBeenCalledTimes(1);
     expect(gateway.ensureWorkspace).not.toHaveBeenCalled();
     expect(mediaRuntime.runPreview).not.toHaveBeenCalled();
+  });
+
+  it('creates and replaces local Voice Studio previews only after digest-bound approval', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    const approvalId = imported.snapshot!.approvals[0].id;
+
+    const blocked = await context.service.createMediaVoicePreview({ jobId });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.error).toContain('approval');
+    expect(mediaRuntime.createVoicePreview).not.toHaveBeenCalled();
+
+    await context.service.reviewApproval({ approvalId, decision: 'approved' });
+    const created = await context.service.createMediaVoicePreview({ jobId });
+
+    expect(created.ok).toBe(true);
+    expect(mediaRuntime.createVoicePreview).toHaveBeenCalledWith(
+      expect.stringMatching(/^customer-[a-f0-9]{12}$/),
+      '11111111-1111-4111-8111-111111111111',
+      'a'.repeat(64),
+    );
+    expect(created.snapshot!.media.jobs[0].voicePreview).toEqual(expect.objectContaining({
+      provider: 'voice-studio',
+      voiceId: 'pham-tuyen',
+      clipCount: 2,
+      totalBytes: 192,
+      commercialUseAllowed: false,
+    }));
+    expect(created.snapshot!.media.artifacts.filter((artifact) => artifact.kind === 'voice_preview'))
+      .toHaveLength(2);
+    expect(created.snapshot!.media.toolchain.commercialRenderAvailable).toBe(false);
+    expect(created.snapshot!.externalActionsAllowed).toBe(false);
+
+    vi.mocked(mediaRuntime.createVoicePreview).mockResolvedValueOnce({
+      receipt: {
+        generatedAt: '2026-07-19T10:07:00.000Z',
+        provider: 'voice-studio',
+        voiceId: 'pham-tuyen',
+        clipCount: 1,
+        totalBytes: 104,
+        commercialUseAllowed: false,
+      },
+      artifacts: [{
+        kind: 'voice_preview',
+        name: 'voice-preview/voice-01-new.wav',
+        sha256: '3'.repeat(64),
+        sizeBytes: 104,
+        createdAt: '2026-07-19T10:07:00.000Z',
+      }],
+    });
+    const replaced = await context.service.createMediaVoicePreview({ jobId });
+    const voiceArtifacts = replaced.snapshot!.media.artifacts
+      .filter((artifact) => artifact.kind === 'voice_preview');
+    expect(voiceArtifacts).toEqual([
+      expect.objectContaining({ name: 'voice-preview/voice-01-new.wav', sizeBytes: 104 }),
+    ]);
+    expect(replaced.snapshot!.media.artifacts.some((artifact) => artifact.name === 'voice-preview/voice-02.wav'))
+      .toBe(false);
+  });
+
+  it('rejects stale approval evidence before calling Voice Studio', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+
+    const [key, raw] = Array.from(context.db.values.entries())[0];
+    const record = JSON.parse(raw);
+    record.mediaJobs[0].evidenceDigest = 'c'.repeat(64);
+    context.db.values.set(key, JSON.stringify(record));
+
+    const result = await context.service.createMediaVoicePreview({ jobId });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('digest');
+    expect(mediaRuntime.createVoicePreview).not.toHaveBeenCalled();
+  });
+
+  it.each(['local', 'synced'] as const)(
+    'rejects a %s workspace plan downgrade before calling Voice Studio',
+    async (authority) => {
+      const identity: CustomerIdentity = {
+        id: `tenant-voice-plan-${authority}`,
+        name: 'Voice Plan Owner',
+        plan: 'pro',
+        balance: 75,
+      };
+      const mediaRuntime = mediaRuntimeFixture();
+      const context = setup({ identity, mediaRuntime });
+      await completeOnboarding(context.service);
+      const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+      const jobId = imported.snapshot!.media.jobs[0].id;
+      await context.service.reviewApproval({
+        approvalId: imported.snapshot!.approvals[0].id,
+        decision: 'approved',
+      });
+
+      let service = context.service;
+      if (authority === 'local') {
+        const [key, raw] = Array.from(context.db.values.entries())[0];
+        const record = JSON.parse(raw);
+        record.plan = 'free';
+        context.db.values.set(key, JSON.stringify(record));
+      } else {
+        const workspace = remoteWorkspace({ role: 'owner', plan: 'free' });
+        const gateway: CustomerMarketingWorkspaceGateway = {
+          ...memberGatewayMethods(),
+          getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+          ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+          reserveQuota: vi.fn(async () => ({ status: 'forbidden', quota: null })),
+        };
+        service = new CustomerMarketingService(
+          context.db,
+          () => identity,
+          () => [],
+          undefined,
+          mediaRuntime,
+          gateway,
+        );
+      }
+
+      const result = await service.createMediaVoicePreview({ jobId });
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('Pro trở lên');
+      expect(mediaRuntime.createVoicePreview).not.toHaveBeenCalled();
+    },
+  );
+
+  it('revalidates role authority and keeps another tenant from using the media job id', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-voice-owner',
+      name: 'Voice Owner',
+      plan: 'pro',
+      balance: 75,
+    };
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ identity, mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+
+    const workspace = remoteWorkspace({ role: 'viewer' });
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      reserveQuota: vi.fn(async () => ({ status: 'forbidden', quota: null })),
+    };
+    const revoked = new CustomerMarketingService(
+      context.db,
+      () => identity,
+      () => [],
+      undefined,
+      mediaRuntime,
+      gateway,
+    );
+    const denied = await revoked.createMediaVoicePreview({ jobId });
+    expect(denied.ok).toBe(false);
+    expect(denied.error).toContain('không có quyền tạo voice preview');
+
+    context.setIdentity({ id: 'tenant-voice-other', name: 'Other Owner', plan: 'pro', balance: 75 });
+    const crossTenant = await context.service.createMediaVoicePreview({ jobId });
+    expect(crossTenant.ok).toBe(false);
+    expect(crossTenant.error).toContain('Không tìm thấy media job');
+    expect(mediaRuntime.createVoicePreview).not.toHaveBeenCalled();
+  });
+
+  it('drops an in-flight voice result when the project is re-imported', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    let finishVoice!: (
+      value: Awaited<ReturnType<CustomerVideoStudioRuntime['createVoicePreview']>>,
+    ) => void;
+    const deferredVoice = new Promise<
+      Awaited<ReturnType<CustomerVideoStudioRuntime['createVoicePreview']>>
+    >((resolve) => {
+      finishVoice = resolve;
+    });
+    vi.mocked(mediaRuntime.createVoicePreview).mockReturnValueOnce(deferredVoice);
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project-v1');
+    const oldJobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+
+    const staleRequest = context.service.createMediaVoicePreview({ jobId: oldJobId });
+    await vi.waitFor(() => expect(mediaRuntime.createVoicePreview).toHaveBeenCalledTimes(1));
+    vi.mocked(mediaRuntime.importProject).mockResolvedValueOnce({
+      runtimeProjectId: '55555555-5555-4555-8555-555555555555',
+      projectId: 'izziapi-demo',
+      title: 'IzziAPI demo current',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 60,
+      sceneCount: 8,
+      voice: {
+        provider: 'voice-studio',
+        license: 'Preview only',
+        commercialUseAllowed: false,
+        referenceVoiceConsent: false,
+      },
+      evidenceDigest: 'f'.repeat(64),
+      importedAt: '2026-07-29T13:00:00.000Z',
+      artifact: {
+        kind: 'project_manifest',
+        name: 'video-workflow.json',
+        sha256: 'f'.repeat(64),
+        sizeBytes: 896,
+        createdAt: '2026-07-29T13:00:00.000Z',
+      },
+    });
+    const refreshed = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project-v2');
+    const currentJobId = refreshed.snapshot!.media.jobs[0].id;
+
+    finishVoice({
+      receipt: {
+        generatedAt: '2026-07-29T13:01:00.000Z',
+        provider: 'voice-studio',
+        voiceId: 'pham-tuyen',
+        clipCount: 1,
+        totalBytes: 64,
+        commercialUseAllowed: false,
+      },
+      artifacts: [{
+        kind: 'voice_preview',
+        name: 'voice-preview/stale.wav',
+        sha256: '9'.repeat(64),
+        sizeBytes: 64,
+        createdAt: '2026-07-29T13:01:00.000Z',
+      }],
+    });
+    const stale = await staleRequest;
+    const finalSnapshot = await context.service.getSnapshot();
+
+    expect(stale.ok).toBe(false);
+    expect(stale.error).toContain('đã được cập nhật');
+    expect(finalSnapshot.media.jobs).toHaveLength(1);
+    expect(finalSnapshot.media.jobs[0].id).toBe(currentJobId);
+    expect(finalSnapshot.media.artifacts.some((artifact) => artifact.name === 'voice-preview/stale.wav'))
+      .toBe(false);
   });
 });
 

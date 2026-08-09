@@ -44,6 +44,16 @@ export interface CustomerVoiceStudioExtensionEnsureDependencies {
   stopExtension: (extensionId: string) => Promise<void>;
 }
 
+export interface CustomerVoiceStudioSynthesisInput {
+  text: string;
+  voice: string;
+}
+
+export interface CustomerVoiceStudioSynthesisDependencies {
+  repair: () => Promise<CustomerVoiceStudioRuntimeOutcome>;
+  executeTts: (input: CustomerVoiceStudioSynthesisInput) => Promise<unknown>;
+}
+
 export const VOICE_STUDIO_EXTENSION_ID = 'ext-voice-studio';
 export const VOICE_STUDIO_BUNDLED_VERSION = '0.2.0';
 const VOICE_STUDIO_DECLARED_PERMISSIONS = new Set([
@@ -167,5 +177,17 @@ export function createCustomerVoiceStudioRepair(
     });
     active = current;
     return current;
+  };
+}
+
+export function createCustomerVoiceStudioSynthesizer(
+  dependencies: CustomerVoiceStudioSynthesisDependencies,
+): (input: CustomerVoiceStudioSynthesisInput) => Promise<unknown> {
+  return async (input) => {
+    const outcome = await dependencies.repair();
+    if (outcome !== 'ready') {
+      throw new Error('Voice Studio runtime is not ready for local preview.');
+    }
+    return dependencies.executeTts({ text: input.text, voice: input.voice });
   };
 }

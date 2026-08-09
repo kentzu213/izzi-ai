@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createCustomerVoiceStudioExtensionEnsurer,
   createCustomerVoiceStudioRepair,
+  createCustomerVoiceStudioSynthesizer,
   VOICE_STUDIO_BUNDLED_VERSION,
 } from './customer-marketing-voice-studio-runtime';
 
@@ -210,4 +211,44 @@ describe('Customer Marketing Voice Studio repair runtime', () => {
     });
     await expect(createCustomerVoiceStudioRepair(unhealthy)()).resolves.toBe('unhealthy');
   });
+});
+
+describe('Customer Marketing Voice Studio synthesis adapter', () => {
+  it('repairs the trusted runtime before forwarding only text and voice to TTS', async () => {
+    const repair = vi.fn(async () => 'ready' as const);
+    const executeTts = vi.fn(async () => ({ ok: true, format: 'wav', audioB64: 'audio' }));
+    const synthesize = createCustomerVoiceStudioSynthesizer({ repair, executeTts });
+
+    await expect(synthesize({
+      text: 'Hướng dẫn IzziAPI',
+      voice: 'pham-tuyen',
+      path: 'C:\\private',
+    } as { text: string; voice: string; path: string })).resolves.toEqual({
+      ok: true,
+      format: 'wav',
+      audioB64: 'audio',
+    });
+
+    expect(repair).toHaveBeenCalledOnce();
+    expect(executeTts).toHaveBeenCalledWith({
+      text: 'Hướng dẫn IzziAPI',
+      voice: 'pham-tuyen',
+    });
+    expect(repair.mock.invocationCallOrder[0]).toBeLessThan(executeTts.mock.invocationCallOrder[0]);
+  });
+
+  it.each(['not_installed', 'docker_unavailable', 'unhealthy'] as const)(
+    'does not execute TTS when repair returns %s',
+    async (outcome) => {
+      const executeTts = vi.fn();
+      const synthesize = createCustomerVoiceStudioSynthesizer({
+        repair: vi.fn(async () => outcome),
+        executeTts,
+      });
+
+      await expect(synthesize({ text: 'IzziAPI', voice: 'pham-tuyen' }))
+        .rejects.toThrow('runtime is not ready');
+      expect(executeTts).not.toHaveBeenCalled();
+    },
+  );
 });

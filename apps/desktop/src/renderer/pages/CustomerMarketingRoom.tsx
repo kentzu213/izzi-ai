@@ -428,6 +428,16 @@ function formatDate(value: string, includeTime = false): string {
   }).format(date);
 }
 
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  if (value < 1_024) return `${value.toLocaleString('vi-VN')} B`;
+  const kilobytes = value / 1_024;
+  if (kilobytes < 1_024) {
+    return `${kilobytes.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} KB`;
+  }
+  return `${(kilobytes / 1_024).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} MB`;
+}
+
 function getCustomerApi(): ElectronCustomerMarketingApi | null {
   return window.electronAPI?.customerMarketing ?? null;
 }
@@ -1772,6 +1782,7 @@ function VideoStudioView({
   onRepairVoiceStudio,
   onImport,
   onPreview,
+  onVoicePreview,
   onReview,
   busy,
 }: {
@@ -1779,6 +1790,7 @@ function VideoStudioView({
   onRepairVoiceStudio: () => Promise<void>;
   onImport: () => Promise<void>;
   onPreview: (jobId: string) => Promise<void>;
+  onVoicePreview: (jobId: string) => Promise<void>;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
   busy: boolean;
 }) {
@@ -1855,6 +1867,18 @@ function VideoStudioView({
             const approval = snapshot.approvals.find((item) => item.mediaJobId === job.id && item.kind === 'media_preview');
             const jobArtifacts = artifacts.filter((item) => item.jobId === job.id);
             const canRunPreview = job.gates.previewApproved && toolchain.previewAvailable && job.status !== 'checking';
+            const canCreateVoicePreview = canImport
+              && job.gates.previewApproved
+              && approval?.status === 'approved'
+              && voiceStudioReady;
+            const voicePreviewDescriptionId = `cmr-voice-preview-description-${job.id}`;
+            const voicePreviewBlockedMessage = !canImport
+              ? importBlockedMessage
+              : !job.gates.previewApproved
+                ? 'Approval không còn khớp với project hiện tại. Hãy import và duyệt lại.'
+                : !voiceStudioReady
+                  ? 'Voice Studio chưa sẵn sàng. Hãy khởi động hoặc kiểm tra voice trước.'
+                  : '';
             return (
               <section className="cmr-panel cmr-media-job" key={job.id}>
                 <div className="cmr-media-job__header">
@@ -1874,6 +1898,19 @@ function VideoStudioView({
                   <div><span>Commercial use</span><strong>{job.voice.commercialUseAllowed ? 'Đã xác minh' : 'Đang chặn'}</strong></div>
                 </div>
                 {job.preview && <div className="cmr-media-receipt"><StatusIcon className="cmr-icon" /><div><strong>{job.preview.summary}</strong><span>{job.preview.snapshotCount} snapshot · {formatDate(job.preview.checkedAt, true)}</span></div></div>}
+                {job.voicePreview && (
+                  <div className="cmr-media-receipt" aria-label="Biên nhận voice preview">
+                    <StatusIcon className="cmr-icon" />
+                    <div>
+                      <strong>{job.voicePreview.provider} · {job.voicePreview.voiceId}</strong>
+                      <span>
+                        {job.voicePreview.clipCount} đoạn · {formatBytes(job.voicePreview.totalBytes)} · {' '}
+                        {job.voicePreview.commercialUseAllowed ? 'Thương mại đã xác minh' : 'Thương mại đang khóa'} · {' '}
+                        {formatDate(job.voicePreview.generatedAt, true)}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {job.error && <div className="cmr-alert cmr-alert--error" role="alert">{job.error}</div>}
                 {jobArtifacts.length > 0 && (
                   <div className="cmr-media-artifacts">
@@ -1889,7 +1926,23 @@ function VideoStudioView({
                     </>
                   )}
                   {approval?.status === 'approved' && <button type="button" className="cmr-button cmr-button--primary" disabled={busy || !canRunPreview} onClick={() => void onPreview(job.id)}>{job.status === 'checking' ? 'Đang kiểm tra...' : job.preview ? 'Chạy lại kiểm tra' : 'Chạy HyperFrames check'}</button>}
+                  {approval?.status === 'approved' && (
+                    <button
+                      type="button"
+                      className="cmr-button cmr-button--quiet"
+                      disabled={busy || !canCreateVoicePreview}
+                      aria-describedby={voicePreviewBlockedMessage ? voicePreviewDescriptionId : undefined}
+                      onClick={() => void onVoicePreview(job.id)}
+                    >
+                      {job.voicePreview ? 'Tạo lại voice preview' : 'Tạo voice preview'}
+                    </button>
+                  )}
                 </div>
+                {approval?.status === 'approved' && voicePreviewBlockedMessage && (
+                  <span className="cmr-permission-note" id={voicePreviewDescriptionId}>
+                    {voicePreviewBlockedMessage}
+                  </span>
+                )}
               </section>
             );
           })}
@@ -2991,6 +3044,10 @@ function CustomerRoom({
     await onMutation((api) => api.runMediaPreview({ jobId }));
   };
 
+  const previewVoice = async (jobId: string) => {
+    await onMutation((api) => api.createMediaVoicePreview({ jobId }));
+  };
+
   const repairVoiceStudio = async () => {
     await onMutation((api) => api.repairVoiceStudio());
   };
@@ -3084,7 +3141,7 @@ function CustomerRoom({
           {activeView === 'director' && <DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
           {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
-          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onReview={review} busy={busy} />}
+          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onReview={review} busy={busy} />}
           {activeView === 'team' && <TeamView capabilities={snapshot.capabilities} />}
           {activeView === 'apps' && (
             activeCapability ? (

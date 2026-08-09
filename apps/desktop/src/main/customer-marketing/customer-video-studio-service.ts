@@ -8,6 +8,7 @@ import type {
   CustomerMediaPreviewReceipt,
   CustomerMediaToolchain,
   CustomerMediaVoicePolicy,
+  CustomerMediaVoicePreviewReceipt,
 } from '../../shared/customer-marketing-types';
 
 const MAX_PROJECT_FILES = 2_500;
@@ -21,6 +22,12 @@ const MAX_PREVIEW_OUTPUT_BYTES = 100 * 1024 * 1024;
 const PREVIEW_TIMEOUT_MS = 120_000;
 const PREVIEW_SNAPSHOT_COUNT = 3;
 const PREVIEW_FALLBACK_FRACTIONS = [0.17, 0.53, 0.83] as const;
+const VOICE_PREVIEW_MAX_SCENES = 24;
+const VOICE_PREVIEW_MAX_TEXT_LENGTH = 500;
+const VOICE_PREVIEW_MAX_WAV_BYTES = 8 * 1024 * 1024;
+const VOICE_PREVIEW_MAX_BASE64_LENGTH = 4 * Math.ceil(VOICE_PREVIEW_MAX_WAV_BYTES / 3);
+const VOICE_PREVIEW_VOICE_ID = 'pham-tuyen';
+const VOICE_PREVIEW_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const HYPERFRAMES_MIN_NODE_MAJOR = 22;
 const MANAGED_HYPERFRAMES_VERSION = '0.7.57';
 const MANAGED_ELECTRON_ATTESTATION = '0.7.57|20.19.1|34.5.8';
@@ -183,6 +190,11 @@ export interface CustomerMediaPreviewResult {
   artifacts: CustomerMediaArtifactDraft[];
 }
 
+export interface CustomerMediaVoicePreviewResult {
+  receipt: CustomerMediaVoicePreviewReceipt;
+  artifacts: CustomerMediaArtifactDraft[];
+}
+
 export interface CustomerVideoStudioOptions {
   rootPath: string;
   appRoot: string;
@@ -194,6 +206,7 @@ export interface CustomerVideoStudioOptions {
   previewMaxOutputBytes?: number;
   getVoiceStudioStatus?: () => CustomerVoiceStudioStatus | Promise<CustomerVoiceStudioStatus>;
   getF5TtsStatus?: () => CustomerF5TtsStatus | Promise<CustomerF5TtsStatus>;
+  synthesizeVoiceStudio?: (input: { text: string; voice: string }) => Promise<unknown>;
   verifyCommercialVoiceLicense?: (evidence: {
     provider: string;
     modelId?: string;
@@ -225,6 +238,93 @@ function normalizedVersion(value: unknown): string {
 function nodeMajor(value: unknown): number {
   const major = Number(normalizedVersion(value).split('.')[0]);
   return Number.isInteger(major) && major > 0 ? major : 0;
+}
+
+function voicePreviewScript(workflow: Record<string, unknown>): string[] {
+  const scenes = Array.isArray(workflow.scenes) ? workflow.scenes : [];
+  if (scenes.length < 1 || scenes.length > VOICE_PREVIEW_MAX_SCENES) {
+    throw new Error('Project cần từ 1 đến 24 cảnh để tạo voice preview.');
+  }
+  return scenes.map((scene, index) => {
+    const value = objectValue(scene).caption_text;
+    if (typeof value !== 'string') {
+      throw new Error(`Cảnh ${index + 1} chưa có caption_text hợp lệ.`);
+    }
+    const text = value.trim();
+    if (
+      !text
+      || text.length > VOICE_PREVIEW_MAX_TEXT_LENGTH
+      || VOICE_PREVIEW_CONTROL_CHARACTERS.test(text)
+    ) {
+      throw new Error(`Cảnh ${index + 1} có nội dung voice preview không hợp lệ.`);
+    }
+    return text;
+  });
+}
+
+function decodeVoiceStudioWav(value: unknown): Buffer {
+  const payload = objectValue(value);
+  if (
+    Object.keys(payload).sort().join(',') !== 'audioB64,format,ok'
+    || payload.ok !== true
+    || payload.format !== 'wav'
+    || typeof payload.audioB64 !== 'string'
+    || payload.audioB64.length < 16
+    || payload.audioB64.length > VOICE_PREVIEW_MAX_BASE64_LENGTH
+  ) {
+    throw new Error('Voice Studio trả về payload audio không hợp lệ.');
+  }
+
+  const audio = Buffer.from(payload.audioB64, 'base64');
+  if (
+    audio.length < 44
+    || audio.length > VOICE_PREVIEW_MAX_WAV_BYTES
+    || audio.toString('base64') !== payload.audioB64
+    || audio.toString('ascii', 0, 4) !== 'RIFF'
+    || audio.toString('ascii', 8, 12) !== 'WAVE'
+    || audio.readUInt32LE(4) + 8 !== audio.length
+  ) {
+    throw new Error('Voice Studio trả về WAV không hợp lệ.');
+  }
+
+  let offset = 12;
+  let hasFormat = false;
+  let hasData = false;
+  while (offset + 8 <= audio.length) {
+    const chunkId = audio.toString('ascii', offset, offset + 4);
+    const chunkSize = audio.readUInt32LE(offset + 4);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + chunkSize;
+    const paddedEnd = dataEnd + (chunkSize % 2);
+    if (dataEnd > audio.length || paddedEnd > audio.length) {
+      throw new Error('Voice Studio trả về WAV không hợp lệ.');
+    }
+    if (chunkId === 'fmt ') {
+      if (
+        hasFormat
+        || chunkSize < 16
+        || audio.readUInt16LE(dataStart) !== 1
+        || audio.readUInt16LE(dataStart + 2) !== 1
+        || audio.readUInt32LE(dataStart + 4) !== 48_000
+        || audio.readUInt32LE(dataStart + 8) !== 96_000
+        || audio.readUInt16LE(dataStart + 12) !== 2
+        || audio.readUInt16LE(dataStart + 14) !== 16
+      ) {
+        throw new Error('Voice Studio trả về WAV không hợp lệ.');
+      }
+      hasFormat = true;
+    } else if (chunkId === 'data') {
+      if (hasData || chunkSize < 2 || chunkSize % 2 !== 0) {
+        throw new Error('Voice Studio trả về WAV không hợp lệ.');
+      }
+      hasData = true;
+    }
+    offset = paddedEnd;
+  }
+  if (offset !== audio.length || !hasFormat || !hasData) {
+    throw new Error('Voice Studio trả về WAV không hợp lệ.');
+  }
+  return audio;
 }
 
 export function supportsManagedHyperframesPreview(
@@ -661,6 +761,11 @@ export interface CustomerVideoStudioRuntime {
   getToolchain(options?: { refresh?: boolean }): Promise<CustomerMediaToolchain>;
   importProject(workspaceId: string, candidate: string): Promise<CustomerMediaImportedProject>;
   runPreview(workspaceId: string, runtimeProjectId: string, expectedDigest: string): Promise<CustomerMediaPreviewResult>;
+  createVoicePreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+  ): Promise<CustomerMediaVoicePreviewResult>;
 }
 export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
   private readonly rootPath: string;
@@ -965,6 +1070,109 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       if (runtimeProfile) {
         await this.removeTrustedDirectory(runtimeProfile.trustedBase, runtimeProfile.path);
       }
+      this.activePreviews.delete(operationKey);
+    }
+  }
+
+  async createVoicePreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+  ): Promise<CustomerMediaVoicePreviewResult> {
+    this.assertWorkspaceId(workspaceId);
+    if (!RUNTIME_PROJECT_ID.test(runtimeProjectId)) throw new Error('Media project ID không hợp lệ.');
+    if (!this.options.synthesizeVoiceStudio) {
+      throw new Error('Voice Studio preview chưa được cấu hình.');
+    }
+    const operationKey = workspaceId + ':' + runtimeProjectId;
+    if (this.activePreviews.has(operationKey)) throw new Error('Project này đang được xử lý.');
+
+    const realProjectRoot = await this.trustedProjectRoot(workspaceId, runtimeProjectId);
+    const currentDigest = await this.projectDigest(realProjectRoot);
+    if (!/^[a-f0-9]{64}$/.test(expectedDigest) || currentDigest !== expectedDigest) {
+      throw new Error('Project đã thay đổi sau approval; cần import và duyệt lại.');
+    }
+    const workflow = await readJson(path.join(realProjectRoot, 'video-workflow.json'));
+    const script = voicePreviewScript(workflow.data);
+
+    this.activePreviews.add(operationKey);
+    let previewRun: PreviewRunPaths | undefined;
+    try {
+      const generatedAt = new Date().toISOString();
+      previewRun = await this.createPreviewRun(
+        workspaceId,
+        runtimeProjectId,
+        previewRunId(generatedAt),
+      );
+      const voiceRoot = await this.ensureTrustedDirectoryFromRoot(
+        previewRun.path,
+        ['voice-preview'],
+        'Voice preview output',
+      );
+      if (!isInside(previewRun.path, voiceRoot.path)) {
+        throw new Error('Voice preview output không nằm trong run đã xác minh.');
+      }
+
+      const artifacts: CustomerMediaArtifactDraft[] = [];
+      let totalBytes = 0;
+      for (let index = 0; index < script.length; index += 1) {
+        const response = await this.options.synthesizeVoiceStudio({
+          text: script[index],
+          voice: VOICE_PREVIEW_VOICE_ID,
+        });
+        const audio = decodeVoiceStudioWav(response);
+        totalBytes += audio.byteLength;
+        if (totalBytes > MAX_PREVIEW_OUTPUT_BYTES) {
+          throw new Error('Voice preview vượt quá ngân sách output cục bộ.');
+        }
+        const name = `voice-${String(index + 1).padStart(2, '0')}.wav`;
+        await fs.writeFile(path.join(voiceRoot.path, name), audio, { flag: 'wx' });
+        artifacts.push({
+          kind: 'voice_preview',
+          name: 'voice-preview/' + name,
+          sha256: sha256(audio),
+          sizeBytes: audio.byteLength,
+          createdAt: generatedAt,
+        });
+      }
+
+      let voiceStudio: CustomerVoiceStudioStatus = { installed: false, running: false };
+      try {
+        voiceStudio = await this.options.getVoiceStudioStatus?.() ?? voiceStudio;
+      } catch {
+        voiceStudio = { installed: false, running: false };
+      }
+      const evidence = {
+        provider: textValue(voiceStudio.provider, 120) || 'voice-studio',
+        modelId: textValue(voiceStudio.modelId, 160) || undefined,
+        modelHash: textValue(voiceStudio.modelHash, 128) || undefined,
+        license: textValue(voiceStudio.license, 160) || undefined,
+        licenseSource: textValue(voiceStudio.licenseSource, 500) || undefined,
+      };
+      const commercialUseAllowed = voiceStudio.installed
+        && voiceStudio.running
+        && voiceStudio.commercialUseAllowed === true
+        && Boolean(evidence.modelId && evidence.modelHash && evidence.license && evidence.licenseSource)
+        && !isNonCommercialLicense(evidence.license || '')
+        && this.options.verifyCommercialVoiceLicense?.(evidence) === true;
+
+      return {
+        receipt: {
+          generatedAt,
+          provider: 'voice-studio',
+          voiceId: VOICE_PREVIEW_VOICE_ID,
+          clipCount: artifacts.length,
+          totalBytes,
+          commercialUseAllowed,
+        },
+        artifacts,
+      };
+    } catch (error) {
+      if (previewRun) {
+        await this.removeTrustedDirectory(previewRun.trustedBase, previewRun.path);
+      }
+      throw error;
+    } finally {
       this.activePreviews.delete(operationKey);
     }
   }

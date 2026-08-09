@@ -68,7 +68,8 @@ export type CustomerMediaArtifactKind =
   | 'project_manifest'
   | 'check_report'
   | 'check_receipt'
-  | 'snapshot';
+  | 'snapshot'
+  | 'voice_preview';
 
 export type CustomerMediaRuntimeState = 'ready' | 'blocked' | 'needs_setup';
 
@@ -290,6 +291,15 @@ export interface CustomerMediaPreviewReceipt {
   snapshotCount: number;
 }
 
+export interface CustomerMediaVoicePreviewReceipt {
+  generatedAt: string;
+  provider: 'voice-studio';
+  voiceId: string;
+  clipCount: number;
+  totalBytes: number;
+  commercialUseAllowed: boolean;
+}
+
 export interface CustomerMediaJob {
   id: string;
   projectId: string;
@@ -304,6 +314,7 @@ export interface CustomerMediaJob {
   voice: CustomerMediaVoicePolicy;
   gates: CustomerMediaGates;
   preview?: CustomerMediaPreviewReceipt;
+  voicePreview?: CustomerMediaVoicePreviewReceipt;
   error?: string;
   createdAt: string;
   updatedAt: string;
@@ -375,6 +386,10 @@ export interface CustomerReviewInput {
 }
 
 export interface CustomerMediaPreviewInput {
+  jobId: string;
+}
+
+export interface CustomerMediaVoicePreviewInput {
   jobId: string;
 }
 

@@ -34,6 +34,7 @@ import type {
   CustomerMarketingWorkflowSourceListResult,
   CustomerMarketingWorkflowTarget,
   CustomerMediaPreviewInput,
+  CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
   CustomerMutationResult,
   CustomerOnboardingInput,
@@ -216,6 +217,7 @@ declare global {
     selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
     repairVoiceStudio: () => Promise<CustomerVoiceStudioRepairResult>;
     runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;
+    createMediaVoicePreview: (input: CustomerMediaVoicePreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
   }
   /**

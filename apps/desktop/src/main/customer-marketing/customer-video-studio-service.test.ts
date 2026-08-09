@@ -15,6 +15,26 @@ const DEFAULT_HYPERFRAMES_CLI = `
 if (process.argv[2] === '--version') process.stdout.write('0.7.57\\n');
 `;
 
+function pcm16Mono48KhzWav(samples = [0, 1_000, -1_000, 0]): Buffer {
+  const dataSize = samples.length * 2;
+  const wav = Buffer.alloc(44 + dataSize);
+  wav.write('RIFF', 0, 'ascii');
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write('WAVE', 8, 'ascii');
+  wav.write('fmt ', 12, 'ascii');
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(48_000, 24);
+  wav.writeUInt32LE(96_000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write('data', 36, 'ascii');
+  wav.writeUInt32LE(dataSize, 40);
+  samples.forEach((sample, index) => wav.writeInt16LE(sample, 44 + (index * 2)));
+  return wav;
+}
+
 function hyperframesCheckReport(
   passed: boolean,
   errorCount = 0,
@@ -46,7 +66,10 @@ async function createProject(root: string): Promise<string> {
     version: 1,
     title: 'IzziAPI local walkthrough',
     project: { id: 'izziapi-walkthrough', width: 1080, height: 1920, fps: 30, target_duration_s: 45 },
-    scenes: [{ id: 'scene-1' }, { id: 'scene-2' }],
+    scenes: [
+      { id: 'scene-1', caption_text: 'IzziAPI giúp kết nối API nhanh hơn.' },
+      { id: 'scene-2', caption_text: 'Bắt đầu với tài khoản Izzi AI của bạn.' },
+    ],
     voice: {
       provider: 'f5-tts',
       model_id: 'local-model',
@@ -539,6 +562,141 @@ describe('CustomerVideoStudioService commercial voice provider boundary', () => 
     const toolchain = await service.getToolchain();
     expect(toolchain.commercialRenderAvailable).toBe(false);
     expect(toolchain.voiceStudio.status).toBe('needs_setup');
+  });
+});
+
+describe('CustomerVideoStudioService Voice Studio preview boundary', () => {
+  it('creates one tenant-owned PCM WAV artifact for every approved scene caption', async () => {
+    const root = await makeRoot();
+    const source = await createProject(root);
+    const wav = pcm16Mono48KhzWav();
+    const synthesizeVoiceStudio = vi.fn(async () => ({
+      ok: true,
+      format: 'wav',
+      audioB64: wav.toString('base64'),
+    }));
+    const runtimeRoot = path.join(root, 'runtime');
+    const service = new CustomerVideoStudioService({
+      rootPath: runtimeRoot,
+      appRoot: path.join(root, 'app'),
+      synthesizeVoiceStudio,
+      getVoiceStudioStatus: async () => ({
+        installed: true,
+        running: true,
+        version: '0.2.0',
+      }),
+    });
+    const imported = await service.importProject('customer-abcdef123456', source);
+
+    const result = await service.createVoicePreview(
+      'customer-abcdef123456',
+      imported.runtimeProjectId,
+      imported.evidenceDigest,
+    );
+
+    expect(synthesizeVoiceStudio).toHaveBeenNthCalledWith(1, {
+      text: 'IzziAPI giúp kết nối API nhanh hơn.',
+      voice: 'pham-tuyen',
+    });
+    expect(synthesizeVoiceStudio).toHaveBeenNthCalledWith(2, {
+      text: 'Bắt đầu với tài khoản Izzi AI của bạn.',
+      voice: 'pham-tuyen',
+    });
+    expect(result.receipt).toEqual(expect.objectContaining({
+      provider: 'voice-studio',
+      voiceId: 'pham-tuyen',
+      clipCount: 2,
+      totalBytes: wav.byteLength * 2,
+      commercialUseAllowed: false,
+    }));
+    expect(result.artifacts).toEqual([
+      expect.objectContaining({ kind: 'voice_preview', name: 'voice-preview/voice-01.wav' }),
+      expect.objectContaining({ kind: 'voice_preview', name: 'voice-preview/voice-02.wav' }),
+    ]);
+
+    const projectRunsRoot = path.join(
+      runtimeRoot,
+      'customer-abcdef123456',
+      'preview-runs',
+      imported.runtimeProjectId,
+    );
+    const runIds = await fs.readdir(projectRunsRoot);
+    expect(runIds).toHaveLength(1);
+    const voiceRoot = path.join(projectRunsRoot, runIds[0], 'voice-preview');
+    expect(await fs.readdir(voiceRoot)).toEqual(['voice-01.wav', 'voice-02.wav']);
+    expect(await fs.readFile(path.join(voiceRoot, 'voice-01.wav'))).toEqual(wav);
+  });
+
+  it('rejects malformed audio and removes every partial clip from the failed run', async () => {
+    const root = await makeRoot();
+    const source = await createProject(root);
+    const wav = pcm16Mono48KhzWav();
+    const synthesizeVoiceStudio = vi.fn()
+      .mockResolvedValueOnce({ ok: true, format: 'wav', audioB64: wav.toString('base64') })
+      .mockResolvedValueOnce({ ok: true, format: 'wav', audioB64: Buffer.alloc(44).toString('base64') });
+    const runtimeRoot = path.join(root, 'runtime');
+    const service = new CustomerVideoStudioService({
+      rootPath: runtimeRoot,
+      appRoot: path.join(root, 'app'),
+      synthesizeVoiceStudio,
+    });
+    const imported = await service.importProject('customer-abcdef123456', source);
+
+    await expect(service.createVoicePreview(
+      'customer-abcdef123456',
+      imported.runtimeProjectId,
+      imported.evidenceDigest,
+    )).rejects.toThrow('WAV không hợp lệ');
+
+    expect(synthesizeVoiceStudio).toHaveBeenCalledTimes(2);
+    expect(await fs.readdir(path.join(
+      runtimeRoot,
+      'customer-abcdef123456',
+      'preview-runs',
+      imported.runtimeProjectId,
+    ))).toEqual([]);
+  });
+
+  it('rejects oversized base64 before decoding it into the Electron main process', async () => {
+    const root = await makeRoot();
+    const source = await createProject(root);
+    const encodedLimit = 4 * Math.ceil((8 * 1_024 * 1_024) / 3);
+    const synthesizeVoiceStudio = vi.fn(async () => ({
+      ok: true,
+      format: 'wav',
+      audioB64: 'A'.repeat(encodedLimit + 4),
+    }));
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot: path.join(root, 'app'),
+      synthesizeVoiceStudio,
+    });
+    const imported = await service.importProject('customer-abcdef123456', source);
+
+    await expect(service.createVoicePreview(
+      'customer-abcdef123456',
+      imported.runtimeProjectId,
+      imported.evidenceDigest,
+    )).rejects.toThrow('payload audio không hợp lệ');
+  });
+
+  it('rejects stale project evidence before sending any caption to Voice Studio', async () => {
+    const root = await makeRoot();
+    const source = await createProject(root);
+    const synthesizeVoiceStudio = vi.fn();
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot: path.join(root, 'app'),
+      synthesizeVoiceStudio,
+    });
+    const imported = await service.importProject('customer-abcdef123456', source);
+
+    await expect(service.createVoicePreview(
+      'customer-abcdef123456',
+      imported.runtimeProjectId,
+      'f'.repeat(64),
+    )).rejects.toThrow('đã thay đổi sau approval');
+    expect(synthesizeVoiceStudio).not.toHaveBeenCalled();
   });
 });
 

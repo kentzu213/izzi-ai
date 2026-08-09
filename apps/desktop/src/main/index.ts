@@ -64,6 +64,7 @@ import { createCustomerMarketingGuardrailStateReader } from './customer-marketin
 import {
   createCustomerVoiceStudioExtensionEnsurer,
   createCustomerVoiceStudioRepair,
+  createCustomerVoiceStudioSynthesizer,
   VOICE_STUDIO_EXTENSION_ID,
 } from './customer-marketing/customer-marketing-voice-studio-runtime';
 import {
@@ -414,14 +415,39 @@ function setupIPC() {
   });
   registerIzziAgentIpc(izziAgent, sessionRecorder);
 
+  const ensureCurrentVoiceStudioExtension = createCustomerVoiceStudioExtensionEnsurer({
+    bundledOcxPath: path.join(
+      process.resourcesPath,
+      'bundled-extensions',
+      BUNDLED_OCX[VOICE_STUDIO_EXTENSION_ID],
+    ),
+    bundledOcxExists: (filePath) => fs.existsSync(filePath),
+    getExtension: () => extensionLoader.getExtension(VOICE_STUDIO_EXTENSION_ID),
+    installFromOcx: (filePath, permissions) => extensionLoader.installFromOcx(filePath, permissions),
+    stopExtension: (extensionId) => extensionLoader.stopExtension(extensionId),
+  });
+  const repairVoiceStudioRuntime = createCustomerVoiceStudioRepair({
+    ensureCurrentExtension: ensureCurrentVoiceStudioExtension,
+    listExtensions: () => extensionLoader.getAllExtensions(),
+    isDockerAvailable: () => localServiceManager.isDockerAvailable(),
+    startExtension: (extensionId, options) => extensionLoader.startExtension(extensionId, options),
+    getServiceStatus: (extensionId) => extensionLoader.getServiceStatus(extensionId),
+  });
+  const synthesizeVoiceStudio = createCustomerVoiceStudioSynthesizer({
+    repair: repairVoiceStudioRuntime,
+    executeTts: (input) => extensionLoader.executeCommand(VOICE_STUDIO_EXTENSION_ID, 'voice-studio.tts', input),
+  });
   const customerVideoStudio = new CustomerVideoStudioService({
     rootPath: path.join(app.getPath('userData'), 'customer-marketing-media'),
     appRoot: app.getAppPath(),
     runtimeScratchParent: app.getPath('temp'),
     getF5TtsStatus: inspectConfiguredF5Tts,
+    synthesizeVoiceStudio,
     getVoiceStudioStatus: async () => {
       const voiceStudio = (extensionLoader?.getAllExtensions() || [])
-        .find((extension) => extension.id === 'ext-voice-studio' || extension.name === 'voice-studio');
+        .find((extension) => (
+          extension.id === VOICE_STUDIO_EXTENSION_ID && extension.name === 'voice-studio'
+        ));
       // CMR-007: the operator declares which checkpoint Voice Studio serves; the verifier then
       // checks that declaration against the audited registry. Missing evidence keeps the
       // commercial gate closed (fail-closed) — Voice Studio still works for preview.
@@ -483,24 +509,6 @@ function setupIPC() {
   // They never touch GraphClient — `live_profile` egress is forbidden.
   registerLiveProfileIpc(profileStore, { onProfileWritten: recordLiveProfileRevision });
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
-  const ensureCurrentVoiceStudioExtension = createCustomerVoiceStudioExtensionEnsurer({
-    bundledOcxPath: path.join(
-      process.resourcesPath,
-      'bundled-extensions',
-      BUNDLED_OCX[VOICE_STUDIO_EXTENSION_ID],
-    ),
-    bundledOcxExists: (filePath) => fs.existsSync(filePath),
-    getExtension: () => extensionLoader.getExtension(VOICE_STUDIO_EXTENSION_ID),
-    installFromOcx: (filePath, permissions) => extensionLoader.installFromOcx(filePath, permissions),
-    stopExtension: (extensionId) => extensionLoader.stopExtension(extensionId),
-  });
-  const repairVoiceStudioRuntime = createCustomerVoiceStudioRepair({
-    ensureCurrentExtension: ensureCurrentVoiceStudioExtension,
-    listExtensions: () => extensionLoader.getAllExtensions(),
-    isDockerAvailable: () => localServiceManager.isDockerAvailable(),
-    startExtension: (extensionId, options) => extensionLoader.startExtension(extensionId, options),
-    getServiceStatus: (extensionId) => extensionLoader.getServiceStatus(extensionId),
-  });
   customerMarketingService = new CustomerMarketingService(
     dbManager,
     () => {

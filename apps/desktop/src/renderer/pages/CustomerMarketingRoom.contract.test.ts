@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 const roomPath = fileURLToPath(new URL('./CustomerMarketingRoom.tsx', import.meta.url));
 const roomSource = readFileSync(roomPath, 'utf8');
+const preloadPath = fileURLToPath(new URL('../../main/preload.ts', import.meta.url));
+const preloadSource = readFileSync(preloadPath, 'utf8');
+const rendererTypesPath = fileURLToPath(new URL('../types/global.d.ts', import.meta.url));
+const rendererTypesSource = readFileSync(rendererTypesPath, 'utf8');
+const mainPath = fileURLToPath(new URL('../../main/index.ts', import.meta.url));
+const mainSource = readFileSync(mainPath, 'utf8');
+const roomStylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.css', import.meta.url));
+const roomStylesSource = readFileSync(roomStylesPath, 'utf8');
 
 describe('Customer Marketing Room Product Context editor contract', () => {
   it('keeps BrandView mounted while another workspace view is active', () => {
@@ -41,6 +49,33 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).toContain('Khởi động Voice Studio');
     expect(roomSource).not.toContain("extensionRuntime.start('ext-voice-studio')");
     expect(roomSource).not.toContain("repairVoiceStudio('ext-voice-studio')");
+  });
+
+  it('creates voice previews through the renderer-safe job-id-only bridge', () => {
+    expect(roomSource).toContain('api.createMediaVoicePreview({ jobId })');
+    expect(roomSource).toContain('Tạo voice preview');
+    expect(roomSource).toContain('Tạo lại voice preview');
+    expect(roomSource).toContain('job.voicePreview.provider');
+    expect(roomSource).toContain('job.voicePreview.voiceId');
+    expect(roomSource).toContain('job.voicePreview.clipCount');
+    expect(roomSource).toContain('job.voicePreview.totalBytes');
+    expect(roomSource).toContain('job.voicePreview.commercialUseAllowed');
+    expect(roomSource).not.toMatch(/createMediaVoicePreview\(\{[^}]*\b(text|voice|path|workspaceId)\b/);
+    expect(roomSource).toContain('voicePreviewBlockedMessage');
+    expect(roomSource).toContain('aria-describedby={voicePreviewBlockedMessage ? voicePreviewDescriptionId : undefined}');
+    expect(roomSource).toContain('Biên nhận voice preview');
+    expect(roomSource).toContain('} đoạn · {formatBytes(job.voicePreview.totalBytes)}');
+    expect(roomSource).not.toContain('} clip · {formatBytes(job.voicePreview.totalBytes)}');
+    expect(roomStylesSource).toMatch(/\.cmr-media-receipt > div \{[\s\S]*?min-width: 0;/);
+    expect(roomStylesSource).toMatch(/\.cmr-media-receipt strong,[\s\S]*?overflow-wrap: anywhere;/);
+
+    expect(preloadSource).toContain('CustomerMediaVoicePreviewInput');
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:createMediaVoicePreview', input)");
+    expect(rendererTypesSource).toContain('createMediaVoicePreview: (input: CustomerMediaVoicePreviewInput)');
+    expect(mainSource).toContain('createCustomerVoiceStudioSynthesizer');
+    expect(mainSource).toContain("extensionLoader.executeCommand(VOICE_STUDIO_EXTENSION_ID, 'voice-studio.tts', input)");
+    expect(mainSource).toContain("extension.id === VOICE_STUDIO_EXTENSION_ID && extension.name === 'voice-studio'");
+    expect(mainSource).not.toContain("extension.id === 'ext-voice-studio' || extension.name === 'voice-studio'");
   });
 
   it('surfaces imported SKILL.md knowledge as read-only metadata only', () => {

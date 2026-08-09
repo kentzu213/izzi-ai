@@ -79,6 +79,7 @@ import type {
   CustomerMediaArtifact,
   CustomerMediaJob,
   CustomerMediaPreviewInput,
+  CustomerMediaVoicePreviewInput,
   CustomerMediaToolchain,
   CustomerMutationResult,
   CustomerOnboardingInput,
@@ -3122,6 +3123,94 @@ export class CustomerMarketingService {
     }
   }
 
+  async createMediaVoicePreview(input: CustomerMediaVoicePreviewInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    let record = this.readRecord(identity);
+    const workspaceState = await this.resolveWorkspaceAuthorization(record);
+    if (workspaceState.status === 'unavailable') {
+      return { ok: false, error: 'Không thể xác nhận quyền workspace; voice preview chưa được tạo.' };
+    }
+    if (workspaceState.workspace) {
+      const authorizedRecord: CustomerTenantRecord = {
+        ...record,
+        role: workspaceState.workspace.role,
+        plan: workspaceState.workspace.plan,
+        usedCredits: workspaceState.workspace.quota?.creditsUsed ?? record.usedCredits,
+      };
+      if (JSON.stringify(authorizedRecord) !== JSON.stringify(record)) {
+        record = authorizedRecord;
+        this.writeRecord(identity, record);
+      }
+    }
+    if (!['owner', 'manager', 'editor'].includes(record.role)) {
+      return { ok: false, error: 'Vai trò hiện tại không có quyền tạo voice preview.' };
+    }
+    if (!planMeetsMinimum(record.plan, 'pro')) {
+      return { ok: false, error: 'Voice Studio cần gói Pro trở lên.' };
+    }
+    if (!this.mediaRuntime) return { ok: false, error: 'Video Studio runtime chưa được cấu hình.' };
+
+    const jobId = cleanText(input?.jobId, 120);
+    const job = record.mediaJobs.find((item) => item.id === jobId);
+    if (!job) return { ok: false, error: 'Không tìm thấy media job trong workspace hiện tại.' };
+    const approval = record.approvals.find((item) => item.id === job.previewApprovalId);
+    if (!job.gates.previewApproved || approval?.status !== 'approved' || approval.evidenceDigest !== job.evidenceDigest) {
+      return { ok: false, error: 'Cần approval khớp với digest hiện tại trước khi tạo voice preview.' };
+    }
+
+    try {
+      const voicePreview = await this.mediaRuntime.createVoicePreview(
+        workspaceState.workspace?.id || record.workspaceId,
+        job.runtimeProjectId,
+        job.evidenceDigest,
+      );
+      const latest = this.readRecord(identity);
+      const currentJob = latest.mediaJobs.find((item) => (
+        item.id === job.id
+        && item.runtimeProjectId === job.runtimeProjectId
+        && item.evidenceDigest === job.evidenceDigest
+      ));
+      if (!currentJob) {
+        return {
+          ok: false,
+          error: 'Project đã được cập nhật trong lúc tạo voice; kết quả cũ đã được bỏ qua.',
+          snapshot: await this.snapshot(identity, latest),
+        };
+      }
+      const artifacts = voicePreview.artifacts.map((artifact): CustomerMediaArtifact => ({
+        id: 'artifact-' + randomUUID(),
+        jobId: job.id,
+        ...artifact,
+      }));
+      const next: CustomerTenantRecord = {
+        ...latest,
+        mediaJobs: latest.mediaJobs.map((item) => item.id === job.id
+          ? { ...item, voicePreview: voicePreview.receipt, error: undefined, updatedAt: voicePreview.receipt.generatedAt }
+          : item),
+        mediaArtifacts: [
+          ...artifacts,
+          ...latest.mediaArtifacts.filter((item) => (
+            item.jobId !== job.id || item.kind !== 'voice_preview'
+          )),
+        ].slice(0, 200),
+        updatedAt: voicePreview.receipt.generatedAt,
+      };
+      this.writeRecord(identity, next);
+      return {
+        ok: true,
+        reply: `Đã tạo ${voicePreview.receipt.clipCount} voice preview cục bộ bằng Voice Studio.`,
+        snapshot: await this.snapshot(identity, next),
+      };
+    } catch {
+      const latest = this.readRecord(identity);
+      return {
+        ok: false,
+        error: 'Voice Studio không tạo được voice preview. Không có render hoặc publish nào được thực hiện.',
+        snapshot: await this.snapshot(identity, latest),
+      };
+    }
+  }
+
   async reviewApproval(input: CustomerReviewInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
     let record = this.readRecord(identity);
@@ -3648,6 +3737,7 @@ export class CustomerMarketingService {
       voice: job.voice,
       gates: job.gates,
       preview: job.preview,
+      voicePreview: job.voicePreview,
       error: job.error,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
