@@ -1,9 +1,9 @@
 # Customer AI Marketing Room Plan
 
 Product status: in_progress (65% weighted local scope)
-Vertical slice status: verified_product_context_release_pending_runtime_smoke
+Vertical slice status: verified_public_beta25_voice_preview
 Backend foundation status: verified_local_not_deployed
-Last verified: 2026-08-10 ICT. Beta24 Voice Studio, managed image, and beta23 to beta24 updater download are now recorded in `docs/DESKTOP-BETA24-VOICE-STUDIO-EVIDENCE.md`.
+Last verified: 2026-08-10 ICT. Beta25 tenant-safe Voice Preview, public release, installed WAV output, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA25-VOICE-PREVIEW-EVIDENCE.md`.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 ## Product boundary
@@ -70,6 +70,14 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
     - stale strategy approvals remain pending after a context revision changes
     - Brand Center preserves drafts across workspace navigation and provides explicit
       revision-conflict recovery
+26. [x] Add tenant-safe Voice Studio previews to the customer Video Studio:
+    - renderer submits only the media job ID
+    - main process verifies workspace, role, Pro entitlement, current digest, and approval
+    - only approved captions and the fixed `pham-tuyen` voice reach the local runtime
+    - persisted WAV clips must be PCM16 mono at 48 kHz and remain size bounded
+    - receipts expose provider, voice, clip count, bytes, and the commercial lock; associated
+      artifact records expose file names, byte counts, and SHA-256 evidence
+    - publish, spend, reference-audio cloning, and commercial render remain unavailable
 
 ## Verification evidence
 
@@ -104,6 +112,11 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - Beta24 runtime close-out: the public VieNeu image, installed Voice Studio 0.2.0, real updater
   download from beta23, extension-client TTS, reference-audio rejection, and desktop/mobile
   overflow checks are recorded in `docs/DESKTOP-BETA24-VOICE-STUDIO-EVIDENCE.md`.
+- Beta25 Voice Preview close-out: full desktop regression passed 1,219 tests across 86 files;
+  main and renderer typechecks plus the five-project production build passed. The public Windows
+  installer was installed and created eight validated PCM16 mono 48 kHz WAV clips totaling
+  3,241,312 bytes. Installed desktop/mobile smoke, updater `idle / 1.14.0-beta.25`, hashes, and
+  remaining commercial gates are recorded in `docs/DESKTOP-BETA25-VOICE-PREVIEW-EVIDENCE.md`.
 
 ## Next phases
 
@@ -114,7 +127,9 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement.
 6. [ ] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering.
 7. [ ] Add one backend-owned, resumable seven-day content workflow with real registry agents, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external publish action.
-8. [ ] Add approved social, SEO, email/CRM, and analytics workflows; HyperFrames/F5 runtime discovery is started but generation/render execution remains gated.
+8. [ ] Add approved social, SEO, email/CRM, and analytics workflows; Voice Studio local preview
+   generation is verified, while HyperFrames render, F5 generation, and every external publish
+   action remain gated.
 9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
 10. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
 11. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
