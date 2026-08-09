@@ -155,6 +155,64 @@ Local evidence files:
 - `F:\3 AI-Automation\izziAi Marketing\artifacts\izzi-beta24-marketing-room-mobile.png`
 - `F:\3 AI-Automation\izziAi Marketing\artifacts\izzi-ai-beta24-voice-studio-smoke.wav`
 
+## Automatic update from beta.23
+
+The public beta.23 package was extracted under an isolated temporary directory,
+launched with its own user-data directory and CDP port 9334, and left separate
+from the registered beta.24 installation. A listener on
+`window.electronAPI.updater.onState` followed by a real
+`window.electronAPI.updater.check()` observed this sequence without a mock:
+
+```text
+idle 1.14.0-beta.23
+available 1.14.0-beta.24
+downloading 1.14.0-beta.24
+downloaded 1.14.0-beta.24, 100%
+```
+
+The updater cache then contained the downloaded beta.24 installer in its
+pending directory. These commands measured the downloaded artifact and checked
+that the sandbox was no longer running:
+
+```powershell
+$cache = Join-Path $env:LOCALAPPDATA '@openclawdesktop-updater'
+$pending = Join-Path (Join-Path $cache 'pending') 'Izzi-AI-1.14.0-beta.24-win-x64.exe'
+Get-Item $pending |
+  Select-Object Length, LastWriteTime
+Get-FileHash (Join-Path $cache 'installer.exe') -Algorithm SHA256
+Get-CimInstance Win32_Process |
+  Where-Object { $_.ExecutablePath -like '*izzi-beta23-sandbox*' }
+Invoke-RestMethod 'http://127.0.0.1:9334/json/version' -TimeoutSec 2
+```
+
+The cached installer measured 184,685,209 bytes and SHA-256
+`9165F3E519FC774FE9034A78D948460B5109D9D1D5A261099907AEA0941F1740`,
+matching the public beta.24 installer above. No sandbox process remained and
+CDP port 9334 was unavailable after its normal close.
+
+The active registered installation was then rechecked independently. The
+registry still reported `1.14.0-beta.24`; its executable and ASAR hashes still
+matched the installed-artifact measurements above. The active app was launched
+from `F:\IzziAI\Izzi\Izzi AI.exe` with CDP port 9333. A fresh updater check
+returned `idle / 1.14.0-beta.24`.
+
+The same installed run repaired Voice Studio to a healthy state within the
+readiness polling window; the CDP harness measured 8,736 ms from click to the
+stable `SẴN SÀNG` state.
+The extension remained version 0.2.0 with the same four requested and granted
+permissions. Its managed container was healthy at `127.0.0.1:5111`, used image
+digest `sha256:b3201f4e98a920d21e86e6c674335acb677c1b91c7b858b706fab632ab180441`,
+and returned the pinned VieNeu 3.2.3 readiness contract. An extension-client TTS
+call returned a validated WAV payload with 358,460 base64 characters (the value
+of `result.audioB64.length`), while a
+payload containing `refAudioB64` was rejected as invalid. The Video Studio view
+again measured no horizontal overflow at 1280 x 800 and 390 x 844.
+
+This proves real automatic discovery and download from beta.23 to beta.24. It
+does not claim an independently observed auto-install relaunch: the registered
+installation already contained beta.24, so a sandbox quit could not establish
+that final replacement step without risking the verified active installation.
+
 ## Known residuals
 
 - The Windows executable remains unsigned (`NotSigned`); installer hashes were
