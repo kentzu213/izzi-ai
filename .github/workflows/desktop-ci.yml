@@ -52,3 +52,6 @@ jobs:
 
       - name: Run desktop smoke tests
         run: pnpm --filter @openclaw/desktop test
+
+      - name: Run Socrates vendored-integrity tests
+        run: pnpm test:socrates

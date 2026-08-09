@@ -1,0 +1,4 @@
+# Preserve audited third-party evidence byte-for-byte across Windows checkouts.
+apps/desktop/resources/customer-marketing-skills/LICENSE -text
+apps/desktop/resources/customer-marketing-skills/registry.json -text
+apps/desktop/resources/customer-marketing-skills/skills/**/SKILL.md -text

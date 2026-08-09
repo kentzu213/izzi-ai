@@ -44,6 +44,10 @@ jobs:
       - name: Run desktop tests
         run: pnpm test
 
+      - name: Run Socrates vendored-integrity tests
+        run: pnpm test:socrates
+        working-directory: .
+
       - name: Package and Publish
         run: npx electron-builder --win --config electron-builder.json --publish always
         env:

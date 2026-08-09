@@ -1,0 +1,10 @@
+Corey Haines Marketing Skills
+
+Source: https://github.com/coreyhaines31/marketingskills
+Release: v2.2.0
+Revision: 692b76118c6b379f89c0fba987a228a40f58b418
+License: MIT (see LICENSE in this directory)
+
+This package contains only the pinned SKILL.md knowledge files declared in
+registry.json. Upstream scripts, references, assets, tools, and integrations are
+not included and are never executed by Izzi AI's Customer Marketing adapter.

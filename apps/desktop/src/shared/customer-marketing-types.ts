@@ -194,6 +194,18 @@ export interface CustomerCapability {
   inputs: string[];
   outputs: string[];
   extensionId?: string;
+  knowledge?: CustomerCapabilityKnowledge;
+}
+
+export interface CustomerCapabilityKnowledge {
+  kind: 'agent_skill';
+  mode: 'read_only';
+  skillId: string;
+  version: string;
+  license: 'MIT';
+  sourceRepository: string;
+  sourceRevision: string;
+  sha256: string;
 }
 
 export interface CustomerCapabilityCatalogSummary {

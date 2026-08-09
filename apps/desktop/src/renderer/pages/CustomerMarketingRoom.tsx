@@ -1932,6 +1932,18 @@ function capabilityCreditLabel(capability: CustomerCapability): string {
   return minimum === maximum ? `${minimum}` : `${minimum}–${maximum}`;
 }
 
+const READ_ONLY_KNOWLEDGE_LABEL = 'SKILL.md · chỉ đọc';
+const READ_ONLY_KNOWLEDGE_NOTE = 'Nguồn ngoài chỉ đọc; không phải công cụ và không tự chạy.';
+
+function capabilityKnowledgeLabel(
+  capability: CustomerCapability,
+  catalogStatus: CustomerMarketingSnapshot['capabilityCatalog']['status'],
+): string | null {
+  return catalogStatus === 'synced' && capability.knowledge?.mode === 'read_only'
+    ? READ_ONLY_KNOWLEDGE_LABEL
+    : null;
+}
+
 function capabilitySurfaceLabel(
   capability: CustomerCapability,
   state: CustomerCapabilitySurfaceState,
@@ -1952,11 +1964,13 @@ function CapabilityCatalogRows({
   sectionId,
   eyebrow,
   title,
+  catalogStatus,
 }: {
   entries: CapabilityCatalogEntry[];
   sectionId: string;
   eyebrow: string;
   title: string;
+  catalogStatus: CustomerMarketingSnapshot['capabilityCatalog']['status'];
 }) {
   if (entries.length === 0) return null;
   const headingId = `${sectionId}-title`;
@@ -1970,13 +1984,18 @@ function CapabilityCatalogRows({
         {entries.map(({ capability, surface }) => {
           const Icon = CATEGORY_ICONS[capability.category];
           const titleId = `${sectionId}-${capability.id}-title`;
+          const knowledgeLabel = capabilityKnowledgeLabel(capability, catalogStatus);
           return (
             <article className="cmr-catalog-only__row" key={capability.id} aria-labelledby={titleId}>
               <span className="cmr-app-card__icon"><Icon className="cmr-icon" /></span>
               <div className="cmr-catalog-only__copy">
                 <h4 id={titleId}>{capability.name}</h4>
                 <p>{capability.description}</p>
-                <span>{CATEGORY_LABELS[capability.category]} · {CAPABILITY_PLAN_LABELS[capability.minimumPlan]}</span>
+                <span>
+                  {CATEGORY_LABELS[capability.category]} · {CAPABILITY_PLAN_LABELS[capability.minimumPlan]}
+                  {knowledgeLabel ? ` · ${knowledgeLabel}` : ''}
+                </span>
+                {knowledgeLabel && <span>{READ_ONLY_KNOWLEDGE_NOTE}</span>}
               </div>
               <StatusPill value={surface.state} />
               <span className="cmr-visually-hidden">{capabilitySurfaceLabel(capability, surface.state)}</span>
@@ -2075,6 +2094,8 @@ function AppsView({
                     const titleId = `cmr-capability-${capability.id}-title`;
                     const descriptionId = `cmr-capability-${capability.id}-description`;
                     const stateId = `cmr-capability-${capability.id}-surface`;
+                    const knowledgeDescriptionId = `cmr-capability-${capability.id}-knowledge`;
+                    const knowledgeLabel = capabilityKnowledgeLabel(capability, catalog.status);
                     return (
                       <article className="cmr-panel cmr-app-card" key={capability.id} aria-labelledby={titleId}>
                         <div className="cmr-app-card__top">
@@ -2092,7 +2113,13 @@ function AppsView({
                           <span>{CATEGORY_LABELS[capability.category]}</span>
                           <span>{CAPABILITY_PLAN_LABELS[capability.minimumPlan]}</span>
                           <span>{CAPABILITY_PERMISSION_LABELS[capability.permission]}</span>
+                          {knowledgeLabel && <span>{knowledgeLabel}</span>}
                         </div>
+                        {knowledgeLabel && (
+                          <p className="cmr-app-card__knowledge-note" id={knowledgeDescriptionId}>
+                            {READ_ONLY_KNOWLEDGE_NOTE}
+                          </p>
+                        )}
                         <details className="cmr-app-card__details">
                           <summary>Chi tiết chạy</summary>
                           <dl>
@@ -2108,6 +2135,12 @@ function AppsView({
                               <dt>Đầu ra</dt>
                               <dd>{capability.outputs.slice(0, 3).map(capabilityTokenLabel).join(', ') || 'Không khai báo'}</dd>
                             </div>
+                            {knowledgeLabel && capability.knowledge && (
+                              <div>
+                                <dt>Knowledge</dt>
+                                <dd>MIT · {capability.knowledge.version} · chỉ đọc</dd>
+                              </div>
+                            )}
                           </dl>
                         </details>
                         {capability.requiredIntegrations.length > 0 && (
@@ -2120,7 +2153,7 @@ function AppsView({
                         <button
                           type="button"
                           className="cmr-button cmr-button--primary cmr-app-card__action"
-                          aria-describedby={`${descriptionId} ${stateId}`}
+                          aria-describedby={`${descriptionId} ${stateId}${knowledgeLabel ? ` ${knowledgeDescriptionId}` : ''}`}
                           onClick={() => onOpen(action)}
                         >
                           {action.label}
@@ -2136,12 +2169,14 @@ function AppsView({
                 sectionId="cmr-catalog-only"
                 eyebrow="Catalog"
                 title="Chưa có màn hình riêng"
+                catalogStatus={catalog.status}
               />
               <CapabilityCatalogRows
                 entries={accessRestricted}
                 sectionId="cmr-access-restricted"
                 eyebrow="Quyền truy cập"
                 title="Chưa thể sử dụng"
+                catalogStatus={catalog.status}
               />
             </>
           )}

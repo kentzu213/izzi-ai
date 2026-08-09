@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/coreyhaines31/marketingskills",
+    "revision": "692b76118c6b379f89c0fba987a228a40f58b418",
+    "license": "MIT",
+    "licenseFile": "LICENSE",
+    "licenseSha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591"
+  },
+  "skills": [
+    {
+      "id": "video",
+      "version": "2.0.1",
+      "capabilityId": "video-studio",
+      "relativePath": "skills/video/SKILL.md",
+      "sha256": "322ff36c8a0fdf7ffeb482fcf2190857c81e21514d99bce7b6c56d654edeb1ae",
+      "matchTerms": [
+        "video",
+        "youtube shorts",
+        "tiktok video",
+        "reels",
+        "hyperframes",
+        "f5-tts",
+        "voice studio",
+        "video quảng cáo",
+        "video hướng dẫn"
+      ],
+      "promptCharacterLimit": 16000
+    },
+    {
+      "id": "ai-seo",
+      "version": "2.0.1",
+      "capabilityId": "seo-workspace",
+      "relativePath": "skills/ai-seo/SKILL.md",
+      "sha256": "a757abe9e8863ee7f4288041982cd30f4efa0b6efade2b8cd0fbd915dff2d928",
+      "matchTerms": [
+        "seo",
+        "google search",
+        "ai overview",
+        "tìm kiếm",
+        "từ khóa",
+        "keyword",
+        "llmo",
+        "answer engine"
+      ],
+      "promptCharacterLimit": 18000
+    },
+    {
+      "id": "social",
+      "version": "2.0.0",
+      "capabilityId": "social-workflows",
+      "relativePath": "skills/social/SKILL.md",
+      "sha256": "7a7a43a82cde2c0819b5e2530953b0bb6da1ddc20a74281afede587a7ba92461",
+      "matchTerms": [
+        "social media",
+        "facebook",
+        "telegram",
+        "twitter",
+        "linkedin",
+        "instagram",
+        "tiktok",
+        "x.com",
+        "mạng xã hội",
+        "bài đăng",
+        "content calendar"
+      ],
+      "promptCharacterLimit": 16000
+    },
+    {
+      "id": "content-strategy",
+      "version": "2.0.0",
+      "capabilityId": "content-studio",
+      "relativePath": "skills/content-strategy/SKILL.md",
+      "sha256": "0611532b2a0dce8d0d5b783c99bba10d13a6d5fd7eecd829974012f74ea33258",
+      "matchTerms": [
+        "content strategy",
+        "content",
+        "blog",
+        "editorial",
+        "nội dung",
+        "bài viết",
+        "topic cluster"
+      ],
+      "promptCharacterLimit": 16000
+    },
+    {
+      "id": "marketing-ideas",
+      "version": "2.0.0",
+      "capabilityId": "strategy-planning",
+      "relativePath": "skills/marketing-ideas/SKILL.md",
+      "sha256": "f197b9f091c04ed0e20a41e443a8610848af543e5facdd17fa36d6953fa719a9",
+      "matchTerms": [
+        "marketing ideas",
+        "growth",
+        "tăng trưởng",
+        "ý tưởng marketing",
+        "cách marketing",
+        "go-to-market",
+        "gtm"
+      ],
+      "promptCharacterLimit": 10000
+    }
+  ]
+}

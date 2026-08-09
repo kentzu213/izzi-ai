@@ -33,6 +33,10 @@
     {
       "from": "resources/bundled-extensions",
       "to": "bundled-extensions"
+    },
+    {
+      "from": "resources/customer-marketing-skills",
+      "to": "customer-marketing-skills"
     }
   ],
 

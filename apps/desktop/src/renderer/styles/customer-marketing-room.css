@@ -1239,6 +1239,15 @@
   font-size: 10px;
 }
 
+.cmr-app-card .cmr-app-card__knowledge-note {
+  flex: none;
+  margin: 8px 0 0;
+  color: rgba(229, 238, 238, 0.72);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .cmr-app-card__details {
   margin: 10px 0 0;
   border-top: 1px solid var(--cmr-border);
@@ -1342,6 +1351,12 @@
 
 .cmr-catalog-only__copy p {
   margin-top: 3px;
+}
+
+.cmr-catalog-only__copy > span {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
 }
 
 .cmr-visually-hidden {

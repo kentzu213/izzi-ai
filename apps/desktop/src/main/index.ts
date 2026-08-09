@@ -62,6 +62,10 @@ import { CustomerMarketingService } from './customer-marketing/customer-marketin
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import { createCustomerVoiceStudioRepair } from './customer-marketing/customer-marketing-voice-studio-runtime';
+import {
+  loadCustomerMarketingKnowledgeSkills,
+  resolveCustomerMarketingKnowledgeSkillsRoot,
+} from './customer-marketing/customer-marketing-knowledge-skills';
 import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
 import { TraceStore } from './memory-trace/trace-store';
@@ -145,6 +149,14 @@ function getBuildAssetPath(fileName: string): string {
     return path.join(process.resourcesPath, 'build', fileName);
   }
   return path.join(app.getAppPath(), 'build', fileName);
+}
+
+function getCustomerMarketingKnowledgeSkillsRoot(): string {
+  return resolveCustomerMarketingKnowledgeSkillsRoot({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+  });
 }
 
 /** Get the platform-appropriate app icon as nativeImage */
@@ -503,6 +515,7 @@ function setupIPC() {
       killSwitchFilePath: path.join(app.getPath('userData'), 'marketing-kill-switch'),
     }),
     repairVoiceStudioRuntime,
+    () => loadCustomerMarketingKnowledgeSkills(getCustomerMarketingKnowledgeSkillsRoot()),
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

@@ -42,4 +42,14 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).not.toContain("extensionRuntime.start('ext-voice-studio')");
     expect(roomSource).not.toContain("repairVoiceStudio('ext-voice-studio')");
   });
+
+  it('surfaces imported SKILL.md knowledge as read-only metadata only', () => {
+    expect(roomSource).toContain('SKILL.md · chỉ đọc');
+    expect(roomSource).toContain("catalogStatus === 'synced'");
+    expect(roomSource).toContain("capability.knowledge?.mode === 'read_only'");
+    expect(roomSource).toContain('Nguồn ngoài chỉ đọc; không phải công cụ và không tự chạy.');
+    expect(roomSource).toContain('knowledgeDescriptionId');
+    expect(roomSource).not.toContain('title="Nguồn kiến thức chỉ đọc');
+    expect(roomSource).not.toContain('knowledgeSkill.execute');
+  });
 });

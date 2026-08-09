@@ -27,9 +27,10 @@
 //
 // Exit codes: 0 = no blocking finding, 2 = at least one blocking finding.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, lstatSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve, isAbsolute, dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+import { resolve, isAbsolute, dirname, relative as relativePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
@@ -180,6 +181,122 @@ const NOVELTY_PATTERN =
 const EVIDENCE_HINT_PATTERN =
   /(`|arxiv|doi|http|git |rg |grep|vitest|npm |pnpm |exit code|sha256|sha512|=\s*\d)/i;
 
+const VENDORED_SKILL_ROOT = 'apps/desktop/resources/customer-marketing-skills';
+const VENDORED_SKILL_REPOSITORY = 'https://github.com/coreyhaines31/marketingskills';
+const VENDORED_SKILL_REVISION = '692b76118c6b379f89c0fba987a228a40f58b418';
+const VENDORED_REGISTRY_SHA256 = 'add5f2009e82e908b05056ff77504ec3356f2421df015cb4ae29feb79ff472c9';
+const VENDORED_LICENSE_SHA256 = 'b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591';
+const VENDORED_SKILL_SHA256 = new Map([
+  ['ai-seo', 'a757abe9e8863ee7f4288041982cd30f4efa0b6efade2b8cd0fbd915dff2d928'],
+  ['content-strategy', '0611532b2a0dce8d0d5b783c99bba10d13a6d5fd7eecd829974012f74ea33258'],
+  ['marketing-ideas', 'f197b9f091c04ed0e20a41e443a8610848af543e5facdd17fa36d6953fa719a9'],
+  ['social', '7a7a43a82cde2c0819b5e2530953b0bb6da1ddc20a74281afede587a7ba92461'],
+  ['video', '322ff36c8a0fdf7ffeb482fcf2190857c81e21514d99bce7b6c56d654edeb1ae'],
+]);
+const MAX_VENDORED_INDEX_BYTES = 256 * 1024;
+
+function bytesSha256(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function readIndexedRegularFile(root, relative) {
+  if (
+    !root
+    || !relative
+    || relative.includes('\\')
+    || isAbsolute(relative)
+    || relative.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+  ) return null;
+  try {
+    const stageOutput = execFileSync(
+      'git',
+      ['-C', root, 'ls-files', '--stage', '--', relative],
+      { encoding: 'utf8' },
+    ).trim();
+    const stageLines = stageOutput.split(/\r?\n/).filter(Boolean);
+    const expectedSuffix = `\t${relative}`;
+    if (
+      stageLines.length !== 1
+      || !/^100644 [0-9a-f]{40,64} 0\t/.test(stageLines[0])
+      || !stageLines[0].endsWith(expectedSuffix)
+    ) return null;
+
+    let current = root;
+    for (const segment of relative.split('/')) {
+      current = resolve(current, segment);
+      if (lstatSync(current).isSymbolicLink()) return null;
+    }
+    const staged = execFileSync('git', ['-C', root, 'show', `:${relative}`], {
+      encoding: null,
+      maxBuffer: MAX_VENDORED_INDEX_BYTES,
+    });
+    const worktree = readFileSync(current);
+    if (
+      !Buffer.isBuffer(staged)
+      || staged.length === 0
+      || staged.length > MAX_VENDORED_INDEX_BYTES
+      || !staged.equals(worktree)
+    ) return null;
+    return staged;
+  } catch {
+    return null;
+  }
+}
+
+function vendoredSkillId(filePath, root) {
+  if (!root) return null;
+  const absolute = isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
+  const relative = relativePath(root, absolute).replace(/\\/g, '/');
+  return relative.match(
+    /^apps\/desktop\/resources\/customer-marketing-skills\/skills\/([a-z0-9-]+)\/SKILL\.md$/,
+  )?.[1] ?? null;
+}
+
+/**
+ * Third-party SKILL.md files are immutable evidence, not local runbooks. Skip
+ * prose claim checks only when the exact staged regular-file blobs, worktree
+ * bytes, compiled trust anchors, and MIT license all agree. Any index mode,
+ * registry, license, path, or byte drift falls through to the normal checks.
+ */
+function isVerifiedVendoredSkill(filePath, root) {
+  const id = vendoredSkillId(filePath, root);
+  if (!id) return false;
+  const expectedSkillSha256 = VENDORED_SKILL_SHA256.get(id);
+  if (!expectedSkillSha256) return false;
+  try {
+    const registryRelative = `${VENDORED_SKILL_ROOT}/registry.json`;
+    const registryBytes = readIndexedRegularFile(root, registryRelative);
+    if (!registryBytes || bytesSha256(registryBytes) !== VENDORED_REGISTRY_SHA256) return false;
+    const registry = JSON.parse(registryBytes.toString('utf8'));
+    if (
+      registry?.schemaVersion !== 1
+      || registry?.source?.repository !== VENDORED_SKILL_REPOSITORY
+      || registry?.source?.revision !== VENDORED_SKILL_REVISION
+      || registry?.source?.license !== 'MIT'
+      || registry?.source?.licenseFile !== 'LICENSE'
+      || registry?.source?.licenseSha256 !== VENDORED_LICENSE_SHA256
+      || !Array.isArray(registry?.skills)
+    ) return false;
+    const licenseBytes = readIndexedRegularFile(root, `${VENDORED_SKILL_ROOT}/LICENSE`);
+    if (
+      !licenseBytes
+      || !licenseBytes.toString('utf8').startsWith('MIT License\n')
+      || bytesSha256(licenseBytes) !== VENDORED_LICENSE_SHA256
+    ) return false;
+    const expectedRelativePath = `skills/${id}/SKILL.md`;
+    const entries = registry.skills.filter((entry) => (
+      entry?.id === id && entry?.relativePath === expectedRelativePath
+    ));
+    const skillBytes = readIndexedRegularFile(root, `${VENDORED_SKILL_ROOT}/${expectedRelativePath}`);
+    return entries.length === 1
+      && entries[0]?.sha256 === expectedSkillSha256
+      && skillBytes !== null
+      && bytesSha256(skillBytes) === expectedSkillSha256;
+  } catch {
+    return false;
+  }
+}
+
 function gitAvailable(root) {
   if (!root) return false;
   try {
@@ -297,7 +414,26 @@ const results = [];
 for (const file of files) {
   try {
     const root = rootFor(file);
-    results.push(checkFile(file, root, gitAvailable(root)));
+    const vendoredId = vendoredSkillId(file, root);
+    if (vendoredId && isVerifiedVendoredSkill(file, root)) {
+      results.push({
+        file: isAbsolute(file) ? file : resolve(process.cwd(), file),
+        findings: [],
+        verifiedVendored: true,
+      });
+    } else if (vendoredId) {
+      results.push({
+        file: isAbsolute(file) ? file : resolve(process.cwd(), file),
+        findings: [{
+          severity: 'blocking',
+          rule: 'vendored-integrity',
+          detail: vendoredId,
+          hint: 'Vendored SKILL.md must match the pinned staged 100644 blob, registry, license, and worktree bytes.',
+        }],
+      });
+    } else {
+      results.push(checkFile(file, root, gitAvailable(root)));
+    }
   } catch (error) {
     results.push({
       file,
@@ -321,6 +457,10 @@ for (const result of results) {
   warnings += warningsHere.length;
 
   lines.push(`\n${result.file}`);
+  if (result.verifiedVendored) {
+    lines.push('  pinned vendored markdown verified');
+    continue;
+  }
   if (result.findings.length === 0) {
     lines.push('  clean');
     continue;

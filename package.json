@@ -18,6 +18,7 @@
     "dev:marketplace": "pnpm --parallel --filter @openclaw/marketplace-api --filter @openclaw/desktop dev",
     "build": "pnpm --filter @openclaw/desktop build",
     "build:all": "pnpm -r build",
+    "test:socrates": "node --test tools/socrates-tier1.test.mjs",
     "lint": "pnpm -r lint",
     "clean": "pnpm -r clean"
   },

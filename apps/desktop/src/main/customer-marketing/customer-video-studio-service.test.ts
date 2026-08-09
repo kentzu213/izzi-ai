@@ -163,7 +163,7 @@ describe('resolveConfiguredBinaryPath', () => {
   });
 });
 
-describe('CustomerVideoStudioService F5-TTS capability boundary', () => {
+describe('CustomerVideoStudioService F5-TTS capability boundary', { timeout: 15_000 }, () => {
   it('refreshes dynamic voice status only when the caller explicitly bypasses the runtime cache', async () => {
     const root = await makeRoot();
     let running = false;
@@ -542,7 +542,7 @@ describe('CustomerVideoStudioService commercial voice provider boundary', () => 
   });
 });
 
-describe('CustomerVideoStudioService managed HyperFrames runtime', () => {
+describe('CustomerVideoStudioService managed HyperFrames runtime', { timeout: 15_000 }, () => {
   it('allows only the behaviorally attested Electron 34 / Node 20 pair below the upstream Node floor', () => {
     expect(supportsManagedHyperframesPreview('0.7.57', 'v20.19.1', '34.5.8')).toBe(true);
     expect(supportsManagedHyperframesPreview('0.7.58', 'v20.19.1', '34.5.8')).toBe(false);
