@@ -29,6 +29,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
       healthy: true,
       ports: { api: 5111 },
     })),
+    wait: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -41,7 +42,8 @@ describe('Customer Marketing Voice Studio repair runtime', () => {
       startExtension: vi.fn(() => startPending),
       getServiceStatus: vi.fn()
         .mockResolvedValueOnce({ hasService: true, running: true })
-        .mockResolvedValueOnce({ hasService: true, running: true, healthy: true, ports: { api: 5111 } }),
+        .mockResolvedValueOnce({ hasService: true, running: true, healthy: false })
+        .mockResolvedValue({ hasService: true, running: true, healthy: true, ports: { api: 5111 } }),
     });
     const repair = createCustomerVoiceStudioRepair(deps);
 
@@ -52,7 +54,9 @@ describe('Customer Marketing Voice Studio repair runtime', () => {
     finishStart();
 
     await expect(Promise.all([first, second])).resolves.toEqual(['ready', 'ready']);
-    expect(deps.getServiceStatus).toHaveBeenCalledTimes(2);
+    expect(deps.getServiceStatus).toHaveBeenCalledTimes(4);
+    expect(deps.wait).toHaveBeenCalledTimes(2);
+    expect(deps.wait).toHaveBeenCalledWith(500);
   });
 
   it('does not restart a service that is already healthy in this app process', async () => {
