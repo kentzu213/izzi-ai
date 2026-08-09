@@ -3,6 +3,7 @@
 Product status: in_progress (65% weighted local scope)
 Vertical slice status: verified_product_context_release_pending_runtime_smoke
 Backend foundation status: verified_local_not_deployed
+Last verified: 2026-08-10 ICT. Beta24 Voice Studio, managed image, and beta23 to beta24 updater download are now recorded in `docs/DESKTOP-BETA24-VOICE-STUDIO-EVIDENCE.md`.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 ## Product boundary
@@ -100,6 +101,9 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - CMR-218 clean release verification: focused Product Context/service/workflow/IPC/UI contract
   tests **197/197**, full desktop regression **931/931**, main TypeScript typecheck, and production
   Vite build passed. External actions remain disabled and confirmed spend is **0 VND**.
+- Beta24 runtime close-out: the public VieNeu image, installed Voice Studio 0.2.0, real updater
+  download from beta23, extension-client TTS, reference-audio rejection, and desktop/mobile
+  overflow checks are recorded in `docs/DESKTOP-BETA24-VOICE-STUDIO-EVIDENCE.md`.
 
 ## Next phases
 
@@ -114,7 +118,7 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
 10. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
 11. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
-12. [ ] Finish the production Voice Studio image and managed runtime: resolve the `perth`
+12. [x] Finish the production Voice Studio image and managed runtime: resolve the `perth`
     dependency, preserve Docker connection variables, rebuild, publish, and run end-to-end TTS
     smoke tests.
 13. [ ] Restore persistent GitNexus MCP connectivity and index the active Voice worktree while
@@ -127,7 +131,8 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - Cross-device onboarding, run, approval, media job, and artifact persistence.
 - Real billing-ledger reconciliation; local atomic quota enforcement exists but production billing authority is not claimed.
 - Fully wired publishing, ads, email, CRM, HyperFrames render, or F5-TTS generation execution.
-- A commercially licensed and authoritatively verified Vietnamese voice model for IzziAPI advertising.
+- A commercially enabled advertising render on the installed app. The audited VieNeu chain is
+  available, but the runtime gate remains closed until its operator license evidence is configured.
 - A recorded consent artifact bound to the reference voice used by a media job.
 - A complete end-to-end marketing campaign with external actions.
 - Staging URL, release branch, or deployment approval.
