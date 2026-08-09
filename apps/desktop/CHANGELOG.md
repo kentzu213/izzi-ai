@@ -1,4 +1,18 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.24
+
+Voice Studio 0.2 local TTS hardening and automatic extension upgrade.
+
+- Install or upgrade the bundled Voice Studio extension before repair, retain
+  only declared grants, and coalesce concurrent starts.
+- Pin VieNeu-TTS 3.2.3, model and codec revisions, four audited presets, strict
+  PCM WAV output, and reject reference audio or voice-cloning inputs.
+- Require the full runtime readiness contract, immutable loopback Compose
+  configuration, local Docker context, and a digest-pinned multi-arch image.
+- Make the required OCX fail closed during packaging and publish the backend
+  with a hash-locked dependency set, SBOM, provenance, and GitHub attestation.
+- Patch the remaining high-severity `brace-expansion` v2 dependency advisories.
+
 ## 1.14.0-beta.23
 
 Windows background update delivery.

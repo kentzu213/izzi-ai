@@ -12,7 +12,7 @@ services:
     # Prebuilt image published by CI (.github/workflows/publish-voice-image.yml).
     # CMR-007: immutable multi-arch image built from the hardened VieNeu 3.2.3
     # runtime. Re-pin only after the publish workflow and runtime smoke checks.
-    image: ghcr.io/kentzu213/izzi-voice-tts@sha256:1190ac4eaaa75e45c37b783254d2180c1942a230c24039dc5e741950c4b6b832
+    image: ghcr.io/kentzu213/izzi-voice-tts@sha256:b3201f4e98a920d21e86e6c674335acb677c1b91c7b858b706fab632ab180441
     restart: unless-stopped
     ports:
       - '127.0.0.1:${IZZI_PORT_API:-5111}:5111'

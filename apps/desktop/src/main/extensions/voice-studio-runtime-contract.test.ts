@@ -26,7 +26,7 @@ const compose = readFileSync(composePath, 'utf8');
 const publishWorkflow = readFileSync(path.resolve(root, '../../.github/workflows/publish-voice-image.yml'), 'utf8');
 const beforePack = readFileSync(path.resolve(root, '../../apps/desktop/scripts/before-pack.cjs'), 'utf8');
 const desktopMain = readFileSync(path.resolve(root, '../../apps/desktop/src/main/index.ts'), 'utf8');
-const pinnedImage = 'ghcr.io/kentzu213/izzi-voice-tts@sha256:1190ac4eaaa75e45c37b783254d2180c1942a230c24039dc5e741950c4b6b832';
+const pinnedImage = 'ghcr.io/kentzu213/izzi-voice-tts@sha256:b3201f4e98a920d21e86e6c674335acb677c1b91c7b858b706fab632ab180441';
 
 function loadVoiceClient(): any {
   const resolved = requireClient.resolve(clientPath);
