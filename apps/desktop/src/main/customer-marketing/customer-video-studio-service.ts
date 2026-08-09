@@ -658,7 +658,7 @@ async function runCommand(
 }
 
 export interface CustomerVideoStudioRuntime {
-  getToolchain(): Promise<CustomerMediaToolchain>;
+  getToolchain(options?: { refresh?: boolean }): Promise<CustomerMediaToolchain>;
   importProject(workspaceId: string, candidate: string): Promise<CustomerMediaImportedProject>;
   runPreview(workspaceId: string, runtimeProjectId: string, expectedDigest: string): Promise<CustomerMediaPreviewResult>;
 }
@@ -721,7 +721,8 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     );
   }
 
-  async getToolchain(): Promise<CustomerMediaToolchain> {
+  async getToolchain(options: { refresh?: boolean } = {}): Promise<CustomerMediaToolchain> {
+    if (options.refresh) this.runtimeCache = null;
     return (await this.inspectRuntime()).toolchain;
   }
 

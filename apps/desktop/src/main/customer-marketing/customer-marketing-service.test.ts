@@ -1730,6 +1730,41 @@ describe('Customer Marketing Video Studio', () => {
       },
     });
     expect(repairVoiceStudioRuntime).toHaveBeenCalledTimes(1);
+    expect(mediaRuntime.getToolchain).not.toHaveBeenCalledWith({ refresh: true });
+  });
+
+  it('force-refreshes a stale voice snapshot after the runtime becomes ready', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const readyToolchain = await mediaRuntime.getToolchain();
+    const staleToolchain: CustomerMediaToolchain = {
+      ...readyToolchain,
+      voiceStudio: { status: 'needs_setup', version: '0.1.0', detail: 'Installed.' },
+    };
+    let refreshed = false;
+    vi.mocked(mediaRuntime.getToolchain).mockImplementation(async (options?: { refresh?: boolean }) => {
+      if (options?.refresh) refreshed = true;
+      return refreshed ? readyToolchain : staleToolchain;
+    });
+    const repairVoiceStudioRuntime = vi.fn(async () => 'ready' as const);
+    const context = setup({ mediaRuntime, repairVoiceStudioRuntime });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.repairVoiceStudio();
+
+    expect(mediaRuntime.getToolchain).toHaveBeenCalledWith({ refresh: true });
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: 'ready',
+      snapshot: {
+        media: {
+          toolchain: {
+            voiceStudio: { status: 'ready' },
+            commercialRenderAvailable: false,
+          },
+        },
+        externalActionsAllowed: false,
+      },
+    });
   });
 
   it.each([

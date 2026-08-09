@@ -164,6 +164,31 @@ describe('resolveConfiguredBinaryPath', () => {
 });
 
 describe('CustomerVideoStudioService F5-TTS capability boundary', () => {
+  it('refreshes dynamic voice status only when the caller explicitly bypasses the runtime cache', async () => {
+    const root = await makeRoot();
+    let running = false;
+    const getVoiceStudioStatus = vi.fn(async () => ({
+      installed: true,
+      running,
+      version: '0.1.0',
+    }));
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot: path.join(root, 'app'),
+      getVoiceStudioStatus,
+    });
+
+    const stopped = await service.getToolchain();
+    running = true;
+    const cached = await service.getToolchain();
+    const refreshed = await service.getToolchain({ refresh: true });
+
+    expect(stopped.voiceStudio.status).toBe('needs_setup');
+    expect(cached.voiceStudio.status).toBe('needs_setup');
+    expect(refreshed.voiceStudio.status).toBe('ready');
+    expect(getVoiceStudioStatus).toHaveBeenCalledTimes(2);
+  });
+
   it('reports an installed offline runtime without exposing its local path or enabling commercial render', async () => {
     const root = await makeRoot();
     const privatePath = 'C:\\Users\\customer\\private-f5-runtime';

@@ -1227,7 +1227,19 @@ export class CustomerMarketingService {
     } catch {
       outcome = 'unhealthy';
     }
-    const snapshot = await this.snapshot(identity, record, false, workspaceState);
+    let snapshot = await this.snapshot(identity, record, false, workspaceState);
+    if (
+      outcome === 'ready'
+      && snapshot.media.toolchain.voiceStudio.status !== 'ready'
+      && this.mediaRuntime
+    ) {
+      try {
+        await this.mediaRuntime.getToolchain({ refresh: true });
+        snapshot = await this.snapshot(identity, record, false, workspaceState);
+      } catch {
+        // The verified runtime outcome is reconciled against the snapshot below.
+      }
+    }
     if (outcome === 'ready' && snapshot.media.toolchain.voiceStudio.status !== 'ready') {
       outcome = 'unhealthy';
     }
