@@ -1769,12 +1769,14 @@ function ApprovalsView({
 
 function VideoStudioView({
   snapshot,
+  onRepairVoiceStudio,
   onImport,
   onPreview,
   onReview,
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
+  onRepairVoiceStudio: () => Promise<void>;
   onImport: () => Promise<void>;
   onPreview: (jobId: string) => Promise<void>;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
@@ -1785,6 +1787,7 @@ function VideoStudioView({
   const planAllowsImport = customerPlanMeetsMinimum(snapshot.workspace.plan, 'pro');
   const roleAllowsImport = ['owner', 'manager', 'editor'].includes(snapshot.workspace.role);
   const canImport = planAllowsImport && roleAllowsImport;
+  const voiceStudioReady = toolchain.voiceStudio.status === 'ready';
   const importBlockedMessage = planAllowsImport
     ? 'Vai trò hiện tại chỉ có quyền xem Video Studio.'
     : 'Video Studio cần gói Pro trở lên.';
@@ -1804,9 +1807,21 @@ function VideoStudioView({
           <h2>Video Studio</h2>
           <p>Project, preview receipt và approval thuộc riêng workspace hiện tại.</p>
         </div>
-        <button type="button" className="cmr-button cmr-button--primary" onClick={() => void onImport()} disabled={busy || !canImport}>
-          {busy ? 'Đang xử lý...' : 'Import HyperFrames'} <DesignIcon className="cmr-button__icon" />
-        </button>
+        <div className="cmr-inline-actions">
+          <button
+            type="button"
+            className="cmr-button cmr-button--quiet"
+            onClick={() => void onRepairVoiceStudio()}
+            disabled={busy || !canImport}
+            aria-label="Khởi động hoặc kiểm tra lại Voice Studio và F5-TTS local"
+          >
+            {busy ? 'Đang xử lý...' : voiceStudioReady ? 'Kiểm tra voice' : 'Khởi động Voice Studio'}
+            <RefreshIcon className="cmr-button__icon" />
+          </button>
+          <button type="button" className="cmr-button cmr-button--primary" onClick={() => void onImport()} disabled={busy || !canImport}>
+            {busy ? 'Đang xử lý...' : 'Import HyperFrames'} <DesignIcon className="cmr-button__icon" />
+          </button>
+        </div>
       </div>
 
       <div className="cmr-media-tool-grid" aria-label="Media toolchain">
@@ -2941,6 +2956,10 @@ function CustomerRoom({
     await onMutation((api) => api.runMediaPreview({ jobId }));
   };
 
+  const repairVoiceStudio = async () => {
+    await onMutation((api) => api.repairVoiceStudio());
+  };
+
   const pendingCount = snapshot.approvals.filter((approval) => approval.status === 'pending').length;
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const pendingCapabilityViewRef = useRef<ViewId | null>(null);
@@ -3030,7 +3049,7 @@ function CustomerRoom({
           {activeView === 'director' && <DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
           {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
-          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onImport={onSelectMedia} onPreview={previewMedia} onReview={review} busy={busy} />}
+          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onReview={review} busy={busy} />}
           {activeView === 'team' && <TeamView capabilities={snapshot.capabilities} />}
           {activeView === 'apps' && (
             activeCapability ? (

@@ -34,13 +34,11 @@ loaded), then injects `backendUrl` so the extension's commands work over loopbac
 - Wraps VieNeu-TTS per docs.vieneu.io: `Vieneu().infer(text=...)` + `.save(...)`.
 - `/tts` returns base64 WAV as JSON (the extension's `net.fetch` bridge is text).
 
-## No-Docker fallback
-
-If Docker isn't installed, the host uses `VOICE_BACKEND_URL` (a hosted TTS
-endpoint) via `service.fallback.remoteEnvVar`.
-
 ## Responsible use
 
 Voice cloning (`refAudioB64`) requires the **consent** of the person whose voice
 is cloned. Non-consensual cloning / impersonation is prohibited by the model
-license and by izzi policy. The panel surfaces this before enabling cloning.
+license and by izzi policy. The Customer Marketing capability exposes local
+preview only; commercial use remains closed until the exact served model and
+its license are independently verified. No hosted fallback, publishing, or
+external action is enabled here.

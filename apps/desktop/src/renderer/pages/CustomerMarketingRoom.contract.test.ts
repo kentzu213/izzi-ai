@@ -35,4 +35,11 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).toContain('onOpen={openCapabilityView}');
     expect(roomSource).not.toContain("openCapabilityView(action, 'apps')");
   });
+
+  it('repairs Voice Studio only through the zero-payload Customer Marketing API', () => {
+    expect(roomSource).toContain('api.repairVoiceStudio()');
+    expect(roomSource).toContain('Khởi động Voice Studio');
+    expect(roomSource).not.toContain("extensionRuntime.start('ext-voice-studio')");
+    expect(roomSource).not.toContain("repairVoiceStudio('ext-voice-studio')");
+  });
 });

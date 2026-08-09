@@ -61,6 +61,7 @@ import { registerCustomerMarketingIpc } from './customer-marketing/customer-mark
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
+import { createCustomerVoiceStudioRepair } from './customer-marketing/customer-marketing-voice-studio-runtime';
 import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
 import { TraceStore } from './memory-trace/trace-store';
@@ -465,6 +466,12 @@ function setupIPC() {
   // They never touch GraphClient — `live_profile` egress is forbidden.
   registerLiveProfileIpc(profileStore, { onProfileWritten: recordLiveProfileRevision });
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
+  const repairVoiceStudioRuntime = createCustomerVoiceStudioRepair({
+    listExtensions: () => extensionLoader.getAllExtensions(),
+    isDockerAvailable: () => localServiceManager.isDockerAvailable(),
+    startExtension: (extensionId, options) => extensionLoader.startExtension(extensionId, options),
+    getServiceStatus: (extensionId) => extensionLoader.getServiceStatus(extensionId),
+  });
   customerMarketingService = new CustomerMarketingService(
     dbManager,
     () => {
@@ -495,6 +502,7 @@ function setupIPC() {
     createCustomerMarketingGuardrailStateReader({
       killSwitchFilePath: path.join(app.getPath('userData'), 'marketing-kill-switch'),
     }),
+    repairVoiceStudioRuntime,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

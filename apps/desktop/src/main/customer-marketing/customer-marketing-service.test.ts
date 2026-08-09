@@ -501,6 +501,9 @@ function setup(options?: {
     writeClipboardText?: (value: string) => void | Promise<void>;
     credentialVault?: Pick<CustomerMarketingCredentialVault, 'listStatuses' | 'revokeCredential'>;
     readGuardrailState?: () => CustomerMarketingGuardrailState;
+    repairVoiceStudioRuntime?: () => Promise<
+      'ready' | 'not_installed' | 'docker_unavailable' | 'unhealthy'
+    >;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -521,6 +524,7 @@ function setup(options?: {
     options?.credentialVault ?? null,
     options?.readGuardrailState
       ?? createCustomerMarketingGuardrailStateReader({ env: {}, spendVndUsedInWindow: () => 0 }),
+    options?.repairVoiceStudioRuntime,
   );
   return {
     db,
@@ -1697,6 +1701,102 @@ describe('customer capability catalog', () => {
 
 
 describe('Customer Marketing Video Studio', () => {
+  it('repairs Voice Studio through the bounded main runtime and refreshes both voice statuses', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const baseToolchain = await mediaRuntime.getToolchain();
+    const repairVoiceStudioRuntime = vi.fn(async () => {
+      vi.mocked(mediaRuntime.getToolchain).mockResolvedValue({
+        ...baseToolchain,
+        voiceStudio: { status: 'ready', version: '0.1.0', detail: 'Running.' },
+      });
+      return 'ready' as const;
+    });
+    const context = setup({ mediaRuntime, repairVoiceStudioRuntime });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.repairVoiceStudio();
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: 'ready',
+      snapshot: {
+        media: {
+          toolchain: {
+            voiceStudio: { status: 'ready' },
+            commercialRenderAvailable: false,
+          },
+        },
+        externalActionsAllowed: false,
+      },
+    });
+    expect(repairVoiceStudioRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { role: 'viewer' as const, plan: 'pro' as const, outcome: 'forbidden' },
+    { role: 'owner' as const, plan: 'starter' as const, outcome: 'plan_required' },
+  ])('blocks Voice Studio repair for $role on $plan', async ({ role, plan, outcome }) => {
+    const repairVoiceStudioRuntime = vi.fn(async () => 'ready' as const);
+    const context = setup({ repairVoiceStudioRuntime });
+    await completeOnboarding(context.service);
+    context.db.updateOnlyRecord({ role, plan });
+
+    const result = await context.service.repairVoiceStudio();
+
+    expect(result).toMatchObject({ ok: false, outcome });
+    expect(repairVoiceStudioRuntime).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before Voice Studio start when IzziAPI authority is unavailable', async () => {
+    const identity: CustomerIdentity = { id: 'tenant-voice-authority', name: 'Owner', plan: 'pro', balance: 75 };
+    const initial = setup({ identity });
+    await completeOnboarding(initial.service);
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const repairVoiceStudioRuntime = vi.fn(async () => 'ready' as const);
+    const service = new CustomerMarketingService(
+      initial.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      remote.gateway,
+      undefined,
+      null,
+      undefined,
+      repairVoiceStudioRuntime,
+    );
+
+    const result = await service.repairVoiceStudio();
+
+    expect(result).toMatchObject({ ok: false, outcome: 'authority_unavailable' });
+    expect(repairVoiceStudioRuntime).not.toHaveBeenCalled();
+  });
+
+  it('honors an IzziAPI plan downgrade before Voice Studio start', async () => {
+    const identity: CustomerIdentity = { id: 'tenant-voice-plan', name: 'Owner', plan: 'pro', balance: 75 };
+    const initial = setup({ identity });
+    await completeOnboarding(initial.service);
+    const remote = marketingResourceGateway('owner');
+    const repairVoiceStudioRuntime = vi.fn(async () => 'ready' as const);
+    const service = new CustomerMarketingService(
+      initial.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      remote.gateway,
+      undefined,
+      null,
+      undefined,
+      repairVoiceStudioRuntime,
+    );
+
+    const result = await service.repairVoiceStudio();
+
+    expect(result).toMatchObject({ ok: false, outcome: 'plan_required' });
+    expect(repairVoiceStudioRuntime).not.toHaveBeenCalled();
+  });
+
   it('imports a project into the authenticated tenant without exposing paths or runtime ids', async () => {
     const mediaRuntime = mediaRuntimeFixture();
     const context = setup({ mediaRuntime });

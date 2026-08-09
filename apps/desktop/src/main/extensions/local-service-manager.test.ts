@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  LocalServiceManager,
   parseGenSpec,
   generateSecretValue,
   resolveInject,
@@ -10,6 +11,28 @@ import {
   checkPortFree,
   findFreePort,
 } from './local-service-manager';
+
+describe('LocalServiceManager Docker availability', () => {
+  it('requires both the Compose CLI and a reachable Docker server', async () => {
+    const manager = new LocalServiceManager();
+    const exec = vi.spyOn(manager as any, 'exec')
+      .mockResolvedValueOnce({ code: 0, stdout: 'Docker Compose version v5.3.1', stderr: '' })
+      .mockResolvedValueOnce({ code: 1, stdout: '', stderr: 'daemon unavailable' });
+
+    await expect(manager.isDockerAvailable()).resolves.toBe(false);
+    expect(exec).toHaveBeenNthCalledWith(1, ['compose', 'version'], 10_000);
+    expect(exec).toHaveBeenNthCalledWith(2, ['version', '--format', '{{.Server.Version}}'], 10_000);
+  });
+
+  it('reports Docker available only after the server answers', async () => {
+    const manager = new LocalServiceManager();
+    vi.spyOn(manager as any, 'exec')
+      .mockResolvedValueOnce({ code: 0, stdout: 'Docker Compose version v5.3.1', stderr: '' })
+      .mockResolvedValueOnce({ code: 0, stdout: '29.6.2', stderr: '' });
+
+    await expect(manager.isDockerAvailable()).resolves.toBe(true);
+  });
+});
 
 describe('parseGenSpec', () => {
   it('parses hex and base64 specs', () => {

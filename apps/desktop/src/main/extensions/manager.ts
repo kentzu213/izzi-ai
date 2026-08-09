@@ -249,7 +249,7 @@ const FALLBACK_EXTENSIONS = [
     id: 'ext-voice-studio',
     name: 'voice-studio',
     display_name: 'Voice Studio (VieNeu-TTS)',
-    description: 'TTS + clone giọng tiếng Việt/Anh chạy CỤC BỘ (VieNeu-TTS, CPU/ONNX). Mở tiện ích là tự khởi động backend localhost. Nâng cấp cho OmniVoice.',
+    description: 'Tạo bản nghe thử TTS tiếng Việt/Anh cục bộ bằng VieNeu-TTS. Chỉ khởi động khi người dùng yêu cầu; không có hosted fallback.',
     version: '0.1.0',
     category: 'Voice',
     rating_avg: 4.7,

@@ -26,6 +26,7 @@ import type {
   CustomerWorkspaceInvitationInput,
   CustomerWorkspaceInvitationResult,
   CustomerWorkspaceInvitationAcceptanceResult,
+  CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
 import {
   parseCustomerProductMarketingContextSaveInput,
@@ -328,6 +329,15 @@ export function registerCustomerMarketingIpc(
     } catch {
       return { canceled: false, error: 'Không import được media project.' };
     }
+  });
+
+  ipcMain.handle('customerMarketing:repairVoiceStudio', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerVoiceStudioRepairResult> => {
+    trusted(event);
+    if (payload !== undefined) throw new Error('Payload Voice Studio không được phép.');
+    return service.repairVoiceStudio();
   });
 
   ipcMain.handle('customerMarketing:runMediaPreview', async (event, payload: unknown): Promise<CustomerMutationResult> => {

@@ -89,6 +89,8 @@ import type {
   CustomerWorkspaceInvitationInput,
   CustomerWorkspaceInvitationResult,
   CustomerReviewInput,
+  CustomerVoiceStudioRepairResult,
+  CustomerVoiceStudioRuntimeOutcome,
 } from '../../shared/customer-marketing-types';
 import {
   CUSTOMER_PRODUCT_MARKETING_CONTEXT_ID,
@@ -1069,6 +1071,7 @@ export class CustomerMarketingService {
     // environment and are fixed for the life of this process.
     // Omitting this reader halts every gated action rather than running unguarded.
     private readonly readGuardrailState?: () => CustomerMarketingGuardrailState,
+    private readonly repairVoiceStudioRuntime?: () => Promise<CustomerVoiceStudioRuntimeOutcome>,
   ) {}
 
   private productMarketingContextAuthority(
@@ -1160,6 +1163,88 @@ export class CustomerMarketingService {
       // The workflow store quarantines malformed state and the customer room remains fail-closed.
     }
     return this.snapshot(identity, record);
+  }
+
+  async repairVoiceStudio(): Promise<CustomerVoiceStudioRepairResult> {
+    const identity = this.requireIdentity();
+    let record = this.readRecord(identity);
+    if (!record.onboarding?.completed) {
+      return {
+        ok: false,
+        outcome: 'forbidden',
+        error: 'Hoàn thành onboarding trước khi khởi động Voice Studio.',
+        snapshot: await this.snapshot(identity, record),
+      };
+    }
+
+    const workspaceState = await this.resolveWorkspaceAuthorization(record);
+    if (
+      workspaceState.status === 'unavailable'
+      || (workspaceState.status === 'synced' && !workspaceState.workspace)
+    ) {
+      return {
+        ok: false,
+        outcome: 'authority_unavailable',
+        error: 'Không thể xác nhận quyền workspace với IzziAPI; Voice Studio chưa được khởi động.',
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
+      };
+    }
+    if (workspaceState.workspace) {
+      const syncedRecord = this.applyRemoteWorkspace(record, workspaceState.workspace);
+      if (syncedRecord !== record) {
+        record = syncedRecord;
+        this.writeRecord(identity, record);
+      }
+    }
+    if (!MARKETING_AUTHOR_ROLES.has(record.role)) {
+      return {
+        ok: false,
+        outcome: 'forbidden',
+        error: 'Vai trò hiện tại không có quyền khởi động Voice Studio.',
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
+      };
+    }
+    if (!planMeetsMinimum(record.plan, 'pro')) {
+      return {
+        ok: false,
+        outcome: 'plan_required',
+        error: 'Voice Studio cần gói Pro trở lên.',
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
+      };
+    }
+    if (!this.repairVoiceStudioRuntime) {
+      return {
+        ok: false,
+        outcome: 'unavailable',
+        error: 'Voice Studio runtime chưa được cấu hình.',
+        snapshot: await this.snapshot(identity, record, false, workspaceState),
+      };
+    }
+
+    let outcome: CustomerVoiceStudioRuntimeOutcome;
+    try {
+      outcome = await this.repairVoiceStudioRuntime();
+    } catch {
+      outcome = 'unhealthy';
+    }
+    const snapshot = await this.snapshot(identity, record, false, workspaceState);
+    if (outcome === 'ready' && snapshot.media.toolchain.voiceStudio.status !== 'ready') {
+      outcome = 'unhealthy';
+    }
+    if (outcome === 'ready') {
+      return {
+        ok: true,
+        outcome,
+        reply: 'Voice Studio local đã sẵn sàng. F5-TTS đã được kiểm tra lại; commercial render vẫn theo license đã xác minh.',
+        snapshot,
+      };
+    }
+    const errors: Record<Exclude<CustomerVoiceStudioRuntimeOutcome, 'ready'>, string> = {
+      not_installed: 'Voice Studio chưa được cài từ App Catalog.',
+      docker_unavailable: 'Docker Desktop chưa sẵn sàng. Hãy mở Docker Desktop rồi thử lại.',
+      unhealthy: 'Voice Studio chưa healthy sau lần khởi động. Không có render hoặc hành động bên ngoài nào được thực hiện.',
+    };
+    return { ok: false, outcome, error: errors[outcome], snapshot };
   }
 
   async listMarketingResources(

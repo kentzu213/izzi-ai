@@ -379,6 +379,22 @@ export interface CustomerMutationResult {
   error?: string;
 }
 
+export type CustomerVoiceStudioRuntimeOutcome =
+  | 'ready'
+  | 'not_installed'
+  | 'docker_unavailable'
+  | 'unhealthy';
+
+export type CustomerVoiceStudioRepairOutcome = CustomerVoiceStudioRuntimeOutcome
+  | 'forbidden'
+  | 'plan_required'
+  | 'authority_unavailable'
+  | 'unavailable';
+
+export interface CustomerVoiceStudioRepairResult extends CustomerMutationResult {
+  outcome: CustomerVoiceStudioRepairOutcome;
+}
+
 export type CustomerProductMarketingContextMutationStatus =
   | 'saved'
   | 'conflict'

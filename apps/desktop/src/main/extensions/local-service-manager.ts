@@ -148,8 +148,10 @@ export class LocalServiceManager {
 
   /** True when `docker compose` is usable. */
   async isDockerAvailable(): Promise<boolean> {
-    const { code } = await this.exec(['compose', 'version'], 10_000);
-    return code === 0;
+    const compose = await this.exec(['compose', 'version'], 10_000);
+    if (compose.code !== 0) return false;
+    const server = await this.exec(['version', '--format', '{{.Server.Version}}'], 10_000);
+    return server.code === 0;
   }
 
   /**

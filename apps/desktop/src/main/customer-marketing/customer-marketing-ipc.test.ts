@@ -91,6 +91,7 @@ function serviceMock() {
     })),
     importMediaProject: vi.fn(async () => ({ ok: true })),
     runMediaPreview: vi.fn(async () => ({ ok: true })),
+    repairVoiceStudio: vi.fn(async () => ({ ok: true, outcome: 'ready' })),
     listMarketingResources: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
     listMarketingCalendar: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
     getMarketingAnalytics: vi.fn(async () => ({ ok: true, status: 'synced', report: null })),
@@ -120,6 +121,30 @@ beforeEach(() => {
 });
 
 describe('customer marketing media IPC', () => {
+  it('accepts no renderer-controlled Voice Studio selector or path', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:repairVoiceStudio');
+    expect(handler).toBeTypeOf('function');
+
+    await expect(handler!(event())).resolves.toEqual({ ok: true, outcome: 'ready' });
+    expect(service.repairVoiceStudio).toHaveBeenCalledTimes(1);
+
+    await expect(handler!(event(), { extensionId: 'ext-attacker', path: 'C:\\private' }))
+      .rejects.toThrow('Payload Voice Studio không được phép');
+    expect(service.repairVoiceStudio).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted sender before Voice Studio service execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:repairVoiceStudio');
+
+    await expect(handler!(event('https://attacker.example/customer-marketing')))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.repairVoiceStudio).not.toHaveBeenCalled();
+  });
+
   it('accepts the exact Starizzi dev origin only in an unpackaged dev renderer', () => {
     expect(isTrustedMarketingSender(event())).toBe(true);
     expect(isTrustedMarketingSender(event('http://127.0.0.1:5173/customer-marketing'))).toBe(true);

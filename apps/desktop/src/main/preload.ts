@@ -78,6 +78,7 @@ import type {
   CustomerWorkspaceInvitationAcceptanceResult,
   CustomerWorkspaceInvitationInput,
   CustomerWorkspaceInvitationResult,
+  CustomerVoiceStudioRepairResult,
 } from '../shared/customer-marketing-types';
 import type {
   CustomerMarketingCredentialListResult,
@@ -619,6 +620,8 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:askDirector', input),
     selectMediaProject: (): Promise<CustomerMediaProjectSelectionResult> =>
       ipcRenderer.invoke('customerMarketing:selectMediaProject'),
+    repairVoiceStudio: (): Promise<CustomerVoiceStudioRepairResult> =>
+      ipcRenderer.invoke('customerMarketing:repairVoiceStudio'),
     runMediaPreview: (input: CustomerMediaPreviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:runMediaPreview', input),
     reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>

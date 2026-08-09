@@ -43,6 +43,7 @@ import type {
   CustomerWorkspaceInvitationAcceptanceResult,
   CustomerWorkspaceInvitationInput,
   CustomerWorkspaceInvitationResult,
+  CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
 import type {
   CustomerMarketingCredentialListResult,
@@ -206,6 +207,7 @@ declare global {
     createGoal: (input: CustomerGoalInput) => Promise<CustomerMutationResult>;
     askDirector: (input: CustomerDirectorInput) => Promise<CustomerMutationResult>;
     selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
+    repairVoiceStudio: () => Promise<CustomerVoiceStudioRepairResult>;
     runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
   }

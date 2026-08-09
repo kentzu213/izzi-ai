@@ -2,7 +2,7 @@
   "name": "voice-studio",
   "version": "0.1.0",
   "displayName": "Voice Studio (VieNeu-TTS)",
-  "description": "Text-to-speech + clone giọng tiếng Việt/Anh, chạy CỤC BỘ trên máy (VieNeu-TTS, CPU/ONNX, offline sau khi tải model). Mở tiện ích là tự khởi động backend localhost. Nâng cấp cho OmniVoice.",
+  "description": "Tạo bản nghe thử text-to-speech tiếng Việt/Anh hoàn toàn cục bộ bằng VieNeu-TTS. Không tải nội dung lên dịch vụ hosted.",
   "main": "dist/index.js",
   "engine": ">=0.1.0",
   "author": {
@@ -16,7 +16,6 @@
     "net.http"
   ],
   "activationEvents": [
-    "onStartup",
     "onCommand:voice-studio.status",
     "onCommand:voice-studio.listVoices",
     "onCommand:voice-studio.tts"
@@ -38,6 +37,25 @@
   "categories": ["Voice", "Content"],
   "tags": ["tts", "voice-clone", "vietnamese", "on-device", "voice", "offline"],
   "homepage": "https://izziapi.com",
+  "repository": "https://github.com/kentzu213/izzi-ai",
+  "customerMarketing": true,
+  "customerMarketingCapability": {
+    "id": "voice-studio-local-preview",
+    "category": "creative",
+    "role": "Voice Studio",
+    "automationModes": ["copilot"],
+    "requiredIntegrations": [],
+    "minimumPlan": "pro",
+    "permission": "execute",
+    "stability": "preview",
+    "creditEstimate": {
+      "minimum": 0,
+      "maximum": 0,
+      "unit": "credits_per_run"
+    },
+    "inputs": ["text", "voice"],
+    "outputs": ["wav_preview", "approval_receipt"]
+  },
   "pricing": { "model": "free" },
   "service": {
     "type": "docker-compose",
@@ -48,8 +66,7 @@
     ],
     "readyTimeoutMs": 600000,
     "inject": { "backendUrl": "http://127.0.0.1:${port.api}" },
-    "requires": { "docker": true },
-    "fallback": { "remoteEnvVar": "VOICE_BACKEND_URL" }
+    "requires": { "docker": true }
   },
   "license": "SEE LICENSE"
 }
