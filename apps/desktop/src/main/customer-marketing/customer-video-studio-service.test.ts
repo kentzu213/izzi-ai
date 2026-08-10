@@ -35,6 +35,14 @@ function pcm16Mono48KhzWav(samples = [0, 1_000, -1_000, 0]): Buffer {
   return wav;
 }
 
+function minimalMp4(): Buffer {
+  return Buffer.from('000000186674797069736f6d0000020069736f6d69736f32', 'hex');
+}
+
+function sha256Hex(value: Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 function hyperframesCheckReport(
   passed: boolean,
   errorCount = 0,
@@ -103,6 +111,31 @@ async function createReadyAppRuntime(root: string, cliSource = DEFAULT_HYPERFRAM
   }), 'utf8');
   await fs.writeFile(path.join(hyperframesRoot, 'dist', 'cli.js'), cliSource, 'utf8');
   const browserPath = path.join(appRoot, 'chrome-headless-shell.exe');
+  await fs.writeFile(browserPath, 'browser');
+  vi.stubEnv('STARIZZI_HYPERFRAMES_BROWSER', browserPath);
+  return appRoot;
+}
+
+async function createPackagedAppRuntime(
+  root: string,
+  cliSource = DEFAULT_HYPERFRAMES_CLI,
+): Promise<string> {
+  const appRoot = path.join(root, 'app.asar');
+  const packageSource = JSON.stringify({
+    name: 'hyperframes',
+    version: '0.7.57',
+    bin: { hyperframes: './dist/cli.js' },
+    engines: { node: '>=22' },
+    license: 'Apache-2.0',
+    type: 'module',
+  });
+  for (const runtimeRoot of [appRoot, `${appRoot}.unpacked`]) {
+    const hyperframesRoot = path.join(runtimeRoot, 'node_modules', 'hyperframes');
+    await fs.mkdir(path.join(hyperframesRoot, 'dist'), { recursive: true });
+    await fs.writeFile(path.join(hyperframesRoot, 'package.json'), packageSource, 'utf8');
+    await fs.writeFile(path.join(hyperframesRoot, 'dist', 'cli.js'), cliSource, 'utf8');
+  }
+  const browserPath = path.join(root, 'chrome-headless-shell.exe');
   await fs.writeFile(browserPath, 'browser');
   vi.stubEnv('STARIZZI_HYPERFRAMES_BROWSER', browserPath);
   return appRoot;
@@ -603,6 +636,7 @@ describe('CustomerVideoStudioService Voice Studio preview boundary', () => {
       voice: 'pham-tuyen',
     });
     expect(result.receipt).toEqual(expect.objectContaining({
+      runId: expect.stringMatching(/^\d{8}T\d{6}Z-[a-f0-9]{16}$/),
       provider: 'voice-studio',
       voiceId: 'pham-tuyen',
       clipCount: 2,
@@ -697,6 +731,351 @@ describe('CustomerVideoStudioService Voice Studio preview boundary', () => {
       'f'.repeat(64),
     )).rejects.toThrow('đã thay đổi sau approval');
     expect(synthesizeVoiceStudio).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerVideoStudioService local video preview boundary', () => {
+  interface VideoPreviewInternals {
+    inspectRuntime: () => Promise<unknown>;
+    runHyperframesRender: (...args: unknown[]) => Promise<unknown>;
+    runFfmpegMux: (...args: unknown[]) => Promise<unknown>;
+    probeVideoPreview: (...args: unknown[]) => Promise<unknown>;
+  }
+
+  async function videoPreviewHarness() {
+    const root = await makeRoot();
+    const source = await createProject(root);
+    const runtimeRoot = path.join(root, 'runtime');
+    const scratchRoot = path.join(root, 'scratch');
+    await fs.mkdir(scratchRoot, { recursive: true });
+    const wav = pcm16Mono48KhzWav();
+    const openLocalFile = vi.fn(async () => '');
+    const service = new CustomerVideoStudioService({
+      rootPath: runtimeRoot,
+      runtimeScratchParent: scratchRoot,
+      appRoot: path.join(root, 'app'),
+      synthesizeVoiceStudio: async () => ({
+        ok: true,
+        format: 'wav',
+        audioB64: wav.toString('base64'),
+      }),
+      openLocalFile,
+    });
+    const imported = await service.importProject('customer-abcdef123456', source);
+    const voice = await service.createVoicePreview(
+      'customer-abcdef123456',
+      imported.runtimeProjectId,
+      imported.evidenceDigest,
+    );
+    const voiceArtifacts = voice.artifacts.map((artifact) => ({
+      name: artifact.name,
+      sha256: artifact.sha256 || '',
+    }));
+    const internals = service as unknown as VideoPreviewInternals;
+    const inspectRuntime = vi.spyOn(internals, 'inspectRuntime').mockResolvedValue({
+      toolchain: {},
+      hyperframesRuntime: {
+        executablePath: process.execPath,
+        cliPath: path.join(root, 'hyperframes-cli.js'),
+        source: 'system_node',
+        nodeVersion: process.version,
+        browserPath: process.execPath,
+        commercialEligible: false,
+      },
+      videoRenderRuntime: {
+        executablePath: process.execPath,
+        cliPath: path.join(root, 'hyperframes-cli.js'),
+        source: 'system_node',
+        nodeVersion: process.version,
+        browserPath: process.execPath,
+        commercialEligible: false,
+      },
+      ffmpegPath: process.execPath,
+      ffprobePath: process.execPath,
+      ffmpegDirectory: path.dirname(process.execPath),
+    });
+    const render = vi.spyOn(internals, 'runHyperframesRender').mockImplementation(async (...args) => {
+      await fs.writeFile(String(args[2]), minimalMp4());
+      return { stdout: '', stderr: '' };
+    });
+    const mux = vi.spyOn(internals, 'runFfmpegMux').mockImplementation(async (...args) => {
+      await fs.writeFile(String(args[3]), minimalMp4());
+      return { stdout: '', stderr: '' };
+    });
+    const probe = vi.spyOn(internals, 'probeVideoPreview').mockResolvedValue({
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 45,
+      audioSampleRate: 48_000,
+      audioChannels: 1,
+    });
+    const runsRoot = path.join(
+      runtimeRoot,
+      'customer-abcdef123456',
+      'preview-runs',
+      imported.runtimeProjectId,
+    );
+    return {
+      root,
+      runtimeRoot,
+      scratchRoot,
+      service,
+      imported,
+      voiceRunId: voice.receipt.runId,
+      voiceGeneratedAt: voice.receipt.generatedAt,
+      voiceArtifacts,
+      runsRoot,
+      inspectRuntime,
+      render,
+      mux,
+      probe,
+      openLocalFile,
+    };
+  }
+
+  it('resolves a legacy voice receipt past 25 newer runs and retains one verified local MP4', async () => {
+    const harness = await videoPreviewHarness();
+    for (let index = 0; index < 25; index += 1) {
+      await fs.mkdir(path.join(
+        harness.runsRoot,
+        `99991231T2359${String(index).padStart(2, '0')}Z-${index.toString(16).padStart(16, '0')}`,
+      ));
+    }
+
+    const result = await harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      undefined,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    );
+
+    expect(result.receipt).toEqual(expect.objectContaining({
+      runId: expect.stringMatching(/^\d{8}T\d{6}Z-[a-f0-9]{16}$/),
+      provider: 'hyperframes+voice-studio',
+      voiceId: 'pham-tuyen',
+      clipCount: 2,
+      fileName: 'video-preview/video-preview.mp4',
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      durationSeconds: 45,
+      audioSampleRate: 48_000,
+      audioChannels: 1,
+      totalBytes: minimalMp4().byteLength,
+      commercialUseAllowed: false,
+    }));
+    expect(result.artifacts).toEqual([
+      expect.objectContaining({
+        kind: 'video_preview',
+        name: 'video-preview/video-preview.mp4',
+        sha256: sha256Hex(minimalMp4()),
+        sizeBytes: minimalMp4().byteLength,
+      }),
+    ]);
+    expect(harness.render).toHaveBeenCalledTimes(1);
+    expect(harness.mux).toHaveBeenCalledTimes(1);
+    expect(harness.probe).toHaveBeenCalledTimes(1);
+    const renderOutput = String(harness.render.mock.calls[0][2]);
+    expect(renderOutput).toContain(`${path.sep}izzi-ai-hf-`);
+    expect(renderOutput).not.toContain(`${path.sep}preview-runs${path.sep}`);
+    const muxCall = harness.mux.mock.calls[0];
+    const muxOutput = String(muxCall[3]);
+    expect(muxOutput).toContain(`${path.sep}izzi-ai-hf-`);
+    expect(muxOutput).not.toContain(`${path.sep}preview-runs${path.sep}`);
+    expect(muxCall[2]).toEqual([
+      expect.stringMatching(/voice-01\.wav$/),
+      expect.stringMatching(/voice-02\.wav$/),
+    ]);
+    expect(muxCall[4]).toBe(45);
+    expect(JSON.stringify(harness.render.mock.calls)).not.toContain('publish');
+
+    const runIds = await fs.readdir(harness.runsRoot);
+    const videoFiles = await Promise.all(runIds.map(async (runId) => {
+      const candidate = path.join(harness.runsRoot, runId, 'video-preview', 'video-preview.mp4');
+      try {
+        return await fs.readFile(candidate);
+      } catch {
+        return null;
+      }
+    }));
+    expect(videoFiles.filter(Boolean)).toEqual([minimalMp4()]);
+    expect(await fs.readdir(harness.scratchRoot)).toEqual([]);
+
+    await harness.service.openVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      result.receipt.runId,
+      result.receipt.generatedAt,
+      result.artifacts[0],
+    );
+    expect(harness.openLocalFile).toHaveBeenCalledWith(expect.stringMatching(/video-preview\.mp4$/));
+  });
+
+  it('refuses to open a video whose bytes no longer match the stored artifact', async () => {
+    const harness = await videoPreviewHarness();
+    const result = await harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      harness.voiceRunId,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    );
+    const runIds = await fs.readdir(harness.runsRoot);
+    for (const runId of runIds) {
+      const candidate = path.join(harness.runsRoot, runId, 'video-preview', 'video-preview.mp4');
+      try {
+        await fs.writeFile(candidate, Buffer.from('tampered-video'));
+      } catch {
+        // Voice-only runs do not contain a video output.
+      }
+    }
+
+    await expect(harness.service.openVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      result.receipt.runId,
+      result.receipt.generatedAt,
+      result.artifacts[0],
+    )).rejects.toThrow('Không tìm thấy local video preview');
+    expect(harness.openLocalFile).not.toHaveBeenCalled();
+  });
+
+  it('does not expose OS path details when the default video application cannot open', async () => {
+    const harness = await videoPreviewHarness();
+    const result = await harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      harness.voiceRunId,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    );
+    harness.openLocalFile.mockResolvedValueOnce('C:\\private\\video.mp4 access denied');
+
+    await expect(harness.service.openVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      result.receipt.runId,
+      result.receipt.generatedAt,
+      result.artifacts[0],
+    )).rejects.toThrow('Không thể mở local video preview bằng ứng dụng mặc định.');
+  });
+
+  it('rejects mismatched hashes and malformed WAV evidence before runtime execution', async () => {
+    const mismatched = await videoPreviewHarness();
+    await expect(mismatched.service.createVideoPreview(
+      'customer-abcdef123456',
+      mismatched.imported.runtimeProjectId,
+      mismatched.imported.evidenceDigest,
+      mismatched.voiceRunId,
+      mismatched.voiceGeneratedAt,
+      mismatched.voiceArtifacts.map((artifact, index) => (
+        index === 0 ? { ...artifact, sha256: 'f'.repeat(64) } : artifact
+      )),
+    )).rejects.toThrow('Không tìm thấy bộ voice preview');
+    expect(mismatched.inspectRuntime).not.toHaveBeenCalled();
+
+    const malformed = await videoPreviewHarness();
+    const [voiceRun] = await fs.readdir(malformed.runsRoot);
+    const firstVoice = path.join(malformed.runsRoot, voiceRun, 'voice-preview', 'voice-01.wav');
+    const invalidWav = Buffer.from('not-a-pcm-wav');
+    await fs.writeFile(firstVoice, invalidWav);
+    const malformedArtifacts = malformed.voiceArtifacts.map((artifact, index) => (
+      index === 0 ? { ...artifact, sha256: sha256Hex(invalidWav) } : artifact
+    ));
+
+    await expect(malformed.service.createVideoPreview(
+      'customer-abcdef123456',
+      malformed.imported.runtimeProjectId,
+      malformed.imported.evidenceDigest,
+      malformed.voiceRunId,
+      malformed.voiceGeneratedAt,
+      malformedArtifacts,
+    )).rejects.toThrow('WAV không hợp lệ');
+    expect(malformed.inspectRuntime).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['HyperFrames browser', { ffmpegPath: process.execPath, ffprobePath: process.execPath }],
+    ['FFmpeg', {
+      videoRenderRuntime: {
+        executablePath: process.execPath,
+        cliPath: process.execPath,
+        source: 'system_node',
+        nodeVersion: process.version,
+        browserPath: process.execPath,
+        commercialEligible: false,
+      },
+    }],
+  ])('fails closed when %s is unavailable without creating another run', async (_label, runtime) => {
+    const harness = await videoPreviewHarness();
+    const before = await fs.readdir(harness.runsRoot);
+    harness.inspectRuntime.mockResolvedValueOnce({ toolchain: {}, ...runtime });
+
+    await expect(harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      harness.voiceRunId,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    )).rejects.toThrow('HyperFrames browser, FFmpeg và FFprobe');
+
+    expect(harness.render).not.toHaveBeenCalled();
+    expect(await fs.readdir(harness.runsRoot)).toEqual(before);
+    expect(await fs.readdir(harness.scratchRoot)).toEqual([]);
+  });
+
+  it.each([
+    ['malformed', async (candidate: string) => fs.writeFile(candidate, Buffer.from('not-an-mp4'))],
+    ['oversized', async (candidate: string) => {
+      await fs.writeFile(candidate, minimalMp4());
+      await fs.truncate(candidate, (100 * 1_024 * 1_024) + 1);
+    }],
+  ])('removes the entire failed run for a %s MP4 output', async (_label, writeOutput) => {
+    const harness = await videoPreviewHarness();
+    const before = await fs.readdir(harness.runsRoot);
+    harness.mux.mockImplementationOnce(async (...args) => {
+      await writeOutput(String(args[3]));
+      return { stdout: '', stderr: '' };
+    });
+
+    await expect(harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      harness.voiceRunId,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    )).rejects.toThrow(/MP4 hợp lệ|vượt giới hạn dung lượng/);
+
+    expect(await fs.readdir(harness.runsRoot)).toEqual(before);
+    expect(await fs.readdir(harness.scratchRoot)).toEqual([]);
+  });
+
+  it('cleans staging and output when render or mux execution fails', async () => {
+    const harness = await videoPreviewHarness();
+    const before = await fs.readdir(harness.runsRoot);
+    harness.mux.mockRejectedValueOnce(new Error('synthetic mux failure'));
+
+    await expect(harness.service.createVideoPreview(
+      'customer-abcdef123456',
+      harness.imported.runtimeProjectId,
+      harness.imported.evidenceDigest,
+      harness.voiceRunId,
+      harness.voiceGeneratedAt,
+      harness.voiceArtifacts,
+    )).rejects.toThrow('Local video preview');
+
+    expect(await fs.readdir(harness.runsRoot)).toEqual(before);
+    expect(await fs.readdir(harness.scratchRoot)).toEqual([]);
   });
 });
 
@@ -796,8 +1175,103 @@ process.exit(2);
     const toolchain = await service.getToolchain();
 
     expect(toolchain.previewAvailable).toBe(true);
+    expect(toolchain.videoPreviewAvailable).toBe(false);
     expect(toolchain.node.status).toBe('ready');
     expect(toolchain.commercialRenderAvailable).toBe(false);
+  });
+
+  it('uses an attested system Node for local video while keeping the managed commercial gate closed', async () => {
+    const root = await makeRoot();
+    const appRoot = await createReadyAppRuntime(root);
+    vi.stubEnv('STARIZZI_FFMPEG_BIN', process.execPath);
+    vi.stubEnv('STARIZZI_FFPROBE_BIN', process.execPath);
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      videoRenderNodePath: process.execPath,
+      managedElectronRuntime: {
+        executablePath: process.execPath,
+        electronVersion: '34.5.8',
+        nodeVersion: '20.19.1',
+      },
+      hyperframesAttestation: await createHyperframesAttestation(appRoot),
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.previewAvailable).toBe(true);
+    expect(toolchain.videoPreviewAvailable).toBe(true);
+    expect(toolchain.node.version).toBe('v20.19.1');
+    expect(toolchain.node.detail).toContain(process.version);
+    expect(toolchain.commercialRenderAvailable).toBe(false);
+  });
+
+  it('runs packaged HyperFrames through the attested ASAR-unpacked CLI', async () => {
+    const root = await makeRoot();
+    const commandLog = path.join(root, 'packaged-cli-paths.jsonl');
+    const cliSource = `
+import { appendFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify(process.argv[1]) + '\\n');
+if (process.argv[2] === '--version') process.stdout.write('0.7.57\\n');
+`;
+    const appRoot = await createPackagedAppRuntime(root, cliSource);
+    vi.stubEnv('STARIZZI_FFMPEG_BIN', process.execPath);
+    vi.stubEnv('STARIZZI_FFPROBE_BIN', process.execPath);
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      videoRenderNodePath: process.execPath,
+      managedElectronRuntime: {
+        executablePath: process.execPath,
+        electronVersion: '34.5.8',
+        nodeVersion: '20.19.1',
+      },
+      hyperframesAttestation: await createHyperframesAttestation(appRoot),
+    });
+
+    const toolchain = await service.getToolchain();
+    const cliPaths = (await fs.readFile(commandLog, 'utf8'))
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as string);
+    const unpackedRoot = (await fs.realpath(`${appRoot}.unpacked`)).toLowerCase();
+    const resolvedCliPaths = await Promise.all(cliPaths.map((candidate) => fs.realpath(candidate)));
+
+    expect(toolchain.previewAvailable).toBe(true);
+    expect(toolchain.videoPreviewAvailable).toBe(true);
+    expect(cliPaths.length).toBeGreaterThanOrEqual(2);
+    expect(
+      resolvedCliPaths.every((candidate) => candidate.toLowerCase().startsWith(`${unpackedRoot}${path.sep}`)),
+      JSON.stringify({ unpackedRoot, cliPaths: resolvedCliPaths }),
+    ).toBe(true);
+    expect(toolchain.commercialRenderAvailable).toBe(false);
+  });
+
+  it('rejects a modified HyperFrames CLI in the packaged ASAR-unpacked runtime', async () => {
+    const root = await makeRoot();
+    const appRoot = await createPackagedAppRuntime(root);
+    const attestation = await createHyperframesAttestation(appRoot);
+    await fs.appendFile(
+      path.join(`${appRoot}.unpacked`, 'node_modules', 'hyperframes', 'dist', 'cli.js'),
+      '\n// modified after packaging',
+      'utf8',
+    );
+    const service = new CustomerVideoStudioService({
+      rootPath: path.join(root, 'runtime'),
+      appRoot,
+      managedElectronRuntime: {
+        executablePath: process.execPath,
+        electronVersion: '34.5.8',
+        nodeVersion: '20.19.1',
+      },
+      hyperframesAttestation: attestation,
+    });
+
+    const toolchain = await service.getToolchain();
+
+    expect(toolchain.hyperframes.status).toBe('needs_setup');
+    expect(toolchain.previewAvailable).toBe(false);
+    expect(toolchain.videoPreviewAvailable).toBe(false);
   });
 
   it('rejects a HyperFrames bin path that escapes the pinned package root', async () => {

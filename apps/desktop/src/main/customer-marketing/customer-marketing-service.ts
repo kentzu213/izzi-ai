@@ -79,6 +79,7 @@ import type {
   CustomerMediaArtifact,
   CustomerMediaJob,
   CustomerMediaPreviewInput,
+  CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaToolchain,
   CustomerMutationResult,
@@ -673,6 +674,7 @@ function unavailableMediaToolchain(): CustomerMediaToolchain {
     f5Tts: unavailable('F5-TTS chưa được xác minh.'),
     voiceStudio: unavailable('Voice Studio chưa được kiểm tra.'),
     previewAvailable: false,
+    videoPreviewAvailable: false,
     commercialRenderAvailable: false,
   };
 }
@@ -3185,12 +3187,19 @@ export class CustomerMarketingService {
       const next: CustomerTenantRecord = {
         ...latest,
         mediaJobs: latest.mediaJobs.map((item) => item.id === job.id
-          ? { ...item, voicePreview: voicePreview.receipt, error: undefined, updatedAt: voicePreview.receipt.generatedAt }
+          ? {
+            ...item,
+            voicePreview: voicePreview.receipt,
+            videoPreview: undefined,
+            error: undefined,
+            updatedAt: voicePreview.receipt.generatedAt,
+          }
           : item),
         mediaArtifacts: [
           ...artifacts,
           ...latest.mediaArtifacts.filter((item) => (
-            item.jobId !== job.id || item.kind !== 'voice_preview'
+            item.jobId !== job.id
+            || (item.kind !== 'voice_preview' && item.kind !== 'video_preview')
           )),
         ].slice(0, 200),
         updatedAt: voicePreview.receipt.generatedAt,
@@ -3207,6 +3216,198 @@ export class CustomerMarketingService {
         ok: false,
         error: 'Voice Studio không tạo được voice preview. Không có render hoặc publish nào được thực hiện.',
         snapshot: await this.snapshot(identity, latest),
+      };
+    }
+  }
+
+  async createMediaVideoPreview(input: CustomerMediaVideoPreviewInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    let record = this.readRecord(identity);
+    const workspaceState = await this.resolveWorkspaceAuthorization(record);
+    if (workspaceState.status === 'unavailable') {
+      return { ok: false, error: 'Không thể xác nhận quyền workspace; video preview chưa được tạo.' };
+    }
+    if (workspaceState.workspace) {
+      const authorizedRecord: CustomerTenantRecord = {
+        ...record,
+        role: workspaceState.workspace.role,
+        plan: workspaceState.workspace.plan,
+        usedCredits: workspaceState.workspace.quota?.creditsUsed ?? record.usedCredits,
+      };
+      if (JSON.stringify(authorizedRecord) !== JSON.stringify(record)) {
+        record = authorizedRecord;
+        this.writeRecord(identity, record);
+      }
+    }
+    if (!['owner', 'manager', 'editor'].includes(record.role)) {
+      return { ok: false, error: 'Vai trò hiện tại không có quyền tạo video preview.' };
+    }
+    if (!planMeetsMinimum(record.plan, 'pro')) {
+      return { ok: false, error: 'Local video preview cần gói Pro trở lên.' };
+    }
+    if (!this.mediaRuntime) return { ok: false, error: 'Video Studio runtime chưa được cấu hình.' };
+
+    const jobId = cleanText(input?.jobId, 120);
+    const job = record.mediaJobs.find((item) => item.id === jobId);
+    if (!job) return { ok: false, error: 'Không tìm thấy media job trong workspace hiện tại.' };
+    const approval = record.approvals.find((item) => item.id === job.previewApprovalId);
+    if (!job.gates.previewApproved || approval?.status !== 'approved' || approval.evidenceDigest !== job.evidenceDigest) {
+      return { ok: false, error: 'Cần approval khớp với digest hiện tại trước khi tạo video preview.' };
+    }
+    if (!job.preview?.passed) {
+      return { ok: false, error: 'Cần HyperFrames check đạt trước khi tạo video preview.' };
+    }
+    if (!job.voicePreview) {
+      return { ok: false, error: 'Cần tạo voice preview trước khi ghép local video preview.' };
+    }
+    const voiceArtifacts = record.mediaArtifacts
+      .filter((artifact) => artifact.jobId === job.id && artifact.kind === 'voice_preview')
+      .sort((left, right) => left.name.localeCompare(right.name));
+    if (
+      voiceArtifacts.length !== job.voicePreview.clipCount
+      || voiceArtifacts.some((artifact) => !artifact.sha256)
+    ) {
+      return { ok: false, error: 'Voice artifact không còn khớp với receipt hiện tại.' };
+    }
+    const sourceVoiceEvidence = voiceArtifacts.map((artifact) => ({
+      name: artifact.name,
+      sha256: artifact.sha256 as string,
+    }));
+
+    try {
+      const videoPreview = await this.mediaRuntime.createVideoPreview(
+        workspaceState.workspace?.id || record.workspaceId,
+        job.runtimeProjectId,
+        job.evidenceDigest,
+        job.voicePreview.runId,
+        job.voicePreview.generatedAt,
+        sourceVoiceEvidence,
+      );
+      const latest = this.readRecord(identity);
+      const currentApproval = latest.approvals.find((item) => item.id === job.previewApprovalId);
+      const currentJob = latest.mediaJobs.find((item) => (
+        item.id === job.id
+        && item.runtimeProjectId === job.runtimeProjectId
+        && item.evidenceDigest === job.evidenceDigest
+        && item.voicePreview?.generatedAt === job.voicePreview?.generatedAt
+        && item.gates.previewApproved
+        && currentApproval?.status === 'approved'
+        && currentApproval.evidenceDigest === item.evidenceDigest
+      ));
+      const currentVoiceEvidence = latest.mediaArtifacts
+        .filter((artifact) => artifact.jobId === job.id && artifact.kind === 'voice_preview')
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((artifact) => ({ name: artifact.name, sha256: artifact.sha256 }));
+      if (
+        !currentJob
+        || JSON.stringify(currentVoiceEvidence) !== JSON.stringify(sourceVoiceEvidence)
+      ) {
+        return {
+          ok: false,
+          error: 'Project, approval hoặc voice preview đã được cập nhật trong lúc ghép video; kết quả cũ đã được bỏ qua.',
+          snapshot: await this.snapshot(identity, latest),
+        };
+      }
+      const artifacts = videoPreview.artifacts.map((artifact): CustomerMediaArtifact => ({
+        id: 'artifact-' + randomUUID(),
+        jobId: job.id,
+        ...artifact,
+      }));
+      const next: CustomerTenantRecord = {
+        ...latest,
+        mediaJobs: latest.mediaJobs.map((item) => item.id === job.id
+          ? { ...item, videoPreview: videoPreview.receipt, error: undefined, updatedAt: videoPreview.receipt.generatedAt }
+          : item),
+        mediaArtifacts: [
+          ...artifacts,
+          ...latest.mediaArtifacts.filter((item) => (
+            item.jobId !== job.id || item.kind !== 'video_preview'
+          )),
+        ].slice(0, 200),
+        updatedAt: videoPreview.receipt.generatedAt,
+      };
+      this.writeRecord(identity, next);
+      return {
+        ok: true,
+        reply: `Đã tạo local video preview ${videoPreview.receipt.durationSeconds}s bằng HyperFrames và Voice Studio.`,
+        snapshot: await this.snapshot(identity, next),
+      };
+    } catch {
+      const latest = this.readRecord(identity);
+      return {
+        ok: false,
+        error: 'Không tạo được local video preview. Không có publish hoặc hành động bên ngoài nào được thực hiện.',
+        snapshot: await this.snapshot(identity, latest),
+      };
+    }
+  }
+
+  async openMediaVideoPreview(input: CustomerMediaVideoPreviewInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    let record = this.readRecord(identity);
+    const workspaceState = await this.resolveWorkspaceAuthorization(record);
+    if (workspaceState.status === 'unavailable') {
+      return { ok: false, error: 'Không thể xác nhận quyền workspace; local video preview chưa được mở.' };
+    }
+    if (workspaceState.workspace) {
+      const authorizedRecord: CustomerTenantRecord = {
+        ...record,
+        role: workspaceState.workspace.role,
+        plan: workspaceState.workspace.plan,
+        usedCredits: workspaceState.workspace.quota?.creditsUsed ?? record.usedCredits,
+      };
+      if (JSON.stringify(authorizedRecord) !== JSON.stringify(record)) {
+        record = authorizedRecord;
+        this.writeRecord(identity, record);
+      }
+    }
+    if (!['owner', 'manager', 'editor', 'reviewer', 'viewer'].includes(record.role)) {
+      return { ok: false, error: 'Vai trò hiện tại không có quyền mở video preview.' };
+    }
+    if (!this.mediaRuntime) return { ok: false, error: 'Video Studio runtime chưa được cấu hình.' };
+
+    const jobId = cleanText(input?.jobId, 120);
+    const job = record.mediaJobs.find((item) => item.id === jobId);
+    if (!job) return { ok: false, error: 'Không tìm thấy media job trong workspace hiện tại.' };
+    const approval = record.approvals.find((item) => item.id === job.previewApprovalId);
+    if (!job.gates.previewApproved || approval?.status !== 'approved' || approval.evidenceDigest !== job.evidenceDigest) {
+      return { ok: false, error: 'Approval hiện tại không còn khớp với local video preview.' };
+    }
+    if (!job.videoPreview) {
+      return { ok: false, error: 'Job chưa có local video preview để mở.' };
+    }
+    const artifact = record.mediaArtifacts.find((item) => (
+      item.jobId === job.id
+      && item.kind === 'video_preview'
+      && item.name === job.videoPreview?.fileName
+      && item.sha256
+      && item.sizeBytes === job.videoPreview?.totalBytes
+    ));
+    if (!artifact?.sha256 || !artifact.sizeBytes) {
+      return { ok: false, error: 'Artifact local video preview không còn khớp receipt hiện tại.' };
+    }
+
+    try {
+      await this.mediaRuntime.openVideoPreview(
+        workspaceState.workspace?.id || record.workspaceId,
+        job.runtimeProjectId,
+        job.evidenceDigest,
+        job.videoPreview.runId,
+        job.videoPreview.generatedAt,
+        {
+          name: artifact.name,
+          sha256: artifact.sha256,
+          sizeBytes: artifact.sizeBytes,
+        },
+      );
+      return {
+        ok: true,
+        reply: 'Đã mở local video preview bằng ứng dụng mặc định.',
+      };
+    } catch {
+      return {
+        ok: false,
+        error: 'Không thể mở local video preview. Artifact vẫn giữ nguyên và không có hành động publish nào được thực hiện.',
       };
     }
   }
@@ -3738,6 +3939,7 @@ export class CustomerMarketingService {
       gates: job.gates,
       preview: job.preview,
       voicePreview: job.voicePreview,
+      videoPreview: job.videoPreview,
       error: job.error,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,

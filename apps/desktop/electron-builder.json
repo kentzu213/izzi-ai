@@ -132,6 +132,15 @@
 
   "asar": true,
   "asarUnpack": [
+    "node_modules/hyperframes",
+    "node_modules/hyperframes/**/*",
+    "node_modules/.pnpm/hyperframes@*/node_modules/hyperframes",
+    "node_modules/.pnpm/hyperframes@*/node_modules/hyperframes/**/*",
+    "node_modules/esbuild",
+    "node_modules/esbuild/**/*",
+    "node_modules/.pnpm/esbuild@*/node_modules/esbuild",
+    "node_modules/.pnpm/esbuild@*/node_modules/esbuild/**/*",
+    "node_modules/.pnpm/**/node_modules/**/*",
     "node_modules/sharp/**/*",
     "node_modules/@napi-rs/**/*",
     "dist/main/extensions/extension-runner.js"

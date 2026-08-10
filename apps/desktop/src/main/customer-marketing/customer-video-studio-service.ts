@@ -7,6 +7,7 @@ import type {
   CustomerMediaArtifactKind,
   CustomerMediaPreviewReceipt,
   CustomerMediaToolchain,
+  CustomerMediaVideoPreviewReceipt,
   CustomerMediaVoicePolicy,
   CustomerMediaVoicePreviewReceipt,
 } from '../../shared/customer-marketing-types';
@@ -20,6 +21,7 @@ const MAX_PREVIEW_OUTPUT_FILES = 16;
 const MAX_PREVIEW_OUTPUT_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_PREVIEW_OUTPUT_BYTES = 100 * 1024 * 1024;
 const PREVIEW_TIMEOUT_MS = 120_000;
+const VIDEO_PREVIEW_TIMEOUT_MS = 300_000;
 const PREVIEW_SNAPSHOT_COUNT = 3;
 const PREVIEW_FALLBACK_FRACTIONS = [0.17, 0.53, 0.83] as const;
 const VOICE_PREVIEW_MAX_SCENES = 24;
@@ -27,6 +29,9 @@ const VOICE_PREVIEW_MAX_TEXT_LENGTH = 500;
 const VOICE_PREVIEW_MAX_WAV_BYTES = 8 * 1024 * 1024;
 const VOICE_PREVIEW_MAX_BASE64_LENGTH = 4 * Math.ceil(VOICE_PREVIEW_MAX_WAV_BYTES / 3);
 const VOICE_PREVIEW_VOICE_ID = 'pham-tuyen';
+const VIDEO_PREVIEW_FILE_NAME = 'video-preview.mp4';
+const LEGACY_PREVIEW_MAX_RUNS_TO_SCAN = 20;
+const VIDEO_PREVIEW_DURATION_TOLERANCE_SECONDS = 0.5;
 const VOICE_PREVIEW_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const HYPERFRAMES_MIN_NODE_MAJOR = 22;
 const MANAGED_HYPERFRAMES_VERSION = '0.7.57';
@@ -38,6 +43,7 @@ const MANAGED_HYPERFRAMES_ATTESTATION = Object.freeze({
 const PACKAGED_HYPERFRAMES_PACKAGE_SHA256 = 'f435187f26697eccb852288835313ca63286552c016fbfe000c0bc9df8b48fe0';
 const WORKSPACE_ID = /^customer-[a-f0-9]{12}$/;
 const RUNTIME_PROJECT_ID = /^[a-f0-9-]{36}$/;
+const PREVIEW_RUN_ID = /^\d{8}T\d{6}Z-[a-f0-9]{16}$/;
 const ALLOWED_ROOT_FILES = new Set([
   'video-workflow.json',
   'hyperframes.json',
@@ -72,6 +78,18 @@ interface HyperframesCheckResult {
   reportRaw: string;
 }
 
+interface VideoRenderSpec {
+  width: number;
+  height: number;
+  fps: number;
+  durationSeconds: number;
+}
+
+interface VideoPreviewProbe extends VideoRenderSpec {
+  audioSampleRate: number;
+  audioChannels: number;
+}
+
 type HyperframesRuntimeSource = 'system_node' | 'managed_electron';
 
 interface HyperframesCommandRuntime {
@@ -87,6 +105,9 @@ interface HyperframesCommandRuntime {
 interface RuntimeInspection {
   toolchain: CustomerMediaToolchain;
   hyperframesRuntime?: HyperframesCommandRuntime;
+  videoRenderRuntime?: HyperframesCommandRuntime;
+  ffmpegPath?: string;
+  ffprobePath?: string;
   ffmpegDirectory?: string;
 }
 
@@ -195,6 +216,11 @@ export interface CustomerMediaVoicePreviewResult {
   artifacts: CustomerMediaArtifactDraft[];
 }
 
+export interface CustomerMediaVideoPreviewResult {
+  receipt: CustomerMediaVideoPreviewReceipt;
+  artifacts: CustomerMediaArtifactDraft[];
+}
+
 export interface CustomerVideoStudioOptions {
   rootPath: string;
   appRoot: string;
@@ -203,10 +229,13 @@ export interface CustomerVideoStudioOptions {
   managedBrowserPath?: string | null;
   hyperframesAttestation?: CustomerHyperframesAttestation | null;
   previewTimeoutMs?: number;
+  videoPreviewTimeoutMs?: number;
   previewMaxOutputBytes?: number;
+  videoRenderNodePath?: string;
   getVoiceStudioStatus?: () => CustomerVoiceStudioStatus | Promise<CustomerVoiceStudioStatus>;
   getF5TtsStatus?: () => CustomerF5TtsStatus | Promise<CustomerF5TtsStatus>;
   synthesizeVoiceStudio?: (input: { text: string; voice: string }) => Promise<unknown>;
+  openLocalFile?: (absolutePath: string) => Promise<string>;
   verifyCommercialVoiceLicense?: (evidence: {
     provider: string;
     modelId?: string;
@@ -345,6 +374,62 @@ function numberValue(value: unknown, fallback: number, min: number, max: number)
   return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
 }
 
+function videoRenderSpec(workflow: Record<string, unknown>): VideoRenderSpec {
+  const project = objectValue(workflow.project);
+  const width = Number(project.width);
+  const height = Number(project.height);
+  const fps = Number(project.fps);
+  const durationSeconds = Number(project.target_duration_s ?? workflow.duration_s);
+  if (
+    !Number.isInteger(width)
+    || width < 320
+    || width > 7_680
+    || !Number.isInteger(height)
+    || height < 320
+    || height > 7_680
+    || ![24, 30, 60].includes(fps)
+    || !Number.isFinite(durationSeconds)
+    || durationSeconds <= 0
+    || durationSeconds > 3_600
+  ) {
+    throw new Error('Project chưa có contract render local hợp lệ.');
+  }
+  return { width, height, fps, durationSeconds };
+}
+
+function parseVideoPreviewProbe(raw: string): VideoPreviewProbe {
+  try {
+    const report = objectValue(JSON.parse(raw));
+    const streams = Array.isArray(report.streams)
+      ? report.streams.map((stream) => objectValue(stream))
+      : [];
+    const format = objectValue(report.format);
+    const video = streams.find((stream) => stream.codec_type === 'video');
+    const audio = streams.find((stream) => stream.codec_type === 'audio');
+    if (!video || !audio || video.codec_name !== 'h264' || audio.codec_name !== 'aac') {
+      throw new Error('missing streams');
+    }
+    const frameRate = textValue(video.r_frame_rate, 40).split('/').map(Number);
+    const fps = frameRate.length === 2 && frameRate[1]
+      ? frameRate[0] / frameRate[1]
+      : Number(video.r_frame_rate);
+    const result: VideoPreviewProbe = {
+      width: Number(video.width),
+      height: Number(video.height),
+      fps,
+      durationSeconds: Number(format.duration ?? video.duration),
+      audioSampleRate: Number(audio.sample_rate),
+      audioChannels: Number(audio.channels),
+    };
+    if (Object.values(result).some((value) => !Number.isFinite(value) || value <= 0)) {
+      throw new Error('invalid values');
+    }
+    return result;
+  } catch {
+    throw new Error('FFprobe không xác minh được local video preview.');
+  }
+}
+
 function previewSnapshotTimestamps(workflow: Record<string, unknown>): number[] {
   const project = objectValue(workflow.project);
   const targetDuration = numberValue(
@@ -395,10 +480,16 @@ function previewSnapshotTimestamps(workflow: Record<string, unknown>): number[] 
     .filter((timestamp, index, values) => timestamp >= 0 && values.indexOf(timestamp) === index);
 }
 
-function previewRunId(checkedAt: string): string {
-  const compactTimestamp = checkedAt
+function previewRunTimestamp(checkedAt: string): string | undefined {
+  const compactTimestamp = textValue(checkedAt, 40)
     .replace(/[-:]/g, '')
     .replace(/\.\d{3}Z$/, 'Z');
+  return /^\d{8}T\d{6}Z$/.test(compactTimestamp) ? compactTimestamp : undefined;
+}
+
+function previewRunId(checkedAt: string): string {
+  const compactTimestamp = previewRunTimestamp(checkedAt);
+  if (!compactTimestamp) throw new Error('Media preview timestamp không hợp lệ.');
   const entropy = randomUUID().replace(/-/g, '').slice(0, 16);
   return compactTimestamp + '-' + entropy;
 }
@@ -766,6 +857,22 @@ export interface CustomerVideoStudioRuntime {
     runtimeProjectId: string,
     expectedDigest: string,
   ): Promise<CustomerMediaVoicePreviewResult>;
+  createVideoPreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+    voiceRunId: string | undefined,
+    voiceGeneratedAt: string,
+    voiceArtifacts: ReadonlyArray<Pick<CustomerMediaArtifactDraft, 'name' | 'sha256'>>,
+  ): Promise<CustomerMediaVideoPreviewResult>;
+  openVideoPreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+    videoRunId: string | undefined,
+    videoGeneratedAt: string,
+    artifact: Pick<CustomerMediaArtifactDraft, 'name' | 'sha256' | 'sizeBytes'>,
+  ): Promise<void>;
 }
 export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
   private readonly rootPath: string;
@@ -776,6 +883,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
   private readonly hyperframesAttestation: CustomerHyperframesAttestation;
   private readonly acceptedHyperframesPackageSha256s: ReadonlySet<string>;
   private readonly previewTimeoutMs: number;
+  private readonly videoPreviewTimeoutMs: number;
   private readonly previewMaxOutputBytes: number;
   private runtimeCache: { expiresAt: number; value: RuntimeInspection } | null = null;
   private readonly activePreviews = new Set<string>();
@@ -818,6 +926,12 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       ? [this.hyperframesAttestation.packageSha256]
       : [this.hyperframesAttestation.packageSha256, PACKAGED_HYPERFRAMES_PACKAGE_SHA256]);
     this.previewTimeoutMs = numberValue(options.previewTimeoutMs, PREVIEW_TIMEOUT_MS, 100, PREVIEW_TIMEOUT_MS);
+    this.videoPreviewTimeoutMs = numberValue(
+      options.videoPreviewTimeoutMs,
+      VIDEO_PREVIEW_TIMEOUT_MS,
+      1_000,
+      15 * 60_000,
+    );
     this.previewMaxOutputBytes = numberValue(
       options.previewMaxOutputBytes,
       MAX_COMMAND_OUTPUT,
@@ -1099,10 +1213,11 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     let previewRun: PreviewRunPaths | undefined;
     try {
       const generatedAt = new Date().toISOString();
+      const runId = previewRunId(generatedAt);
       previewRun = await this.createPreviewRun(
         workspaceId,
         runtimeProjectId,
-        previewRunId(generatedAt),
+        runId,
       );
       const voiceRoot = await this.ensureTrustedDirectoryFromRoot(
         previewRun.path,
@@ -1159,6 +1274,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       return {
         receipt: {
           generatedAt,
+          runId,
           provider: 'voice-studio',
           voiceId: VOICE_PREVIEW_VOICE_ID,
           clipCount: artifacts.length,
@@ -1175,6 +1291,383 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     } finally {
       this.activePreviews.delete(operationKey);
     }
+  }
+
+  async createVideoPreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+    voiceRunId: string | undefined,
+    voiceGeneratedAt: string,
+    voiceArtifacts: ReadonlyArray<Pick<CustomerMediaArtifactDraft, 'name' | 'sha256'>>,
+  ): Promise<CustomerMediaVideoPreviewResult> {
+    this.assertWorkspaceId(workspaceId);
+    if (!RUNTIME_PROJECT_ID.test(runtimeProjectId)) throw new Error('Media project ID không hợp lệ.');
+    const operationKey = workspaceId + ':' + runtimeProjectId;
+    if (this.activePreviews.has(operationKey)) throw new Error('Project này đang được xử lý.');
+
+    const realProjectRoot = await this.trustedProjectRoot(workspaceId, runtimeProjectId);
+    const currentDigest = await this.projectDigest(realProjectRoot);
+    if (!/^[a-f0-9]{64}$/.test(expectedDigest) || currentDigest !== expectedDigest) {
+      throw new Error('Project đã thay đổi sau approval; cần import và duyệt lại.');
+    }
+    const workflow = await readJson(path.join(realProjectRoot, 'video-workflow.json'));
+    const renderSpec = videoRenderSpec(workflow.data);
+    const voiceInputs = await this.resolveVoicePreviewInputs(
+      workspaceId,
+      runtimeProjectId,
+      voiceRunId,
+      voiceGeneratedAt,
+      voiceArtifacts,
+    );
+    const runtime = await this.inspectRuntime();
+    if (
+      !runtime.videoRenderRuntime?.browserPath
+      || !runtime.ffmpegPath
+      || !runtime.ffprobePath
+    ) {
+      throw new Error('Local video preview cần HyperFrames browser, FFmpeg và FFprobe đã xác minh.');
+    }
+
+    this.activePreviews.add(operationKey);
+    let runtimeProfile: HyperframesRuntimeProfile | undefined;
+    let previewRun: PreviewRunPaths | undefined;
+    try {
+      const generatedAt = new Date().toISOString();
+      const runId = previewRunId(generatedAt);
+      previewRun = await this.createPreviewRun(
+        workspaceId,
+        runtimeProjectId,
+        runId,
+      );
+      const videoRoot = await this.ensureTrustedDirectoryFromRoot(
+        previewRun.path,
+        ['video-preview'],
+        'Video preview output',
+      );
+      runtimeProfile = await this.createRuntimeProfile();
+      const env = this.commandEnvironment(
+        runtime.videoRenderRuntime,
+        runtimeProfile,
+        runtime.ffmpegDirectory,
+      );
+      const visualPath = path.join(runtimeProfile.snapshotRoot, 'visual-preview.mp4');
+      const stagedOutputPath = path.join(runtimeProfile.snapshotRoot, VIDEO_PREVIEW_FILE_NAME);
+      const outputPath = path.join(videoRoot.path, VIDEO_PREVIEW_FILE_NAME);
+      try {
+        await this.runHyperframesRender(
+          runtime.videoRenderRuntime,
+          realProjectRoot,
+          visualPath,
+          runtimeProfile.cwd,
+          env,
+        );
+        await this.runFfmpegMux(
+          runtime.ffmpegPath,
+          visualPath,
+          voiceInputs.paths,
+          stagedOutputPath,
+          renderSpec.durationSeconds,
+          runtimeProfile.cwd,
+          env,
+        );
+        await fs.rm(visualPath, { force: true });
+      } catch (error) {
+        throw publicCommandError(error, 'Local video preview');
+      }
+
+      const probe = await this.probeVideoPreview(
+        runtime.ffprobePath,
+        stagedOutputPath,
+        runtimeProfile.cwd,
+        env,
+      );
+      if (
+        probe.width !== renderSpec.width
+        || probe.height !== renderSpec.height
+        || Math.abs(probe.fps - renderSpec.fps) > 0.01
+        || Math.abs(probe.durationSeconds - renderSpec.durationSeconds)
+          > VIDEO_PREVIEW_DURATION_TOLERANCE_SECONDS
+        || probe.audioSampleRate !== 48_000
+        || probe.audioChannels !== 1
+      ) {
+        throw new Error('Video preview không khớp contract hình, frame rate, thời lượng hoặc audio.');
+      }
+
+      const outputStat = await fs.lstat(stagedOutputPath);
+      if (
+        outputStat.isSymbolicLink()
+        || !outputStat.isFile()
+        || outputStat.size <= 0
+        || outputStat.size > MAX_PREVIEW_OUTPUT_BYTES
+      ) {
+        throw new Error('Video preview output không hợp lệ hoặc vượt giới hạn dung lượng.');
+      }
+      const outputBytes = await fs.readFile(stagedOutputPath);
+      if (
+        outputBytes.byteLength < 12
+        || outputBytes.toString('ascii', 4, 8) !== 'ftyp'
+      ) {
+        throw new Error('Video preview không phải MP4 hợp lệ.');
+      }
+      await fs.copyFile(stagedOutputPath, outputPath);
+      const retainedStat = await fs.lstat(outputPath);
+      if (
+        retainedStat.isSymbolicLink()
+        || !retainedStat.isFile()
+        || retainedStat.size !== outputBytes.byteLength
+      ) {
+        throw new Error('Không giữ được local video preview trong tenant output đã xác minh.');
+      }
+      const retainedBytes = await fs.readFile(outputPath);
+      if (!retainedBytes.equals(outputBytes)) {
+        throw new Error('Local video preview đã thay đổi trong lúc lưu tenant output.');
+      }
+      const artifactName = 'video-preview/' + VIDEO_PREVIEW_FILE_NAME;
+      const artifact: CustomerMediaArtifactDraft = {
+        kind: 'video_preview',
+        name: artifactName,
+        sha256: sha256(retainedBytes),
+        sizeBytes: retainedBytes.byteLength,
+        createdAt: generatedAt,
+      };
+      return {
+        receipt: {
+          generatedAt,
+          runId,
+          provider: 'hyperframes+voice-studio',
+          voiceId: VOICE_PREVIEW_VOICE_ID,
+          clipCount: voiceInputs.paths.length,
+          fileName: artifactName,
+          width: probe.width,
+          height: probe.height,
+          fps: probe.fps,
+          durationSeconds: probe.durationSeconds,
+          audioSampleRate: probe.audioSampleRate,
+          audioChannels: probe.audioChannels,
+          totalBytes: retainedBytes.byteLength,
+          commercialUseAllowed: false,
+        },
+        artifacts: [artifact],
+      };
+    } catch (error) {
+      if (previewRun) {
+        await this.removeTrustedDirectory(previewRun.trustedBase, previewRun.path);
+      }
+      throw error;
+    } finally {
+      if (runtimeProfile) {
+        await this.removeTrustedDirectory(runtimeProfile.trustedBase, runtimeProfile.path);
+      }
+      this.activePreviews.delete(operationKey);
+    }
+  }
+
+  async openVideoPreview(
+    workspaceId: string,
+    runtimeProjectId: string,
+    expectedDigest: string,
+    videoRunId: string | undefined,
+    videoGeneratedAt: string,
+    artifact: Pick<CustomerMediaArtifactDraft, 'name' | 'sha256' | 'sizeBytes'>,
+  ): Promise<void> {
+    this.assertWorkspaceId(workspaceId);
+    if (!RUNTIME_PROJECT_ID.test(runtimeProjectId)) throw new Error('Media project ID không hợp lệ.');
+    if (!this.options.openLocalFile) {
+      throw new Error('Ứng dụng chưa hỗ trợ mở local video preview.');
+    }
+    const realProjectRoot = await this.trustedProjectRoot(workspaceId, runtimeProjectId);
+    const currentDigest = await this.projectDigest(realProjectRoot);
+    if (!/^[a-f0-9]{64}$/.test(expectedDigest) || currentDigest !== expectedDigest) {
+      throw new Error('Project đã thay đổi sau approval; cần import và duyệt lại.');
+    }
+    const outputPath = await this.resolveVideoPreviewOutput(
+      workspaceId,
+      runtimeProjectId,
+      videoRunId,
+      videoGeneratedAt,
+      artifact,
+    );
+    const openError = await this.options.openLocalFile(outputPath);
+    if (openError) {
+      throw new Error('Không thể mở local video preview bằng ứng dụng mặc định.');
+    }
+  }
+
+  private async previewRunNames(
+    runsRoot: string,
+    preferredRunId: string | undefined,
+    legacyGeneratedAt: string,
+  ): Promise<string[]> {
+    if (preferredRunId !== undefined) {
+      const runId = textValue(preferredRunId, 80);
+      if (!PREVIEW_RUN_ID.test(runId)) {
+        throw new Error('Media preview run ID không hợp lệ.');
+      }
+      return [runId];
+    }
+    const entries = (await fs.readdir(runsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+      .sort((left, right) => right.name.localeCompare(left.name));
+    const legacyTimestamp = previewRunTimestamp(legacyGeneratedAt);
+    if (legacyTimestamp) {
+      return entries
+        .filter((entry) => (
+          PREVIEW_RUN_ID.test(entry.name) && entry.name.startsWith(legacyTimestamp + '-')
+        ))
+        .map((entry) => entry.name);
+    }
+    return entries.slice(0, LEGACY_PREVIEW_MAX_RUNS_TO_SCAN).map((entry) => entry.name);
+  }
+
+  private async resolveVideoPreviewOutput(
+    workspaceId: string,
+    runtimeProjectId: string,
+    videoRunId: string | undefined,
+    videoGeneratedAt: string,
+    artifact: Pick<CustomerMediaArtifactDraft, 'name' | 'sha256' | 'sizeBytes'>,
+  ): Promise<string> {
+    const expectedName = textValue(artifact.name, 120);
+    const expectedSha256 = textValue(artifact.sha256, 64).toLowerCase();
+    const expectedSize = Number(artifact.sizeBytes);
+    if (
+      expectedName !== 'video-preview/' + VIDEO_PREVIEW_FILE_NAME
+      || !/^[a-f0-9]{64}$/.test(expectedSha256)
+      || !Number.isSafeInteger(expectedSize)
+      || expectedSize <= 0
+      || expectedSize > MAX_PREVIEW_OUTPUT_BYTES
+    ) {
+      throw new Error('Local video artifact không hợp lệ.');
+    }
+
+    const runsRoot = await this.ensureTrustedDirectory(
+      [workspaceId, 'preview-runs', runtimeProjectId],
+      'Media preview output',
+    );
+    const runNames = await this.previewRunNames(runsRoot.path, videoRunId, videoGeneratedAt);
+
+    for (const runName of runNames) {
+      const runCandidate = path.join(runsRoot.path, runName);
+      try {
+        const realRun = await fs.realpath(runCandidate);
+        if (!isInside(runsRoot.path, realRun)) continue;
+        const videoRootCandidate = path.join(realRun, 'video-preview');
+        const videoRootStat = await fs.lstat(videoRootCandidate);
+        if (videoRootStat.isSymbolicLink() || !videoRootStat.isDirectory()) continue;
+        const realVideoRoot = await fs.realpath(videoRootCandidate);
+        if (!isInside(realRun, realVideoRoot)) continue;
+        const outputCandidate = path.join(realVideoRoot, VIDEO_PREVIEW_FILE_NAME);
+        const outputStat = await fs.lstat(outputCandidate);
+        if (
+          outputStat.isSymbolicLink()
+          || !outputStat.isFile()
+          || outputStat.size !== expectedSize
+          || outputStat.size > MAX_PREVIEW_OUTPUT_BYTES
+        ) {
+          continue;
+        }
+        const realOutput = await fs.realpath(outputCandidate);
+        if (!isInside(realVideoRoot, realOutput)) continue;
+        const outputBytes = await fs.readFile(realOutput);
+        if (
+          outputBytes.byteLength < 12
+          || outputBytes.toString('ascii', 4, 8) !== 'ftyp'
+          || sha256(outputBytes) !== expectedSha256
+        ) {
+          continue;
+        }
+        return realOutput;
+      } catch {
+        continue;
+      }
+    }
+    throw new Error('Không tìm thấy local video preview khớp artifact đã xác minh.');
+  }
+
+  private async resolveVoicePreviewInputs(
+    workspaceId: string,
+    runtimeProjectId: string,
+    voiceRunId: string | undefined,
+    voiceGeneratedAt: string,
+    voiceArtifacts: ReadonlyArray<Pick<CustomerMediaArtifactDraft, 'name' | 'sha256'>>,
+  ): Promise<{ paths: string[] }> {
+    if (
+      voiceArtifacts.length < 1
+      || voiceArtifacts.length > VOICE_PREVIEW_MAX_SCENES
+    ) {
+      throw new Error('Local video preview cần bộ voice artifact hợp lệ.');
+    }
+    const expected = voiceArtifacts
+      .map((artifact) => ({
+        name: textValue(artifact.name, 120),
+        sha256: textValue(artifact.sha256, 64).toLowerCase(),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    expected.forEach((artifact, index) => {
+      const expectedName = `voice-preview/voice-${String(index + 1).padStart(2, '0')}.wav`;
+      if (artifact.name !== expectedName || !/^[a-f0-9]{64}$/.test(artifact.sha256)) {
+        throw new Error('Voice artifact không khớp receipt đã xác minh.');
+      }
+    });
+
+    const runsRoot = await this.ensureTrustedDirectory(
+      [workspaceId, 'preview-runs', runtimeProjectId],
+      'Media preview output',
+    );
+    const runNames = await this.previewRunNames(runsRoot.path, voiceRunId, voiceGeneratedAt);
+
+    for (const runName of runNames) {
+      const runCandidate = path.join(runsRoot.path, runName);
+      let realRun: string;
+      try {
+        realRun = await fs.realpath(runCandidate);
+      } catch {
+        continue;
+      }
+      if (!isInside(runsRoot.path, realRun)) continue;
+      const voiceCandidate = path.join(realRun, 'voice-preview');
+      try {
+        const voiceStat = await fs.lstat(voiceCandidate);
+        if (voiceStat.isSymbolicLink() || !voiceStat.isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      const realVoiceRoot = await fs.realpath(voiceCandidate);
+      if (!isInside(realRun, realVoiceRoot)) continue;
+      const entries = (await fs.readdir(realVoiceRoot, { withFileTypes: true }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const expectedNames = expected.map((artifact) => path.basename(artifact.name));
+      if (
+        entries.length !== expected.length
+        || entries.some((entry, index) => (
+          !entry.isFile()
+          || entry.isSymbolicLink()
+          || entry.name !== expectedNames[index]
+        ))
+      ) {
+        continue;
+      }
+
+      const paths: string[] = [];
+      let matches = true;
+      for (let index = 0; index < expected.length; index += 1) {
+        const candidate = path.join(realVoiceRoot, expectedNames[index]);
+        const realCandidate = await fs.realpath(candidate);
+        if (!isInside(realVoiceRoot, realCandidate)) {
+          matches = false;
+          break;
+        }
+        const data = await fs.readFile(realCandidate);
+        if (sha256(data) !== expected[index].sha256) {
+          matches = false;
+          break;
+        }
+        decodeVoiceStudioWav({ ok: true, format: 'wav', audioB64: data.toString('base64') });
+        paths.push(realCandidate);
+      }
+      if (matches && paths.length === expected.length) return { paths };
+    }
+    throw new Error('Không tìm thấy bộ voice preview khớp artifact đã xác minh.');
   }
 
   private projectRoot(workspaceId: string, runtimeProjectId: string): string {
@@ -1497,7 +1990,8 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         return undefined;
       }
       const packageBytes = await fs.readFile(packagePath);
-      if (!this.acceptedHyperframesPackageSha256s.has(sha256(packageBytes))) return undefined;
+      const packageSha256 = sha256(packageBytes);
+      if (!this.acceptedHyperframesPackageSha256s.has(packageSha256)) return undefined;
       const packageJson = objectValue(JSON.parse(packageBytes.toString('utf8')));
       const packageName = textValue(packageJson.name, 80);
       const packageVersion = normalizedVersion(packageJson.version);
@@ -1514,8 +2008,34 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         return undefined;
       }
 
-      const candidateCli = path.resolve(hyperframesRoot, configuredBin);
-      const expectedCli = path.resolve(hyperframesRoot, 'dist', 'cli.js');
+      const executableHyperframesRoot = path.extname(this.appRoot).toLowerCase() === '.asar'
+        ? path.join(`${this.appRoot}.unpacked`, 'node_modules', 'hyperframes')
+        : hyperframesRoot;
+      if (executableHyperframesRoot !== hyperframesRoot) {
+        const executableRootStat = await fs.lstat(executableHyperframesRoot);
+        const executablePackagePath = path.join(executableHyperframesRoot, 'package.json');
+        const executablePackageStat = await fs.lstat(executablePackagePath);
+        if (
+          executableRootStat.isSymbolicLink()
+          || !executableRootStat.isDirectory()
+          || executablePackageStat.isSymbolicLink()
+          || !executablePackageStat.isFile()
+          || executablePackageStat.size > 1024 * 1024
+        ) {
+          return undefined;
+        }
+        const realExecutableRoot = await fs.realpath(executableHyperframesRoot);
+        const realExecutablePackage = await fs.realpath(executablePackagePath);
+        if (
+          !isInside(realExecutableRoot, realExecutablePackage)
+          || sha256(await fs.readFile(realExecutablePackage)) !== packageSha256
+        ) {
+          return undefined;
+        }
+      }
+
+      const candidateCli = path.resolve(executableHyperframesRoot, configuredBin);
+      const expectedCli = path.resolve(executableHyperframesRoot, 'dist', 'cli.js');
       if (candidateCli !== expectedCli) return undefined;
       const cliStat = await fs.lstat(candidateCli);
       if (
@@ -1525,7 +2045,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       ) {
         return undefined;
       }
-      const realHyperframesRoot = await fs.realpath(hyperframesRoot);
+      const realHyperframesRoot = await fs.realpath(executableHyperframesRoot);
       const realCli = await fs.realpath(candidateCli);
       if (!isInside(realHyperframesRoot, realCli)) return undefined;
       const cliBytes = await fs.readFile(realCli);
@@ -1617,6 +2137,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     const configuredNode = textValue(process.env.STARIZZI_HYPERFRAMES_NODE, 2_000);
     let nodeVersion: string | undefined;
     let hyperframesRuntime: HyperframesCommandRuntime | undefined;
+    let videoRenderRuntime: HyperframesCommandRuntime | undefined;
     if (hyperframesPackage) {
       if (configuredNode) {
         const candidate = await this.inspectConfiguredNodeRuntime(
@@ -1625,6 +2146,7 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
           configuredNode,
         );
         hyperframesRuntime = candidate.runtime;
+        videoRenderRuntime = candidate.runtime;
         nodeVersion = candidate.nodeVersion;
       }
       if (!hyperframesRuntime) {
@@ -1639,6 +2161,29 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         if (discoveredBrowserPath) {
           hyperframesRuntime = { ...hyperframesRuntime, browserPath: discoveredBrowserPath };
         }
+      }
+      if (!videoRenderRuntime && this.options.videoRenderNodePath) {
+        const discoveredNode = textValue(this.options.videoRenderNodePath, 2_000);
+        if (discoveredNode) {
+          const candidate = await this.inspectConfiguredNodeRuntime(
+            hyperframesPackage,
+            hyperframesRuntime?.browserPath || configuredBrowserPath,
+            discoveredNode,
+          );
+          if (candidate.runtime) {
+            videoRenderRuntime = {
+              ...candidate.runtime,
+              browserPath: candidate.runtime.browserPath || hyperframesRuntime?.browserPath,
+              commercialEligible: false,
+            };
+          }
+        }
+      }
+      if (!videoRenderRuntime && hyperframesRuntime?.source === 'system_node') {
+        videoRenderRuntime = hyperframesRuntime;
+      }
+      if (videoRenderRuntime && !videoRenderRuntime.browserPath && hyperframesRuntime?.browserPath) {
+        videoRenderRuntime = { ...videoRenderRuntime, browserPath: hyperframesRuntime.browserPath };
       }
     }
     const nodeReady = hyperframesRuntime?.source === 'system_node';
@@ -1783,7 +2328,9 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
         ? {
           status: 'ready',
           version: hyperframesRuntime.nodeVersion,
-          detail: 'Runtime preview do Izzi AI quản lý chỉ được attested cho check/snapshot; render thương mại vẫn khóa.',
+          detail: videoRenderRuntime?.source === 'system_node'
+            ? `Runtime preview do Izzi AI quản lý dùng cho check/snapshot; Node ${videoRenderRuntime.nodeVersion} đã xác minh cho local video; render thương mại vẫn khóa.`
+            : 'Runtime preview do Izzi AI quản lý dùng cho check/snapshot; cần Node 22 trở lên đã xác minh để tạo local video; render thương mại vẫn khóa.',
         }
         : nodeReady
           ? { status: 'ready', version: nodeVersion, detail: 'Node đáp ứng yêu cầu HyperFrames.' }
@@ -1810,6 +2357,9 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
           ? { status: 'needs_setup', version: publicRuntimeVersion(voiceStudio.version), detail: 'Voice Studio đã cài nhưng chưa chạy.' }
           : { status: 'needs_setup', detail: 'Voice Studio chưa được cài.' },
       previewAvailable: Boolean(hyperframesRuntime?.browserPath),
+      videoPreviewAvailable: Boolean(
+        videoRenderRuntime?.browserPath && ffmpegPath && ffprobePath,
+      ),
       commercialRenderAvailable: Boolean(
         hyperframesRuntime?.browserPath
           && hyperframesRuntime.commercialEligible
@@ -1821,6 +2371,9 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
     const value: RuntimeInspection = {
       toolchain,
       hyperframesRuntime,
+      videoRenderRuntime,
+      ffmpegPath,
+      ffprobePath,
       ffmpegDirectory: ffmpegPath ? path.dirname(ffmpegPath) : undefined,
     };
     this.runtimeCache = { expiresAt: Date.now() + 15_000, value };
@@ -1978,6 +2531,115 @@ export class CustomerVideoStudioService implements CustomerVideoStudioRuntime {
       }
       throw error;
     }
+  }
+
+  private runHyperframesRender(
+    runtime: HyperframesCommandRuntime,
+    projectRoot: string,
+    outputPath: string,
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<CommandResult> {
+    return runCommand(runtime.executablePath, [
+      runtime.cliPath,
+      'render',
+      projectRoot,
+      '--quality',
+      'draft',
+      '--workers',
+      '4',
+      '--output',
+      outputPath,
+      '--quiet',
+    ], {
+      cwd,
+      env,
+      timeout: this.videoPreviewTimeoutMs,
+      maxOutputBytes: this.previewMaxOutputBytes,
+      killTree: true,
+      onSpawn: (pid) => this.activeCommandPids.add(pid),
+      onExit: (pid) => this.activeCommandPids.delete(pid),
+    });
+  }
+
+  private runFfmpegMux(
+    ffmpegPath: string,
+    videoPath: string,
+    voicePaths: string[],
+    outputPath: string,
+    durationSeconds: number,
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<CommandResult> {
+    const inputs = ['-i', videoPath];
+    for (const voicePath of voicePaths) inputs.push('-i', voicePath);
+    const labels = voicePaths.map((_, index) => `[${index + 1}:a]`).join('');
+    const filter = `${labels}concat=n=${voicePaths.length}:v=0:a=1,`
+      + `apad=whole_dur=${durationSeconds},atrim=duration=${durationSeconds},`
+      + 'asetpts=N/SR/TB[a]';
+    return runCommand(ffmpegPath, [
+      '-nostdin',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-n',
+      ...inputs,
+      '-filter_complex',
+      filter,
+      '-map',
+      '0:v:0',
+      '-map',
+      '[a]',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-ar',
+      '48000',
+      '-ac',
+      '1',
+      '-t',
+      String(durationSeconds),
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ], {
+      cwd,
+      env,
+      timeout: this.videoPreviewTimeoutMs,
+      maxOutputBytes: this.previewMaxOutputBytes,
+      killTree: true,
+      onSpawn: (pid) => this.activeCommandPids.add(pid),
+      onExit: (pid) => this.activeCommandPids.delete(pid),
+    });
+  }
+
+  private async probeVideoPreview(
+    ffprobePath: string,
+    videoPath: string,
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+  ): Promise<VideoPreviewProbe> {
+    const result = await runCommand(ffprobePath, [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration:stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels,duration',
+      '-of',
+      'json',
+      videoPath,
+    ], {
+      cwd,
+      env,
+      timeout: 30_000,
+      maxOutputBytes: 256 * 1024,
+      killTree: true,
+      onSpawn: (pid) => this.activeCommandPids.add(pid),
+      onExit: (pid) => this.activeCommandPids.delete(pid),
+    });
+    return parseVideoPreviewProbe(result.stdout);
   }
 
   private async runHyperframesSnapshot(

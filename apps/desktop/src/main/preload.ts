@@ -69,6 +69,7 @@ import type {
   CustomerMarketingResourceReviewInput,
   CustomerMarketingResourceUpdateInput,
   CustomerMediaPreviewInput,
+  CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
   CustomerMutationResult,
@@ -635,6 +636,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:runMediaPreview', input),
     createMediaVoicePreview: (input: CustomerMediaVoicePreviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:createMediaVoicePreview', input),
+    createMediaVideoPreview: (input: CustomerMediaVideoPreviewInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:createMediaVideoPreview', input),
+    openMediaVideoPreview: (input: CustomerMediaVideoPreviewInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:openMediaVideoPreview', input),
     reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:reviewApproval', input),
   },

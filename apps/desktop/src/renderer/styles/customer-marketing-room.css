@@ -979,6 +979,11 @@
   font-size: 10px;
 }
 
+.cmr-permission-note:focus-visible {
+  outline: 2px solid var(--cmr-cyan);
+  outline-offset: 3px;
+}
+
 .cmr-empty-panel {
   min-height: 210px;
 }
@@ -3096,7 +3101,7 @@
 
 .cmr-media-gate-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border-block: 1px solid var(--cmr-border);
 }
 

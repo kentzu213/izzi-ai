@@ -69,7 +69,8 @@ export type CustomerMediaArtifactKind =
   | 'check_report'
   | 'check_receipt'
   | 'snapshot'
-  | 'voice_preview';
+  | 'voice_preview'
+  | 'video_preview';
 
 export type CustomerMediaRuntimeState = 'ready' | 'blocked' | 'needs_setup';
 
@@ -264,6 +265,7 @@ export interface CustomerMediaToolchain {
   f5Tts: CustomerMediaRuntimeStatus;
   voiceStudio: CustomerMediaRuntimeStatus;
   previewAvailable: boolean;
+  videoPreviewAvailable: boolean;
   commercialRenderAvailable: boolean;
 }
 
@@ -293,9 +295,27 @@ export interface CustomerMediaPreviewReceipt {
 
 export interface CustomerMediaVoicePreviewReceipt {
   generatedAt: string;
+  runId?: string;
   provider: 'voice-studio';
   voiceId: string;
   clipCount: number;
+  totalBytes: number;
+  commercialUseAllowed: boolean;
+}
+
+export interface CustomerMediaVideoPreviewReceipt {
+  generatedAt: string;
+  runId?: string;
+  provider: 'hyperframes+voice-studio';
+  voiceId: string;
+  clipCount: number;
+  fileName: string;
+  width: number;
+  height: number;
+  fps: number;
+  durationSeconds: number;
+  audioSampleRate: number;
+  audioChannels: number;
   totalBytes: number;
   commercialUseAllowed: boolean;
 }
@@ -315,6 +335,7 @@ export interface CustomerMediaJob {
   gates: CustomerMediaGates;
   preview?: CustomerMediaPreviewReceipt;
   voicePreview?: CustomerMediaVoicePreviewReceipt;
+  videoPreview?: CustomerMediaVideoPreviewReceipt;
   error?: string;
   createdAt: string;
   updatedAt: string;
@@ -390,6 +411,10 @@ export interface CustomerMediaPreviewInput {
 }
 
 export interface CustomerMediaVoicePreviewInput {
+  jobId: string;
+}
+
+export interface CustomerMediaVideoPreviewInput {
   jobId: string;
 }
 

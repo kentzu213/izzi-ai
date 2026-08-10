@@ -78,6 +78,41 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(mainSource).not.toContain("extension.id === 'ext-voice-studio' || extension.name === 'voice-studio'");
   });
 
+  it('creates local video previews through the renderer-safe job-id-only bridge', () => {
+    expect(roomSource).toContain('api.createMediaVideoPreview({ jobId })');
+    expect(roomSource).toContain('api.openMediaVideoPreview({ jobId })');
+    expect(roomSource).toContain('Tạo local video preview');
+    expect(roomSource).toContain('Tạo lại local video');
+    expect(roomSource).toContain('Mở video');
+    expect(roomSource).toContain('job.videoPreview.width');
+    expect(roomSource).toContain('job.videoPreview.height');
+    expect(roomSource).toContain('job.videoPreview.fps');
+    expect(roomSource).toContain('job.videoPreview.durationSeconds');
+    expect(roomSource).toContain('job.videoPreview.voiceId');
+    expect(roomSource).toContain('job.videoPreview.audioSampleRate');
+    expect(roomSource).toContain('job.videoPreview.audioChannels');
+    expect(roomSource).toContain('job.videoPreview.fileName');
+    expect(roomSource).toContain('job.videoPreview.runId?.slice(-8)');
+    expect(roomSource).toContain('job.videoPreview.totalBytes');
+    expect(roomSource).toContain('job.videoPreview.commercialUseAllowed');
+    expect(roomSource).not.toMatch(/createMediaVideoPreview\(\{[^}]*\b(path|output|workspaceId|runtimeProjectId)\b/);
+    expect(roomSource).not.toMatch(/openMediaVideoPreview\(\{[^}]*\b(path|output|workspaceId|runtimeProjectId)\b/);
+    expect(roomSource).toContain('videoPreviewBlockedMessage');
+    expect(roomSource).toContain('aria-describedby={videoPreviewBlockedMessage ? videoPreviewDescriptionId : undefined}');
+    expect(roomSource).toContain('Biên nhận local video preview');
+    expect(roomSource).toContain('role="note" tabIndex={0}');
+    expect(roomSource).toContain("snapshot.media.jobs.some((job) => Boolean(job.videoPreview))");
+    expect(roomStylesSource).toMatch(/\.cmr-media-gate-strip \{[\s\S]*?grid-template-columns: repeat\(4,/);
+    expect(roomStylesSource).toContain('.cmr-permission-note:focus-visible');
+
+    expect(preloadSource).toContain('CustomerMediaVideoPreviewInput');
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:createMediaVideoPreview', input)");
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:openMediaVideoPreview', input)");
+    expect(rendererTypesSource).toContain('createMediaVideoPreview: (input: CustomerMediaVideoPreviewInput)');
+    expect(rendererTypesSource).toContain('openMediaVideoPreview: (input: CustomerMediaVideoPreviewInput)');
+    expect(mainSource).toContain('openLocalFile: (candidate) => shell.openPath(candidate)');
+  });
+
   it('surfaces imported SKILL.md knowledge as read-only metadata only', () => {
     expect(roomSource).toContain('SKILL.md · chỉ đọc');
     expect(roomSource).toContain("catalogStatus === 'synced'");

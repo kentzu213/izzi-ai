@@ -1783,6 +1783,8 @@ function VideoStudioView({
   onImport,
   onPreview,
   onVoicePreview,
+  onVideoPreview,
+  onOpenVideoPreview,
   onReview,
   busy,
 }: {
@@ -1791,6 +1793,8 @@ function VideoStudioView({
   onImport: () => Promise<void>;
   onPreview: (jobId: string) => Promise<void>;
   onVoicePreview: (jobId: string) => Promise<void>;
+  onVideoPreview: (jobId: string) => Promise<void>;
+  onOpenVideoPreview: (jobId: string) => Promise<void>;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
   busy: boolean;
 }) {
@@ -1847,7 +1851,8 @@ function VideoStudioView({
       </div>
 
       <div className="cmr-media-gate-strip">
-        <div><span>Local preview</span><strong>{toolchain.previewAvailable ? 'Sẵn sàng' : 'Đang chặn'}</strong></div>
+        <div><span>HyperFrames check</span><strong>{toolchain.previewAvailable ? 'Sẵn sàng' : 'Đang chặn'}</strong></div>
+        <div><span>Local video</span><strong>{toolchain.videoPreviewAvailable ? 'Sẵn sàng' : 'Đang chặn'}</strong></div>
         <div><span>Commercial render</span><strong>{toolchain.commercialRenderAvailable ? 'Đã xác minh' : 'Chưa được phép'}</strong></div>
         <div><span>External actions</span><strong>{snapshot.externalActionsAllowed ? 'Được phép' : 'Đang khóa'}</strong></div>
       </div>
@@ -1871,7 +1876,15 @@ function VideoStudioView({
               && job.gates.previewApproved
               && approval?.status === 'approved'
               && voiceStudioReady;
+            const canCreateVideoPreview = canImport
+              && job.gates.previewApproved
+              && approval?.status === 'approved'
+              && job.preview?.passed === true
+              && Boolean(job.voicePreview)
+              && toolchain.videoPreviewAvailable
+              && job.status !== 'checking';
             const voicePreviewDescriptionId = `cmr-voice-preview-description-${job.id}`;
+            const videoPreviewDescriptionId = `cmr-video-preview-description-${job.id}`;
             const voicePreviewBlockedMessage = !canImport
               ? importBlockedMessage
               : !job.gates.previewApproved
@@ -1879,6 +1892,17 @@ function VideoStudioView({
                 : !voiceStudioReady
                   ? 'Voice Studio chưa sẵn sàng. Hãy khởi động hoặc kiểm tra voice trước.'
                   : '';
+            const videoPreviewBlockedMessage = !canImport
+              ? importBlockedMessage
+              : !job.gates.previewApproved
+                ? 'Approval không còn khớp với project hiện tại. Hãy import và duyệt lại.'
+                : job.preview?.passed !== true
+                  ? 'HyperFrames check cần đạt trước khi ghép local video preview.'
+                  : !job.voicePreview
+                    ? 'Hãy tạo voice preview trước khi ghép local video preview.'
+                    : !toolchain.videoPreviewAvailable
+                      ? 'Cần Node 22+, HyperFrames browser, FFmpeg và FFprobe đã xác minh.'
+                      : '';
             return (
               <section className="cmr-panel cmr-media-job" key={job.id}>
                 <div className="cmr-media-job__header">
@@ -1911,6 +1935,25 @@ function VideoStudioView({
                     </div>
                   </div>
                 )}
+                {job.videoPreview && (
+                  <div className="cmr-media-receipt" aria-label="Biên nhận local video preview">
+                    <StatusIcon className="cmr-icon" />
+                    <div>
+                      <strong>HyperFrames + Voice Studio · {job.videoPreview.voiceId}</strong>
+                      <span>
+                        {job.videoPreview.width} x {job.videoPreview.height} · {job.videoPreview.fps} fps · {' '}
+                        {job.videoPreview.durationSeconds}s · {formatBytes(job.videoPreview.totalBytes)} · {' '}
+                        {job.videoPreview.commercialUseAllowed ? 'Thương mại đã xác minh' : 'Thương mại đang khóa'}
+                      </span>
+                      <span>
+                        AAC {job.videoPreview.audioSampleRate / 1000} kHz · {' '}
+                        {job.videoPreview.audioChannels === 1 ? 'mono' : `${job.videoPreview.audioChannels} kênh`} · {' '}
+                        {job.videoPreview.fileName} · run {job.videoPreview.runId?.slice(-8) || 'legacy'} · {' '}
+                        {formatDate(job.videoPreview.generatedAt, true)}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {job.error && <div className="cmr-alert cmr-alert--error" role="alert">{job.error}</div>}
                 {jobArtifacts.length > 0 && (
                   <div className="cmr-media-artifacts">
@@ -1937,10 +1980,36 @@ function VideoStudioView({
                       {job.voicePreview ? 'Tạo lại voice preview' : 'Tạo voice preview'}
                     </button>
                   )}
+                  {approval?.status === 'approved' && (
+                    <button
+                      type="button"
+                      className="cmr-button cmr-button--quiet"
+                      disabled={busy || !canCreateVideoPreview}
+                      aria-describedby={videoPreviewBlockedMessage ? videoPreviewDescriptionId : undefined}
+                      onClick={() => void onVideoPreview(job.id)}
+                    >
+                      {job.videoPreview ? 'Tạo lại local video' : 'Tạo local video preview'}
+                    </button>
+                  )}
+                  {job.videoPreview && (
+                    <button
+                      type="button"
+                      className="cmr-button cmr-button--quiet"
+                      disabled={busy}
+                      onClick={() => void onOpenVideoPreview(job.id)}
+                    >
+                      Mở video
+                    </button>
+                  )}
                 </div>
                 {approval?.status === 'approved' && voicePreviewBlockedMessage && (
-                  <span className="cmr-permission-note" id={voicePreviewDescriptionId}>
+                  <span className="cmr-permission-note" id={voicePreviewDescriptionId} role="note" tabIndex={0}>
                     {voicePreviewBlockedMessage}
+                  </span>
+                )}
+                {approval?.status === 'approved' && videoPreviewBlockedMessage && (
+                  <span className="cmr-permission-note" id={videoPreviewDescriptionId} role="note" tabIndex={0}>
+                    {videoPreviewBlockedMessage}
                   </span>
                 )}
               </section>
@@ -3014,7 +3083,8 @@ function CustomerRoom({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeCapability, setActiveCapability] =
     useState<CustomerCapabilityWorkbenchId | null>(null);
-  const videoStudioAvailable = customerPlanMeetsMinimum(snapshot.workspace.plan, 'pro');
+  const videoStudioAvailable = customerPlanMeetsMinimum(snapshot.workspace.plan, 'pro')
+    || snapshot.media.jobs.some((job) => Boolean(job.videoPreview));
   const activeView = view === 'video' && !videoStudioAvailable ? 'home' : view;
   const selectView = useCallback((target: ViewId) => {
     setActiveCapability(null);
@@ -3046,6 +3116,14 @@ function CustomerRoom({
 
   const previewVoice = async (jobId: string) => {
     await onMutation((api) => api.createMediaVoicePreview({ jobId }));
+  };
+
+  const previewVideo = async (jobId: string) => {
+    await onMutation((api) => api.createMediaVideoPreview({ jobId }));
+  };
+
+  const openVideo = async (jobId: string) => {
+    await onMutation((api) => api.openMediaVideoPreview({ jobId }));
   };
 
   const repairVoiceStudio = async () => {
@@ -3141,7 +3219,7 @@ function CustomerRoom({
           {activeView === 'director' && <DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
           {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
-          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onReview={review} busy={busy} />}
+          {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onVideoPreview={previewVideo} onOpenVideoPreview={openVideo} onReview={review} busy={busy} />}
           {activeView === 'team' && <TeamView capabilities={snapshot.capabilities} />}
           {activeView === 'apps' && (
             activeCapability ? (

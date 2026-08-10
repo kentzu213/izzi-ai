@@ -165,6 +165,47 @@ function getCustomerMarketingKnowledgeSkillsRoot(): string {
   });
 }
 
+function discoverTrustedVideoRenderNodePath(): string | undefined {
+  if (process.platform === 'win32') {
+    const roots = [process.env.ProgramW6432, process.env.ProgramFiles, 'C:\\Program Files'];
+    for (const root of roots) {
+      if (!root) continue;
+      const resolvedRoot = path.resolve(root);
+      if (!/^[A-Za-z]:\\Program Files$/i.test(resolvedRoot)) continue;
+      const candidate = path.join(resolvedRoot, 'nodejs', 'node.exe');
+      try {
+        const stat = fs.lstatSync(candidate);
+        const realCandidate = fs.realpathSync(candidate);
+        if (
+          stat.isFile()
+          && !stat.isSymbolicLink()
+          && realCandidate.toLowerCase() === path.resolve(candidate).toLowerCase()
+        ) {
+          return realCandidate;
+        }
+      } catch {
+        // Continue through the bounded system install candidates.
+      }
+    }
+    return undefined;
+  }
+
+  if (process.platform === 'darwin') {
+    for (const candidate of ['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']) {
+      try {
+        const realCandidate = fs.realpathSync(candidate);
+        const trusted = realCandidate === '/usr/bin/node'
+          || realCandidate.startsWith('/usr/local/Cellar/node/')
+          || realCandidate.startsWith('/opt/homebrew/Cellar/node/');
+        if (trusted && fs.statSync(realCandidate).isFile()) return realCandidate;
+      } catch {
+        // Continue through the bounded system install candidates.
+      }
+    }
+  }
+  return undefined;
+}
+
 /** Get the platform-appropriate app icon as nativeImage */
 function getAppIcon(): Electron.NativeImage | undefined {
   try {
@@ -441,8 +482,10 @@ function setupIPC() {
     rootPath: path.join(app.getPath('userData'), 'customer-marketing-media'),
     appRoot: app.getAppPath(),
     runtimeScratchParent: app.getPath('temp'),
+    videoRenderNodePath: discoverTrustedVideoRenderNodePath(),
     getF5TtsStatus: inspectConfiguredF5Tts,
     synthesizeVoiceStudio,
+    openLocalFile: (candidate) => shell.openPath(candidate),
     getVoiceStudioStatus: async () => {
       const voiceStudio = (extensionLoader?.getAllExtensions() || [])
         .find((extension) => (

@@ -663,6 +663,7 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
     f5Tts: { status: 'blocked', detail: 'Commercial license not verified.' },
     voiceStudio: { status: 'ready', version: '0.1.0', detail: 'Running.' },
     previewAvailable: true,
+    videoPreviewAvailable: true,
     commercialRenderAvailable: false,
   };
   return {
@@ -710,6 +711,7 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
     createVoicePreview: vi.fn(async () => ({
       receipt: {
         generatedAt: '2026-07-19T10:06:00.000Z',
+        runId: '20260719T100600Z-1111111111111111',
         provider: 'voice-studio' as const,
         voiceId: 'pham-tuyen',
         clipCount: 2,
@@ -733,6 +735,32 @@ function mediaRuntimeFixture(): CustomerVideoStudioRuntime {
         },
       ],
     })),
+    createVideoPreview: vi.fn(async () => ({
+      receipt: {
+        generatedAt: '2026-07-19T10:08:00.000Z',
+        runId: '20260719T100800Z-2222222222222222',
+        provider: 'hyperframes+voice-studio' as const,
+        voiceId: 'pham-tuyen',
+        clipCount: 2,
+        fileName: 'video-preview/video-preview.mp4',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        durationSeconds: 45,
+        audioSampleRate: 48_000,
+        audioChannels: 1,
+        totalBytes: 4_096,
+        commercialUseAllowed: false,
+      },
+      artifacts: [{
+        kind: 'video_preview' as const,
+        name: 'video-preview/video-preview.mp4',
+        sha256: '3'.repeat(64),
+        sizeBytes: 4_096,
+        createdAt: '2026-07-19T10:08:00.000Z',
+      }],
+    })),
+    openVideoPreview: vi.fn(async () => undefined),
   };
 }
 async function completeOnboarding(service: CustomerMarketingService, name = 'Acme') {
@@ -2960,6 +2988,208 @@ describe('Customer Marketing Video Studio', () => {
     expect(finalSnapshot.media.jobs[0].id).toBe(currentJobId);
     expect(finalSnapshot.media.artifacts.some((artifact) => artifact.name === 'voice-preview/stale.wav'))
       .toBe(false);
+  });
+
+  it('creates a local video preview only after approved check and voice evidence', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    const approvalId = imported.snapshot!.approvals[0].id;
+
+    const approvalBlocked = await context.service.createMediaVideoPreview({ jobId });
+    expect(approvalBlocked.error).toContain('approval');
+    await context.service.reviewApproval({ approvalId, decision: 'approved' });
+
+    const checkBlocked = await context.service.createMediaVideoPreview({ jobId });
+    expect(checkBlocked.error).toContain('HyperFrames check');
+    await context.service.runMediaPreview({ jobId });
+
+    const voiceBlocked = await context.service.createMediaVideoPreview({ jobId });
+    expect(voiceBlocked.error).toContain('voice preview');
+    await context.service.createMediaVoicePreview({ jobId });
+
+    const created = await context.service.createMediaVideoPreview({ jobId });
+
+    expect(created.ok).toBe(true);
+    expect(mediaRuntime.createVideoPreview).toHaveBeenCalledWith(
+      expect.stringMatching(/^customer-[a-f0-9]{12}$/),
+      '11111111-1111-4111-8111-111111111111',
+      'a'.repeat(64),
+      '20260719T100600Z-1111111111111111',
+      '2026-07-19T10:06:00.000Z',
+      [
+        { name: 'voice-preview/voice-01.wav', sha256: '1'.repeat(64) },
+        { name: 'voice-preview/voice-02.wav', sha256: '2'.repeat(64) },
+      ],
+    );
+    expect(created.snapshot!.media.jobs[0].videoPreview).toEqual(expect.objectContaining({
+      provider: 'hyperframes+voice-studio',
+      runId: '20260719T100800Z-2222222222222222',
+      voiceId: 'pham-tuyen',
+      clipCount: 2,
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      audioSampleRate: 48_000,
+      audioChannels: 1,
+      commercialUseAllowed: false,
+    }));
+    expect(created.snapshot!.media.artifacts).toContainEqual(expect.objectContaining({
+      kind: 'video_preview',
+      name: 'video-preview/video-preview.mp4',
+      sha256: '3'.repeat(64),
+    }));
+    expect(created.snapshot!.media.jobs[0].gates.renderApproved).toBe(false);
+    expect(created.snapshot!.media.jobs[0].gates.publishApproved).toBe(false);
+    expect(created.snapshot!.externalActionsAllowed).toBe(false);
+  });
+
+  it('invalidates an existing video preview when voice evidence is regenerated', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+    await context.service.runMediaPreview({ jobId });
+    await context.service.createMediaVoicePreview({ jobId });
+    const video = await context.service.createMediaVideoPreview({ jobId });
+    expect(video.snapshot!.media.jobs[0].videoPreview).toBeDefined();
+
+    const regenerated = await context.service.createMediaVoicePreview({ jobId });
+
+    expect(regenerated.snapshot!.media.jobs[0].videoPreview).toBeUndefined();
+    expect(regenerated.snapshot!.media.artifacts.some((artifact) => artifact.kind === 'video_preview'))
+      .toBe(false);
+  });
+
+  it('drops an in-flight video result when the approval gate changes', async () => {
+    const completedRuntime = mediaRuntimeFixture();
+    const completedVideo = await completedRuntime.createVideoPreview(
+      'customer-abcdef123456',
+      '11111111-1111-4111-8111-111111111111',
+      'a'.repeat(64),
+      '20260719T100600Z-1111111111111111',
+      '2026-07-19T10:06:00.000Z',
+      [],
+    );
+    const mediaRuntime = mediaRuntimeFixture();
+    let finishVideo!: (
+      value: Awaited<ReturnType<CustomerVideoStudioRuntime['createVideoPreview']>>,
+    ) => void;
+    vi.mocked(mediaRuntime.createVideoPreview).mockReturnValueOnce(new Promise((resolve) => {
+      finishVideo = resolve;
+    }));
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+    await context.service.runMediaPreview({ jobId });
+    await context.service.createMediaVoicePreview({ jobId });
+
+    const pending = context.service.createMediaVideoPreview({ jobId });
+    await vi.waitFor(() => expect(mediaRuntime.createVideoPreview).toHaveBeenCalledTimes(1));
+    const [key, raw] = Array.from(context.db.values.entries())[0];
+    const record = JSON.parse(raw);
+    record.approvals[0].status = 'rejected';
+    record.mediaJobs[0].gates.previewApproved = false;
+    context.db.values.set(key, JSON.stringify(record));
+    finishVideo(completedVideo);
+
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('approval');
+    expect(result.snapshot!.media.jobs[0].videoPreview).toBeUndefined();
+    expect(result.snapshot!.media.artifacts.some((artifact) => artifact.kind === 'video_preview'))
+      .toBe(false);
+  });
+
+  it('opens only the current tenant-owned video artifact without accepting a renderer path', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+
+    const approvalBlocked = await context.service.openMediaVideoPreview({ jobId });
+    expect(approvalBlocked.ok).toBe(false);
+    expect(approvalBlocked.error).toContain('Approval');
+    expect(mediaRuntime.openVideoPreview).not.toHaveBeenCalled();
+
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+    const missing = await context.service.openMediaVideoPreview({ jobId });
+    expect(missing.ok).toBe(false);
+    expect(missing.error).toContain('chưa có local video preview');
+    expect(mediaRuntime.openVideoPreview).not.toHaveBeenCalled();
+
+    await context.service.runMediaPreview({ jobId });
+    await context.service.createMediaVoicePreview({ jobId });
+    const video = await context.service.createMediaVideoPreview({ jobId });
+    const opened = await context.service.openMediaVideoPreview({ jobId });
+
+    expect(opened).toEqual(expect.objectContaining({
+      ok: true,
+      reply: 'Đã mở local video preview bằng ứng dụng mặc định.',
+    }));
+    expect(mediaRuntime.openVideoPreview).toHaveBeenCalledWith(
+      expect.stringMatching(/^customer-[a-f0-9]{12}$/),
+      '11111111-1111-4111-8111-111111111111',
+      'a'.repeat(64),
+      '20260719T100800Z-2222222222222222',
+      '2026-07-19T10:08:00.000Z',
+      {
+        name: 'video-preview/video-preview.mp4',
+        sha256: '3'.repeat(64),
+        sizeBytes: 4_096,
+      },
+    );
+    expect(video.snapshot!.externalActionsAllowed).toBe(false);
+
+    const [key, raw] = Array.from(context.db.values.entries())[0];
+    const record = JSON.parse(raw);
+    record.role = 'viewer';
+    record.plan = 'free';
+    context.db.values.set(key, JSON.stringify(record));
+    context.setIdentity({ id: 'tenant-a', name: 'Viewer A', plan: 'free', balance: 0 });
+    const viewerOpened = await context.service.openMediaVideoPreview({ jobId });
+    expect(viewerOpened.ok).toBe(true);
+    expect(mediaRuntime.openVideoPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it('revalidates the current digest before calling the video runtime', async () => {
+    const mediaRuntime = mediaRuntimeFixture();
+    const context = setup({ mediaRuntime });
+    await completeOnboarding(context.service);
+    const imported = await context.service.importMediaProject('C:\\trusted\\izziapi-video-project');
+    const jobId = imported.snapshot!.media.jobs[0].id;
+    await context.service.reviewApproval({
+      approvalId: imported.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+    await context.service.runMediaPreview({ jobId });
+    await context.service.createMediaVoicePreview({ jobId });
+
+    const [key, raw] = Array.from(context.db.values.entries())[0];
+    const record = JSON.parse(raw);
+    record.mediaJobs[0].evidenceDigest = 'c'.repeat(64);
+    context.db.values.set(key, JSON.stringify(record));
+
+    const result = await context.service.createMediaVideoPreview({ jobId });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('digest');
+    expect(mediaRuntime.createVideoPreview).not.toHaveBeenCalled();
   });
 });
 

@@ -97,6 +97,8 @@ function serviceMock() {
     importMediaProject: vi.fn(async () => ({ ok: true })),
     runMediaPreview: vi.fn(async () => ({ ok: true })),
     createMediaVoicePreview: vi.fn(async () => ({ ok: true })),
+    createMediaVideoPreview: vi.fn(async () => ({ ok: true })),
+    openMediaVideoPreview: vi.fn(async () => ({ ok: true })),
     repairVoiceStudio: vi.fn(async () => ({ ok: true, outcome: 'ready' })),
     listMarketingResources: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
     listMarketingCalendar: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
@@ -272,6 +274,56 @@ describe('customer marketing media IPC', () => {
       { jobId: 'media-job-1', voice: 'attacker' },
     )).rejects.toThrow('sender không hợp lệ');
     expect(service.createMediaVoicePreview).not.toHaveBeenCalled();
+  });
+
+  it('passes only an exact job id to the local video preview service', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:createMediaVideoPreview');
+
+    await expect(handler!(event(), { jobId: 'media-job-1' })).resolves.toEqual({ ok: true });
+    expect(service.createMediaVideoPreview).toHaveBeenCalledWith({ jobId: 'media-job-1' });
+  });
+
+  it.each([
+    'media-job-1',
+    { jobId: '' },
+    { jobId: 'x'.repeat(121) },
+    { jobId: 'media-job-1', path: 'C:\\private' },
+    { jobId: 'media-job-1', output: 'renderer-controlled.mp4' },
+    { jobId: 'media-job-1', workspaceId: 'renderer-controlled' },
+  ])('rejects expanded local video preview payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:createMediaVideoPreview');
+
+    await expect(handler!(event(), payload)).rejects.toThrow(/Payload (video preview|customer marketing) không hợp lệ/);
+    expect(service.createMediaVideoPreview).not.toHaveBeenCalled();
+  });
+
+  it('passes only an exact job id to the local video opener', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:openMediaVideoPreview');
+
+    await expect(handler!(event(), { jobId: 'media-job-1' })).resolves.toEqual({ ok: true });
+    expect(service.openMediaVideoPreview).toHaveBeenCalledWith({ jobId: 'media-job-1' });
+  });
+
+  it.each([
+    'media-job-1',
+    { jobId: '' },
+    { jobId: 'x'.repeat(121) },
+    { jobId: 'media-job-1', path: 'C:\\private\\video.mp4' },
+    { jobId: 'media-job-1', output: 'renderer-controlled.mp4' },
+    { jobId: 'media-job-1', workspaceId: 'renderer-controlled' },
+  ])('rejects expanded local video open payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:openMediaVideoPreview');
+
+    await expect(handler!(event(), payload)).rejects.toThrow(/Payload (video preview|customer marketing) không hợp lệ/);
+    expect(service.openMediaVideoPreview).not.toHaveBeenCalled();
   });
 });
 

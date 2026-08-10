@@ -17,6 +17,7 @@ import type {
   CustomerMarketingWorkflowReviewRequest,
   CustomerMarketingWorkflowSourceListResult,
   CustomerMediaPreviewInput,
+  CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
   CustomerMutationResult,
@@ -119,6 +120,21 @@ function mediaVoicePreviewPayload(value: unknown): CustomerMediaVoicePreviewInpu
     || payload.jobId.length > 120
   ) {
     throw new Error('Payload voice preview không hợp lệ.');
+  }
+  return { jobId: payload.jobId };
+}
+
+function mediaVideoPreviewPayload(value: unknown): CustomerMediaVideoPreviewInput {
+  const payload = objectPayload<Record<string, unknown>>(value);
+  const keys = Object.keys(payload);
+  if (
+    keys.length !== 1
+    || keys[0] !== 'jobId'
+    || typeof payload.jobId !== 'string'
+    || payload.jobId.length < 1
+    || payload.jobId.length > 120
+  ) {
+    throw new Error('Payload video preview không hợp lệ.');
   }
   return { jobId: payload.jobId };
 }
@@ -380,6 +396,20 @@ export function registerCustomerMarketingIpc(
   ): Promise<CustomerMutationResult> => {
     trusted(event);
     return service.createMediaVoicePreview(mediaVoicePreviewPayload(payload));
+  });
+  ipcMain.handle('customerMarketing:createMediaVideoPreview', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.createMediaVideoPreview(mediaVideoPreviewPayload(payload));
+  });
+  ipcMain.handle('customerMarketing:openMediaVideoPreview', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.openMediaVideoPreview(mediaVideoPreviewPayload(payload));
   });
   ipcMain.handle('customerMarketing:reviewApproval', async (event, payload: unknown): Promise<CustomerMutationResult> => {
     trusted(event);
