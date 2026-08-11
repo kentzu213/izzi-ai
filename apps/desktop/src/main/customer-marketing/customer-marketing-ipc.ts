@@ -147,8 +147,21 @@ export function registerCustomerMarketingIpc(
   service: CustomerMarketingService,
   options: CustomerMarketingIpcOptions = {},
 ): void {
-  ipcMain.handle('customerMarketing:getSnapshot', async (event): Promise<CustomerMarketingSnapshot> => {
+  ipcMain.handle('customerMarketing:getSnapshot', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerMarketingSnapshot> => {
     trusted(event);
+    if (payload !== undefined) throw new Error('Payload snapshot không được phép.');
+    return service.getInitialSnapshot();
+  });
+
+  ipcMain.handle('customerMarketing:refreshSnapshot', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerMarketingSnapshot> => {
+    trusted(event);
+    if (payload !== undefined) throw new Error('Payload snapshot không được phép.');
     return service.getSnapshot();
   });
 

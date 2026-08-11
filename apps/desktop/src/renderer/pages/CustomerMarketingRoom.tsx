@@ -3271,8 +3271,15 @@ export function CustomerMarketingRoomPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const invitationStatusRef = useRef('');
+  const snapshotRequestRef = useRef(0);
+
+  const applySnapshot = useCallback((next: CustomerMarketingSnapshot) => {
+    setSnapshot(next);
+    if (next.onboarding) setForm(profileToInput(next.onboarding));
+  }, []);
 
   const loadSnapshot = useCallback(async () => {
+    const requestId = ++snapshotRequestRef.current;
     const api = getCustomerApi();
     if (!api) {
       setError('Customer AI Marketing Room cần chạy trong Izzi AI Desktop để kết nối workspace thật.');
@@ -3282,17 +3289,30 @@ export function CustomerMarketingRoomPage() {
     try {
       setError('');
       const next = await api.getSnapshot();
-      setSnapshot(next);
-      if (next.onboarding) setForm(profileToInput(next.onboarding));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Không tải được Customer Marketing workspace.');
-    } finally {
+      if (requestId !== snapshotRequestRef.current) return;
+      applySnapshot(next);
       setLoading(false);
+      void api.refreshSnapshot()
+        .then((refreshed) => {
+          if (requestId === snapshotRequestRef.current) applySnapshot(refreshed);
+        })
+        .catch(() => {
+          // The fail-closed initial snapshot remains usable if optional readiness refresh fails.
+        });
+    } catch (reason) {
+      if (requestId === snapshotRequestRef.current) {
+        setError(reason instanceof Error ? reason.message : 'Không tải được Customer Marketing workspace.');
+      }
+    } finally {
+      if (requestId === snapshotRequestRef.current) setLoading(false);
     }
-  }, []);
+  }, [applySnapshot]);
 
   useEffect(() => {
     void loadSnapshot();
+    return () => {
+      snapshotRequestRef.current += 1;
+    };
   }, [loadSnapshot]);
 
   useEffect(() => {

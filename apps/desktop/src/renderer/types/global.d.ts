@@ -181,6 +181,7 @@ declare global {
 
   interface ElectronCustomerMarketingApi {
     getSnapshot: () => Promise<CustomerMarketingSnapshot>;
+    refreshSnapshot: () => Promise<CustomerMarketingSnapshot>;
     measurePageSpeed: (
       input: CustomerMarketingPageSpeedInput,
     ) => Promise<CustomerMarketingPageSpeedResult>;

@@ -3194,6 +3194,41 @@ describe('Customer Marketing Video Studio', () => {
 });
 
 describe('CustomerMarketingService backend workspace sync', () => {
+  it('returns an initial fail-closed snapshot without waiting for optional media probes', async () => {
+    let finishProbe!: (value: CustomerMediaToolchain) => void;
+    const mediaRuntime = mediaRuntimeFixture();
+    const readyToolchain = await mediaRuntime.getToolchain();
+    vi.mocked(mediaRuntime.getToolchain).mockClear();
+    const slowProbe = new Promise<CustomerMediaToolchain>((resolve) => {
+      finishProbe = resolve;
+    });
+    vi.mocked(mediaRuntime.getToolchain).mockImplementation(() => slowProbe);
+    const context = setup({ mediaRuntime });
+
+    const initial = await context.service.getInitialSnapshot(0);
+
+    expect(initial.media.toolchain).toMatchObject({
+      previewAvailable: false,
+      videoPreviewAvailable: false,
+      commercialRenderAvailable: false,
+    });
+    expect(initial.externalActionsAllowed).toBe(false);
+    expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
+
+    const refresh = context.service.getSnapshot();
+    finishProbe(readyToolchain);
+    await expect(refresh).resolves.toMatchObject({
+      media: {
+        toolchain: {
+          previewAvailable: true,
+          videoPreviewAvailable: true,
+          commercialRenderAvailable: false,
+        },
+      },
+    });
+    expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
+  });
+
   it('uses backend workspace identity, membership, plan, and quota when available', async () => {
     const workspace = remoteWorkspace();
     const gateway: CustomerMarketingWorkspaceGateway = {

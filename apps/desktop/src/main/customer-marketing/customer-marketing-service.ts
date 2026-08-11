@@ -679,6 +679,8 @@ function unavailableMediaToolchain(): CustomerMediaToolchain {
   };
 }
 
+const INITIAL_MEDIA_TOOLCHAIN_BUDGET_MS = 250;
+
 export function buildCustomerCapabilities(
   extensions: CustomerRuntimeExtension[],
   authoritativeCapabilities?: readonly CustomerCapability[],
@@ -1069,6 +1071,7 @@ export class CustomerMarketingService {
   private readonly pageSpeedInFlight = new Map<string, Promise<CustomerMarketingPageSpeedResult>>();
   private readonly pageSpeedTargetNextRun = new Map<string, number>();
   private readonly pageSpeedWorkspaceNextRun = new Map<string, number>();
+  private mediaToolchainInFlight: Promise<CustomerMediaToolchain> | null = null;
   private readonly productMarketingAuthorityKey = randomUUID();
 
   constructor(
@@ -1215,7 +1218,19 @@ export class CustomerMarketingService {
     }
   }
 
+  async getInitialSnapshot(
+    mediaToolchainTimeoutMs = INITIAL_MEDIA_TOOLCHAIN_BUDGET_MS,
+  ): Promise<CustomerMarketingSnapshot> {
+    return this.getSnapshotWithMediaBudget(mediaToolchainTimeoutMs);
+  }
+
   async getSnapshot(): Promise<CustomerMarketingSnapshot> {
+    return this.getSnapshotWithMediaBudget();
+  }
+
+  private async getSnapshotWithMediaBudget(
+    mediaToolchainTimeoutMs?: number,
+  ): Promise<CustomerMarketingSnapshot> {
     const identity = this.requireIdentity();
     let record = this.readRecord(identity);
     try {
@@ -1228,7 +1243,7 @@ export class CustomerMarketingService {
     } catch {
       // The workflow store quarantines malformed state and the customer room remains fail-closed.
     }
-    return this.snapshot(identity, record);
+    return this.snapshot(identity, record, false, undefined, mediaToolchainTimeoutMs);
   }
 
   async measurePageSpeed(
@@ -3866,6 +3881,7 @@ export class CustomerMarketingService {
     record: CustomerTenantRecord,
     profileAlreadySynced = false,
     workspaceStateOverride?: CustomerMarketingWorkspaceState,
+    mediaToolchainTimeoutMs?: number,
   ): Promise<CustomerMarketingSnapshot> {
     const workspaceState = workspaceStateOverride ?? await this.resolveWorkspaceState(record);
     const remoteWorkspace = workspaceState.workspace;
@@ -3911,14 +3927,7 @@ export class CustomerMarketingService {
         : record.runs.some((run) => run.status === 'in_progress')
           ? ['Theo dõi workflow đang chạy và kiểm tra bước tiếp theo.']
           : ['Giao một mục tiêu mới cho AI Marketing Director.'];
-    let toolchain = unavailableMediaToolchain();
-    if (this.mediaRuntime) {
-      try {
-        toolchain = await this.mediaRuntime.getToolchain();
-      } catch {
-        toolchain = unavailableMediaToolchain();
-      }
-    }
+    const toolchain = await this.resolveMediaToolchain(mediaToolchainTimeoutMs);
 
     let capabilityCatalog: CustomerMarketingSnapshot['capabilityCatalog'] = { status: 'local' };
     let capabilities = buildCustomerCapabilities(this.getRuntimeExtensions());
@@ -4025,6 +4034,40 @@ export class CustomerMarketingService {
       externalActionsAllowed: false,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  private async resolveMediaToolchain(timeoutMs?: number): Promise<CustomerMediaToolchain> {
+    if (!this.mediaRuntime) return unavailableMediaToolchain();
+    const probe = this.getMediaToolchainProbe();
+    if (timeoutMs === undefined) {
+      return probe;
+    }
+
+    const budgetMs = Math.min(Math.max(timeoutMs, 0), 1_000);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: CustomerMediaToolchain) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(unavailableMediaToolchain()), budgetMs);
+      timer.unref();
+      void probe.then(finish, () => finish(unavailableMediaToolchain()));
+    });
+  }
+
+  private getMediaToolchainProbe(): Promise<CustomerMediaToolchain> {
+    if (this.mediaToolchainInFlight) return this.mediaToolchainInFlight;
+    const probe = Promise.resolve()
+      .then(() => this.mediaRuntime!.getToolchain())
+      .catch(() => unavailableMediaToolchain());
+    this.mediaToolchainInFlight = probe;
+    void probe.then(() => {
+      if (this.mediaToolchainInFlight === probe) this.mediaToolchainInFlight = null;
+    });
+    return probe;
   }
 
   private async loadMemberDirectory(identity: CustomerIdentity): Promise<CustomerMemberDirectoryLoad> {

@@ -14,6 +14,14 @@ const roomStylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.
 const roomStylesSource = readFileSync(roomStylesPath, 'utf8');
 
 describe('Customer Marketing Room Product Context editor contract', () => {
+  it('paints the fail-closed initial snapshot before refreshing optional media readiness', () => {
+    expect(roomSource).toContain('api.getSnapshot()');
+    expect(roomSource).toContain('api.refreshSnapshot()');
+    expect(roomSource).toContain('snapshotRequestRef.current');
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:refreshSnapshot')");
+    expect(rendererTypesSource).toContain('refreshSnapshot: () => Promise<CustomerMarketingSnapshot>');
+  });
+
   it('keeps BrandView mounted while another workspace view is active', () => {
     expect(roomSource).toMatch(
       /<div\s+hidden=\{activeView !== 'brand'\}\s+aria-hidden=\{activeView !== 'brand'\}\s*>[\s\S]*?<BrandView[\s\S]*?<\/div>/,

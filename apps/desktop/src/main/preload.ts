@@ -560,6 +560,8 @@ const electronAPI = {
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
       ipcRenderer.invoke('customerMarketing:getSnapshot'),
+    refreshSnapshot: (): Promise<CustomerMarketingSnapshot> =>
+      ipcRenderer.invoke('customerMarketing:refreshSnapshot'),
     measurePageSpeed: (
       input: CustomerMarketingPageSpeedInput,
     ): Promise<CustomerMarketingPageSpeedResult> =>

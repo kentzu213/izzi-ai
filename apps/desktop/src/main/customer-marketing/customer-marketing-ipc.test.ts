@@ -37,6 +37,7 @@ function event(url = 'http://localhost:5173/customer-marketing'): IpcMainInvokeE
 
 function serviceMock() {
   return {
+    getInitialSnapshot: vi.fn(),
     getSnapshot: vi.fn(),
     listIntegrationCredentials: vi.fn(async () => ({
       ok: true,
@@ -126,6 +127,27 @@ beforeEach(() => {
   electronMocks.fromWebContents.mockReset();
   electronMocks.isPackaged = false;
   delete process.env.OPENCLAW_FORCE_PROD_RENDERER;
+});
+
+describe('customer marketing snapshot IPC', () => {
+  it('separates the fast initial snapshot from the full no-payload refresh', async () => {
+    const service = serviceMock();
+    service.getInitialSnapshot.mockResolvedValue({ kind: 'initial' });
+    service.getSnapshot.mockResolvedValue({ kind: 'refreshed' });
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const initial = electronMocks.handlers.get('customerMarketing:getSnapshot');
+    const refresh = electronMocks.handlers.get('customerMarketing:refreshSnapshot');
+
+    await expect(initial!(event())).resolves.toEqual({ kind: 'initial' });
+    await expect(refresh!(event())).resolves.toEqual({ kind: 'refreshed' });
+    expect(service.getInitialSnapshot).toHaveBeenCalledTimes(1);
+    expect(service.getSnapshot).toHaveBeenCalledTimes(1);
+
+    await expect(initial!(event(), { workspaceId: 'renderer-controlled' }))
+      .rejects.toThrow('Payload snapshot không được phép');
+    await expect(refresh!(event(), { token: 'renderer-controlled' }))
+      .rejects.toThrow('Payload snapshot không được phép');
+  });
 });
 
 describe('customer marketing PageSpeed IPC', () => {
