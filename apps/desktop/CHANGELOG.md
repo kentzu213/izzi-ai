@@ -1,4 +1,18 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.30
+
+Faster renderer startup with guarded lazy loading.
+
+- Keep Chat and authentication in the initial renderer while loading secondary
+  workspaces on demand, reducing the entry JavaScript from about 1.02 MB to
+  about 355 KB.
+- Preload the primary AI Marketing workspace after Chat becomes interactive and
+  show a responsive, reduced-motion-safe loading shell for immediate navigation.
+- Keep shared mobile navigation styling in the eager stylesheet so Chat remains
+  correctly styled before the AI Marketing chunk loads.
+- Enforce a 400 KB renderer entry budget and a 500 KB per-chunk ceiling in both
+  desktop CI and release packaging.
+
 ## 1.14.0-beta.29
 
 Deterministic desktop release publishing.
