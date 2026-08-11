@@ -8,8 +8,8 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 ## Public Source
 
 - Repository: `https://github.com/kentzu213/izzi-backend`
-- Master commit: `41b45c684370ae1448c3ee4f5312b9c505f5cfee`
-- Merge shape: fast-forward by five reviewed commits from `3211308`; no auto-deploy workflow ran.
+- Master commit: `e901d43832c6b66748e064ce28b3c4cdd1ecf26b`
+- Merge shape: fast-forward to the reviewed final tree from `3211308`; no auto-deploy workflow ran.
 - Included contract: authenticated workspaces, members, invitations, quota reservations, profile
   revisions, capability catalog, campaigns, content, assets, knowledge, calendar, and analytics.
 
@@ -26,6 +26,7 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 | Staging verifier | PASS, 16 self-tests and offline release/digest contract |
 | Packaged Izzi AI beta31 flow | PASS, runtime errors 0 and external actions false |
 | Packaged beta31 two-device profile sync | PASS, revisions 1 -> 2 -> 4, one 409 conflict, retry 200 |
+| Capability registry and plan/role filter | PASS, revision 3 and 20/20 focused tests |
 | Full and production dependency audits | PASS, 0 known vulnerabilities |
 | Docker build and local image smoke | PASS |
 
@@ -46,6 +47,12 @@ The existing single-device packaged regression also passed after the harness cha
 profile revision 1, one approved campaign, one approved content item, workflow receipt, publish gate
 `policy_denied`, zero runtime errors, and no external action. Its receipt SHA-256 is
 `b5a0a207d46e5e1f61d2d4f35b7ebd14c6cbd45f32d9e3f6e94c04452113e377`.
+
+The capability registry is server-owned at revision 3. Its public response contains only bounded
+metadata, maps internal actions to public permissions, filters by the actor-scoped workspace plan
+and role, keeps dry-run channel outputs, and fails closed for unknown plans or roles. The focused
+registry suite covers all five plans, owner/manager/editor/reviewer/viewer roles, the local Voice
+Studio preview contract, immutable snapshot behavior, and forbidden internal-key scans: `20/20`.
 
 The release image reported the exact full Git SHA. Local probes returned liveness 200, readiness
 503 against an intentionally invalid Supabase target, and unauthenticated Marketing Workspace 401
