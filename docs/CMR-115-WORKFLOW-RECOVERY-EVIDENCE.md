@@ -22,10 +22,11 @@ When the network fails after IzziAPI has accepted the workflow, a retry within 2
 | Production build | `pnpm --filter @openclaw/desktop build` | Passed; renderer entry 355.26 kB |
 | Production dependency audit | `pnpm audit --prod --audit-level high` | No known vulnerabilities |
 | Diff and secret checks | `git diff --check`; targeted secret scan over changed source | Passed; no secret pattern found |
+| Installed beta33 packaged local staging | `CMR_DESKTOP_EXECUTABLE="F:\\IzziAI\\Izzi\\Izzi AI.exe" CMR_DESKTOP_EXPECTED_VERSION="1.14.0-beta.33" node scripts/test-marketing-desktop-staging.mjs` | PASS; 273 requests, runtime errors 0, workflow created/resumed/approved, 2 campaigns and 8 content items, reconciliation consistent |
 
 ## Safety Boundary
 
-The slice changes retry durability only. It does not enable a remote production flag, apply a remote migration, call a live model, publish social/SEO/email content, spend money, send bulk messages, or mutate integration credentials. The installed beta32 executable remains the current public workstation build until beta33 is packaged and exercised.
+The slice changes retry durability only. It does not enable a remote production flag, apply a remote migration, call a live model, publish social/SEO/email content, spend money, send bulk messages, or mutate integration credentials. Beta33 is the installed public workstation build; its smoke kept `externalActionPerformed=false` and the publish gate returned `policy_denied`.
 
 ## Remaining Gates
 
