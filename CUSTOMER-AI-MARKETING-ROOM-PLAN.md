@@ -1,10 +1,17 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (65% weighted local scope)
-Vertical slice status: verified_public_beta25_voice_preview
+Product status: in_progress (68% weighted delivery scope)
+Vertical slice status: verified_public_beta26_local_video_preview
 Backend foundation status: verified_local_not_deployed
-Last verified: 2026-08-10 ICT. Beta25 tenant-safe Voice Preview, public release, installed WAV output, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA25-VOICE-PREVIEW-EVIDENCE.md`.
+Last verified: 2026-08-11 ICT. Beta26 tenant-safe local video preview, public release, installed MP4 output, updater state, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
+
+The weighted delivery score is intentionally not a raw checkbox count. The
+source rubric is this plan, `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`: 20% complete
+foundation/auth/tenant guardrails, 20% complete customer UX/context/approvals,
+16% of the 20% local content/media allocation, 7% of the 20%
+backend-sync/billing allocation, and 5% of the 20%
+integrations/staging/production-E2E allocation: 68% total.
 
 ## Product boundary
 
@@ -78,6 +85,14 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
     - receipts expose provider, voice, clip count, bytes, and the commercial lock; associated
       artifact records expose file names, byte counts, and SHA-256 evidence
     - publish, spend, reference-audio cloning, and commercial render remain unavailable
+27. [x] Add verified local video previews to the customer Video Studio:
+    - renderer submits only the approved media job ID
+    - main process revalidates tenant, role, entitlement, digest, approval, path, and runtime
+    - packaged HyperFrames renders the approved vertical scene sequence
+    - FFmpeg muxes approved Voice Studio WAVs into a local H.264/AAC MP4
+    - persisted receipts and artifacts bind dimensions, duration, audio format, bytes, and SHA-256
+    - `Mo video` opens only an MP4 whose on-disk size and hash still match the artifact
+    - commercial render, direct F5 generation, publish, spend, and external actions remain locked
 
 ## Verification evidence
 
@@ -117,6 +132,12 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
   installer was installed and created eight validated PCM16 mono 48 kHz WAV clips totaling
   3,241,312 bytes. Installed desktop/mobile smoke, updater `idle / 1.14.0-beta.25`, hashes, and
   remaining commercial gates are recorded in `docs/DESKTOP-BETA25-VOICE-PREVIEW-EVIDENCE.md`.
+- Beta26 Local Video Preview close-out: full desktop regression passed 1,251 tests across 86
+  files; main TypeScript, five-workspace production build, Windows packaging, Socrates tests,
+  and production audit passed. The public installer is installed and produced a verified
+  H.264/AAC 1080 x 1920 MP4 with Voice Studio audio. Installed desktop/mobile smoke, updater
+  `idle / 1.14.0-beta.26`, hashes, focus states, and remaining commercial gates are recorded in
+  `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`.
 
 ## Next phases
 
@@ -128,8 +149,8 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 6. [ ] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering.
 7. [ ] Add one backend-owned, resumable seven-day content workflow with real registry agents, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external publish action.
 8. [ ] Add approved social, SEO, email/CRM, and analytics workflows; Voice Studio local preview
-   generation is verified, while HyperFrames render, F5 generation, and every external publish
-   action remain gated.
+   and HyperFrames plus Voice Studio local MP4 generation are verified, while direct F5
+   generation, commercial rendering, and every external publish action remain gated.
 9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
 10. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
 11. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
@@ -145,7 +166,7 @@ Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI
 - Production deployment of team invitations, server-authoritative roles, and member role administration; the local implementation is complete and verified against a mocked backend, but no deployed IzziAPI instance has served these routes.
 - Cross-device onboarding, run, approval, media job, and artifact persistence.
 - Real billing-ledger reconciliation; local atomic quota enforcement exists but production billing authority is not claimed.
-- Fully wired publishing, ads, email, CRM, HyperFrames render, or F5-TTS generation execution.
+- Fully wired publishing, ads, email, CRM, commercial rendering, or direct F5-TTS generation.
 - A commercially enabled advertising render on the installed app. The audited VieNeu chain is
   available, but the runtime gate remains closed until its operator license evidence is configured.
 - A recorded consent artifact bound to the reference voice used by a media job.
