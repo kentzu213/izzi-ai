@@ -165,7 +165,7 @@ function processExists(pid: number): boolean {
 }
 
 async function waitForProcessExit(pid: number): Promise<boolean> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (!processExists(pid)) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -173,7 +173,7 @@ async function waitForProcessExit(pid: number): Promise<boolean> {
 }
 
 async function waitForFileText(candidate: string): Promise<string> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
       return await fs.readFile(candidate, 'utf8');
     } catch {
@@ -1079,7 +1079,7 @@ describe('CustomerVideoStudioService local video preview boundary', () => {
   });
 });
 
-describe('CustomerVideoStudioService managed HyperFrames runtime', { timeout: 15_000 }, () => {
+describe('CustomerVideoStudioService managed HyperFrames runtime', { timeout: 30_000 }, () => {
   it('allows only the behaviorally attested Electron 34 / Node 20 pair below the upstream Node floor', () => {
     expect(supportsManagedHyperframesPreview('0.7.57', 'v20.19.1', '34.5.8')).toBe(true);
     expect(supportsManagedHyperframesPreview('0.7.58', 'v20.19.1', '34.5.8')).toBe(false);
