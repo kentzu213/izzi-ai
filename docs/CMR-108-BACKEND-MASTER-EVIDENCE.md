@@ -8,7 +8,7 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 ## Public Source
 
 - Repository: `https://github.com/kentzu213/izzi-backend`
-- Master commit: `e901d43832c6b66748e064ce28b3c4cdd1ecf26b`
+- Master commit: `df54f458f1ea1bc2659a3cb42594a56fcb1a0f0e`
 - Merge shape: fast-forward to the reviewed final tree from `3211308`; no auto-deploy workflow ran.
 - Included contract: authenticated workspaces, members, invitations, quota reservations, profile
   revisions, capability catalog, campaigns, content, assets, knowledge, calendar, and analytics.
@@ -19,14 +19,15 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 |---|---|
 | Frozen install | PASS, 0 vulnerabilities |
 | TypeScript build | PASS |
-| Focused Customer Marketing route suites | PASS, 2/2 files and 59/59 tests |
-| Full backend suite | PASS, 296 passed and 35 environment-dependent skipped |
-| PostgreSQL 16 isolation | PASS, 19/19 checks |
-| Pinned PostgREST JWT boundary | PASS, 10/10 checks |
-| Staging verifier | PASS, 16 self-tests and offline release/digest contract |
+| Focused quota migration/service/route suites | PASS, 3/3 files and 84/84 tests |
+| Full backend suite | PASS, 305 passed and 37 environment-dependent skipped |
+| PostgreSQL 16 isolation | PASS, 21/21 checks |
+| Pinned PostgREST JWT boundary | PASS, 11/11 checks |
+| Staging verifier | PASS, 16 self-tests and four-migration offline digest contract |
 | Packaged Izzi AI beta31 flow | PASS, runtime errors 0 and external actions false |
 | Packaged beta31 two-device profile sync | PASS, revisions 1 -> 2 -> 4, one 409 conflict, retry 200 |
 | Capability registry and plan/role filter | PASS, revision 3 and 20/20 focused tests |
+| Packaged beta31 quota reconciliation | PASS, event count 1, consistent true, no discrepancies |
 | Full and production dependency audits | PASS, 0 known vulnerabilities |
 | Docker build and local image smoke | PASS |
 
@@ -54,6 +55,15 @@ and role, keeps dry-run channel outputs, and fails closed for unknown plans or r
 registry suite covers all five plans, owner/manager/editor/reviewer/viewer roles, the local Voice
 Studio preview contract, immutable snapshot behavior, and forbidden internal-key scans: `20/20`.
 
+The quota reconciliation RPC aggregates credits, agent runs, automation runs, and content items
+inside the active billing cycle, then compares those ledger totals with the locked quota counters.
+Both SQL and service authorization restrict this receipt to owner/manager. The public route strips
+event IDs, actor IDs, idempotency keys, metadata, and billing identity; drift is represented only by
+metric names. Database tests proved both a consistent ledger and intentional credits-only drift.
+The packaged beta31 staging flow passed 207 requests with event count 1, `consistent=true`, no
+discrepancies, zero runtime errors, and no external action. Receipt SHA-256:
+`2a725479a9c1af9e0497eee83c37ef92121b35c626d9443eb743e02f89a8eaae`.
+
 The release image reported the exact full Git SHA. Local probes returned liveness 200, readiness
 503 against an intentionally invalid Supabase target, and unauthenticated Marketing Workspace 401
 with `Cache-Control: no-store`.
@@ -73,6 +83,8 @@ with `Cache-Control: no-store`.
   provides the distributed window when available; a bounded local window remains active when Redis
   fails open. Invalid JWTs never create an actor rate-limit key, and denied requests do not dispatch
   to Customer Marketing services.
+- Quota reconciliation is aggregate-only, owner/manager-only, cycle-bounded, and independently
+  allowlisted in SQL normalization and the HTTP response boundary.
 
 ## Remaining Gate
 

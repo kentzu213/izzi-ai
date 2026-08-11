@@ -1,18 +1,18 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (70% weighted delivery scope; 99% local product scope)
-Vertical slice status: verified_public_backend_two_device_local_staging
+Product status: in_progress (71% weighted delivery scope; 99% local product scope)
+Vertical slice status: verified_public_quota_reconciliation_receipt
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend, staging readiness gate, authenticated route rate limit, packaged two-device profile-sync harness, and server-filtered capability registry are public on `izzi-backend/master` at `e901d43`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend, staging readiness gate, authenticated route rate limit, packaged two-device profile-sync harness, server-filtered capability registry, and aggregate quota-reconciliation receipt are public on `izzi-backend/master` at `df54f45`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
 source rubric is this plan, `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`: 20% complete
 foundation/auth/tenant guardrails, 20% complete customer UX/context/approvals,
-16% of the 20% local content/media allocation, 7% of the 20%
+16% of the 20% local content/media allocation, 8% of the 20%
 backend-sync/billing allocation, and 7% of the 20%
-integrations/staging/production-E2E allocation: 70% total.
+integrations/staging/production-E2E allocation: 71% total.
 
 ## Product boundary
 
@@ -129,6 +129,12 @@ integrations/staging/production-E2E allocation: 70% total.
     - reload the winner revision and retry the losing profile successfully to revision 4
     - retain the existing single-device campaign/content/workflow regression with no runtime or
       external-action error
+33. [x] Add an aggregate quota-reconciliation receipt for billing integrity:
+    - aggregate all four usage metrics inside the active quota cycle
+    - allow only owner/manager and bind the SQL actor to `auth.uid()`
+    - return only counters, ledger totals, event count, consistency, and discrepancy metric names
+    - detect intentional counter drift without exposing actor IDs, idempotency keys, or metadata
+    - bind the fourth migration to the staging digest contract and verify it through packaged beta31
 
 ## Verification evidence
 
@@ -196,7 +202,7 @@ integrations/staging/production-E2E allocation: 70% total.
 4. [x] Prove RLS and tenant isolation against an ephemeral local Postgres instance using two signed
    authenticated users (`19/19` SQL checks and `10/10` PostgREST boundary checks). Remote staging
    verification remains covered by the deployment gate below.
-5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement.
+5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement. Current-cycle quota counters now reconcile against aggregate Marketing usage events; joining actual payment/API `transactions` and `usage_logs` remains open.
 6. [x] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering. Registry revision 3 is actor-scoped, plan/role filtered, public-field allowlisted, and covered by `20/20` focused tests.
 7. [ ] Add one backend-owned, resumable seven-day content workflow with real registry agents, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external publish action.
 8. [ ] Add approved social, SEO, email/CRM, and analytics workflows; Voice Studio local preview
