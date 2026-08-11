@@ -193,7 +193,9 @@ integrations/staging/production-E2E allocation: 69% total.
    The revision/conflict backend contract and packaged two-device local staging harness are public
    on `izzi-backend/master` at `41b45c6`; this item remains open until two devices use an isolated
    deployed staging project successfully.
-4. [ ] Prove RLS and tenant isolation against a real local/staging Postgres instance using two authenticated users.
+4. [x] Prove RLS and tenant isolation against an ephemeral local Postgres instance using two signed
+   authenticated users (`19/19` SQL checks and `10/10` PostgREST boundary checks). Remote staging
+   verification remains covered by the deployment gate below.
 5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement.
 6. [ ] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering.
 7. [ ] Add one backend-owned, resumable seven-day content workflow with real registry agents, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external publish action.
