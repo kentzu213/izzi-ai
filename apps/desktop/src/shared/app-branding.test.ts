@@ -28,7 +28,7 @@ describe('Izzi AI desktop branding contract', () => {
     expect(builderConfig.productName).toBe(APP_NAME);
     expect(builderConfig.appId).toBe(APP_ID);
     expect(builderConfig.nsis.shortcutName).toBe(APP_NAME);
-    expect(builderConfig.linux.desktop.Name).toBe(APP_NAME);
+    expect(builderConfig.linux.desktop.entry.Name).toBe(APP_NAME);
     expect(desktopPackage.description).toContain(APP_NAME);
   });
 
@@ -65,5 +65,26 @@ describe('Izzi AI desktop branding contract', () => {
     expect(builderConfig.detectUpdateChannel).toBe(true);
     expect(workflowSource.match(/EP_PRE_RELEASE:/g)).toHaveLength(2);
     expect(workflowSource.match(/contains\(github\.ref_name, '-'\)/g)).toHaveLength(2);
+  });
+
+  it('keeps executable package dependencies together in the ASAR-unpacked runtime', () => {
+    expect(builderConfig.asar).toBe(true);
+    expect(builderConfig.asarUnpack).not.toContain('node_modules/**/*');
+    for (const packageName of [
+      '@esbuild/win32-x64',
+      '@hono/node-server',
+      '@img/sharp-win32-x64',
+      '@puppeteer/browsers',
+      'esbuild',
+      'fontkit',
+      'hono',
+      'hyperframes',
+      'postcss',
+      'puppeteer-core',
+      'sharp',
+    ]) {
+      expect(builderConfig.asarUnpack).toContain(`node_modules/${packageName}/**/*`);
+    }
+    expect(builderConfig.asarUnpack).toContain('dist/main/extensions/extension-runner.js');
   });
 });

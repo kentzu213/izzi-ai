@@ -131,6 +131,7 @@ export interface CustomerMarketingInvitationCreateInput {
   workspaceId: string;
   email: string;
   role: CustomerAssignableRole;
+  idempotencyKey: string;
 }
 
 export type CustomerMarketingInvitationCreateState =
@@ -1243,12 +1244,14 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       || input.email.length > 320
       || !EMAIL_PATTERN.test(input.email)
       || !ASSIGNABLE_ROLES.has(input.role)
+      || !INVITATION_TOKEN_PATTERN.test(input.idempotencyKey)
     ) return { status: 'unavailable', invitation: null, inviteToken: null };
 
     const result = await this.request(
       `/api/marketing/workspaces/${input.workspaceId}/invitations`,
       {
         method: 'POST',
+        headers: { 'Idempotency-Key': input.idempotencyKey },
         body: JSON.stringify({ email: input.email, role: input.role }),
       },
     );

@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { DatabaseManager } from '../db/database';
 import type { IzziAgentChatPayload, IzziAgentChatResult } from '../agents/izzi-agent';
 import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
@@ -1064,6 +1064,7 @@ export class CustomerMarketingService {
     role: CustomerAssignableRole;
     expiresAt: string;
   } | null = null;
+  private readonly invitationCreateRequests = new Map<string, { idempotencyKey: string; expiresAt: number }>();
   private readonly marketingCreateRequests = new Map<string, { idempotencyKey: string; expiresAt: number }>();
   private readonly pageSpeedInFlight = new Map<string, Promise<CustomerMarketingPageSpeedResult>>();
   private readonly pageSpeedTargetNextRun = new Map<string, number>();
@@ -1178,6 +1179,40 @@ export class CustomerMarketingService {
       expiresAt: now + 5 * 60_000,
     });
     return { fingerprint, idempotencyKey };
+  }
+
+  private invitationCreateRequest(
+    identityId: string,
+    workspaceId: string,
+    email: string,
+    role: CustomerAssignableRole,
+  ): { fingerprint: string; idempotencyKey: string } {
+    const now = Date.now();
+    for (const [fingerprint, request] of this.invitationCreateRequests) {
+      if (request.expiresAt <= now) this.invitationCreateRequests.delete(fingerprint);
+    }
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify([identityId, workspaceId, email, role]), 'utf8')
+      .digest('hex');
+    const existing = this.invitationCreateRequests.get(fingerprint);
+    if (existing) return { fingerprint, idempotencyKey: existing.idempotencyKey };
+    if (this.invitationCreateRequests.size >= 256) {
+      const oldest = this.invitationCreateRequests.keys().next().value;
+      if (oldest) this.invitationCreateRequests.delete(oldest);
+    }
+    const idempotencyKey = randomBytes(24).toString('base64url');
+    this.invitationCreateRequests.set(fingerprint, {
+      idempotencyKey,
+      expiresAt: now + 5 * 60_000,
+    });
+    return { fingerprint, idempotencyKey };
+  }
+
+  private clearInvitationCreateRequest(request: { fingerprint: string; idempotencyKey: string }): void {
+    const tracked = this.invitationCreateRequests.get(request.fingerprint);
+    if (tracked?.idempotencyKey === request.idempotencyKey) {
+      this.invitationCreateRequests.delete(request.fingerprint);
+    }
   }
 
   async getSnapshot(): Promise<CustomerMarketingSnapshot> {
@@ -2078,17 +2113,25 @@ export class CustomerMarketingService {
       return { ok: false, copied: false, error: 'Chỉ Chủ sở hữu workspace mới có thể tạo lời mời.' };
     }
 
+    const request = this.invitationCreateRequest(
+      identity.id,
+      workspaceState.workspace.id,
+      email,
+      input.role,
+    );
     let created: Awaited<ReturnType<CustomerMarketingWorkspaceGateway['createInvitation']>>;
     try {
       created = await this.workspaceGateway.createInvitation({
         workspaceId: workspaceState.workspace.id,
         email,
         role: input.role,
+        idempotencyKey: request.idempotencyKey,
       });
     } catch {
       created = { status: 'unavailable', invitation: null, inviteToken: null };
     }
     if (created.status !== 'created') {
+      if (created.status !== 'unavailable') this.clearInvitationCreateRequest(request);
       const error = created.status === 'forbidden'
         ? 'Chỉ Chủ sở hữu workspace mới có thể tạo lời mời.'
         : created.status === 'conflict'
@@ -2096,6 +2139,7 @@ export class CustomerMarketingService {
           : 'Không thể tạo lời mời với IzziAPI. Vui lòng thử lại.';
       return { ok: false, copied: false, error };
     }
+    this.clearInvitationCreateRequest(request);
 
     let link: string;
     try {
@@ -2197,6 +2241,7 @@ export class CustomerMarketingService {
 
   clearPendingWorkspaceInvitationCopy(): void {
     this.pendingInvitationCopy = null;
+    this.invitationCreateRequests.clear();
   }
 
   async acceptWorkspaceInvitation(

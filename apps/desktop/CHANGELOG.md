@@ -1,4 +1,21 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.27
+
+Customer Marketing workspace sync and packaged Video Studio hardening.
+
+- Reuse one main-process-owned idempotency key for concurrent or retried
+  invitations to the same recipient, rotate it after terminal outcomes, and
+  keep it out of renderer responses and persisted state.
+- Upgrade Electron, the native SQLite runtime, the desktop builder, Vite, and
+  React Router while keeping the production dependency audit at zero known
+  vulnerabilities.
+- Keep the complete HyperFrames runtime dependency graph beside its unpacked
+  CLI so packaged Windows builds can resolve PostCSS and render without a
+  separate HyperFrames installation.
+- Verify the packaged Electron 39 / Node 22 runtime with HyperFrames 0.7.57,
+  the pinned Chrome Headless Shell, FFmpeg, eight retained F5-TTS preview clips,
+  and a 60-second portrait MP4 while preserving the non-commercial render gate.
+
 ## 1.14.0-beta.24
 
 Voice Studio 0.2 local TTS hardening and automatic extension upgrade.

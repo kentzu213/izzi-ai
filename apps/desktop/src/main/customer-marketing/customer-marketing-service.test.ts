@@ -3810,9 +3810,8 @@ describe('CustomerMarketingService workspace invitations', () => {
   const INVITATION_TOKEN = 'InviteToken_0123456789-abcdef';
   const expiresAt = '2026-07-29T00:00:00.000Z';
 
-  function invitationGateway(role: CustomerRole = 'owner') {
-    const workspace = remoteWorkspace({ role });
-    const createInvitation = vi.fn(async () => ({
+  function createdInvitationState() {
+    return {
       status: 'created' as const,
       invitation: {
         id: '33333333-3333-4333-8333-333333333333',
@@ -3822,7 +3821,13 @@ describe('CustomerMarketingService workspace invitations', () => {
         createdAt: '2026-07-22T00:00:00.000Z',
       },
       inviteToken: INVITATION_TOKEN,
-    }));
+    };
+  }
+
+  function invitationGateway(role: CustomerRole = 'owner') {
+    const workspace = remoteWorkspace({ role });
+    const createInvitation = vi.fn<CustomerMarketingWorkspaceGateway['createInvitation']>()
+      .mockResolvedValue(createdInvitationState());
     const acceptInvitation = vi.fn(async () => ({
       status: 'accepted' as const,
       workspaceId: workspace.id,
@@ -3864,12 +3869,113 @@ describe('CustomerMarketingService workspace invitations', () => {
       workspaceId: workspace.id,
       email: 'new@example.com',
       role: 'viewer',
+      idempotencyKey: expect.stringMatching(/^[A-Za-z0-9_-]{32}$/),
     });
     expect(writeClipboardText).toHaveBeenCalledWith(
       `openclaw://customer-marketing/invitations/accept?token=${INVITATION_TOKEN}`,
     );
     expect(JSON.stringify(result)).not.toContain(INVITATION_TOKEN);
     expect(Array.from(context.db.values.values()).join('\n')).not.toContain(INVITATION_TOKEN);
+    const idempotencyKey = createInvitation.mock.calls[0][0].idempotencyKey;
+    expect(JSON.stringify(result)).not.toContain(idempotencyKey);
+    expect(Array.from(context.db.values.values()).join('\n')).not.toContain(idempotencyKey);
+  });
+
+  it('reuses the same idempotency key after an unavailable response and rotates after success', async () => {
+    const { gateway, createInvitation } = invitationGateway('owner');
+    createInvitation
+      .mockResolvedValueOnce({ status: 'unavailable', invitation: null, inviteToken: null })
+      .mockResolvedValueOnce(createdInvitationState())
+      .mockResolvedValueOnce({ status: 'conflict', invitation: null, inviteToken: null });
+    const context = setup({
+      identity: { id: OWNER_ID },
+      workspaceGateway: gateway,
+      writeClipboardText: vi.fn(),
+    });
+
+    await expect(context.service.createWorkspaceInvitation({
+      email: 'new@example.com',
+      role: 'viewer',
+    })).resolves.toMatchObject({ ok: false, copied: false });
+    await expect(context.service.createWorkspaceInvitation({
+      email: ' NEW@example.com ',
+      role: 'viewer',
+    })).resolves.toMatchObject({ ok: true, copied: true });
+    await expect(context.service.createWorkspaceInvitation({
+      email: 'new@example.com',
+      role: 'viewer',
+    })).resolves.toMatchObject({ ok: false, copied: false });
+
+    const keys = createInvitation.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[1]);
+    expect(keys.every((key) => /^[A-Za-z0-9_-]{32}$/.test(key))).toBe(true);
+  });
+
+  it('shares one idempotency key across concurrent invitations for the same recipient', async () => {
+    const { gateway, createInvitation } = invitationGateway('owner');
+    const releases: Array<() => void> = [];
+    createInvitation.mockImplementation(async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return { status: 'unavailable', invitation: null, inviteToken: null };
+    });
+    const context = setup({ identity: { id: OWNER_ID }, workspaceGateway: gateway });
+
+    const first = context.service.createWorkspaceInvitation({
+      email: 'new@example.com',
+      role: 'viewer',
+    });
+    const second = context.service.createWorkspaceInvitation({
+      email: ' NEW@example.com ',
+      role: 'viewer',
+    });
+    await vi.waitFor(() => expect(createInvitation).toHaveBeenCalledTimes(2));
+
+    const keys = createInvitation.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[0]).toMatch(/^[A-Za-z0-9_-]{32}$/);
+
+    releases.forEach((release) => release());
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ ok: false, copied: false }),
+      expect.objectContaining({ ok: false, copied: false }),
+    ]);
+  });
+
+  it('clears a retained idempotency key after a terminal invitation response', async () => {
+    const { gateway, createInvitation } = invitationGateway('owner');
+    createInvitation
+      .mockResolvedValueOnce({ status: 'unavailable', invitation: null, inviteToken: null })
+      .mockResolvedValueOnce({ status: 'conflict', invitation: null, inviteToken: null })
+      .mockResolvedValueOnce({ status: 'unavailable', invitation: null, inviteToken: null });
+    const context = setup({ identity: { id: OWNER_ID }, workspaceGateway: gateway });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await context.service.createWorkspaceInvitation({ email: 'new@example.com', role: 'viewer' });
+    }
+
+    const keys = createInvitation.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[1]);
+  });
+
+  it('expires a retained idempotency key after five minutes', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-07-22T00:00:00.000Z'));
+      const { gateway, createInvitation } = invitationGateway('owner');
+      createInvitation.mockResolvedValue({ status: 'unavailable', invitation: null, inviteToken: null });
+      const context = setup({ identity: { id: OWNER_ID }, workspaceGateway: gateway });
+
+      await context.service.createWorkspaceInvitation({ email: 'new@example.com', role: 'viewer' });
+      vi.advanceTimersByTime(5 * 60_000 + 1);
+      await context.service.createWorkspaceInvitation({ email: 'new@example.com', role: 'viewer' });
+
+      const keys = createInvitation.mock.calls.map(([input]) => input.idempotencyKey);
+      expect(keys[1]).not.toBe(keys[0]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('retries clipboard from memory without creating a second invitation', async () => {
@@ -3991,6 +4097,19 @@ describe('CustomerMarketingService workspace invitations', () => {
       error: 'Không có liên kết lời mời nào đang chờ sao chép.',
     });
     expect(writeClipboardText).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears a retained invitation request on logout', async () => {
+    const { gateway, createInvitation } = invitationGateway('owner');
+    createInvitation.mockResolvedValue({ status: 'unavailable', invitation: null, inviteToken: null });
+    const context = setup({ identity: { id: OWNER_ID }, workspaceGateway: gateway });
+
+    await context.service.createWorkspaceInvitation({ email: 'new@example.com', role: 'viewer' });
+    context.service.clearPendingWorkspaceInvitationCopy();
+    await context.service.createWorkspaceInvitation({ email: 'new@example.com', role: 'viewer' });
+
+    const keys = createInvitation.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[1]).not.toBe(keys[0]);
   });
 
   it('rejects manager invitations in main even if a renderer reaches the method', async () => {

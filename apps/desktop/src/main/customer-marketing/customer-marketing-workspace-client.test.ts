@@ -11,6 +11,7 @@ const OTHER_WORKSPACE_ID = '99999999-9999-4999-8999-999999999999';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const INVITATION_ID = '33333333-3333-4333-8333-333333333333';
 const INVITATION_TOKEN = 'InviteToken_0123456789-abcdef';
+const INVITATION_IDEMPOTENCY_KEY = 'A'.repeat(32);
 const ANALYTICS_FROM = '2026-07-01T00:00:00.000Z';
 const ANALYTICS_TO = '2026-07-31T23:59:59.999Z';
 const FORBIDDEN_CAPABILITY_FIELDS = [
@@ -252,6 +253,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
       workspaceId: WORKSPACE_ID,
       email: 'new@example.com',
       role: 'viewer',
+      idempotencyKey: INVITATION_IDEMPOTENCY_KEY,
     })).resolves.toEqual({ status: 'local', invitation: null, inviteToken: null });
     await expect(client.acceptInvitation(INVITATION_TOKEN)).resolves.toEqual({
       status: 'local',
@@ -758,6 +760,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
       workspaceId: WORKSPACE_ID,
       email: 'new@example.com',
       role: 'viewer',
+      idempotencyKey: INVITATION_IDEMPOTENCY_KEY,
     })).resolves.toEqual({
       status: 'created',
       invitation: {
@@ -779,6 +782,9 @@ describe('CustomerMarketingWorkspaceClient', () => {
       `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/invitations`,
       expect.objectContaining({
         method: 'POST',
+        headers: expect.objectContaining({
+          'Idempotency-Key': INVITATION_IDEMPOTENCY_KEY,
+        }),
         body: JSON.stringify({ email: 'new@example.com', role: 'viewer' }),
       }),
     );
@@ -790,6 +796,25 @@ describe('CustomerMarketingWorkspaceClient', () => {
         body: JSON.stringify({ token: INVITATION_TOKEN }),
       }),
     );
+  });
+
+  it('rejects invalid invitation idempotency keys before reading auth or calling the backend', async () => {
+    const auth = { getAccessToken: vi.fn(async () => 'test-token') };
+    const fetchImpl = vi.fn<typeof fetch>();
+    const client = new CustomerMarketingWorkspaceClient(auth, {
+      enabled: true,
+      baseUrl: 'https://api.example.test',
+      fetchImpl,
+    });
+
+    await expect(client.createInvitation({
+      workspaceId: WORKSPACE_ID,
+      email: 'new@example.com',
+      role: 'viewer',
+      idempotencyKey: 'too-short',
+    })).resolves.toEqual({ status: 'unavailable', invitation: null, inviteToken: null });
+    expect(auth.getAccessToken).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('fails closed for malformed invitation envelopes and never returns a raw token from them', async () => {
@@ -824,6 +849,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
       workspaceId: WORKSPACE_ID,
       email: 'new@example.com',
       role: 'viewer',
+      idempotencyKey: INVITATION_IDEMPOTENCY_KEY,
     });
     expect(created).toEqual({ status: 'unavailable', invitation: null, inviteToken: null });
     expect(JSON.stringify(created)).not.toContain(INVITATION_TOKEN);
