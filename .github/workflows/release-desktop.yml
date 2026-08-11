@@ -243,10 +243,8 @@ jobs:
           $published = gh release view $env:GITHUB_REF_NAME `
             --repo $env:GITHUB_REPOSITORY `
             --json isDraft,isPrerelease,assets | ConvertFrom-Json
-          if (
-            $published.isDraft
-            -or $published.isPrerelease -ne $env:GITHUB_REF_NAME.Contains('-')
-            -or @($published.assets).Count -ne $requiredNames.Count
-          ) {
+          $expectedPrerelease = $env:GITHUB_REF_NAME.Contains('-')
+          $publishedAssetCount = @($published.assets).Count
+          if ($published.isDraft -or ($published.isPrerelease -ne $expectedPrerelease) -or ($publishedAssetCount -ne $requiredNames.Count)) {
             throw 'Published release state does not match the verified draft.'
           }
