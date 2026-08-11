@@ -44,6 +44,14 @@ CI, and pnpm 9 for release packaging.
 or removal of the contract from normal CI and the release workflow. GitHub-hosted execution must
 still pass after the follow-up is pushed.
 
+The first Node 24 workflow run, `31478443684`, exposed an orphan `_private_clone` gitlink with no
+matching `.gitmodules` entry. The referenced nested commit object was not present in this
+repository, the clean-worktree directory was empty, and no product source referenced the path.
+The follow-up removes only that gitlink from the repository index and ignores the local proprietary
+clone path. `git submodule foreach --recursive "git status --short"` now exits successfully, and
+`pnpm test:actions` passes 5/5 including an orphan-gitlink regression check. GitHub-hosted
+confirmation remains required after this fix is pushed.
+
 ## Decision
 
 CMR-404 can close as `done_local` for dependency audit, lint, build, and automated security-test

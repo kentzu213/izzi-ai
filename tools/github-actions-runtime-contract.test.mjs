@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const workflows = new Map([
@@ -68,4 +69,25 @@ test("keeps the project toolchain versions explicit", () => {
 test("does not persist checkout credentials into build and packaging steps", () => {
   const sources = [...workflows.values()].join("\n");
   assert.equal((sources.match(/persist-credentials:\s*false/g) ?? []).length, 3);
+});
+
+test("contains no orphan gitlinks that break checkout credential cleanup", () => {
+  const index = execFileSync("git", ["ls-files", "--stage"], { encoding: "utf8" });
+  const gitlinks = [...index.matchAll(/^160000\s+[a-f0-9]{40}\s+\d+\t(.+)$/gm)]
+    .map((match) => match[1]);
+  const declaredSubmodules = new Set();
+
+  if (existsSync(".gitmodules")) {
+    const config = execFileSync(
+      "git",
+      ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+      { encoding: "utf8" },
+    );
+    for (const line of config.trim().split(/\r?\n/)) {
+      const [, modulePath] = line.split(/\s+/, 2);
+      if (modulePath) declaredSubmodules.add(modulePath);
+    }
+  }
+
+  assert.deepEqual(gitlinks.filter((gitlink) => !declaredSubmodules.has(gitlink)), []);
 });

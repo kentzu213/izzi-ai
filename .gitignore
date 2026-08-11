@@ -23,6 +23,7 @@ apps/desktop/src/main/setup/nine-router-service.ts
 apps/desktop/src/main/setup/budget-ipc-handlers.ts
 
 # Private setup clone (entire directory is proprietary)
+_private_clone/
 _izzi_setup/
 _izzi_openclaw_ref/
 
