@@ -56,17 +56,69 @@ jobs:
         run: pnpm test:socrates
         working-directory: .
 
-      - name: Package and Publish
-        run: npx electron-builder --win --config electron-builder.json --publish always
+      - name: Package Windows
+        run: npx electron-builder --win --config electron-builder.json --publish never
+
+      - name: Ensure GitHub release exists
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:GITHUB_REF_NAME
+          $existing = gh release view $tag --repo $env:GITHUB_REPOSITORY `
+            --json tagName,isDraft,isPrerelease 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if (-not $release.isDraft) {
+              throw "Release $tag is already published; refusing to replace its assets."
+            }
+            if ($release.isPrerelease -ne $tag.Contains('-')) {
+              throw "Draft release $tag has the wrong prerelease state."
+            }
+          } else {
+            $title = $tag -replace '^v', ''
+            $arguments = @(
+              'release', 'create', $tag,
+              '--repo', $env:GITHUB_REPOSITORY,
+              '--verify-tag',
+              '--draft',
+              '--title', $title,
+              '--notes', "Automated Izzi AI desktop release $title."
+            )
+            if ($tag.Contains('-')) {
+              $arguments += '--prerelease'
+            } else {
+              $arguments += '--latest'
+            }
+            & gh @arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to create GitHub release $tag."
+            }
+          }
+
+      - name: Upload Windows release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $assets = @(
+            (Resolve-Path "release/Izzi-AI-$version-win-x64.exe").Path,
+            (Resolve-Path "release/Izzi-AI-$version-win-x64.exe.blockmap").Path,
+            (Resolve-Path 'release/latest.yml').Path
+          )
+          & gh release upload $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to upload the Windows release assets.'
+          }
 
   build-mac:
     runs-on: macos-latest
-    # Run AFTER build-windows (not in parallel) so only one job creates the
-    # GitHub release; this one then uploads the mac assets to the existing
-    # release. Prevents the "422 already_exists" race when both jobs publish.
+    # Windows creates the draft and uploads its assets first. macOS extends the
+    # same draft; the final job publishes only after all 12 assets are verified.
     needs: build-windows
     defaults:
       run:
@@ -86,7 +138,10 @@ jobs:
           version: 9
 
       - name: Provision macOS native architectures
-        run: pnpm config set supportedArchitectures '{"os":["darwin"],"cpu":["x64","arm64"]}' --json --location=project
+        run: >-
+          npm pkg set --json
+          'pnpm.supportedArchitectures.os=["darwin"]'
+          'pnpm.supportedArchitectures.cpu=["x64","arm64"]'
         working-directory: .
 
       - name: Install dependencies
@@ -101,9 +156,97 @@ jobs:
       - name: Build desktop app
         run: pnpm build
 
-      - name: Package and Publish
-        run: npx electron-builder --mac --config electron-builder.json --publish always
+      - name: Package macOS
+        run: npx electron-builder --mac --config electron-builder.json --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload macOS release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_PRE_RELEASE: ${{ contains(github.ref_name, '-') }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          assets=(
+            "release/Izzi-AI-${version}-mac-x64.dmg"
+            "release/Izzi-AI-${version}-mac-x64.dmg.blockmap"
+            "release/Izzi-AI-${version}-mac-x64.zip"
+            "release/Izzi-AI-${version}-mac-x64.zip.blockmap"
+            "release/Izzi-AI-${version}-mac-arm64.dmg"
+            "release/Izzi-AI-${version}-mac-arm64.dmg.blockmap"
+            "release/Izzi-AI-${version}-mac-arm64.zip"
+            "release/Izzi-AI-${version}-mac-arm64.zip.blockmap"
+            "release/latest-mac.yml"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "$asset"
+          done
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+  verify-and-publish-release:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-mac]
+    steps:
+      - name: Verify complete release inventory
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $requiredNames = @(
+            "Izzi-AI-$version-win-x64.exe",
+            "Izzi-AI-$version-win-x64.exe.blockmap",
+            'latest.yml',
+            "Izzi-AI-$version-mac-x64.dmg",
+            "Izzi-AI-$version-mac-x64.dmg.blockmap",
+            "Izzi-AI-$version-mac-x64.zip",
+            "Izzi-AI-$version-mac-x64.zip.blockmap",
+            "Izzi-AI-$version-mac-arm64.dmg",
+            "Izzi-AI-$version-mac-arm64.dmg.blockmap",
+            "Izzi-AI-$version-mac-arm64.zip",
+            "Izzi-AI-$version-mac-arm64.zip.blockmap",
+            'latest-mac.yml'
+          )
+          $release = gh release view $env:GITHUB_REF_NAME `
+            --repo $env:GITHUB_REPOSITORY `
+            --json isDraft,isPrerelease,assets | ConvertFrom-Json
+          if (-not $release.isDraft) {
+            throw 'Release must remain a draft until the inventory is complete.'
+          }
+          if ($release.isPrerelease -ne $env:GITHUB_REF_NAME.Contains('-')) {
+            throw 'Release prerelease state does not match the tag.'
+          }
+          $assets = @($release.assets)
+          foreach ($name in $requiredNames) {
+            $asset = $assets | Where-Object name -eq $name
+            if (-not $asset) {
+              throw "Missing release asset: $name"
+            }
+            if ($asset.size -le 0) {
+              throw "Release asset is empty: $name"
+            }
+            if ($asset.digest -notmatch '^sha256:[0-9a-f]{64}$') {
+              throw "Release asset has no valid SHA-256 digest: $name"
+            }
+          }
+          if ($assets.Count -ne $requiredNames.Count) {
+            $unexpected = $assets.name | Where-Object { $_ -notin $requiredNames }
+            throw "Unexpected release inventory: $($unexpected -join ', ')"
+          }
+          & gh release edit $env:GITHUB_REF_NAME `
+            --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to publish the verified desktop release.'
+          }
+          $published = gh release view $env:GITHUB_REF_NAME `
+            --repo $env:GITHUB_REPOSITORY `
+            --json isDraft,isPrerelease,assets | ConvertFrom-Json
+          if (
+            $published.isDraft
+            -or $published.isPrerelease -ne $env:GITHUB_REF_NAME.Contains('-')
+            -or @($published.assets).Count -ne $requiredNames.Count
+          ) {
+            throw 'Published release state does not match the verified draft.'
+          }

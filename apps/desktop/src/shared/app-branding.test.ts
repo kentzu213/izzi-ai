@@ -103,15 +103,26 @@ describe('Izzi AI desktop branding contract', () => {
     expect(logoSource).not.toContain('Starizzi Logo');
   });
 
-  it('publishes prerelease version tags as GitHub prereleases on every platform', () => {
+  it('publishes deterministic prereleases only after every platform asset exists', () => {
     const workflowSource = readFileSync(
       new URL('../../../../.github/workflows/release-desktop.yml', import.meta.url),
       'utf8',
     );
+    const inventory = workflowSource.match(/\$requiredNames = @\(([\s\S]*?)\n\s*\)/)?.[1] ?? '';
 
     expect(builderConfig.detectUpdateChannel).toBe(true);
-    expect(workflowSource.match(/EP_PRE_RELEASE:/g)).toHaveLength(2);
-    expect(workflowSource.match(/contains\(github\.ref_name, '-'\)/g)).toHaveLength(2);
+    expect(builderConfig.artifactName).toBe('Izzi-AI-${version}-${os}-${arch}.${ext}');
+    expect(workflowSource).not.toContain('--publish always');
+    expect(workflowSource.match(/--publish never/g)).toHaveLength(2);
+    expect(workflowSource.match(/gh release upload/g)).toHaveLength(2);
+    expect(workflowSource).toContain("if ($tag.Contains('-'))");
+    expect(workflowSource).toContain("$arguments += '--prerelease'");
+    expect(workflowSource).toContain("'--draft',");
+    expect(workflowSource).toContain('already published; refusing to replace its assets');
+    expect(workflowSource).toContain('needs: [build-windows, build-mac]');
+    expect(inventory.match(/^\s+(?:"Izzi-AI|'latest)/gm)).toHaveLength(12);
+    expect(workflowSource).toContain('if ($assets.Count -ne $requiredNames.Count)');
+    expect(workflowSource).toContain('--repo $env:GITHUB_REPOSITORY --draft=false');
   });
 
   it('provisions target-native optional packages without a third-party Electron mirror', () => {
@@ -122,10 +133,11 @@ describe('Izzi AI desktop branding contract', () => {
     const macJob = workflowSource.split('  build-mac:')[1] ?? '';
 
     expect(builderConfig).not.toHaveProperty('electronDownload');
-    expect(workflowSource.match(/pnpm config set supportedArchitectures/g)).toHaveLength(1);
-    expect(macJob).toContain(
-      `pnpm config set supportedArchitectures '{"os":["darwin"],"cpu":["x64","arm64"]}' --json --location=project`,
-    );
+    expect(workflowSource).not.toContain('pnpm config set supportedArchitectures');
+    expect(macJob).toContain('npm pkg set --json');
+    expect(macJob).toContain(`'pnpm.supportedArchitectures.os=["darwin"]'`);
+    expect(macJob).toContain(`'pnpm.supportedArchitectures.cpu=["x64","arm64"]'`);
+    expect(macJob.indexOf('npm pkg set --json')).toBeLessThan(macJob.indexOf('pnpm install --frozen-lockfile'));
   });
 
   it('keeps executable package dependencies together in the ASAR-unpacked runtime', () => {
