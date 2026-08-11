@@ -1,10 +1,10 @@
 # Customer AI Marketing Room Plan
 
 Product status: in_progress (68% weighted delivery scope; 98% local product scope)
-Vertical slice status: verified_beta31_candidate_marketing_snapshot_latency
+Vertical slice status: verified_public_beta31_marketing_snapshot_latency
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta30 renderer route splitting and public release are recorded in `docs/DESKTOP-BETA30-RENDERER-PERFORMANCE-EVIDENCE.md`. The beta31 candidate paints a fail-closed Marketing snapshot before optional media probes; local production-renderer smoke measured 890 ms after Chat settled and 1,826 ms for immediate fresh-process navigation. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
