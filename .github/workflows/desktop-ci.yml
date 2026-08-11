@@ -47,6 +47,12 @@ jobs:
           # Consumed by root .npmrc (${NODE_AUTH_TOKEN}).
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      - name: Run workspace lint
+        run: pnpm lint
+
+      - name: Run ESLint config contract tests
+        run: pnpm test:lint-config
+
       - name: Build workspace
         run: pnpm build:all
 

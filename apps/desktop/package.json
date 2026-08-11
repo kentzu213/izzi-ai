@@ -23,7 +23,7 @@
     "build:mac": "pnpm build && electron-builder --mac",
     "build:all": "pnpm build:icon:win && pnpm build && electron-builder --win --mac",
     "clean": "rimraf dist out release",
-    "lint": "eslint src/",
+    "lint": "pnpm --dir ../.. exec eslint apps/desktop/src",
     "test": "vitest run",
     "test:smoke": "vitest run src/**/*.smoke.test.ts"
   },

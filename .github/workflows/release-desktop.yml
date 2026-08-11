@@ -38,6 +38,14 @@ jobs:
           # works when this repo is granted read access to the package.
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      - name: Run workspace lint
+        run: pnpm lint
+        working-directory: .
+
+      - name: Run ESLint config contract tests
+        run: pnpm test:lint-config
+        working-directory: .
+
       - name: Build desktop app
         run: pnpm build
 

@@ -3,7 +3,8 @@
 Product status: in_progress (68% weighted delivery scope)
 Vertical slice status: verified_public_beta26_local_video_preview
 Backend foundation status: verified_local_not_deployed
-Last verified: 2026-08-11 ICT. Beta26 tenant-safe local video preview, public release, installed MP4 output, updater state, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`.
+Quality gate status: verified_workspace_eslint9
+Last verified: 2026-08-11 ICT. Beta26 tenant-safe local video preview, public release, installed MP4 output, updater state, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`. The post-release ESLint 9 gate and dependency audit are recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -138,6 +139,10 @@ integrations/staging/production-E2E allocation: 68% total.
   H.264/AAC 1080 x 1920 MP4 with Voice Studio audio. Installed desktop/mobile smoke, updater
   `idle / 1.14.0-beta.26`, hashes, focus states, and remaining commercial gates are recorded in
   `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`.
+- CMR-404 lint continuation: `pnpm lint` checks 310 workspace source/config files with zero
+  reported errors or warnings; `pnpm test:lint-config` passes 4/4 and proves a new unused variable
+  still fails. CI and release gates now run both commands. Exact dependency, suppression, and
+  audit evidence is recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`.
 
 ## Next phases
 
@@ -159,6 +164,8 @@ integrations/staging/production-E2E allocation: 68% total.
     smoke tests.
 13. [ ] Restore persistent GitNexus MCP connectivity and index the active Voice worktree while
     retaining shell/CLI fallback.
+14. [x] Establish a workspace-wide ESLint 9 flat-config gate, bounded migration suppressions,
+    deterministic contract tests, and CI/release enforcement.
 
 ## Explicitly not claimed complete
 
@@ -172,3 +179,6 @@ integrations/staging/production-E2E allocation: 68% total.
 - A recorded consent artifact bound to the reference voice used by a media job.
 - A complete end-to-end marketing campaign with external actions.
 - Staging URL, release branch, or deployment approval.
+- Complete developer-tool dependency remediation. `pnpm audit --json` still reports the Electron
+  34/build-chain baseline recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`; the production
+  audit is clean.

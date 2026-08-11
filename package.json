@@ -18,8 +18,10 @@
     "dev:marketplace": "pnpm --parallel --filter @openclaw/marketplace-api --filter @openclaw/desktop dev",
     "build": "pnpm --filter @openclaw/desktop build",
     "build:all": "pnpm -r build",
+    "test:lint-config": "node --test tools/eslint-config-contract.test.mjs",
     "test:socrates": "node --test tools/socrates-tier1.test.mjs",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "clean": "pnpm -r clean"
   },
   "engines": {
@@ -28,6 +30,7 @@
   },
   "pnpm": {
     "overrides": {
+      "@babel/core": "7.29.6",
       "@hono/node-server": "2.0.10",
       "builder-util-runtime": "9.7.0",
       "fast-uri": "3.1.5",
@@ -41,7 +44,17 @@
       "postcss": "^8.5.18",
       "sharp": "0.35.3",
       "adm-zip": "0.6.0",
-      "brace-expansion@^2.0.0": "2.1.4"
+      "brace-expansion@^1.0.0": "1.1.18",
+      "brace-expansion@^2.0.0": "2.1.4",
+      "brace-expansion@^5.0.0": "5.0.9"
     }
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.9.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0"
   }
 }

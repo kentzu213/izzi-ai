@@ -157,8 +157,8 @@ The test returned the app to `AI Marketing -> Video Studio` after verification.
 
 - The Windows installer and executable are not digitally signed. Public and
   installed bytes are independently hashed in this record.
-- ESLint remains blocked until the repository receives an ESLint 9 flat
-  configuration; this is the next bounded verification-infrastructure task.
+- The tagged beta26 release predates the ESLint configuration. Post-release main now has a
+  workspace ESLint 9 gate; its evidence is in `docs/CMR-404-ESLINT9-EVIDENCE.md`.
 - The verified audio provider in this slice is Voice Studio. Direct F5-TTS
   generation is not claimed.
 - Commercial rendering, reference-voice consent, publishing, spend, and all
