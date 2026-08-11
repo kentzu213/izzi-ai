@@ -4,7 +4,7 @@ Product status: in_progress (68% weighted delivery scope; 98% local product scop
 Vertical slice status: verified_public_beta31_marketing_snapshot_latency
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend and staging readiness gate are now public on `izzi-backend/master` at `187e458`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend, staging readiness gate, and authenticated route rate limit are public on `izzi-backend/master` at `c17ac32`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -114,6 +114,12 @@ integrations/staging/production-E2E allocation: 68% total.
       remain tenant-scoped and fail closed
     - PostgreSQL 16, pinned PostgREST, packaged beta31, Docker image, audit, and offline staging
       gates pass without changing remote state
+31. [x] Harden authenticated Customer Marketing routes against request floods:
+    - derive the rate-limit key only from the Supabase-validated actor
+    - enforce 300 requests per minute through Redis when available
+    - keep a bounded 10,000-actor local fallback when Redis is absent or unavailable
+    - return stable 429, `Retry-After`, `X-RateLimit-*`, and `Cache-Control: no-store` before
+      service dispatch across workspace and nested resource routes
 
 ## Verification evidence
 
