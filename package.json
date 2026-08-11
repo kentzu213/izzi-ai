@@ -18,6 +18,7 @@
     "dev:marketplace": "pnpm --parallel --filter @openclaw/marketplace-api --filter @openclaw/desktop dev",
     "build": "pnpm --filter @openclaw/desktop build",
     "build:all": "pnpm -r build",
+    "test:actions": "node --test tools/github-actions-runtime-contract.test.mjs",
     "test:lint-config": "node --test tools/eslint-config-contract.test.mjs",
     "test:socrates": "node --test tools/socrates-tier1.test.mjs",
     "lint": "eslint .",

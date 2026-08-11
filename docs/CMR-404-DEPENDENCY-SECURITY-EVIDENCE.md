@@ -33,6 +33,17 @@ The install and verification commands warned that `NODE_AUTH_TOKEN` was not set.
 was read or printed, and the frozen-lockfile install completed. pnpm also kept the
 `electron-winstaller@5.4.0` dependency build script blocked by its build-script policy.
 
+## GitHub Actions Runtime Follow-Up
+
+The Desktop CI and release workflows pin reviewed full commit SHAs for checkout `7.0.1`,
+setup-node `7.0.0`, and pnpm/action-setup `6.0.10`. Their official action manifests declare the
+Node 24 action runtime. The application toolchain remains explicit at Node 22, pnpm 10 for normal
+CI, and pnpm 9 for release packaging.
+
+`pnpm test:actions` detects mutable major tags, unreviewed SHAs, persisted checkout credentials,
+or removal of the contract from normal CI and the release workflow. GitHub-hosted execution must
+still pass after the follow-up is pushed.
+
 ## Decision
 
 CMR-404 can close as `done_local` for dependency audit, lint, build, and automated security-test
