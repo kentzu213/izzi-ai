@@ -6010,6 +6010,143 @@ body {
   background: var(--color-bg-primary) !important;
 }
 
+.app-page-loader {
+  min-height: 240px;
+  height: 100%;
+  padding: clamp(20px, 4vw, 48px);
+  background: var(--color-bg-primary);
+}
+
+.app-page-loader__shell {
+  display: grid;
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  gap: 24px;
+}
+
+.app-page-loader__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-page-loader__mark {
+  width: 40px;
+  aspect-ratio: 1;
+}
+
+.app-page-loader__heading,
+.app-page-loader__panel {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  animation: app-page-loading-pulse 1.4s ease-in-out infinite;
+}
+
+.app-page-loader__heading {
+  width: min(38vw, 260px);
+  height: 18px;
+  border-radius: 4px;
+}
+
+.app-page-loader__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-page-loader__panel {
+  min-height: 150px;
+  border-radius: 8px;
+}
+
+.app-page-loader__panel--wide {
+  grid-column: 1 / -1;
+  min-height: 210px;
+}
+
+@keyframes app-page-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.48;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
+.app-mobile-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .app-page-loader {
+    padding: 20px 16px calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .app-page-loader__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-page-loader__panel,
+  .app-page-loader__panel--wide {
+    grid-column: auto;
+    min-height: 132px;
+  }
+
+  .app-mobile-nav {
+    position: fixed;
+    z-index: 1200;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid rgba(221, 235, 238, 0.18);
+    border-radius: 8px;
+    background: rgba(8, 13, 19, 0.96);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+  }
+
+  .app-mobile-nav button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 6px;
+    color: rgba(229, 238, 238, 0.62);
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .app-mobile-nav button.is-active {
+    color: #f5f7f2;
+    background: rgba(37, 215, 193, 0.13);
+    box-shadow: inset 0 0 0 1px rgba(37, 215, 193, 0.28);
+  }
+
+  .app-mobile-nav__icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    color: #25d7c1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-page-loader__heading,
+  .app-page-loader__panel {
+    animation: none;
+  }
+}
+
 /* Setup mode-cards: flat paper tiles with a Bauhaus geometric corner accent */
 .izzi-setup__mode-card {
   background: var(--color-bg-elevated);

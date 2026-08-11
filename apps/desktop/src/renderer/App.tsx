@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -8,25 +8,27 @@ import { UpdateNotification } from './components/UpdateNotification';
 import { AppLogoMark, ChatIcon, OverviewIcon } from './components/AppIcons';
 import { LoginPage } from './pages/Login';
 import { ChatPage } from './pages/Chat';
-import { TasksPage } from './pages/Tasks';
-import { MemoryPage } from './pages/Memory';
-import { StatusPage } from './pages/Status';
-import { DashboardPage } from './pages/Dashboard';
-import { MarketplacePage } from './pages/Marketplace';
-import { ExtensionsPage } from './pages/Extensions';
-import { AgentStorePage } from './pages/AgentStore';
-import { SettingsPage } from './pages/Settings';
-import { SetupWizardPage } from './pages/SetupWizard';
-import { CostDashboardPage } from './pages/CostDashboard';
-import { AffiliatePage } from './pages/Affiliate';
-import { ModelConnectionsPage } from './pages/ModelConnections';
-import { AutoPostPage } from './pages/AutoPost';
-import { MarketingRoomPage } from './pages/MarketingRoom';
-import { CustomerMarketingRoomPage } from './pages/CustomerMarketingRoom';
-import KnowledgeUniversePage from './pages/KnowledgeUniverse';
-import { ScheduledSessionsPage } from './pages/ScheduledSessions';
 import { useAgentWorkspaceStore } from './store/agentWorkspace';
 import { vi } from './i18n/vi';
+
+const TasksPage = lazy(() => import('./pages/Tasks').then((module) => ({ default: module.TasksPage })));
+const MemoryPage = lazy(() => import('./pages/Memory').then((module) => ({ default: module.MemoryPage })));
+const StatusPage = lazy(() => import('./pages/Status').then((module) => ({ default: module.StatusPage })));
+const DashboardPage = lazy(() => import('./pages/Dashboard').then((module) => ({ default: module.DashboardPage })));
+const MarketplacePage = lazy(() => import('./pages/Marketplace').then((module) => ({ default: module.MarketplacePage })));
+const ExtensionsPage = lazy(() => import('./pages/Extensions').then((module) => ({ default: module.ExtensionsPage })));
+const AgentStorePage = lazy(() => import('./pages/AgentStore').then((module) => ({ default: module.AgentStorePage })));
+const SettingsPage = lazy(() => import('./pages/Settings').then((module) => ({ default: module.SettingsPage })));
+const SetupWizardPage = lazy(() => import('./pages/SetupWizard').then((module) => ({ default: module.SetupWizardPage })));
+const CostDashboardPage = lazy(() => import('./pages/CostDashboard').then((module) => ({ default: module.CostDashboardPage })));
+const AffiliatePage = lazy(() => import('./pages/Affiliate').then((module) => ({ default: module.AffiliatePage })));
+const ModelConnectionsPage = lazy(() => import('./pages/ModelConnections').then((module) => ({ default: module.ModelConnectionsPage })));
+const AutoPostPage = lazy(() => import('./pages/AutoPost').then((module) => ({ default: module.AutoPostPage })));
+const MarketingRoomPage = lazy(() => import('./pages/MarketingRoom').then((module) => ({ default: module.MarketingRoomPage })));
+const loadCustomerMarketingRoom = () => import('./pages/CustomerMarketingRoom').then((module) => ({ default: module.CustomerMarketingRoomPage }));
+const CustomerMarketingRoomPage = lazy(loadCustomerMarketingRoom);
+const KnowledgeUniversePage = lazy(() => import('./pages/KnowledgeUniverse'));
+const ScheduledSessionsPage = lazy(() => import('./pages/ScheduledSessions').then((module) => ({ default: module.ScheduledSessionsPage })));
 
 type Page =
   | 'chat'
@@ -57,6 +59,27 @@ const DEV_USER = {
   role: 'user',
   avatar: 'D',
 };
+
+function PageLoadingFallback() {
+  return (
+    <div className="app-page-loader" role="status" aria-live="polite">
+      <span className="sr-only">Đang tải trang</span>
+      <div className="app-page-loader__shell" aria-hidden="true">
+        <div className="app-page-loader__header">
+          <div className="app-page-loader__mark">
+            <AppLogoMark />
+          </div>
+          <div className="app-page-loader__heading" />
+        </div>
+        <div className="app-page-loader__grid">
+          <div className="app-page-loader__panel app-page-loader__panel--wide" />
+          <div className="app-page-loader__panel" />
+          <div className="app-page-loader__panel" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -112,6 +135,19 @@ export function App() {
       void checkForUpdates();
     }
   }, [checkForUpdates, currentPage, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== 'chat') {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadCustomerMarketingRoom().catch(() => undefined);
+    }, 1200);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [currentPage, isAuthenticated]);
 
   useEffect(() => {
     const extensionUpdates = window.electronAPI?.extensionUpdates;
@@ -431,7 +467,9 @@ export function App() {
             onRestart={() => void restartToUpdate()}
           />
           <ErrorBoundary fallbackTitle="Loi hien thi trang">
-            {renderPage()}
+            <Suspense fallback={<PageLoadingFallback />}>
+              {renderPage()}
+            </Suspense>
           </ErrorBoundary>
         </main>
       </div>

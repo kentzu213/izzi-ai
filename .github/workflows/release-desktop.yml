@@ -55,6 +55,10 @@ jobs:
       - name: Build desktop app
         run: pnpm build
 
+      - name: Enforce renderer bundle budget
+        run: pnpm test:renderer-budget
+        working-directory: .
+
       - name: Run desktop tests
         run: pnpm test
 

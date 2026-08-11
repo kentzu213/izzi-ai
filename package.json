@@ -19,6 +19,7 @@
     "build": "pnpm --filter @openclaw/desktop build",
     "build:all": "pnpm -r build",
     "test:actions": "node --test tools/github-actions-runtime-contract.test.mjs",
+    "test:renderer-budget": "node --test tools/renderer-bundle-budget.test.mjs",
     "test:lint-config": "node --test tools/eslint-config-contract.test.mjs",
     "test:socrates": "node --test tools/socrates-tier1.test.mjs",
     "lint": "eslint .",
