@@ -49,8 +49,9 @@ matching `.gitmodules` entry. The referenced nested commit object was not presen
 repository, the clean-worktree directory was empty, and no product source referenced the path.
 The follow-up removes only that gitlink from the repository index and ignores the local proprietary
 clone path. `git submodule foreach --recursive "git status --short"` now exits successfully, and
-`pnpm test:actions` passes 5/5 including an orphan-gitlink regression check. GitHub-hosted
-confirmation remains required after this fix is pushed.
+`pnpm test:actions` passes 5/5 including an orphan-gitlink regression check. GitHub Desktop CI run
+`31478879820` for commit `dee4a5d1740c404eab63f1adc6d3b81b524eeccb` passed on Windows and
+macOS; both check runs reported zero annotations.
 
 ## Decision
 
