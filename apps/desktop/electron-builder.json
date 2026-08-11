@@ -41,6 +41,7 @@
   ],
 
   "beforePack": "scripts/before-pack.cjs",
+  "afterPack": "scripts/after-pack.cjs",
 
   "win": {
     "target": [
@@ -137,6 +138,10 @@
     "node_modules/@esbuild/win32-x64/**/*",
     "node_modules/@hono/node-server/**/*",
     "node_modules/@img/colour/**/*",
+    "node_modules/@img/sharp-darwin-arm64/**/*",
+    "node_modules/@img/sharp-darwin-x64/**/*",
+    "node_modules/@img/sharp-libvips-darwin-arm64/**/*",
+    "node_modules/@img/sharp-libvips-darwin-x64/**/*",
     "node_modules/@img/sharp-win32-x64/**/*",
     "node_modules/@puppeteer/browsers/**/*",
     "node_modules/@swc/helpers/**/*",
@@ -198,10 +203,5 @@
     "node_modules/zod/**/*",
     "dist/main/extensions/extension-runner.js"
   ],
-
-  "electronDownload": {
-    "mirror": "https://npmmirror.com/mirrors/electron/"
-  },
-
   "afterSign": null
 }

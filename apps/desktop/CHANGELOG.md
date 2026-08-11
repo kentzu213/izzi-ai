@@ -1,4 +1,18 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.28
+
+Clean-package native runtime repair.
+
+- Declare the pinned Sharp binaries as direct optional desktop dependencies so
+  fresh CI packages include the native runtime used by HyperFrames.
+- Fail packaging before an installer can be published when the target Sharp
+  `.node`, `.dll`, or `.dylib` payload is missing from `app.asar.unpacked`.
+- Provision Windows x64 and macOS x64/arm64 optional binaries for every
+  published target, and return Electron downloads to the builder's
+  checksum-verified default.
+- Keep the narrow ASAR allowlist, local-only preview boundary, non-commercial
+  F5-TTS gate, and external-action lock intact.
+
 ## 1.14.0-beta.27
 
 Customer Marketing workspace sync and packaged Video Studio hardening.

@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import builderConfig from '../../electron-builder.json';
 import desktopPackage from '../../package.json';
@@ -9,6 +18,23 @@ const EXPECTED_ICON_HASHES = {
   ico: 'ac711a1557e15fa612cab7299442fb9d29e95170a8a303064f433eb6b126b1f9',
   png: '824807c15344b8d36a31cae66cd54ff77e15d12ecf100e21b4c243fcad0e5e4c',
 } as const;
+
+const SHARP_RUNTIME_DEPENDENCIES = {
+  '@img/sharp-darwin-arm64': '0.35.3',
+  '@img/sharp-darwin-x64': '0.35.3',
+  '@img/sharp-libvips-darwin-arm64': '1.3.2',
+  '@img/sharp-libvips-darwin-x64': '1.3.2',
+  '@img/sharp-win32-x64': '0.35.3',
+} as const;
+
+const requireHere = createRequire(import.meta.url);
+
+type AfterPackHook = (context: {
+  appOutDir: string;
+  arch: number;
+  electronPlatformName: string;
+  packager: { appInfo: { productFilename: string } };
+}) => Promise<void>;
 
 function sha256(url: URL): string {
   return createHash('sha256').update(readFileSync(url)).digest('hex');
@@ -21,6 +47,27 @@ function icoSizes(url: URL): number[] {
     const width = ico[6 + index * 16];
     return width === 0 ? 256 : width;
   });
+}
+
+function writePackagedRuntime(
+  resourcesDir: string,
+  packages: Record<string, string[]>,
+): void {
+  for (const [packageName, nativeFiles] of Object.entries(packages)) {
+    const packageDir = join(
+      resourcesDir,
+      'app.asar.unpacked',
+      'node_modules',
+      ...packageName.split('/'),
+    );
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name: packageName }));
+    for (const nativeFile of nativeFiles) {
+      const nativePath = join(packageDir, nativeFile);
+      mkdirSync(join(nativePath, '..'), { recursive: true });
+      writeFileSync(nativePath, 'native-runtime');
+    }
+  }
 }
 
 describe('Izzi AI desktop branding contract', () => {
@@ -67,6 +114,20 @@ describe('Izzi AI desktop branding contract', () => {
     expect(workflowSource.match(/contains\(github\.ref_name, '-'\)/g)).toHaveLength(2);
   });
 
+  it('provisions target-native optional packages without a third-party Electron mirror', () => {
+    const workflowSource = readFileSync(
+      new URL('../../../../.github/workflows/release-desktop.yml', import.meta.url),
+      'utf8',
+    );
+    const macJob = workflowSource.split('  build-mac:')[1] ?? '';
+
+    expect(builderConfig).not.toHaveProperty('electronDownload');
+    expect(workflowSource.match(/pnpm config set supportedArchitectures/g)).toHaveLength(1);
+    expect(macJob).toContain(
+      `pnpm config set supportedArchitectures '{"os":["darwin"],"cpu":["x64","arm64"]}' --json --location=project`,
+    );
+  });
+
   it('keeps executable package dependencies together in the ASAR-unpacked runtime', () => {
     expect(builderConfig.asar).toBe(true);
     expect(builderConfig.asarUnpack).not.toContain('node_modules/**/*');
@@ -86,5 +147,65 @@ describe('Izzi AI desktop branding contract', () => {
       expect(builderConfig.asarUnpack).toContain(`node_modules/${packageName}/**/*`);
     }
     expect(builderConfig.asarUnpack).toContain('dist/main/extensions/extension-runner.js');
+  });
+
+  it('includes and verifies Sharp native runtimes for every published desktop target', async () => {
+    const optionalDependencies = (
+      desktopPackage as typeof desktopPackage & {
+        optionalDependencies?: Record<string, string>;
+      }
+    ).optionalDependencies;
+
+    expect(optionalDependencies).toMatchObject(SHARP_RUNTIME_DEPENDENCIES);
+    expect(builderConfig.afterPack).toBe('scripts/after-pack.cjs');
+    for (const packageName of Object.keys(SHARP_RUNTIME_DEPENDENCIES)) {
+      expect(builderConfig.asarUnpack).toContain(`node_modules/${packageName}/**/*`);
+    }
+
+    const { default: afterPack } = requireHere('../../scripts/after-pack.cjs') as {
+      default: AfterPackHook;
+    };
+    const roots: string[] = [];
+    const fixture = (
+      platform: 'win32' | 'darwin',
+      arch: 1 | 3,
+      packages: Record<string, string[]>,
+    ) => {
+      const appOutDir = mkdtempSync(join(tmpdir(), 'izzi-after-pack-'));
+      roots.push(appOutDir);
+      const resourcesDir = platform === 'darwin'
+        ? join(appOutDir, `${APP_NAME}.app`, 'Contents', 'Resources')
+        : join(appOutDir, 'resources');
+      writePackagedRuntime(resourcesDir, packages);
+      return {
+        appOutDir,
+        arch,
+        electronPlatformName: platform,
+        packager: { appInfo: { productFilename: APP_NAME } },
+      };
+    };
+
+    try {
+      await expect(afterPack(fixture('win32', 1, {
+        '@img/sharp-win32-x64': [
+          'lib/sharp-win32-x64-0.35.3.node',
+          'lib/libvips-42.dll',
+        ],
+      }))).resolves.toBeUndefined();
+      await expect(afterPack(fixture('darwin', 1, {
+        '@img/sharp-darwin-x64': ['lib/sharp-darwin-x64.node'],
+        '@img/sharp-libvips-darwin-x64': ['lib/libvips-cpp.dylib'],
+      }))).resolves.toBeUndefined();
+      await expect(afterPack(fixture('darwin', 3, {
+        '@img/sharp-darwin-arm64': ['lib/sharp-darwin-arm64.node'],
+        '@img/sharp-libvips-darwin-arm64': ['lib/libvips-cpp.dylib'],
+      }))).resolves.toBeUndefined();
+
+      await expect(afterPack(fixture('darwin', 3, {
+        '@img/sharp-darwin-arm64': ['lib/sharp-darwin-arm64.node'],
+      }))).rejects.toThrow('@img/sharp-libvips-darwin-arm64');
+    } finally {
+      for (const root of roots) rmSync(root, { recursive: true, force: true });
+    }
   });
 });
