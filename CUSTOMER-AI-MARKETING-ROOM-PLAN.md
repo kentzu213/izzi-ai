@@ -1,18 +1,18 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (68% weighted delivery scope; 98% local product scope)
-Vertical slice status: verified_public_beta31_marketing_snapshot_latency
+Product status: in_progress (69% weighted delivery scope; 99% local product scope)
+Vertical slice status: verified_public_backend_two_device_local_staging
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend, staging readiness gate, and authenticated route rate limit are public on `izzi-backend/master` at `c17ac32`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend, staging readiness gate, authenticated route rate limit, and packaged two-device profile-sync harness are public on `izzi-backend/master` at `41b45c6`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
 source rubric is this plan, `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`: 20% complete
 foundation/auth/tenant guardrails, 20% complete customer UX/context/approvals,
 16% of the 20% local content/media allocation, 7% of the 20%
-backend-sync/billing allocation, and 5% of the 20%
-integrations/staging/production-E2E allocation: 68% total.
+backend-sync/billing allocation, and 6% of the 20%
+integrations/staging/production-E2E allocation: 69% total.
 
 ## Product boundary
 
@@ -120,6 +120,15 @@ integrations/staging/production-E2E allocation: 68% total.
     - keep a bounded 10,000-actor local fallback when Redis is absent or unavailable
     - return stable 429, `Retry-After`, `X-RateLimit-*`, and `Cache-Control: no-store` before
       service dispatch across workspace and nested resource routes
+32. [x] Prove packaged two-device profile synchronization against isolated local staging:
+    - run two beta31 Electron sessions with separate `APPDATA`, `LOCALAPPDATA`, temp, user-data,
+      process, and CDP state
+    - synchronize device A revision 1 to device B, then device B revision 2 back to device A
+    - race two authenticated updates at one revision and require exactly one 200 plus one
+      `409 profile_conflict`
+    - reload the winner revision and retry the losing profile successfully to revision 4
+    - retain the existing single-device campaign/content/workflow regression with no runtime or
+      external-action error
 
 ## Verification evidence
 
@@ -181,8 +190,9 @@ integrations/staging/production-E2E allocation: 68% total.
 1. [x] Implement the local backend schema, RLS contract, authenticated workspace APIs, invitations, and remote workspace/quota synchronization.
 2. [x] Complete server-authoritative member listing and role administration; the local implementation is verified and not deployed.
 3. [ ] Complete remote cross-device proof for onboarding and customer profile synchronization.
-   The revision/conflict backend contract is public on `izzi-backend/master` at `187e458`; this
-   item remains open until two devices use an isolated deployed staging project successfully.
+   The revision/conflict backend contract and packaged two-device local staging harness are public
+   on `izzi-backend/master` at `41b45c6`; this item remains open until two devices use an isolated
+   deployed staging project successfully.
 4. [ ] Prove RLS and tenant isolation against a real local/staging Postgres instance using two authenticated users.
 5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement.
 6. [ ] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering.
@@ -208,7 +218,8 @@ integrations/staging/production-E2E allocation: 68% total.
 
 - Production deployment of the local multi-tenant backend migration, RLS policies, or feature gate.
 - Production deployment of team invitations, server-authoritative roles, and member role administration; the local implementation is complete and verified against a mocked backend, but no deployed IzziAPI instance has served these routes.
-- Cross-device onboarding, run, approval, media job, and artifact persistence.
+- Remote cross-device onboarding, run, approval, media job, and artifact persistence. Local
+  packaged cross-device customer-profile synchronization is verified through revision 4.
 - Real billing-ledger reconciliation; local atomic quota enforcement exists but production billing authority is not claimed.
 - Fully wired publishing, ads, email, CRM, commercial rendering, or direct F5-TTS generation.
 - A commercially enabled advertising render on the installed app. The audited VieNeu chain is

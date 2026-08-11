@@ -8,8 +8,8 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 ## Public Source
 
 - Repository: `https://github.com/kentzu213/izzi-backend`
-- Master commit: `c17ac322c674dc6bbae8e8fc33389ba75f9c5f41`
-- Merge shape: fast-forward by four reviewed commits from `3211308`; no auto-deploy workflow ran.
+- Master commit: `41b45c684370ae1448c3ee4f5312b9c505f5cfee`
+- Merge shape: fast-forward by five reviewed commits from `3211308`; no auto-deploy workflow ran.
 - Included contract: authenticated workspaces, members, invitations, quota reservations, profile
   revisions, capability catalog, campaigns, content, assets, knowledge, calendar, and analytics.
 
@@ -25,6 +25,7 @@ canonical `izzi-backend/master`, and keep remote database/VPS state unchanged.
 | Pinned PostgREST JWT boundary | PASS, 10/10 checks |
 | Staging verifier | PASS, 16 self-tests and offline release/digest contract |
 | Packaged Izzi AI beta31 flow | PASS, runtime errors 0 and external actions false |
+| Packaged beta31 two-device profile sync | PASS, revisions 1 -> 2 -> 4, one 409 conflict, retry 200 |
 | Full and production dependency audits | PASS, 0 known vulnerabilities |
 | Docker build and local image smoke | PASS |
 
@@ -32,6 +33,19 @@ The final packaged beta31 flow synchronized onboarding at profile revision 1, sa
 Context, approved one campaign and one scheduled content item, verified calendar and analytics,
 produced a workflow receipt, and denied publish with `policy_denied`. The local receipt SHA-256 is
 `5f0b6fc2bfd268de08cca00ad9b6e218f426ecb9fce6c873405cf879a0752e67`.
+
+The two-device harness launched two packaged beta31 Electron sessions with independent Windows app,
+local-app, temp, user-data, process, and CDP state against one ephemeral backend. Device B pulled
+device A revision 1, wrote revision 2, and device A pulled that update. Two direct authenticated
+updates then raced on revision 2: exactly one returned 200 and one returned
+`409 profile_conflict`; the losing profile reloaded revision 3 and retried successfully to revision
+4. The 87-request run had zero runtime errors and no publish, spend, bulk, or send endpoint. Its
+receipt SHA-256 is `c9fbf3d18828840ada4a246238c114c0e8c6a9bebd6d1d234dac5f22163a32be`.
+
+The existing single-device packaged regression also passed after the harness change: 205 requests,
+profile revision 1, one approved campaign, one approved content item, workflow receipt, publish gate
+`policy_denied`, zero runtime errors, and no external action. Its receipt SHA-256 is
+`b5a0a207d46e5e1f61d2d4f35b7ebd14c6cbd45f32d9e3f6e94c04452113e377`.
 
 The release image reported the exact full Git SHA. Local probes returned liveness 200, readiness
 503 against an intentionally invalid Supabase target, and unauthenticated Marketing Workspace 401
