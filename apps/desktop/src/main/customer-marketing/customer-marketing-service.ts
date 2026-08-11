@@ -166,6 +166,15 @@ interface CustomerMediaJobRecord extends CustomerMediaJob {
   previewApprovalId: string;
 }
 
+interface CustomerRemoteWorkflowAttempt {
+  version: 1;
+  workspaceId: string;
+  fingerprint: string;
+  startsOn: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
 interface CustomerTenantRecord {
   version: 1;
   workspaceId: string;
@@ -179,6 +188,7 @@ interface CustomerTenantRecord {
   approvals: CustomerApproval[];
   mediaJobs: CustomerMediaJobRecord[];
   mediaArtifacts: CustomerMediaArtifact[];
+  remoteWorkflowAttempt: CustomerRemoteWorkflowAttempt | null;
   usedCredits: number;
   updatedAt: string;
 }
@@ -223,6 +233,7 @@ const CHANNELS: CustomerChannel[] = [
 const AUTOMATION_MODES: CustomerAutomationMode[] = ['copilot', 'semi_autonomous', 'guardrailed_autonomous'];
 const LOCAL_WORKFLOW_WORKER_ID = 'customer-marketing-local-orchestrator';
 const CUSTOMER_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REMOTE_WORKFLOW_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1_000;
 const ASSIGNABLE_MEMBER_ROLES: CustomerAssignableRole[] = ['manager', 'editor', 'reviewer', 'viewer'];
 const MANAGER_ASSIGNABLE_ROLES: CustomerAssignableRole[] = ['editor', 'reviewer', 'viewer'];
 const CUSTOMER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -538,6 +549,30 @@ const CORE_CAPABILITIES: CustomerCapability[] = [
 
 function cleanText(value: unknown, max = 600): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function remoteWorkflowFingerprint(objective: string, channels: CustomerChannel[]): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ objective, channels }), 'utf8')
+    .digest('hex');
+}
+
+function restoreRemoteWorkflowAttempt(value: unknown): CustomerRemoteWorkflowAttempt | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Partial<CustomerRemoteWorkflowAttempt>;
+  const createdAtMs = typeof candidate.createdAt === 'string' ? Date.parse(candidate.createdAt) : Number.NaN;
+  const ageMs = Date.now() - createdAtMs;
+  if (candidate.version !== 1
+    || typeof candidate.workspaceId !== 'string' || !CUSTOMER_UUID_PATTERN.test(candidate.workspaceId)
+    || typeof candidate.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(candidate.fingerprint)
+    || typeof candidate.startsOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(candidate.startsOn)
+    || Number.isNaN(Date.parse(`${candidate.startsOn}T00:00:00Z`))
+    || typeof candidate.idempotencyKey !== 'string'
+    || !/^desktop-workflow:[0-9a-f-]{36}$/.test(candidate.idempotencyKey)
+    || !Number.isFinite(createdAtMs)
+    || ageMs < -5 * 60 * 1_000
+    || ageMs > REMOTE_WORKFLOW_ATTEMPT_TTL_MS) return null;
+  return candidate as CustomerRemoteWorkflowAttempt;
 }
 
 function cleanList(value: unknown, maxItems = 12, itemMax = 160): string[] {
@@ -1104,31 +1139,62 @@ export class CustomerMarketingService {
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
+    identity: CustomerIdentity,
+    initialRecord: CustomerTenantRecord,
     workspaceId: string,
     objective: string,
     channels: CustomerChannel[],
-  ): Promise<{ run: RemoteMarketingWorkflowRun } | { error: string } | null> {
+  ): Promise<{ run: RemoteMarketingWorkflowRun; record: CustomerTenantRecord } | { error: string } | null> {
     const gateway = this.workspaceGateway;
     if (!gateway?.startSevenDayWorkflow || !gateway.resumeSevenDayWorkflow) return null;
-    const startDate = new Date();
-    startDate.setUTCDate(startDate.getUTCDate() + 1);
+    let record = initialRecord;
+    const fingerprint = remoteWorkflowFingerprint(objective, channels);
+    let attempt = record.remoteWorkflowAttempt;
+    if (attempt?.workspaceId !== workspaceId || attempt.fingerprint !== fingerprint) {
+      const startDate = new Date();
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+      attempt = {
+        version: 1,
+        workspaceId,
+        fingerprint,
+        startsOn: startDate.toISOString().slice(0, 10),
+        idempotencyKey: `desktop-workflow:${randomUUID()}`,
+        createdAt: new Date().toISOString(),
+      };
+      record = { ...record, remoteWorkflowAttempt: attempt, updatedAt: attempt.createdAt };
+      try {
+        this.writeRecord(identity, record);
+      } catch {
+        return { error: 'Không thể lưu trạng thái khôi phục workflow; chưa gửi yêu cầu tới IzziAPI.' };
+      }
+    }
     let state: CustomerMarketingWorkflowState;
     try {
       state = await gateway.startSevenDayWorkflow({
         workspaceId,
         objective,
         channels,
-        startsOn: startDate.toISOString().slice(0, 10),
-        idempotencyKey: `desktop-workflow:${randomUUID()}`,
+        startsOn: attempt.startsOn,
+        idempotencyKey: attempt.idempotencyKey,
       });
     } catch {
       return { error: 'Không thể khởi tạo workflow với IzziAPI; chưa tạo dữ liệu local.' };
     }
     if (state.status !== 'synced' || !state.run) {
       if (state.status === 'quota_exceeded') {
+        try {
+          this.writeRecord(identity, { ...record, remoteWorkflowAttempt: null });
+        } catch {
+          // Keep the retry marker if cleanup is unavailable; it cannot authorize an action.
+        }
         return { error: 'Gói hiện tại không còn quota automation cho workflow 7 ngày.' };
       }
       if (state.status === 'forbidden') {
+        try {
+          this.writeRecord(identity, { ...record, remoteWorkflowAttempt: null });
+        } catch {
+          // Keep the retry marker if cleanup is unavailable; it cannot authorize an action.
+        }
         return { error: 'Vai trò hiện tại không được phép tạo workflow 7 ngày.' };
       }
       return { error: 'IzziAPI chưa xác nhận được workflow 7 ngày; chưa tạo dữ liệu local.' };
@@ -1153,7 +1219,7 @@ export class CustomerMarketingService {
     if (run.currentStep !== 4 || run.status !== 'awaiting_customer_approval' || run.approval?.status !== 'pending') {
       return { error: 'Workflow IzziAPI trả về trạng thái không hợp lệ; chưa tạo dữ liệu local.' };
     }
-    return { run };
+    return { run, record };
   }
 
   private async reviewRemoteSevenDayWorkflow(
@@ -2726,11 +2792,12 @@ export class CustomerMarketingService {
       ? input.automationMode as CustomerAutomationMode
       : profile.automationMode;
     const remoteWorkflow = workspaceState.workspace
-      ? await this.prepareRemoteSevenDayWorkflow(workspaceState.workspace.id, goal, channels)
+      ? await this.prepareRemoteSevenDayWorkflow(identity, record, workspaceState.workspace.id, goal, channels)
       : null;
     if (remoteWorkflow && 'error' in remoteWorkflow) {
       return { ok: false, error: remoteWorkflow.error };
     }
+    if (remoteWorkflow) record = remoteWorkflow.record;
     const now = new Date().toISOString();
     const runId = remoteWorkflow?.run.id ?? 'run-' + randomUUID();
     const approvalId = 'approval-' + randomUUID();
@@ -2837,6 +2904,7 @@ export class CustomerMarketingService {
       ...record,
       runs: [run, ...record.runs].slice(0, 20),
       approvals: [approval, ...record.approvals].slice(0, 40),
+      remoteWorkflowAttempt: remoteWorkflow ? null : record.remoteWorkflowAttempt,
       updatedAt: now,
     };
     this.writeRecord(identity, next);
@@ -3941,6 +4009,7 @@ export class CustomerMarketingService {
       approvals: [],
       mediaJobs: [],
       mediaArtifacts: [],
+      remoteWorkflowAttempt: null,
       usedCredits: 0,
       updatedAt: new Date().toISOString(),
     };
@@ -3973,6 +4042,7 @@ export class CustomerMarketingService {
         approvals: Array.isArray(parsed.approvals) ? parsed.approvals as CustomerApproval[] : [],
         mediaJobs: Array.isArray(parsed.mediaJobs) ? parsed.mediaJobs as CustomerMediaJobRecord[] : [],
         mediaArtifacts: Array.isArray(parsed.mediaArtifacts) ? parsed.mediaArtifacts as CustomerMediaArtifact[] : [],
+        remoteWorkflowAttempt: restoreRemoteWorkflowAttempt(parsed.remoteWorkflowAttempt),
         usedCredits: typeof parsed.usedCredits === 'number' && Number.isFinite(parsed.usedCredits) ? parsed.usedCredits : 0,
         updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       };

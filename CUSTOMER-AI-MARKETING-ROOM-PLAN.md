@@ -1,10 +1,10 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (77% weighted delivery scope; 99% local product scope)
+Product status: in_progress (78% weighted delivery scope; 99% local product scope)
 Vertical slice status: verified_local_packaged_seven_day_workflow
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta32 is public, installed, and running. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, and desktop bridge are public on `izzi-backend/master` at the [CMR-114 backend commit](https://github.com/kentzu213/izzi-backend/commit/5d35362) and `izzi-ai/main` at the [CMR-114 desktop commit](https://github.com/kentzu213/izzi-ai/commit/58076df); the latest verification is recorded in `docs/CMR-114-SEVEN-DAY-WORKFLOW-DESKTOP-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, desktop workflow integration, and staging readiness.
+Last verified: 2026-08-11 ICT. Beta32 remains the installed public baseline while beta33 is being packaged. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, and CMR-115 retry recovery are included in the beta33 candidate; the latest verification is recorded in `docs/CMR-115-WORKFLOW-RECOVERY-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, desktop workflow integration, and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -248,22 +248,26 @@ integrations/staging/production-E2E allocation: 75% total.
    identities, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external
    publish action. The API and database contract are public; generated drafts remain deterministic
    templates until the desktop/model execution slice is connected.
-8. [ ] Enable the reviewed remote migration for the installed Izzi AI workflow UI and model/agent
+8. [x] Make desktop workflow creation restart-safe after a network interruption. Persist a
+   bounded, tenant-local retry marker with a payload fingerprint and 24-hour TTL, reuse the
+   same backend idempotency key on retry, and clear it only after local durable workflow
+   persistence succeeds. See `docs/CMR-115-WORKFLOW-RECOVERY-EVIDENCE.md`.
+9. [ ] Enable the reviewed remote migration for the installed Izzi AI workflow UI and model/agent
    execution, then add approved social, SEO, email/CRM, and analytics workflows; the desktop bridge
    and local packaged staging proof are complete. Voice Studio local preview
    and HyperFrames plus Voice Studio local MP4 generation are verified, while direct F5
    generation, commercial rendering, and every external publish action remain gated.
-9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
-10. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
-11. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
-12. [x] Finish the production Voice Studio image and managed runtime: resolve the `perth`
+10. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
+11. [ ] Add end-to-end tests for publish gates, spend gates, integrations, billing, recovery, console/network health, and Internal Marketing Room regression.
+12. [ ] Deploy a staging environment, complete security review, and obtain reviewer approval.
+13. [x] Finish the production Voice Studio image and managed runtime: resolve the `perth`
     dependency, preserve Docker connection variables, rebuild, publish, and run end-to-end TTS
     smoke tests.
-13. [ ] Restore persistent GitNexus MCP connectivity and index the active Voice worktree while
+14. [ ] Restore persistent GitNexus MCP connectivity and index the active Voice worktree while
     retaining shell/CLI fallback.
-14. [x] Establish a workspace-wide ESLint 9 flat-config gate, bounded migration suppressions,
+15. [x] Establish a workspace-wide ESLint 9 flat-config gate, bounded migration suppressions,
     deterministic contract tests, and CI/release enforcement.
-15. [x] Reduce authenticated Customer Marketing workspace first-open latency; precise beta31
+16. [x] Reduce authenticated Customer Marketing workspace first-open latency; precise beta31
     production-renderer smoke measured 890 ms after Chat settled and 1,826 ms for immediate
     fresh-process navigation, with optional media readiness refreshed in the background.
 

@@ -1523,6 +1523,94 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(snapshot.runs).toHaveLength(0);
     expect(snapshot.approvals).toHaveLength(0);
   });
+
+  it('recovers the same remote workflow after a resume network failure and app restart', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-remote-recovery',
+      name: 'Owner Recovery',
+      plan: 'pro',
+      balance: 75,
+    };
+    const base = marketingResourceGateway('manager');
+    let remoteRevision = 0;
+    let interruptOnce = true;
+    const idempotencyKeys: string[] = [];
+    const startSevenDayWorkflow = vi.fn(async (input: { idempotencyKey: string }) => {
+      idempotencyKeys.push(input.idempotencyKey);
+      return {
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({
+          status: remoteRevision === 4 ? 'awaiting_customer_approval' : remoteRevision === 0 ? 'queued' : 'running',
+          revision: remoteRevision,
+          currentStep: remoteRevision,
+          approval: remoteRevision === 4
+            ? { status: 'pending' as const, requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: null }
+            : null,
+        }),
+        duplicate: remoteRevision > 0,
+      };
+    });
+    const resumeSevenDayWorkflow = vi.fn(async (input: { expectedRevision: number }) => {
+      expect(input.expectedRevision).toBe(remoteRevision);
+      if (remoteRevision === 1 && interruptOnce) {
+        interruptOnce = false;
+        throw new Error('simulated network interruption');
+      }
+      remoteRevision += 1;
+      return {
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({
+          status: remoteRevision === 4 ? 'awaiting_customer_approval' : 'running',
+          revision: remoteRevision,
+          currentStep: remoteRevision,
+        }),
+        duplicate: false,
+      };
+    });
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow,
+      resumeSevenDayWorkflow,
+    };
+    const context = setup({ identity, workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const first = await context.service.createGoal({
+      goal: 'Recover one backend campaign without duplicate drafts',
+      channels: ['facebook', 'seo'],
+    });
+    expect(first).toMatchObject({ ok: false, error: expect.stringContaining('bị gián đoạn') });
+    expect((await context.service.getSnapshot()).runs).toHaveLength(0);
+    const tenantRecordKey = Array.from(context.db.values.keys())
+      .find((key) => key.startsWith('customer_marketing:v1:'))!;
+    expect(JSON.parse(context.db.values.get(tenantRecordKey)!).remoteWorkflowAttempt).toMatchObject({
+      idempotencyKey: idempotencyKeys[0],
+    });
+
+    const restarted = new CustomerMarketingService(
+      context.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      gateway,
+    );
+    const recovered = await restarted.createGoal({
+      goal: 'Recover one backend campaign without duplicate drafts',
+      channels: ['facebook', 'seo'],
+    });
+
+    expect(recovered.ok).toBe(true);
+    expect(idempotencyKeys).toHaveLength(2);
+    expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
+    expect(recovered.snapshot?.runs).toHaveLength(1);
+    expect(recovered.snapshot?.runs[0]).toMatchObject({
+      id: '66666666-6666-4666-8666-666666666666',
+      status: 'awaiting_approval',
+      progress: 80,
+    });
+    expect(JSON.parse(context.db.values.get(tenantRecordKey)!).remoteWorkflowAttempt).toBeNull();
+  });
 });
 
 describe('CustomerMarketingService AI Director', () => {
