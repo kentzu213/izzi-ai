@@ -1,18 +1,18 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (73% weighted delivery scope; 99% local product scope)
-Vertical slice status: verified_public_billing_ledger_reconciliation
+Product status: in_progress (75% weighted delivery scope; 99% local product scope)
+Vertical slice status: verified_public_seven_day_workflow_api
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta31 is public, installed, and running. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, and aggregate real-billing-ledger reconciliation are public on `izzi-backend/master` at the [CMR-111 backend commit](https://github.com/kentzu213/izzi-backend/commit/2a3b18ec96a4af2316490c7a8cda1fea16e2a825); the latest verification is recorded in `docs/CMR-111-BILLING-LEDGER-RECONCILIATION-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public, installed, and running. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, and backend-owned seven-day workflow API are public on `izzi-backend/master` at the [CMR-112 backend commit](https://github.com/kentzu213/izzi-backend/commit/e6178bed6144553abcbbb6e90986c78f59907943); the latest verification is recorded in `docs/CMR-112-SEVEN-DAY-WORKFLOW-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, desktop workflow integration, and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
 source rubric is this plan, `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`: 20% complete
 foundation/auth/tenant guardrails, 20% complete customer UX/context/approvals,
-16% of the 20% local content/media allocation, 10% of the 20%
+16% of the 20% local content/media allocation, 12% of the 20%
 backend-sync/billing allocation, and 7% of the 20%
-integrations/staging/production-E2E allocation: 73% total.
+integrations/staging/production-E2E allocation: 75% total.
 
 ## Product boundary
 
@@ -144,6 +144,14 @@ integrations/staging/production-E2E allocation: 73% total.
       reference, description, endpoint, or source-platform identity
     - report quota-to-billing linkage as `unavailable` until a server-derived run ID exists
     - bind the fifth migration to the staging digest contract and verify it through packaged beta31
+35. [x] Publish a backend-owned, resumable seven-day workflow API:
+    - create one tenant-scoped campaign and seven daily content drafts through five ordered steps
+    - bind capability identities to AI Marketing Director, Strategy, Content Studio, Brand Guardian,
+      and Approval Center
+    - charge one automation run and seven content items, with free-plan denial and idempotent start
+    - stop at Brand Guardian review for one explicit customer approval
+    - expose no publish, send, spend, bulk, service-role, actor, billing, or raw workflow-table path
+    - bind the sixth migration to the staging digest contract and verify it through installed beta31
 
 ## Verification evidence
 
@@ -204,6 +212,11 @@ integrations/staging/production-E2E allocation: 73% total.
   PostgreSQL passed 22/22, the signed-JWT PostgREST boundary passed all 11 checks, and both
   dependency audits found 0 vulnerabilities. Installed beta31 passed a 209-request packaged
   smoke with billing balance consistent, no runtime error, and no publish, spend, send, or bulk action.
+- CMR-112 seven-day workflow close-out: the [backend commit](https://github.com/kentzu213/izzi-backend/commit/e6178bed6144553abcbbb6e90986c78f59907943) is public on `master`; workflow-focused tests passed
+  15/15, the full suite passed 324 tests with 40 environment-dependent skips, PostgreSQL passed
+  24/24, and the signed-JWT PostgREST boundary passed all 12 checks. The clean six-migration
+  offline digest verifier passed. Installed beta31 passed a 209-request packaged smoke with zero
+  runtime errors and no publish, spend, send, or bulk action.
 
 ## Next phases
 
@@ -214,12 +227,16 @@ integrations/staging/production-E2E allocation: 73% total.
    on `izzi-backend/master` at `41b45c6`; this item remains open until two devices use an isolated
    deployed staging project successfully.
 4. [x] Prove RLS and tenant isolation against an ephemeral local Postgres instance using two signed
-   authenticated users (`19/19` SQL checks and `10/10` PostgREST boundary checks). Remote staging
+   authenticated users (`24/24` SQL checks and `12/12` PostgREST boundary checks). Remote staging
    verification remains covered by the deployment gate below.
-5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement. Aggregate `profiles.balance`, contributing `transactions`, and current-cycle `usage_logs` now reconcile independently from Marketing quota units. A server-derived per-run billing link and hard plan enforcement remain open.
+5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement. Aggregate `profiles.balance`, contributing `transactions`, and current-cycle `usage_logs` now reconcile independently from Marketing quota units. The seven-day workflow hard-denies the free plan, but a server-derived per-run billing link and broader production hard plan enforcement remain open.
 6. [x] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering. Registry revision 3 is actor-scoped, plan/role filtered, public-field allowlisted, and covered by `20/20` focused tests.
-7. [ ] Add one backend-owned, resumable seven-day content workflow with real registry agents, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external publish action.
-8. [ ] Add approved social, SEO, email/CRM, and analytics workflows; Voice Studio local preview
+7. [x] Add one backend-owned, resumable seven-day content workflow with registry capability
+   identities, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external
+   publish action. The API and database contract are public; generated drafts remain deterministic
+   templates until the desktop/model execution slice is connected.
+8. [ ] Connect the installed Izzi AI workflow UI and model/agent execution to the public API, then
+   add approved social, SEO, email/CRM, and analytics workflows; Voice Studio local preview
    and HyperFrames plus Voice Studio local MP4 generation are verified, while direct F5
    generation, commercial rendering, and every external publish action remain gated.
 9. [ ] Add integration token vaulting, scoped grants, revocation, audit records, and real campaign/content/assets/knowledge routes.
@@ -244,6 +261,8 @@ integrations/staging/production-E2E allocation: 73% total.
   packaged cross-device customer-profile synchronization is verified through revision 4.
 - Per-run Marketing-to-billing linkage and production hard plan entitlement enforcement; aggregate
   real-ledger reconciliation is verified locally, but production billing authority is not claimed.
+- Installed Izzi AI UI and live model/agent execution for the public seven-day workflow API; the
+  current backend creates deterministic campaign/content drafts and stops for approval.
 - Fully wired publishing, ads, email, CRM, commercial rendering, or direct F5-TTS generation.
 - A commercially enabled advertising render on the installed app. The audited VieNeu chain is
   available, but the runtime gate remains closed until its operator license evidence is configured.
