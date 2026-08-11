@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.31
+
+Faster AI Marketing workspace startup.
+
+- Paint a fail-closed Customer Marketing snapshot without waiting for optional
+  HyperFrames, Node, FFmpeg, F5, or Voice Studio readiness probes.
+- Refresh optional media readiness in the background and prevent stale refreshes
+  from replacing a newer workspace snapshot.
+- Keep snapshot IPC payload-free and deduplicate concurrent media probes in the
+  Electron main process.
+- Reduce the measured warm Chat-to-AI-Marketing dashboard time to 890 ms, with
+  no desktop or mobile overflow and no captured renderer error.
+
 ## 1.14.0-beta.30
 
 Faster renderer startup with guarded lazy loading.

@@ -1,10 +1,10 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (68% weighted delivery scope; 97% local product scope)
-Vertical slice status: verified_public_beta30_renderer_performance
+Product status: in_progress (68% weighted delivery scope; 98% local product scope)
+Vertical slice status: verified_beta31_candidate_marketing_snapshot_latency
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta30 renderer route splitting, bundle budgets, public release, installed upgrade, and Chat-to-AI-Marketing smoke are recorded in `docs/DESKTOP-BETA30-RENDERER-PERFORMANCE-EVIDENCE.md`. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta30 renderer route splitting and public release are recorded in `docs/DESKTOP-BETA30-RENDERER-PERFORMANCE-EVIDENCE.md`. The beta31 candidate paints a fail-closed Marketing snapshot before optional media probes; local production-renderer smoke measured 890 ms after Chat settled and 1,826 ms for immediate fresh-process navigation. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -101,6 +101,12 @@ integrations/staging/production-E2E allocation: 68% total.
     - preload the primary AI Marketing workspace after Chat becomes interactive
     - keep shared mobile navigation CSS eager and cover the regression with contract tests
     - verify the installed beta30 Chat-to-AI-Marketing flow without publishing or spending
+29. [x] Remove optional media probes from the initial AI Marketing render path:
+    - return a payload-free, fail-closed initial snapshot within a 250 ms media budget
+    - refresh optional toolchain readiness in the background without stale snapshot overwrite
+    - deduplicate concurrent toolchain probes in the Electron main process
+    - verify 890 ms warm and 1,826 ms immediate fresh-process dashboard rendering
+    - verify desktop and mobile layouts with no horizontal overflow, console error, or page error
 
 ## Verification evidence
 
@@ -179,8 +185,9 @@ integrations/staging/production-E2E allocation: 68% total.
     retaining shell/CLI fallback.
 14. [x] Establish a workspace-wide ESLint 9 flat-config gate, bounded migration suppressions,
     deterministic contract tests, and CI/release enforcement.
-15. [ ] Reduce authenticated Customer Marketing workspace first-open latency; installed beta30
-    settled successfully but took about 17 seconds from navigation to the operational dashboard.
+15. [x] Reduce authenticated Customer Marketing workspace first-open latency; precise beta31
+    production-renderer smoke measured 890 ms after Chat settled and 1,826 ms for immediate
+    fresh-process navigation, with optional media readiness refreshed in the background.
 
 ## Explicitly not claimed complete
 
@@ -194,5 +201,5 @@ integrations/staging/production-E2E allocation: 68% total.
 - A recorded consent artifact bound to the reference voice used by a media job.
 - A complete end-to-end marketing campaign with external actions.
 - Staging URL, release branch, or deployment approval.
-- Windows Authenticode signing and SmartScreen reputation; beta30 is unsigned even though its
+- Windows Authenticode signing and SmartScreen reputation; beta31 remains unsigned even though its
   installer SHA-256 matches the digest published by the verified GitHub release workflow.
