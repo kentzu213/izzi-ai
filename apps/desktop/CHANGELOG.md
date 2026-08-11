@@ -1,4 +1,16 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.32
+
+Backend-owned seven-day Marketing workflows.
+
+- Start and resume the tenant-scoped IzziAPI workflow from the existing AI Marketing goal flow.
+- Mirror the backend workflow UUID into durable local state and stop at one customer approval.
+- Confirm backend approval before completing local workflow state, with conflict-safe retry checks.
+- Fail closed on plan quota, permission, malformed response, route, or network errors without
+  creating a misleading local workflow.
+- Keep production remote Marketing disabled until the reviewed migration is deployed; local staging
+  verified ten approved resources, nine ledger events, and no external action.
+
 ## 1.14.0-beta.31
 
 Faster AI Marketing workspace startup.

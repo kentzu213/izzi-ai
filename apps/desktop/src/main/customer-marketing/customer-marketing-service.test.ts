@@ -49,6 +49,7 @@ import type {
   CustomerMarketingWorkspaceGateway,
   RemoteMarketingMember,
   RemoteMarketingProfile,
+  RemoteMarketingWorkflowRun,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
 
@@ -219,6 +220,51 @@ function marketingKnowledgeSkill(
     .find((item) => item.id === 'marketing-ideas');
   if (!bundled) throw new Error('Pinned marketing-ideas fixture is unavailable.');
   return { ...bundled, ...overrides };
+}
+
+function remoteSevenDayWorkflow(
+  overrides: Partial<RemoteMarketingWorkflowRun> = {},
+): RemoteMarketingWorkflowRun {
+  const revision = overrides.revision ?? 4;
+  const currentStep = overrides.currentStep ?? 4;
+  return {
+    id: '66666666-6666-4666-8666-666666666666',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
+    workflowKey: 'seven_day_content_v1',
+    status: 'awaiting_customer_approval',
+    revision,
+    objective: 'Build a backend-owned seven day campaign',
+    channels: ['facebook', 'seo'],
+    startsOn: '2026-08-12',
+    planSnapshot: 'starter',
+    currentStep,
+    steps: [
+      { ordinal: 1, stepKey: 'brief', capabilityId: 'ai-marketing-director', status: currentStep >= 1 ? 'completed' : 'pending', startedAt: null, completedAt: null },
+      { ordinal: 2, stepKey: 'strategy', capabilityId: 'strategy-planning', status: currentStep >= 2 ? 'completed' : 'pending', startedAt: null, completedAt: null },
+      { ordinal: 3, stepKey: 'content_drafts', capabilityId: 'content-studio', status: currentStep >= 3 ? 'completed' : 'pending', startedAt: null, completedAt: null },
+      { ordinal: 4, stepKey: 'brand_guardian', capabilityId: 'brand-guardian', status: currentStep >= 4 ? 'completed' : 'pending', startedAt: null, completedAt: null },
+      { ordinal: 5, stepKey: 'customer_approval', capabilityId: 'approval-center', status: currentStep >= 4 ? 'awaiting_approval' : 'pending', startedAt: null, completedAt: null },
+    ],
+    artifacts: currentStep >= 3 ? Array.from({ length: 8 }, (_, index) => ({
+      artifactRole: index === 0 ? 'campaign' as const : 'daily_content' as const,
+      dayIndex: index,
+      resource: {
+        id: `${String(index + 1).padStart(8, '0')}-0000-4000-8000-000000000000`,
+        workspaceId: '11111111-1111-4111-8111-111111111111',
+        kind: index === 0 ? 'campaign' as const : 'content' as const,
+        status: currentStep >= 4 ? 'in_review' as const : 'draft' as const,
+        revision: currentStep >= 4 ? 1 : 0,
+        title: index === 0 ? 'Seven day campaign' : `Day ${index}`,
+        scheduledAt: index === 0 ? null : `2026-08-${String(11 + index).padStart(2, '0')}T09:00:00.000Z`,
+      },
+    })) : [],
+    approval: currentStep >= 4
+      ? { status: 'pending', requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: null }
+      : null,
+    createdAt: '2026-08-11T00:00:00.000Z',
+    updatedAt: '2026-08-11T00:04:00.000Z',
+    ...overrides,
+  };
 }
 
 function marketingContentResource(overrides: Partial<CustomerMarketingResource> = {}): CustomerMarketingResource {
@@ -1382,6 +1428,100 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(reviewed.snapshot?.runs[0].steps.every((step) => step.status === 'done')).toBe(true);
     expect(reviewed.snapshot?.externalActionsAllowed).toBe(false);
     expect(director).not.toHaveBeenCalled();
+  });
+
+  it('mirrors the backend seven-day workflow and confirms remote approval before local completion', async () => {
+    const base = marketingResourceGateway('manager');
+    const startSevenDayWorkflow = vi.fn(async () => ({
+      status: 'synced' as const,
+      run: remoteSevenDayWorkflow({ status: 'queued', revision: 0, currentStep: 0, approval: null }),
+      duplicate: false,
+    }));
+    const resumeSevenDayWorkflow = vi.fn(async (input: { expectedRevision: number }) => {
+      const nextStep = input.expectedRevision + 1;
+      return {
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({
+          status: nextStep === 4 ? 'awaiting_customer_approval' : 'running',
+          revision: nextStep,
+          currentStep: nextStep,
+        }),
+        duplicate: false,
+      };
+    });
+    const getSevenDayWorkflow = vi.fn(async () => ({
+      status: 'synced' as const,
+      run: remoteSevenDayWorkflow(),
+    }));
+    const reviewSevenDayWorkflow = vi.fn(async () => ({
+      status: 'synced' as const,
+      run: remoteSevenDayWorkflow({
+        status: 'approved',
+        revision: 5,
+        approval: { status: 'approved', requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: '2026-08-11T00:05:00.000Z' },
+      }),
+      duplicate: false,
+    }));
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow,
+      resumeSevenDayWorkflow,
+      getSevenDayWorkflow,
+      reviewSevenDayWorkflow,
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const created = await context.service.createGoal({
+      goal: 'Build a backend-owned seven day campaign',
+      channels: ['facebook', 'seo'],
+    });
+    expect(created.ok).toBe(true);
+    expect(startSevenDayWorkflow).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: base.workspace.id,
+      objective: 'Build a backend-owned seven day campaign',
+      channels: ['facebook', 'seo'],
+      idempotencyKey: expect.stringMatching(/^desktop-workflow:[0-9a-f-]{36}$/),
+    }));
+    expect(resumeSevenDayWorkflow).toHaveBeenCalledTimes(4);
+    expect(created.snapshot?.runs[0]).toMatchObject({
+      id: '66666666-6666-4666-8666-666666666666',
+      status: 'awaiting_approval',
+      progress: 80,
+    });
+
+    const reviewed = await context.service.reviewApproval({
+      approvalId: created.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+    expect(reviewed.ok).toBe(true);
+    expect(getSevenDayWorkflow).toHaveBeenCalledWith(base.workspace.id, '66666666-6666-4666-8666-666666666666');
+    expect(reviewSevenDayWorkflow).toHaveBeenCalledWith({
+      workspaceId: base.workspace.id,
+      runId: '66666666-6666-4666-8666-666666666666',
+      decision: 'approve',
+      expectedRevision: 4,
+    });
+    expect(reviewed.snapshot?.runs[0]).toMatchObject({ status: 'completed', progress: 100 });
+  });
+
+  it('fails closed without local workflow state when backend automation quota is denied', async () => {
+    const base = marketingResourceGateway('manager');
+    const resumeSevenDayWorkflow = vi.fn();
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow: vi.fn(async () => ({ status: 'quota_exceeded', run: null })),
+      resumeSevenDayWorkflow,
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.createGoal({ goal: 'Build a seven day campaign safely' });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('quota automation') });
+    expect(resumeSevenDayWorkflow).not.toHaveBeenCalled();
+    const snapshot = await context.service.getSnapshot();
+    expect(snapshot.runs).toHaveLength(0);
+    expect(snapshot.approvals).toHaveLength(0);
   });
 });
 

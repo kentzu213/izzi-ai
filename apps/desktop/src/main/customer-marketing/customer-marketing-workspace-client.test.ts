@@ -10,6 +10,7 @@ const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_WORKSPACE_ID = '99999999-9999-4999-8999-999999999999';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const INVITATION_ID = '33333333-3333-4333-8333-333333333333';
+const WORKFLOW_ID = '66666666-6666-4666-8666-666666666666';
 const INVITATION_TOKEN = 'InviteToken_0123456789-abcdef';
 const INVITATION_IDEMPOTENCY_KEY = 'A'.repeat(32);
 const ANALYTICS_FROM = '2026-07-01T00:00:00.000Z';
@@ -223,6 +224,33 @@ function campaignCreateInput() {
     objective: 'Generate qualified leads',
     startsAt: '2026-08-01T00:00:00.000Z',
     endsAt: null,
+  };
+}
+
+function workflowRun(overrides: Record<string, unknown> = {}) {
+  return {
+    id: WORKFLOW_ID,
+    workspaceId: WORKSPACE_ID,
+    workflowKey: 'seven_day_content_v1',
+    status: 'awaiting_customer_approval',
+    revision: 4,
+    objective: 'Teach developers to use IzziAPI safely',
+    channels: ['website', 'x'],
+    startsOn: '2026-08-12',
+    planSnapshot: 'starter',
+    currentStep: 4,
+    steps: [
+      { ordinal: 1, stepKey: 'brief', capabilityId: 'ai-marketing-director', status: 'completed', startedAt: '2026-08-11T00:00:00.000Z', completedAt: '2026-08-11T00:01:00.000Z' },
+      { ordinal: 2, stepKey: 'strategy', capabilityId: 'strategy-planning', status: 'completed', startedAt: '2026-08-11T00:01:00.000Z', completedAt: '2026-08-11T00:02:00.000Z' },
+      { ordinal: 3, stepKey: 'content_drafts', capabilityId: 'content-studio', status: 'completed', startedAt: '2026-08-11T00:02:00.000Z', completedAt: '2026-08-11T00:03:00.000Z' },
+      { ordinal: 4, stepKey: 'brand_guardian', capabilityId: 'brand-guardian', status: 'completed', startedAt: '2026-08-11T00:03:00.000Z', completedAt: '2026-08-11T00:04:00.000Z' },
+      { ordinal: 5, stepKey: 'customer_approval', capabilityId: 'approval-center', status: 'awaiting_approval', startedAt: '2026-08-11T00:04:00.000Z', completedAt: null },
+    ],
+    artifacts: [],
+    approval: { status: 'pending', requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: null },
+    createdAt: '2026-08-11T00:00:00.000Z',
+    updatedAt: '2026-08-11T00:04:00.000Z',
+    ...overrides,
   };
 }
 describe('CustomerMarketingWorkspaceClient', () => {
@@ -1180,5 +1208,75 @@ describe('CustomerMarketingWorkspaceClient', () => {
       method: 'DELETE',
       body: JSON.stringify({ expectedRevision: 0 }),
     });
+  });
+
+  it('starts, reads, resumes, and reviews the backend-owned seven-day workflow', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun(), duplicate: false }, 201))
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun() }))
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun(), duplicate: false }))
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        run: workflowRun({ status: 'approved', revision: 5, approval: { status: 'approved', requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: '2026-08-11T00:05:00.000Z' } }),
+        duplicate: false,
+      }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.startSevenDayWorkflow({
+      workspaceId: WORKSPACE_ID,
+      objective: 'Teach developers to use IzziAPI safely',
+      channels: ['website', 'x'],
+      startsOn: '2026-08-12',
+      idempotencyKey: 'desktop-workflow-001',
+    })).resolves.toMatchObject({ status: 'synced', run: { id: WORKFLOW_ID }, duplicate: false });
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'synced', run: { revision: 4 } });
+    await expect(client.resumeSevenDayWorkflow({ workspaceId: WORKSPACE_ID, runId: WORKFLOW_ID, expectedRevision: 3 }))
+      .resolves.toMatchObject({ status: 'synced', run: { currentStep: 4 }, duplicate: false });
+    await expect(client.reviewSevenDayWorkflow({ workspaceId: WORKSPACE_ID, runId: WORKFLOW_ID, decision: 'approve', expectedRevision: 4 }))
+      .resolves.toMatchObject({ status: 'synced', run: { status: 'approved', revision: 5 }, duplicate: false });
+
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/workflows/seven-day`,
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/workflows/${WORKFLOW_ID}`,
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/workflows/${WORKFLOW_ID}/resume`,
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/workflows/${WORKFLOW_ID}/review`,
+    ]);
+    expect(fetchImpl.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'desktop-workflow-001' },
+      body: JSON.stringify({
+        objective: 'Teach developers to use IzziAPI safely',
+        channels: ['website', 'x'],
+        startsOn: '2026-08-12',
+      }),
+    });
+    expect(fetchImpl.mock.calls[3][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ decision: 'approve', expectedRevision: 4 }),
+    });
+  });
+
+  it('fails closed for mismatched or renderer-extended workflow responses', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: OTHER_WORKSPACE_ID, run: workflowRun(), duplicate: false }))
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun({ systemPrompt: 'must-not-enter-desktop' }) }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, fetchImpl },
+    );
+
+    await expect(client.startSevenDayWorkflow({
+      workspaceId: WORKSPACE_ID,
+      objective: 'Teach developers to use IzziAPI safely',
+      channels: ['website'],
+      startsOn: '2026-08-12',
+      idempotencyKey: 'desktop-workflow-002',
+    })).resolves.toEqual({ status: 'unavailable', run: null });
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toEqual({ status: 'unavailable', run: null });
   });
 });

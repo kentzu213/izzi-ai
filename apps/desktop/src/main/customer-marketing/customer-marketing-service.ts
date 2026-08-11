@@ -28,8 +28,10 @@ import {
 import type {
   CustomerMarketingWorkspaceGateway,
   CustomerMarketingWorkspaceState,
+  CustomerMarketingWorkflowState,
   RemoteMarketingMember,
   RemoteMarketingProfile,
+  RemoteMarketingWorkflowRun,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
 import {
@@ -1100,6 +1102,100 @@ export class CustomerMarketingService {
       input: CustomerMarketingPageSpeedInput,
     ) => Promise<CustomerMarketingPageSpeedResult>,
   ) {}
+
+  private async prepareRemoteSevenDayWorkflow(
+    workspaceId: string,
+    objective: string,
+    channels: CustomerChannel[],
+  ): Promise<{ run: RemoteMarketingWorkflowRun } | { error: string } | null> {
+    const gateway = this.workspaceGateway;
+    if (!gateway?.startSevenDayWorkflow || !gateway.resumeSevenDayWorkflow) return null;
+    const startDate = new Date();
+    startDate.setUTCDate(startDate.getUTCDate() + 1);
+    let state: CustomerMarketingWorkflowState;
+    try {
+      state = await gateway.startSevenDayWorkflow({
+        workspaceId,
+        objective,
+        channels,
+        startsOn: startDate.toISOString().slice(0, 10),
+        idempotencyKey: `desktop-workflow:${randomUUID()}`,
+      });
+    } catch {
+      return { error: 'Không thể khởi tạo workflow với IzziAPI; chưa tạo dữ liệu local.' };
+    }
+    if (state.status !== 'synced' || !state.run) {
+      if (state.status === 'quota_exceeded') {
+        return { error: 'Gói hiện tại không còn quota automation cho workflow 7 ngày.' };
+      }
+      if (state.status === 'forbidden') {
+        return { error: 'Vai trò hiện tại không được phép tạo workflow 7 ngày.' };
+      }
+      return { error: 'IzziAPI chưa xác nhận được workflow 7 ngày; chưa tạo dữ liệu local.' };
+    }
+
+    let run = state.run;
+    for (let attempt = 0; run.currentStep < 4 && attempt < 4; attempt += 1) {
+      try {
+        state = await gateway.resumeSevenDayWorkflow({
+          workspaceId,
+          runId: run.id,
+          expectedRevision: run.revision,
+        });
+      } catch {
+        return { error: 'Workflow IzziAPI bị gián đoạn trước bước phê duyệt; chưa tạo dữ liệu local.' };
+      }
+      if (state.status !== 'synced' || !state.run) {
+        return { error: 'Workflow IzziAPI chưa tới được bước phê duyệt; chưa tạo dữ liệu local.' };
+      }
+      run = state.run;
+    }
+    if (run.currentStep !== 4 || run.status !== 'awaiting_customer_approval' || run.approval?.status !== 'pending') {
+      return { error: 'Workflow IzziAPI trả về trạng thái không hợp lệ; chưa tạo dữ liệu local.' };
+    }
+    return { run };
+  }
+
+  private async reviewRemoteSevenDayWorkflow(
+    workspaceId: string,
+    runId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<string | null> {
+    const gateway = this.workspaceGateway;
+    if (!CUSTOMER_UUID_PATTERN.test(runId)
+      || !gateway?.getSevenDayWorkflow
+      || !gateway.reviewSevenDayWorkflow) return null;
+    const expectedStatus = decision;
+    let current: CustomerMarketingWorkflowState;
+    try {
+      current = await gateway.getSevenDayWorkflow(workspaceId, runId);
+    } catch {
+      return 'Không thể xác nhận workflow IzziAPI; approval local chưa được xử lý.';
+    }
+    if (current.status !== 'synced' || !current.run) {
+      return 'Không thể xác nhận workflow IzziAPI; approval local chưa được xử lý.';
+    }
+    if (current.run.status === expectedStatus) return null;
+    if (current.run.status !== 'awaiting_customer_approval') {
+      return 'Workflow IzziAPI không còn chờ phê duyệt; approval local chưa được xử lý.';
+    }
+    try {
+      const reviewed = await gateway.reviewSevenDayWorkflow({
+        workspaceId,
+        runId,
+        decision: decision === 'approved' ? 'approve' : 'reject',
+        expectedRevision: current.run.revision,
+      });
+      if (reviewed.status === 'synced' && reviewed.run?.status === expectedStatus) return null;
+      if (reviewed.status === 'conflict') {
+        const latest = await gateway.getSevenDayWorkflow(workspaceId, runId);
+        if (latest.status === 'synced' && latest.run?.status === expectedStatus) return null;
+      }
+    } catch {
+      // Fail closed below without mutating the local durable approval.
+    }
+    return 'IzziAPI chưa xác nhận quyết định; approval local chưa được xử lý.';
+  }
 
   private knowledgeSkills(): CustomerMarketingKnowledgeSkill[] {
     try {
@@ -2629,8 +2725,14 @@ export class CustomerMarketingService {
     const automationMode = AUTOMATION_MODES.includes(input?.automationMode as CustomerAutomationMode)
       ? input.automationMode as CustomerAutomationMode
       : profile.automationMode;
+    const remoteWorkflow = workspaceState.workspace
+      ? await this.prepareRemoteSevenDayWorkflow(workspaceState.workspace.id, goal, channels)
+      : null;
+    if (remoteWorkflow && 'error' in remoteWorkflow) {
+      return { ok: false, error: remoteWorkflow.error };
+    }
     const now = new Date().toISOString();
-    const runId = 'run-' + randomUUID();
+    const runId = remoteWorkflow?.run.id ?? 'run-' + randomUUID();
     const approvalId = 'approval-' + randomUUID();
     const plan = buildLocalMarketingPlan(
       runId,
@@ -3534,6 +3636,14 @@ export class CustomerMarketingService {
           ok: false,
           error: 'Product Marketing Context đã đổi revision; strategy approval cũ vẫn được giữ pending và cần tạo lại.',
         };
+      }
+      if (workspaceState.workspace) {
+        const remoteError = await this.reviewRemoteSevenDayWorkflow(
+          workspaceState.workspace.id,
+          approval.runId,
+          input.decision,
+        );
+        if (remoteError) return { ok: false, error: remoteError };
       }
       try {
         const store = this.workflowStore(record);

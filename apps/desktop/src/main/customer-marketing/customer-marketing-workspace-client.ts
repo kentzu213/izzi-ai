@@ -134,6 +134,74 @@ export interface CustomerMarketingInvitationCreateInput {
   idempotencyKey: string;
 }
 
+export interface RemoteMarketingWorkflowStep {
+  ordinal: number;
+  stepKey: 'brief' | 'strategy' | 'content_drafts' | 'brand_guardian' | 'customer_approval';
+  capabilityId: 'ai-marketing-director' | 'strategy-planning' | 'content-studio' | 'brand-guardian' | 'approval-center';
+  status: 'pending' | 'running' | 'completed' | 'awaiting_approval' | 'approved' | 'rejected' | 'failed';
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface RemoteMarketingWorkflowArtifact {
+  artifactRole: 'campaign' | 'daily_content';
+  dayIndex: number;
+  resource: {
+    id: string;
+    workspaceId: string;
+    kind: 'campaign' | 'content';
+    status: 'draft' | 'in_review' | 'approved' | 'rejected' | 'archived';
+    revision: number;
+    title: string;
+    scheduledAt: string | null;
+  };
+}
+
+export interface RemoteMarketingWorkflowRun {
+  id: string;
+  workspaceId: string;
+  workflowKey: 'seven_day_content_v1';
+  status: 'queued' | 'running' | 'awaiting_customer_approval' | 'approved' | 'rejected' | 'failed';
+  revision: number;
+  objective: string;
+  channels: CustomerChannel[];
+  startsOn: string;
+  planSnapshot: 'free' | 'starter' | 'pro' | 'max' | 'ultra';
+  currentStep: number;
+  steps: RemoteMarketingWorkflowStep[];
+  artifacts: RemoteMarketingWorkflowArtifact[];
+  approval: { status: 'pending' | 'approved' | 'rejected'; requestedAt: string; decidedAt: string | null } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerMarketingWorkflowStartInput {
+  workspaceId: string;
+  objective: string;
+  channels: CustomerChannel[];
+  startsOn: string;
+  idempotencyKey: string;
+}
+
+export interface CustomerMarketingWorkflowResumeInput {
+  workspaceId: string;
+  runId: string;
+  expectedRevision: number;
+}
+
+export interface CustomerMarketingWorkflowReviewInput {
+  workspaceId: string;
+  runId: string;
+  decision: 'approve' | 'reject';
+  expectedRevision: number;
+}
+
+export interface CustomerMarketingWorkflowState {
+  status: CustomerMarketingBridgeStatus;
+  run: RemoteMarketingWorkflowRun | null;
+  duplicate?: boolean;
+}
+
 export type CustomerMarketingInvitationCreateState =
   | { status: 'created'; invitation: RemoteMarketingInvitation; inviteToken: string }
   | {
@@ -213,6 +281,10 @@ export interface CustomerMarketingWorkspaceGateway {
   updateMarketingResource(input: CustomerMarketingResourceGatewayUpdateInput): Promise<CustomerMarketingResourceState>;
   reviewMarketingResource(input: CustomerMarketingResourceGatewayReviewInput): Promise<CustomerMarketingResourceState>;
   archiveMarketingResource(input: CustomerMarketingResourceGatewayArchiveInput): Promise<CustomerMarketingResourceArchiveState>;
+  startSevenDayWorkflow?(input: CustomerMarketingWorkflowStartInput): Promise<CustomerMarketingWorkflowState>;
+  getSevenDayWorkflow?(workspaceId: string, runId: string): Promise<CustomerMarketingWorkflowState>;
+  resumeSevenDayWorkflow?(input: CustomerMarketingWorkflowResumeInput): Promise<CustomerMarketingWorkflowState>;
+  reviewSevenDayWorkflow?(input: CustomerMarketingWorkflowReviewInput): Promise<CustomerMarketingWorkflowState>;
 }
 
 interface AuthTokenProvider {
@@ -254,6 +326,22 @@ const CAPABILITY_STABILITIES = new Set<CustomerCapabilityStability>([
 ]);
 const MARKETING_PLANS = new Set<CustomerMarketingPlan>([
   'free', 'starter', 'pro', 'max', 'ultra',
+]);
+const WORKFLOW_STEP_KEYS = new Set<RemoteMarketingWorkflowStep['stepKey']>([
+  'brief', 'strategy', 'content_drafts', 'brand_guardian', 'customer_approval',
+]);
+const WORKFLOW_CAPABILITY_IDS = new Set<RemoteMarketingWorkflowStep['capabilityId']>([
+  'ai-marketing-director', 'strategy-planning', 'content-studio', 'brand-guardian', 'approval-center',
+]);
+const WORKFLOW_STEP_STATUSES = new Set<RemoteMarketingWorkflowStep['status']>([
+  'pending', 'running', 'completed', 'awaiting_approval', 'approved', 'rejected', 'failed',
+]);
+const WORKFLOW_STATUSES = new Set<RemoteMarketingWorkflowRun['status']>([
+  'queued', 'running', 'awaiting_customer_approval', 'approved', 'rejected', 'failed',
+]);
+const WORKFLOW_RESOURCE_KINDS = new Set<RemoteMarketingWorkflowArtifact['resource']['kind']>(['campaign', 'content']);
+const WORKFLOW_RESOURCE_STATUSES = new Set<RemoteMarketingWorkflowArtifact['resource']['status']>([
+  'draft', 'in_review', 'approved', 'rejected', 'archived',
 ]);
 const CAPABILITY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const CAPABILITY_EXTENSION_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,159}$/;
@@ -701,6 +789,124 @@ function parseMarketingListEnvelope(
     expectedKind,
   ));
   return resources.some((resource) => resource === null) ? null : resources as CustomerMarketingResource[];
+}
+
+function parseSevenDayWorkflowRun(value: unknown, expectedWorkspaceId: string): RemoteMarketingWorkflowRun | null {
+  const run = exactRecord(value, [
+    'id', 'workspaceId', 'workflowKey', 'status', 'revision', 'objective', 'channels', 'startsOn',
+    'planSnapshot', 'currentStep', 'steps', 'artifacts', 'approval', 'createdAt', 'updatedAt',
+  ]);
+  if (!run || run.workspaceId !== expectedWorkspaceId
+    || typeof run.id !== 'string' || !UUID_PATTERN.test(run.id)
+    || run.workflowKey !== 'seven_day_content_v1'
+    || !WORKFLOW_STATUSES.has(run.status as RemoteMarketingWorkflowRun['status'])
+    || !Number.isSafeInteger(run.revision) || Number(run.revision) < 0
+    || typeof run.objective !== 'string' || run.objective.length < 1 || run.objective.length > 500
+    || !Array.isArray(run.channels) || run.channels.length < 1 || run.channels.length > 7
+    || run.channels.some((channel) => !CHANNELS.has(channel as CustomerChannel))
+    || typeof run.startsOn !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}$/.test(run.startsOn)
+    || Number.isNaN(Date.parse(`${run.startsOn}T00:00:00Z`))
+    || !MARKETING_PLANS.has(run.planSnapshot as CustomerMarketingPlan)
+    || !Number.isInteger(run.currentStep) || Number(run.currentStep) < 0 || Number(run.currentStep) > 4
+    || !Array.isArray(run.steps) || run.steps.length !== 5
+    || !Array.isArray(run.artifacts) || run.artifacts.length > 8
+    || (run.approval !== null && recordValue(run.approval) === null)
+    || !validIso(run.createdAt) || !validIso(run.updatedAt)) return null;
+
+  const steps = run.steps.map((value): RemoteMarketingWorkflowStep | null => {
+    const step = exactRecord(value, ['ordinal', 'stepKey', 'capabilityId', 'status', 'startedAt', 'completedAt']);
+    if (!step || !Number.isInteger(step.ordinal) || Number(step.ordinal) < 1 || Number(step.ordinal) > 5
+      || !WORKFLOW_STEP_KEYS.has(step.stepKey as RemoteMarketingWorkflowStep['stepKey'])
+      || !WORKFLOW_CAPABILITY_IDS.has(step.capabilityId as RemoteMarketingWorkflowStep['capabilityId'])
+      || !WORKFLOW_STEP_STATUSES.has(step.status as RemoteMarketingWorkflowStep['status'])
+      || (step.startedAt !== null && !validIso(step.startedAt))
+      || (step.completedAt !== null && !validIso(step.completedAt))) return null;
+    return {
+      ordinal: step.ordinal as number,
+      stepKey: step.stepKey as RemoteMarketingWorkflowStep['stepKey'],
+      capabilityId: step.capabilityId as RemoteMarketingWorkflowStep['capabilityId'],
+      status: step.status as RemoteMarketingWorkflowStep['status'],
+      startedAt: step.startedAt as string | null,
+      completedAt: step.completedAt as string | null,
+    };
+  });
+  if (steps.some((step) => step === null)) return null;
+
+  const artifacts = run.artifacts.map((value): RemoteMarketingWorkflowArtifact | null => {
+    const artifact = exactRecord(value, ['artifactRole', 'dayIndex', 'resource']);
+    const resource = artifact ? exactRecord(artifact.resource, [
+      'id', 'workspaceId', 'kind', 'status', 'revision', 'title', 'scheduledAt',
+    ]) : null;
+    if (!artifact || !resource || (artifact.artifactRole !== 'campaign' && artifact.artifactRole !== 'daily_content')
+      || !Number.isInteger(artifact.dayIndex) || Number(artifact.dayIndex) < 0 || Number(artifact.dayIndex) > 7
+      || typeof resource.id !== 'string' || !UUID_PATTERN.test(resource.id)
+      || resource.workspaceId !== expectedWorkspaceId
+      || !WORKFLOW_RESOURCE_KINDS.has(resource.kind as RemoteMarketingWorkflowArtifact['resource']['kind'])
+      || !WORKFLOW_RESOURCE_STATUSES.has(resource.status as RemoteMarketingWorkflowArtifact['resource']['status'])
+      || !Number.isSafeInteger(resource.revision) || Number(resource.revision) < 0
+      || typeof resource.title !== 'string' || resource.title.length < 1 || resource.title.length > 160
+      || (resource.scheduledAt !== null && !validIso(resource.scheduledAt))) return null;
+    return {
+      artifactRole: artifact.artifactRole as RemoteMarketingWorkflowArtifact['artifactRole'],
+      dayIndex: artifact.dayIndex as number,
+      resource: {
+        id: resource.id as string,
+        workspaceId: resource.workspaceId as string,
+        kind: resource.kind as RemoteMarketingWorkflowArtifact['resource']['kind'],
+        status: resource.status as RemoteMarketingWorkflowArtifact['resource']['status'],
+        revision: resource.revision as number,
+        title: resource.title as string,
+        scheduledAt: resource.scheduledAt as string | null,
+      },
+    };
+  });
+  if (artifacts.some((artifact) => artifact === null)) return null;
+
+  let approval: RemoteMarketingWorkflowRun['approval'] = null;
+  if (run.approval !== null) {
+    const candidate = exactRecord(run.approval, ['status', 'requestedAt', 'decidedAt']);
+    if (!candidate || !['pending', 'approved', 'rejected'].includes(String(candidate.status))
+      || !validIso(candidate.requestedAt)
+      || (candidate.decidedAt !== null && !validIso(candidate.decidedAt))) return null;
+    approval = candidate as RemoteMarketingWorkflowRun['approval'];
+  }
+
+  return {
+    id: run.id as string,
+    workspaceId: run.workspaceId as string,
+    workflowKey: 'seven_day_content_v1',
+    status: run.status as RemoteMarketingWorkflowRun['status'],
+    revision: run.revision as number,
+    objective: run.objective as string,
+    channels: run.channels as CustomerChannel[],
+    startsOn: run.startsOn as string,
+    planSnapshot: run.planSnapshot as RemoteMarketingWorkflowRun['planSnapshot'],
+    currentStep: run.currentStep as number,
+    steps: steps as RemoteMarketingWorkflowStep[],
+    artifacts: artifacts as RemoteMarketingWorkflowArtifact[],
+    approval,
+    createdAt: run.createdAt as string,
+    updatedAt: run.updatedAt as string,
+  };
+}
+
+function parseSevenDayWorkflowEnvelope(
+  value: unknown,
+  expectedWorkspaceId: string,
+  expectedKeys: readonly string[],
+): CustomerMarketingWorkflowState {
+  const envelope = exactRecord(value, expectedKeys);
+  const run = envelope ? parseSevenDayWorkflowRun(envelope.run, expectedWorkspaceId) : null;
+  if (!envelope || envelope.workspaceId !== expectedWorkspaceId || !run
+    || (expectedKeys.includes('duplicate') && typeof envelope.duplicate !== 'boolean')) {
+    return { status: 'unavailable', run: null };
+  }
+  return {
+    status: 'synced',
+    run,
+    ...(expectedKeys.includes('duplicate') ? { duplicate: envelope.duplicate as boolean } : {}),
+  };
 }
 
 function parseMarketingResourceEnvelope(
@@ -1506,6 +1712,70 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     return envelope?.workspaceId === input.workspaceId && envelope.deleted === true
       ? { status: 'synced', deleted: true }
       : { status: 'unavailable', deleted: false };
+  }
+
+  async startSevenDayWorkflow(input: CustomerMarketingWorkflowStartInput): Promise<CustomerMarketingWorkflowState> {
+    if (!this.enabled) return { status: 'local', run: null };
+    if (!UUID_PATTERN.test(input.workspaceId)
+      || typeof input.objective !== 'string' || input.objective.trim().length < 1 || input.objective.length > 500
+      || input.channels.length < 1 || input.channels.length > 7
+      || input.channels.some((channel) => !CHANNELS.has(channel))
+      || new Set(input.channels).size !== input.channels.length
+      || !/^\d{4}-\d{2}-\d{2}$/.test(input.startsOn)
+      || Number.isNaN(Date.parse(`${input.startsOn}T00:00:00Z`))
+      || !/^[A-Za-z0-9._:-]{8,128}$/.test(input.idempotencyKey)) {
+      return { status: 'unavailable', run: null };
+    }
+    const result = await this.request(
+      `/api/marketing/workspaces/${input.workspaceId}/workflows/seven-day`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': input.idempotencyKey },
+        body: JSON.stringify({ objective: input.objective, channels: input.channels, startsOn: input.startsOn }),
+      },
+    );
+    if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
+    return parseSevenDayWorkflowEnvelope(result.body, input.workspaceId, ['workspaceId', 'run', 'duplicate']);
+  }
+
+  async getSevenDayWorkflow(workspaceId: string, runId: string): Promise<CustomerMarketingWorkflowState> {
+    if (!this.enabled) return { status: 'local', run: null };
+    if (!UUID_PATTERN.test(workspaceId) || !UUID_PATTERN.test(runId)) return { status: 'unavailable', run: null };
+    const result = await this.request(`/api/marketing/workspaces/${workspaceId}/workflows/${runId}`);
+    if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
+    return parseSevenDayWorkflowEnvelope(result.body, workspaceId, ['workspaceId', 'run']);
+  }
+
+  async resumeSevenDayWorkflow(input: CustomerMarketingWorkflowResumeInput): Promise<CustomerMarketingWorkflowState> {
+    if (!this.enabled) return { status: 'local', run: null };
+    if (!UUID_PATTERN.test(input.workspaceId) || !UUID_PATTERN.test(input.runId)
+      || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      return { status: 'unavailable', run: null };
+    }
+    const result = await this.request(
+      `/api/marketing/workspaces/${input.workspaceId}/workflows/${input.runId}/resume`,
+      { method: 'POST', body: JSON.stringify({ expectedRevision: input.expectedRevision }) },
+    );
+    if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
+    return parseSevenDayWorkflowEnvelope(result.body, input.workspaceId, ['workspaceId', 'run', 'duplicate']);
+  }
+
+  async reviewSevenDayWorkflow(input: CustomerMarketingWorkflowReviewInput): Promise<CustomerMarketingWorkflowState> {
+    if (!this.enabled) return { status: 'local', run: null };
+    if (!UUID_PATTERN.test(input.workspaceId) || !UUID_PATTERN.test(input.runId)
+      || (input.decision !== 'approve' && input.decision !== 'reject')
+      || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+      return { status: 'unavailable', run: null };
+    }
+    const result = await this.request(
+      `/api/marketing/workspaces/${input.workspaceId}/workflows/${input.runId}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ decision: input.decision, expectedRevision: input.expectedRevision }),
+      },
+    );
+    if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
+    return parseSevenDayWorkflowEnvelope(result.body, input.workspaceId, ['workspaceId', 'run', 'duplicate']);
   }
 
   async reserveQuota(input: CustomerMarketingQuotaReservationInput): Promise<CustomerMarketingQuotaReservation> {
