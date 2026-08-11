@@ -1,10 +1,10 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (68% weighted delivery scope)
-Vertical slice status: verified_public_beta26_local_video_preview
+Product status: in_progress (68% weighted delivery scope; 97% local product scope)
+Vertical slice status: verified_public_beta30_renderer_performance
 Backend foundation status: verified_local_not_deployed
-Quality gate status: verified_workspace_eslint9
-Last verified: 2026-08-11 ICT. Beta26 tenant-safe local video preview, public release, installed MP4 output, updater state, and desktop/mobile smoke are recorded in `docs/DESKTOP-BETA26-LOCAL-VIDEO-PREVIEW-EVIDENCE.md`. The post-release ESLint 9 gate and dependency audit are recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`.
+Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
+Last verified: 2026-08-11 ICT. Beta30 renderer route splitting, bundle budgets, public release, installed upgrade, and Chat-to-AI-Marketing smoke are recorded in `docs/DESKTOP-BETA30-RENDERER-PERFORMANCE-EVIDENCE.md`. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -94,6 +94,13 @@ integrations/staging/production-E2E allocation: 68% total.
     - persisted receipts and artifacts bind dimensions, duration, audio format, bytes, and SHA-256
     - `Mo video` opens only an MP4 whose on-disk size and hash still match the artifact
     - commercial render, direct F5 generation, publish, spend, and external actions remain locked
+28. [x] Close the renderer performance slice and publish beta30:
+    - keep authentication and Chat in the initial renderer and lazy-load 17 secondary workspaces
+    - reduce the entry JavaScript from 1,018,843 bytes to 355,260 bytes
+    - enforce a 400,000-byte entry budget and 500,000-byte per-chunk ceiling in CI and release
+    - preload the primary AI Marketing workspace after Chat becomes interactive
+    - keep shared mobile navigation CSS eager and cover the regression with contract tests
+    - verify the installed beta30 Chat-to-AI-Marketing flow without publishing or spending
 
 ## Verification evidence
 
@@ -143,6 +150,12 @@ integrations/staging/production-E2E allocation: 68% total.
   reported errors or warnings; `pnpm test:lint-config` passes 4/4 and proves a new unused variable
   still fails. CI and release gates now run both commands. Exact dependency, suppression, and
   audit evidence is recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`.
+- Beta30 renderer performance close-out: build transformed 1,140 modules with no chunk-size
+  warning; entry JavaScript is 355,260 bytes, the largest lazy chunk is 245,678 bytes, and the
+  bundle budget passes 2/2. Desktop regression passed 88 files and 1,265 tests. Desktop CI runs
+  `31481534646` and `31481805015` passed Windows/macOS with zero annotations. Release run
+  `31482074009` published 12 digest-bearing assets; the Windows installer was hash-verified,
+  installed, and opened the authenticated IzziAPI Marketing workspace successfully.
 
 ## Next phases
 
@@ -166,6 +179,8 @@ integrations/staging/production-E2E allocation: 68% total.
     retaining shell/CLI fallback.
 14. [x] Establish a workspace-wide ESLint 9 flat-config gate, bounded migration suppressions,
     deterministic contract tests, and CI/release enforcement.
+15. [ ] Reduce authenticated Customer Marketing workspace first-open latency; installed beta30
+    settled successfully but took about 17 seconds from navigation to the operational dashboard.
 
 ## Explicitly not claimed complete
 
@@ -179,6 +194,5 @@ integrations/staging/production-E2E allocation: 68% total.
 - A recorded consent artifact bound to the reference voice used by a media job.
 - A complete end-to-end marketing campaign with external actions.
 - Staging URL, release branch, or deployment approval.
-- Complete developer-tool dependency remediation. `pnpm audit --json` still reports the Electron
-  34/build-chain baseline recorded in `docs/CMR-404-ESLINT9-EVIDENCE.md`; the production
-  audit is clean.
+- Windows Authenticode signing and SmartScreen reputation; beta30 is unsigned even though its
+  installer SHA-256 matches the digest published by the verified GitHub release workflow.

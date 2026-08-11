@@ -59,6 +59,23 @@ CMR-404 can close as `done_local` for dependency audit, lint, build, and automat
 scope. The prior report of 89 advisories described an older dependency graph and is not evidence
 for this commit.
 
-The renderer build still reports a chunk-size warning for the generated JavaScript bundle. Treat
-that as a separate performance slice. Code signing, clean-machine install/upgrade/uninstall,
-remote staging, and production sign-off remain open gates.
+## Renderer Performance Follow-Up
+
+The separate renderer slice landed in commit `15b9eff5c646b31ad2198fae49c86f87f9ec0ff2`.
+Authentication and Chat remain eager while 17 secondary workspaces load on demand. The generated
+entry JavaScript fell from 1,018,843 bytes to 355,260 bytes; no JavaScript chunk exceeds 500,000
+bytes and Vite no longer emits its chunk-size warning. A deterministic budget now runs after build
+and before tests or packaging in both Desktop CI and the desktop release workflow.
+
+Local verification passed the five-workspace build, workspace lint, 88 desktop test files with
+1,265 tests, 5/5 Actions contracts, 4/4 lint contracts, 4/4 Socrates contracts, 2/2 renderer budget
+contracts, and both full and production audits with no known vulnerability. Desktop CI run
+`31481534646` passed Windows and macOS with zero annotations.
+
+Release metadata commit `3904b24e81e33b9a8104cfa057a21cc21b53158f` also passed Desktop CI run
+`31481805015`. Release run `31482074009` published beta30 only after Windows, macOS, and the
+post-publish 12-asset inventory check passed with zero annotations.
+
+Code signing, remote staging, and production sign-off remain open gates. The beta30 Windows
+installer is unsigned, but its downloaded SHA-256 exactly matched the digest published by the
+verified GitHub release workflow.
