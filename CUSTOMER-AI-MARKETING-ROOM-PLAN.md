@@ -4,7 +4,7 @@ Product status: in_progress (68% weighted delivery scope; 98% local product scop
 Vertical slice status: verified_public_beta31_marketing_snapshot_latency
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
+Last verified: 2026-08-11 ICT. Beta31 is public and installed; its fail-closed initial Marketing snapshot, background readiness refresh, 963 ms installed smoke, release inventory, and security evidence are recorded in `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`. The tenant-safe backend and staging readiness gate are now public on `izzi-backend/master` at `187e458`, with verification recorded in `docs/CMR-108-BACKEND-MASTER-EVIDENCE.md`; no remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -107,6 +107,13 @@ integrations/staging/production-E2E allocation: 68% total.
     - deduplicate concurrent toolchain probes in the Electron main process
     - verify 890 ms warm and 1,826 ms immediate fresh-process dashboard rendering
     - verify desktop and mobile layouts with no horizontal overflow, console error, or page error
+30. [x] Public the tenant-safe Customer Marketing backend foundation on `izzi-backend/master`:
+    - JWT-derived actors and request-scoped Supabase clients keep `auth.uid()` and RLS authoritative
+    - onboarding profiles synchronize with integer revisions and stable conflict recovery
+    - campaign, content, asset, knowledge, calendar, analytics, invitation, quota, and member APIs
+      remain tenant-scoped and fail closed
+    - PostgreSQL 16, pinned PostgREST, packaged beta31, Docker image, audit, and offline staging
+      gates pass without changing remote state
 
 ## Verification evidence
 
@@ -167,7 +174,9 @@ integrations/staging/production-E2E allocation: 68% total.
 
 1. [x] Implement the local backend schema, RLS contract, authenticated workspace APIs, invitations, and remote workspace/quota synchronization.
 2. [x] Complete server-authoritative member listing and role administration; the local implementation is verified and not deployed.
-3. [ ] Synchronize onboarding and customer profiles across devices with revision/conflict handling. (active wave)
+3. [ ] Complete remote cross-device proof for onboarding and customer profile synchronization.
+   The revision/conflict backend contract is public on `izzi-backend/master` at `187e458`; this
+   item remains open until two devices use an isolated deployed staging project successfully.
 4. [ ] Prove RLS and tenant isolation against a real local/staging Postgres instance using two authenticated users.
 5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement.
 6. [ ] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering.
