@@ -67,3 +67,24 @@ The current owner account is not eligible because it already has an Izzi AI prof
 uninstall entry, and running processes. The machine has no usable Windows Sandbox or clean Hyper-V VM
 in the current session. Therefore CMR-216 remains open after CMR-216A until an isolated user session
 and then a clean VM/machine produce reviewed receipts.
+
+## Portable bundle
+
+CMR-216B/C can run without Git, Node.js, pnpm, or a source checkout. The staged internal bundle is:
+
+- Directory: `C:\Users\Public\CMR216\izzi-ai-beta18-beta34-v2`
+- ZIP: `C:\Users\Public\CMR216\izzi-ai-beta18-beta34-v2.zip`
+- ZIP SHA-256: `56774664b78f37d19ff1d98b322294bb40876de92ccf7cee3c0b01388cb334b8`
+- Manifest SHA-256: `fe77377854b1465c8558fb7d8038e2d50616374d589d19e3d9f552904e4a6818`
+- Exact inventory: 10 files, 370457996 bytes after extraction.
+
+Before copying or extracting on another Windows host, verify the ZIP SHA-256. After extraction, run
+`verify-cmr216-clean-host-bundle.ps1`; it rejects missing, unexpected, renamed, path-escaping, or
+tampered files. Then use `START-PREFLIGHT.cmd`; use `START-LIFECYCLE.cmd` only after preflight passes.
+For a shared folder, grant the test user read/execute only and keep write access with the operator or
+administrator; otherwise use a private local extraction directory.
+
+Bundle v2 was extracted to a separate directory and reverified with the same manifest SHA-256. Running
+the extracted launcher on the owner account passed artifact/signing checks and then denied
+`existing_profile`, with `localSystemMutationPerformed=false`, `cleanupAttempted=false`, no install
+root, and no new process. This is portability and fail-closed evidence only, not lifecycle evidence.
