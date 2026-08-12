@@ -39,6 +39,7 @@ import type {
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
 import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/customer-marketing-credential-types';
+import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
 import {
   parseCustomerMarketingPageSpeedInput,
   type CustomerMarketingPageSpeedResult,
@@ -213,6 +214,15 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingCredentialRevokeInput(payload);
     if (!parsed) throw new Error('Payload thu hồi credential không hợp lệ.');
     return service.revokeIntegrationCredential(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:getCanaryReadiness', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerMarketingCanaryReadinessResult> => {
+    trusted(event);
+    if (payload !== undefined) throw new Error('Payload canary không được phép.');
+    return service.getCanaryReadiness();
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (

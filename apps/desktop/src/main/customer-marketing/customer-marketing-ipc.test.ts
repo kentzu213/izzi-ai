@@ -52,6 +52,16 @@ function serviceMock() {
       revoked: true,
       credential: { provider: input.provider, state: 'disconnected', updatedAt: null },
     })),
+    getCanaryReadiness: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      provider: 'telegram',
+      controlPlane: { enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 },
+      credentialState: 'disconnected',
+      liveReady: false,
+      missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
+      externalActionPerformed: false,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -833,5 +843,34 @@ describe('customer marketing CMR-401 credential IPC', () => {
     await expect(revoke!(event('http://localhost:9999/customer-marketing'), { provider: 'x' }))
       .rejects.toThrow('Customer Marketing IPC sender');
     expect(service.revokeIntegrationCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230 canary readiness IPC', () => {
+  it('exposes read-only no-payload readiness status', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const readiness = electronMocks.handlers.get('customerMarketing:getCanaryReadiness');
+
+    await expect(readiness!(event())).resolves.toMatchObject({
+      ok: true,
+      provider: 'telegram',
+      liveReady: false,
+      externalActionPerformed: false,
+    });
+    expect(service.getCanaryReadiness).toHaveBeenCalledTimes(1);
+    await expect(readiness!(event(), { token: 'renderer-controlled', chatId: '-1001234567890' }))
+      .rejects.toThrow('Payload canary');
+    expect(service.getCanaryReadiness).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before readiness service execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const readiness = electronMocks.handlers.get('customerMarketing:getCanaryReadiness');
+
+    await expect(readiness!(event('https://attacker.example/customer-marketing')))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.getCanaryReadiness).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import type {
 import type {
   CustomerMarketingCredentialStatus,
 } from '../../shared/customer-marketing-credential-types';
+import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
 import type {
   CustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
@@ -570,9 +571,13 @@ function setup(options?: {
       'ready' | 'not_installed' | 'docker_unavailable' | 'unhealthy'
     >;
   knowledgeSkills?: CustomerMarketingKnowledgeSkill[];
-  pageSpeedRuntime?: (
-    input: CustomerMarketingPageSpeedInput,
-  ) => Promise<CustomerMarketingPageSpeedResult>;
+    pageSpeedRuntime?: (
+      input: CustomerMarketingPageSpeedInput,
+    ) => Promise<CustomerMarketingPageSpeedResult>;
+    canaryReadinessSource?: {
+      status(): CustomerMarketingCanaryStatus;
+      privateSandboxChatConfigured(): boolean;
+    };
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -596,6 +601,7 @@ function setup(options?: {
     options?.repairVoiceStudioRuntime,
     () => options?.knowledgeSkills ?? [],
     options?.pageSpeedRuntime,
+    options?.canaryReadinessSource,
   );
   return {
     db,
@@ -5040,6 +5046,87 @@ describe('CustomerMarketingService CMR-306 workflow bridge', () => {
       .resolves.toMatchObject({ ok: false, status: 'unavailable', revoked: false });
     expect(listStatuses).not.toHaveBeenCalled();
     expect(revokeCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerMarketingService CMR-230 canary readiness', () => {
+  it('reports disabled control plane and missing live inputs without exposing sensitive data', async () => {
+    const remote = marketingResourceGateway('manager');
+    const listStatuses = vi.fn(() => ({
+      vaultState: 'ready' as const,
+      credentials: [{ provider: 'telegram' as const, state: 'connected' as const, updatedAt: null }],
+    }));
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn() },
+      canaryReadinessSource: {
+        status: () => ({ enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 }),
+        privateSandboxChatConfigured: () => false,
+      },
+    });
+
+    const result = await context.service.getCanaryReadiness();
+
+    expect(result).toEqual({
+      ok: true,
+      status: 'synced',
+      provider: 'telegram',
+      controlPlane: { enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 },
+      credentialState: 'connected',
+      liveReady: false,
+      missingRequirements: ['private_sandbox_chat', 'named_approval', 'canary_enablement'],
+      externalActionPerformed: false,
+    });
+    expect(listStatuses).toHaveBeenCalledWith(remote.workspace.id);
+    expect(JSON.stringify(result)).not.toContain('token');
+    expect(JSON.stringify(result)).not.toContain('chatId');
+  });
+
+  it('reports readiness only when credential, private chat and named binding are all present', async () => {
+    const remote = marketingResourceGateway('owner');
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({
+          vaultState: 'ready' as const,
+          credentials: [{ provider: 'telegram' as const, state: 'connected' as const, updatedAt: null }],
+        })),
+        revokeCredential: vi.fn(),
+      },
+      canaryReadinessSource: {
+        status: () => ({ enabled: true, killSwitch: false, bindingDigest: 'a'.repeat(64), stateRevision: 1 }),
+        privateSandboxChatConfigured: () => true,
+      },
+    });
+
+    await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
+      ok: true,
+      liveReady: true,
+      missingRequirements: [],
+      externalActionPerformed: false,
+    });
+  });
+
+  it('fails closed before reading vault or control state when workspace authority is unavailable', async () => {
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const listStatuses = vi.fn();
+    const status = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn() },
+      canaryReadinessSource: { status, privateSandboxChatConfigured: vi.fn() },
+    });
+
+    await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      controlPlane: null,
+      credentialState: 'missing',
+      liveReady: false,
+      externalActionPerformed: false,
+    });
+    expect(listStatuses).not.toHaveBeenCalled();
+    expect(status).not.toHaveBeenCalled();
   });
 });
 

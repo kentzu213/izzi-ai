@@ -116,6 +116,8 @@ import type {
   CustomerMarketingCredentialRevokeInput,
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
+import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
+import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
 import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateRequest,
@@ -1136,6 +1138,10 @@ export class CustomerMarketingService {
     private readonly pageSpeedRuntime?: (
       input: CustomerMarketingPageSpeedInput,
     ) => Promise<CustomerMarketingPageSpeedResult>,
+    private readonly canaryReadinessSource?: {
+      status(): CustomerMarketingCanaryStatus;
+      privateSandboxChatConfigured(): boolean;
+    },
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1807,6 +1813,69 @@ export class CustomerMarketingService {
         revoked: false,
         credential: null,
         error: 'Không thể thu hồi thông tin xác thực.',
+      };
+    }
+  }
+
+  async getCanaryReadiness(): Promise<CustomerMarketingCanaryReadinessResult> {
+    const authority = await this.resolveMarketingResourceAuthority();
+    if (authority.status !== 'synced') {
+      return {
+        ok: false,
+        status: authority.status,
+        provider: 'telegram',
+        controlPlane: null,
+        credentialState: 'missing',
+        liveReady: false,
+        missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
+        externalActionPerformed: false,
+        error: authority.error,
+      };
+    }
+    if (!this.credentialVault || !this.canaryReadinessSource) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        provider: 'telegram',
+        controlPlane: null,
+        credentialState: 'missing',
+        liveReady: false,
+        missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
+        externalActionPerformed: false,
+        error: 'Canary control plane chưa sẵn sàng.',
+      };
+    }
+    try {
+      const snapshot = this.credentialVault.listStatuses(authority.workspace.id);
+      const credentialState = snapshot.credentials.find((item) => item.provider === 'telegram')?.state ?? 'missing';
+      const controlPlane = this.canaryReadinessSource.status();
+      const chatConfigured = this.canaryReadinessSource.privateSandboxChatConfigured();
+      const missingRequirements: CustomerMarketingCanaryReadinessResult['missingRequirements'] = [];
+      if (credentialState !== 'connected') missingRequirements.push('credential');
+      if (!chatConfigured) missingRequirements.push('private_sandbox_chat');
+      if (!controlPlane.enabled || !controlPlane.bindingDigest) missingRequirements.push('named_approval');
+      if (!controlPlane.enabled || controlPlane.killSwitch) missingRequirements.push('canary_enablement');
+      return {
+        ok: true,
+        status: 'synced',
+        provider: 'telegram',
+        controlPlane,
+        credentialState,
+        liveReady: missingRequirements.length === 0,
+        missingRequirements,
+        externalActionPerformed: false,
+      };
+    } catch {
+      return {
+        ok: false,
+        status: 'unavailable',
+        provider: 'telegram',
+        controlPlane: null,
+        credentialState: 'missing',
+        liveReady: false,
+        missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
+        externalActionPerformed: false,
+        error: 'Không thể xác minh trạng thái canary.',
       };
     }
   }
