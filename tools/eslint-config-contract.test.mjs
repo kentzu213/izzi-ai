@@ -69,7 +69,7 @@ test('limits the migration baseline to the measured legacy findings', () => {
   }
 
   assert.deepEqual(Object.fromEntries(totals), {
-    '@typescript-eslint/no-unused-vars': 27,
+    '@typescript-eslint/no-unused-vars': 22,
     'react-hooks/exhaustive-deps': 7,
   });
 });
