@@ -29,6 +29,7 @@ const base = {
   provider: 'telegram' as const,
   target: 'social' as const,
   resourceDigest: RESOURCE_DIGEST,
+  manifestDigest: APPROVAL_DIGEST,
   expectedRevision: 2,
   idempotencyKey: 'cmr-219-001',
   authority,

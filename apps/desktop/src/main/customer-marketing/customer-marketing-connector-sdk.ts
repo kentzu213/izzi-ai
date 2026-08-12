@@ -79,6 +79,7 @@ export interface CustomerMarketingConnectorRequestBase {
   provider: CustomerMarketingIntegrationProvider;
   target: CustomerMarketingWorkflowTarget;
   resourceDigest: string;
+  manifestDigest: string;
   expectedRevision: number;
   idempotencyKey: string;
   authority: CustomerMarketingConnectorAuthority;
@@ -166,7 +167,7 @@ const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const ALLOWED_KEYS = new Set([
   'workspaceHash', 'provider', 'target', 'resourceDigest', 'expectedRevision',
-  'idempotencyKey', 'authority', 'operation', 'approval',
+  'manifestDigest', 'idempotencyKey', 'authority', 'operation', 'approval',
 ]);
 const PROVIDER_TARGETS: Readonly<Record<CustomerMarketingWorkflowTarget, readonly CustomerMarketingIntegrationProvider[]>> = Object.freeze({
   social: ['facebook', 'instagram', 'tiktok', 'youtube', 'telegram', 'x'],
@@ -226,6 +227,7 @@ export function parseCustomerMarketingConnectorRequest(
     || (value.target !== 'social' && value.target !== 'seo' && value.target !== 'email' && value.target !== 'crm')
     || !PROVIDER_TARGETS[value.target].includes(value.provider)
     || !SHA256_PATTERN.test(String(value.resourceDigest))
+    || !SHA256_PATTERN.test(String(value.manifestDigest))
     || typeof value.expectedRevision !== 'number'
     || !Number.isInteger(value.expectedRevision)
     || value.expectedRevision < 0
