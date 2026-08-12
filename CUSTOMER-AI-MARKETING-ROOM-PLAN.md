@@ -4,15 +4,15 @@ Product status: in_progress (78% weighted delivery scope; 99% local product scop
 Vertical slice status: verified_local_packaged_seven_day_workflow
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-11 ICT. Beta33 is public, installed, and smoke-tested. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, and CMR-115 retry recovery are included in the [beta33 release](https://github.com/kentzu213/izzi-ai/releases/tag/v1.14.0-beta.33); the latest verification is recorded in `docs/CMR-115-WORKFLOW-RECOVERY-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, desktop workflow integration, and staging readiness.
+Last verified: 2026-08-12 ICT. Beta33 is public, installed, and smoke-tested. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, CMR-115 retry recovery, and CMR-116 server-derived per-run billing linkage are public; the latest verification is recorded in `docs/CMR-116-PER-RUN-BILLING-LINKAGE-EVIDENCE.md`. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, hard plan entitlement, and staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
 source rubric is this plan, `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`: 20% complete
 foundation/auth/tenant guardrails, 20% complete customer UX/context/approvals,
-16% of the 20% local content/media allocation, 14% of the 20%
+16% of the 20% local content/media allocation, 15% of the 20%
 backend-sync/billing allocation, and 7% of the 20%
-integrations/staging/production-E2E allocation: 75% total.
+integrations/staging/production-E2E allocation: 78% total.
 
 ## Product boundary
 
@@ -158,6 +158,13 @@ integrations/staging/production-E2E allocation: 75% total.
     - confirm backend approval before completing local approval, with conflict-safe retry checks
     - fail closed on quota, permission, malformed response, route, and network errors
     - publish beta32 and verify the real packaged executable against disposable local staging
+37. [x] Add server-derived per-run Marketing billing provenance:
+    - bind every quota usage event to the workspace billing owner inside PostgreSQL
+    - derive a stable reference from workspace UUID and the existing idempotency key
+    - backfill existing events before making both linkage fields required
+    - expose only aggregate linked/unlinked counts to active owner/manager members
+    - keep authenticated users off the raw table and preserve `auth.uid()` authorization
+    - add no deduction, transaction, publish, spend, send, bulk, or production deployment action
 
 ## Verification evidence
 
@@ -230,6 +237,7 @@ integrations/staging/production-E2E allocation: 75% total.
   zero runtime errors: one backend workflow was created, resumed four steps, approved, and mirrored into the
   desktop snapshot; PostgreSQL contained 2 approved campaigns and 8 approved content items, quota/billing
   reconciliation had 9 events and no discrepancies, and no publish, spend, send, or bulk action ran.
+- CMR-116 billing-linkage close-out: the [backend commit](https://github.com/kentzu213/izzi-backend/commit/ee81b5376e2d860a485e44ed3bbff69d8d96d336) is public on `master`; focused tests passed 84/84, the full backend suite passed 328 tests with 40 DB-backed skips, PostgreSQL passed 24/24, signed-JWT PostgREST passed 12 checks, the seven-migration staging contract passed 16 checks, and the production dependency audit found 0 vulnerabilities. Installed beta33 passed a 273-request packaged smoke with 9/9 linked usage events, zero runtime errors, consistent quota/billing reconciliation, `policy_denied` publishing, and no publish, spend, send, or bulk action.
 
 ## Next phases
 
@@ -242,7 +250,7 @@ integrations/staging/production-E2E allocation: 75% total.
 4. [x] Prove RLS and tenant isolation against an ephemeral local Postgres instance using two signed
    authenticated users (`24/24` SQL checks and `12/12` PostgREST boundary checks). Remote staging
    verification remains covered by the deployment gate below.
-5. [ ] Reconcile quota reservations with the real billing ledger and productize hard plan entitlement enforcement. Aggregate `profiles.balance`, contributing `transactions`, and current-cycle `usage_logs` now reconcile independently from Marketing quota units. The seven-day workflow hard-denies the free plan, but a server-derived per-run billing link and broader production hard plan enforcement remain open.
+5. [ ] Productize hard plan entitlement enforcement across every Marketing capability. Aggregate `profiles.balance`, contributing `transactions`, and current-cycle `usage_logs` reconcile independently from Marketing quota units, and every quota event now has server-derived billing provenance. The seven-day workflow hard-denies the free plan; broader plan enforcement remains open.
 6. [x] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering. Registry revision 3 is actor-scoped, plan/role filtered, public-field allowlisted, and covered by `20/20` focused tests.
 7. [x] Add one backend-owned, resumable seven-day content workflow with registry capability
    identities, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external
@@ -277,8 +285,8 @@ integrations/staging/production-E2E allocation: 75% total.
 - Production deployment of team invitations, server-authoritative roles, and member role administration; the local implementation is complete and verified against a mocked backend, but no deployed IzziAPI instance has served these routes.
 - Remote cross-device onboarding, run, approval, media job, and artifact persistence. Local
   packaged cross-device customer-profile synchronization is verified through revision 4.
-- Per-run Marketing-to-billing linkage and production hard plan entitlement enforcement; aggregate
-  real-ledger reconciliation is verified locally, but production billing authority is not claimed.
+- Production hard plan entitlement enforcement and deployed billing authority. Aggregate real-ledger
+  reconciliation and per-run provenance are verified locally, but no remote migration is claimed.
 - Installed Izzi AI UI and live model/agent execution for the public seven-day workflow API; the
   desktop bridge is verified against local staging, but the production remote flag remains disabled;
   the current backend creates deterministic campaign/content drafts and stops for approval.
