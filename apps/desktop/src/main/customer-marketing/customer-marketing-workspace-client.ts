@@ -107,6 +107,7 @@ export type CustomerMarketingQuotaMetric =
 
 export interface CustomerMarketingQuotaReservationInput {
   workspaceId: string;
+  capabilityId: string;
   metric: CustomerMarketingQuotaMetric;
   units: number;
   idempotencyKey: string;
@@ -221,7 +222,7 @@ export type CustomerMarketingInvitationAcceptanceState =
 export type CustomerMarketingQuotaReservation =
   | { status: 'local'; quota: null }
   | { status: 'reserved'; duplicate: boolean; quota: RemoteMarketingQuota }
-  | { status: 'quota_exceeded' | 'forbidden' | 'unavailable'; quota: null };
+  | { status: 'quota_exceeded' | 'forbidden' | 'plan_required' | 'unavailable'; quota: null };
 
 export interface CustomerMarketingResourceListState {
   status: CustomerMarketingBridgeStatus;
@@ -1782,6 +1783,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     if (!this.enabled) return { status: 'local', quota: null };
     if (
       !UUID_PATTERN.test(input.workspaceId)
+      || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(input.capabilityId)
       || !Number.isFinite(input.units)
       || input.units <= 0
       || !/^[A-Za-z0-9._:-]{8,128}$/.test(input.idempotencyKey)
@@ -1793,6 +1795,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       `/api/marketing/workspaces/${input.workspaceId}/quota/reservations`,
       {
         method: 'POST',
+        headers: { 'X-Marketing-Capability-Id': input.capabilityId },
         body: JSON.stringify({
           metric: input.metric,
           units: input.units,
@@ -1804,6 +1807,9 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     if (!result.ok) {
       if (result.status === 429 && result.code === 'quota_exceeded') {
         return { status: 'quota_exceeded', quota: null };
+      }
+      if (result.status === 403 && result.code === 'plan_required') {
+        return { status: 'plan_required', quota: null };
       }
       if (result.status === 403) return { status: 'forbidden', quota: null };
       return { status: 'unavailable', quota: null };

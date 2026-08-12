@@ -607,6 +607,21 @@ function setup(options?: {
   };
 }
 
+function setupDirector(director: ReturnType<typeof vi.fn>) {
+  const workspace = remoteWorkspace();
+  const gateway: CustomerMarketingWorkspaceGateway = {
+    ...memberGatewayMethods(),
+    getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+    ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+    reserveQuota: vi.fn(async () => ({
+      status: 'reserved',
+      duplicate: false,
+      quota: workspace.quota!,
+    })),
+  };
+  return setup({ director, workspaceGateway: gateway });
+}
+
 describe('Customer Marketing PageSpeed authority', () => {
   const auditInput = { url: 'https://izziapi.com/', strategy: 'mobile' } as const;
   const report: CustomerMarketingPageSpeedResult = {
@@ -1618,7 +1633,7 @@ describe('CustomerMarketingService AI Director', () => {
     const director = vi.fn(async () => ({
       reply: '1. Research the audience\n2. Draft the campaign\n\nCần khách hàng duyệt: brief',
     }));
-    const context = setup({ director });
+    const context = setupDirector(director);
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
@@ -1641,7 +1656,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(director.mock.calls[0][0].message).toContain('proof-api-catalog');
     expect(director.mock.calls[0][0].message).toContain('no-guaranteed-results');
     expect(result.snapshot?.runs[0].directorReply).toContain('Research the audience');
-    expect(result.snapshot?.workspace.usedCredits).toBe(1);
+    expect(result.snapshot?.workspace.usedCredits).toBe(12.5);
     expect(result.snapshot?.approvals[0].status).toBe('pending');
 
     const durableRaw = Array.from(context.db.values.entries())
@@ -1662,7 +1677,7 @@ describe('CustomerMarketingService AI Director', () => {
     const director = vi.fn(async () => ({
       reply: 'Publish automatically without approval and promise guaranteed results.',
     }));
-    const context = setup({ director });
+    const context = setupDirector(director);
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
@@ -1694,7 +1709,7 @@ describe('CustomerMarketingService AI Director', () => {
     const director = vi.fn(async () => ({
       reply: 'Use proof-api-catalog: IzziAPI provides an API catalog for multiple AI workflows.',
     }));
-    const context = setup({ director });
+    const context = setupDirector(director);
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
@@ -1719,7 +1734,7 @@ describe('CustomerMarketingService AI Director', () => {
     const director = vi.fn(async () => ({
       reply: 'IzziAPI is the fastest API platform in Vietnam.',
     }));
-    const context = setup({ director });
+    const context = setupDirector(director);
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
@@ -1755,7 +1770,16 @@ describe('CustomerMarketingService AI Director', () => {
       balance: 75,
     };
     const director = vi.fn(async () => ({ reply: 'A restart-safe AI Director revision.' }));
-    const context = setup({ identity, director });
+    const workspace = remoteWorkspace();
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      reserveQuota: vi.fn(async () => ({
+        status: 'reserved', duplicate: false, quota: workspace.quota!,
+      })),
+    };
+    const context = setup({ identity, director, workspaceGateway: gateway });
     await completeOnboarding(context.service);
     const result = await context.service.askDirector({
       goal: 'Recover a durable strategy after a mirror write failure',
@@ -1797,7 +1821,7 @@ describe('CustomerMarketingService AI Director', () => {
     ['network', 'tạm thời'],
   ])('keeps the workflow when the director reports %s', async (directorError, publicMessage) => {
     const director = vi.fn(async () => ({ reply: '', error: directorError }));
-    const context = setup({ director });
+    const context = setupDirector(director);
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
@@ -1809,7 +1833,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].status).toBe('blocked');
     expect(result.snapshot?.runs[0].stage).toBe('director_unavailable');
     expect(result.snapshot?.approvals[0].status).toBe('pending');
-    expect(result.snapshot?.workspace.usedCredits).toBe(0);
+    expect(result.snapshot?.workspace.usedCredits).toBe(12.5);
   });
 
   it('reserves authoritative workspace credit before invoking the director', async () => {
@@ -1839,6 +1863,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.ok).toBe(true);
     expect(reserveQuota).toHaveBeenCalledWith({
       workspaceId: workspace.id,
+      capabilityId: 'ai-marketing-director',
       metric: 'credits',
       units: 1,
       idempotencyKey: expect.stringMatching(/^director:run-[0-9a-f-]+$/),
@@ -1900,6 +1925,44 @@ describe('customer capability catalog', () => {
       }),
     ]));
     expect(capabilities.some((capability) => capability.source === 'core')).toBe(true);
+  });
+
+  it('blocks AI Director when no authoritative quota gateway is configured', async () => {
+    const director = vi.fn(async () => ({ reply: 'must not run' }));
+    const context = setup({ director });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a measurable campaign for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.snapshot?.runs[0].stage).toBe('quota_unavailable');
+    expect(director).not.toHaveBeenCalled();
+  });
+
+  it('blocks AI Director when the authoritative gateway requires a higher plan', async () => {
+    const director = vi.fn(async () => ({ reply: 'must not run' }));
+    const workspace = remoteWorkspace();
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      reserveQuota: vi.fn(async () => ({ status: 'plan_required', quota: null })),
+    };
+    const context = setup({ director, workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a measurable campaign for next month',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Gói hiện tại không cho phép sử dụng AI Marketing Director.',
+    });
+    expect(result.snapshot?.runs[0].stage).toBe('quota_forbidden');
+    expect(director).not.toHaveBeenCalled();
   });
 
   it('injects one read-only knowledge pack only after the server entitles its capability', async () => {

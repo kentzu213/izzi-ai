@@ -2957,6 +2957,7 @@ export class CustomerMarketingService {
       try {
         reservation = await this.workspaceGateway.reserveQuota({
           workspaceId: record.workspaceId,
+          capabilityId: 'ai-marketing-director',
           metric: 'credits',
           units: 1,
           idempotencyKey: `director:${run.id}`,
@@ -2966,18 +2967,20 @@ export class CustomerMarketingService {
         reservation = { status: 'unavailable', quota: null };
       }
     }
-    if (reservation.status !== 'local' && reservation.status !== 'reserved') {
+    if (reservation.status !== 'reserved') {
       const updatedAt = new Date().toISOString();
       const stage = reservation.status === 'quota_exceeded'
         ? 'quota_exceeded'
-        : reservation.status === 'forbidden'
+        : reservation.status === 'forbidden' || reservation.status === 'plan_required'
           ? 'quota_forbidden'
           : 'quota_unavailable';
       const error = reservation.status === 'quota_exceeded'
         ? 'Workspace đã hết quota cho tác vụ AI Marketing.'
         : reservation.status === 'forbidden'
           ? 'Vai trò hiện tại không được phép sử dụng quota của workspace.'
-          : 'Không thể xác nhận quota với IzziAPI; tác vụ đã được chặn để tránh ghi nhận sai chi phí.';
+          : reservation.status === 'plan_required'
+            ? 'Gói hiện tại không cho phép sử dụng AI Marketing Director.'
+            : 'Không thể xác nhận quota với IzziAPI; tác vụ đã được chặn để tránh ghi nhận sai chi phí.';
       const latest = this.readRecord(identity);
       const next: CustomerTenantRecord = {
         ...latest,

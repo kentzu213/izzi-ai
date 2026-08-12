@@ -267,6 +267,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
     });
     await expect(client.reserveQuota({
       workspaceId: WORKSPACE_ID,
+      capabilityId: 'ai-marketing-director',
       metric: 'credits',
       units: 1,
       idempotencyKey: 'director:run-1234',
@@ -927,6 +928,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
 
     await expect(client.reserveQuota({
       workspaceId: WORKSPACE_ID,
+      capabilityId: 'ai-marketing-director',
       metric: 'credits',
       units: 1,
       idempotencyKey: 'director:run-1234',
@@ -940,6 +942,9 @@ describe('CustomerMarketingWorkspaceClient', () => {
       `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/quota/reservations`,
       expect.objectContaining({
         method: 'POST',
+        headers: expect.objectContaining({
+          'X-Marketing-Capability-Id': 'ai-marketing-director',
+        }),
         body: JSON.stringify({
           metric: 'credits',
           units: 1,
@@ -953,6 +958,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
   it.each([
     [429, 'quota_exceeded'],
     [403, 'forbidden'],
+    [403, 'plan_required'],
     [404, 'unavailable'],
   ] as const)('maps reservation HTTP %i to %s without leaking the server message', async (status, expected) => {
     const client = new CustomerMarketingWorkspaceClient(
@@ -967,6 +973,7 @@ describe('CustomerMarketingWorkspaceClient', () => {
 
     await expect(client.reserveQuota({
       workspaceId: WORKSPACE_ID,
+      capabilityId: 'ai-marketing-director',
       metric: 'credits',
       units: 1,
       idempotencyKey: 'director:run-1234',
