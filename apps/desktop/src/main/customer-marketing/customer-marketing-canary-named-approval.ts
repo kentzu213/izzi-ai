@@ -87,7 +87,7 @@ export class CustomerMarketingCanaryNamedApprovalStore {
       || !isCanonicalIsoTimestamp(approvedAt)) {
       throw new Error('Invalid canary named approval.');
     }
-    const active = this.getActive(workspaceId, reviewerIdentityId);
+    const active = this.readActiveForWorkspace(workspaceId);
     if (active) {
       if (active.workflowId === request.workflowId
         && active.manifestDigest === request.manifestDigest
@@ -138,9 +138,16 @@ export class CustomerMarketingCanaryNamedApprovalStore {
     workspaceId: string,
     reviewerIdentityId: string,
   ): CustomerMarketingCanaryNamedApprovalReceipt | null {
-    const workspaceHash = hashWorkspaceId(workspaceId);
     const reviewerHash = hashReviewerIdentity(reviewerIdentityId);
     if (!reviewerHash) return null;
+    const receipt = this.readActiveForWorkspace(workspaceId);
+    return receipt?.approval.reviewerHash === reviewerHash ? receipt : null;
+  }
+
+  private readActiveForWorkspace(
+    workspaceId: string,
+  ): CustomerMarketingCanaryNamedApprovalReceipt | null {
+    const workspaceHash = hashWorkspaceId(workspaceId);
     const currentTime = this.now();
     if (!isCanonicalIsoTimestamp(currentTime)) return null;
     const key = this.storageKey(workspaceHash);
@@ -153,12 +160,29 @@ export class CustomerMarketingCanaryNamedApprovalStore {
         || stored.version !== 1
         || stored.workspaceHash !== workspaceHash
         || !validReceipt(stored.receipt)
-        || stored.receipt.approval.reviewerHash !== reviewerHash
         || Date.parse(stored.receipt.approval.expiresAt) <= Date.parse(currentTime)) return null;
       return stored.receipt;
     } catch {
       return null;
     }
+  }
+
+  consume(
+    workspaceId: string,
+    reviewerIdentityId: string,
+    requestValue: unknown,
+  ): CustomerMarketingCanaryNamedApprovalReceipt | null {
+    const request = parseCustomerMarketingCanaryNamedApprovalRequest(requestValue);
+    if (!request) return null;
+    const receipt = this.getActive(workspaceId, reviewerIdentityId);
+    if (!receipt
+      || receipt.workflowId !== request.workflowId
+      || receipt.manifestDigest !== request.manifestDigest
+      || receipt.resourceDigest !== request.resourceDigest
+      || receipt.expectedRevision !== request.expectedRevision) return null;
+    const workspaceHash = hashWorkspaceId(workspaceId);
+    this.db.deleteSetting(this.storageKey(workspaceHash));
+    return receipt;
   }
 
   private storageKey(workspaceHash: string): string {

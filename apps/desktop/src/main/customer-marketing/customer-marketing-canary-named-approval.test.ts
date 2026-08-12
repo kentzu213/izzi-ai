@@ -115,6 +115,20 @@ describe('Customer Marketing canary named approval store', () => {
     expect(store.getActive(WORKSPACE_ID, 'user-owner-a')).toEqual(first);
   });
 
+  it('prevents another principal from overwriting an active workspace approval', () => {
+    const db = new MemorySettings();
+    const encryption = new FakeSafeStorage();
+    const store = new CustomerMarketingCanaryNamedApprovalStore(
+      db, encryption, () => NOW, () => 'approval-principal-lock-1',
+    );
+    const first = store.issue(WORKSPACE_ID, REQUEST, 'Owner A', 'user-owner-a');
+
+    expect(() => store.issue(WORKSPACE_ID, REQUEST, 'Owner B', 'user-owner-b'))
+      .toThrow('Active canary named approval conflict.');
+    expect(store.getActive(WORKSPACE_ID, 'user-owner-a')).toEqual(first);
+    expect(store.getActive(WORKSPACE_ID, 'user-owner-b')).toBeNull();
+  });
+
   it('fails closed when the clock source is not canonical', () => {
     const db = new MemorySettings();
     const encryption = new FakeSafeStorage();
@@ -132,5 +146,21 @@ describe('Customer Marketing canary named approval store', () => {
     expect(() => store.issue(WORKSPACE_ID, REQUEST, 'Owner A', 'user-owner-a'))
       .toThrow('Canary named approval encryption is unavailable.');
     expect(db.values.size).toBe(0);
+  });
+
+  it('consumes one exact approval and preserves it on binding mismatch', () => {
+    const db = new MemorySettings();
+    const encryption = new FakeSafeStorage();
+    const store = new CustomerMarketingCanaryNamedApprovalStore(
+      db, encryption, () => NOW, () => 'approval-consume-1',
+    );
+    const receipt = store.issue(WORKSPACE_ID, REQUEST, 'Owner A', 'user-owner-a');
+
+    expect(store.consume(WORKSPACE_ID, 'user-owner-a', { ...REQUEST, resourceDigest: 'c'.repeat(64) }))
+      .toBeNull();
+    expect(store.getActive(WORKSPACE_ID, 'user-owner-a')).toEqual(receipt);
+    expect(store.consume(WORKSPACE_ID, 'user-owner-a', REQUEST)).toEqual(receipt);
+    expect(store.getActive(WORKSPACE_ID, 'user-owner-a')).toBeNull();
+    expect(store.consume(WORKSPACE_ID, 'user-owner-a', REQUEST)).toBeNull();
   });
 });

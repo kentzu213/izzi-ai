@@ -100,7 +100,10 @@ export class CustomerMarketingCanaryController {
     };
   }
 
-  enable(value: unknown, expectedStateRevision: number): CustomerMarketingCanaryReceipt {
+  enable(
+    value: unknown,
+    expectedStateRevision: number,
+  ): CustomerMarketingCanaryReceipt & { action: 'enabled' } {
     this.assertStateRevision(expectedStateRevision);
     if (this.binding) throw new Error('Canary is already enabled.');
     if (this.killSwitch) throw new Error('Canary kill switch is enabled.');
@@ -166,11 +169,11 @@ export class CustomerMarketingCanaryController {
     return { authorized, reason, externalActionPerformed: false };
   }
 
-  private receipt(
-    action: CustomerMarketingCanaryReceipt['action'],
+  private receipt<TAction extends CustomerMarketingCanaryReceipt['action']>(
+    action: TAction,
     reason: string,
     previousBindingDigest?: string,
-  ): CustomerMarketingCanaryReceipt {
+  ): CustomerMarketingCanaryReceipt & { action: TAction } {
     const canonical = {
       action,
       reason,

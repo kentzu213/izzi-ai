@@ -50,19 +50,28 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     );
   });
 
-  it('issues named approval only from the exact preview and keeps canary disabled', () => {
+  it('issues named approval from the exact preview before a distinct enable-only step', () => {
     expect(pageSource).toContain('api.approveTelegramCanaryCandidate({');
     expect(pageSource).toContain('resourceDigest: telegramCandidate.resourceDigest');
     expect(pageSource).toContain('expectedRevision: telegramCandidate.expectedRevision');
     expect(pageSource).toContain('Canary vẫn tắt');
     expect(pageSource).toContain('Chỉ tạo receipt phê duyệt. Canary vẫn tắt và không gửi tin nhắn.');
-    expect(pageSource).toContain("['Canary enabled', Boolean(canaryReadiness?.controlPlane?.enabled && !canaryReadiness.controlPlane.killSwitch)]");
+    expect(pageSource).toContain("canaryEnabled ? 'Named approval đã xử lý' : namedApprovalReady ? 'Named approval đã cấp' : 'Chưa có named approval'");
+    expect(pageSource).toContain("canaryReadiness?.controlPlane?.killSwitch ? 'Kill switch đang bật' : canaryEnabled ? 'Canary đã bật' : 'Canary chưa bật'");
     expect(pageSource).toContain("telegramApproval ? 'Named approval đã cấp' : 'Chờ named approval'");
     expect(pageSource).toContain('telegramCandidatePreview.current?.focus()');
     expect(pageSource).toContain('telegramApprovalReceipt.current?.focus()');
     expect(pageSource).not.toContain('reviewer:');
     expect(pageSource).not.toContain('expiresAt:');
-    expect(pageSource).not.toContain('api.enableCanary(');
+    expect(pageSource).toContain('api.enableTelegramCanary({');
+    expect(pageSource).toContain('expectedStateRevision: controlPlane.stateRevision');
+    expect(pageSource).toContain('Bật canary nội bộ');
+    expect(pageSource).toContain('Chỉ bind candidate đã duyệt vào control plane. Không gửi Telegram.');
+    expect(pageSource).toContain('telegramEnableReceiptRef.current?.focus()');
+    expect(pageSource).toContain('telegramCandidate && !telegramApproval && !telegramEnableReceipt');
+    expect(pageSource).toContain("item !== 'named_approval' && item !== 'canary_enablement'");
+    expect(pageSource).not.toMatch(/setTelegramEnableAnnouncement\([\s\S]{0,300}await loadCredentials\(\)/);
+    expect(pageSource).toContain('externalActionPerformed');
     expect(pageSource).not.toContain('api.executeCanary(');
   });
 });

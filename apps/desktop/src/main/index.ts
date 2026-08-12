@@ -595,6 +595,7 @@ function setupIPC() {
     },
     customerMarketingTelegramSandboxConfig,
     customerMarketingCanaryNamedApprovalStore,
+    customerMarketingCanaryController,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

@@ -56,6 +56,8 @@ import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramCanaryCandidateRequest,
   CustomerMarketingTelegramCanaryCandidateResult,
+  CustomerMarketingTelegramCanaryEnableRequest,
+  CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryNamedApprovalRequest,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
   CustomerMarketingTelegramSandboxSetupInput,
@@ -212,6 +214,9 @@ declare global {
     approveTelegramCanaryCandidate: (
       input: CustomerMarketingTelegramCanaryNamedApprovalRequest,
     ) => Promise<CustomerMarketingTelegramCanaryNamedApprovalResult>;
+    enableTelegramCanary: (
+      input: CustomerMarketingTelegramCanaryEnableRequest,
+    ) => Promise<CustomerMarketingTelegramCanaryEnableResult>;
     listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;

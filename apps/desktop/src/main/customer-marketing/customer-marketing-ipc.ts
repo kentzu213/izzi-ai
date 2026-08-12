@@ -33,6 +33,7 @@ import {
 import type { CustomerMarketingService } from './customer-marketing-service';
 import type {
   CustomerMarketingTelegramCanaryCandidateResult,
+  CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
 } from '../../shared/customer-marketing-canary-types';
 import {
@@ -45,6 +46,7 @@ import type {
 } from '../../shared/customer-marketing-credential-types';
 import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/customer-marketing-credential-types';
 import {
+  parseCustomerMarketingTelegramCanaryEnableRequest,
   parseCustomerMarketingTelegramSandboxSetupInput,
   type CustomerMarketingCanaryReadinessResult,
   type CustomerMarketingTelegramSandboxSetupResult,
@@ -262,6 +264,16 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingCanaryNamedApprovalRequest(payload);
     if (!parsed) throw new Error('Payload named approval không hợp lệ.');
     return service.approveTelegramCanaryCandidate(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:enableTelegramCanary', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingTelegramCanaryEnableResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingTelegramCanaryEnableRequest(payload);
+    if (!parsed) throw new Error('Payload bật Telegram canary không hợp lệ.');
+    return service.enableTelegramCanary(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (

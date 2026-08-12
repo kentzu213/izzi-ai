@@ -133,8 +133,15 @@ import type {
   CustomerMarketingTelegramCanaryCandidateResult,
   CustomerMarketingTelegramCanaryNamedApprovalRequest,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
+  CustomerMarketingTelegramCanaryEnableRequest,
+  CustomerMarketingTelegramCanaryEnableResult,
 } from '../../shared/customer-marketing-canary-types';
-import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
+import { parseCustomerMarketingTelegramCanaryEnableRequest } from '../../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingCanaryBinding,
+  CustomerMarketingCanaryController,
+  CustomerMarketingCanaryStatus,
+} from './customer-marketing-canary-controller';
 import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateRequest,
@@ -1168,8 +1175,9 @@ export class CustomerMarketingService {
     >,
     private readonly canaryNamedApprovalStore?: Pick<
       CustomerMarketingCanaryNamedApprovalStore,
-      'issue' | 'getActive'
+      'issue' | 'getActive' | 'consume'
     >,
+    private readonly canaryController?: Pick<CustomerMarketingCanaryController, 'status' | 'enable'>,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1887,7 +1895,7 @@ export class CustomerMarketingService {
         authority.workspace.id,
         authority.identity.id,
       ) ?? null;
-      if (!namedApproval) missingRequirements.push('named_approval');
+      if (!controlPlane.enabled && !namedApproval) missingRequirements.push('named_approval');
       if (!controlPlane.enabled || controlPlane.killSwitch) missingRequirements.push('canary_enablement');
       return {
         ok: true,
@@ -2093,6 +2101,97 @@ export class CustomerMarketingService {
         ok: false, status: 'unavailable', approval: null,
         externalActionPerformed: false, error: 'Không thể lưu named approval.',
       };
+    }
+  }
+
+  async enableTelegramCanary(
+    input: CustomerMarketingTelegramCanaryEnableRequest,
+  ): Promise<CustomerMarketingTelegramCanaryEnableResult> {
+    const request = parseCustomerMarketingTelegramCanaryEnableRequest(input);
+    const unavailable = (
+      status: CustomerMarketingTelegramCanaryEnableResult['status'],
+      error: string,
+      controlPlane: CustomerMarketingCanaryStatus | null = null,
+    ): CustomerMarketingTelegramCanaryEnableResult => ({
+      ok: false,
+      status,
+      controlPlane,
+      receipt: null,
+      externalActionPerformed: false,
+      error,
+    });
+    if (!request) return unavailable('unavailable', 'Yêu cầu bật Telegram canary không hợp lệ.');
+    const authority = await this.authorizeMarketingWorkflow('social', MARKETING_EXTERNAL_ACTION_ROLES);
+    if (authority.status !== 'synced') return unavailable(authority.status, authority.error);
+    if (!this.canaryController || !this.canaryNamedApprovalStore) {
+      return unavailable('unavailable', 'Canary controller chưa sẵn sàng.');
+    }
+    const initialStatus = this.canaryController.status();
+    if (initialStatus.enabled
+      || initialStatus.killSwitch
+      || initialStatus.stateRevision !== request.expectedStateRevision) {
+      return unavailable('conflict', 'Trạng thái canary đã thay đổi; hãy tải lại trước khi bật.', initialStatus);
+    }
+    const candidateResult = await this.prepareTelegramCanaryCandidateForAuthority({
+      workflowId: request.workflowId,
+      manifestDigest: request.manifestDigest,
+    }, authority);
+    const candidate = candidateResult.candidate;
+    if (!candidateResult.ok || !candidate
+      || candidate.resourceDigest !== request.resourceDigest
+      || candidate.expectedRevision !== request.expectedRevision) {
+      return unavailable('conflict', 'Telegram candidate đã thay đổi; hãy chuẩn bị preview mới.', this.canaryController.status());
+    }
+    const currentStatus = this.canaryController.status();
+    if (currentStatus.enabled
+      || currentStatus.killSwitch
+      || currentStatus.stateRevision !== request.expectedStateRevision) {
+      return unavailable('conflict', 'Trạng thái canary đã thay đổi; hãy tải lại trước khi bật.', currentStatus);
+    }
+    const approval = this.canaryNamedApprovalStore.consume(
+      authority.workspace.id,
+      authority.identity.id,
+      {
+        workflowId: request.workflowId,
+        manifestDigest: request.manifestDigest,
+        resourceDigest: request.resourceDigest,
+        expectedRevision: request.expectedRevision,
+      },
+    );
+    if (!approval) return unavailable(
+      'conflict', 'Named approval không còn hợp lệ; hãy phê duyệt lại.', this.canaryController.status(),
+    );
+    const binding: CustomerMarketingCanaryBinding = {
+      provider: approval.provider,
+      operation: approval.operation,
+      manifestDigest: approval.manifestDigest,
+      resourceDigest: approval.resourceDigest,
+      expectedRevision: approval.expectedRevision,
+      approval: {
+        approvalId: approval.approval.approvalId,
+        reviewer: approval.approval.reviewer,
+        manifestDigest: approval.approval.manifestDigest,
+        expiresAt: approval.approval.expiresAt,
+      },
+    };
+    try {
+      const receipt = this.canaryController.enable(binding, request.expectedStateRevision);
+      if (receipt.action !== 'enabled') {
+        return unavailable('conflict', 'Canary controller trả về receipt không hợp lệ.', this.canaryController.status());
+      }
+      return {
+        ok: true,
+        status: 'synced',
+        controlPlane: this.canaryController.status(),
+        receipt,
+        externalActionPerformed: false,
+      };
+    } catch {
+      return unavailable(
+        'conflict',
+        'Không thể bật canary; named approval đã được hủy để tránh replay.',
+        this.canaryController.status(),
+      );
     }
   }
 

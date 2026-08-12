@@ -15,7 +15,10 @@ import type {
 import type {
   CustomerMarketingCredentialStatus,
 } from '../../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
+import {
+  CustomerMarketingCanaryController,
+  type CustomerMarketingCanaryStatus,
+} from './customer-marketing-canary-controller';
 import type {
   CustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
@@ -598,6 +601,7 @@ function setup(options?: {
       status(): CustomerMarketingCanaryStatus;
       privateSandboxChatConfigured(): boolean;
     };
+    canaryController?: CustomerMarketingCanaryController;
     telegramSandboxConfig?: Pick<
       CustomerMarketingTelegramSandboxConfigStore,
       'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
@@ -629,6 +633,7 @@ function setup(options?: {
     options?.canaryReadinessSource,
     options?.telegramSandboxConfig,
     options?.canaryNamedApprovalStore,
+    options?.canaryController,
   );
   return {
     db,
@@ -5649,6 +5654,189 @@ describe('CustomerMarketingService CMR-230 Telegram named approval', () => {
       expect(issue).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('CustomerMarketingService CMR-230 Telegram canary enablement', () => {
+  const fixedNow = '2026-08-13T00:00:00.000Z';
+  const privateSandboxChatId = '-1001234567890';
+
+  it('consumes one exact named approval into the controller without external action', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const db = new MemorySettings();
+    const approvalStore = namedApprovalStore(db, () => fixedNow, () => 'approval-enable-1');
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId), setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryReadinessSource: {
+        status: () => controller.status(), privateSandboxChatConfigured: () => true,
+      },
+      canaryNamedApprovalStore: approvalStore,
+      canaryController: controller,
+    });
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social', resourceId: remote.resource.id, expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social', workflowId: workflow.workflowId, approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest, decision: 'approved',
+    });
+    const candidate = (await context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId, manifestDigest: workflow.manifestDigest,
+    })).candidate!;
+    await context.service.approveTelegramCanaryCandidate({
+      workflowId: candidate.workflowId, manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest, expectedRevision: candidate.expectedRevision,
+    });
+
+    const result = await context.service.enableTelegramCanary({
+      workflowId: candidate.workflowId,
+      manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest,
+      expectedRevision: candidate.expectedRevision,
+      expectedStateRevision: 0,
+    });
+
+    expect(result).toMatchObject({
+      ok: true, status: 'synced', externalActionPerformed: false,
+      controlPlane: { enabled: true, killSwitch: false, bindingDigest: expect.stringMatching(/^[a-f0-9]{64}$/), stateRevision: 1 },
+      receipt: { action: 'enabled', reason: 'named-approval-bound', externalActionPerformed: false },
+    });
+    expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).toBeNull();
+    expect(controller.status()).toMatchObject({ enabled: true, stateRevision: 1 });
+  });
+
+  it('rejects stale state revision without consuming approval', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const db = new MemorySettings();
+    const approvalStore = namedApprovalStore(db, () => fixedNow, () => 'approval-enable-2');
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId), setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryReadinessSource: {
+        status: () => controller.status(), privateSandboxChatConfigured: () => true,
+      },
+      canaryNamedApprovalStore: approvalStore,
+      canaryController: controller,
+    });
+    approvalStore.issue(remote.workspace.id, {
+      workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+      resourceDigest: 'b'.repeat(64), expectedRevision: 3,
+    }, 'Owner A', 'tenant-a');
+
+    await expect(context.service.enableTelegramCanary({
+      workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+      resourceDigest: 'b'.repeat(64), expectedRevision: 3, expectedStateRevision: 1,
+    })).resolves.toMatchObject({ ok: false, status: 'conflict', controlPlane: { enabled: false } });
+    expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).not.toBeNull();
+    expect(controller.status()).toMatchObject({ enabled: false, stateRevision: 0 });
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])(
+    'denies %s without exposing control-plane state or consuming approval',
+    async (role) => {
+      const remote = marketingWorkflowGateway(role);
+      const approvalStore = namedApprovalStore(new MemorySettings(), () => fixedNow);
+      const controller = new CustomerMarketingCanaryController(() => fixedNow);
+      approvalStore.issue(remote.workspace.id, {
+        workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+        resourceDigest: 'b'.repeat(64), expectedRevision: 3,
+      }, 'Reviewer', 'tenant-a');
+      const consume = vi.spyOn(approvalStore, 'consume');
+      const context = setup({
+        workspaceGateway: remote.gateway,
+        canaryNamedApprovalStore: approvalStore,
+        canaryController: controller,
+      });
+
+      await expect(context.service.enableTelegramCanary({
+        workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+        resourceDigest: 'b'.repeat(64), expectedRevision: 3, expectedStateRevision: 0,
+      })).resolves.toMatchObject({ ok: false, status: 'forbidden', controlPlane: null, receipt: null });
+      expect(consume).not.toHaveBeenCalled();
+      expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).not.toBeNull();
+    },
+  );
+
+  it('preserves approval when the approved source drifts before enable', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const approvalStore = namedApprovalStore(new MemorySettings(), () => fixedNow);
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId), setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryNamedApprovalStore: approvalStore,
+      canaryController: controller,
+    });
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social', resourceId: remote.resource.id, expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social', workflowId: workflow.workflowId, approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest, decision: 'approved',
+    });
+    const candidate = (await context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId, manifestDigest: workflow.manifestDigest,
+    })).candidate!;
+    await context.service.approveTelegramCanaryCandidate({
+      workflowId: candidate.workflowId, manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest, expectedRevision: candidate.expectedRevision,
+    });
+    remote.getMarketingResource.mockResolvedValue({
+      status: 'synced',
+      resource: marketingContentResource({
+        workspaceId: remote.workspace.id,
+        revision: remote.resource.revision + 1,
+        body: 'Changed after named approval',
+      }),
+    });
+
+    await expect(context.service.enableTelegramCanary({
+      workflowId: candidate.workflowId, manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest, expectedRevision: candidate.expectedRevision,
+      expectedStateRevision: 0,
+    })).resolves.toMatchObject({ ok: false, status: 'conflict', receipt: null });
+    expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).not.toBeNull();
+    expect(controller.status().enabled).toBe(false);
+  });
+
+  it('preserves approval when the kill switch is enabled', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const approvalStore = namedApprovalStore(new MemorySettings(), () => fixedNow);
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    controller.setKillSwitch(true, 0);
+    approvalStore.issue(remote.workspace.id, {
+      workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+      resourceDigest: 'b'.repeat(64), expectedRevision: 3,
+    }, 'Manager', 'tenant-a');
+    const consume = vi.spyOn(approvalStore, 'consume');
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      canaryNamedApprovalStore: approvalStore,
+      canaryController: controller,
+    });
+
+    await expect(context.service.enableTelegramCanary({
+      workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+      resourceDigest: 'b'.repeat(64), expectedRevision: 3, expectedStateRevision: 1,
+    })).resolves.toMatchObject({
+      ok: false, status: 'conflict', controlPlane: { killSwitch: true }, receipt: null,
+    });
+    expect(consume).not.toHaveBeenCalled();
+    expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).not.toBeNull();
+  });
 });
 
 describe('CustomerMarketingService CMR-402 external action gate', () => {

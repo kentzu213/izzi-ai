@@ -82,6 +82,28 @@ export interface CustomerMarketingTelegramCanaryNamedApprovalResult {
   error?: string;
 }
 
+export interface CustomerMarketingTelegramCanaryEnableRequest
+  extends CustomerMarketingTelegramCanaryNamedApprovalRequest {
+  expectedStateRevision: number;
+}
+
+export interface CustomerMarketingTelegramCanaryEnableResult {
+  ok: boolean;
+  status: CustomerMarketingBridgeStatus;
+  controlPlane: CustomerMarketingCanaryReadinessResult['controlPlane'];
+  receipt: {
+    action: 'enabled';
+    reason: string;
+    bindingDigest: string | null;
+    stateRevision: number;
+    createdAt: string;
+    externalActionPerformed: false;
+    receiptDigest: string;
+  } | null;
+  externalActionPerformed: false;
+  error?: string;
+}
+
 const TELEGRAM_BOT_TOKEN_PATTERN = /^[1-9][0-9]{5,15}:[A-Za-z0-9_-]{30,80}$/;
 const TELEGRAM_PRIVATE_SANDBOX_CHAT_ID_PATTERN = /^-100[1-9][0-9]{5,19}$/;
 
@@ -101,4 +123,37 @@ export function parseCustomerMarketingTelegramSandboxSetupInput(
     token: input.token,
     privateSandboxChatId: input.privateSandboxChatId,
   };
+}
+
+export function parseCustomerMarketingTelegramCanaryEnableRequest(
+  value: unknown,
+): CustomerMarketingTelegramCanaryEnableRequest | null {
+  if (!isExactPlainRecord(value, [
+    'workflowId', 'manifestDigest', 'resourceDigest', 'expectedRevision', 'expectedStateRevision',
+  ])
+    || typeof value.workflowId !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(value.workflowId)
+    || typeof value.manifestDigest !== 'string'
+    || !/^[a-f0-9]{64}$/.test(value.manifestDigest)
+    || typeof value.resourceDigest !== 'string'
+    || !/^[a-f0-9]{64}$/.test(value.resourceDigest)
+    || typeof value.expectedRevision !== 'number'
+    || !Number.isSafeInteger(value.expectedRevision)
+    || value.expectedRevision < 0
+    || typeof value.expectedStateRevision !== 'number'
+    || !Number.isSafeInteger(value.expectedStateRevision)
+    || value.expectedStateRevision < 0) return null;
+  return value as unknown as CustomerMarketingTelegramCanaryEnableRequest;
+}
+
+function isExactPlainRecord(
+  value: unknown,
+  expectedKeys: readonly string[],
+): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const keys = Object.keys(value);
+  return keys.length === expectedKeys.length
+    && expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
