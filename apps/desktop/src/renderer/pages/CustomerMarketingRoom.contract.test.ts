@@ -49,6 +49,13 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram'");
   });
 
+  it('exposes bounded rollback control without renderer-owned reason or send channel', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:rollbackTelegramCanary', input)");
+    expect(rendererTypesSource).toContain('rollbackTelegramCanary: (');
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram'");
+  });
+
   it('keeps BrandView mounted while another workspace view is active', () => {
     expect(roomSource).toMatch(
       /<div\s+hidden=\{activeView !== 'brand'\}\s+aria-hidden=\{activeView !== 'brand'\}\s*>[\s\S]*?<BrandView[\s\S]*?<\/div>/,

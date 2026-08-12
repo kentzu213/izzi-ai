@@ -135,8 +135,13 @@ import type {
   CustomerMarketingTelegramCanaryNamedApprovalResult,
   CustomerMarketingTelegramCanaryEnableRequest,
   CustomerMarketingTelegramCanaryEnableResult,
+  CustomerMarketingTelegramCanaryRollbackRequest,
+  CustomerMarketingTelegramCanaryRollbackResult,
 } from '../../shared/customer-marketing-canary-types';
-import { parseCustomerMarketingTelegramCanaryEnableRequest } from '../../shared/customer-marketing-canary-types';
+import {
+  parseCustomerMarketingTelegramCanaryEnableRequest,
+  parseCustomerMarketingTelegramCanaryRollbackRequest,
+} from '../../shared/customer-marketing-canary-types';
 import type {
   CustomerMarketingCanaryBinding,
   CustomerMarketingCanaryController,
@@ -1177,7 +1182,10 @@ export class CustomerMarketingService {
       CustomerMarketingCanaryNamedApprovalStore,
       'issue' | 'getActive' | 'consume'
     >,
-    private readonly canaryController?: Pick<CustomerMarketingCanaryController, 'status' | 'enable'>,
+    private readonly canaryController?: Pick<
+      CustomerMarketingCanaryController,
+      'status' | 'enable' | 'rollback'
+    >,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -2192,6 +2200,44 @@ export class CustomerMarketingService {
         'Không thể bật canary; named approval đã được hủy để tránh replay.',
         this.canaryController.status(),
       );
+    }
+  }
+
+  async rollbackTelegramCanary(
+    input: CustomerMarketingTelegramCanaryRollbackRequest,
+  ): Promise<CustomerMarketingTelegramCanaryRollbackResult> {
+    const request = parseCustomerMarketingTelegramCanaryRollbackRequest(input);
+    const unavailable = (
+      status: CustomerMarketingTelegramCanaryRollbackResult['status'],
+      error: string,
+      controlPlane: CustomerMarketingCanaryStatus | null = null,
+    ): CustomerMarketingTelegramCanaryRollbackResult => ({
+      ok: false,
+      status,
+      controlPlane,
+      receipt: null,
+      externalActionPerformed: false,
+      error,
+    });
+    if (!request) return unavailable('unavailable', 'Yêu cầu rollback Telegram canary không hợp lệ.');
+    const authority = await this.authorizeMarketingWorkflow('social', MARKETING_EXTERNAL_ACTION_ROLES);
+    if (authority.status !== 'synced') return unavailable(authority.status, authority.error);
+    if (!this.canaryController) return unavailable('unavailable', 'Canary controller chưa sẵn sàng.');
+    const controlPlane = this.canaryController.status();
+    if (!controlPlane.enabled || controlPlane.stateRevision !== request.expectedStateRevision) {
+      return unavailable('conflict', 'Trạng thái canary đã thay đổi; hãy tải lại trước khi rollback.', controlPlane);
+    }
+    try {
+      const receipt = this.canaryController.rollback('operator-request', request.expectedStateRevision);
+      return {
+        ok: true,
+        status: 'synced',
+        controlPlane: this.canaryController.status(),
+        receipt,
+        externalActionPerformed: false,
+      };
+    } catch {
+      return unavailable('conflict', 'Không thể rollback Telegram canary.', this.canaryController.status());
     }
   }
 

@@ -108,6 +108,17 @@ function serviceMock() {
       },
       externalActionPerformed: false,
     })),
+    rollbackTelegramCanary: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      controlPlane: { enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 2 },
+      receipt: {
+        action: 'rolled_back', reason: 'operator-request', bindingDigest: 'd'.repeat(64),
+        stateRevision: 2, createdAt: '2026-08-13T01:00:00.000Z',
+        externalActionPerformed: false, receiptDigest: 'f'.repeat(64),
+      },
+      externalActionPerformed: false,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -1051,5 +1062,37 @@ describe('customer marketing CMR-230 Telegram canary enablement IPC', () => {
     await expect(enable!(event('https://attacker.example/customer-marketing'), input))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.enableTelegramCanary).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230 Telegram canary rollback IPC', () => {
+  const input = { expectedStateRevision: 1 };
+
+  it('accepts only the exact state revision and returns a non-sending rollback receipt', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const rollback = electronMocks.handlers.get('customerMarketing:rollbackTelegramCanary');
+
+    await expect(rollback!(event(), input)).resolves.toMatchObject({
+      ok: true,
+      controlPlane: { enabled: false, stateRevision: 2 },
+      receipt: { action: 'rolled_back', reason: 'operator-request', externalActionPerformed: false },
+      externalActionPerformed: false,
+    });
+    expect(service.rollbackTelegramCanary).toHaveBeenCalledWith(input);
+    await expect(rollback!(event(), { ...input, reason: 'renderer' })).rejects.toThrow('Payload rollback');
+    await expect(rollback!(event(), { ...input, workspaceId: 'renderer' })).rejects.toThrow('Payload rollback');
+    await expect(rollback!(event(), { expectedStateRevision: -1 })).rejects.toThrow('Payload rollback');
+    expect(service.rollbackTelegramCanary).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before rollback parsing', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const rollback = electronMocks.handlers.get('customerMarketing:rollbackTelegramCanary');
+
+    await expect(rollback!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.rollbackTelegramCanary).not.toHaveBeenCalled();
   });
 });

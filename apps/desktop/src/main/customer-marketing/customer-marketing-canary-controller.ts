@@ -141,7 +141,10 @@ export class CustomerMarketingCanaryController {
     );
   }
 
-  rollback(reason: string, expectedStateRevision: number): CustomerMarketingCanaryReceipt {
+  rollback(
+    reason: string,
+    expectedStateRevision: number,
+  ): CustomerMarketingCanaryReceipt & { action: 'rolled_back' } {
     this.assertStateRevision(expectedStateRevision);
     if (!this.binding) throw new Error('Canary is not enabled.');
     if (typeof reason !== 'string'

@@ -18,6 +18,7 @@ import type {
   CustomerMarketingTelegramCanaryCandidate,
   CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
+  CustomerMarketingTelegramCanaryRollbackResult,
 } from '../../shared/customer-marketing-canary-types';
 import { CloseIcon, ContentIcon, RefreshIcon, ReviewIcon, StatusIcon } from '../components/AppIcons';
 
@@ -131,12 +132,17 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramEnableBusy, setTelegramEnableBusy] = useState(false);
   const [telegramEnableError, setTelegramEnableError] = useState('');
   const [telegramEnableAnnouncement, setTelegramEnableAnnouncement] = useState('');
+  const [telegramRollbackReceipt, setTelegramRollbackReceipt] = useState<CustomerMarketingTelegramCanaryRollbackResult['receipt']>(null);
+  const [telegramRollbackBusy, setTelegramRollbackBusy] = useState(false);
+  const [telegramRollbackError, setTelegramRollbackError] = useState('');
+  const [telegramRollbackAnnouncement, setTelegramRollbackAnnouncement] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
   const telegramCandidatePreview = useRef<HTMLDivElement>(null);
   const telegramApprovalReceipt = useRef<HTMLDivElement>(null);
   const telegramEnableReceiptRef = useRef<HTMLDivElement>(null);
+  const telegramRollbackReceiptRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const api = window.electronAPI?.customerMarketing;
@@ -276,6 +282,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setTelegramEnableReceipt(null);
     setTelegramEnableError('');
     setTelegramEnableAnnouncement('');
+    setTelegramRollbackReceipt(null);
+    setTelegramRollbackError('');
+    setTelegramRollbackAnnouncement('');
   }, [target, workflow?.workflowId, workflow?.manifestDigest]);
 
   const revokeCredential = async (provider: CustomerMarketingIntegrationProvider) => {
@@ -393,6 +402,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setTelegramEnableReceipt(null);
     setTelegramEnableError('');
     setTelegramEnableAnnouncement('');
+    setTelegramRollbackReceipt(null);
+    setTelegramRollbackError('');
+    setTelegramRollbackAnnouncement('');
     try {
       const result = await api.prepareTelegramCanaryCandidate({
         workflowId: workflow.workflowId,
@@ -457,6 +469,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         return;
       }
       setTelegramEnableReceipt(result.receipt);
+      setTelegramRollbackReceipt(null);
       setTelegramApproval(null);
       setTelegramEnableAnnouncement('Canary nội bộ đã bật. Chưa gửi Telegram.');
       setCanaryReadiness((current) => {
@@ -476,6 +489,43 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setTelegramEnableError(reason instanceof Error ? reason.message : 'Không thể bật Telegram canary.');
     } finally {
       setTelegramEnableBusy(false);
+    }
+  };
+
+  const rollbackTelegramCanary = async () => {
+    const api = window.electronAPI?.customerMarketing;
+    const controlPlane = canaryReadiness?.controlPlane;
+    if (!api || !controlPlane?.enabled || telegramRollbackBusy) return;
+    if (!window.confirm('Rollback canary nội bộ? Binding hiện tại sẽ bị gỡ và không gửi Telegram.')) return;
+    setTelegramRollbackBusy(true);
+    setTelegramRollbackError('');
+    setTelegramRollbackAnnouncement('');
+    try {
+      const result = await api.rollbackTelegramCanary({
+        expectedStateRevision: controlPlane.stateRevision,
+      });
+      if (!result.ok || !result.receipt || !result.controlPlane) {
+        setTelegramRollbackError(result.error || 'Không thể rollback Telegram canary.');
+        return;
+      }
+      setTelegramRollbackReceipt(result.receipt);
+      setTelegramEnableReceipt(null);
+      setTelegramRollbackAnnouncement('Canary đã rollback. Không gửi Telegram.');
+      setCanaryReadiness((current) => current ? {
+        ...current,
+        controlPlane: result.controlPlane,
+        liveReady: false,
+        missingRequirements: Array.from(new Set([
+          ...current.missingRequirements,
+          'named_approval' as const,
+          'canary_enablement' as const,
+        ])),
+      } : current);
+      window.requestAnimationFrame(() => telegramRollbackReceiptRef.current?.focus());
+    } catch (reason) {
+      setTelegramRollbackError(reason instanceof Error ? reason.message : 'Không thể rollback Telegram canary.');
+    } finally {
+      setTelegramRollbackBusy(false);
     }
   };
 
@@ -820,6 +870,40 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
             </span>
           ))}
         </div>
+        {canConfigureTelegram && canaryReadiness?.controlPlane?.enabled && (
+          <div className="cmr-telegram-rollback-action">
+            <small>Gỡ binding khỏi control plane. Không gửi Telegram.</small>
+            <button
+              type="button"
+              className="cmr-button cmr-button--danger"
+              disabled={telegramRollbackBusy}
+              onClick={() => void rollbackTelegramCanary()}
+            >
+              <CloseIcon className="cmr-button__icon" />
+              {telegramRollbackBusy ? 'Đang rollback…' : 'Rollback canary'}
+            </button>
+          </div>
+        )}
+        {telegramRollbackReceipt && (
+          <div
+            className="cmr-telegram-rollback-receipt"
+            ref={telegramRollbackReceiptRef}
+            tabIndex={-1}
+          >
+            <div>
+              <span>Canary đã rollback</span>
+              <code title={telegramRollbackReceipt.receiptDigest}>{shortDigest(telegramRollbackReceipt.receiptDigest)}</code>
+            </div>
+            <small>
+              {telegramRollbackReceipt.reason} · {formatTime(telegramRollbackReceipt.createdAt)} ·{' '}
+              Binding đã gỡ · Không gửi Telegram · State r{telegramRollbackReceipt.stateRevision}
+            </small>
+          </div>
+        )}
+        <div className="cmr-sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {telegramRollbackAnnouncement}
+        </div>
+        {telegramRollbackError && <div className="cmr-credential-error" role="alert">{telegramRollbackError}</div>}
         {canConfigureTelegram ? (
           <form
             className="cmr-telegram-setup"

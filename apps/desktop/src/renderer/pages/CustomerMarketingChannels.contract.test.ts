@@ -74,4 +74,27 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(pageSource).toContain('externalActionPerformed');
     expect(pageSource).not.toContain('api.executeCanary(');
   });
+
+  it('rolls back an enabled canary independently of local candidate state', () => {
+    expect(pageSource).toContain('api.rollbackTelegramCanary({');
+    expect(pageSource).toContain('expectedStateRevision: controlPlane.stateRevision');
+    expect(pageSource).toContain('Rollback canary');
+    expect(pageSource).toContain('Gỡ binding khỏi control plane. Không gửi Telegram.');
+    expect(pageSource).toContain('telegramRollbackReceiptRef.current?.focus()');
+    expect(pageSource).toContain('setTelegramRollbackReceipt(null)');
+    expect(pageSource).toContain('setTelegramEnableReceipt(null)');
+    expect(pageSource).toContain("setTelegramRollbackAnnouncement('Canary đã rollback. Không gửi Telegram.')");
+    expect(pageSource).toContain('liveReady: false');
+    expect(pageSource).toContain("'named_approval' as const");
+    expect(pageSource).toContain("'canary_enablement' as const");
+    expect(pageSource).toContain('telegramRollbackReceipt.reason');
+    expect(pageSource).toContain('formatTime(telegramRollbackReceipt.createdAt)');
+    expect(pageSource).not.toMatch(/cmr-telegram-rollback-receipt[\s\S]{0,180}role="status"/);
+    expect(stylesSource).toMatch(/\.cmr-button--danger \{[\s\S]*?border-color:[\s\S]*?background:/);
+    expect(stylesSource).toMatch(/\.cmr-canary-readiness > span \{[\s\S]*?font-size: 12px;/);
+    expect(stylesSource).toMatch(/\.cmr-credential-empty,[\s\S]*?\.cmr-credential-error \{[\s\S]*?font-size: 12px;/);
+    expect(pageSource).toContain('canaryReadiness?.controlPlane?.enabled');
+    expect(pageSource).not.toContain("reason: 'operator-request'");
+    expect(pageSource).not.toContain('api.executeCanary(');
+  });
 });

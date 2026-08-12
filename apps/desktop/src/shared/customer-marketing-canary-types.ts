@@ -104,6 +104,27 @@ export interface CustomerMarketingTelegramCanaryEnableResult {
   error?: string;
 }
 
+export interface CustomerMarketingTelegramCanaryRollbackRequest {
+  expectedStateRevision: number;
+}
+
+export interface CustomerMarketingTelegramCanaryRollbackResult {
+  ok: boolean;
+  status: CustomerMarketingBridgeStatus;
+  controlPlane: CustomerMarketingCanaryReadinessResult['controlPlane'];
+  receipt: {
+    action: 'rolled_back';
+    reason: string;
+    bindingDigest: string | null;
+    stateRevision: number;
+    createdAt: string;
+    externalActionPerformed: false;
+    receiptDigest: string;
+  } | null;
+  externalActionPerformed: false;
+  error?: string;
+}
+
 const TELEGRAM_BOT_TOKEN_PATTERN = /^[1-9][0-9]{5,15}:[A-Za-z0-9_-]{30,80}$/;
 const TELEGRAM_PRIVATE_SANDBOX_CHAT_ID_PATTERN = /^-100[1-9][0-9]{5,19}$/;
 
@@ -144,6 +165,31 @@ export function parseCustomerMarketingTelegramCanaryEnableRequest(
     || !Number.isSafeInteger(value.expectedStateRevision)
     || value.expectedStateRevision < 0) return null;
   return value as unknown as CustomerMarketingTelegramCanaryEnableRequest;
+}
+
+export function parseCustomerMarketingTelegramCanaryRollbackRequest(
+  value: unknown,
+): CustomerMarketingTelegramCanaryRollbackRequest | null {
+  if (!isExactPlainDataRecord(value, ['expectedStateRevision'])
+    || typeof value.expectedStateRevision !== 'number'
+    || !Number.isSafeInteger(value.expectedStateRevision)
+    || value.expectedStateRevision < 0) return null;
+  return { expectedStateRevision: value.expectedStateRevision };
+}
+
+function isExactPlainDataRecord(
+  value: unknown,
+  expectedKeys: readonly string[],
+): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== expectedKeys.length || keys.some((key) => typeof key !== 'string')) return false;
+  return expectedKeys.every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return Boolean(descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value'));
+  });
 }
 
 function isExactPlainRecord(

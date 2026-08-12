@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseCustomerMarketingTelegramCanaryEnableRequest,
+  parseCustomerMarketingTelegramCanaryRollbackRequest,
   parseCustomerMarketingTelegramSandboxSetupInput,
 } from './customer-marketing-canary-types';
 
@@ -46,5 +47,38 @@ describe('parseCustomerMarketingTelegramCanaryEnableRequest', () => {
       { ...request, expectedStateRevision: -1 },
       { ...request, expectedStateRevision: 0.5 },
     ].forEach((value) => expect(parseCustomerMarketingTelegramCanaryEnableRequest(value)).toBeNull());
+  });
+});
+
+describe('parseCustomerMarketingTelegramCanaryRollbackRequest', () => {
+  it('accepts only an exact optimistic state revision', () => {
+    expect(parseCustomerMarketingTelegramCanaryRollbackRequest({ expectedStateRevision: 1 }))
+      .toEqual({ expectedStateRevision: 1 });
+    [
+      null,
+      {},
+      { expectedStateRevision: -1 },
+      { expectedStateRevision: 1.5 },
+      { expectedStateRevision: 1, reason: 'renderer-controlled' },
+      { expectedStateRevision: 1, workspaceId: 'renderer-controlled' },
+    ].forEach((value) => expect(parseCustomerMarketingTelegramCanaryRollbackRequest(value)).toBeNull());
+  });
+
+  it('rejects accessors, symbols and custom prototypes without invoking getters', () => {
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({}, 'expectedStateRevision', {
+      enumerable: true,
+      get: () => { getterCalls += 1; return 1; },
+    });
+    const symbolKey = { expectedStateRevision: 1, [Symbol('hidden')]: true };
+    const customPrototype = Object.assign(Object.create({ inherited: true }), { expectedStateRevision: 1 });
+    const nullPrototype = Object.assign(Object.create(null), { expectedStateRevision: 1 });
+
+    expect(parseCustomerMarketingTelegramCanaryRollbackRequest(accessor)).toBeNull();
+    expect(getterCalls).toBe(0);
+    expect(parseCustomerMarketingTelegramCanaryRollbackRequest(symbolKey)).toBeNull();
+    expect(parseCustomerMarketingTelegramCanaryRollbackRequest(customPrototype)).toBeNull();
+    expect(parseCustomerMarketingTelegramCanaryRollbackRequest(nullPrototype))
+      .toEqual({ expectedStateRevision: 1 });
   });
 });

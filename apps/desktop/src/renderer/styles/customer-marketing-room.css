@@ -297,6 +297,18 @@
   background: transparent;
 }
 
+.cmr-button--danger {
+  border-color: rgba(255, 107, 114, 0.56);
+  color: #ffd7da;
+  background: rgba(255, 107, 114, 0.12);
+}
+
+.cmr-button--danger:hover:not(:disabled) {
+  border-color: var(--cmr-red);
+  color: #ffffff;
+  background: rgba(255, 107, 114, 0.22);
+}
+
 .cmr-button__icon {
   width: 16px;
   height: 16px;
@@ -2212,7 +2224,7 @@
 .cmr-credential-error {
   grid-column: 1 / -1;
   color: var(--cmr-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -2232,7 +2244,7 @@
   border-left: 2px solid var(--cmr-dim);
   color: var(--cmr-muted);
   background: var(--cmr-surface-soft);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -2405,6 +2417,56 @@
 
 .cmr-telegram-enable-receipt:focus-visible {
   outline: 2px solid var(--cmr-green);
+  outline-offset: 2px;
+}
+
+.cmr-telegram-rollback-action {
+  display: grid;
+  gap: 8px;
+}
+
+.cmr-telegram-rollback-action > small {
+  color: var(--cmr-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cmr-telegram-rollback-action > .cmr-button {
+  width: 100%;
+}
+
+.cmr-telegram-rollback-receipt {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px;
+  border-left: 2px solid var(--cmr-red);
+  background: rgba(255, 95, 109, 0.08);
+}
+
+.cmr-telegram-rollback-receipt > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cmr-telegram-rollback-receipt code {
+  overflow-wrap: anywhere;
+  color: var(--cmr-red);
+}
+
+.cmr-telegram-rollback-receipt small {
+  color: var(--cmr-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cmr-telegram-rollback-receipt:focus-visible {
+  outline: 2px solid var(--cmr-red);
   outline-offset: 2px;
 }
 
@@ -3212,6 +3274,10 @@
   }
 
   .cmr-telegram-enable-action > .cmr-button {
+    min-height: 44px;
+  }
+
+  .cmr-telegram-rollback-action > .cmr-button {
     min-height: 44px;
   }
 

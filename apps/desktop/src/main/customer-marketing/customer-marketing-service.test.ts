@@ -5839,6 +5839,107 @@ describe('CustomerMarketingService CMR-230 Telegram canary enablement', () => {
   });
 });
 
+describe('CustomerMarketingService CMR-230 Telegram canary rollback', () => {
+  const fixedNow = '2026-08-13T01:00:00.000Z';
+  const binding = {
+    provider: 'telegram' as const,
+    operation: 'private_sandbox_send' as const,
+    manifestDigest: 'a'.repeat(64),
+    resourceDigest: 'b'.repeat(64),
+    expectedRevision: 3,
+    approval: {
+      approvalId: 'approval-rollback-1', reviewer: 'Owner A',
+      manifestDigest: 'a'.repeat(64), expiresAt: '2026-08-13T01:15:00.000Z',
+    },
+  };
+
+  it.each(['owner', 'manager'] as CustomerRole[])(
+    'lets %s rollback an enabled canary without external action',
+    async (role) => {
+      const remote = marketingWorkflowGateway(role);
+      const controller = new CustomerMarketingCanaryController(() => fixedNow);
+      controller.enable(binding, 0);
+      const context = setup({ workspaceGateway: remote.gateway, canaryController: controller });
+
+      await expect(context.service.rollbackTelegramCanary({ expectedStateRevision: 1 }))
+        .resolves.toMatchObject({
+          ok: true,
+          status: 'synced',
+          controlPlane: { enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 2 },
+          receipt: {
+            action: 'rolled_back', reason: 'operator-request',
+            bindingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+            stateRevision: 2, externalActionPerformed: false,
+          },
+          externalActionPerformed: false,
+        });
+      expect(controller.status()).toMatchObject({ enabled: false, stateRevision: 2 });
+    },
+  );
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])(
+    'denies %s without exposing or changing control-plane state',
+    async (role) => {
+      const remote = marketingWorkflowGateway(role);
+      const controller = new CustomerMarketingCanaryController(() => fixedNow);
+      controller.enable(binding, 0);
+      const rollback = vi.spyOn(controller, 'rollback');
+      const status = vi.spyOn(controller, 'status');
+      const listStatuses = vi.fn();
+      const context = setup({
+        workspaceGateway: remote.gateway,
+        canaryController: controller,
+        credentialVault: {
+          listStatuses, revokeCredential: vi.fn(), setCredential: vi.fn(),
+        },
+      });
+
+      await expect(context.service.rollbackTelegramCanary({ expectedStateRevision: 1 }))
+        .resolves.toMatchObject({ ok: false, status: 'forbidden', controlPlane: null, receipt: null });
+      expect(rollback).not.toHaveBeenCalled();
+      expect(status).not.toHaveBeenCalled();
+      expect(listStatuses).not.toHaveBeenCalled();
+      expect(controller.authorize({
+        provider: 'telegram', operation: 'private_sandbox_send',
+        manifestDigest: binding.manifestDigest, resourceDigest: binding.resourceDigest,
+        expectedRevision: binding.expectedRevision,
+      })).toMatchObject({ authorized: true });
+    },
+  );
+
+  it('rejects a stale revision without rolling back', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    controller.enable(binding, 0);
+    const context = setup({ workspaceGateway: remote.gateway, canaryController: controller });
+
+    await expect(context.service.rollbackTelegramCanary({ expectedStateRevision: 0 }))
+      .resolves.toMatchObject({
+        ok: false, status: 'conflict',
+        controlPlane: { enabled: true, stateRevision: 1 }, receipt: null,
+      });
+    expect(controller.status()).toMatchObject({ enabled: true, stateRevision: 1 });
+  });
+
+  it('does not read credential status while rolling back', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    controller.enable(binding, 0);
+    const listStatuses = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      canaryController: controller,
+      credentialVault: {
+        listStatuses, revokeCredential: vi.fn(), setCredential: vi.fn(),
+      },
+    });
+
+    await expect(context.service.rollbackTelegramCanary({ expectedStateRevision: 1 }))
+      .resolves.toMatchObject({ ok: true, externalActionPerformed: false });
+    expect(listStatuses).not.toHaveBeenCalled();
+  });
+});
+
 describe('CustomerMarketingService CMR-402 external action gate', () => {
   it.each([
     ['publish', 'social', 'facebook', { itemCount: 1, recipientCount: 0, spendVnd: 0 }],
