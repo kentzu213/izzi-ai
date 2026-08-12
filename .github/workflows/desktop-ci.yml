@@ -40,6 +40,10 @@ jobs:
       - name: Run GitHub Actions runtime contract
         run: pnpm test:actions
 
+      - name: Run clean-host lifecycle contract
+        if: runner.os == 'Windows'
+        run: pnpm --filter @openclaw/desktop test:clean-host-lifecycle
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
