@@ -237,7 +237,9 @@ export function parseCustomerMarketingConnectorRequest(
     return null;
   }
   if (value.operation === 'execute') {
-    if (value.authority.permission !== 'execute' || !isApproval(value.approval)) return null;
+    if (value.authority.permission !== 'execute'
+      || !CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES[value.provider].operations.includes('execute')
+      || !isApproval(value.approval)) return null;
     return { ...value, operation: 'execute', approval: value.approval } as CustomerMarketingConnectorExecuteInput;
   }
   if (value.approval !== undefined) return null;

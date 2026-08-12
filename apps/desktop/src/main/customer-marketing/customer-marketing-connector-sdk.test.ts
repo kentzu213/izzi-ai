@@ -110,6 +110,16 @@ describe('CustomerMarketingConnector SDK contract', () => {
     });
     expect(approvedExecute).toMatchObject({ operation: 'execute', provider: 'telegram' });
     expect(JSON.stringify(approvedExecute)).not.toContain('secret');
+    expect(parseCustomerMarketingConnectorRequest({
+      ...base,
+      provider: 'facebook',
+      operation: 'execute',
+      approval: {
+        approvalId: 'approval-1',
+        manifestDigest: APPROVAL_DIGEST,
+        expiresAt: APPROVAL_FUTURE,
+      },
+    })).toBeNull();
   });
 
   it('publishes a closed capability matrix and typed fail-closed error taxonomy', () => {
