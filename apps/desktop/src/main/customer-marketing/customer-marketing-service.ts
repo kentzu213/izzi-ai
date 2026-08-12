@@ -4076,13 +4076,24 @@ export class CustomerMarketingService {
       }
     }
 
-    if (remoteWorkspace && this.workspaceGateway && !profileAlreadySynced) {
-      let profileState: Awaited<ReturnType<CustomerMarketingWorkspaceGateway['getProfile']>>;
-      try {
-        profileState = await this.workspaceGateway.getProfile(remoteWorkspace.id);
-      } catch {
-        profileState = { status: 'unavailable', profile: null };
-      }
+    const workspaceGateway = this.workspaceGateway;
+    const remoteWorkspaceId = remoteWorkspace?.id;
+    const profileStatePromise = remoteWorkspaceId && workspaceGateway && !profileAlreadySynced
+      ? Promise.resolve().then(() => workspaceGateway.getProfile(remoteWorkspaceId)).catch(() => ({
+        status: 'unavailable' as const,
+        profile: null,
+      }))
+      : null;
+    const capabilityCatalogPromise = remoteWorkspaceId && workspaceGateway
+      ? Promise.resolve().then(() => workspaceGateway.getCapabilities(remoteWorkspaceId)).catch(() => ({
+        status: 'unavailable' as const,
+        revision: null,
+        capabilities: [],
+      }))
+      : null;
+
+    if (profileStatePromise && remoteWorkspace) {
+      const profileState = await profileStatePromise;
       if (profileState.status === 'synced' && profileState.profile && profileState.profile.workspaceId === remoteWorkspace.id) {
         const syncedProfile = this.applyRemoteProfile(record, profileState.profile, 'synced');
         if (syncedProfile !== record) {
@@ -4115,13 +4126,8 @@ export class CustomerMarketingService {
     let capabilityCatalog: CustomerMarketingSnapshot['capabilityCatalog'] = { status: 'local' };
     let capabilities = buildCustomerCapabilities(this.getRuntimeExtensions());
     if (this.workspaceGateway) {
-      if (remoteWorkspace) {
-        let catalogState: Awaited<ReturnType<CustomerMarketingWorkspaceGateway['getCapabilities']>>;
-        try {
-          catalogState = await this.workspaceGateway.getCapabilities(remoteWorkspace.id);
-        } catch {
-          catalogState = { status: 'unavailable', revision: null, capabilities: [] };
-        }
+      if (remoteWorkspace && capabilityCatalogPromise) {
+        const catalogState = await capabilityCatalogPromise;
         if (catalogState.status === 'synced') {
           capabilityCatalog = {
             status: 'synced',

@@ -1,6 +1,7 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (78% weighted delivery scope; 99% local product scope)
+Product status: in_progress (78% weighted delivery scope; 97% local product scope; source:
+`CUSTOMER-AI-MARKETING-ROOM-PLAN.md` weighted rubric and verified checklist)
 Vertical slice status: verified_local_packaged_seven_day_workflow
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
@@ -171,6 +172,11 @@ integrations/staging/production-E2E allocation: 78% total.
     - enforce resource and seven-day workflow mutation authorization inside the database transaction
     - fail the AI Marketing Director closed unless IzziAPI returns an authoritative reservation
     - publish, install, and smoke-test beta34 against isolated local staging before any remote cutover
+39. [x] Start independent Customer Marketing profile and capability reads concurrently:
+    - keep workspace identity resolution first and derive both reads from the confirmed workspace ID
+    - preserve unavailable/forbidden fail-closed mapping and all tenant/auth boundaries
+    - prove both read-only requests start before either one completes
+    - keep media readiness on its existing bounded initial-snapshot path
 
 ## Verification evidence
 
@@ -244,6 +250,11 @@ integrations/staging/production-E2E allocation: 78% total.
   desktop snapshot; PostgreSQL contained 2 approved campaigns and 8 approved content items, quota/billing
   reconciliation had 9 events and no discrepancies, and no publish, spend, send, or bulk action ran.
 - CMR-116 billing-linkage close-out: the [backend commit](https://github.com/kentzu213/izzi-backend/commit/ee81b5376e2d860a485e44ed3bbff69d8d96d336) is public on `master`; focused tests passed 84/84, the full backend suite passed 328 tests with 40 DB-backed skips, PostgreSQL passed 24/24, signed-JWT PostgREST passed 12 checks, the seven-migration staging contract passed 16 checks, and the production dependency audit found 0 vulnerabilities. Installed beta33 passed a 273-request packaged smoke with 9/9 linked usage events, zero runtime errors, consistent quota/billing reconciliation, `policy_denied` publishing, and no publish, spend, send, or bulk action.
+- PERF-001 remote-read concurrency slice: the Customer Marketing snapshot starts profile and
+  capability reads together after resolving the authoritative workspace. Desktop regression passed
+  1,279/1,279, build and lint passed, renderer budget passed 2/2, and the scoped source/script scan
+  found no high-confidence secret pattern. Public CI and installed-runtime timing remain pending
+  until this slice is committed and pushed.
 
 ## Next phases
 

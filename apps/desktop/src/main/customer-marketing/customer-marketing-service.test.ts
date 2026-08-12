@@ -3485,6 +3485,87 @@ describe('Customer Marketing Video Studio', () => {
 });
 
 describe('CustomerMarketingService backend workspace sync', () => {
+  it('starts profile and capability reads together for the initial workspace snapshot', async () => {
+    let releaseProfile!: () => void;
+    let releaseCapabilities!: () => void;
+    const profileGate = new Promise<void>((resolve) => {
+      releaseProfile = resolve;
+    });
+    const capabilitiesGate = new Promise<void>((resolve) => {
+      releaseCapabilities = resolve;
+    });
+    const workspace = remoteWorkspace();
+    let profileStarted = false;
+    let capabilitiesStarted = false;
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      getProfile: vi.fn(async () => {
+        profileStarted = true;
+        await profileGate;
+        return { status: 'synced' as const, profile: remoteProfile() };
+      }),
+      getCapabilities: vi.fn(async () => {
+        capabilitiesStarted = true;
+        await capabilitiesGate;
+        return {
+          status: 'synced' as const,
+          revision: 1,
+          capabilities: buildCustomerCapabilities([]),
+        };
+      }),
+      reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+    };
+    const context = setup({ workspaceGateway: gateway });
+
+    const pending = context.service.getInitialSnapshot(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(profileStarted).toBe(true);
+    expect(capabilitiesStarted).toBe(true);
+    releaseProfile();
+    releaseCapabilities();
+    await expect(pending).resolves.toMatchObject({
+      workspace: { syncStatus: 'synced' },
+      capabilityCatalog: { status: 'synced', revision: 1 },
+    });
+  });
+
+  it.each([
+    ['profile', 'unavailable', 'synced'],
+    ['capabilities', 'synced', 'unavailable'],
+  ] as const)('keeps %s read failures isolated in the initial snapshot', async (
+    failingRead,
+    expectedProfileStatus,
+    expectedCatalogStatus,
+  ) => {
+    const workspace = remoteWorkspace();
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      getProfile: vi.fn(async () => {
+        if (failingRead === 'profile') throw new Error('profile unavailable');
+        return { status: 'synced' as const, profile: remoteProfile() };
+      }),
+      getCapabilities: vi.fn(async () => {
+        if (failingRead === 'capabilities') throw new Error('catalog unavailable');
+        return {
+          status: 'synced' as const,
+          revision: 1,
+          capabilities: buildCustomerCapabilities([]),
+        };
+      }),
+      reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+    };
+
+    await expect(setup({ workspaceGateway: gateway }).service.getInitialSnapshot(0)).resolves.toMatchObject({
+      workspace: { profileSyncStatus: expectedProfileStatus },
+      capabilityCatalog: { status: expectedCatalogStatus },
+    });
+  });
+
   it('returns an initial fail-closed snapshot without waiting for optional media probes', async () => {
     let finishProbe!: (value: CustomerMediaToolchain) => void;
     const mediaRuntime = mediaRuntimeFixture();
