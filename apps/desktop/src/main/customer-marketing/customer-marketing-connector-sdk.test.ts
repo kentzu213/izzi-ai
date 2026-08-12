@@ -113,7 +113,7 @@ describe('CustomerMarketingConnector SDK contract', () => {
     expect(JSON.stringify(approvedExecute)).not.toContain('secret');
     expect(parseCustomerMarketingConnectorRequest({
       ...base,
-      provider: 'facebook',
+      provider: 'instagram',
       operation: 'execute',
       approval: {
         approvalId: 'approval-1',
@@ -132,6 +132,11 @@ describe('CustomerMarketingConnector SDK contract', () => {
     expect(CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES.google.operations)
       .not.toContain('execute');
     expect(CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES.x).toEqual({
+      target: 'social',
+      operations: ['health', 'validate', 'dry_run', 'execute'],
+      sandboxOnly: true,
+    });
+    expect(CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES.facebook).toEqual({
       target: 'social',
       operations: ['health', 'validate', 'dry_run', 'execute'],
       sandboxOnly: true,
@@ -164,6 +169,21 @@ describe('CustomerMarketingConnector SDK contract', () => {
     });
 
     expect(parsed).toMatchObject({ provider: 'x', target: 'social', operation: 'execute' });
+  });
+
+  it('accepts an approved Facebook execute request only through its sandbox capability', () => {
+    const parsed = parseCustomerMarketingConnectorRequest({
+      ...base,
+      provider: 'facebook',
+      operation: 'execute',
+      approval: {
+        approvalId: 'approval-facebook-test-page',
+        manifestDigest: APPROVAL_DIGEST,
+        expiresAt: APPROVAL_FUTURE,
+      },
+    });
+
+    expect(parsed).toMatchObject({ provider: 'facebook', target: 'social', operation: 'execute' });
   });
 
   it('keeps connector methods typed by operation and requires a redacted receipt shape', () => {

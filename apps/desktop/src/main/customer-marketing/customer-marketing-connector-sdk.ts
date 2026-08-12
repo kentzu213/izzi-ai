@@ -45,7 +45,7 @@ export interface CustomerMarketingConnectorCapability {
 export const CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES: Readonly<
   Record<CustomerMarketingIntegrationProvider, CustomerMarketingConnectorCapability>
 > = Object.freeze({
-  facebook: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
+  facebook: { target: 'social', operations: ['health', 'validate', 'dry_run', 'execute'], sandboxOnly: true },
   instagram: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   tiktok: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   youtube: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
