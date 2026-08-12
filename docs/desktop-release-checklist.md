@@ -39,11 +39,15 @@
 - Chat remains the default landing page after login.
 - Tasks, Memory, Status, Overview, Marketplace, Extensions, and Settings all render.
 - Integration status refreshes after returning from browser flows.
+- Windows Authenticode status is `Valid`. Stable tags fail closed when the installer is unsigned.
 - An installed package automatically progresses from `available` to
   `downloaded` without a Download click, presents the restart CTA, and installs
   the downloaded update on a normal zero-exit quit.
 
 ## Notes
 
-- Windows signing is optional in this phase. If no certificate is configured, the NSIS installer is still published unsigned.
+- Decision CMR-214: defer certificate purchase/configuration. Unsigned Windows output is allowed only
+  for hyphenated prerelease tags and internal evaluation; its GitHub release remains a draft and
+  broad distribution is denied. Stable tags
+  require Authenticode `Valid`. Local scripts never publish; only the tagged GitHub workflow may do so.
 - macOS production release is blocked until Apple credentials and signing material are available in GitHub Actions.

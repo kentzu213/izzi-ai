@@ -25,7 +25,8 @@
     "clean": "rimraf dist out release",
     "lint": "pnpm --dir ../.. exec eslint apps/desktop/src",
     "test": "vitest run",
-    "test:smoke": "vitest run src/**/*.smoke.test.ts"
+    "test:smoke": "vitest run src/**/*.smoke.test.ts",
+    "test:signing-policy": "pwsh -NoProfile -File scripts/test-windows-signing-policy.ps1"
   },
   "dependencies": {
     "@kentzu213/graph-view": "file:vendor/kentzu213-graph-view-0.1.1.tgz",

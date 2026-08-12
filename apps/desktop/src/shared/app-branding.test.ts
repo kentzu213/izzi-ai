@@ -123,6 +123,31 @@ describe('Izzi AI desktop branding contract', () => {
     expect(inventory.match(/^\s+(?:"Izzi-AI|'latest)/gm)).toHaveLength(12);
     expect(workflowSource).toContain('if ($assets.Count -ne $requiredNames.Count)');
     expect(workflowSource).toContain('--repo $env:GITHUB_REPOSITORY --draft=false');
+    expect(workflowSource).toContain('Enforce Windows signing policy');
+    expect(workflowSource).toContain('Test Windows signing policy');
+    expect(workflowSource).toContain('pnpm test:signing-policy');
+    expect(workflowSource).toContain('verify-windows-signing-policy.ps1');
+    expect(workflowSource).toContain('broadDistributionAllowed=$env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED');
+    expect(workflowSource).toContain("if ($env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED -ne 'true')");
+    expect(workflowSource).toContain('keeping the release draft for internal evaluation');
+    expect(workflowSource.indexOf('Test Windows signing policy')).toBeLessThan(
+      workflowSource.indexOf('Package Windows'),
+    );
+    expect(workflowSource.indexOf('Enforce Windows signing policy')).toBeLessThan(
+      workflowSource.indexOf('Ensure GitHub release exists'),
+    );
+    const localBatchReleaseSource = readFileSync(
+      new URL('../../scripts/release-win.bat', import.meta.url),
+      'utf8',
+    );
+    const localPowerShellReleaseSource = readFileSync(
+      new URL('../../scripts/release-win.ps1', import.meta.url),
+      'utf8',
+    );
+    for (const localReleaseSource of [localBatchReleaseSource, localPowerShellReleaseSource]) {
+      expect(localReleaseSource).not.toContain('--publish always');
+      expect(localReleaseSource).toContain('--publish never');
+    }
   });
 
   it('provisions target-native optional packages without a third-party Electron mirror', () => {
