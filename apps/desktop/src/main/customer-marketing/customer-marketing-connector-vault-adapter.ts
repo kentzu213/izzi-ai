@@ -25,6 +25,10 @@ export interface CustomerMarketingConnectorCredentialValidation {
   detail: string;
 }
 
+export interface CustomerMarketingConnectorCredentialOperationResult {
+  ok: boolean;
+}
+
 const WORKSPACE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function validWorkspaceId(value: string): boolean {
@@ -56,7 +60,9 @@ export class CustomerMarketingConnectorVaultAdapter {
   }
 
   async validate(
-    useCredential: (secret: string) => CustomerMarketingConnectorCredentialValidation,
+    useCredential: (
+      secret: string,
+    ) => CustomerMarketingConnectorCredentialValidation | Promise<CustomerMarketingConnectorCredentialValidation>,
   ): Promise<CustomerMarketingConnectorValidateResult> {
     const status = this.status();
     if (status !== 'connected') {
@@ -80,7 +86,12 @@ export class CustomerMarketingConnectorVaultAdapter {
     }
     let validation: CustomerMarketingConnectorCredentialValidation;
     try {
-      validation = useCredential(secret);
+      const candidate = await useCredential(secret);
+      validation = candidate
+        && typeof candidate.valid === 'boolean'
+        && typeof candidate.detail === 'string'
+        ? candidate
+        : { valid: false, detail: 'credential-validation-failed' };
     } catch {
       validation = { valid: false, detail: 'credential-validation-failed' };
     }
@@ -91,6 +102,21 @@ export class CustomerMarketingConnectorVaultAdapter {
       checkedAt: this.now(),
       detail: validation.valid ? 'credential-valid' : 'credential-invalid',
     };
+  }
+
+  async executeWithCredential(
+    operation: (
+      secret: string,
+    ) => CustomerMarketingConnectorCredentialOperationResult | Promise<CustomerMarketingConnectorCredentialOperationResult>,
+  ): Promise<boolean> {
+    if (this.status() !== 'connected') return false;
+    const secret = this.vault.getCredential(this.workspaceId, this.provider);
+    if (!secret) return false;
+    try {
+      return (await operation(secret)).ok === true;
+    } catch {
+      return false;
+    }
   }
 
   private status(): CustomerMarketingCredentialConnectionState | 'missing' {

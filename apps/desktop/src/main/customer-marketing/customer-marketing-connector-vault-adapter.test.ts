@@ -48,6 +48,47 @@ describe('CustomerMarketingConnectorVaultAdapter', () => {
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
 
+  it('executes an async provider operation inside the credential boundary and returns only a boolean', async () => {
+    const vault = new FakeVault();
+    const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
+    let callbackSecret: string | null = null;
+
+    const result = await adapter.executeWithCredential(async (secret) => {
+      callbackSecret = secret;
+      return { ok: true, secret };
+    });
+
+    expect(callbackSecret).toBe(SECRET);
+    expect(result).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('does not execute a provider operation after credential revocation', async () => {
+    const vault = new FakeVault();
+    vault.status = 'disconnected';
+    const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
+    let called = false;
+
+    const result = await adapter.executeWithCredential(async () => {
+      called = true;
+      return { ok: true };
+    });
+
+    expect(result).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  it('fails closed when an async credential validator returns malformed output', async () => {
+    const vault = new FakeVault();
+    const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
+
+    await expect(adapter.validate(async () => undefined as never)).resolves.toMatchObject({
+      ok: false,
+      status: 'invalid',
+      detail: 'credential-invalid',
+    });
+  });
+
   it('fails closed when vault is locked, disconnected or invalid', async () => {
     const vault = new FakeVault();
     const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
