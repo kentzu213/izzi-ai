@@ -253,8 +253,9 @@ integrations/staging/production-E2E allocation: 78% total.
 - PERF-001 remote-read concurrency slice: the Customer Marketing snapshot starts profile and
   capability reads together after resolving the authoritative workspace. Desktop regression passed
   1,279/1,279, build and lint passed, renderer budget passed 2/2, and the scoped source/script scan
-  found no high-confidence secret pattern. Public CI and installed-runtime timing remain pending
-  until this slice is committed and pushed.
+  found no high-confidence secret pattern. Product and version CI passed Windows/macOS; the beta35
+  release workflow verified 12 digest-bearing assets and kept the unsigned release as an internal
+  draft. Installed-runtime timing remains pending an authorized isolated-user or clean-machine run.
 
 ## Next phases
 

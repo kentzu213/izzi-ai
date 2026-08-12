@@ -34,12 +34,24 @@ signing behavior.
   Final staged result: `changed_count=5`, `affected_count=3`, `changed_files=4`,
   `risk_level=medium`.
 
+## Public Commit And Internal Draft
+
+- Product commit: `8d740183b91e6bd68ab845122e4061d3153e87aa`.
+- Version commit and beta35 tag target: `de2dc1e3c39e105a8244834e14489bef03c31ef5`.
+- Product CI `31594055907` and version CI `31594293299` both passed Windows and macOS.
+- Release workflow `31594296507` passed Windows, macOS and inventory verification.
+- Beta35 remains an internal GitHub draft with 12 non-empty digest-bearing assets. The Windows
+  installer is 185,856,638 bytes with SHA-256
+  `00f2b45e9002de82f73db8a68788aa3fbfd71e89251ee7e469eef90ba270aab4`.
+- Windows signing receipt: `channel=prerelease-internal`, `signature=NotSigned`,
+  `broadDistributionAllowed=false`. Anonymous release lookup returns HTTP 404.
+
 ## Remaining Evidence
 
-- Commit SHA and public CI run URL/result are not claimed until this slice is pushed and the
-  workflow completes.
 - Installed-runtime latency is not claimed until the public commit is exercised in Izzi AI.
 - The installed timing method must record fresh-process and warm navigation from the Customer
   Marketing route request until the loading state is gone, while also checking renderer console
   and page errors.
+- Beta35 was not installed on the current owner profile. CMR-216 requires an isolated-user or
+  clean-machine lifecycle receipt, and the unsigned draft is not authorized for broad distribution.
 - CMR-216 remains partial until isolated-user and clean-VM lifecycle receipts exist.
