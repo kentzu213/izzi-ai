@@ -70,6 +70,22 @@ function serviceMock() {
       privateSandboxChatConfigured: true,
       externalActionPerformed: false,
     })),
+    prepareTelegramCanaryCandidate: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      candidate: {
+        provider: 'telegram',
+        operation: 'private_sandbox_send',
+        workflowId: 'cmr306-social-workflow-1',
+        manifestDigest: 'a'.repeat(64),
+        resourceId: '55555555-5555-4555-8555-555555555555',
+        expectedRevision: 3,
+        text: 'Approved launch copy.',
+        resourceDigest: 'b'.repeat(64),
+        externalActionPerformed: false,
+      },
+      externalActionPerformed: false,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -914,5 +930,40 @@ describe('customer marketing CMR-230 Telegram setup IPC', () => {
     await expect(configure!(event('https://attacker.example/customer-marketing'), input))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.configureTelegramSandbox).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230 Telegram candidate IPC', () => {
+  const input = {
+    workflowId: 'cmr306-social-workflow-1',
+    manifestDigest: 'a'.repeat(64),
+  };
+
+  it('accepts only workflow identity and returns a non-executing candidate', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const prepare = electronMocks.handlers.get('customerMarketing:prepareTelegramCanaryCandidate');
+
+    await expect(prepare!(event(), input)).resolves.toMatchObject({
+      ok: true,
+      candidate: { resourceDigest: 'b'.repeat(64), externalActionPerformed: false },
+      externalActionPerformed: false,
+    });
+    expect(service.prepareTelegramCanaryCandidate).toHaveBeenCalledWith(input);
+    await expect(prepare!(event(), { ...input, text: 'renderer-controlled' }))
+      .rejects.toThrow('Payload Telegram canary candidate');
+    await expect(prepare!(event(), { ...input, chatId: '-1001234567890' }))
+      .rejects.toThrow('Payload Telegram canary candidate');
+    expect(service.prepareTelegramCanaryCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before candidate parsing', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const prepare = electronMocks.handlers.get('customerMarketing:prepareTelegramCanaryCandidate');
+
+    await expect(prepare!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.prepareTelegramCanaryCandidate).not.toHaveBeenCalled();
   });
 });

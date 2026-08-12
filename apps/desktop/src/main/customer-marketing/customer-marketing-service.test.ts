@@ -5347,6 +5347,163 @@ describe('CustomerMarketingService CMR-230 Telegram sandbox setup', () => {
   });
 });
 
+describe('CustomerMarketingService CMR-230 Telegram canary candidate', () => {
+  const privateSandboxChatId = '-1001234567890';
+
+  async function approvedSocialWorkflow(
+    context: ReturnType<typeof setup>,
+    remote: ReturnType<typeof marketingWorkflowGateway>,
+  ) {
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social',
+      resourceId: remote.resource.id,
+      expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social',
+      workflowId: workflow.workflowId,
+      approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest,
+      decision: 'approved',
+    });
+    return workflow;
+  }
+
+  it.each(['owner', 'manager'] as CustomerRole[])('lets %s preview an exact approved payload without external action', async (role) => {
+    const remote = marketingWorkflowGateway(role);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId),
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured: vi.fn(() => true),
+      },
+    });
+    const workflow = await approvedSocialWorkflow(context, remote);
+
+    const result = await context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId,
+      manifestDigest: workflow.manifestDigest,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'synced',
+      candidate: {
+        provider: 'telegram',
+        operation: 'private_sandbox_send',
+        workflowId: workflow.workflowId,
+        manifestDigest: workflow.manifestDigest,
+        resourceId: remote.resource.id,
+        expectedRevision: remote.resource.revision,
+        text: remote.resource.kind === 'content' ? remote.resource.body : undefined,
+        resourceDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        externalActionPerformed: false,
+      },
+      externalActionPerformed: false,
+    });
+    expect(JSON.stringify(result)).not.toContain(privateSandboxChatId);
+    expect(JSON.stringify(result)).not.toContain(remote.workspace.id);
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])('denies %s before reading chat or resource', async (role) => {
+    const remote = marketingWorkflowGateway(role);
+    const getPrivateSandboxChatId = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId,
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured: vi.fn(),
+      },
+    });
+
+    await expect(context.service.prepareTelegramCanaryCandidate({
+      workflowId: 'cmr306-social-workflow-1',
+      manifestDigest: 'a'.repeat(64),
+    })).resolves.toMatchObject({ ok: false, status: 'forbidden', candidate: null });
+    expect(getPrivateSandboxChatId).not.toHaveBeenCalled();
+    expect(remote.getMarketingResource).not.toHaveBeenCalled();
+  });
+
+  it('rejects source revision drift after workflow approval', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId),
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured: vi.fn(() => true),
+      },
+    });
+    const workflow = await approvedSocialWorkflow(context, remote);
+    remote.getMarketingResource.mockResolvedValue({
+      status: 'synced',
+      resource: marketingContentResource({
+        workspaceId: remote.workspace.id,
+        revision: remote.resource.revision + 1,
+        body: 'Changed after approval',
+      }),
+    });
+
+    await expect(context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId,
+      manifestDigest: workflow.manifestDigest,
+    })).resolves.toMatchObject({ ok: false, status: 'conflict', candidate: null });
+  });
+
+  it('rejects an expired approved workflow before reading the source or private chat', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const getPrivateSandboxChatId = vi.fn(() => privateSandboxChatId);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId,
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured: vi.fn(() => true),
+      },
+    });
+    const workflow = await approvedSocialWorkflow(context, remote);
+    remote.getMarketingResource.mockClear();
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(workflow.manifest.grant.expiresAt).getTime() + 1);
+      await expect(context.service.prepareTelegramCanaryCandidate({
+        workflowId: workflow.workflowId,
+        manifestDigest: workflow.manifestDigest,
+      })).resolves.toMatchObject({ ok: false, status: 'conflict', candidate: null });
+      expect(remote.getMarketingResource).not.toHaveBeenCalled();
+      expect(getPrivateSandboxChatId).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects a missing private sandbox chat without returning a candidate', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => null),
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured: vi.fn(() => false),
+      },
+    });
+    const workflow = await approvedSocialWorkflow(context, remote);
+
+    await expect(context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId,
+      manifestDigest: workflow.manifestDigest,
+    })).resolves.toMatchObject({ ok: false, status: 'unavailable', candidate: null });
+  });
+});
+
 describe('CustomerMarketingService CMR-402 external action gate', () => {
   it.each([
     ['publish', 'social', 'facebook', { itemCount: 1, recipientCount: 0, spendVnd: 0 }],

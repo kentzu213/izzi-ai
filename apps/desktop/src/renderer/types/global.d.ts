@@ -54,6 +54,8 @@ import type {
 } from '../../shared/customer-marketing-credential-types';
 import type {
   CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramCanaryCandidateRequest,
+  CustomerMarketingTelegramCanaryCandidateResult,
   CustomerMarketingTelegramSandboxSetupInput,
   CustomerMarketingTelegramSandboxSetupResult,
 } from '../../shared/customer-marketing-canary-types';
@@ -202,6 +204,9 @@ declare global {
     configureTelegramSandbox: (
       input: CustomerMarketingTelegramSandboxSetupInput,
     ) => Promise<CustomerMarketingTelegramSandboxSetupResult>;
+    prepareTelegramCanaryCandidate: (
+      input: CustomerMarketingTelegramCanaryCandidateRequest,
+    ) => Promise<CustomerMarketingTelegramCanaryCandidateResult>;
     listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;

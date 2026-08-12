@@ -27,4 +27,26 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(stylesSource).toMatch(/@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-setup/);
     expect(pageSource).not.toContain('cmr-telegram-card');
   });
+
+  it('previews an approved Social candidate without exposing enable or execute controls', () => {
+    expect(pageSource).toContain('api.prepareTelegramCanaryCandidate({');
+    expect(pageSource).toContain('workflowId: workflow.workflowId');
+    expect(pageSource).toContain('manifestDigest: workflow.manifestDigest');
+    expect(pageSource).toContain('telegramCandidate.text');
+    expect(pageSource).toContain('telegramCandidate.resourceDigest');
+    expect(pageSource).toContain('Chuẩn bị Telegram preview');
+    expect(pageSource).toContain("workflow?.status === 'approved' && !canConfigureTelegram");
+    expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể chuẩn bị Telegram preview.');
+    expect(pageSource).not.toContain('api.enableCanary(');
+    expect(pageSource).not.toContain('api.executeCanary(');
+  });
+
+  it('keeps the Telegram candidate action touch-safe on mobile', () => {
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate > \.cmr-button[\s\S]*?min-height: 44px;/,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate__preview > div,[\s\S]*?\.cmr-telegram-candidate__permission[\s\S]*?font-size: 11px;/,
+    );
+  });
 });

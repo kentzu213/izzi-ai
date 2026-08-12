@@ -89,6 +89,8 @@ import type {
 } from '../shared/customer-marketing-credential-types';
 import type {
   CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramCanaryCandidateRequest,
+  CustomerMarketingTelegramCanaryCandidateResult,
   CustomerMarketingTelegramSandboxSetupInput,
   CustomerMarketingTelegramSandboxSetupResult,
 } from '../shared/customer-marketing-canary-types';
@@ -589,6 +591,10 @@ const electronAPI = {
       input: CustomerMarketingTelegramSandboxSetupInput,
     ): Promise<CustomerMarketingTelegramSandboxSetupResult> =>
       ipcRenderer.invoke('customerMarketing:configureTelegramSandbox', input),
+    prepareTelegramCanaryCandidate: (
+      input: CustomerMarketingTelegramCanaryCandidateRequest,
+    ): Promise<CustomerMarketingTelegramCanaryCandidateResult> =>
+      ipcRenderer.invoke('customerMarketing:prepareTelegramCanaryCandidate', input),
     listMarketingResources: (kind: CustomerMarketingResourceKind): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>

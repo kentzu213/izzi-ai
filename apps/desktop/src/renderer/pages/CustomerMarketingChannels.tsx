@@ -13,7 +13,10 @@ import type {
   CustomerMarketingCredentialVaultState,
   CustomerMarketingIntegrationProvider,
 } from '../../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramCanaryCandidate,
+} from '../../shared/customer-marketing-canary-types';
 import { CloseIcon, ContentIcon, RefreshIcon, ReviewIcon, StatusIcon } from '../components/AppIcons';
 
 const TARGETS: Array<{ value: CustomerMarketingWorkflowTarget; label: string; source: string }> = [
@@ -116,6 +119,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramSetupBusy, setTelegramSetupBusy] = useState(false);
   const [telegramSetupNotice, setTelegramSetupNotice] = useState('');
+  const [telegramCandidate, setTelegramCandidate] = useState<CustomerMarketingTelegramCanaryCandidate | null>(null);
+  const [telegramCandidateBusy, setTelegramCandidateBusy] = useState(false);
+  const [telegramCandidateError, setTelegramCandidateError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
@@ -244,6 +250,11 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const expired = Boolean(pendingExpiry)
     && now >= Date.parse(pendingExpiry!);
 
+  useEffect(() => {
+    setTelegramCandidate(null);
+    setTelegramCandidateError('');
+  }, [target, workflow?.workflowId, workflow?.manifestDigest]);
+
   const revokeCredential = async (provider: CustomerMarketingIntegrationProvider) => {
     const api = window.electronAPI?.customerMarketing;
     if (!api || !canRevokeCredentials || revokingProvider) return;
@@ -346,6 +357,29 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Không lưu được quyết định dry-run.');
     } finally { setBusy(false); }
+  };
+
+  const prepareTelegramCandidate = async () => {
+    const api = window.electronAPI?.customerMarketing;
+    if (!api || !workflow || target !== 'social' || workflow.status !== 'approved' || telegramCandidateBusy) return;
+    setTelegramCandidateBusy(true);
+    setTelegramCandidateError('');
+    setTelegramCandidate(null);
+    try {
+      const result = await api.prepareTelegramCanaryCandidate({
+        workflowId: workflow.workflowId,
+        manifestDigest: workflow.manifestDigest,
+      });
+      if (!result.ok || !result.candidate) {
+        setTelegramCandidateError(result.error || 'Không thể chuẩn bị Telegram preview.');
+        return;
+      }
+      setTelegramCandidate(result.candidate);
+    } catch (reason) {
+      setTelegramCandidateError(reason instanceof Error ? reason.message : 'Không thể chuẩn bị Telegram preview.');
+    } finally {
+      setTelegramCandidateBusy(false);
+    }
   };
 
   const sourceColumn = (
@@ -502,6 +536,35 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       )}
       {!canReview && workflow?.status === 'pending' && (
         <small className="cmr-permission-note">Chỉ Owner, Manager hoặc Reviewer có thể quyết định.</small>
+      )}
+      {target === 'social' && workflow?.status === 'approved' && canConfigureTelegram && (
+        <div className="cmr-telegram-candidate">
+          <button
+            type="button"
+            className="cmr-button cmr-button--quiet"
+            disabled={telegramCandidateBusy}
+            onClick={() => void prepareTelegramCandidate()}
+          >
+            <ContentIcon className="cmr-button__icon" />
+            {telegramCandidateBusy ? 'Đang chuẩn bị…' : 'Chuẩn bị Telegram preview'}
+          </button>
+          {telegramCandidate && (
+            <div className="cmr-telegram-candidate__preview" role="status">
+              <div>
+                <span>Tin nhắn private sandbox</span>
+                <code title={telegramCandidate.resourceDigest}>{shortDigest(telegramCandidate.resourceDigest)}</code>
+              </div>
+              <p>{telegramCandidate.text}</p>
+              <small>Source r{telegramCandidate.expectedRevision} · Chưa có hành động bên ngoài · Chờ named approval</small>
+            </div>
+          )}
+          {telegramCandidateError && <div className="cmr-credential-error" role="alert">{telegramCandidateError}</div>}
+        </div>
+      )}
+      {target === 'social' && workflow?.status === 'approved' && !canConfigureTelegram && (
+        <small className="cmr-permission-note cmr-telegram-candidate__permission">
+          Chỉ Owner hoặc Manager có thể chuẩn bị Telegram preview.
+        </small>
       )}
     </section>
   );

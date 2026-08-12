@@ -6,15 +6,12 @@ import type {
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
   CustomerProductMarketingContextMutationResult,
-  CustomerProductMarketingContextSaveInput,
   CustomerProductMarketingContextV1,
   CustomerMarketingResourceArchiveResult,
   CustomerMarketingResourceListResult,
   CustomerMarketingResourceMutationResult,
   CustomerMarketingWorkflowListResult,
   CustomerMarketingWorkflowMutationResult,
-  CustomerMarketingWorkflowPrepareRequest,
-  CustomerMarketingWorkflowReviewRequest,
   CustomerMarketingWorkflowSourceListResult,
   CustomerMediaPreviewInput,
   CustomerMediaVideoPreviewInput,
@@ -34,6 +31,10 @@ import {
   parseCustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
 import type { CustomerMarketingService } from './customer-marketing-service';
+import type { CustomerMarketingTelegramCanaryCandidateResult } from '../../shared/customer-marketing-canary-types';
+import {
+  parseCustomerMarketingTelegramCanaryCandidateRequest,
+} from './customer-marketing-telegram-canary-candidate';
 import type {
   CustomerMarketingCredentialListResult,
   CustomerMarketingCredentialRevokeResult,
@@ -237,6 +238,16 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingTelegramSandboxSetupInput(payload);
     if (!parsed) throw new Error('Payload Telegram sandbox không hợp lệ.');
     return service.configureTelegramSandbox(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:prepareTelegramCanaryCandidate', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingTelegramCanaryCandidateResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingTelegramCanaryCandidateRequest(payload);
+    if (!parsed) throw new Error('Payload Telegram canary candidate không hợp lệ.');
+    return service.prepareTelegramCanaryCandidate(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (
