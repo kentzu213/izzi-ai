@@ -16,6 +16,7 @@ import type {
 import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramCanaryCandidate,
+  CustomerMarketingTelegramCanaryNamedApprovalResult,
 } from '../../shared/customer-marketing-canary-types';
 import { CloseIcon, ContentIcon, RefreshIcon, ReviewIcon, StatusIcon } from '../components/AppIcons';
 
@@ -122,9 +123,14 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramCandidate, setTelegramCandidate] = useState<CustomerMarketingTelegramCanaryCandidate | null>(null);
   const [telegramCandidateBusy, setTelegramCandidateBusy] = useState(false);
   const [telegramCandidateError, setTelegramCandidateError] = useState('');
+  const [telegramApproval, setTelegramApproval] = useState<CustomerMarketingTelegramCanaryNamedApprovalResult['approval']>(null);
+  const [telegramApprovalBusy, setTelegramApprovalBusy] = useState(false);
+  const [telegramApprovalError, setTelegramApprovalError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
+  const telegramCandidatePreview = useRef<HTMLDivElement>(null);
+  const telegramApprovalReceipt = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const api = window.electronAPI?.customerMarketing;
@@ -253,6 +259,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   useEffect(() => {
     setTelegramCandidate(null);
     setTelegramCandidateError('');
+    setTelegramApproval(null);
+    setTelegramApprovalError('');
   }, [target, workflow?.workflowId, workflow?.manifestDigest]);
 
   const revokeCredential = async (provider: CustomerMarketingIntegrationProvider) => {
@@ -365,6 +373,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setTelegramCandidateBusy(true);
     setTelegramCandidateError('');
     setTelegramCandidate(null);
+    setTelegramApproval(null);
+    setTelegramApprovalError('');
     try {
       const result = await api.prepareTelegramCanaryCandidate({
         workflowId: workflow.workflowId,
@@ -375,10 +385,37 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         return;
       }
       setTelegramCandidate(result.candidate);
+      window.requestAnimationFrame(() => telegramCandidatePreview.current?.focus());
     } catch (reason) {
       setTelegramCandidateError(reason instanceof Error ? reason.message : 'Không thể chuẩn bị Telegram preview.');
     } finally {
       setTelegramCandidateBusy(false);
+    }
+  };
+
+  const approveTelegramCandidate = async () => {
+    const api = window.electronAPI?.customerMarketing;
+    if (!api || !telegramCandidate || telegramApprovalBusy) return;
+    setTelegramApprovalBusy(true);
+    setTelegramApprovalError('');
+    try {
+      const result = await api.approveTelegramCanaryCandidate({
+        workflowId: telegramCandidate.workflowId,
+        manifestDigest: telegramCandidate.manifestDigest,
+        resourceDigest: telegramCandidate.resourceDigest,
+        expectedRevision: telegramCandidate.expectedRevision,
+      });
+      if (!result.ok || !result.approval) {
+        setTelegramApprovalError(result.error || 'Không thể tạo named approval.');
+        return;
+      }
+      setTelegramApproval(result.approval);
+      window.requestAnimationFrame(() => telegramApprovalReceipt.current?.focus());
+      await loadCredentials();
+    } catch (reason) {
+      setTelegramApprovalError(reason instanceof Error ? reason.message : 'Không thể tạo named approval.');
+    } finally {
+      setTelegramApprovalBusy(false);
     }
   };
 
@@ -549,15 +586,49 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
             {telegramCandidateBusy ? 'Đang chuẩn bị…' : 'Chuẩn bị Telegram preview'}
           </button>
           {telegramCandidate && (
-            <div className="cmr-telegram-candidate__preview" role="status">
+            <div
+              className="cmr-telegram-candidate__preview"
+              ref={telegramCandidatePreview}
+              tabIndex={-1}
+            >
               <div>
                 <span>Tin nhắn private sandbox</span>
                 <code title={telegramCandidate.resourceDigest}>{shortDigest(telegramCandidate.resourceDigest)}</code>
               </div>
               <p>{telegramCandidate.text}</p>
-              <small>Source r{telegramCandidate.expectedRevision} · Chưa có hành động bên ngoài · Chờ named approval</small>
+              <small>
+                Source r{telegramCandidate.expectedRevision} · Chưa có hành động bên ngoài ·{' '}
+                {telegramApproval ? 'Named approval đã cấp' : 'Chờ named approval'}
+              </small>
             </div>
           )}
+          {telegramCandidate && !telegramApproval && (
+            <div className="cmr-telegram-approval-action">
+              <small>Chỉ tạo receipt phê duyệt. Canary vẫn tắt và không gửi tin nhắn.</small>
+              <button
+                type="button"
+                className="cmr-button cmr-button--primary"
+                disabled={telegramApprovalBusy}
+                onClick={() => void approveTelegramCandidate()}
+              >
+                <ReviewIcon className="cmr-button__icon" />
+                {telegramApprovalBusy ? 'Đang phê duyệt…' : 'Phê duyệt candidate này'}
+              </button>
+            </div>
+          )}
+          {telegramApproval && (
+            <div
+              className="cmr-telegram-approval"
+              ref={telegramApprovalReceipt}
+              tabIndex={-1}
+              role="status"
+            >
+              <div><span>Named approval</span><code title={telegramApproval.receiptDigest}>{shortDigest(telegramApproval.receiptDigest)}</code></div>
+              <strong>{telegramApproval.reviewer}</strong>
+              <small>Hiệu lực đến {formatTime(telegramApproval.expiresAt)} · Canary vẫn tắt · Chưa gửi tin nhắn</small>
+            </div>
+          )}
+          {telegramApprovalError && <div className="cmr-credential-error" role="alert">{telegramApprovalError}</div>}
           {telegramCandidateError && <div className="cmr-credential-error" role="alert">{telegramCandidateError}</div>}
         </div>
       )}
@@ -645,7 +716,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
             ['Credential', canaryReadiness?.credentialState === 'connected'],
             ['Private chat', Boolean(canaryReadiness && !canaryReadiness.missingRequirements.includes('private_sandbox_chat'))],
             ['Named approval', Boolean(canaryReadiness && !canaryReadiness.missingRequirements.includes('named_approval'))],
-            ['Canary', canaryReadiness?.liveReady === true],
+            ['Canary enabled', Boolean(canaryReadiness?.controlPlane?.enabled && !canaryReadiness.controlPlane.killSwitch)],
           ].map(([label, ready]) => (
             <span key={String(label)} className={ready ? 'is-ready' : ''}>
               <StatusIcon className="cmr-icon" />{label}

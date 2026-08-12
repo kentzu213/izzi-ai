@@ -58,6 +58,30 @@ export interface CustomerMarketingTelegramCanaryCandidateResult {
   error?: string;
 }
 
+export interface CustomerMarketingTelegramCanaryNamedApprovalRequest {
+  workflowId: string;
+  manifestDigest: string;
+  resourceDigest: string;
+  expectedRevision: number;
+}
+
+export interface CustomerMarketingTelegramCanaryNamedApprovalResult {
+  ok: boolean;
+  status: CustomerMarketingBridgeStatus;
+  approval: {
+    approvalId: string;
+    reviewer: string;
+    manifestDigest: string;
+    resourceDigest: string;
+    expectedRevision: number;
+    expiresAt: string;
+    receiptDigest: string;
+    externalActionPerformed: false;
+  } | null;
+  externalActionPerformed: false;
+  error?: string;
+}
+
 const TELEGRAM_BOT_TOKEN_PATTERN = /^[1-9][0-9]{5,15}:[A-Za-z0-9_-]{30,80}$/;
 const TELEGRAM_PRIVATE_SANDBOX_CHAT_ID_PATTERN = /^-100[1-9][0-9]{5,19}$/;
 

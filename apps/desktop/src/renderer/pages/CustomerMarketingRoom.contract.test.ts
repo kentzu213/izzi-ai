@@ -36,6 +36,13 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
   });
 
+  it('exposes named approval without renderer-owned reviewer or canary enablement', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:approveTelegramCanaryCandidate', input)");
+    expect(rendererTypesSource).toContain('approveTelegramCanaryCandidate: (');
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:enableCanary'");
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
+  });
+
   it('keeps BrandView mounted while another workspace view is active', () => {
     expect(roomSource).toMatch(
       /<div\s+hidden=\{activeView !== 'brand'\}\s+aria-hidden=\{activeView !== 'brand'\}\s*>[\s\S]*?<BrandView[\s\S]*?<\/div>/,

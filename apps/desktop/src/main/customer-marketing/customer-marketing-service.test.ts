@@ -46,7 +46,9 @@ import type {
   CustomerVideoStudioRuntime,
 } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
+import type { CustomerMarketingSafeStorage } from './customer-marketing-credential-vault';
 import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
+import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing-canary-named-approval';
 import type {
   CustomerMarketingWorkspaceGateway,
   RemoteMarketingMember,
@@ -222,6 +224,20 @@ function marketingKnowledgeSkill(
     .find((item) => item.id === 'marketing-ideas');
   if (!bundled) throw new Error('Pinned marketing-ideas fixture is unavailable.');
   return { ...bundled, ...overrides };
+}
+
+const testSafeStorage: CustomerMarketingSafeStorage = {
+  isEncryptionAvailable: () => true,
+  encryptString: (value) => Buffer.from(value, 'utf8').reverse(),
+  decryptString: (value) => Buffer.from(value).reverse().toString('utf8'),
+};
+
+function namedApprovalStore(
+  db: MemorySettings,
+  now: () => string,
+  createId?: () => string,
+): CustomerMarketingCanaryNamedApprovalStore {
+  return new CustomerMarketingCanaryNamedApprovalStore(db, testSafeStorage, now, createId);
 }
 
 function remoteSevenDayWorkflow(
@@ -586,6 +602,7 @@ function setup(options?: {
       CustomerMarketingTelegramSandboxConfigStore,
       'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
     >;
+    canaryNamedApprovalStore?: CustomerMarketingCanaryNamedApprovalStore;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -611,6 +628,7 @@ function setup(options?: {
     options?.pageSpeedRuntime,
     options?.canaryReadinessSource,
     options?.telegramSandboxConfig,
+    options?.canaryNamedApprovalStore,
   );
   return {
     db,
@@ -5093,6 +5111,17 @@ describe('CustomerMarketingService CMR-230 canary readiness', () => {
 
   it('reports readiness only when credential, private chat and named binding are all present', async () => {
     const remote = marketingResourceGateway('owner');
+    const approvalStore = namedApprovalStore(
+      new MemorySettings(),
+      () => '2026-08-12T15:00:00.000Z',
+      () => 'approval-readiness-1',
+    );
+    approvalStore.issue(remote.workspace.id, {
+      workflowId: 'cmr306-social-workflow-1',
+      manifestDigest: 'a'.repeat(64),
+      resourceDigest: 'b'.repeat(64),
+      expectedRevision: 3,
+    }, 'Owner A', 'tenant-a');
     const context = setup({
       workspaceGateway: remote.gateway,
       credentialVault: {
@@ -5106,6 +5135,7 @@ describe('CustomerMarketingService CMR-230 canary readiness', () => {
         status: () => ({ enabled: true, killSwitch: false, bindingDigest: 'a'.repeat(64), stateRevision: 1 }),
         privateSandboxChatConfigured: () => true,
       },
+      canaryNamedApprovalStore: approvalStore,
     });
 
     await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
@@ -5502,6 +5532,123 @@ describe('CustomerMarketingService CMR-230 Telegram canary candidate', () => {
       manifestDigest: workflow.manifestDigest,
     })).resolves.toMatchObject({ ok: false, status: 'unavailable', candidate: null });
   });
+});
+
+describe('CustomerMarketingService CMR-230 Telegram named approval', () => {
+  const privateSandboxChatId = '-1001234567890';
+  const fixedNow = '2026-08-12T15:00:00.000Z';
+
+  async function candidateFor(context: ReturnType<typeof setup>, remote: ReturnType<typeof marketingWorkflowGateway>) {
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social', resourceId: remote.resource.id, expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social', workflowId: workflow.workflowId, approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest, decision: 'approved',
+    });
+    const preview = await context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId, manifestDigest: workflow.manifestDigest,
+    });
+    return preview.candidate!;
+  }
+
+  it('issues a main-owned exact approval while keeping canary disabled', async () => {
+    const remote = marketingWorkflowGateway('owner');
+    const db = new MemorySettings();
+    const approvalStore = namedApprovalStore(
+      db, () => fixedNow, () => 'approval-cmr230b-service-1',
+    );
+    const canaryStatus = vi.fn(() => ({ enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 }));
+    const context = setup({
+      identity: { id: 'tenant-a', name: 'Owner A', plan: 'pro' },
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({ vaultState: 'ready', credentials: [{ provider: 'telegram', state: 'connected', updatedAt: null }] })),
+        revokeCredential: vi.fn(), setCredential: vi.fn(),
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId), setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryReadinessSource: { status: canaryStatus, privateSandboxChatConfigured: vi.fn(() => false) },
+      canaryNamedApprovalStore: approvalStore,
+    });
+    const candidate = await candidateFor(context, remote);
+
+    const result = await context.service.approveTelegramCanaryCandidate({
+      workflowId: candidate.workflowId,
+      manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest,
+      expectedRevision: candidate.expectedRevision,
+    });
+
+    expect(result).toMatchObject({
+      ok: true, status: 'synced', externalActionPerformed: false,
+      approval: {
+        approvalId: 'approval-cmr230b-service-1', reviewer: 'Owner A',
+        manifestDigest: candidate.manifestDigest, resourceDigest: candidate.resourceDigest,
+        expectedRevision: candidate.expectedRevision, expiresAt: '2026-08-12T15:15:00.000Z',
+        receiptDigest: expect.stringMatching(/^[a-f0-9]{64}$/), externalActionPerformed: false,
+      },
+    });
+    await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
+      liveReady: false,
+      controlPlane: { enabled: false, bindingDigest: null },
+      missingRequirements: ['canary_enablement'],
+    });
+    expect(canaryStatus).toHaveBeenCalled();
+  });
+
+  it('rejects a renderer digest mismatch without persisting approval', async () => {
+    const remote = marketingWorkflowGateway('manager');
+    const db = new MemorySettings();
+    const approvalStore = namedApprovalStore(db, () => fixedNow);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId), setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryNamedApprovalStore: approvalStore,
+    });
+    const candidate = await candidateFor(context, remote);
+
+    await expect(context.service.approveTelegramCanaryCandidate({
+      workflowId: candidate.workflowId,
+      manifestDigest: candidate.manifestDigest,
+      resourceDigest: 'c'.repeat(64),
+      expectedRevision: candidate.expectedRevision,
+    })).resolves.toMatchObject({ ok: false, status: 'conflict', approval: null });
+    expect(approvalStore.getActive(remote.workspace.id, 'tenant-a')).toBeNull();
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])(
+    'denies %s before reading candidate inputs or issuing approval',
+    async (role) => {
+      const remote = marketingWorkflowGateway(role);
+      const approvalStore = namedApprovalStore(new MemorySettings(), () => fixedNow);
+      const issue = vi.spyOn(approvalStore, 'issue');
+      const getPrivateSandboxChatId = vi.fn();
+      const context = setup({
+        workspaceGateway: remote.gateway,
+        telegramSandboxConfig: {
+          getPrivateSandboxChatId, setPrivateSandboxChatId: vi.fn(), clear: vi.fn(), isConfigured: vi.fn(),
+        },
+        canaryNamedApprovalStore: approvalStore,
+      });
+
+      await expect(context.service.approveTelegramCanaryCandidate({
+        workflowId: 'cmr306-social-workflow-1',
+        manifestDigest: 'a'.repeat(64),
+        resourceDigest: 'b'.repeat(64),
+        expectedRevision: 3,
+      })).resolves.toMatchObject({ ok: false, status: 'forbidden', approval: null });
+      expect(remote.getMarketingResource).not.toHaveBeenCalled();
+      expect(getPrivateSandboxChatId).not.toHaveBeenCalled();
+      expect(issue).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('CustomerMarketingService CMR-402 external action gate', () => {

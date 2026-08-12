@@ -31,10 +31,14 @@ import {
   parseCustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
 import type { CustomerMarketingService } from './customer-marketing-service';
-import type { CustomerMarketingTelegramCanaryCandidateResult } from '../../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingTelegramCanaryCandidateResult,
+  CustomerMarketingTelegramCanaryNamedApprovalResult,
+} from '../../shared/customer-marketing-canary-types';
 import {
   parseCustomerMarketingTelegramCanaryCandidateRequest,
 } from './customer-marketing-telegram-canary-candidate';
+import { parseCustomerMarketingCanaryNamedApprovalRequest } from './customer-marketing-canary-named-approval';
 import type {
   CustomerMarketingCredentialListResult,
   CustomerMarketingCredentialRevokeResult,
@@ -248,6 +252,16 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingTelegramCanaryCandidateRequest(payload);
     if (!parsed) throw new Error('Payload Telegram canary candidate không hợp lệ.');
     return service.prepareTelegramCanaryCandidate(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:approveTelegramCanaryCandidate', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingTelegramCanaryNamedApprovalResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingCanaryNamedApprovalRequest(payload);
+    if (!parsed) throw new Error('Payload named approval không hợp lệ.');
+    return service.approveTelegramCanaryCandidate(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (

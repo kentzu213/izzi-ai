@@ -2343,6 +2343,56 @@
   line-height: 1.4;
 }
 
+.cmr-telegram-approval {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--cmr-green);
+  color: var(--cmr-muted);
+  background: rgba(57, 217, 138, 0.06);
+}
+
+.cmr-telegram-approval-action {
+  display: grid;
+  gap: 8px;
+}
+
+.cmr-telegram-approval-action > small {
+  color: var(--cmr-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.cmr-telegram-approval-action > .cmr-button {
+  width: 100%;
+}
+
+.cmr-telegram-approval > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.cmr-telegram-approval code {
+  overflow-wrap: anywhere;
+  color: var(--cmr-green);
+}
+
+.cmr-telegram-approval strong {
+  overflow-wrap: anywhere;
+  color: var(--cmr-text);
+  font-size: 12px;
+}
+
+.cmr-telegram-approval small {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .cmr-credential-error {
   padding: 8px 10px;
   border-left: 2px solid var(--cmr-red);

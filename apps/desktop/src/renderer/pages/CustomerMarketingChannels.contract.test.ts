@@ -49,4 +49,20 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
       /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate__preview > div,[\s\S]*?\.cmr-telegram-candidate__permission[\s\S]*?font-size: 11px;/,
     );
   });
+
+  it('issues named approval only from the exact preview and keeps canary disabled', () => {
+    expect(pageSource).toContain('api.approveTelegramCanaryCandidate({');
+    expect(pageSource).toContain('resourceDigest: telegramCandidate.resourceDigest');
+    expect(pageSource).toContain('expectedRevision: telegramCandidate.expectedRevision');
+    expect(pageSource).toContain('Canary vẫn tắt');
+    expect(pageSource).toContain('Chỉ tạo receipt phê duyệt. Canary vẫn tắt và không gửi tin nhắn.');
+    expect(pageSource).toContain("['Canary enabled', Boolean(canaryReadiness?.controlPlane?.enabled && !canaryReadiness.controlPlane.killSwitch)]");
+    expect(pageSource).toContain("telegramApproval ? 'Named approval đã cấp' : 'Chờ named approval'");
+    expect(pageSource).toContain('telegramCandidatePreview.current?.focus()');
+    expect(pageSource).toContain('telegramApprovalReceipt.current?.focus()');
+    expect(pageSource).not.toContain('reviewer:');
+    expect(pageSource).not.toContain('expiresAt:');
+    expect(pageSource).not.toContain('api.enableCanary(');
+    expect(pageSource).not.toContain('api.executeCanary(');
+  });
 });

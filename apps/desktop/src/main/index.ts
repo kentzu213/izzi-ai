@@ -62,6 +62,7 @@ import { CustomerMarketingService } from './customer-marketing/customer-marketin
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryController } from './customer-marketing/customer-marketing-canary-controller';
+import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing/customer-marketing-canary-named-approval';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import {
   createCustomerVoiceStudioExtensionEnsurer,
@@ -125,7 +126,6 @@ let izziLlmProxy: IzziLlmProxy;
 let dockerAgentService: DockerAgentService;
 let customerMarketingService: CustomerMarketingService;
 let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
-let liveProfileStore: LiveProfileStore | null = null;
 let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
 const queuedProtocolUrls: string[] = [];
 
@@ -523,10 +523,10 @@ function setupIPC() {
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
+  const customerMarketingCanaryNamedApprovalStore = new CustomerMarketingCanaryNamedApprovalStore(dbManager);
   // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
   // from the template on first run; never overwrite an existing or unreadable file.
   const profileStore = new LiveProfileStore({ directory: app.getPath('userData') });
-  liveProfileStore = profileStore;
   const liveProfileState = profileStore.ensure();
   if (liveProfileState.status !== 'ok') {
     console.warn('[memory-trace] Live.md is not readable at', liveProfileState.filePath);
@@ -594,6 +594,7 @@ function setupIPC() {
       privateSandboxChatConfigured: () => false,
     },
     customerMarketingTelegramSandboxConfig,
+    customerMarketingCanaryNamedApprovalStore,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

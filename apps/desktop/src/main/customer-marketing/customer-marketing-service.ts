@@ -8,6 +8,10 @@ import {
   buildCustomerMarketingTelegramCanaryCandidate,
   parseCustomerMarketingTelegramCanaryCandidateRequest,
 } from './customer-marketing-telegram-canary-candidate';
+import {
+  CustomerMarketingCanaryNamedApprovalStore,
+  parseCustomerMarketingCanaryNamedApprovalRequest,
+} from './customer-marketing-canary-named-approval';
 import type {
   CustomerMarketingPageSpeedInput,
   CustomerMarketingPageSpeedResult,
@@ -127,6 +131,8 @@ import type {
   CustomerMarketingTelegramSandboxSetupResult,
   CustomerMarketingTelegramCanaryCandidateRequest,
   CustomerMarketingTelegramCanaryCandidateResult,
+  CustomerMarketingTelegramCanaryNamedApprovalRequest,
+  CustomerMarketingTelegramCanaryNamedApprovalResult,
 } from '../../shared/customer-marketing-canary-types';
 import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
 import {
@@ -219,6 +225,10 @@ type CustomerMarketingResourceAuthority =
     status: Exclude<CustomerMarketingBridgeStatus, 'synced'>;
     error: string;
   };
+type CustomerMarketingSyncedResourceAuthority = Extract<
+  CustomerMarketingResourceAuthority,
+  { status: 'synced' }
+>;
 
 type CustomerMarketingWorkflowResourceLoad =
   | { status: 'synced'; resource: CustomerMarketingWorkflowResource }
@@ -1156,6 +1166,10 @@ export class CustomerMarketingService {
       CustomerMarketingTelegramSandboxConfigStore,
       'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
     >,
+    private readonly canaryNamedApprovalStore?: Pick<
+      CustomerMarketingCanaryNamedApprovalStore,
+      'issue' | 'getActive'
+    >,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1869,7 +1883,11 @@ export class CustomerMarketingService {
       const missingRequirements: CustomerMarketingCanaryReadinessResult['missingRequirements'] = [];
       if (credentialState !== 'connected') missingRequirements.push('credential');
       if (!chatConfigured) missingRequirements.push('private_sandbox_chat');
-      if (!controlPlane.enabled || !controlPlane.bindingDigest) missingRequirements.push('named_approval');
+      const namedApproval = this.canaryNamedApprovalStore?.getActive(
+        authority.workspace.id,
+        authority.identity.id,
+      ) ?? null;
+      if (!namedApproval) missingRequirements.push('named_approval');
       if (!controlPlane.enabled || controlPlane.killSwitch) missingRequirements.push('canary_enablement');
       return {
         ok: true,
@@ -2008,16 +2026,86 @@ export class CustomerMarketingService {
         error: authority.error,
       };
     }
+    return this.prepareTelegramCanaryCandidateForAuthority(request, authority);
+  }
+
+  async approveTelegramCanaryCandidate(
+    input: CustomerMarketingTelegramCanaryNamedApprovalRequest,
+  ): Promise<CustomerMarketingTelegramCanaryNamedApprovalResult> {
+    const request = parseCustomerMarketingCanaryNamedApprovalRequest(input);
+    if (!request) {
+      return {
+        ok: false, status: 'unavailable', approval: null,
+        externalActionPerformed: false, error: 'Yêu cầu named approval không hợp lệ.',
+      };
+    }
+    const authority = await this.authorizeMarketingWorkflow('social', MARKETING_EXTERNAL_ACTION_ROLES);
+    if (authority.status !== 'synced') {
+      return {
+        ok: false, status: authority.status, approval: null,
+        externalActionPerformed: false, error: authority.error,
+      };
+    }
+    if (!this.canaryNamedApprovalStore) {
+      return {
+        ok: false, status: 'unavailable', approval: null,
+        externalActionPerformed: false, error: 'Named approval store chưa sẵn sàng.',
+      };
+    }
+    const candidateResult = await this.prepareTelegramCanaryCandidateForAuthority({
+      workflowId: request.workflowId,
+      manifestDigest: request.manifestDigest,
+    }, authority);
+    const candidate = candidateResult.candidate;
+    if (!candidateResult.ok || !candidate
+      || candidate.resourceDigest !== request.resourceDigest
+      || candidate.expectedRevision !== request.expectedRevision) {
+      return {
+        ok: false, status: 'conflict', approval: null,
+        externalActionPerformed: false,
+        error: 'Telegram candidate đã thay đổi; hãy chuẩn bị preview mới.',
+      };
+    }
+    try {
+      const receipt = this.canaryNamedApprovalStore.issue(
+        authority.workspace.id,
+        request,
+        authority.identity.name || `Workspace reviewer ${tenantHash(authority.identity.id).slice(0, 8)}`,
+        authority.identity.id,
+      );
+      return {
+        ok: true,
+        status: 'synced',
+        approval: {
+          approvalId: receipt.approval.approvalId,
+          reviewer: receipt.approval.reviewer,
+          manifestDigest: receipt.manifestDigest,
+          resourceDigest: receipt.resourceDigest,
+          expectedRevision: receipt.expectedRevision,
+          expiresAt: receipt.approval.expiresAt,
+          receiptDigest: receipt.receiptDigest,
+          externalActionPerformed: false,
+        },
+        externalActionPerformed: false,
+      };
+    } catch {
+      return {
+        ok: false, status: 'unavailable', approval: null,
+        externalActionPerformed: false, error: 'Không thể lưu named approval.',
+      };
+    }
+  }
+
+  private async prepareTelegramCanaryCandidateForAuthority(
+    request: CustomerMarketingTelegramCanaryCandidateRequest,
+    authority: CustomerMarketingSyncedResourceAuthority,
+  ): Promise<CustomerMarketingTelegramCanaryCandidateResult> {
     if (!this.telegramSandboxConfig) {
       return {
-        ok: false,
-        status: 'unavailable',
-        candidate: null,
-        externalActionPerformed: false,
+        ok: false, status: 'unavailable', candidate: null, externalActionPerformed: false,
         error: 'Cấu hình Telegram sandbox chưa sẵn sàng.',
       };
     }
-
     try {
       const wrappers = createCustomerMarketingWorkflowWrappers(
         new CustomerMarketingWorkflowStore(this.db, authority.workspace.id),
@@ -2031,10 +2119,7 @@ export class CustomerMarketingService {
         || workflow.receipt.manifestDigest !== request.manifestDigest
         || Date.now() >= Date.parse(workflow.manifest.grant.expiresAt)) {
         return {
-          ok: false,
-          status: 'conflict',
-          candidate: null,
-          externalActionPerformed: false,
+          ok: false, status: 'conflict', candidate: null, externalActionPerformed: false,
           error: 'Workflow Social chưa có approval hợp lệ hoặc đã thay đổi.',
         };
       }
@@ -2045,11 +2130,8 @@ export class CustomerMarketingService {
       );
       if (source.status !== 'synced') {
         return {
-          ok: false,
-          status: source.status,
-          candidate: null,
-          externalActionPerformed: false,
-          error: source.error,
+          ok: false, status: source.status, candidate: null,
+          externalActionPerformed: false, error: source.error,
         };
       }
       if (source.resource.kind !== 'content'
@@ -2057,10 +2139,7 @@ export class CustomerMarketingService {
         || source.resource.revision !== workflow.manifest.inputRef.revision
         || marketingWorkflowResourceDigest(source.resource) !== workflow.manifest.inputRef.sha256) {
         return {
-          ok: false,
-          status: 'conflict',
-          candidate: null,
-          externalActionPerformed: false,
+          ok: false, status: 'conflict', candidate: null, externalActionPerformed: false,
           error: 'Nguồn Social đã duyệt đã thay đổi; candidate cũ không còn hợp lệ.',
         };
       }
@@ -2069,33 +2148,26 @@ export class CustomerMarketingService {
       );
       if (!privateSandboxChatId) {
         return {
-          ok: false,
-          status: 'unavailable',
-          candidate: null,
-          externalActionPerformed: false,
+          ok: false, status: 'unavailable', candidate: null, externalActionPerformed: false,
           error: 'Private Telegram sandbox chưa được cấu hình.',
         };
       }
-      const candidate = buildCustomerMarketingTelegramCanaryCandidate({
-        workflowId: workflow.workflowId,
-        manifestDigest: workflow.manifestDigest,
-        resourceId: source.resource.id,
-        expectedRevision: source.resource.revision,
-        sourceBody: source.resource.body,
-        privateSandboxChatId,
-      });
       return {
         ok: true,
         status: 'synced',
-        candidate,
+        candidate: buildCustomerMarketingTelegramCanaryCandidate({
+          workflowId: workflow.workflowId,
+          manifestDigest: workflow.manifestDigest,
+          resourceId: source.resource.id,
+          expectedRevision: source.resource.revision,
+          sourceBody: source.resource.body,
+          privateSandboxChatId,
+        }),
         externalActionPerformed: false,
       };
     } catch {
       return {
-        ok: false,
-        status: 'unavailable',
-        candidate: null,
-        externalActionPerformed: false,
+        ok: false, status: 'unavailable', candidate: null, externalActionPerformed: false,
         error: 'Không thể chuẩn bị Telegram canary candidate.',
       };
     }

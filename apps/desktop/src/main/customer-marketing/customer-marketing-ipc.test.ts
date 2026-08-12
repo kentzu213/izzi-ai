@@ -86,6 +86,17 @@ function serviceMock() {
       },
       externalActionPerformed: false,
     })),
+    approveTelegramCanaryCandidate: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      approval: {
+        approvalId: 'approval-cmr230b-ipc-1', reviewer: 'Owner A',
+        manifestDigest: 'a'.repeat(64), resourceDigest: 'b'.repeat(64), expectedRevision: 3,
+        expiresAt: '2026-08-12T15:15:00.000Z', receiptDigest: 'c'.repeat(64),
+        externalActionPerformed: false,
+      },
+      externalActionPerformed: false,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -965,5 +976,35 @@ describe('customer marketing CMR-230 Telegram candidate IPC', () => {
     await expect(prepare!(event('https://attacker.example/customer-marketing'), input))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.prepareTelegramCanaryCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230 Telegram named approval IPC', () => {
+  const input = {
+    workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+    resourceDigest: 'b'.repeat(64), expectedRevision: 3,
+  };
+
+  it('accepts only the exact candidate binding and no reviewer or enablement', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const approve = electronMocks.handlers.get('customerMarketing:approveTelegramCanaryCandidate');
+
+    await expect(approve!(event(), input)).resolves.toMatchObject({
+      ok: true, approval: { reviewer: 'Owner A' }, externalActionPerformed: false,
+    });
+    expect(service.approveTelegramCanaryCandidate).toHaveBeenCalledWith(input);
+    await expect(approve!(event(), { ...input, reviewer: 'renderer' })).rejects.toThrow('Payload named approval');
+    await expect(approve!(event(), { ...input, enabled: true })).rejects.toThrow('Payload named approval');
+    expect(service.approveTelegramCanaryCandidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before approval parsing', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const approve = electronMocks.handlers.get('customerMarketing:approveTelegramCanaryCandidate');
+    await expect(approve!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.approveTelegramCanaryCandidate).not.toHaveBeenCalled();
   });
 });
