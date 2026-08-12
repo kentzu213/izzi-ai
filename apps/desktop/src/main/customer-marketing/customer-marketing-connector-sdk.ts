@@ -50,7 +50,7 @@ export const CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES: Readonly<
   tiktok: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   youtube: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   telegram: { target: 'social', operations: ['health', 'validate', 'dry_run', 'execute'], sandboxOnly: true },
-  x: { target: 'social', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
+  x: { target: 'social', operations: ['health', 'validate', 'dry_run', 'execute'], sandboxOnly: true },
   google: { target: 'seo', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   email: { target: 'email', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },
   crm: { target: 'crm', operations: ['health', 'validate', 'dry_run'], sandboxOnly: true },

@@ -131,6 +131,11 @@ describe('CustomerMarketingConnector SDK contract', () => {
     });
     expect(CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES.google.operations)
       .not.toContain('execute');
+    expect(CUSTOMER_MARKETING_CONNECTOR_CAPABILITIES.x).toEqual({
+      target: 'social',
+      operations: ['health', 'validate', 'dry_run', 'execute'],
+      sandboxOnly: true,
+    });
     const codes: CustomerMarketingConnectorErrorCode[] = [
       'invalid_request',
       'provider_unavailable',
@@ -144,6 +149,21 @@ describe('CustomerMarketingConnector SDK contract', () => {
       'credential_unavailable',
     ];
     expect(codes).toHaveLength(10);
+  });
+
+  it('accepts an approved X execute request only through its sandbox capability', () => {
+    const parsed = parseCustomerMarketingConnectorRequest({
+      ...base,
+      provider: 'x',
+      operation: 'execute',
+      approval: {
+        approvalId: 'approval-x-sandbox',
+        manifestDigest: APPROVAL_DIGEST,
+        expiresAt: APPROVAL_FUTURE,
+      },
+    });
+
+    expect(parsed).toMatchObject({ provider: 'x', target: 'social', operation: 'execute' });
   });
 
   it('keeps connector methods typed by operation and requires a redacted receipt shape', () => {
