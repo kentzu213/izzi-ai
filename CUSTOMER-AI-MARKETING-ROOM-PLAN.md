@@ -4,7 +4,7 @@ Product status: in_progress (78% weighted delivery scope; 99% local product scop
 Vertical slice status: verified_local_packaged_seven_day_workflow
 Backend foundation status: verified_local_not_deployed
 Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-12 ICT. Beta33 is public, installed, and smoke-tested. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, CMR-115 retry recovery, CMR-116 server-derived per-run billing linkage, and the CMR-117 backend hard-plan contract are public. The beta34 desktop close-out is in progress. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability, hard plan entitlement, and staging readiness.
+Last verified: 2026-08-12 ICT. Beta34 is public, installed, and smoke-tested. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, CMR-115 retry recovery, CMR-116 server-derived per-run billing linkage, and CMR-117 hard plan entitlement are public. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and remote staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The
@@ -165,7 +165,7 @@ integrations/staging/production-E2E allocation: 78% total.
     - expose only aggregate linked/unlinked counts to active owner/manager members
     - keep authenticated users off the raw table and preserve `auth.uid()` authorization
     - add no deduction, transaction, publish, spend, send, bulk, or production deployment action
-38. [ ] Close hard plan entitlement through the public desktop release:
+38. [x] Close hard plan entitlement through the public desktop release:
     - authorize all 14 Marketing capabilities from the canonical database plan and active role
     - require a capability identity for quota reservations and bind idempotency to the complete request
     - enforce resource and seven-day workflow mutation authorization inside the database transaction
@@ -256,7 +256,7 @@ integrations/staging/production-E2E allocation: 78% total.
 4. [x] Prove RLS and tenant isolation against an ephemeral local Postgres instance using two signed
    authenticated users (`24/24` SQL checks and `12/12` PostgREST boundary checks). Remote staging
    verification remains covered by the deployment gate below.
-5. [ ] Productize hard plan entitlement enforcement across every Marketing capability. The backend implementation is public at `4b71c14`; the desktop implementation and tests are complete locally. This item remains open until beta34 is public, installed, and passes packaged staging smoke.
+5. [x] Productize hard plan entitlement enforcement across every Marketing capability. The backend implementation is public at `4b71c14`; desktop beta34 is public, installed, and passed packaged staging with an end-to-end authoritative capability reservation. Migration 8 remains undeployed remotely.
 6. [x] Productize skill/tool registry metadata, permissions, stability labels, credit estimates, and server-side plan filtering. Registry revision 3 is actor-scoped, plan/role filtered, public-field allowlisted, and covered by `20/20` focused tests.
 7. [x] Add one backend-owned, resumable seven-day content workflow with registry capability
    identities, tenant-scoped artifacts, Brand Guardian review, and customer approval; no external

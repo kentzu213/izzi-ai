@@ -36,12 +36,30 @@ closed before the model is invoked.
 | Production dependency audit | PASS, 0 known vulnerabilities |
 | Scoped secret scan and diff check | PASS, no finding |
 | Security review | PASS, no confirmed fail-open or sensitive-data finding |
+| GitHub release workflow | PASS, Windows, macOS, and inventory/publish jobs |
+| Public release inventory | PASS, 12 assets |
+| Public Windows installer | PASS, 185,856,383 bytes; SHA-256 `a6e88e9882be0956a7b73f872640e00041ed4ad3264b21d7d07c8cc7b3f84a0d` |
+| Installed executable | PASS, `F:\IzziAI\Izzi\Izzi AI.exe` reports `1.14.0-beta.34` |
+| Packaged migration-8 staging smoke | PASS, 286 requests and 0 runtime errors |
 
-Public beta34 artifact details and packaged staging results are added after the release workflow,
-public download, installation, and smoke test complete.
+The public release is [Izzi AI v1.14.0-beta.34](https://github.com/kentzu213/izzi-ai/releases/tag/v1.14.0-beta.34)
+from desktop commit `633c28c`. The release contains 12 Windows/macOS assets. The downloaded Windows
+installer matched the GitHub SHA-256 digest before installation. Authenticode remains `NotSigned`,
+which is the existing code-signing gate rather than a beta34 regression.
+
+The installed executable ran against disposable local PostgreSQL/PostgREST with all eight reviewed
+migrations. It sent `X-Marketing-Capability-Id: ai-marketing-director`; the isolated database was
+temporarily placed at its credit limit, the backend returned `429 quota_exceeded`, and the desktop
+stopped before a model call. The public reusable harness is on `izzi-backend/master` at `b1d0df9`.
+
+The same smoke created, resumed, and approved one backend-owned seven-day workflow; persisted two
+approved campaigns and eight approved content items; produced nine usage events with nine billing
+links and no discrepancy; and completed 286 local requests with zero runtime error. Publish remained
+`policy_denied`, `executed=false`, and `externalActionPerformed=false`. No publish, spend, send, or
+bulk endpoint was called.
 
 ## Safety Boundary
 
 This slice does not deploy migration 8 remotely and does not enable publish, spend, send, bulk,
-credential mutation, or live production model execution. The installed beta33 remains active until
-the public beta34 installer is downloaded, verified, and smoke-tested.
+credential mutation, or live production model execution. Dedicated remote staging, code signing,
+minimum-client enforcement, connectors, and production canary approval remain open.
