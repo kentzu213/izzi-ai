@@ -3,6 +3,7 @@ import type { DatabaseManager } from '../db/database';
 import type { IzziAgentChatPayload, IzziAgentChatResult } from '../agents/izzi-agent';
 import type { CustomerVideoStudioRuntime } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
+import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
 import type {
   CustomerMarketingPageSpeedInput,
   CustomerMarketingPageSpeedResult,
@@ -116,7 +117,11 @@ import type {
   CustomerMarketingCredentialRevokeInput,
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramSandboxSetupInput,
+  CustomerMarketingTelegramSandboxSetupResult,
+} from '../../shared/customer-marketing-canary-types';
 import type { CustomerMarketingCanaryStatus } from './customer-marketing-canary-controller';
 import {
   parseCustomerMarketingActionGateRequest,
@@ -1126,7 +1131,7 @@ export class CustomerMarketingService {
     private readonly writeClipboardText?: (value: string) => void | Promise<void>,
     private readonly credentialVault: Pick<
       CustomerMarketingCredentialVault,
-      'listStatuses' | 'revokeCredential'
+      'listStatuses' | 'revokeCredential' | 'setCredential'
     > | null = null,
     // CMR-222: the operator halt is re-read in main on every gated request, so a
     // halt takes effect without restarting the app. The caps come from the process
@@ -1142,6 +1147,10 @@ export class CustomerMarketingService {
       status(): CustomerMarketingCanaryStatus;
       privateSandboxChatConfigured(): boolean;
     },
+    private readonly telegramSandboxConfig?: Pick<
+      CustomerMarketingTelegramSandboxConfigStore,
+      'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
+    >,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1849,7 +1858,9 @@ export class CustomerMarketingService {
       const snapshot = this.credentialVault.listStatuses(authority.workspace.id);
       const credentialState = snapshot.credentials.find((item) => item.provider === 'telegram')?.state ?? 'missing';
       const controlPlane = this.canaryReadinessSource.status();
-      const chatConfigured = this.canaryReadinessSource.privateSandboxChatConfigured();
+      const chatConfigured = this.telegramSandboxConfig
+        ? this.telegramSandboxConfig.isConfigured(authority.workspace.id)
+        : this.canaryReadinessSource.privateSandboxChatConfigured();
       const missingRequirements: CustomerMarketingCanaryReadinessResult['missingRequirements'] = [];
       if (credentialState !== 'connected') missingRequirements.push('credential');
       if (!chatConfigured) missingRequirements.push('private_sandbox_chat');
@@ -1876,6 +1887,95 @@ export class CustomerMarketingService {
         missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
         externalActionPerformed: false,
         error: 'Không thể xác minh trạng thái canary.',
+      };
+    }
+  }
+
+  async configureTelegramSandbox(
+    input: CustomerMarketingTelegramSandboxSetupInput,
+  ): Promise<CustomerMarketingTelegramSandboxSetupResult> {
+    const authority = await this.authorizeMarketingResourceMutation(MARKETING_CREDENTIAL_REVOKE_ROLES);
+    if (authority.status !== 'synced') {
+      return {
+        ok: false,
+        status: authority.status,
+        provider: 'telegram',
+        credentialState: 'missing',
+        privateSandboxChatConfigured: false,
+        externalActionPerformed: false,
+        error: authority.error,
+      };
+    }
+    if (!this.credentialVault || !this.telegramSandboxConfig) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        provider: 'telegram',
+        credentialState: 'missing',
+        privateSandboxChatConfigured: false,
+        externalActionPerformed: false,
+        error: 'Cấu hình Telegram sandbox chưa sẵn sàng.',
+      };
+    }
+
+    const workspaceId = authority.workspace.id;
+    let previousCredentialState: CustomerMarketingTelegramSandboxSetupResult['credentialState'];
+    let previousChatId: string | null;
+    try {
+      previousCredentialState = this.credentialVault.listStatuses(workspaceId)
+        .credentials.find((item) => item.provider === 'telegram')?.state ?? 'missing';
+      previousChatId = this.telegramSandboxConfig.getPrivateSandboxChatId(workspaceId);
+    } catch {
+      return {
+        ok: false,
+        status: 'unavailable',
+        provider: 'telegram',
+        credentialState: 'missing',
+        privateSandboxChatConfigured: false,
+        externalActionPerformed: false,
+        error: 'Không thể xác minh cấu hình Telegram sandbox hiện tại.',
+      };
+    }
+    let chatWritten = false;
+    try {
+      this.telegramSandboxConfig.setPrivateSandboxChatId(
+        workspaceId,
+        input.privateSandboxChatId,
+      );
+      chatWritten = true;
+      this.credentialVault.setCredential(workspaceId, 'telegram', input.token);
+      return {
+        ok: true,
+        status: 'synced',
+        provider: 'telegram',
+        credentialState: 'connected',
+        privateSandboxChatConfigured: true,
+        externalActionPerformed: false,
+      };
+    } catch {
+      if (chatWritten) {
+        try {
+          if (previousChatId) {
+            this.telegramSandboxConfig.setPrivateSandboxChatId(workspaceId, previousChatId);
+          } else {
+            this.telegramSandboxConfig.clear(workspaceId);
+          }
+        } catch {
+          try {
+            this.telegramSandboxConfig.clear(workspaceId);
+          } catch {
+            // The setup remains unavailable; never surface local persistence details.
+          }
+        }
+      }
+      return {
+        ok: false,
+        status: 'unavailable',
+        provider: 'telegram',
+        credentialState: previousCredentialState,
+        privateSandboxChatConfigured: previousChatId !== null,
+        externalActionPerformed: false,
+        error: 'Không thể lưu cấu hình Telegram sandbox.',
       };
     }
   }

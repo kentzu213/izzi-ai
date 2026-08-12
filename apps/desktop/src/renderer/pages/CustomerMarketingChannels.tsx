@@ -13,6 +13,7 @@ import type {
   CustomerMarketingCredentialVaultState,
   CustomerMarketingIntegrationProvider,
 } from '../../shared/customer-marketing-credential-types';
+import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
 import { CloseIcon, ContentIcon, RefreshIcon, ReviewIcon, StatusIcon } from '../components/AppIcons';
 
 const TARGETS: Array<{ value: CustomerMarketingWorkflowTarget; label: string; source: string }> = [
@@ -110,6 +111,11 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [credentialError, setCredentialError] = useState('');
   const [credentialLoading, setCredentialLoading] = useState(true);
   const [revokingProvider, setRevokingProvider] = useState<CustomerMarketingIntegrationProvider | null>(null);
+  const [canaryReadiness, setCanaryReadiness] = useState<CustomerMarketingCanaryReadinessResult | null>(null);
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramSetupBusy, setTelegramSetupBusy] = useState(false);
+  const [telegramSetupNotice, setTelegramSetupNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
@@ -170,15 +176,20 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setCredentialLoading(true);
     setCredentialError('');
     try {
-      const result = await api.listIntegrationCredentials();
+      const [result, readiness] = await Promise.all([
+        api.listIntegrationCredentials(),
+        api.getCanaryReadiness(),
+      ]);
       setCredentialBridgeStatus(result.status);
       setCredentialVaultState(result.vaultState);
       setCredentials(result.credentials);
+      setCanaryReadiness(readiness);
       if (!result.ok) setCredentialError(result.error || 'Không tải được trạng thái kết nối.');
     } catch (reason) {
       setCredentialBridgeStatus('unavailable');
       setCredentialVaultState('locked');
       setCredentials([]);
+      setCanaryReadiness(null);
       setCredentialError(reason instanceof Error ? reason.message : 'Vault không phản hồi.');
     } finally {
       setCredentialLoading(false);
@@ -204,6 +215,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const canPrepare = AUTHOR_ROLES.includes(role);
   const canReview = REVIEW_ROLES.includes(role);
   const canRevokeCredentials = CREDENTIAL_REVOKE_ROLES.includes(role);
+  const canConfigureTelegram = CREDENTIAL_REVOKE_ROLES.includes(role);
   const connectedCredentialCount = credentials.filter((item) => item.state === 'connected').length;
   const credentialAnnouncement = credentialLoading
     ? 'Đang kiểm tra trạng thái provider.'
@@ -253,6 +265,34 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setCredentialError(reason instanceof Error ? reason.message : 'Không thể thu hồi kết nối.');
     } finally {
       setRevokingProvider(null);
+    }
+  };
+
+  const configureTelegramSandbox = async () => {
+    const api = window.electronAPI?.customerMarketing;
+    if (!api || !canConfigureTelegram || telegramSetupBusy) return;
+    setTelegramSetupBusy(true);
+    setCredentialError('');
+    setTelegramSetupNotice('');
+    try {
+      const result = await api.configureTelegramSandbox({
+        token: telegramToken,
+        privateSandboxChatId: telegramChatId,
+      });
+      setTelegramToken('');
+      setTelegramChatId('');
+      if (!result.ok) {
+        setCredentialError(result.error || 'Không thể lưu cấu hình Telegram sandbox.');
+        return;
+      }
+      setTelegramSetupNotice('Đã lưu an toàn. Canary vẫn tắt và chưa gửi tin nhắn.');
+      await loadCredentials();
+    } catch (reason) {
+      setTelegramToken('');
+      setTelegramChatId('');
+      setCredentialError(reason instanceof Error ? reason.message : 'Không thể lưu cấu hình Telegram sandbox.');
+    } finally {
+      setTelegramSetupBusy(false);
     }
   };
 
@@ -537,6 +577,60 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
             </div>
           )}
         </div>
+        <div className="cmr-canary-readiness" aria-label="Trạng thái Telegram canary">
+          {[
+            ['Credential', canaryReadiness?.credentialState === 'connected'],
+            ['Private chat', Boolean(canaryReadiness && !canaryReadiness.missingRequirements.includes('private_sandbox_chat'))],
+            ['Named approval', Boolean(canaryReadiness && !canaryReadiness.missingRequirements.includes('named_approval'))],
+            ['Canary', canaryReadiness?.liveReady === true],
+          ].map(([label, ready]) => (
+            <span key={String(label)} className={ready ? 'is-ready' : ''}>
+              <StatusIcon className="cmr-icon" />{label}
+            </span>
+          ))}
+        </div>
+        {canConfigureTelegram ? (
+          <form
+            className="cmr-telegram-setup"
+            onSubmit={(event) => { event.preventDefault(); void configureTelegramSandbox(); }}
+          >
+            <label>
+              <span>Telegram bot token</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={telegramToken}
+                disabled={telegramSetupBusy || credentialVaultState !== 'ready'}
+                onChange={(event) => setTelegramToken(event.target.value)}
+                placeholder="123456789:..."
+                required
+              />
+            </label>
+            <label>
+              <span>Private sandbox chat ID</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={telegramChatId}
+                disabled={telegramSetupBusy || credentialVaultState !== 'ready'}
+                onChange={(event) => setTelegramChatId(event.target.value)}
+                placeholder="-100..."
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              className="cmr-button cmr-button--primary"
+              disabled={telegramSetupBusy || credentialVaultState !== 'ready' || !telegramToken || !telegramChatId}
+            >
+              {telegramSetupBusy ? 'Đang lưu…' : 'Lưu Telegram sandbox'}
+            </button>
+          </form>
+        ) : (
+          <small className="cmr-permission-note">Chỉ Owner hoặc Manager có thể cấu hình Telegram sandbox.</small>
+        )}
+        {telegramSetupNotice && <div className="cmr-telegram-setup__notice" role="status">{telegramSetupNotice}</div>}
         {!canRevokeCredentials && (
           <small className="cmr-permission-note">Chỉ Owner hoặc Manager có thể thu hồi kết nối.</small>
         )}

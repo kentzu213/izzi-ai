@@ -52,7 +52,11 @@ import type {
   CustomerMarketingCredentialRevokeInput,
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramSandboxSetupInput,
+  CustomerMarketingTelegramSandboxSetupResult,
+} from '../../shared/customer-marketing-canary-types';
 import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
@@ -195,6 +199,9 @@ declare global {
       input: CustomerMarketingCredentialRevokeInput,
     ) => Promise<CustomerMarketingCredentialRevokeResult>;
     getCanaryReadiness: () => Promise<CustomerMarketingCanaryReadinessResult>;
+    configureTelegramSandbox: (
+      input: CustomerMarketingTelegramSandboxSetupInput,
+    ) => Promise<CustomerMarketingTelegramSandboxSetupResult>;
     listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;

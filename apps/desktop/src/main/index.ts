@@ -60,6 +60,7 @@ import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
+import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryController } from './customer-marketing/customer-marketing-canary-controller';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import {
@@ -520,6 +521,7 @@ function setupIPC() {
   app.on('before-quit', () => customerVideoStudio.killAll());
   const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
+  const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
   // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
   // from the template on first run; never overwrite an existing or unreadable file.
@@ -591,6 +593,7 @@ function setupIPC() {
       status: () => customerMarketingCanaryController.status(),
       privateSandboxChatConfigured: () => false,
     },
+    customerMarketingTelegramSandboxConfig,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

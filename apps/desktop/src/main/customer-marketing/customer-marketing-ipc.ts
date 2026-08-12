@@ -39,7 +39,11 @@ import type {
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
 import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryReadinessResult } from '../../shared/customer-marketing-canary-types';
+import {
+  parseCustomerMarketingTelegramSandboxSetupInput,
+  type CustomerMarketingCanaryReadinessResult,
+  type CustomerMarketingTelegramSandboxSetupResult,
+} from '../../shared/customer-marketing-canary-types';
 import {
   parseCustomerMarketingPageSpeedInput,
   type CustomerMarketingPageSpeedResult,
@@ -223,6 +227,16 @@ export function registerCustomerMarketingIpc(
     trusted(event);
     if (payload !== undefined) throw new Error('Payload canary không được phép.');
     return service.getCanaryReadiness();
+  });
+
+  ipcMain.handle('customerMarketing:configureTelegramSandbox', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingTelegramSandboxSetupResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingTelegramSandboxSetupInput(payload);
+    if (!parsed) throw new Error('Payload Telegram sandbox không hợp lệ.');
+    return service.configureTelegramSandbox(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (

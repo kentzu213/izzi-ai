@@ -62,6 +62,14 @@ function serviceMock() {
       missingRequirements: ['credential', 'private_sandbox_chat', 'named_approval', 'canary_enablement'],
       externalActionPerformed: false,
     })),
+    configureTelegramSandbox: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      provider: 'telegram',
+      credentialState: 'connected',
+      privateSandboxChatConfigured: true,
+      externalActionPerformed: false,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -872,5 +880,39 @@ describe('customer marketing CMR-230 canary readiness IPC', () => {
     await expect(readiness!(event('https://attacker.example/customer-marketing')))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.getCanaryReadiness).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230 Telegram setup IPC', () => {
+  const input = {
+    token: ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef_123456'].join(':'),
+    privateSandboxChatId: '-1001234567890',
+  };
+
+  it('passes only the exact bounded setup payload and returns redacted state', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const configure = electronMocks.handlers.get('customerMarketing:configureTelegramSandbox');
+
+    const result = await configure!(event(), input);
+    expect(result).toMatchObject({ ok: true, credentialState: 'connected', externalActionPerformed: false });
+    expect(JSON.stringify(result)).not.toContain(input.token);
+    expect(JSON.stringify(result)).not.toContain(input.privateSandboxChatId);
+    expect(service.configureTelegramSandbox).toHaveBeenCalledWith(input);
+    await expect(configure!(event(), { ...input, enabled: true }))
+      .rejects.toThrow('Payload Telegram sandbox');
+    await expect(configure!(event(), { ...input, workspaceId: 'renderer-controlled' }))
+      .rejects.toThrow('Payload Telegram sandbox');
+    expect(service.configureTelegramSandbox).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted renderer before parsing sensitive setup input', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const configure = electronMocks.handlers.get('customerMarketing:configureTelegramSandbox');
+
+    await expect(configure!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.configureTelegramSandbox).not.toHaveBeenCalled();
   });
 });

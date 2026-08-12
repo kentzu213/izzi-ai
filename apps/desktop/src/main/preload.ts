@@ -87,7 +87,11 @@ import type {
   CustomerMarketingCredentialRevokeInput,
   CustomerMarketingCredentialRevokeResult,
 } from '../shared/customer-marketing-credential-types';
-import type { CustomerMarketingCanaryReadinessResult } from '../shared/customer-marketing-canary-types';
+import type {
+  CustomerMarketingCanaryReadinessResult,
+  CustomerMarketingTelegramSandboxSetupInput,
+  CustomerMarketingTelegramSandboxSetupResult,
+} from '../shared/customer-marketing-canary-types';
 import type {
   CustomerMarketingActionGateRequest,
   CustomerMarketingActionGateResult,
@@ -581,6 +585,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:revokeIntegrationCredential', input),
     getCanaryReadiness: (): Promise<CustomerMarketingCanaryReadinessResult> =>
       ipcRenderer.invoke('customerMarketing:getCanaryReadiness'),
+    configureTelegramSandbox: (
+      input: CustomerMarketingTelegramSandboxSetupInput,
+    ): Promise<CustomerMarketingTelegramSandboxSetupResult> =>
+      ipcRenderer.invoke('customerMarketing:configureTelegramSandbox', input),
     listMarketingResources: (kind: CustomerMarketingResourceKind): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>

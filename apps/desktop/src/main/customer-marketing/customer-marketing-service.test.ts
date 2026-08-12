@@ -46,6 +46,7 @@ import type {
   CustomerVideoStudioRuntime,
 } from './customer-video-studio-service';
 import type { CustomerMarketingCredentialVault } from './customer-marketing-credential-vault';
+import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
 import type {
   CustomerMarketingWorkspaceGateway,
   RemoteMarketingMember,
@@ -565,7 +566,10 @@ function setup(options?: {
     mediaRuntime?: CustomerVideoStudioRuntime;
     workspaceGateway?: CustomerMarketingWorkspaceGateway;
     writeClipboardText?: (value: string) => void | Promise<void>;
-    credentialVault?: Pick<CustomerMarketingCredentialVault, 'listStatuses' | 'revokeCredential'>;
+    credentialVault?: Pick<
+      CustomerMarketingCredentialVault,
+      'listStatuses' | 'revokeCredential' | 'setCredential'
+    >;
     readGuardrailState?: () => CustomerMarketingGuardrailState;
   repairVoiceStudioRuntime?: () => Promise<
       'ready' | 'not_installed' | 'docker_unavailable' | 'unhealthy'
@@ -578,6 +582,10 @@ function setup(options?: {
       status(): CustomerMarketingCanaryStatus;
       privateSandboxChatConfigured(): boolean;
     };
+    telegramSandboxConfig?: Pick<
+      CustomerMarketingTelegramSandboxConfigStore,
+      'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
+    >;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -602,6 +610,7 @@ function setup(options?: {
     () => options?.knowledgeSkills ?? [],
     options?.pageSpeedRuntime,
     options?.canaryReadinessSource,
+    options?.telegramSandboxConfig,
   );
   return {
     db,
@@ -5107,6 +5116,41 @@ describe('CustomerMarketingService CMR-230 canary readiness', () => {
     });
   });
 
+  it('reads private chat readiness from the workspace-scoped store before the legacy fallback', async () => {
+    const remote = marketingResourceGateway('owner');
+    const fallback = vi.fn(() => false);
+    const isConfigured = vi.fn(() => true);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({
+          vaultState: 'ready' as const,
+          credentials: [{ provider: 'telegram' as const, state: 'connected' as const, updatedAt: null }],
+        })),
+        revokeCredential: vi.fn(),
+        setCredential: vi.fn(),
+      },
+      canaryReadinessSource: {
+        status: () => ({ enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 }),
+        privateSandboxChatConfigured: fallback,
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(),
+        setPrivateSandboxChatId: vi.fn(),
+        clear: vi.fn(),
+        isConfigured,
+      },
+    });
+
+    await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
+      liveReady: false,
+      missingRequirements: ['named_approval', 'canary_enablement'],
+      externalActionPerformed: false,
+    });
+    expect(isConfigured).toHaveBeenCalledWith(remote.workspace.id);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it('fails closed before reading vault or control state when workspace authority is unavailable', async () => {
     const remote = marketingResourceGateway('owner', 'unavailable');
     const listStatuses = vi.fn();
@@ -5127,6 +5171,179 @@ describe('CustomerMarketingService CMR-230 canary readiness', () => {
     });
     expect(listStatuses).not.toHaveBeenCalled();
     expect(status).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerMarketingService CMR-230 Telegram sandbox setup', () => {
+  const token = ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef_123456'].join(':');
+  const privateSandboxChatId = '-1001234567890';
+
+  it.each(['owner', 'manager'] as CustomerRole[])('allows %s to configure redacted setup state', async (role) => {
+    const remote = marketingResourceGateway(role);
+    const setCredential = vi.fn();
+    const setPrivateSandboxChatId = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({ vaultState: 'ready', credentials: [] })),
+        revokeCredential: vi.fn(),
+        setCredential,
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => null),
+        setPrivateSandboxChatId,
+        clear: vi.fn(),
+        isConfigured: vi.fn(() => true),
+      },
+    });
+
+    const result = await context.service.configureTelegramSandbox({ token, privateSandboxChatId });
+
+    expect(result).toEqual({
+      ok: true,
+      status: 'synced',
+      provider: 'telegram',
+      credentialState: 'connected',
+      privateSandboxChatConfigured: true,
+      externalActionPerformed: false,
+    });
+    expect(setCredential).toHaveBeenCalledWith(remote.workspace.id, 'telegram', token);
+    expect(setPrivateSandboxChatId).toHaveBeenCalledWith(remote.workspace.id, privateSandboxChatId);
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(result)).not.toContain(privateSandboxChatId);
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])('denies %s before reading or writing setup state', async (role) => {
+    const remote = marketingResourceGateway(role);
+    const setCredential = vi.fn();
+    const getPrivateSandboxChatId = vi.fn();
+    const setPrivateSandboxChatId = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({ vaultState: 'ready', credentials: [] })),
+        revokeCredential: vi.fn(),
+        setCredential,
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId,
+        setPrivateSandboxChatId,
+        clear: vi.fn(),
+        isConfigured: vi.fn(),
+      },
+    });
+
+    await expect(context.service.configureTelegramSandbox({ token, privateSandboxChatId }))
+      .resolves.toMatchObject({ ok: false, status: 'forbidden', externalActionPerformed: false });
+    expect(setCredential).not.toHaveBeenCalled();
+    expect(getPrivateSandboxChatId).not.toHaveBeenCalled();
+    expect(setPrivateSandboxChatId).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the credential when chat persistence fails and returns no sensitive error', async () => {
+    const remote = marketingResourceGateway('owner');
+    const revokeCredential = vi.fn();
+    const clear = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({ vaultState: 'ready', credentials: [] })),
+        revokeCredential,
+        setCredential: vi.fn(),
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => null),
+        setPrivateSandboxChatId: vi.fn(() => { throw new Error(`${token}:${privateSandboxChatId}`); }),
+        clear,
+        isConfigured: vi.fn(),
+      },
+    });
+
+    const result = await context.service.configureTelegramSandbox({ token, privateSandboxChatId });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      provider: 'telegram',
+      credentialState: 'missing',
+      privateSandboxChatConfigured: false,
+      externalActionPerformed: false,
+    });
+    expect(revokeCredential).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(result)).not.toContain(privateSandboxChatId);
+  });
+
+  it('does not revoke credential ciphertext and rolls back chat when credential persistence fails', async () => {
+    const remote = marketingResourceGateway('owner');
+    const revokeCredential = vi.fn();
+    const setPrivateSandboxChatId = vi.fn();
+    const clear = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({
+          vaultState: 'ready',
+          credentials: [{ provider: 'telegram', state: 'connected', updatedAt: null }],
+        })),
+        revokeCredential,
+        setCredential: vi.fn(() => { throw new Error(token); }),
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => null),
+        setPrivateSandboxChatId,
+        clear,
+        isConfigured: vi.fn(),
+      },
+    });
+
+    const result = await context.service.configureTelegramSandbox({ token, privateSandboxChatId });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      credentialState: 'connected',
+      externalActionPerformed: false,
+    });
+    expect(revokeCredential).not.toHaveBeenCalled();
+    expect(setPrivateSandboxChatId).toHaveBeenCalledWith(remote.workspace.id, privateSandboxChatId);
+    expect(clear).toHaveBeenCalledWith(remote.workspace.id);
+    expect(JSON.stringify(result)).not.toContain(token);
+  });
+
+  it('fails closed without writing when existing setup status cannot be read', async () => {
+    const remote = marketingResourceGateway('owner');
+    const setCredential = vi.fn();
+    const setPrivateSandboxChatId = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => { throw new Error(token); }),
+        revokeCredential: vi.fn(),
+        setCredential,
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId),
+        setPrivateSandboxChatId,
+        clear: vi.fn(),
+        isConfigured: vi.fn(),
+      },
+    });
+
+    const result = await context.service.configureTelegramSandbox({ token, privateSandboxChatId });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      credentialState: 'missing',
+      privateSandboxChatConfigured: false,
+      externalActionPerformed: false,
+    });
+    expect(setCredential).not.toHaveBeenCalled();
+    expect(setPrivateSandboxChatId).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(result)).not.toContain(privateSandboxChatId);
   });
 });
 
