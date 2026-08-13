@@ -18,6 +18,37 @@ function Assert-ExactKeys([hashtable]$Value, [string[]]$Expected, [string]$Label
   }
 }
 
+function ConvertTo-Hashtable($Value) {
+  if ($null -eq $Value) { return $null }
+  if ($Value -is [Collections.IDictionary]) {
+    $table = @{}
+    foreach ($key in $Value.Keys) { $table[[string]$key] = ConvertTo-Hashtable $Value[$key] }
+    return $table
+  }
+  if ($Value -is [Management.Automation.PSCustomObject]) {
+    $table = @{}
+    foreach ($property in $Value.PSObject.Properties) {
+      $table[$property.Name] = ConvertTo-Hashtable $property.Value
+    }
+    return $table
+  }
+  if ($Value -is [Collections.IEnumerable] -and $Value -isnot [string]) {
+    return @($Value | ForEach-Object { ConvertTo-Hashtable $_ })
+  }
+  return $Value
+}
+
+function Get-Sha256([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { $hash = $algorithm.ComputeHash($stream) } finally { $algorithm.Dispose() }
+  } finally {
+    $stream.Dispose()
+  }
+  return [BitConverter]::ToString($hash).Replace('-', '').ToLowerInvariant()
+}
+
 function Resolve-BundleFile([string]$RelativePath) {
   if (
     [string]::IsNullOrWhiteSpace($RelativePath) -or
@@ -35,7 +66,7 @@ function Resolve-BundleFile([string]$RelativePath) {
   return $candidate
 }
 
-$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+$manifest = ConvertTo-Hashtable (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
 Assert-ExactKeys $manifest @('schemaVersion', 'task', 'generatedAt', 'baseline', 'candidate', 'files') "Manifest"
 if ($manifest.schemaVersion -ne 1 -or $manifest.task -ne 'CMR-216') {
   throw "Bundle manifest identity is invalid."
@@ -89,7 +120,7 @@ foreach ($row in $fileRows) {
   if ([string]$row.sha256 -notmatch '^[a-f0-9]{64}$') { throw "Manifest file SHA-256 is invalid." }
   $fullPath = Resolve-BundleFile $relativePath
   if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { throw "Bundle inventory file is missing." }
-  $observed = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $observed = Get-Sha256 $fullPath
   if ($observed -ne [string]$row.sha256) { throw "Bundle file SHA-256 mismatch: $relativePath" }
 }
 if ($seen.Count -ne 9) { throw "Manifest file inventory is incomplete." }
@@ -106,5 +137,5 @@ if ($manifest.candidate.sha256 -ne ($fileRows | Where-Object path -eq $manifest.
   fileCount = $actualFiles.Count
   baselineTag = $manifest.baseline.tag
   candidateTag = $manifest.candidate.tag
-  manifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  manifestSha256 = Get-Sha256 $manifestPath
 } | ConvertTo-Json -Compress

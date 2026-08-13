@@ -48,6 +48,19 @@ try {
   }
   $checks += 1
 
+  $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $windowsVerifiedProcess = Start-Process -FilePath $windowsPowerShell -ArgumentList @(
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-File', ('"{0}"' -f $verifier), '-BundleDirectory', ('"{0}"' -f $bundle)
+  ) -WindowStyle Hidden -PassThru -Wait `
+    -RedirectStandardOutput (Join-Path $root 'windows-verifier.stdout.log') `
+    -RedirectStandardError (Join-Path $root 'windows-verifier.stderr.log')
+  $windowsVerifiedOutput = Get-Content -LiteralPath (Join-Path $root 'windows-verifier.stdout.log') -Raw
+  if ($windowsVerifiedProcess.ExitCode -ne 0 -or -not ($windowsVerifiedOutput | ConvertFrom-Json).ok) {
+    throw "Bundle verifier must run under machine-wide Windows PowerShell 5.1."
+  }
+  $checks += 1
+
   $env:CMR216_LIFECYCLE_SELF_TEST = "true"
   $env:CMR214_SIGNING_POLICY_SELF_TEST = "true"
   $launcher = Join-Path $bundle "run-cmr216-clean-host-bundle.ps1"
@@ -84,7 +97,7 @@ try {
   [IO.File]::WriteAllBytes($launcherPath, $launcherBytes)
 
   $manifestPath = Join-Path $bundle "manifest.json"
-  $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+  $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
   $manifest.baseline.file = "../baseline.exe"
   $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
   Expect-Failure { & $verifier -BundleDirectory $bundle } "relative path"
