@@ -119,7 +119,7 @@ describe('desktop runtime profile', () => {
   });
 
   it('accepts the public CLI selector and rejects a conflicting environment selector', () => {
-    const userData = 'C:/Users/Public/IzziAI-Customer-Marketing-Staging';
+    const userData = path.resolve('IzziAI-Customer-Marketing-Staging');
     const env = stagingEnv();
     delete env.IZZI_DESKTOP_RUNTIME_PROFILE;
     expect(resolveDesktopRuntimeProfile(env, [STAGING_PROFILE_ARGUMENT, `--user-data-dir=${userData}`]).id)
