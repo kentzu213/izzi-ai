@@ -26,6 +26,7 @@ param(
   [Parameter(Mandatory = $true)]
   [ValidateSet("WorkstationIsolated", "CleanMachineClaimed")]
   [string]$EnvironmentClass,
+  [string]$HostProvenanceSha256 = '',
   [Parameter(Mandatory = $true)]
   [string]$ReceiptPath,
   [switch]$Execute
@@ -37,6 +38,7 @@ $steps = New-Object System.Collections.Generic.List[object]
 $startedAt = (Get-Date).ToUniversalTime().ToString("o")
 $localSystemMutationPerformed = $false
 $cleanupAttempted = $false
+$evidenceClassification = $null
 
 function Get-FullPath([string]$Path) {
   return [IO.Path]::GetFullPath($Path).TrimEnd([IO.Path]::DirectorySeparatorChar)
@@ -81,8 +83,8 @@ function Write-Receipt([string]$Status, [string]$ErrorMessage = "") {
     task = "CMR-216"
     status = $Status
     environmentClass = $EnvironmentClass
-    verifiedEvidenceTier = $(if ($selfTest) { "ContractOnly" } else { "WorkstationIsolated" })
-    claim = $(if ($selfTest) { "synthetic-contract" } else { "same-workstation-isolated-user" })
+    verifiedEvidenceTier = $(if ($evidenceClassification) { $evidenceClassification.verifiedEvidenceTier } else { 'Unverified' })
+    claim = $(if ($evidenceClassification) { $evidenceClassification.claim } else { 'unverified' })
     selfTest = $selfTest
     mode = $(if ($Execute) { "execute" } else { "preflight" })
     startedAt = $startedAt
@@ -90,7 +92,8 @@ function Write-Receipt([string]$Status, [string]$ErrorMessage = "") {
     baseline = @{ tag = $BaselineTag; sha256 = $BaselineSha256.ToLowerInvariant() }
     candidate = @{ tag = $CandidateTag; sha256 = $CandidateSha256.ToLowerInvariant() }
     providerMutationPerformed = $false
-    networkIsolationVerified = $false
+    networkIsolationVerified = $(if ($evidenceClassification) { $evidenceClassification.networkIsolationVerified } else { $false })
+    hostProvenanceSha256 = $(if ($evidenceClassification) { $evidenceClassification.hostProvenanceSha256 } else { $null })
     localSystemMutationPerformed = $localSystemMutationPerformed
     cleanupAttempted = $cleanupAttempted
     errorCode = $(if ($ErrorMessage) { Get-ErrorCode $ErrorMessage } else { "" })
@@ -279,6 +282,21 @@ try {
     }
   }
 
+  if ($selfTest) {
+    $evidenceClassification = [pscustomobject]@{
+      verifiedEvidenceTier = 'ContractOnly'
+      claim = 'synthetic-contract'
+      networkIsolationVerified = $false
+      hostProvenanceSha256 = $null
+    }
+  } else {
+    $activeNetworkAdapterCount = @(Get-NetAdapter -ErrorAction Stop | Where-Object Status -eq 'Up').Count
+    $evidenceClassification = & (Join-Path $PSScriptRoot 'resolve-cmr216-evidence-classification.ps1') `
+      -EnvironmentClass $EnvironmentClass `
+      -HostProvenanceSha256 $HostProvenanceSha256 `
+      -ActiveNetworkAdapterCount $activeNetworkAdapterCount | ConvertFrom-Json
+  }
+
   $baselineObserved = (Get-FileHash -LiteralPath $baselineInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
   $candidateObserved = (Get-FileHash -LiteralPath $candidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($baselineObserved -ne $BaselineSha256.ToLowerInvariant()) { throw "Baseline installer SHA-256 mismatch." }
@@ -318,8 +336,8 @@ try {
       ok = $true
       mode = "preflight"
       environmentClass = $EnvironmentClass
-      verifiedEvidenceTier = $(if ($selfTest) { "ContractOnly" } else { "WorkstationIsolated" })
-      claim = $(if ($selfTest) { "synthetic-contract" } else { "same-workstation-isolated-user" })
+      verifiedEvidenceTier = $evidenceClassification.verifiedEvidenceTier
+      claim = $evidenceClassification.claim
       selfTest = $selfTest
       receiptPath = $receiptFullPath
     } | ConvertTo-Json -Compress
@@ -362,7 +380,12 @@ try {
   Add-Step "final-uninstall" "pass" @{ profileRetained = $true }
 
   Write-Receipt "pass"
-  [pscustomobject]@{ ok = $true; mode = "execute"; verifiedEvidenceTier = "WorkstationIsolated"; receiptPath = $receiptFullPath } |
+  [pscustomobject]@{
+    ok = $true
+    mode = "execute"
+    verifiedEvidenceTier = $evidenceClassification.verifiedEvidenceTier
+    receiptPath = $receiptFullPath
+  } |
     ConvertTo-Json -Compress
 } catch {
   $failureMessage = $_.Exception.Message

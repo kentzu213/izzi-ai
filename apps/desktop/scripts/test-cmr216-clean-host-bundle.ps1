@@ -37,13 +37,13 @@ try {
   }
 
   $built = & $builder @buildArguments | ConvertFrom-Json
-  if (-not $built.ok -or $built.fileCount -ne 10 -or -not (Test-Path -LiteralPath $built.manifestPath)) {
+  if (-not $built.ok -or $built.fileCount -ne 11 -or -not (Test-Path -LiteralPath $built.manifestPath)) {
     throw "Bundle build contract mismatch"
   }
   $checks += 1
 
   $verified = & $verifier -BundleDirectory $bundle | ConvertFrom-Json
-  if (-not $verified.ok -or $verified.fileCount -ne 10 -or $verified.baselineTag -ne "v1.14.0-beta.18" -or $verified.candidateTag -ne "v1.14.0-beta.34") {
+  if (-not $verified.ok -or $verified.fileCount -ne 11 -or $verified.baselineTag -ne "v1.14.0-beta.18" -or $verified.candidateTag -ne "v1.14.0-beta.34") {
     throw "Bundle verification contract mismatch"
   }
   $checks += 1

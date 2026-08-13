@@ -53,6 +53,7 @@ foreach ($name in @(
   'cmr216-bundle-START-LIFECYCLE.cmd',
   'cmr216-bundle-START-PREFLIGHT.cmd',
   'invoke-cmr216-clean-host-lifecycle.ps1',
+  'resolve-cmr216-evidence-classification.ps1',
   'run-cmr216-clean-host-bundle.ps1',
   'verify-cmr216-clean-host-bundle.ps1',
   'verify-windows-signing-policy.ps1'
@@ -68,6 +69,7 @@ $inventoryPaths = @(
   'START-LIFECYCLE.cmd',
   'START-PREFLIGHT.cmd',
   'invoke-cmr216-clean-host-lifecycle.ps1',
+  'resolve-cmr216-evidence-classification.ps1',
   'run-cmr216-clean-host-bundle.ps1',
   'verify-cmr216-clean-host-bundle.ps1',
   'verify-windows-signing-policy.ps1'

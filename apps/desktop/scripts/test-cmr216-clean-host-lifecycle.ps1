@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
 $runner = Join-Path $PSScriptRoot "invoke-cmr216-clean-host-lifecycle.ps1"
+$classifier = Join-Path $PSScriptRoot "resolve-cmr216-evidence-classification.ps1"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("cmr216-contract-" + [Guid]::NewGuid().ToString("N"))
 $artifacts = Join-Path $root "artifacts"
 $appData = Join-Path $root "appdata"
@@ -28,6 +29,42 @@ function Expect-Failure([scriptblock]$Action, [string]$Pattern) {
 }
 
 try {
+  $workstationClassification = & $classifier `
+    -EnvironmentClass WorkstationIsolated `
+    -ActiveNetworkAdapterCount 1 | ConvertFrom-Json
+  if (
+    $workstationClassification.verifiedEvidenceTier -ne 'WorkstationIsolated' -or
+    $workstationClassification.claim -ne 'same-workstation-isolated-user' -or
+    $workstationClassification.networkIsolationVerified -ne $false -or
+    $null -ne $workstationClassification.hostProvenanceSha256
+  ) { throw 'Workstation evidence classification mismatch' }
+  $checks += 1
+
+  $provenanceHash = 'a' * 64
+  $cleanClassification = & $classifier `
+    -EnvironmentClass CleanMachineClaimed `
+    -HostProvenanceSha256 $provenanceHash `
+    -ActiveNetworkAdapterCount 0 | ConvertFrom-Json
+  if (
+    $cleanClassification.verifiedEvidenceTier -ne 'CleanMachineVerified' -or
+    $cleanClassification.claim -ne 'independent-clean-vm' -or
+    $cleanClassification.networkIsolationVerified -ne $true -or
+    $cleanClassification.hostProvenanceSha256 -ne $provenanceHash
+  ) { throw 'Clean-machine evidence classification mismatch' }
+  $checks += 1
+
+  Expect-Failure {
+    & $classifier -EnvironmentClass CleanMachineClaimed -ActiveNetworkAdapterCount 0
+  } 'provenance'
+  Expect-Failure {
+    & $classifier -EnvironmentClass CleanMachineClaimed `
+      -HostProvenanceSha256 $provenanceHash -ActiveNetworkAdapterCount 1
+  } 'network isolation'
+  Expect-Failure {
+    & $classifier -EnvironmentClass WorkstationIsolated `
+      -HostProvenanceSha256 $provenanceHash -ActiveNetworkAdapterCount 0
+  } 'Workstation'
+
   $env:CMR216_LIFECYCLE_SELF_TEST = "true"
   $env:CMR214_SIGNING_POLICY_SELF_TEST = "true"
   New-Item -ItemType Directory -Force -Path $artifacts, $appData, $localAppData | Out-Null

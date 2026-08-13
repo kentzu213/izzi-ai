@@ -5,6 +5,7 @@ param(
   [string]$ReceiptPath,
   [ValidateSet("WorkstationIsolated", "CleanMachineClaimed")]
   [string]$EnvironmentClass = "WorkstationIsolated",
+  [string]$HostProvenanceSha256 = '',
   [string]$AppDataRoot = $env:APPDATA,
   [string]$LocalAppDataRoot = $env:LOCALAPPDATA,
   [string]$ExpectedUser = [Environment]::UserName,
@@ -29,6 +30,7 @@ $arguments = @{
   LocalAppDataRoot = $LocalAppDataRoot
   ExpectedUser = $ExpectedUser
   EnvironmentClass = $EnvironmentClass
+  HostProvenanceSha256 = $HostProvenanceSha256
   ReceiptPath = $ReceiptPath
 }
 if ($Execute) { $arguments.Execute = $true }

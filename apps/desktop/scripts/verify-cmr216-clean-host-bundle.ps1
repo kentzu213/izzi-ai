@@ -94,6 +94,7 @@ $expectedFiles = @(
   'START-LIFECYCLE.cmd',
   'START-PREFLIGHT.cmd',
   'invoke-cmr216-clean-host-lifecycle.ps1',
+  'resolve-cmr216-evidence-classification.ps1',
   'manifest.json',
   'run-cmr216-clean-host-bundle.ps1',
   'verify-cmr216-clean-host-bundle.ps1',
@@ -107,7 +108,7 @@ if (($actualFiles -join "`n") -ne (($expectedFiles | Sort-Object) -join "`n")) {
 }
 
 $fileRows = @($manifest.files)
-if ($fileRows.Count -ne 9) { throw "Manifest file inventory count is invalid." }
+if ($fileRows.Count -ne 10) { throw "Manifest file inventory count is invalid." }
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
 foreach ($row in $fileRows) {
   if ($row -isnot [hashtable]) { throw "Manifest file inventory row is invalid." }
@@ -123,7 +124,7 @@ foreach ($row in $fileRows) {
   $observed = Get-Sha256 $fullPath
   if ($observed -ne [string]$row.sha256) { throw "Bundle file SHA-256 mismatch: $relativePath" }
 }
-if ($seen.Count -ne 9) { throw "Manifest file inventory is incomplete." }
+if ($seen.Count -ne 10) { throw "Manifest file inventory is incomplete." }
 if ($manifest.baseline.sha256 -ne ($fileRows | Where-Object path -eq $manifest.baseline.file).sha256) {
   throw "Baseline SHA-256 is not bound to the file inventory."
 }

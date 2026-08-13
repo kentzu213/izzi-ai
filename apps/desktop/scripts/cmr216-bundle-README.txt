@@ -21,3 +21,8 @@ ACLs cannot be checked, use a private local folder on the test user instead.
 
 This bundle does not prove a clean machine by itself. Independent VM/host
 provenance review is required before CMR-216 can be closed.
+
+For a clean VM claim, run the PowerShell launcher with EnvironmentClass
+CleanMachineClaimed and HostProvenanceSha256 set to the reviewed host receipt
+digest. The VM must have zero active network adapters. Otherwise the lifecycle
+fails closed before installation and cannot emit CleanMachineVerified evidence.
