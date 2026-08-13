@@ -599,6 +599,7 @@ function CheckOption({
 }
 
 interface OnboardingProps {
+  snapshot: CustomerMarketingSnapshot;
   form: CustomerOnboardingInput;
   setForm: React.Dispatch<React.SetStateAction<CustomerOnboardingInput>>;
   busy: boolean;
@@ -606,7 +607,7 @@ interface OnboardingProps {
   onComplete: (input: CustomerOnboardingInput) => Promise<void>;
 }
 
-function OnboardingRoom({ form, setForm, busy, error, onComplete }: OnboardingProps) {
+function OnboardingRoom({ snapshot, form, setForm, busy, error, onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
   const [localError, setLocalError] = useState('');
 
@@ -720,6 +721,7 @@ function OnboardingRoom({ form, setForm, busy, error, onComplete }: OnboardingPr
             <span>Bước thiết lập</span>
           </div>
         </header>
+        <WorkspaceBridgeStatus snapshot={snapshot} />
 
         <div className="cmr-step-rail" aria-label="Các bước onboarding">
           {STEP_LABELS.map((label, index) => {
@@ -971,6 +973,30 @@ function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerP
   );
 }
 
+function WorkspaceBridgeStatus({ snapshot }: { snapshot: CustomerMarketingSnapshot }) {
+  const bridgeLabels = {
+    disabled: 'Cầu nối Marketing chưa bật',
+    configuration_required: 'Cấu hình staging không hợp lệ',
+    auth_required: 'Cần đăng nhập môi trường Marketing',
+    tunnel_unavailable: 'Tunnel staging mất kết nối',
+    route_missing: 'Backend chưa có Marketing Workspace',
+    backend_unavailable: 'Backend Marketing chưa sẵn sàng',
+    connected: 'Marketing Workspace đã kết nối',
+  } as const;
+  const bridgeHealth = snapshot.workspace.bridgeHealth
+    ?? (snapshot.workspace.syncStatus === 'synced' ? 'connected' : 'disabled');
+  const statusTone = bridgeHealth === 'connected'
+    ? 'synced'
+    : bridgeHealth === 'disabled'
+      ? 'local'
+      : 'unavailable';
+  return (
+    <span className={`cmr-workspace-status cmr-workspace-status--${statusTone}`} role="status">
+      <span /> {bridgeLabels[bridgeHealth]}
+    </span>
+  );
+}
+
 function WorkspaceHeader({
   snapshot,
   onRefresh,
@@ -984,14 +1010,6 @@ function WorkspaceHeader({
   settingsOpen: boolean;
   busy: boolean;
 }) {
-  const profileSyncStatus = snapshot.workspace.profileSyncStatus;
-  const syncLabel = profileSyncStatus === 'synced'
-    ? 'Hồ sơ đã đồng bộ'
-    : profileSyncStatus === 'conflict'
-      ? 'Hồ sơ có xung đột, cần xem lại'
-      : profileSyncStatus === 'unavailable'
-        ? 'Chưa xác nhận đồng bộ'
-        : 'Hồ sơ lưu trên thiết bị';
   return (
     <header className="cmr-header">
       <div className="cmr-header__copy">
@@ -1000,9 +1018,7 @@ function WorkspaceHeader({
         <p>Phòng Marketing AI của bạn tập trung vào mục tiêu, workflow và quyết định cần duyệt.</p>
       </div>
       <div className="cmr-header__meta">
-        <span className={`cmr-workspace-status cmr-workspace-status--${profileSyncStatus}`}>
-          <span /> {syncLabel}
-        </span>
+        <WorkspaceBridgeStatus snapshot={snapshot} />
         <span className="cmr-credit-balance">
           {snapshot.workspace.creditBalance.toLocaleString('vi-VN')} credit
           <small>/ {snapshot.workspace.monthlyQuota.toLocaleString('vi-VN')} credit/tháng</small>
@@ -3437,7 +3453,7 @@ export function CustomerMarketingRoomPage() {
   }
 
   if (!snapshot.onboarding?.completed) {
-    return <OnboardingRoom form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} />;
+    return <OnboardingRoom snapshot={snapshot} form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} />;
   }
 
   return (

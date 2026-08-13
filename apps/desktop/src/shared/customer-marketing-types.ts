@@ -14,6 +14,14 @@ export type CustomerRole = 'owner' | 'manager' | 'editor' | 'reviewer' | 'viewer
 
 export type CustomerAutomationMode = 'copilot' | 'semi_autonomous' | 'guardrailed_autonomous';
 export type CustomerWorkspaceSyncStatus = 'local' | 'synced' | 'unavailable';
+export type CustomerMarketingBridgeHealth =
+  | 'disabled'
+  | 'configuration_required'
+  | 'auth_required'
+  | 'tunnel_unavailable'
+  | 'route_missing'
+  | 'backend_unavailable'
+  | 'connected';
 export type CustomerProfileSyncStatus = CustomerWorkspaceSyncStatus | 'conflict';
 export type CustomerCapabilityCatalogStatus = CustomerWorkspaceSyncStatus | 'forbidden';
 export type CustomerMarketingPlan = 'free' | 'starter' | 'pro' | 'max' | 'ultra';
@@ -123,6 +131,7 @@ export interface CustomerWorkspaceSummary {
   monthlyQuota: number;
   usedCredits: number;
   syncStatus: CustomerWorkspaceSyncStatus;
+  bridgeHealth?: CustomerMarketingBridgeHealth;
   profileSyncStatus: CustomerProfileSyncStatus;
   onboardingComplete: boolean;
   updatedAt: string;

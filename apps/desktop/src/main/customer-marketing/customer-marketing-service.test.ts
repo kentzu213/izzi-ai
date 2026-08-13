@@ -3692,6 +3692,7 @@ describe('CustomerMarketingService backend workspace sync', () => {
 
     expect(snapshot.workspace.id).toMatch(/^customer-/);
     expect(snapshot.workspace.syncStatus).toBe('unavailable');
+    expect(snapshot.workspace.bridgeHealth).toBe('backend_unavailable');
     expect(snapshot.workspace.role).toBe('owner');
     expect(snapshot.productMarketingContextAuthority).toEqual({
       reviewerName: 'Owner A',
@@ -3700,6 +3701,21 @@ describe('CustomerMarketingService backend workspace sync', () => {
       scopeToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
       authorityToken: null,
     });
+  });
+
+  it('exposes the workspace gateway diagnosis without leaking endpoint details', async () => {
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getBridgeHealth: vi.fn(() => 'tunnel_unavailable'),
+      getCurrent: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'unavailable', workspace: null })),
+      reserveQuota: vi.fn(async () => ({ status: 'unavailable', quota: null })),
+    };
+
+    const snapshot = await setup({ workspaceGateway: gateway }).service.getSnapshot();
+
+    expect(snapshot.workspace.bridgeHealth).toBe('tunnel_unavailable');
+    expect(JSON.stringify(snapshot)).not.toContain('marketing-staging.izziapi.com');
   });
 
   it('fails closed when a cached local owner loses backend authority confirmation', async () => {

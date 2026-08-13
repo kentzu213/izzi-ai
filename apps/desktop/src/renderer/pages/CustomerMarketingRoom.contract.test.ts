@@ -76,6 +76,15 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).not.toContain("monthlyQuota.toLocaleString('vi-VN')} tháng");
   });
 
+  it('shows an operator-readable Marketing bridge diagnosis', () => {
+    expect(roomSource).toContain("tunnel_unavailable: 'Tunnel staging mất kết nối'");
+    expect(roomSource).toContain("auth_required: 'Cần đăng nhập môi trường Marketing'");
+    expect(roomSource).toContain("route_missing: 'Backend chưa có Marketing Workspace'");
+    expect(roomSource).toContain('snapshot.workspace.bridgeHealth');
+    expect(roomSource).toContain('<WorkspaceBridgeStatus snapshot={snapshot} />');
+    expect(roomSource).toContain('<OnboardingRoom snapshot={snapshot}');
+  });
+
   it('shows the main-process context signer before save and keeps reviewer authority outside the form', () => {
     expect(roomSource).toContain('Revision mới sẽ được ký bằng tài khoản');
     expect(roomSource).toContain('contextAuthority.reviewerName');

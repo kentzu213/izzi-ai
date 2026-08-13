@@ -4862,6 +4862,12 @@ export class CustomerMarketingService {
         monthlyQuota: remoteWorkspace?.quota?.creditsLimit ?? PLAN_QUOTA[plan] ?? PLAN_QUOTA.free,
         usedCredits: remoteWorkspace?.quota?.creditsUsed ?? record.usedCredits,
         syncStatus: remoteWorkspace ? 'synced' : workspaceState.status === 'unavailable' ? 'unavailable' : 'local',
+        bridgeHealth: this.workspaceGateway?.getBridgeHealth?.()
+          ?? (remoteWorkspace
+            ? 'connected'
+            : workspaceState.status === 'local'
+              ? 'disabled'
+              : 'backend_unavailable'),
         profileSyncStatus: record.profileSyncStatus,
         onboardingComplete: Boolean(record.onboarding?.completed),
         updatedAt: record.updatedAt,

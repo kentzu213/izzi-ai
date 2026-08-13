@@ -12,6 +12,7 @@ import type {
   CustomerChannel,
   CustomerMarketingAnalyticsReport,
   CustomerMarketingAnalyticsWindow,
+  CustomerMarketingBridgeHealth,
   CustomerMarketingPlan,
   CustomerMarketingBridgeStatus,
   CustomerMarketingCalendarInput,
@@ -264,6 +265,7 @@ export type CustomerMarketingResourceGatewayArchiveInput = CustomerMarketingReso
 };
 
 export interface CustomerMarketingWorkspaceGateway {
+  getBridgeHealth?(): CustomerMarketingBridgeHealth;
   getCurrent(preferredWorkspaceId?: string): Promise<CustomerMarketingWorkspaceState>;
   ensureWorkspace(input: EnsureCustomerMarketingWorkspaceInput): Promise<CustomerMarketingWorkspaceState>;
   getCapabilities(workspaceId: string): Promise<CustomerMarketingCapabilityCatalogState>;
@@ -297,9 +299,13 @@ interface ClientOptions {
   enabled?: boolean;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  env?: NodeJS.ProcessEnv;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REVIEWED_MARKETING_API_ORIGINS = new Set([
+  'https://marketing-staging.izziapi.com',
+]);
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor', 'reviewer', 'viewer']);
 const ASSIGNABLE_ROLES = new Set<CustomerAssignableRole>(['manager', 'editor', 'reviewer', 'viewer']);
@@ -1261,21 +1267,38 @@ function parseProfileEnvelope(raw: unknown, expectedWorkspaceId: string): Remote
 export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorkspaceGateway {
   private readonly baseUrl: string;
   private readonly enabled: boolean;
+  private readonly configurationValid: boolean;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private bridgeHealth: CustomerMarketingBridgeHealth;
 
   constructor(
     private readonly auth: AuthTokenProvider,
     options: ClientOptions = {},
   ) {
-    this.baseUrl = (options.baseUrl ?? IZZI_API_BASE).replace(/\/$/, '');
-    this.enabled = options.enabled ?? process.env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED === 'true';
+    const env = options.env ?? process.env;
+    const configuredUrl = env.STARIZZI_CUSTOMER_MARKETING_API_URL?.trim().replace(/\/$/, '');
+    this.baseUrl = (options.baseUrl ?? configuredUrl ?? IZZI_API_BASE).replace(/\/$/, '');
+    this.enabled = options.enabled ?? env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED === 'true';
+    this.configurationValid = options.baseUrl !== undefined
+      || options.enabled !== undefined
+      || REVIEWED_MARKETING_API_ORIGINS.has(configuredUrl ?? IZZI_API_BASE);
     this.timeoutMs = options.timeoutMs ?? 6_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.bridgeHealth = !this.enabled
+      ? 'disabled'
+      : this.configurationValid
+        ? 'backend_unavailable'
+        : 'configuration_required';
+  }
+
+  getBridgeHealth(): CustomerMarketingBridgeHealth {
+    return this.bridgeHealth;
   }
 
   async getCurrent(preferredWorkspaceId?: string): Promise<CustomerMarketingWorkspaceState> {
     if (!this.enabled) return { status: 'local', workspace: null };
+    if (!this.configurationValid) return { status: 'unavailable', workspace: null };
     const result = await this.request('/api/marketing/workspaces');
     if (!result.ok) return { status: 'unavailable', workspace: null };
 
@@ -1829,8 +1852,12 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     path: string,
     init: RequestInit = {},
   ): Promise<{ ok: true; body: unknown } | { ok: false; status?: number; code?: string }> {
+    if (!this.configurationValid) return { ok: false };
     const token = await this.auth.getAccessToken();
-    if (!token) return { ok: false, status: 401 };
+    if (!token) {
+      this.bridgeHealth = 'auth_required';
+      return { ok: false, status: 401 };
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -1844,6 +1871,8 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
           Authorization: `Bearer ${token}`,
         },
       });
+      const tunnelUnavailable = response.status === 530
+        && await this.isCloudflareTunnelUnavailable(response.clone());
       let body: unknown = null;
       try {
         body = await response.json();
@@ -1851,6 +1880,14 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
         // Invalid or empty responses fail closed below.
       }
       if (!response.ok) {
+        if (response.status === 401) this.bridgeHealth = 'auth_required';
+        else if (response.status === 404 && path === '/api/marketing/workspaces') {
+          this.bridgeHealth = 'route_missing';
+        }
+        else if (tunnelUnavailable) {
+          this.bridgeHealth = 'tunnel_unavailable';
+        } else if (response.status >= 500) this.bridgeHealth = 'backend_unavailable';
+        else this.bridgeHealth = 'connected';
         this.logFailure(path, response.status);
         const error = ownObject(body, 'error');
         return {
@@ -1860,12 +1897,22 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
         };
       }
       if (body === null) return { ok: false, status: response.status };
+      this.bridgeHealth = 'connected';
       return { ok: true, body };
     } catch {
+      this.bridgeHealth = 'backend_unavailable';
       this.logFailure(path);
       return { ok: false };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private async isCloudflareTunnelUnavailable(response: Response): Promise<boolean> {
+    try {
+      return (await response.clone().text()).includes('1033');
+    } catch {
+      return false;
     }
   }
 

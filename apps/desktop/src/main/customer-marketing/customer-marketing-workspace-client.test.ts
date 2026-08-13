@@ -254,6 +254,93 @@ function workflowRun(overrides: Record<string, unknown> = {}) {
   };
 }
 describe('CustomerMarketingWorkspaceClient', () => {
+  it('reports why the runtime bridge cannot reach an authoritative workspace', async () => {
+    const disabled = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: false, fetchImpl: vi.fn<typeof fetch>() },
+    );
+    expect(disabled.getBridgeHealth()).toBe('disabled');
+
+    const authRequired = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => null) },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl: vi.fn<typeof fetch>() },
+    );
+    await authRequired.getCurrent();
+    expect(authRequired.getBridgeHealth()).toBe('auth_required');
+
+    const routeMissing = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, 404)),
+      },
+    );
+    await routeMissing.getCurrent();
+    expect(routeMissing.getBridgeHealth()).toBe('route_missing');
+
+    const tunnelUnavailable = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response('error code: 1033', { status: 530 })),
+      },
+    );
+    await tunnelUnavailable.getCurrent();
+    expect(tunnelUnavailable.getBridgeHealth()).toBe('tunnel_unavailable');
+
+    const reachableButForbidden = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, 403)),
+      },
+    );
+    await reachableButForbidden.getCurrent();
+    expect(reachableButForbidden.getBridgeHealth()).toBe('connected');
+  });
+
+  it('accepts only the reviewed HTTPS staging origin from runtime configuration', async () => {
+    const auth = { getAccessToken: vi.fn(async () => 'test-token') };
+    const missingUrlFetch = vi.fn<typeof fetch>();
+    const missingUrl = new CustomerMarketingWorkspaceClient(auth, {
+      env: { STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true' },
+      fetchImpl: missingUrlFetch,
+    });
+    await expect(missingUrl.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+    expect(missingUrl.getBridgeHealth()).toBe('configuration_required');
+    expect(missingUrlFetch).not.toHaveBeenCalled();
+
+    const rejectedFetch = vi.fn<typeof fetch>();
+    const rejected = new CustomerMarketingWorkspaceClient(auth, {
+      env: {
+        STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true',
+        STARIZZI_CUSTOMER_MARKETING_API_URL: 'https://api.izziapi.com',
+      },
+      fetchImpl: rejectedFetch,
+    });
+    await expect(rejected.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+    expect(rejected.getBridgeHealth()).toBe('configuration_required');
+    expect(rejectedFetch).not.toHaveBeenCalled();
+
+    const acceptedFetch = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ workspaces: [] }));
+    const accepted = new CustomerMarketingWorkspaceClient(auth, {
+      env: {
+        STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true',
+        STARIZZI_CUSTOMER_MARKETING_API_URL: 'https://marketing-staging.izziapi.com',
+      },
+      fetchImpl: acceptedFetch,
+    });
+    await accepted.getCurrent();
+    expect(accepted.getBridgeHealth()).toBe('connected');
+    expect(acceptedFetch).toHaveBeenCalledWith(
+      'https://marketing-staging.izziapi.com/api/marketing/workspaces',
+      expect.any(Object),
+    );
+  });
+
   it('does not make backend calls unless the customer API is enabled', async () => {
     const auth = { getAccessToken: vi.fn(async () => 'test-token') };
     const fetchImpl = vi.fn<typeof fetch>();
@@ -825,6 +912,20 @@ describe('CustomerMarketingWorkspaceClient', () => {
         body: JSON.stringify({ token: INVITATION_TOKEN }),
       }),
     );
+  });
+
+  it('does not classify a missing workspace resource as a missing backend route', async () => {
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, 404)),
+      },
+    );
+
+    await expect(client.getProfile(WORKSPACE_ID)).resolves.toEqual({ status: 'not_found', profile: null });
+    expect(client.getBridgeHealth()).toBe('connected');
   });
 
   it('rejects invalid invitation idempotency keys before reading auth or calling the backend', async () => {
