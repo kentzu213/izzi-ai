@@ -66,7 +66,10 @@ try {
   }
   New-Item -ItemType Directory -Force -Path $UserDataRoot | Out-Null
   $process = Start-Process -FilePath $ExecutablePath `
-    -ArgumentList @("--user-data-dir=$UserDataRoot") -PassThru
+    -ArgumentList @(
+      '--izzi-runtime-profile=customer-marketing-staging',
+      "--user-data-dir=$UserDataRoot"
+    ) -PassThru
   if ($PassThru) { $process }
 } finally {
   foreach ($entry in $runtime.GetEnumerator()) {

@@ -11,7 +11,6 @@ import { safeStorage, shell, BrowserWindow } from 'electron';
 import { DatabaseManager } from '../db/database';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 import { IZZI_API_BASE, IZZI_WEB_BASE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/public-config';
-import { DESKTOP_RUNTIME_PROFILE } from '../config/desktop-runtime-profile';
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
@@ -62,11 +61,13 @@ export class AuthManager {
   private session: StoredSession | null = null;
   private supabase: SupabaseClient | null = null;
   private db: DatabaseManager;
+  private googleOAuthEnabled: boolean;
   /** Minted izzi- key for this desktop (bound to a user id), cached in memory. Never logged. */
   private desktopKeyCache: { userId: string; key: string } | null = null;
 
-  constructor(db: DatabaseManager) {
+  constructor(db: DatabaseManager, options: { googleOAuthEnabled?: boolean } = {}) {
     this.db = db;
+    this.googleOAuthEnabled = options.googleOAuthEnabled ?? true;
     this.initSupabase();
     this.loadSession();
   }
@@ -275,7 +276,7 @@ export class AuthManager {
    * Opens system browser for OAuth flow
    */
   async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
-    if (!DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled) {
+    if (!this.googleOAuthEnabled) {
       return { success: false, error: 'Google OAuth is unavailable in the isolated staging profile.' };
     }
     if (!this.supabase) {
@@ -443,7 +444,7 @@ export class AuthManager {
    * Handle OAuth callback (legacy — kept for custom protocol handler compatibility)
    */
   async handleOAuthCallback(url: string): Promise<{ success: boolean; user?: User; error?: string }> {
-    if (!DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled) {
+    if (!this.googleOAuthEnabled) {
       return { success: false, error: 'Google OAuth is unavailable in the isolated staging profile.' };
     }
     if (!this.supabase) {

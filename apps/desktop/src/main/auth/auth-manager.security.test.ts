@@ -12,7 +12,7 @@ describe('AuthManager logging boundary', () => {
   it('blocks Google OAuth when the isolated staging runtime profile disables it', () => {
     const source = fs.readFileSync(path.join(__dirname, 'auth-manager.ts'), 'utf8');
 
-    expect(source).toMatch(/DESKTOP_RUNTIME_PROFILE\.googleOAuthEnabled/);
+    expect(source).toMatch(/this\.googleOAuthEnabled/);
     expect(source).toMatch(/Google OAuth[^\n]*staging/i);
   });
 });

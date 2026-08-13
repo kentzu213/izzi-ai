@@ -9,6 +9,7 @@ function Assert-Match([string]$Pattern, [string]$Message) {
 }
 
 Assert-Match 'customer-marketing-staging' 'Missing named staging runtime profile.'
+Assert-Match '--izzi-runtime-profile=customer-marketing-staging' 'Missing explicit staging profile argument.'
 Assert-Match 'IzziAI-Customer-Marketing-Staging' 'Missing isolated userData contract.'
 Assert-Match 'marketing-staging\.izziapi\.com' 'Missing reviewed staging origin.'
 Assert-Match 'bogwhtnknhquxhktormu' 'Missing reviewed staging Supabase project.'

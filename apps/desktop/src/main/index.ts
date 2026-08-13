@@ -1,7 +1,8 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
-import { DESKTOP_RUNTIME_PROFILE } from './config/desktop-runtime-profile';
+import { resolveDesktopRuntimeProfile } from './config/desktop-runtime-profile';
+import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
 import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -110,6 +111,24 @@ import type { LiveProfile } from '../shared/memory-trace/live-profile';
 const LIVE_PROFILE_BOUNDARY_ID = 'workspace:local';
 
 installMainProcessOutputSafety({ stdout: process.stdout, stderr: process.stderr });
+
+let DESKTOP_RUNTIME_PROFILE: DesktopRuntimeProfile;
+try {
+  DESKTOP_RUNTIME_PROFILE = resolveDesktopRuntimeProfile(process.env, process.argv, {
+    runtimeProfile: app.commandLine.getSwitchValue('izzi-runtime-profile'),
+    userDataDir: app.commandLine.getSwitchValue('user-data-dir'),
+    marketingRecorderPort: app.commandLine.getSwitchValue('izzi-marketing-recorder-port'),
+  });
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : 'unknown runtime profile error';
+  console.error('[Bootstrap] Desktop runtime profile failed:', message);
+  app.exit(1);
+  throw error;
+}
+
+if (DESKTOP_RUNTIME_PROFILE.userDataPath) {
+  app.setPath('userData', DESKTOP_RUNTIME_PROFILE.userDataPath);
+}
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
@@ -534,7 +553,12 @@ function setupIPC() {
     verifyCommercialVoiceLicense,
   });
   app.on('before-quit', () => customerVideoStudio.killAll());
-  const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
+  const customerMarketingWorkspaceClient = DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+    ? new CustomerMarketingWorkspaceClient(authManager, {
+        baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl,
+        enabled: true,
+      })
+    : new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
   const customerMarketingConnectorOperationStore = new CustomerMarketingConnectorOperationStore(dbManager);
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
@@ -1600,7 +1624,9 @@ async function initServices() {
   // The saved config/key remain available for an explicit manual reconnect.
   migrateLegacyCodexLbConnection(dbManager);
 
-  authManager = new AuthManager(dbManager);
+  authManager = new AuthManager(dbManager, {
+    googleOAuthEnabled: DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled,
+  });
 
   // Localhost LLM proxy for Docker agents (Hermes) — routes their upstream LLM
   // through the user's Izzi smart router; the credential stays in main. Started
@@ -1749,10 +1775,12 @@ function flushQueuedProtocolUrls(): void {
 }
 
 // Single instance lock
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = DESKTOP_RUNTIME_PROFILE.singleInstanceLock
+  ? app.requestSingleInstanceLock()
+  : true;
 if (!gotTheLock) {
   app.quit();
-} else {
+} else if (DESKTOP_RUNTIME_PROFILE.singleInstanceLock) {
   app.on('second-instance', (_event, commandLine) => {
     // A scheduled task fired while the app is already open: run it inside THIS instance instead of
     // stealing focus. Running it here also keeps a single writer on the SQLite file (R2.5).
@@ -1822,6 +1850,10 @@ app.whenReady().then(async () => {
     }
   });
 
+}).catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : 'unknown startup error';
+  console.error('[Bootstrap] Desktop startup failed:', message);
+  app.exit(1);
 });
 
 app.on('window-all-closed', () => {

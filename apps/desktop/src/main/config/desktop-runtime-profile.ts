@@ -10,9 +10,18 @@ const STAGING_USER_DATA_DIRECTORY = 'IzziAI-Customer-Marketing-Staging';
 export interface DesktopRuntimeProfile {
   id: 'default' | typeof CUSTOMER_MARKETING_STAGING_PROFILE_ID;
   customerMarketingStaging: boolean;
+  marketingApiBaseUrl: string | null;
+  userDataPath: string | null;
+  singleInstanceLock: boolean;
   registerProtocol: boolean;
   updaterEnabled: boolean;
   googleOAuthEnabled: boolean;
+}
+
+export interface DesktopRuntimeSwitches {
+  runtimeProfile?: string;
+  userDataDir?: string;
+  marketingRecorderPort?: string;
 }
 
 function normalizeOrigin(value: string | undefined): string {
@@ -47,15 +56,42 @@ function readUserDataArgument(argv: readonly string[]): string | null {
   return path.isAbsolute(value) ? path.resolve(value) : null;
 }
 
+function normalizeUserDataPath(value: string | undefined): string | null {
+  const normalized = value?.trim().replace(/^"|"$/g, '');
+  return normalized && path.isAbsolute(normalized) ? path.resolve(normalized) : null;
+}
+
+function readRuntimeProfileArgument(argv: readonly string[]): string | null {
+  const prefix = '--izzi-runtime-profile=';
+  const argument = argv.find((value) => value.toLowerCase().startsWith(prefix));
+  return argument ? argument.slice(prefix.length).trim() : null;
+}
+
 export function resolveDesktopRuntimeProfile(
   env: NodeJS.ProcessEnv = process.env,
   argv: readonly string[] = process.argv,
+  nativeSwitches: DesktopRuntimeSwitches = {},
 ): DesktopRuntimeProfile {
-  const requested = env.IZZI_DESKTOP_RUNTIME_PROFILE?.trim();
+  const environmentProfile = env.IZZI_DESKTOP_RUNTIME_PROFILE?.trim() || null;
+  const argumentProfile = readRuntimeProfileArgument(argv);
+  const nativeProfile = nativeSwitches.runtimeProfile?.trim() || null;
+  if (argumentProfile && nativeProfile && argumentProfile !== nativeProfile) {
+    throw new Error('Desktop runtime profile selectors conflict.');
+  }
+  const requested = nativeProfile ?? argumentProfile;
+  if (environmentProfile && requested && environmentProfile !== requested) {
+    throw new Error('Desktop runtime profile selectors conflict.');
+  }
+  if (environmentProfile && !requested) {
+    throw new Error('Desktop runtime profile requires an explicit launch selector.');
+  }
   if (!requested) {
     return {
       id: 'default',
       customerMarketingStaging: false,
+      marketingApiBaseUrl: null,
+      userDataPath: null,
+      singleInstanceLock: true,
       registerProtocol: true,
       updaterEnabled: true,
       googleOAuthEnabled: true,
@@ -69,15 +105,30 @@ export function resolveDesktopRuntimeProfile(
   const marketingOrigin = normalizeOrigin(env.STARIZZI_CUSTOMER_MARKETING_API_URL);
   const supabaseOrigin = normalizeOrigin(env.OPENCLAW_SUPABASE_URL);
   const claims = decodeJwtClaims(env.OPENCLAW_SUPABASE_ANON_KEY);
-  const userDataPath = readUserDataArgument(argv);
-
+  const argumentUserDataPath = readUserDataArgument(argv);
+  const nativeUserDataPath = normalizeUserDataPath(nativeSwitches.userDataDir);
   if (
-    apiOrigin !== STAGING_API_ORIGIN
-    || marketingOrigin !== STAGING_API_ORIGIN
-    || env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED !== 'true'
-    || supabaseOrigin !== STAGING_SUPABASE_ORIGIN
+    argumentUserDataPath
+    && nativeUserDataPath
+    && argumentUserDataPath.toLowerCase() !== nativeUserDataPath.toLowerCase()
   ) {
-    throw new Error('Customer Marketing staging profile endpoints are invalid.');
+    throw new Error('Desktop runtime profile userData selectors conflict.');
+  }
+  const userDataPath = nativeUserDataPath ?? argumentUserDataPath;
+  const recorderPortValue = nativeSwitches.marketingRecorderPort?.trim() || null;
+  const recorderPort = recorderPortValue ? Number(recorderPortValue) : null;
+
+  if (apiOrigin !== STAGING_API_ORIGIN) {
+    throw new Error('Customer Marketing staging profile API origin is invalid.');
+  }
+  if (marketingOrigin !== STAGING_API_ORIGIN) {
+    throw new Error('Customer Marketing staging profile Marketing API origin is invalid.');
+  }
+  if (env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED !== 'true') {
+    throw new Error('Customer Marketing staging profile bridge flag is invalid.');
+  }
+  if (supabaseOrigin !== STAGING_SUPABASE_ORIGIN) {
+    throw new Error('Customer Marketing staging profile Supabase origin is invalid.');
   }
   if (claims?.role !== 'anon' || claims.ref !== STAGING_SUPABASE_REF) {
     throw new Error('Customer Marketing staging profile requires the reviewed Supabase anon client.');
@@ -85,14 +136,21 @@ export function resolveDesktopRuntimeProfile(
   if (!userDataPath || path.basename(userDataPath) !== STAGING_USER_DATA_DIRECTORY) {
     throw new Error('Customer Marketing staging profile requires isolated userData.');
   }
+  if (
+    recorderPortValue
+    && (!Number.isInteger(recorderPort) || recorderPort! < 1_024 || recorderPort! > 65_535)
+  ) {
+    throw new Error('Customer Marketing staging profile recorder port is invalid.');
+  }
 
   return {
     id: CUSTOMER_MARKETING_STAGING_PROFILE_ID,
     customerMarketingStaging: true,
+    marketingApiBaseUrl: recorderPort ? `http://127.0.0.1:${recorderPort}` : STAGING_API_ORIGIN,
+    userDataPath,
+    singleInstanceLock: false,
     registerProtocol: false,
     updaterEnabled: false,
     googleOAuthEnabled: false,
   };
 }
-
-export const DESKTOP_RUNTIME_PROFILE = resolveDesktopRuntimeProfile();
