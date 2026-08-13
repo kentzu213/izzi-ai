@@ -1,44 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   isCustomerMarketingIntegrationProvider,
-  type CustomerMarketingIntegrationProvider,
 } from '../../shared/customer-marketing-credential-types';
-
-export type CustomerMarketingConnectorOperation =
-  | 'health'
-  | 'revoke'
-  | 'private_sandbox_send';
-
-export type CustomerMarketingConnectorOperationOutcome =
-  | 'ready'
-  | 'unavailable'
-  | 'revoked'
-  | 'not_found'
-  | 'performed'
-  | 'unknown'
-  | 'not_performed';
-
-export interface CustomerMarketingConnectorOperationInput {
-  provider: CustomerMarketingIntegrationProvider;
-  operation: CustomerMarketingConnectorOperation;
-  outcome: CustomerMarketingConnectorOperationOutcome;
-  occurredAt: string;
-  externalActionPerformed: boolean;
-  sourceReceiptDigest: string | null;
-}
-
-export interface CustomerMarketingConnectorOperationReceipt
-extends CustomerMarketingConnectorOperationInput {
-  id: string;
-  stateRevision: number;
-  receiptDigest: string;
-}
-
-export interface CustomerMarketingConnectorOperationSnapshot {
-  status: 'ready' | 'unavailable';
-  revision: number;
-  receipts: CustomerMarketingConnectorOperationReceipt[];
-}
+import type {
+  CustomerMarketingConnectorOperation,
+  CustomerMarketingConnectorOperationInput,
+  CustomerMarketingConnectorOperationOutcome,
+  CustomerMarketingConnectorOperationReceipt,
+  CustomerMarketingConnectorOperationSnapshot,
+} from '../../shared/customer-marketing-connector-operation-types';
 
 interface ConnectorOperationSettings {
   getSetting(key: string): string | null;
@@ -78,7 +48,7 @@ export function parseCustomerMarketingConnectorOperationInput(
     || typeof value.outcome !== 'string'
     || !OUTCOMES.has(value.outcome as CustomerMarketingConnectorOperationOutcome)
     || !isCanonicalIsoTimestamp(value.occurredAt)
-    || typeof value.externalActionPerformed !== 'boolean'
+    || (typeof value.externalActionPerformed !== 'boolean' && value.externalActionPerformed !== null)
     || (value.sourceReceiptDigest !== null
       && (typeof value.sourceReceiptDigest !== 'string'
         || !SHA256_PATTERN.test(value.sourceReceiptDigest)))) return null;
@@ -86,7 +56,9 @@ export function parseCustomerMarketingConnectorOperationInput(
   const operation = value.operation as CustomerMarketingConnectorOperation;
   const outcome = value.outcome as CustomerMarketingConnectorOperationOutcome;
   if (!validOperationOutcome(operation, outcome, value.externalActionPerformed)) return null;
-  if (operation === 'private_sandbox_send' && value.sourceReceiptDigest === null) return null;
+  if (operation === 'private_sandbox_send'
+    && outcome === 'performed'
+    && value.sourceReceiptDigest === null) return null;
   if (operation !== 'private_sandbox_send' && value.sourceReceiptDigest !== null) return null;
   return value as unknown as CustomerMarketingConnectorOperationInput;
 }
@@ -229,7 +201,7 @@ function validReceipt(value: unknown): value is CustomerMarketingConnectorOperat
 function validOperationOutcome(
   operation: CustomerMarketingConnectorOperation,
   outcome: CustomerMarketingConnectorOperationOutcome,
-  externalActionPerformed: boolean,
+  externalActionPerformed: boolean | null,
 ): boolean {
   if (operation === 'health') {
     return !externalActionPerformed && (outcome === 'ready' || outcome === 'unavailable');
@@ -237,8 +209,9 @@ function validOperationOutcome(
   if (operation === 'revoke') {
     return !externalActionPerformed && (outcome === 'revoked' || outcome === 'not_found');
   }
-  return (outcome === 'performed') === externalActionPerformed
-    && ['performed', 'unknown', 'not_performed'].includes(outcome);
+  if (outcome === 'performed') return externalActionPerformed === true;
+  if (outcome === 'unknown') return externalActionPerformed === null;
+  return outcome === 'not_performed' && externalActionPerformed === false;
 }
 
 function hashWorkspaceId(workspaceId: string): string {

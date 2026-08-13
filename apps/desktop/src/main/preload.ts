@@ -88,6 +88,11 @@ import type {
   CustomerMarketingCredentialRevokeResult,
 } from '../shared/customer-marketing-credential-types';
 import type {
+  CustomerMarketingConnectorHealthInput,
+  CustomerMarketingConnectorHealthResult,
+  CustomerMarketingConnectorOperationListResult,
+} from '../shared/customer-marketing-connector-operation-types';
+import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramCanaryCandidateRequest,
   CustomerMarketingTelegramCanaryCandidateResult,
@@ -593,6 +598,12 @@ const electronAPI = {
       input: CustomerMarketingCredentialRevokeInput,
     ): Promise<CustomerMarketingCredentialRevokeResult> =>
       ipcRenderer.invoke('customerMarketing:revokeIntegrationCredential', input),
+    listConnectorOperations: (): Promise<CustomerMarketingConnectorOperationListResult> =>
+      ipcRenderer.invoke('customerMarketing:listConnectorOperations'),
+    checkIntegrationHealth: (
+      input: CustomerMarketingConnectorHealthInput,
+    ): Promise<CustomerMarketingConnectorHealthResult> =>
+      ipcRenderer.invoke('customerMarketing:checkIntegrationHealth', input),
     getCanaryReadiness: (): Promise<CustomerMarketingCanaryReadinessResult> =>
       ipcRenderer.invoke('customerMarketing:getCanaryReadiness'),
     configureTelegramSandbox: (

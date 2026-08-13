@@ -48,6 +48,11 @@ import type {
 } from '../../shared/customer-marketing-credential-types';
 import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/customer-marketing-credential-types';
 import {
+  parseCustomerMarketingConnectorProviderInput,
+  type CustomerMarketingConnectorHealthResult,
+  type CustomerMarketingConnectorOperationListResult,
+} from '../../shared/customer-marketing-connector-operation-types';
+import {
   parseCustomerMarketingTelegramCanaryEnableRequest,
   parseCustomerMarketingTelegramCanaryRollbackRequest,
   parseCustomerMarketingTelegramCanarySendRequest,
@@ -229,6 +234,25 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingCredentialRevokeInput(payload);
     if (!parsed) throw new Error('Payload thu hồi credential không hợp lệ.');
     return service.revokeIntegrationCredential(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:listConnectorOperations', async (
+    event,
+    payload?: unknown,
+  ): Promise<CustomerMarketingConnectorOperationListResult> => {
+    trusted(event);
+    if (payload !== undefined) throw new Error('Payload connector operation không được phép.');
+    return service.listConnectorOperations();
+  });
+
+  ipcMain.handle('customerMarketing:checkIntegrationHealth', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingConnectorHealthResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingConnectorProviderInput(payload);
+    if (!parsed) throw new Error('Payload connector health không hợp lệ.');
+    return service.checkIntegrationHealth(parsed);
   });
 
   ipcMain.handle('customerMarketing:getCanaryReadiness', async (

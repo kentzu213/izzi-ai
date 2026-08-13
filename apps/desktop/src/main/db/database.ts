@@ -208,6 +208,10 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM settings WHERE key = ?').run(key);
   }
 
+  withSettingsTransaction<T>(operation: () => T): T {
+    return this.db.transaction(operation)();
+  }
+
   cacheUserData(id: string, type: string, data: object): void {
     const now = new Date().toISOString();
     this.db

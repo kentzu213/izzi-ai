@@ -52,6 +52,20 @@ function serviceMock() {
       revoked: true,
       credential: { provider: input.provider, state: 'disconnected', updatedAt: null },
     })),
+    listConnectorOperations: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      revision: 1,
+      receipts: [],
+    })),
+    checkIntegrationHealth: vi.fn(async (input) => ({
+      ok: true,
+      status: 'synced',
+      provider: input.provider,
+      health: 'ready',
+      operationsRevision: 2,
+      operationReceipt: null,
+    })),
     getCanaryReadiness: vi.fn(async () => ({
       ok: true,
       status: 'synced',
@@ -913,6 +927,63 @@ describe('customer marketing CMR-401 credential IPC', () => {
     await expect(revoke!(event('http://localhost:9999/customer-marketing'), { provider: 'x' }))
       .rejects.toThrow('Customer Marketing IPC sender');
     expect(service.revokeIntegrationCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-232 connector operation IPC', () => {
+  it('lists redacted receipts without accepting renderer-controlled scope', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const list = electronMocks.handlers.get('customerMarketing:listConnectorOperations');
+
+    await expect(list!(event())).resolves.toMatchObject({ ok: true, revision: 1 });
+    for (const payload of [
+      { workspaceId: 'renderer-controlled' },
+      { revision: 9 },
+      { token: 'renderer-token' },
+    ]) {
+      await expect(list!(event(), payload)).rejects.toThrow('Payload connector operation');
+    }
+    expect(service.listConnectorOperations).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes only the allowlisted provider to local health and rejects injected fields', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const health = electronMocks.handlers.get('customerMarketing:checkIntegrationHealth');
+
+    await expect(health!(event(), { provider: 'telegram' })).resolves.toMatchObject({
+      ok: true,
+      provider: 'telegram',
+      health: 'ready',
+    });
+    expect(service.checkIntegrationHealth).toHaveBeenCalledWith({ provider: 'telegram' });
+    for (const payload of [
+      { provider: 'telegram', workspaceId: 'renderer-controlled' },
+      { provider: 'telegram', token: 'renderer-token' },
+      { provider: 'telegram', chatId: '-1001234567890' },
+      { provider: 'telegram', url: 'https://attacker.example' },
+      { provider: 'unknown' },
+    ]) {
+      await expect(health!(event(), payload)).rejects.toThrow('Payload connector health');
+    }
+    expect(service.checkIntegrationHealth).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects untrusted renderers and exposes no generic connector execution channel', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const list = electronMocks.handlers.get('customerMarketing:listConnectorOperations');
+    const health = electronMocks.handlers.get('customerMarketing:checkIntegrationHealth');
+    const untrusted = event('https://attacker.example/customer-marketing');
+
+    await expect(list!(untrusted)).rejects.toThrow('Customer Marketing IPC sender');
+    await expect(health!(untrusted, { provider: 'x' }))
+      .rejects.toThrow('Customer Marketing IPC sender');
+    expect(service.listConnectorOperations).not.toHaveBeenCalled();
+    expect(service.checkIntegrationHealth).not.toHaveBeenCalled();
+    expect(electronMocks.handlers.has('customerMarketing:executeConnector')).toBe(false);
+    expect(electronMocks.handlers.has('customerMarketing:executeConnectorOperation')).toBe(false);
   });
 });
 

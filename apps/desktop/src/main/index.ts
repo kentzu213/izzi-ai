@@ -60,6 +60,7 @@ import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
+import { CustomerMarketingConnectorOperationStore } from './customer-marketing/customer-marketing-connector-operation-store';
 import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryController } from './customer-marketing/customer-marketing-canary-controller';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing/customer-marketing-canary-named-approval';
@@ -529,6 +530,7 @@ function setupIPC() {
   app.on('before-quit', () => customerVideoStudio.killAll());
   const customerMarketingWorkspaceClient = new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
+  const customerMarketingConnectorOperationStore = new CustomerMarketingConnectorOperationStore(dbManager);
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
   const customerMarketingCanaryNamedApprovalStore = new CustomerMarketingCanaryNamedApprovalStore(dbManager);
@@ -687,6 +689,7 @@ function setupIPC() {
         };
       },
     },
+    customerMarketingConnectorOperationStore,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

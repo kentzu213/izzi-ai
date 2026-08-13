@@ -52,6 +52,7 @@ import type { CustomerMarketingCredentialVault } from './customer-marketing-cred
 import type { CustomerMarketingSafeStorage } from './customer-marketing-credential-vault';
 import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing-canary-named-approval';
+import { CustomerMarketingConnectorOperationStore } from './customer-marketing-connector-operation-store';
 import { CustomerMarketingTelegramCanarySendCoordinator } from './customer-marketing-telegram-canary-send';
 import type { CustomerMarketingTelegramCanarySendRuntime } from './customer-marketing-service';
 import type {
@@ -75,6 +76,17 @@ class MemorySettings {
 
   deleteSetting(key: string): void {
     this.values.delete(key);
+  }
+
+  withSettingsTransaction<T>(operation: () => T): T {
+    const before = new Map(this.values);
+    try {
+      return operation();
+    } catch (error) {
+      this.values.clear();
+      before.forEach((value, key) => this.values.set(key, value));
+      throw error;
+    }
   }
 
   updateOnlyRecord(patch: Record<string, unknown>): void {
@@ -611,6 +623,7 @@ function setup(options?: {
     canaryNamedApprovalStore?: CustomerMarketingCanaryNamedApprovalStore;
     canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator;
     telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime;
+    connectorOperationStore?: CustomerMarketingConnectorOperationStore;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -640,6 +653,7 @@ function setup(options?: {
     options?.canaryController,
     options?.canarySendCoordinator,
     options?.telegramCanarySendRuntime,
+    options?.connectorOperationStore,
   );
   return {
     db,
@@ -5043,6 +5057,55 @@ describe('CustomerMarketingService CMR-306 workflow bridge', () => {
     expect(JSON.stringify(result)).not.toContain('token');
   });
 
+  it('returns durable redacted connector operations for the authoritative workspace', async () => {
+    const remote = marketingResourceGateway('viewer');
+    const operations = new CustomerMarketingConnectorOperationStore(new MemorySettings());
+    operations.record(remote.workspace.id, 0, {
+      provider: 'telegram', operation: 'health', outcome: 'ready',
+      occurredAt: '2026-08-13T09:00:00.000Z', externalActionPerformed: false,
+      sourceReceiptDigest: null,
+    });
+    const context = setup({ workspaceGateway: remote.gateway, connectorOperationStore: operations });
+
+    await expect(context.service.listConnectorOperations()).resolves.toMatchObject({
+      ok: true,
+      status: 'synced',
+      revision: 1,
+      receipts: [{ provider: 'telegram', operation: 'health', outcome: 'ready' }],
+    });
+  });
+
+  it('records local vault health without reading credential material', async () => {
+    const remote = marketingResourceGateway('manager');
+    const getCredential = vi.fn();
+    const listStatuses = vi.fn(() => ({
+      vaultState: 'ready' as const,
+      credentials: [{ provider: 'x' as const, state: 'connected' as const, updatedAt: null }],
+    }));
+    const operations = new CustomerMarketingConnectorOperationStore(
+      new MemorySettings(), () => 'connector-health-x-0001',
+    );
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn(), getCredential } as never,
+      connectorOperationStore: operations,
+    });
+
+    const result = await context.service.checkIntegrationHealth({ provider: 'x' });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'synced',
+      provider: 'x',
+      health: 'ready',
+      operationsRevision: 1,
+      operationReceipt: { operation: 'health', outcome: 'ready', externalActionPerformed: false },
+    });
+    expect(listStatuses).toHaveBeenCalledWith(remote.workspace.id);
+    expect(getCredential).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
   it.each(['owner', 'manager'] as CustomerRole[])('allows %s to revoke a workspace credential', async (role) => {
     const remote = marketingResourceGateway(role);
     const revokeCredential = vi.fn((workspaceId: string, provider: string) => {
@@ -5050,23 +5113,63 @@ describe('CustomerMarketingService CMR-306 workflow bridge', () => {
       expect(provider).toBe('facebook');
       return true;
     });
+    const operations = new CustomerMarketingConnectorOperationStore(
+      new MemorySettings(), () => 'connector-revoke-facebook-0001',
+    );
     const context = setup({
       workspaceGateway: remote.gateway,
       credentialVault: {
         listStatuses: vi.fn(),
         revokeCredential,
       },
+      connectorOperationStore: operations,
     });
 
     await expect(context.service.revokeIntegrationCredential({ provider: 'facebook' }))
-      .resolves.toEqual({
+      .resolves.toMatchObject({
         ok: true,
         status: 'synced',
         provider: 'facebook',
         revoked: true,
         credential: { provider: 'facebook', state: 'disconnected', updatedAt: null },
+        operationsRevision: 1,
+        operationReceipt: { operation: 'revoke', outcome: 'revoked', externalActionPerformed: false },
       });
     expect(revokeCredential).toHaveBeenCalledWith(remote.workspace.id, 'facebook');
+  });
+
+  it('records not-found revoke evidence without claiming removal', async () => {
+    const remote = marketingResourceGateway('owner');
+    const operations = new CustomerMarketingConnectorOperationStore(new MemorySettings());
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses: vi.fn(), revokeCredential: vi.fn(() => false) },
+      connectorOperationStore: operations,
+    });
+
+    await expect(context.service.revokeIntegrationCredential({ provider: 'youtube' }))
+      .resolves.toMatchObject({
+        ok: true,
+        revoked: false,
+        operationsRevision: 1,
+        operationReceipt: { outcome: 'not_found' },
+      });
+  });
+
+  it('fails before touching the vault when operation evidence is unavailable', async () => {
+    const remote = marketingResourceGateway('owner');
+    const revokeCredential = vi.fn();
+    const settings = new MemorySettings();
+    settings.getSetting = () => { throw new Error('disk unavailable'); };
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses: vi.fn(), revokeCredential },
+      connectorOperationStore: new CustomerMarketingConnectorOperationStore(settings),
+    });
+
+    await expect(context.service.revokeIntegrationCredential({ provider: 'facebook' }))
+      .resolves.toMatchObject({ ok: false, status: 'unavailable', revoked: false });
+    expect(revokeCredential).not.toHaveBeenCalled();
   });
 
   it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])('denies %s from revoking credentials', async (role) => {
@@ -5975,6 +6078,9 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       new MemorySettings(), () => fixedNow, () => 'approval-send-1',
     );
     const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    const connectorOperationStore = new CustomerMarketingConnectorOperationStore(
+      new MemorySettings(), () => 'connector-send-telegram-0001',
+    );
     const context = setup({
       workspaceGateway: remote.gateway,
       telegramSandboxConfig: {
@@ -5988,6 +6094,7 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
         id: () => 'canary-send-attempt-1',
       }),
       telegramCanarySendRuntime: runtime,
+      connectorOperationStore,
     });
     const prepared = await context.service.prepareMarketingWorkflow({
       target: 'social', resourceId: remote.resource.id, expectedRevision: remote.resource.revision,
@@ -6016,7 +6123,7 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       expectedRevision: candidate.expectedRevision,
       expectedStateRevision: 1,
     };
-    return { context, remote, controller, candidate, request };
+    return { context, remote, controller, candidate, request, connectorOperationStore };
   }
 
   it.each(['owner', 'manager'] as CustomerRole[])(
@@ -6041,6 +6148,14 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       });
       expect(JSON.stringify(first)).not.toContain(privateSandboxChatId);
       expect(JSON.stringify(first)).not.toContain(current.candidate.text);
+      expect(current.connectorOperationStore.snapshot(current.remote.workspace.id)).toMatchObject({
+        revision: 1,
+        receipts: [{
+          provider: 'telegram', operation: 'private_sandbox_send', outcome: 'performed',
+          externalActionPerformed: true,
+          sourceReceiptDigest: first.receipt?.receiptDigest,
+        }],
+      });
       expect(replay).toMatchObject({
         ok: false, outcome: 'not_performed', externalActionPerformed: false,
         detail: 'attempt-already-consumed',
@@ -6057,6 +6172,48 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       }));
     },
   );
+
+  it('persists unknown send evidence and never exposes private payload data', async () => {
+    const current = await enabledContext('owner', {
+      confirm: vi.fn(async () => true),
+      execute: vi.fn(async () => ({ outcome: 'unknown' as const, detail: 'external-outcome-unknown' })),
+    });
+
+    const result = await current.context.service.sendTelegramCanary(current.request);
+    const operation = current.connectorOperationStore.snapshot(current.remote.workspace.id);
+
+    expect(result).toMatchObject({ outcome: 'unknown', externalActionPerformed: null });
+    expect(operation).toMatchObject({
+      revision: 1,
+      receipts: [{
+        operation: 'private_sandbox_send', outcome: 'unknown', externalActionPerformed: null,
+        sourceReceiptDigest: result.receipt?.receiptDigest,
+      }],
+    });
+    expect(JSON.stringify(operation)).not.toContain(privateSandboxChatId);
+    expect(JSON.stringify(operation)).not.toContain(current.candidate.text);
+  });
+
+  it('reports an unknown result and blocks replay when final receipt persistence fails', async () => {
+    const current = await enabledContext('owner', {
+      confirm: vi.fn(async () => true),
+      execute: vi.fn(async () => ({ outcome: 'performed' as const })),
+    });
+    const record = vi.spyOn(current.connectorOperationStore, 'record')
+      .mockImplementation(() => { throw new Error('disk unavailable'); });
+
+    const first = await current.context.service.sendTelegramCanary(current.request);
+    const replay = await current.context.service.sendTelegramCanary(current.request);
+
+    expect(first).toMatchObject({
+      ok: false,
+      outcome: 'unknown',
+      externalActionPerformed: null,
+      detail: 'operation-receipt-unavailable',
+    });
+    expect(replay).toMatchObject({ detail: 'attempt-already-consumed' });
+    expect(record).toHaveBeenCalledTimes(1);
+  });
 
   it('cancels in the main-owned confirmation before runtime execute', async () => {
     const confirm = vi.fn(async () => false);

@@ -53,6 +53,11 @@ import type {
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
 import type {
+  CustomerMarketingConnectorHealthInput,
+  CustomerMarketingConnectorHealthResult,
+  CustomerMarketingConnectorOperationListResult,
+} from '../../shared/customer-marketing-connector-operation-types';
+import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramCanaryCandidateRequest,
   CustomerMarketingTelegramCanaryCandidateResult,
@@ -208,6 +213,10 @@ declare global {
     revokeIntegrationCredential: (
       input: CustomerMarketingCredentialRevokeInput,
     ) => Promise<CustomerMarketingCredentialRevokeResult>;
+    listConnectorOperations: () => Promise<CustomerMarketingConnectorOperationListResult>;
+    checkIntegrationHealth: (
+      input: CustomerMarketingConnectorHealthInput,
+    ) => Promise<CustomerMarketingConnectorHealthResult>;
     getCanaryReadiness: () => Promise<CustomerMarketingCanaryReadinessResult>;
     configureTelegramSandbox: (
       input: CustomerMarketingTelegramSandboxSetupInput,

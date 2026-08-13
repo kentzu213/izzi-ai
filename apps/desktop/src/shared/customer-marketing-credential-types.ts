@@ -1,4 +1,5 @@
 import type { CustomerMarketingBridgeStatus } from './customer-marketing-types';
+import type { CustomerMarketingConnectorOperationReceipt } from './customer-marketing-connector-operation-types';
 
 export const CUSTOMER_MARKETING_INTEGRATION_PROVIDERS = [
   'facebook',
@@ -47,6 +48,8 @@ export interface CustomerMarketingCredentialRevokeResult {
   provider: CustomerMarketingIntegrationProvider;
   revoked: boolean;
   credential: CustomerMarketingCredentialStatus | null;
+  operationsRevision?: number;
+  operationReceipt?: CustomerMarketingConnectorOperationReceipt;
   error?: string;
 }
 

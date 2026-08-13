@@ -126,6 +126,13 @@ import type {
   CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
 import type {
+  CustomerMarketingConnectorHealthInput,
+  CustomerMarketingConnectorHealthResult,
+  CustomerMarketingConnectorOperationListResult,
+  CustomerMarketingConnectorOperationReceipt,
+} from '../../shared/customer-marketing-connector-operation-types';
+import type { CustomerMarketingConnectorOperationStore } from './customer-marketing-connector-operation-store';
+import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramSandboxSetupInput,
   CustomerMarketingTelegramSandboxSetupResult,
@@ -1170,7 +1177,10 @@ export class CustomerMarketingService {
   private readonly productMarketingAuthorityKey = randomUUID();
 
   constructor(
-    private readonly db: Pick<DatabaseManager, 'getSetting' | 'setSetting' | 'deleteSetting'>,
+    private readonly db: Pick<
+      DatabaseManager,
+      'getSetting' | 'setSetting' | 'deleteSetting' | 'withSettingsTransaction'
+    >,
     private readonly getIdentity: () => CustomerIdentity | null,
     private readonly getRuntimeExtensions: () => CustomerRuntimeExtension[] = () => [],
     private readonly runDirector: (payload: IzziAgentChatPayload) => Promise<IzziAgentChatResult> = async () => ({
@@ -1212,6 +1222,7 @@ export class CustomerMarketingService {
     >,
     private readonly canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator,
     private readonly telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime,
+    private readonly connectorOperationStore?: CustomerMarketingConnectorOperationStore,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1839,6 +1850,87 @@ export class CustomerMarketingService {
     }
   }
 
+  async listConnectorOperations(): Promise<CustomerMarketingConnectorOperationListResult> {
+    const authority = await this.resolveMarketingResourceAuthority();
+    if (authority.status !== 'synced') {
+      return {
+        ok: false,
+        status: authority.status,
+        revision: 0,
+        receipts: [],
+        error: authority.error,
+      };
+    }
+    if (!this.connectorOperationStore) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        revision: 0,
+        receipts: [],
+        error: 'Nhật ký vận hành connector chưa sẵn sàng.',
+      };
+    }
+    const snapshot = this.connectorOperationStore.snapshot(authority.workspace.id);
+    return snapshot.status === 'ready'
+      ? { ok: true, status: 'synced', revision: snapshot.revision, receipts: snapshot.receipts }
+      : {
+        ok: false,
+        status: 'unavailable',
+        revision: 0,
+        receipts: [],
+        error: 'Không thể xác minh nhật ký vận hành connector.',
+      };
+  }
+
+  async checkIntegrationHealth(
+    input: CustomerMarketingConnectorHealthInput,
+  ): Promise<CustomerMarketingConnectorHealthResult> {
+    const authority = await this.resolveMarketingResourceAuthority();
+    const unavailable = (error: string): CustomerMarketingConnectorHealthResult => ({
+      ok: false,
+      status: authority.status === 'synced' ? 'unavailable' : authority.status,
+      provider: input.provider,
+      health: 'unavailable',
+      operationsRevision: 0,
+      operationReceipt: null,
+      error,
+    });
+    if (authority.status !== 'synced') return unavailable(authority.error);
+    if (!this.credentialVault || !this.connectorOperationStore) {
+      return unavailable('Connector health chưa sẵn sàng.');
+    }
+    const operations = this.connectorOperationStore.snapshot(authority.workspace.id);
+    if (operations.status !== 'ready') return unavailable('Nhật ký vận hành connector không khả dụng.');
+    try {
+      const vault = this.credentialVault.listStatuses(authority.workspace.id);
+      const credential = vault.credentials.find((item) => item.provider === input.provider);
+      const health = vault.vaultState === 'ready' && credential?.state === 'connected'
+        ? 'ready' as const : 'unavailable' as const;
+      const receipt = this.connectorOperationStore.record(
+        authority.workspace.id,
+        operations.revision,
+        {
+          provider: input.provider,
+          operation: 'health',
+          outcome: health,
+          occurredAt: new Date().toISOString(),
+          externalActionPerformed: false,
+          sourceReceiptDigest: null,
+        },
+      );
+      return {
+        ok: true,
+        status: 'synced',
+        provider: input.provider,
+        health,
+        operationsRevision: receipt.stateRevision,
+        operationReceipt: receipt,
+      };
+    } catch {
+      return unavailable('Không thể ghi nhận trạng thái connector.');
+    }
+  }
+
   async revokeIntegrationCredential(
     input: CustomerMarketingCredentialRevokeInput,
   ): Promise<CustomerMarketingCredentialRevokeResult> {
@@ -1863,17 +1955,55 @@ export class CustomerMarketingService {
         error: 'Kho thông tin xác thực chưa sẵn sàng.',
       };
     }
+    let operationSnapshot: ReturnType<CustomerMarketingConnectorOperationStore['snapshot']> | null = null;
+    if (this.connectorOperationStore) {
+      operationSnapshot = this.connectorOperationStore.snapshot(authority.workspace.id);
+      if (operationSnapshot.status !== 'ready') {
+        return {
+          ok: false,
+          status: 'unavailable',
+          provider: input.provider,
+          revoked: false,
+          credential: null,
+          error: 'Nhật ký vận hành connector không khả dụng.',
+        };
+      }
+    }
     try {
-      const revoked = this.credentialVault.revokeCredential(
-        authority.workspace.id,
-        input.provider,
-      );
+      let revoked = false;
+      let operationReceipt: CustomerMarketingConnectorOperationReceipt | undefined;
+      this.db.withSettingsTransaction(() => {
+        revoked = this.credentialVault!.revokeCredential(
+          authority.workspace.id,
+          input.provider,
+        );
+        if (this.connectorOperationStore && operationSnapshot?.status === 'ready') {
+          operationReceipt = this.connectorOperationStore.record(
+            authority.workspace.id,
+            operationSnapshot.revision,
+            {
+              provider: input.provider,
+              operation: 'revoke',
+              outcome: revoked ? 'revoked' : 'not_found',
+              occurredAt: new Date().toISOString(),
+              externalActionPerformed: false,
+              sourceReceiptDigest: null,
+            },
+          );
+        }
+      });
       return {
         ok: true,
         status: 'synced',
         provider: input.provider,
         revoked,
         credential: { provider: input.provider, state: 'disconnected', updatedAt: null },
+        ...(operationReceipt
+          ? {
+            operationsRevision: operationReceipt.stateRevision,
+            operationReceipt,
+          }
+          : {}),
       };
     } catch {
       return {
@@ -2384,6 +2514,42 @@ export class CustomerMarketingService {
     const externalActionPerformed = coordinated.outcome === 'performed'
       ? true
       : coordinated.outcome === 'unknown' ? null : false;
+    if (this.connectorOperationStore && coordinated.receipt) {
+      const operations = this.connectorOperationStore.snapshot(authority.workspace.id);
+      if (operations.status !== 'ready') {
+        return {
+          ok: false,
+          status: 'conflict',
+          outcome: 'unknown',
+          controlPlane,
+          receipt: coordinated.receipt,
+          detail: 'operation-receipt-unavailable',
+          externalActionPerformed: null,
+          error: 'Không lưu được bằng chứng vận hành; không thử lại và hãy kiểm tra Telegram thủ công.',
+        };
+      }
+      try {
+        this.connectorOperationStore.record(authority.workspace.id, operations.revision, {
+          provider: 'telegram',
+          operation: 'private_sandbox_send',
+          outcome: coordinated.outcome,
+          occurredAt: coordinated.receipt.createdAt,
+          externalActionPerformed,
+          sourceReceiptDigest: coordinated.receipt.receiptDigest,
+        });
+      } catch {
+        return {
+          ok: false,
+          status: 'conflict',
+          outcome: 'unknown',
+          controlPlane,
+          receipt: coordinated.receipt,
+          detail: 'operation-receipt-unavailable',
+          externalActionPerformed: null,
+          error: 'Không lưu được bằng chứng vận hành; không thử lại và hãy kiểm tra Telegram thủ công.',
+        };
+      }
+    }
     return {
       ...coordinated,
       status: coordinated.outcome === 'performed' ? 'synced' : 'conflict',
