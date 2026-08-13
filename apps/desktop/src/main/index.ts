@@ -100,12 +100,15 @@ import {
 } from './customer-marketing/commercial-voice-license';
 import { createStreamCollector } from '../shared/agent-turn-events';
 import { APP_ID, APP_NAME } from '../shared/app-branding';
+import { installMainProcessOutputSafety } from './main-process-output-safety';
 import type { CustomerWorkspaceInvitationAcceptanceResult } from '../shared/customer-marketing-types';
 import type { LiveProfile } from '../shared/memory-trace/live-profile';
 
 // Live.md is workspace-scoped rather than session-scoped: it outlives any one
 // chat, so its trace units share one boundary.
 const LIVE_PROFILE_BOUNDARY_ID = 'workspace:local';
+
+installMainProcessOutputSafety({ stdout: process.stdout, stderr: process.stderr });
 
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
