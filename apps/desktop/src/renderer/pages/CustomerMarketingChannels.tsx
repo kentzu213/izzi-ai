@@ -19,6 +19,7 @@ import type {
   CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
   CustomerMarketingTelegramCanaryRollbackResult,
+  CustomerMarketingTelegramCanarySendResult,
 } from '../../shared/customer-marketing-canary-types';
 import { CloseIcon, ContentIcon, RefreshIcon, ReviewIcon, StatusIcon } from '../components/AppIcons';
 
@@ -136,6 +137,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramRollbackBusy, setTelegramRollbackBusy] = useState(false);
   const [telegramRollbackError, setTelegramRollbackError] = useState('');
   const [telegramRollbackAnnouncement, setTelegramRollbackAnnouncement] = useState('');
+  const [telegramSendResult, setTelegramSendResult] = useState<CustomerMarketingTelegramCanarySendResult | null>(null);
+  const [telegramSendBusy, setTelegramSendBusy] = useState(false);
+  const [telegramSendError, setTelegramSendError] = useState('');
+  const [telegramSendAnnouncement, setTelegramSendAnnouncement] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
@@ -143,6 +148,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const telegramApprovalReceipt = useRef<HTMLDivElement>(null);
   const telegramEnableReceiptRef = useRef<HTMLDivElement>(null);
   const telegramRollbackReceiptRef = useRef<HTMLDivElement>(null);
+  const telegramSendReceiptRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const api = window.electronAPI?.customerMarketing;
@@ -285,6 +291,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setTelegramRollbackReceipt(null);
     setTelegramRollbackError('');
     setTelegramRollbackAnnouncement('');
+    setTelegramSendResult(null);
+    setTelegramSendError('');
+    setTelegramSendAnnouncement('');
   }, [target, workflow?.workflowId, workflow?.manifestDigest]);
 
   const revokeCredential = async (provider: CustomerMarketingIntegrationProvider) => {
@@ -405,6 +414,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setTelegramRollbackReceipt(null);
     setTelegramRollbackError('');
     setTelegramRollbackAnnouncement('');
+    setTelegramSendResult(null);
+    setTelegramSendError('');
+    setTelegramSendAnnouncement('');
     try {
       const result = await api.prepareTelegramCanaryCandidate({
         workflowId: workflow.workflowId,
@@ -526,6 +538,51 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setTelegramRollbackError(reason instanceof Error ? reason.message : 'Không thể rollback Telegram canary.');
     } finally {
       setTelegramRollbackBusy(false);
+    }
+  };
+
+  const sendTelegramCanary = async () => {
+    const api = window.electronAPI?.customerMarketing;
+    const controlPlane = canaryReadiness?.controlPlane;
+    if (!api || !telegramCandidate || !controlPlane?.enabled
+      || controlPlane.killSwitch || telegramSendBusy || telegramSendResult) return;
+    setTelegramSendBusy(true);
+    setTelegramSendError('');
+    setTelegramSendAnnouncement('');
+    try {
+      const result = await api.sendTelegramCanary({
+        workflowId: telegramCandidate.workflowId,
+        manifestDigest: telegramCandidate.manifestDigest,
+        resourceDigest: telegramCandidate.resourceDigest,
+        expectedRevision: telegramCandidate.expectedRevision,
+        expectedStateRevision: controlPlane.stateRevision,
+      });
+      setTelegramSendResult(result);
+      if (result.outcome === 'performed') {
+        setTelegramSendAnnouncement('Đã gửi đúng một tin Telegram private canary.');
+      } else if (result.outcome === 'unknown') {
+        setTelegramSendError('Không xác định được kết quả. Không thử lại. Hãy rollback và kiểm tra Telegram thủ công.');
+        setTelegramSendAnnouncement('Kết quả gửi không xác định. Không được thử lại.');
+      } else {
+        setTelegramSendAnnouncement('Telegram chưa được gửi. Lần thử này đã khóa.');
+      }
+      window.requestAnimationFrame(() => telegramSendReceiptRef.current?.focus());
+    } catch (reason) {
+      setTelegramSendResult({
+        ok: false,
+        status: 'unavailable',
+        outcome: 'unknown',
+        controlPlane,
+        receipt: null,
+        detail: 'renderer-bridge-failed',
+        externalActionPerformed: null,
+        error: reason instanceof Error ? reason.message : 'Bridge gửi Telegram không phản hồi.',
+      });
+      setTelegramSendError('Không xác định được kết quả. Không thử lại. Hãy rollback và kiểm tra Telegram thủ công.');
+      setTelegramSendAnnouncement('Kết quả gửi không xác định. Không được thử lại.');
+      window.requestAnimationFrame(() => telegramSendReceiptRef.current?.focus());
+    } finally {
+      setTelegramSendBusy(false);
     }
   };
 
@@ -771,9 +828,52 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
               <small>Named approval đã consume · Chưa gửi Telegram · State r{telegramEnableReceipt.stateRevision}</small>
             </div>
           )}
+          {canaryEnabled && telegramCandidate && !telegramSendResult && (
+            <div className="cmr-telegram-send-action">
+              <small>
+                Cửa sổ xác nhận riêng sẽ mở trước khi gửi đúng một tin thật. Nếu kết quả không xác định,
+                không thử lại; hãy rollback và kiểm tra Telegram thủ công.
+              </small>
+              <button
+                type="button"
+                className="cmr-button cmr-button--danger"
+                disabled={telegramSendBusy || canaryReadiness?.controlPlane?.killSwitch}
+                onClick={() => void sendTelegramCanary()}
+              >
+                <StatusIcon className="cmr-button__icon" />
+                {telegramSendBusy ? 'Đang chờ xác nhận…' : 'Gửi đúng 1 tin private'}
+              </button>
+            </div>
+          )}
+          {telegramSendResult && (
+            <div
+              className={`cmr-telegram-send-receipt cmr-telegram-send-receipt--${telegramSendResult.outcome}`}
+              ref={telegramSendReceiptRef}
+              tabIndex={-1}
+            >
+              <div>
+                <span>{telegramSendResult.outcome === 'performed'
+                  ? 'Đã gửi đúng 1 tin'
+                  : telegramSendResult.outcome === 'unknown' ? 'Kết quả chưa xác định' : 'Chưa gửi tin'}</span>
+                {telegramSendResult.receipt && (
+                  <code title={telegramSendResult.receipt.receiptDigest}>
+                    {shortDigest(telegramSendResult.receipt.receiptDigest)}
+                  </code>
+                )}
+              </div>
+              <small>{telegramSendResult.detail}</small>
+              {telegramSendResult.outcome === 'unknown' && (
+                <strong>Không thử lại. Hãy rollback và kiểm tra Telegram thủ công.</strong>
+              )}
+            </div>
+          )}
           <div className="cmr-sr-only" role="status" aria-live="polite" aria-atomic="true">
             {telegramEnableAnnouncement}
           </div>
+          <div className="cmr-sr-only" role="status" aria-live="assertive" aria-atomic="true">
+            {telegramSendAnnouncement}
+          </div>
+          {telegramSendError && <div className="cmr-credential-error" role="alert">{telegramSendError}</div>}
           {telegramEnableError && <div className="cmr-credential-error" role="alert">{telegramEnableError}</div>}
           {telegramApprovalError && <div className="cmr-credential-error" role="alert">{telegramApprovalError}</div>}
           {telegramCandidateError && <div className="cmr-credential-error" role="alert">{telegramCandidateError}</div>}
@@ -793,7 +893,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         <div>
           <span className="cmr-eyebrow">Workflow wrappers · CMR-306</span>
           <h2>Chuẩn bị và duyệt workflow kênh</h2>
-          <p>Chỉ đọc và mô phỏng. Không publish, gửi, chi tiêu hoặc ghi CRM.</p>
+          <p>Workflow an toàn mặc định; hành động bên ngoài chỉ chạy qua xác nhận riêng.</p>
         </div>
         <div className={`cmr-channel-bridge cmr-channel-bridge--${status}`}>
           <span aria-hidden="true" />{bridgeLabel(status)}
@@ -875,7 +975,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
             <small>Gỡ binding khỏi control plane. Không gửi Telegram.</small>
             <button
               type="button"
-              className="cmr-button cmr-button--danger"
+              className="cmr-button cmr-button--quiet"
               disabled={telegramRollbackBusy}
               onClick={() => void rollbackTelegramCanary()}
             >

@@ -42,18 +42,26 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
   });
 
-  it('exposes bounded enable-only canary control without an execute or send channel', () => {
+  it('exposes bounded enable-only canary control without a generic execute channel', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:enableTelegramCanary', input)");
     expect(rendererTypesSource).toContain('enableTelegramCanary: (');
     expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
-    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram'");
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram',");
   });
 
-  it('exposes bounded rollback control without renderer-owned reason or send channel', () => {
+  it('exposes bounded rollback control without renderer-owned reason or generic send channel', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:rollbackTelegramCanary', input)");
     expect(rendererTypesSource).toContain('rollbackTelegramCanary: (');
     expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
-    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram'");
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram',");
+  });
+
+  it('exposes exactly one bounded one-shot Telegram canary send bridge', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:sendTelegramCanary', input)");
+    expect(rendererTypesSource).toContain('sendTelegramCanary: (');
+    expect(preloadSource.match(/customerMarketing:sendTelegramCanary/g)).toHaveLength(1);
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:executeCanary'");
+    expect(preloadSource).not.toContain("ipcRenderer.invoke('customerMarketing:sendTelegram',");
   });
 
   it('keeps BrandView mounted while another workspace view is active', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseCustomerMarketingTelegramCanaryEnableRequest,
   parseCustomerMarketingTelegramCanaryRollbackRequest,
+  parseCustomerMarketingTelegramCanarySendRequest,
   parseCustomerMarketingTelegramSandboxSetupInput,
 } from './customer-marketing-canary-types';
 
@@ -80,5 +81,51 @@ describe('parseCustomerMarketingTelegramCanaryRollbackRequest', () => {
     expect(parseCustomerMarketingTelegramCanaryRollbackRequest(customPrototype)).toBeNull();
     expect(parseCustomerMarketingTelegramCanaryRollbackRequest(nullPrototype))
       .toEqual({ expectedStateRevision: 1 });
+  });
+});
+
+describe('parseCustomerMarketingTelegramCanarySendRequest', () => {
+  const request = {
+    workflowId: 'cmr306-social-workflow-1',
+    manifestDigest: 'a'.repeat(64),
+    resourceDigest: 'b'.repeat(64),
+    expectedRevision: 3,
+    expectedStateRevision: 1,
+  };
+
+  it('accepts only the exact current candidate and optimistic controller revision', () => {
+    expect(parseCustomerMarketingTelegramCanarySendRequest(request)).toEqual(request);
+    [
+      null,
+      {},
+      { ...request, token: TOKEN },
+      { ...request, chatId: CHAT_ID },
+      { ...request, text: 'renderer-controlled' },
+      { ...request, reviewer: 'renderer-controlled' },
+      { ...request, confirmed: true },
+      { ...request, idempotencyKey: 'renderer-controlled' },
+      { ...request, expectedStateRevision: -1 },
+      { ...request, expectedRevision: 3.5 },
+    ].forEach((value) => expect(parseCustomerMarketingTelegramCanarySendRequest(value)).toBeNull());
+  });
+
+  it('rejects accessors, symbol keys and custom prototypes without invoking getters', () => {
+    let getterCalls = 0;
+    const accessor = Object.defineProperty({
+      workflowId: request.workflowId,
+      manifestDigest: request.manifestDigest,
+      resourceDigest: request.resourceDigest,
+      expectedRevision: request.expectedRevision,
+    }, 'expectedStateRevision', {
+      enumerable: true,
+      get: () => { getterCalls += 1; return 1; },
+    });
+    const symbolKey = { ...request, [Symbol('hidden')]: true };
+    const customPrototype = Object.assign(Object.create({ inherited: true }), request);
+
+    expect(parseCustomerMarketingTelegramCanarySendRequest(accessor)).toBeNull();
+    expect(getterCalls).toBe(0);
+    expect(parseCustomerMarketingTelegramCanarySendRequest(symbolKey)).toBeNull();
+    expect(parseCustomerMarketingTelegramCanarySendRequest(customPrototype)).toBeNull();
   });
 });

@@ -137,16 +137,23 @@ import type {
   CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryRollbackRequest,
   CustomerMarketingTelegramCanaryRollbackResult,
+  CustomerMarketingTelegramCanarySendRequest,
+  CustomerMarketingTelegramCanarySendResult,
 } from '../../shared/customer-marketing-canary-types';
 import {
   parseCustomerMarketingTelegramCanaryEnableRequest,
   parseCustomerMarketingTelegramCanaryRollbackRequest,
+  parseCustomerMarketingTelegramCanarySendRequest,
 } from '../../shared/customer-marketing-canary-types';
 import type {
   CustomerMarketingCanaryBinding,
   CustomerMarketingCanaryController,
   CustomerMarketingCanaryStatus,
 } from './customer-marketing-canary-controller';
+import {
+  CustomerMarketingTelegramCanarySendCoordinator,
+  type CustomerMarketingTelegramCanarySendCoordinatorInput,
+} from './customer-marketing-telegram-canary-send';
 import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateRequest,
@@ -241,6 +248,23 @@ type CustomerMarketingSyncedResourceAuthority = Extract<
   CustomerMarketingResourceAuthority,
   { status: 'synced' }
 >;
+
+export interface CustomerMarketingTelegramCanarySendRuntime {
+  confirm(input: CustomerMarketingTelegramCanarySendCoordinatorInput): Promise<boolean>;
+  execute(input: {
+    attemptId: string;
+    workspaceId: string;
+    workspaceHash: string;
+    role: CustomerRole;
+    plan: string;
+    candidate: NonNullable<CustomerMarketingTelegramCanaryCandidateResult['candidate']>;
+    approval: {
+      approvalId: string;
+      manifestDigest: string;
+      expiresAt: string;
+    };
+  }): Promise<{ outcome: 'performed' | 'not_performed' | 'unknown'; detail?: string }>;
+}
 
 type CustomerMarketingWorkflowResourceLoad =
   | { status: 'synced'; resource: CustomerMarketingWorkflowResource }
@@ -1184,8 +1208,10 @@ export class CustomerMarketingService {
     >,
     private readonly canaryController?: Pick<
       CustomerMarketingCanaryController,
-      'status' | 'enable' | 'rollback'
+      'status' | 'enable' | 'rollback' | 'executionGrant'
     >,
+    private readonly canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator,
+    private readonly telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -2239,6 +2265,136 @@ export class CustomerMarketingService {
     } catch {
       return unavailable('conflict', 'Không thể rollback Telegram canary.', this.canaryController.status());
     }
+  }
+
+  async sendTelegramCanary(
+    input: CustomerMarketingTelegramCanarySendRequest,
+  ): Promise<CustomerMarketingTelegramCanarySendResult> {
+    const request = parseCustomerMarketingTelegramCanarySendRequest(input);
+    const unavailable = (
+      status: CustomerMarketingTelegramCanarySendResult['status'],
+      detail: string,
+      error: string,
+      controlPlane: CustomerMarketingCanaryStatus | null = null,
+    ): CustomerMarketingTelegramCanarySendResult => ({
+      ok: false,
+      status,
+      outcome: 'not_performed',
+      controlPlane,
+      receipt: null,
+      detail,
+      externalActionPerformed: false,
+      error,
+    });
+    if (!request) return unavailable(
+      'unavailable', 'request-invalid', 'Yêu cầu gửi Telegram canary không hợp lệ.',
+    );
+    const authority = await this.authorizeMarketingWorkflow('social', MARKETING_EXTERNAL_ACTION_ROLES);
+    if (authority.status !== 'synced') {
+      return unavailable(authority.status, 'authority-denied', authority.error);
+    }
+    if (!this.canaryController || !this.canarySendCoordinator || !this.telegramCanarySendRuntime) {
+      return unavailable('unavailable', 'send-runtime-unavailable', 'Telegram send runtime chưa sẵn sàng.');
+    }
+    const initial = this.canaryController.status();
+    if (!initial.enabled
+      || initial.killSwitch
+      || initial.stateRevision !== request.expectedStateRevision
+      || !initial.bindingDigest) {
+      return unavailable(
+        'conflict', 'control-plane-conflict',
+        'Trạng thái canary đã thay đổi; hãy tải lại trước khi gửi.', initial,
+      );
+    }
+    const candidateResult = await this.prepareTelegramCanaryCandidateForAuthority({
+      workflowId: request.workflowId,
+      manifestDigest: request.manifestDigest,
+    }, authority);
+    const candidate = candidateResult.candidate;
+    if (!candidateResult.ok || !candidate
+      || candidate.resourceDigest !== request.resourceDigest
+      || candidate.expectedRevision !== request.expectedRevision) {
+      return unavailable(
+        'conflict', 'candidate-conflict',
+        'Telegram candidate đã thay đổi; hãy chuẩn bị preview mới.', this.canaryController.status(),
+      );
+    }
+    const intent = {
+      provider: 'telegram' as const,
+      operation: 'private_sandbox_send' as const,
+      manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest,
+      expectedRevision: candidate.expectedRevision,
+    };
+    if (!this.canaryController.executionGrant(intent)) {
+      return unavailable(
+        'conflict', 'binding-conflict',
+        'Canary binding không còn hợp lệ.', this.canaryController.status(),
+      );
+    }
+    const runtime = this.telegramCanarySendRuntime;
+    const workspaceHash = createHash('sha256')
+      .update(authority.workspace.id.toLowerCase(), 'utf8')
+      .digest('hex');
+    const coordinated = await this.canarySendCoordinator.send({
+      workspaceHash,
+      bindingDigest: initial.bindingDigest,
+      resourceDigest: candidate.resourceDigest,
+      text: candidate.text,
+    }, {
+      confirm: (confirmation) => runtime.confirm(confirmation),
+      execute: async ({ attemptId }) => {
+        const refreshedAuthority = await this.authorizeMarketingWorkflow(
+          'social', MARKETING_EXTERNAL_ACTION_ROLES,
+        );
+        if (refreshedAuthority.status !== 'synced'
+          || refreshedAuthority.workspace.id !== authority.workspace.id
+          || refreshedAuthority.identity.id !== authority.identity.id) {
+          return { outcome: 'not_performed', detail: 'authority-changed-after-confirmation' };
+        }
+        const refreshedCandidateResult = await this.prepareTelegramCanaryCandidateForAuthority({
+          workflowId: request.workflowId,
+          manifestDigest: request.manifestDigest,
+        }, refreshedAuthority);
+        const refreshedCandidate = refreshedCandidateResult.candidate;
+        const current = this.canaryController!.status();
+        const grant = this.canaryController!.executionGrant(intent);
+        if (!refreshedCandidateResult.ok || !refreshedCandidate
+          || refreshedCandidate.resourceDigest !== candidate.resourceDigest
+          || refreshedCandidate.expectedRevision !== candidate.expectedRevision
+          || !current.enabled
+          || current.killSwitch
+          || current.stateRevision !== request.expectedStateRevision
+          || current.bindingDigest !== initial.bindingDigest
+          || !grant) {
+          return { outcome: 'not_performed', detail: 'state-changed-after-confirmation' };
+        }
+        return runtime.execute({
+          attemptId,
+          workspaceId: refreshedAuthority.workspace.id,
+          workspaceHash,
+          role: refreshedAuthority.workspace.role,
+          plan: refreshedAuthority.workspace.plan,
+          candidate: refreshedCandidate,
+          approval: grant,
+        });
+      },
+    });
+    const controlPlane = this.canaryController.status();
+    const externalActionPerformed = coordinated.outcome === 'performed'
+      ? true
+      : coordinated.outcome === 'unknown' ? null : false;
+    return {
+      ...coordinated,
+      status: coordinated.outcome === 'performed' ? 'synced' : 'conflict',
+      controlPlane,
+      externalActionPerformed,
+      ...(coordinated.outcome === 'unknown'
+        ? { error: 'Không xác định được kết quả Telegram; không thử lại và hãy rollback canary.' }
+        : coordinated.outcome === 'not_performed'
+          ? { error: 'Telegram chưa được gửi.' }
+          : {}),
+    };
   }
 
   private async prepareTelegramCanaryCandidateForAuthority(

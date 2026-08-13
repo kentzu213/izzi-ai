@@ -60,16 +60,23 @@ describe('Customer Marketing canary controller', () => {
   it('enables exactly one binding and authorizes only an exact matching intent', () => {
     const controller = new CustomerMarketingCanaryController(() => NOW);
     const receipt = controller.enable(binding, 0);
-
-    expect(receipt).toMatchObject({ action: 'enabled', stateRevision: 1, externalActionPerformed: false });
-    expect(receipt.receiptDigest).toMatch(/^[a-f0-9]{64}$/);
-    expect(controller.authorize({
-      provider: 'telegram',
-      operation: 'private_sandbox_send',
+    const intent = {
+      provider: 'telegram' as const,
+      operation: 'private_sandbox_send' as const,
       manifestDigest: MANIFEST_DIGEST,
       resourceDigest: RESOURCE_DIGEST,
       expectedRevision: 2,
-    })).toMatchObject({ authorized: true, reason: 'canary-authorized', externalActionPerformed: false });
+    };
+
+    expect(receipt).toMatchObject({ action: 'enabled', stateRevision: 1, externalActionPerformed: false });
+    expect(receipt.receiptDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(controller.authorize(intent))
+      .toMatchObject({ authorized: true, reason: 'canary-authorized', externalActionPerformed: false });
+    expect(controller.executionGrant(intent)).toEqual({
+      approvalId: binding.approval.approvalId,
+      manifestDigest: binding.manifestDigest,
+      expiresAt: binding.approval.expiresAt,
+    });
     expect(controller.authorize({
       provider: 'telegram',
       operation: 'private_sandbox_send',
@@ -77,6 +84,7 @@ describe('Customer Marketing canary controller', () => {
       resourceDigest: 'c'.repeat(64),
       expectedRevision: 2,
     })).toMatchObject({ authorized: false, reason: 'binding-mismatch' });
+    expect(controller.executionGrant({ ...intent, resourceDigest: 'c'.repeat(64) })).toBeNull();
   });
 
   it('rejects stale state revisions and a second binding while enabled', () => {

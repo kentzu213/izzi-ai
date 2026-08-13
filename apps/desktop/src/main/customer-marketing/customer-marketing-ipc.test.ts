@@ -119,6 +119,19 @@ function serviceMock() {
       },
       externalActionPerformed: false,
     })),
+    sendTelegramCanary: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      outcome: 'performed',
+      controlPlane: { enabled: true, killSwitch: false, bindingDigest: 'd'.repeat(64), stateRevision: 1 },
+      receipt: {
+        attemptId: 'attempt-cmr230b-ipc-1', bindingDigest: 'd'.repeat(64),
+        resourceDigest: 'b'.repeat(64), createdAt: '2026-08-13T01:30:00.000Z',
+        outcome: 'performed', receiptDigest: '9'.repeat(64),
+      },
+      detail: 'Telegram private canary send completed.',
+      externalActionPerformed: true,
+    })),
     getProductMarketingContext: vi.fn(async () => null),
     saveProductMarketingContext: vi.fn(async (input) => ({
       ok: true,
@@ -1094,5 +1107,54 @@ describe('customer marketing CMR-230 Telegram canary rollback IPC', () => {
     await expect(rollback!(event('https://attacker.example/customer-marketing'), input))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.rollbackTelegramCanary).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-230B Telegram one-shot send IPC', () => {
+  const input = {
+    workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+    resourceDigest: 'b'.repeat(64), expectedRevision: 3, expectedStateRevision: 1,
+  };
+
+  it('forwards exactly the bounded binding once and returns a redacted receipt', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const send = electronMocks.handlers.get('customerMarketing:sendTelegramCanary');
+
+    await expect(send!(event(), input)).resolves.toMatchObject({
+      ok: true,
+      outcome: 'performed',
+      receipt: { attemptId: 'attempt-cmr230b-ipc-1', outcome: 'performed' },
+      externalActionPerformed: true,
+    });
+    expect(service.sendTelegramCanary).toHaveBeenCalledTimes(1);
+    expect(service.sendTelegramCanary).toHaveBeenCalledWith(input);
+  });
+
+  it.each([
+    ['token', '123456:renderer-secret'],
+    ['chatId', '-1001234567890'],
+    ['text', 'renderer-controlled'],
+    ['reviewer', 'renderer'],
+    ['confirmed', true],
+    ['idempotencyKey', 'renderer-controlled-attempt'],
+  ])('rejects renderer-owned %s before service execution', async (key, value) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const send = electronMocks.handlers.get('customerMarketing:sendTelegramCanary');
+
+    await expect(send!(event(), { ...input, [key]: value }))
+      .rejects.toThrow('Payload gửi Telegram canary');
+    expect(service.sendTelegramCanary).not.toHaveBeenCalled();
+  });
+
+  it('rejects an untrusted renderer before send payload parsing', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const send = electronMocks.handlers.get('customerMarketing:sendTelegramCanary');
+
+    await expect(send!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.sendTelegramCanary).not.toHaveBeenCalled();
   });
 });

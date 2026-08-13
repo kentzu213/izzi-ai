@@ -97,6 +97,8 @@ import type {
   CustomerMarketingTelegramCanaryNamedApprovalResult,
   CustomerMarketingTelegramCanaryRollbackRequest,
   CustomerMarketingTelegramCanaryRollbackResult,
+  CustomerMarketingTelegramCanarySendRequest,
+  CustomerMarketingTelegramCanarySendResult,
   CustomerMarketingTelegramSandboxSetupInput,
   CustomerMarketingTelegramSandboxSetupResult,
 } from '../shared/customer-marketing-canary-types';
@@ -613,6 +615,10 @@ const electronAPI = {
       input: CustomerMarketingTelegramCanaryRollbackRequest,
     ): Promise<CustomerMarketingTelegramCanaryRollbackResult> =>
       ipcRenderer.invoke('customerMarketing:rollbackTelegramCanary', input),
+    sendTelegramCanary: (
+      input: CustomerMarketingTelegramCanarySendRequest,
+    ): Promise<CustomerMarketingTelegramCanarySendResult> =>
+      ipcRenderer.invoke('customerMarketing:sendTelegramCanary', input),
     listMarketingResources: (kind: CustomerMarketingResourceKind): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>

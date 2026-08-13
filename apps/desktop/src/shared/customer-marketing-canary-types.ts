@@ -125,6 +125,31 @@ export interface CustomerMarketingTelegramCanaryRollbackResult {
   error?: string;
 }
 
+export type CustomerMarketingTelegramCanarySendRequest = CustomerMarketingTelegramCanaryEnableRequest;
+
+export type CustomerMarketingTelegramCanarySendOutcome =
+  | 'performed'
+  | 'not_performed'
+  | 'unknown';
+
+export interface CustomerMarketingTelegramCanarySendResult {
+  ok: boolean;
+  status: CustomerMarketingBridgeStatus;
+  outcome: CustomerMarketingTelegramCanarySendOutcome;
+  controlPlane: CustomerMarketingCanaryReadinessResult['controlPlane'];
+  receipt: {
+    attemptId: string;
+    bindingDigest: string;
+    resourceDigest: string;
+    createdAt: string;
+    outcome: Exclude<CustomerMarketingTelegramCanarySendOutcome, 'not_performed'>;
+    receiptDigest: string;
+  } | null;
+  detail: string;
+  externalActionPerformed: boolean | null;
+  error?: string;
+}
+
 const TELEGRAM_BOT_TOKEN_PATTERN = /^[1-9][0-9]{5,15}:[A-Za-z0-9_-]{30,80}$/;
 const TELEGRAM_PRIVATE_SANDBOX_CHAT_ID_PATTERN = /^-100[1-9][0-9]{5,19}$/;
 
@@ -175,6 +200,23 @@ export function parseCustomerMarketingTelegramCanaryRollbackRequest(
     || !Number.isSafeInteger(value.expectedStateRevision)
     || value.expectedStateRevision < 0) return null;
   return { expectedStateRevision: value.expectedStateRevision };
+}
+
+export function parseCustomerMarketingTelegramCanarySendRequest(
+  value: unknown,
+): CustomerMarketingTelegramCanarySendRequest | null {
+  if (!isExactPlainDataRecord(value, [
+    'workflowId', 'manifestDigest', 'resourceDigest', 'expectedRevision', 'expectedStateRevision',
+  ])) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const input = {
+    workflowId: descriptors.workflowId.value,
+    manifestDigest: descriptors.manifestDigest.value,
+    resourceDigest: descriptors.resourceDigest.value,
+    expectedRevision: descriptors.expectedRevision.value,
+    expectedStateRevision: descriptors.expectedStateRevision.value,
+  };
+  return parseCustomerMarketingTelegramCanaryEnableRequest(input);
 }
 
 function isExactPlainDataRecord(

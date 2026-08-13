@@ -97,4 +97,31 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(pageSource).not.toContain("reason: 'operator-request'");
     expect(pageSource).not.toContain('api.executeCanary(');
   });
+
+  it('offers one bounded send only after canary enablement and keeps rollback independent', () => {
+    expect(pageSource).toContain('api.sendTelegramCanary({');
+    expect(pageSource).toContain('workflowId: telegramCandidate.workflowId');
+    expect(pageSource).toContain('manifestDigest: telegramCandidate.manifestDigest');
+    expect(pageSource).toContain('resourceDigest: telegramCandidate.resourceDigest');
+    expect(pageSource).toContain('expectedRevision: telegramCandidate.expectedRevision');
+    expect(pageSource).toContain('expectedStateRevision: controlPlane.stateRevision');
+    expect(pageSource).toContain('canaryEnabled && telegramCandidate && !telegramSendResult');
+    expect(pageSource).toContain('Gửi đúng 1 tin private');
+    expect(pageSource).toContain('Cửa sổ xác nhận riêng sẽ mở trước khi gửi đúng một tin thật. Nếu kết quả không xác định,');
+    expect(pageSource).toContain('telegramSendResult.outcome === \'unknown\'');
+    expect(pageSource).toContain('Không thử lại. Hãy rollback và kiểm tra Telegram thủ công.');
+    expect(pageSource).toContain("detail: 'renderer-bridge-failed'");
+    expect(pageSource).toMatch(/detail: 'renderer-bridge-failed',[\s\S]{0,120}externalActionPerformed: null/);
+    expect(pageSource).toContain('telegramSendReceiptRef.current?.focus()');
+    expect(pageSource).not.toMatch(/sendTelegramCanary\(\{[^}]*\b(token|chatId|text|reviewer|confirmed|idempotencyKey)\b/);
+    expect(stylesSource).toMatch(/\.cmr-telegram-send-action > \.cmr-button[\s\S]*?width: 100%;/);
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-send-action > \.cmr-button[\s\S]*?min-height: 44px;/,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-approval-action > \.cmr-button[\s\S]*?min-height: 44px;/,
+    );
+    expect(pageSource).toMatch(/cmr-telegram-send-action[\s\S]{0,500}cmr-button cmr-button--danger/);
+    expect(pageSource).toMatch(/cmr-telegram-rollback-action[\s\S]{0,500}cmr-button cmr-button--quiet/);
+  });
 });

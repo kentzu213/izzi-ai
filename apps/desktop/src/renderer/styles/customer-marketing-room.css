@@ -2385,6 +2385,73 @@
   width: 100%;
 }
 
+.cmr-telegram-send-action {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 95, 109, 0.28);
+}
+
+.cmr-telegram-send-action > small {
+  color: #ffb8be;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cmr-telegram-send-action > .cmr-button {
+  width: 100%;
+}
+
+.cmr-telegram-send-receipt {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--cmr-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cmr-telegram-send-receipt--performed {
+  border-left-color: var(--cmr-green);
+  background: rgba(57, 217, 138, 0.08);
+}
+
+.cmr-telegram-send-receipt--unknown {
+  border-left-color: var(--cmr-red);
+  background: rgba(255, 95, 109, 0.1);
+}
+
+.cmr-telegram-send-receipt > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cmr-telegram-send-receipt code {
+  overflow-wrap: anywhere;
+  color: var(--cmr-green);
+}
+
+.cmr-telegram-send-receipt small,
+.cmr-telegram-send-receipt strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cmr-telegram-send-receipt strong {
+  color: #ffb8be;
+}
+
+.cmr-telegram-send-receipt:focus-visible {
+  outline: 2px solid var(--cmr-cyan);
+  outline-offset: 2px;
+}
+
 .cmr-telegram-enable-receipt {
   display: grid;
   min-width: 0;
@@ -3274,6 +3341,14 @@
   }
 
   .cmr-telegram-enable-action > .cmr-button {
+    min-height: 44px;
+  }
+
+  .cmr-telegram-approval-action > .cmr-button {
+    min-height: 44px;
+  }
+
+  .cmr-telegram-send-action > .cmr-button {
     min-height: 44px;
   }
 

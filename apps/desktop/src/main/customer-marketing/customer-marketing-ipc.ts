@@ -36,6 +36,7 @@ import type {
   CustomerMarketingTelegramCanaryEnableResult,
   CustomerMarketingTelegramCanaryNamedApprovalResult,
   CustomerMarketingTelegramCanaryRollbackResult,
+  CustomerMarketingTelegramCanarySendResult,
 } from '../../shared/customer-marketing-canary-types';
 import {
   parseCustomerMarketingTelegramCanaryCandidateRequest,
@@ -49,6 +50,7 @@ import { parseCustomerMarketingCredentialRevokeInput } from '../../shared/custom
 import {
   parseCustomerMarketingTelegramCanaryEnableRequest,
   parseCustomerMarketingTelegramCanaryRollbackRequest,
+  parseCustomerMarketingTelegramCanarySendRequest,
   parseCustomerMarketingTelegramSandboxSetupInput,
   type CustomerMarketingCanaryReadinessResult,
   type CustomerMarketingTelegramSandboxSetupResult,
@@ -286,6 +288,16 @@ export function registerCustomerMarketingIpc(
     const parsed = parseCustomerMarketingTelegramCanaryRollbackRequest(payload);
     if (!parsed) throw new Error('Payload rollback Telegram canary không hợp lệ.');
     return service.rollbackTelegramCanary(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:sendTelegramCanary', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingTelegramCanarySendResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingTelegramCanarySendRequest(payload);
+    if (!parsed) throw new Error('Payload gửi Telegram canary không hợp lệ.');
+    return service.sendTelegramCanary(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingResources', async (

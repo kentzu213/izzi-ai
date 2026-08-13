@@ -37,6 +37,12 @@ export interface CustomerMarketingCanaryDecision {
   externalActionPerformed: false;
 }
 
+export interface CustomerMarketingCanaryExecutionGrant {
+  approvalId: string;
+  manifestDigest: string;
+  expiresAt: string;
+}
+
 export interface CustomerMarketingCanaryReceipt {
   action: 'enabled' | 'kill_switch_enabled' | 'kill_switch_disabled' | 'rolled_back';
   reason: string;
@@ -128,6 +134,16 @@ export class CustomerMarketingCanaryController {
       return this.decision(false, 'binding-mismatch');
     }
     return this.decision(true, 'canary-authorized');
+  }
+
+  executionGrant(intent: CustomerMarketingCanaryIntent): CustomerMarketingCanaryExecutionGrant | null {
+    const decision = this.authorize(intent);
+    if (!decision.authorized || !this.binding) return null;
+    return {
+      approvalId: this.binding.approval.approvalId,
+      manifestDigest: this.binding.approval.manifestDigest,
+      expiresAt: this.binding.approval.expiresAt,
+    };
   }
 
   setKillSwitch(enabled: boolean, expectedStateRevision: number): CustomerMarketingCanaryReceipt {

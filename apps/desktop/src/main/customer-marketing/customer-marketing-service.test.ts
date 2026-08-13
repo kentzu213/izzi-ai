@@ -52,6 +52,8 @@ import type { CustomerMarketingCredentialVault } from './customer-marketing-cred
 import type { CustomerMarketingSafeStorage } from './customer-marketing-credential-vault';
 import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing-canary-named-approval';
+import { CustomerMarketingTelegramCanarySendCoordinator } from './customer-marketing-telegram-canary-send';
+import type { CustomerMarketingTelegramCanarySendRuntime } from './customer-marketing-service';
 import type {
   CustomerMarketingWorkspaceGateway,
   RemoteMarketingMember,
@@ -607,6 +609,8 @@ function setup(options?: {
       'getPrivateSandboxChatId' | 'setPrivateSandboxChatId' | 'clear' | 'isConfigured'
     >;
     canaryNamedApprovalStore?: CustomerMarketingCanaryNamedApprovalStore;
+    canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator;
+    telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -634,6 +638,8 @@ function setup(options?: {
     options?.telegramSandboxConfig,
     options?.canaryNamedApprovalStore,
     options?.canaryController,
+    options?.canarySendCoordinator,
+    options?.telegramCanarySendRuntime,
   );
   return {
     db,
@@ -5937,6 +5943,186 @@ describe('CustomerMarketingService CMR-230 Telegram canary rollback', () => {
     await expect(context.service.rollbackTelegramCanary({ expectedStateRevision: 1 }))
       .resolves.toMatchObject({ ok: true, externalActionPerformed: false });
     expect(listStatuses).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
+  const fixedNow = '2026-08-13T08:00:00.000Z';
+  const privateSandboxChatId = '-1001234567890';
+
+  async function enabledContext(
+    role: CustomerRole,
+    runtime: CustomerMarketingTelegramCanarySendRuntime,
+  ) {
+    const remote = marketingWorkflowGateway(role);
+    const approvalStore = namedApprovalStore(
+      new MemorySettings(), () => fixedNow, () => 'approval-send-1',
+    );
+    const controller = new CustomerMarketingCanaryController(() => fixedNow);
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => privateSandboxChatId),
+        setPrivateSandboxChatId: vi.fn(), clear: vi.fn(), isConfigured: vi.fn(() => true),
+      },
+      canaryNamedApprovalStore: approvalStore,
+      canaryController: controller,
+      canarySendCoordinator: new CustomerMarketingTelegramCanarySendCoordinator({
+        now: () => fixedNow,
+        id: () => 'canary-send-attempt-1',
+      }),
+      telegramCanarySendRuntime: runtime,
+    });
+    const prepared = await context.service.prepareMarketingWorkflow({
+      target: 'social', resourceId: remote.resource.id, expectedRevision: remote.resource.revision,
+    });
+    const workflow = prepared.workflow!;
+    await context.service.reviewMarketingWorkflow({
+      target: 'social', workflowId: workflow.workflowId, approvalId: workflow.approvalId,
+      manifestDigest: workflow.manifestDigest, decision: 'approved',
+    });
+    const candidate = (await context.service.prepareTelegramCanaryCandidate({
+      workflowId: workflow.workflowId, manifestDigest: workflow.manifestDigest,
+    })).candidate!;
+    await context.service.approveTelegramCanaryCandidate({
+      workflowId: candidate.workflowId, manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest, expectedRevision: candidate.expectedRevision,
+    });
+    await context.service.enableTelegramCanary({
+      workflowId: candidate.workflowId, manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest, expectedRevision: candidate.expectedRevision,
+      expectedStateRevision: 0,
+    });
+    const request = {
+      workflowId: candidate.workflowId,
+      manifestDigest: candidate.manifestDigest,
+      resourceDigest: candidate.resourceDigest,
+      expectedRevision: candidate.expectedRevision,
+      expectedStateRevision: 1,
+    };
+    return { context, remote, controller, candidate, request };
+  }
+
+  it.each(['owner', 'manager'] as CustomerRole[])(
+    'lets %s confirm exactly one redacted private send through the main runtime',
+    async (role) => {
+      const confirm = vi.fn(async () => true);
+      const execute = vi.fn(async () => ({ outcome: 'performed' as const }));
+      const current = await enabledContext(role, { confirm, execute });
+
+      const first = await current.context.service.sendTelegramCanary(current.request);
+      const replay = await current.context.service.sendTelegramCanary(current.request);
+
+      expect(first).toMatchObject({
+        ok: true, status: 'synced', outcome: 'performed', externalActionPerformed: true,
+        controlPlane: { enabled: true, stateRevision: 1 },
+        receipt: {
+          attemptId: 'canary-send-attempt-1',
+          resourceDigest: current.candidate.resourceDigest,
+          outcome: 'performed',
+          receiptDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+      expect(JSON.stringify(first)).not.toContain(privateSandboxChatId);
+      expect(JSON.stringify(first)).not.toContain(current.candidate.text);
+      expect(replay).toMatchObject({
+        ok: false, outcome: 'not_performed', externalActionPerformed: false,
+        detail: 'attempt-already-consumed',
+      });
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+        attemptId: 'canary-send-attempt-1',
+        workspaceId: current.remote.workspace.id,
+        workspaceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        role,
+        candidate: current.candidate,
+        approval: expect.objectContaining({ approvalId: 'approval-send-1' }),
+      }));
+    },
+  );
+
+  it('cancels in the main-owned confirmation before runtime execute', async () => {
+    const confirm = vi.fn(async () => false);
+    const execute = vi.fn();
+    const current = await enabledContext('owner', { confirm, execute });
+
+    await expect(current.context.service.sendTelegramCanary(current.request)).resolves.toMatchObject({
+      ok: false, outcome: 'not_performed', externalActionPerformed: false,
+      detail: 'operator-cancelled', receipt: null,
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as CustomerRole[])(
+    'denies %s without exposing controller state or invoking confirmation',
+    async (role) => {
+      const remote = marketingWorkflowGateway(role);
+      const controller = new CustomerMarketingCanaryController(() => fixedNow);
+      const status = vi.spyOn(controller, 'status');
+      const confirm = vi.fn();
+      const execute = vi.fn();
+      const context = setup({
+        workspaceGateway: remote.gateway,
+        canaryController: controller,
+        canarySendCoordinator: new CustomerMarketingTelegramCanarySendCoordinator(),
+        telegramCanarySendRuntime: { confirm, execute },
+      });
+
+      await expect(context.service.sendTelegramCanary({
+        workflowId: 'cmr306-social-workflow-1', manifestDigest: 'a'.repeat(64),
+        resourceDigest: 'b'.repeat(64), expectedRevision: 3, expectedStateRevision: 1,
+      })).resolves.toMatchObject({
+        ok: false, status: 'forbidden', controlPlane: null,
+        outcome: 'not_performed', externalActionPerformed: false,
+      });
+      expect(status).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rechecks source after confirmation and blocks before runtime execute on drift', async () => {
+    const holder: { current?: Awaited<ReturnType<typeof enabledContext>> } = {};
+    const execute = vi.fn();
+    const confirm = vi.fn(async () => {
+      const current = holder.current!;
+      current.remote.getMarketingResource.mockResolvedValue({
+        status: 'synced',
+        resource: marketingContentResource({
+          workspaceId: current.remote.workspace.id,
+          revision: current.remote.resource.revision + 1,
+          body: 'Changed after native confirmation',
+        }),
+      });
+      return true;
+    });
+    const current = await enabledContext('owner', { confirm, execute });
+    holder.current = current;
+
+    await expect(current.context.service.sendTelegramCanary(current.request)).resolves.toMatchObject({
+      ok: false, outcome: 'not_performed', externalActionPerformed: false,
+      detail: 'state-changed-after-confirmation', receipt: null,
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('reports a network-attempt ambiguity as unknown and blocks replay', async () => {
+    const execute = vi.fn(async () => ({ outcome: 'unknown' as const }));
+    const current = await enabledContext('manager', {
+      confirm: vi.fn(async () => true), execute,
+    });
+
+    const first = await current.context.service.sendTelegramCanary(current.request);
+    const replay = await current.context.service.sendTelegramCanary(current.request);
+
+    expect(first).toMatchObject({
+      ok: false, status: 'conflict', outcome: 'unknown',
+      externalActionPerformed: null,
+      receipt: { outcome: 'unknown', receiptDigest: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    });
+    expect(replay).toMatchObject({ outcome: 'not_performed', externalActionPerformed: false });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });
 

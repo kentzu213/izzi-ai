@@ -63,6 +63,14 @@ import { CustomerMarketingCredentialVault } from './customer-marketing/customer-
 import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryController } from './customer-marketing/customer-marketing-canary-controller';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing/customer-marketing-canary-named-approval';
+import { CustomerMarketingConnectorVaultAdapter } from './customer-marketing/customer-marketing-connector-vault-adapter';
+import { CustomerMarketingTelegramSandboxConnector } from './customer-marketing/customer-marketing-telegram-sandbox-connector';
+import { CustomerMarketingTelegramBotApiTransport } from './customer-marketing/customer-marketing-telegram-bot-api-transport';
+import { CustomerMarketingTelegramCanaryRuntime } from './customer-marketing/customer-marketing-telegram-canary-runtime';
+import {
+  CustomerMarketingTelegramCanarySendCoordinator,
+  CustomerMarketingTelegramCanarySendLedger,
+} from './customer-marketing/customer-marketing-telegram-canary-send';
 import { createCustomerMarketingGuardrailStateReader } from './customer-marketing/customer-marketing-loop-guardrails';
 import {
   createCustomerVoiceStudioExtensionEnsurer,
@@ -524,6 +532,9 @@ function setupIPC() {
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
   const customerMarketingCanaryNamedApprovalStore = new CustomerMarketingCanaryNamedApprovalStore(dbManager);
+  const customerMarketingCanarySendCoordinator = new CustomerMarketingTelegramCanarySendCoordinator({
+    ledger: new CustomerMarketingTelegramCanarySendLedger(dbManager),
+  });
   // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
   // from the template on first run; never overwrite an existing or unreadable file.
   const profileStore = new LiveProfileStore({ directory: app.getPath('userData') });
@@ -596,6 +607,86 @@ function setupIPC() {
     customerMarketingTelegramSandboxConfig,
     customerMarketingCanaryNamedApprovalStore,
     customerMarketingCanaryController,
+    customerMarketingCanarySendCoordinator,
+    {
+      confirm: async ({ bindingDigest, resourceDigest, text }) => {
+        const options = {
+          type: 'warning' as const,
+          title: 'Xác nhận gửi Telegram canary',
+          message: 'Gửi đúng 1 tin nhắn vào private Telegram sandbox?',
+          detail: [
+            `Nội dung: ${text}`,
+            `Binding: ${bindingDigest.slice(0, 12)}…`,
+            `Resource: ${resourceDigest.slice(0, 12)}…`,
+            'Đây là hành động bên ngoài thật. Không tự động thử lại nếu kết quả không xác định.',
+          ].join('\n\n'),
+          buttons: ['Gửi đúng 1 tin', 'Hủy'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        };
+        const result = mainWindow && !mainWindow.isDestroyed()
+          ? await dialog.showMessageBox(mainWindow, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 0;
+      },
+      execute: async ({
+        attemptId, workspaceId, workspaceHash, role, plan, candidate, approval,
+      }) => {
+        const chatId = customerMarketingTelegramSandboxConfig.getPrivateSandboxChatId(workspaceId);
+        const credential = customerMarketingCredentialVault.listStatuses(workspaceId)
+          .credentials.find((item) => item.provider === 'telegram');
+        if (!chatId || credential?.state !== 'connected') {
+          return { outcome: 'not_performed' as const, detail: 'credential-or-chat-unavailable' };
+        }
+        const normalizedPlan = ['free', 'starter', 'pro', 'max', 'ultra'].includes(plan)
+          ? plan as 'free' | 'starter' | 'pro' | 'max' | 'ultra'
+          : 'free';
+        const connector = new CustomerMarketingTelegramSandboxConnector({
+          credentialAdapter: new CustomerMarketingConnectorVaultAdapter(
+            customerMarketingCredentialVault, workspaceId, 'telegram',
+          ),
+          resource: {
+            audience: 'private_sandbox',
+            chatId,
+            text: candidate.text,
+          },
+          transport: new CustomerMarketingTelegramBotApiTransport(),
+          policy: { executeEnabled: true, killSwitch: false, sandboxOnly: true },
+        });
+        const runtime = new CustomerMarketingTelegramCanaryRuntime(
+          customerMarketingCanaryController,
+          connector,
+        );
+        const result = await runtime.execute({
+          workspaceHash,
+          provider: 'telegram',
+          target: 'social',
+          resourceDigest: candidate.resourceDigest,
+          manifestDigest: candidate.manifestDigest,
+          expectedRevision: candidate.expectedRevision,
+          idempotencyKey: attemptId,
+          authority: {
+            role,
+            plan: normalizedPlan,
+            permission: 'execute',
+            rateLimit: {
+              remaining: 1,
+              resetAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+          },
+          operation: 'execute',
+          approval,
+        });
+        if (result.ok && result.status === 'executed' && result.externalActionPerformed) {
+          return { outcome: 'performed' as const };
+        }
+        return {
+          outcome: result.detail === 'external-operation-failed' ? 'unknown' as const : 'not_performed' as const,
+          detail: result.detail,
+        };
+      },
+    },
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
