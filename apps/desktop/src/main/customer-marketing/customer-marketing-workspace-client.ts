@@ -1918,6 +1918,10 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
 
   private logFailure(path: string, status?: number): void {
     const detail = status === undefined ? 'unavailable' : `status ${status}`;
-    console.warn(`[CustomerMarketingWorkspaceClient] ${path}: ${detail}`);
+    try {
+      console.warn(`[CustomerMarketingWorkspaceClient] ${path}: ${detail}`);
+    } catch {
+      // Diagnostics must never turn a fail-closed bridge response into a main-process crash.
+    }
   }
 }

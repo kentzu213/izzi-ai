@@ -254,6 +254,27 @@ function workflowRun(overrides: Record<string, unknown> = {}) {
   };
 }
 describe('CustomerMarketingWorkspaceClient', () => {
+  it('keeps request failures fail-closed when the packaged diagnostic stream is unavailable', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {
+      const error = new Error('broken pipe') as NodeJS.ErrnoException;
+      error.code = 'EPIPE';
+      throw error;
+    });
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, 404)),
+      },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+    expect(client.getBridgeHealth()).toBe('route_missing');
+    expect(warning).toHaveBeenCalledTimes(1);
+    warning.mockRestore();
+  });
+
   it('reports why the runtime bridge cannot reach an authoritative workspace', async () => {
     const disabled = new CustomerMarketingWorkspaceClient(
       { getAccessToken: vi.fn(async () => 'test-token') },
