@@ -21,6 +21,7 @@ interface UpdaterServiceOptions {
   mockMode?: boolean;
   directoryPackage?: boolean;
   updateConfigAvailable?: boolean;
+  enabled?: boolean;
 }
 
 function isTruthy(value: string | undefined): boolean {
@@ -79,6 +80,7 @@ export class UpdaterService extends EventEmitter {
   private readonly mockMode: boolean;
   private readonly packaged: boolean;
   private readonly updateChecksEnabled: boolean;
+  private readonly enabled: boolean;
   private state: DesktopUpdaterState;
 
   constructor(options?: UpdaterServiceOptions) {
@@ -87,12 +89,13 @@ export class UpdaterService extends EventEmitter {
     this.appVersion = options?.appVersion ?? app.getVersion();
     this.packaged = options?.packaged ?? app.isPackaged;
     this.mockMode = options?.mockMode ?? isTruthy(process.env.OPENCLAW_MOCK_UPDATER);
+    this.enabled = options?.enabled ?? true;
     const resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : '';
     const directoryPackage = options?.directoryPackage
       ?? isElectronBuilderDirectoryPackage(process.execPath, resourcesPath);
     const updateConfigAvailable = options?.updateConfigAvailable
       ?? (resourcesPath.length > 0 && existsSync(join(resourcesPath, 'app-update.yml')));
-    this.updateChecksEnabled = !directoryPackage || updateConfigAvailable;
+    this.updateChecksEnabled = this.enabled && (!directoryPackage || updateConfigAvailable);
     this.adapter = this.mockMode ? options?.adapter : options?.adapter ?? (autoUpdater as unknown as UpdaterLike);
     this.state = {
       state: 'idle',
@@ -109,6 +112,7 @@ export class UpdaterService extends EventEmitter {
   }
 
   async check(): Promise<void> {
+    if (!this.enabled) return;
     if (!this.packaged && !this.mockMode) {
       this.setState({
         state: 'idle',
@@ -162,6 +166,7 @@ export class UpdaterService extends EventEmitter {
   }
 
   async download(): Promise<void> {
+    if (!this.enabled) return;
     if (this.state.state !== 'available' && this.state.state !== 'error') {
       return;
     }
@@ -184,6 +189,7 @@ export class UpdaterService extends EventEmitter {
   }
 
   quitAndInstall(): void {
+    if (!this.enabled) return;
     if (this.mockMode) {
       this.setState({
         state: 'idle',

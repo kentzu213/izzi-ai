@@ -46,6 +46,10 @@ jobs:
           pnpm --filter @openclaw/desktop test:clean-host-lifecycle
           pnpm --filter @openclaw/desktop test:clean-host-bundle
 
+      - name: Run Customer Marketing staging launcher contract
+        if: runner.os == 'Windows'
+        run: pnpm --filter @openclaw/desktop test:marketing-staging-launcher
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:

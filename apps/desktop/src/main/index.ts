@@ -1,6 +1,7 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
+import { DESKTOP_RUNTIME_PROFILE } from './config/desktop-runtime-profile';
 import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -246,13 +247,15 @@ function getAppIcon(): Electron.NativeImage | undefined {
   }
 }
 
-// Register custom protocol for OAuth callback
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('openclaw', process.execPath, [path.resolve(process.argv[1])]);
+// The isolated staging profile must not replace the production OAuth/deep-link handler.
+if (DESKTOP_RUNTIME_PROFILE.registerProtocol) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('openclaw', process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient('openclaw');
   }
-} else {
-  app.setAsDefaultProtocolClient('openclaw');
 }
 
 function createWindow() {
@@ -1618,7 +1621,7 @@ async function initServices() {
   autopostAuth = new AutopostAuth(authManager);
   integrationsService = new IntegrationsService(authManager, dbManager);
   onboardingService = new OnboardingService(dbManager);
-  updaterService = new UpdaterService();
+  updaterService = new UpdaterService({ enabled: DESKTOP_RUNTIME_PROFILE.updaterEnabled });
   setupWizardService = new SetupWizardService();
   syncEngine = new SyncEngine(authManager, dbManager);
   extensionManager = new ExtensionManager(dbManager);

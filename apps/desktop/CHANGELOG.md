@@ -1,4 +1,16 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.42
+
+Isolated Customer Marketing staging authentication.
+
+- Launch an internal staging-only desktop profile with separate user data and the reviewed
+  Marketing API and Supabase public-client origins.
+- Reject unknown profiles, service-role JWTs, shared profile paths and endpoint drift before the
+  desktop initializes.
+- Keep the production protocol handler, Google OAuth session and updater outside the staging
+  profile while preserving the normal desktop behavior by default.
+- Ship a fail-closed Windows launcher contract without embedding a credential or creating a user.
+
 ## 1.14.0-beta.32
 
 Backend-owned seven-day Marketing workflows.

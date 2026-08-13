@@ -11,6 +11,7 @@ import { safeStorage, shell, BrowserWindow } from 'electron';
 import { DatabaseManager } from '../db/database';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 import { IZZI_API_BASE, IZZI_WEB_BASE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/public-config';
+import { DESKTOP_RUNTIME_PROFILE } from '../config/desktop-runtime-profile';
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
@@ -274,6 +275,9 @@ export class AuthManager {
    * Opens system browser for OAuth flow
    */
   async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (!DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled) {
+      return { success: false, error: 'Google OAuth is unavailable in the isolated staging profile.' };
+    }
     if (!this.supabase) {
       return { success: false, error: 'Supabase not configured' };
     }
@@ -439,6 +443,9 @@ export class AuthManager {
    * Handle OAuth callback (legacy — kept for custom protocol handler compatibility)
    */
   async handleOAuthCallback(url: string): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (!DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled) {
+      return { success: false, error: 'Google OAuth is unavailable in the isolated staging profile.' };
+    }
     if (!this.supabase) {
       return { success: false, error: 'Supabase not configured' };
     }

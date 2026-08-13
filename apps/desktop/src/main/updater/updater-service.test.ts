@@ -43,6 +43,28 @@ class MissingConfigUpdaterAdapter extends FakeUpdaterAdapter {
 }
 
 describe('UpdaterService', () => {
+  it('does not bind, check, download or install when the runtime profile disables updates', async () => {
+    const adapter = new FakeUpdaterAdapter();
+    const service = new UpdaterService({
+      adapter,
+      appVersion: '0.1.0',
+      packaged: true,
+      mockMode: false,
+      enabled: false,
+    });
+
+    await service.check();
+    await service.download();
+    service.quitAndInstall();
+
+    expect(adapter.autoDownload).toBe(false);
+    expect(adapter.autoInstallOnAppQuit).toBe(false);
+    expect(adapter.checkForUpdatesCalls).toBe(0);
+    expect(adapter.downloadUpdateCalls).toBe(0);
+    expect(adapter.quitAndInstallCalls).toEqual([]);
+    expect(service.getState()).toMatchObject({ state: 'idle', version: '0.1.0' });
+  });
+
   it('downloads installed-package updates in the background and installs them on normal quit', async () => {
     const adapter = new FakeUpdaterAdapter();
     const service = new UpdaterService({
