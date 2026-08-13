@@ -10,6 +10,16 @@ $baseline = Join-Path $artifacts "Izzi-AI-1.14.0-beta.18-win-x64.exe"
 $candidate = Join-Path $artifacts "Izzi-AI-1.14.0-beta.34-win-x64.exe"
 $checks = 0
 
+$runnerSource = Get-Content -LiteralPath $runner -Raw
+if (
+  $runnerSource -notmatch 'Get-CurrentUserShortcutPaths' -or
+  $runnerSource -notmatch 'Get-CommonShortcutPaths' -or
+  $runnerSource -notmatch 'Assert-ShortcutPolicy'
+) {
+  throw "Lifecycle runner must distinguish per-user shortcuts from forbidden common shortcuts."
+}
+$checks += 1
+
 function Expect-Failure([scriptblock]$Action, [string]$Pattern) {
   $failed = $false
   try { & $Action | Out-Null } catch { $failed = $_.Exception.Message -match $Pattern }

@@ -179,25 +179,35 @@ function Invoke-LaunchSmoke([string]$ExpectedVersion) {
   Stop-InstalledProcesses
 }
 
-function Get-ShortcutPaths {
+function Get-CurrentUserShortcutPaths {
   $desktop = [Environment]::GetFolderPath('Desktop')
   $programs = [Environment]::GetFolderPath('Programs')
+  return @(
+    (Join-Path $desktop 'Izzi AI.lnk'),
+    (Join-Path $programs 'Izzi AI.lnk')
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+}
+
+function Get-CommonShortcutPaths {
   $commonDesktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
   $commonPrograms = [Environment]::GetFolderPath('CommonPrograms')
   return @(
-    (Join-Path $desktop 'Izzi AI.lnk'),
-    (Join-Path $programs 'Izzi AI.lnk'),
     (Join-Path $commonDesktop 'Izzi AI.lnk'),
     (Join-Path $commonPrograms 'Izzi AI.lnk')
   ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
-function Assert-Shortcuts([bool]$Expected) {
-  foreach ($path in Get-ShortcutPaths) {
+function Assert-ShortcutGroup([string[]]$Paths, [bool]$Expected) {
+  foreach ($path in $Paths) {
     if ((Test-Path -LiteralPath $path) -ne $Expected) {
       throw "Shortcut state mismatch for $path."
     }
   }
+}
+
+function Assert-ShortcutPolicy([bool]$Installed) {
+  Assert-ShortcutGroup @(Get-CurrentUserShortcutPaths) $Installed
+  Assert-ShortcutGroup @(Get-CommonShortcutPaths) $false
 }
 
 function Assert-NoInstalledResidue {
@@ -209,7 +219,7 @@ function Assert-NoInstalledResidue {
   if (@(Get-ChildItem -LiteralPath $InstallRoot -Filter 'Uninstall*.exe' -File -Recurse -ErrorAction SilentlyContinue).Count -ne 0) {
     throw "Uninstaller remained after uninstall."
   }
-  Assert-Shortcuts $false
+  Assert-ShortcutPolicy $false
   $machineResidue = Get-MachineResidue
   if ($machineResidue.services -ne 0 -or $machineResidue.scheduledTasks -ne 0) {
     throw "Machine residue remained after uninstall."
@@ -298,7 +308,7 @@ try {
     if ($machineResidue.services -ne 0 -or $machineResidue.scheduledTasks -ne 0) {
       throw "Clean-host preflight found machine residue."
     }
-    Assert-Shortcuts $false
+    Assert-ShortcutPolicy $false
   }
   Add-Step "clean-baseline" "pass" @{ existingProfile = $false; existingInstall = $false }
 
@@ -319,7 +329,7 @@ try {
   $baselineVersion = $BaselineTag.TrimStart('v')
   $candidateVersion = $CandidateTag.TrimStart('v')
   Invoke-Installer $baselineInstaller "Baseline"
-  Assert-Shortcuts $true
+  Assert-ShortcutPolicy $true
   Invoke-LaunchSmoke $baselineVersion
   Add-Step "baseline-install-launch" "pass" @{ version = $baselineVersion }
 
@@ -328,7 +338,7 @@ try {
   Set-Content -LiteralPath $sentinel -Value $sentinelValue -Encoding ASCII
 
   Invoke-Installer $candidateInstaller "Candidate"
-  Assert-Shortcuts $true
+  Assert-ShortcutPolicy $true
   Invoke-LaunchSmoke $candidateVersion
   if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne $sentinelValue) { throw "Profile sentinel changed during upgrade." }
   Add-Step "candidate-upgrade" "pass" @{ version = $candidateVersion; profileRetained = $true }
