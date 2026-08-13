@@ -2155,19 +2155,19 @@
 
 .cmr-credential-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   min-width: 0;
 }
 
 .cmr-credential-row {
-  display: flex;
+  display: grid;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(280px, 2fr) auto;
+  gap: 16px;
   min-width: 0;
-  min-height: 42px;
-  padding: 6px 0;
+  min-height: 58px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--cmr-border);
 }
 
@@ -2208,6 +2208,50 @@
 .cmr-credential-row--locked .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-gold); }
 .cmr-credential-row--invalid .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-red); }
 
+.cmr-credential-row__evidence {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(220px, 1.4fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.cmr-credential-row__evidence > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.cmr-credential-row__evidence small {
+  color: var(--cmr-dim);
+  font-size: 9px;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.cmr-credential-row__evidence strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--cmr-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cmr-credential-row__evidence strong.is-ready { color: var(--cmr-green); }
+
+.cmr-credential-row__evidence code {
+  color: var(--cmr-cyan);
+  font: inherit;
+}
+
+.cmr-credential-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.cmr-credential-health,
 .cmr-credential-revoke {
   flex: 0 0 auto;
   width: 30px;
@@ -2215,6 +2259,7 @@
   min-height: 30px;
 }
 
+.cmr-credential-health .cmr-icon,
 .cmr-credential-revoke .cmr-icon {
   width: 14px;
   height: 14px;
@@ -3302,8 +3347,13 @@
 }
 
 @media (max-width: 900px) {
-  .cmr-credential-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .cmr-credential-row {
+    grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1.6fr) auto;
+  }
+
+  .cmr-credential-row__evidence {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
   }
 
   .cmr-canary-readiness {
@@ -3324,6 +3374,28 @@
 
   .cmr-credential-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cmr-credential-row {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 0;
+  }
+
+  .cmr-credential-row__evidence {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cmr-credential-row__actions {
+    justify-content: flex-start;
+  }
+
+  .cmr-credential-health,
+  .cmr-credential-revoke {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   .cmr-canary-readiness,

@@ -8,6 +8,29 @@ const stylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.css'
 const stylesSource = readFileSync(stylesPath, 'utf8');
 
 describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
+  it('loads connector evidence with credentials and exposes bounded local health controls', () => {
+    expect(pageSource).toContain('api.listConnectorOperations()');
+    expect(pageSource).toContain('api.checkIntegrationHealth({ provider })');
+    expect(pageSource).toContain("receipt.operation === 'health'");
+    expect(pageSource).toContain('receipt.provider === item.provider');
+    expect(pageSource).toContain('Lần kiểm tra');
+    expect(pageSource).toContain('Receipt gần nhất');
+    expect(pageSource).toContain("aria-label={'Kiểm tra cục bộ ' + providerLabel}");
+    expect(pageSource).not.toMatch(/checkIntegrationHealth\(\{[^}]*\b(workspaceId|revision|token|chatId|url)\b/);
+    expect(pageSource).not.toContain('executeConnector');
+  });
+
+  it('keeps connector evidence scan-friendly and responsive', () => {
+    expect(stylesSource).toMatch(/\.cmr-credential-row__evidence \{[\s\S]*?grid-template-columns:/);
+    expect(stylesSource).toMatch(/\.cmr-credential-row__actions \{[\s\S]*?display: flex;/);
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-row[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-health[\s\S]*?min-height: 44px;/,
+    );
+  });
+
   it('shows redacted readiness and submits only the bounded setup payload', () => {
     expect(pageSource).toContain('api.getCanaryReadiness()');
     expect(pageSource).toContain('api.configureTelegramSandbox({');

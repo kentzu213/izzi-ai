@@ -14,6 +14,10 @@ import type {
   CustomerMarketingIntegrationProvider,
 } from '../../shared/customer-marketing-credential-types';
 import type {
+  CustomerMarketingConnectorOperationOutcome,
+  CustomerMarketingConnectorOperationReceipt,
+} from '../../shared/customer-marketing-connector-operation-types';
+import type {
   CustomerMarketingCanaryReadinessResult,
   CustomerMarketingTelegramCanaryCandidate,
   CustomerMarketingTelegramCanaryEnableResult,
@@ -100,6 +104,22 @@ function credentialEmptyLabel(
   return 'Chưa có trạng thái provider.';
 }
 
+function connectorOutcomeLabel(outcome: CustomerMarketingConnectorOperationOutcome): string {
+  if (outcome === 'ready') return 'Sẵn sàng';
+  if (outcome === 'unavailable') return 'Không khả dụng';
+  if (outcome === 'revoked') return 'Đã thu hồi';
+  if (outcome === 'not_found') return 'Không tìm thấy';
+  if (outcome === 'performed') return 'Đã thực hiện';
+  if (outcome === 'unknown') return 'Chưa xác định';
+  return 'Không thực hiện';
+}
+
+function connectorOperationLabel(receipt: CustomerMarketingConnectorOperationReceipt): string {
+  if (receipt.operation === 'health') return 'Health';
+  if (receipt.operation === 'revoke') return 'Thu hồi';
+  return 'Private canary';
+}
+
 export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [target, setTarget] = useState<CustomerMarketingWorkflowTarget>('social');
   const [sources, setSources] = useState<CustomerMarketingWorkflowSource[]>([]);
@@ -118,6 +138,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [credentialError, setCredentialError] = useState('');
   const [credentialLoading, setCredentialLoading] = useState(true);
   const [revokingProvider, setRevokingProvider] = useState<CustomerMarketingIntegrationProvider | null>(null);
+  const [healthCheckingProvider, setHealthCheckingProvider] = useState<CustomerMarketingIntegrationProvider | null>(null);
+  const [connectorReceipts, setConnectorReceipts] = useState<CustomerMarketingConnectorOperationReceipt[]>([]);
   const [canaryReadiness, setCanaryReadiness] = useState<CustomerMarketingCanaryReadinessResult | null>(null);
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
@@ -206,19 +228,23 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setCredentialLoading(true);
     setCredentialError('');
     try {
-      const [result, readiness] = await Promise.all([
+      const [result, operations, readiness] = await Promise.all([
         api.listIntegrationCredentials(),
+        api.listConnectorOperations(),
         api.getCanaryReadiness(),
       ]);
       setCredentialBridgeStatus(result.status);
       setCredentialVaultState(result.vaultState);
       setCredentials(result.credentials);
+      setConnectorReceipts(operations.receipts);
       setCanaryReadiness(readiness);
       if (!result.ok) setCredentialError(result.error || 'Không tải được trạng thái kết nối.');
+      else if (!operations.ok) setCredentialError(operations.error || 'Không tải được nhật ký connector.');
     } catch (reason) {
       setCredentialBridgeStatus('unavailable');
       setCredentialVaultState('locked');
       setCredentials([]);
+      setConnectorReceipts([]);
       setCanaryReadiness(null);
       setCredentialError(reason instanceof Error ? reason.message : 'Vault không phản hồi.');
     } finally {
@@ -313,10 +339,33 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setCredentials((current) => current.map((item) => (
         item.provider === provider ? result.credential! : item
       )));
+      if (result.operationReceipt) {
+        setConnectorReceipts((current) => [...current, result.operationReceipt!].slice(-50));
+      }
     } catch (reason) {
       setCredentialError(reason instanceof Error ? reason.message : 'Không thể thu hồi kết nối.');
     } finally {
       setRevokingProvider(null);
+    }
+  };
+
+  const checkIntegrationHealth = async (provider: CustomerMarketingIntegrationProvider) => {
+    const api = window.electronAPI?.customerMarketing;
+    if (!api || healthCheckingProvider || revokingProvider) return;
+    setHealthCheckingProvider(provider);
+    setCredentialError('');
+    try {
+      const result = await api.checkIntegrationHealth({ provider });
+      setCredentialBridgeStatus(result.status);
+      if (!result.ok || !result.operationReceipt) {
+        setCredentialError(result.error || 'Không thể kiểm tra trạng thái connector.');
+        return;
+      }
+      setConnectorReceipts((current) => [...current, result.operationReceipt!].slice(-50));
+    } catch (reason) {
+      setCredentialError(reason instanceof Error ? reason.message : 'Không thể kiểm tra trạng thái connector.');
+    } finally {
+      setHealthCheckingProvider(null);
     }
   };
 
@@ -928,6 +977,11 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           {!credentialLoading && credentials.map((item) => {
             const providerLabel = PROVIDER_META[item.provider].label;
             const canRevoke = canRevokeCredentials && item.state !== 'disconnected';
+            const providerReceipts = connectorReceipts.filter((receipt) => receipt.provider === item.provider);
+            const lastReceipt = providerReceipts.at(-1) ?? null;
+            const lastHealth = [...providerReceipts].reverse().find((receipt) => (
+              receipt.operation === 'health'
+            )) ?? null;
             return (
               <div key={item.provider} className={'cmr-credential-row cmr-credential-row--' + item.state}>
                 <div className="cmr-credential-row__identity">
@@ -937,18 +991,49 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
                     <small>{credentialStateLabel(item.state)}</small>
                   </span>
                 </div>
-                {canRevoke && (
+                <div className="cmr-credential-row__evidence">
+                  <span>
+                    <small>Lần kiểm tra</small>
+                    <strong className={lastHealth?.outcome === 'ready' ? 'is-ready' : ''}>
+                      {lastHealth
+                        ? `${connectorOutcomeLabel(lastHealth.outcome)} · ${formatTime(lastHealth.occurredAt)}`
+                        : 'Chưa kiểm tra'}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>Receipt gần nhất</small>
+                    {lastReceipt ? (
+                      <strong title={lastReceipt.receiptDigest}>
+                        {connectorOperationLabel(lastReceipt)} · {connectorOutcomeLabel(lastReceipt.outcome)} ·{' '}
+                        {formatTime(lastReceipt.occurredAt)} · <code>{shortDigest(lastReceipt.receiptDigest)}</code>
+                      </strong>
+                    ) : <strong>Chưa có bằng chứng</strong>}
+                  </span>
+                </div>
+                <div className="cmr-credential-row__actions">
                   <button
                     type="button"
-                    className="cmr-icon-button cmr-credential-revoke"
-                    aria-label={'Thu hồi ' + providerLabel}
-                    title={'Thu hồi ' + providerLabel}
-                    disabled={Boolean(revokingProvider)}
-                    onClick={() => void revokeCredential(item.provider)}
+                    className="cmr-icon-button cmr-credential-health"
+                    aria-label={'Kiểm tra cục bộ ' + providerLabel}
+                    title={'Kiểm tra cục bộ ' + providerLabel}
+                    disabled={Boolean(healthCheckingProvider) || Boolean(revokingProvider)}
+                    onClick={() => void checkIntegrationHealth(item.provider)}
                   >
-                    <CloseIcon className="cmr-icon" />
+                    <RefreshIcon className="cmr-icon" />
                   </button>
-                )}
+                  {canRevoke && (
+                    <button
+                      type="button"
+                      className="cmr-icon-button cmr-credential-revoke"
+                      aria-label={'Thu hồi ' + providerLabel}
+                      title={'Thu hồi ' + providerLabel}
+                      disabled={Boolean(revokingProvider) || Boolean(healthCheckingProvider)}
+                      onClick={() => void revokeCredential(item.provider)}
+                    >
+                      <CloseIcon className="cmr-icon" />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
