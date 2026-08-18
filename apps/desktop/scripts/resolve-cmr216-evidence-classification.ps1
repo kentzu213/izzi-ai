@@ -32,8 +32,8 @@ if ($ActiveNetworkAdapterCount -ne 0) {
 }
 
 [pscustomobject]@{
-  verifiedEvidenceTier = 'CleanMachineVerified'
-  claim = 'independent-clean-vm'
-  networkIsolationVerified = $true
+  verifiedEvidenceTier = 'CleanMachineClaimed'
+  claim = 'host-attestation-required'
+  networkIsolationVerified = $false
   hostProvenanceSha256 = $provenance
 } | ConvertTo-Json -Compress

@@ -24,5 +24,8 @@ provenance review is required before CMR-216 can be closed.
 
 For a clean VM claim, run the PowerShell launcher with EnvironmentClass
 CleanMachineClaimed and HostProvenanceSha256 set to the reviewed host receipt
-digest. The VM must have zero active network adapters. Otherwise the lifecycle
-fails closed before installation and cannot emit CleanMachineVerified evidence.
+digest. The guest can emit only CleanMachineClaimed candidate evidence and must
+observe zero active network adapters throughout the lifecycle. A separate host
+collector must recompute and review provenance, observe the VM with zero network
+adapters before, during, and after execution, and only then emit
+CleanMachineVerified evidence. Failed lifecycle receipts are always Unverified.

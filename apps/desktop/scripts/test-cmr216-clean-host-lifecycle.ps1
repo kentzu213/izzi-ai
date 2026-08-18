@@ -21,10 +21,29 @@ if (
 }
 $checks += 1
 
+if ($runnerSource -notmatch 'Assert-NetworkIsolationCheckpoint') {
+  throw "Lifecycle runner must observe network isolation across the lifecycle."
+}
+$networkCheckpointCalls = ([regex]::Matches($runnerSource, 'Assert-NetworkIsolationCheckpoint')).Count
+if ($networkCheckpointCalls -lt 7) {
+  throw "Lifecycle runner must check network isolation before and between every mutation phase."
+}
+$checks += 1
+
+$classifierSource = Get-Content -LiteralPath $classifier -Raw
+if ($classifierSource -match "verifiedEvidenceTier\s*=\s*'CleanMachineVerified'") {
+  throw "Guest-side classification must not emit host-verified evidence."
+}
+$checks += 1
+
 function Expect-Failure([scriptblock]$Action, [string]$Pattern) {
   $failed = $false
-  try { & $Action | Out-Null } catch { $failed = $_.Exception.Message -match $Pattern }
-  if (-not $failed) { throw "Expected failure matching: $Pattern" }
+  $observed = ''
+  try { & $Action | Out-Null } catch {
+    $observed = $_.Exception.Message
+    $failed = $observed -match $Pattern
+  }
+  if (-not $failed) { throw "Expected failure matching '$Pattern'; observed '$observed'." }
   $script:checks += 1
 }
 
@@ -46,9 +65,9 @@ try {
     -HostProvenanceSha256 $provenanceHash `
     -ActiveNetworkAdapterCount 0 | ConvertFrom-Json
   if (
-    $cleanClassification.verifiedEvidenceTier -ne 'CleanMachineVerified' -or
-    $cleanClassification.claim -ne 'independent-clean-vm' -or
-    $cleanClassification.networkIsolationVerified -ne $true -or
+    $cleanClassification.verifiedEvidenceTier -ne 'CleanMachineClaimed' -or
+    $cleanClassification.claim -ne 'host-attestation-required' -or
+    $cleanClassification.networkIsolationVerified -ne $false -or
     $cleanClassification.hostProvenanceSha256 -ne $provenanceHash
   ) { throw 'Clean-machine evidence classification mismatch' }
   $checks += 1
@@ -113,19 +132,55 @@ try {
 
   $claimedArguments = $common.Clone()
   $claimedArguments.EnvironmentClass = "CleanMachineClaimed"
+  $env:CMR216_NETWORK_ADAPTER_COUNT_SELF_TEST = '0'
   $claimed = & $runner @claimedArguments | ConvertFrom-Json
   if ($claimed.environmentClass -ne "CleanMachineClaimed" -or $claimed.verifiedEvidenceTier -ne "ContractOnly" -or $claimed.claim -ne "synthetic-contract") {
     throw "Runner elevated an operator environment claim"
   }
   $checks += 1
 
-  Expect-Failure { & $runner @common -ExpectedUser "cmr216-not-current-user" } "ExpectedUser"
-  Expect-Failure { & $runner @common -CandidateSha256 ("0" * 64) } "SHA-256"
-  Expect-Failure { & $runner @common -CandidateInstallerPath $baseline -CandidateTag "v1.14.0-beta.34" -CandidateSha256 $baselineHash } "must differ"
-  Expect-Failure { & $runner @common -CandidateTag "v1.14.0" } "Stable Windows"
+  $env:CMR216_NETWORK_ADAPTER_COUNT_SELF_TEST = '1'
+  Expect-Failure { & $runner @claimedArguments } 'Network isolation changed'
+  $networkFailureReceipt = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+  if (
+    $networkFailureReceipt.errorCode -ne 'network_isolation_changed' -or
+    $networkFailureReceipt.verifiedEvidenceTier -ne 'Unverified' -or
+    $networkFailureReceipt.networkIsolationVerified -ne $false -or
+    $null -ne $networkFailureReceipt.hostProvenanceSha256
+  ) { throw 'Network isolation failure did not fail closed.' }
+  $checks += 1
+  $env:CMR216_NETWORK_ADAPTER_COUNT_SELF_TEST = '0'
+
+  $wrongUserArguments = $common.Clone()
+  $wrongUserArguments.ExpectedUser = 'cmr216-not-current-user'
+  Expect-Failure { & $runner @wrongUserArguments } "ExpectedUser"
+  $wrongDigestArguments = $common.Clone()
+  $wrongDigestArguments.CandidateSha256 = "0" * 64
+  Expect-Failure { & $runner @wrongDigestArguments } "SHA-256"
+  $failedReceipt = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+  if (
+    $failedReceipt.status -ne 'fail' -or
+    $failedReceipt.verifiedEvidenceTier -ne 'Unverified' -or
+    $failedReceipt.claim -ne 'unverified' -or
+    $failedReceipt.networkIsolationVerified -ne $false -or
+    $null -ne $failedReceipt.hostProvenanceSha256
+  ) { throw "Failed lifecycle receipt retained verified evidence" }
+  $checks += 1
+  $collisionArguments = $common.Clone()
+  $collisionArguments.CandidateInstallerPath = $baseline
+  $collisionArguments.CandidateTag = 'v1.14.0-beta.34'
+  $collisionArguments.CandidateSha256 = $baselineHash
+  Expect-Failure { & $runner @collisionArguments } "must differ"
+  $stableArguments = $common.Clone()
+  $stableArguments.CandidateTag = 'v1.14.0'
+  Expect-Failure { & $runner @stableArguments } "Stable Windows"
   $unmarkedInstallRoot = Join-Path ([IO.Path]::GetTempPath()) ("izzi-lifecycle-" + [Guid]::NewGuid().ToString("N"))
-  Expect-Failure { & $runner @common -InstallRoot $unmarkedInstallRoot } "CMR216 test directory"
-  Expect-Failure { & $runner @common -ReceiptPath (Join-Path $localAppData "receipt.json") } "outside mutable"
+  $unsafeRootArguments = $common.Clone()
+  $unsafeRootArguments.InstallRoot = $unmarkedInstallRoot
+  Expect-Failure { & $runner @unsafeRootArguments } "CMR216 test directory"
+  $unsafeReceiptArguments = $common.Clone()
+  $unsafeReceiptArguments.ReceiptPath = Join-Path $localAppData 'receipt.json'
+  Expect-Failure { & $runner @unsafeReceiptArguments } "outside mutable"
 
   $profile = Join-Path $appData "@openclaw"
   New-Item -ItemType Directory -Force -Path $profile | Out-Null
@@ -149,6 +204,7 @@ try {
   }
   if ($unrelatedProcess.HasExited) { throw "Execute denial stopped an unrelated process" }
   Stop-Process -Id $unrelatedProcess.Id -Force -ErrorAction SilentlyContinue
+  Wait-Process -Id $unrelatedProcess.Id -Timeout 5 -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $installRoot -Recurse -Force
   $checks += 1
 
@@ -156,9 +212,11 @@ try {
 } finally {
   if ($null -ne $unrelatedProcess -and -not $unrelatedProcess.HasExited) {
     Stop-Process -Id $unrelatedProcess.Id -Force -ErrorAction SilentlyContinue
+    Wait-Process -Id $unrelatedProcess.Id -Timeout 5 -ErrorAction SilentlyContinue
   }
   Remove-Item Env:CMR216_LIFECYCLE_EXECUTE -ErrorAction SilentlyContinue
   Remove-Item Env:CMR216_LIFECYCLE_SELF_TEST -ErrorAction SilentlyContinue
+  Remove-Item Env:CMR216_NETWORK_ADAPTER_COUNT_SELF_TEST -ErrorAction SilentlyContinue
   Remove-Item Env:CMR214_SIGNING_POLICY_SELF_TEST -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

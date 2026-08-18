@@ -54,6 +54,26 @@ function Add-Step([string]$Name, [string]$Status, [hashtable]$Details = @{}) {
   $steps.Add([pscustomobject]@{ name = $Name; status = $Status; details = $Details }) | Out-Null
 }
 
+function Get-ActiveNetworkAdapterCount {
+  if ($selfTest) {
+    $sample = [string]$env:CMR216_NETWORK_ADAPTER_COUNT_SELF_TEST
+    if ($sample -notmatch '^\d+$') { throw 'Network adapter self-test sample is invalid.' }
+    return [int]$sample
+  }
+  return @(NetAdapter\Get-NetAdapter -ErrorAction Stop | Where-Object Status -eq 'Up').Count
+}
+
+function Assert-NetworkIsolationCheckpoint([string]$Name, [switch]$Record) {
+  if ($EnvironmentClass -ne 'CleanMachineClaimed') { return }
+  $activeNetworkAdapterCount = Get-ActiveNetworkAdapterCount
+  if ($activeNetworkAdapterCount -ne 0) {
+    throw "Network isolation changed during lifecycle checkpoint '$Name'."
+  }
+  if ($Record) {
+    Add-Step "network-isolation-$Name" "pass" @{ activeNetworkAdapterCount = 0 }
+  }
+}
+
 function Get-ErrorCode([string]$Message) {
   switch -Regex ($Message) {
     'ExpectedUser' { return 'user_mismatch' }
@@ -68,6 +88,8 @@ function Get-ErrorCode([string]$Message) {
     'CMR216_LIFECYCLE_EXECUTE' { return 'execute_confirmation_missing' }
     'Self-test cannot execute' { return 'self_test_execute_denied' }
     'CMR216 test directory' { return 'unsafe_install_root' }
+    'Network isolation|network adapter self-test' { return 'network_isolation_changed' }
+    'Evidence classification' { return 'evidence_classification_invalid' }
     default { return 'lifecycle_failed' }
   }
 }
@@ -78,13 +100,14 @@ function Write-Receipt([string]$Status, [string]$ErrorMessage = "") {
   if (-not (Test-Path -LiteralPath $parent)) {
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
   }
+  $receiptEvidence = if ($Status -eq 'fail') { $null } else { $evidenceClassification }
   [pscustomobject]@{
     schemaVersion = 1
     task = "CMR-216"
     status = $Status
     environmentClass = $EnvironmentClass
-    verifiedEvidenceTier = $(if ($evidenceClassification) { $evidenceClassification.verifiedEvidenceTier } else { 'Unverified' })
-    claim = $(if ($evidenceClassification) { $evidenceClassification.claim } else { 'unverified' })
+    verifiedEvidenceTier = $(if ($receiptEvidence) { $receiptEvidence.verifiedEvidenceTier } else { 'Unverified' })
+    claim = $(if ($receiptEvidence) { $receiptEvidence.claim } else { 'unverified' })
     selfTest = $selfTest
     mode = $(if ($Execute) { "execute" } else { "preflight" })
     startedAt = $startedAt
@@ -92,8 +115,8 @@ function Write-Receipt([string]$Status, [string]$ErrorMessage = "") {
     baseline = @{ tag = $BaselineTag; sha256 = $BaselineSha256.ToLowerInvariant() }
     candidate = @{ tag = $CandidateTag; sha256 = $CandidateSha256.ToLowerInvariant() }
     providerMutationPerformed = $false
-    networkIsolationVerified = $(if ($evidenceClassification) { $evidenceClassification.networkIsolationVerified } else { $false })
-    hostProvenanceSha256 = $(if ($evidenceClassification) { $evidenceClassification.hostProvenanceSha256 } else { $null })
+    networkIsolationVerified = $(if ($receiptEvidence) { $receiptEvidence.networkIsolationVerified } else { $false })
+    hostProvenanceSha256 = $(if ($receiptEvidence) { $receiptEvidence.hostProvenanceSha256 } else { $null })
     localSystemMutationPerformed = $localSystemMutationPerformed
     cleanupAttempted = $cleanupAttempted
     errorCode = $(if ($ErrorMessage) { Get-ErrorCode $ErrorMessage } else { "" })
@@ -130,7 +153,12 @@ function Invoke-Installer([string]$Path, [string]$Label) {
   $script:localSystemMutationPerformed = $true
   $process = Start-Process -FilePath $Path -ArgumentList @('/S', "/D=$InstallRoot") `
     -WindowStyle Hidden -PassThru
-  if (-not $process.WaitForExit(300000)) {
+  $deadline = (Get-Date).AddMinutes(5)
+  while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
+    [void]$process.WaitForExit(1000)
+    Assert-NetworkIsolationCheckpoint "$Label-installer-running"
+  }
+  if (-not $process.HasExited) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     throw "$Label installer timed out."
   }
@@ -138,9 +166,9 @@ function Invoke-Installer([string]$Path, [string]$Label) {
 }
 
 function Get-InstalledExecutable {
-  $matches = @(Get-ChildItem -LiteralPath $InstallRoot -Filter 'Izzi AI.exe' -File -Recurse -ErrorAction SilentlyContinue)
-  if ($matches.Count -ne 1) { throw "Expected exactly one installed Izzi AI executable; observed $($matches.Count)." }
-  return $matches[0].FullName
+  $executables = @(Get-ChildItem -LiteralPath $InstallRoot -Filter 'Izzi AI.exe' -File -Recurse -ErrorAction SilentlyContinue)
+  if ($executables.Count -ne 1) { throw "Expected exactly one installed Izzi AI executable; observed $($executables.Count)." }
+  return $executables[0].FullName
 }
 
 function Assert-InstalledVersion([string]$ExpectedVersion) {
@@ -170,6 +198,7 @@ function Invoke-LaunchSmoke([string]$ExpectedVersion) {
   $running = @()
   do {
     Start-Sleep -Milliseconds 500
+    Assert-NetworkIsolationCheckpoint "launch-smoke-running"
     $running = @(Get-IzziProcesses | Where-Object { $_.Id -notin $before })
   } while ($running.Count -eq 0 -and (Get-Date) -lt $deadline)
   if ($running.Count -eq 0) { throw "Installed app did not remain running during launch smoke." }
@@ -177,6 +206,7 @@ function Invoke-LaunchSmoke([string]$ExpectedVersion) {
   do {
     if (Test-Path -LiteralPath $profilePath) { break }
     Start-Sleep -Milliseconds 500
+    Assert-NetworkIsolationCheckpoint "profile-seed-running"
   } while ((Get-Date) -lt $deadline)
   if (-not (Test-Path -LiteralPath $profilePath)) { throw "First launch did not create the expected profile." }
   Stop-InstalledProcesses
@@ -235,7 +265,12 @@ function Invoke-Uninstall {
   $uninstallers = @(Get-ChildItem -LiteralPath $InstallRoot -Filter 'Uninstall*.exe' -File -Recurse -ErrorAction SilentlyContinue)
   if ($uninstallers.Count -ne 1) { throw "Expected exactly one uninstaller; observed $($uninstallers.Count)." }
   $process = Start-Process -FilePath $uninstallers[0].FullName -ArgumentList '/S' -WindowStyle Hidden -PassThru
-  if (-not $process.WaitForExit(300000)) {
+  $deadline = (Get-Date).AddMinutes(5)
+  while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
+    [void]$process.WaitForExit(1000)
+    Assert-NetworkIsolationCheckpoint "uninstaller-running"
+  }
+  if (-not $process.HasExited) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     throw "Uninstaller timed out."
   }
@@ -246,6 +281,7 @@ function Invoke-Uninstall {
     $remainingUninstaller = @(Get-ChildItem -LiteralPath $InstallRoot -Filter 'Uninstall*.exe' -File -Recurse -ErrorAction SilentlyContinue)
     if ((Get-UninstallEntries).Count -eq 0 -and $remainingExecutable.Count -eq 0 -and $remainingUninstaller.Count -eq 0) { break }
     Start-Sleep -Milliseconds 500
+    Assert-NetworkIsolationCheckpoint "uninstall-cleanup-running"
   } while ((Get-Date) -lt $deadline)
   Assert-NoInstalledResidue
 }
@@ -290,12 +326,18 @@ try {
       hostProvenanceSha256 = $null
     }
   } else {
-    $activeNetworkAdapterCount = @(Get-NetAdapter -ErrorAction Stop | Where-Object Status -eq 'Up').Count
+    $activeNetworkAdapterCount = Get-ActiveNetworkAdapterCount
     $evidenceClassification = & (Join-Path $PSScriptRoot 'resolve-cmr216-evidence-classification.ps1') `
       -EnvironmentClass $EnvironmentClass `
       -HostProvenanceSha256 $HostProvenanceSha256 `
       -ActiveNetworkAdapterCount $activeNetworkAdapterCount | ConvertFrom-Json
+    if (-not $evidenceClassification) { throw 'Evidence classification returned no result.' }
+    $expectedTier = if ($EnvironmentClass -eq 'CleanMachineClaimed') { 'CleanMachineClaimed' } else { 'WorkstationIsolated' }
+    if ($evidenceClassification.verifiedEvidenceTier -ne $expectedTier) {
+      throw 'Evidence classification returned an unexpected tier.'
+    }
   }
+  Assert-NetworkIsolationCheckpoint "preflight" -Record
 
   $baselineObserved = (Get-FileHash -LiteralPath $baselineInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
   $candidateObserved = (Get-FileHash -LiteralPath $candidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -349,6 +391,7 @@ try {
   Invoke-Installer $baselineInstaller "Baseline"
   Assert-ShortcutPolicy $true
   Invoke-LaunchSmoke $baselineVersion
+  Assert-NetworkIsolationCheckpoint "baseline-install-launch" -Record
   Add-Step "baseline-install-launch" "pass" @{ version = $baselineVersion }
 
   $sentinel = Join-Path $profilePath 'cmr216-retention-sentinel.txt'
@@ -358,24 +401,29 @@ try {
   Invoke-Installer $candidateInstaller "Candidate"
   Assert-ShortcutPolicy $true
   Invoke-LaunchSmoke $candidateVersion
+  Assert-NetworkIsolationCheckpoint "candidate-upgrade" -Record
   if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne $sentinelValue) { throw "Profile sentinel changed during upgrade." }
   Add-Step "candidate-upgrade" "pass" @{ version = $candidateVersion; profileRetained = $true }
 
   Invoke-Installer $baselineInstaller "Rollback"
   Invoke-LaunchSmoke $baselineVersion
+  Assert-NetworkIsolationCheckpoint "baseline-rollback" -Record
   if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne $sentinelValue) { throw "Profile sentinel changed during rollback." }
   Add-Step "baseline-rollback" "pass" @{ version = $baselineVersion; profileRetained = $true }
 
   Invoke-Uninstall
+  Assert-NetworkIsolationCheckpoint "uninstall" -Record
   if (-not (Test-Path -LiteralPath $sentinel)) { throw "Profile was removed by uninstall despite retention policy." }
   Add-Step "uninstall" "pass" @{ profileRetained = $true }
 
   Invoke-Installer $candidateInstaller "Reinstall"
   Invoke-LaunchSmoke $candidateVersion
+  Assert-NetworkIsolationCheckpoint "candidate-reinstall" -Record
   if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne $sentinelValue) { throw "Profile sentinel changed during reinstall." }
   Add-Step "candidate-reinstall" "pass" @{ version = $candidateVersion; profileRetained = $true }
 
   Invoke-Uninstall
+  Assert-NetworkIsolationCheckpoint "final-uninstall" -Record
   if (-not (Test-Path -LiteralPath $sentinel)) { throw "Profile was removed by final uninstall." }
   Add-Step "final-uninstall" "pass" @{ profileRetained = $true }
 

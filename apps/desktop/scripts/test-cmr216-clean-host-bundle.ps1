@@ -14,8 +14,12 @@ $checks = 0
 
 function Expect-Failure([scriptblock]$Action, [string]$Pattern) {
   $failed = $false
-  try { & $Action | Out-Null } catch { $failed = $_.Exception.Message -match $Pattern }
-  if (-not $failed) { throw "Expected failure matching: $Pattern" }
+  $observed = ''
+  try { & $Action | Out-Null } catch {
+    $observed = $_.Exception.Message
+    $failed = $observed -match $Pattern
+  }
+  if (-not $failed) { throw "Expected failure matching '$Pattern'; observed '$observed'." }
   $script:checks += 1
 }
 
@@ -105,7 +109,9 @@ try {
   $secondBundle = Join-Path $root "second-bundle"
   New-Item -ItemType Directory -Force -Path $secondBundle | Out-Null
   Set-Content -LiteralPath (Join-Path $secondBundle "owned.txt") -Value "owned" -Encoding ASCII
-  Expect-Failure { & $builder @buildArguments -OutputDirectory $secondBundle } "empty"
+  $nonEmptyArguments = $buildArguments.Clone()
+  $nonEmptyArguments.OutputDirectory = $secondBundle
+  Expect-Failure { & $builder @nonEmptyArguments } "empty"
 
   $archiveBundle = Join-Path $root "CMR216-archive-bundle"
   $archiveArguments = $buildArguments.Clone()
