@@ -262,6 +262,7 @@ export interface CustomerMarketingTelegramCanarySendRuntime {
     attemptId: string;
     workspaceId: string;
     workspaceHash: string;
+    bindingDigest: string;
     role: CustomerRole;
     plan: string;
     candidate: NonNullable<CustomerMarketingTelegramCanaryCandidateResult['candidate']>;
@@ -2436,6 +2437,7 @@ export class CustomerMarketingService {
         'Trạng thái canary đã thay đổi; hãy tải lại trước khi gửi.', initial,
       );
     }
+    const bindingDigest = initial.bindingDigest;
     const candidateResult = await this.prepareTelegramCanaryCandidateForAuthority({
       workflowId: request.workflowId,
       manifestDigest: request.manifestDigest,
@@ -2468,11 +2470,22 @@ export class CustomerMarketingService {
       .digest('hex');
     const coordinated = await this.canarySendCoordinator.send({
       workspaceHash,
-      bindingDigest: initial.bindingDigest,
+      bindingDigest,
       resourceDigest: candidate.resourceDigest,
       text: candidate.text,
     }, {
       confirm: (confirmation) => runtime.confirm(confirmation),
+      reauthorize: async (confirmation) => {
+        const current = this.canaryController!.status();
+        return confirmation.bindingDigest === bindingDigest
+          && confirmation.resourceDigest === candidate.resourceDigest
+          && confirmation.text === candidate.text
+          && current.enabled
+          && !current.killSwitch
+          && current.stateRevision === request.expectedStateRevision
+          && current.bindingDigest === bindingDigest
+          && Boolean(this.canaryController!.executionGrant(intent));
+      },
       execute: async ({ attemptId }) => {
         const refreshedAuthority = await this.authorizeMarketingWorkflow(
           'social', MARKETING_EXTERNAL_ACTION_ROLES,
@@ -2495,7 +2508,7 @@ export class CustomerMarketingService {
           || !current.enabled
           || current.killSwitch
           || current.stateRevision !== request.expectedStateRevision
-          || current.bindingDigest !== initial.bindingDigest
+          || current.bindingDigest !== bindingDigest
           || !grant) {
           return { outcome: 'not_performed', detail: 'state-changed-after-confirmation' };
         }
@@ -2503,6 +2516,7 @@ export class CustomerMarketingService {
           attemptId,
           workspaceId: refreshedAuthority.workspace.id,
           workspaceHash,
+          bindingDigest,
           role: refreshedAuthority.workspace.role,
           plan: refreshedAuthority.workspace.plan,
           candidate: refreshedCandidate,

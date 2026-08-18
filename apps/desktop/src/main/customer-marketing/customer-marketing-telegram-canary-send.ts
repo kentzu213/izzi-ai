@@ -14,11 +14,12 @@ export interface CustomerMarketingTelegramCanarySendCoordinatorInput {
 export interface CustomerMarketingTelegramCanarySendCoordinatorOptions {
   now?: () => string;
   id?: () => string;
-  ledger?: CustomerMarketingTelegramCanarySendAttemptLedger;
+  ledger: CustomerMarketingTelegramCanarySendAttemptLedger;
 }
 
 export interface CustomerMarketingTelegramCanarySendHandlers {
   confirm(input: CustomerMarketingTelegramCanarySendCoordinatorInput): Promise<boolean>;
+  reauthorize(input: CustomerMarketingTelegramCanarySendCoordinatorInput): Promise<boolean>;
   execute(input: CustomerMarketingTelegramCanarySendCoordinatorInput & {
     attemptId: string;
   }): Promise<{ outcome: CustomerMarketingTelegramCanarySendOutcome; detail?: string }>;
@@ -29,10 +30,10 @@ const STORAGE_PREFIX = 'customer_marketing_telegram_canary_send:v1';
 
 interface CustomerMarketingTelegramCanarySendSettings {
   getSetting(key: string): string | null;
-  setSetting(key: string, value: string): void;
+  setSettingIfAbsent(key: string, value: string): boolean;
 }
 
-interface CustomerMarketingTelegramCanarySendReservation {
+export interface CustomerMarketingTelegramCanarySendReservation {
   workspaceHash: string;
   bindingDigest: string;
   resourceDigest: string;
@@ -40,8 +41,14 @@ interface CustomerMarketingTelegramCanarySendReservation {
   reservedAt: string;
 }
 
+export type CustomerMarketingTelegramCanarySendReservationProof = Pick<
+  CustomerMarketingTelegramCanarySendReservation,
+  'workspaceHash' | 'bindingDigest' | 'resourceDigest' | 'attemptId'
+>;
+
 export interface CustomerMarketingTelegramCanarySendAttemptLedger {
   reserve(input: CustomerMarketingTelegramCanarySendReservation): 'reserved' | 'consumed' | 'unavailable';
+  verifyReservation(input: CustomerMarketingTelegramCanarySendReservationProof): boolean;
 }
 
 export class CustomerMarketingTelegramCanarySendLedger
@@ -56,24 +63,39 @@ implements CustomerMarketingTelegramCanarySendAttemptLedger {
       || !isCanonicalIsoTimestamp(input.reservedAt)) return 'unavailable';
     const key = `${STORAGE_PREFIX}:${input.workspaceHash}:${input.resourceDigest}`;
     try {
-      if (this.settings.getSetting(key) !== null) return 'consumed';
       const value = JSON.stringify({ version: 1, ...input });
-      this.settings.setSetting(key, value);
-      return this.settings.getSetting(key) === value ? 'reserved' : 'unavailable';
+      if (this.settings.setSettingIfAbsent(key, value)) return 'reserved';
+      return this.settings.getSetting(key) === null ? 'unavailable' : 'consumed';
     } catch {
       return 'unavailable';
     }
   }
-}
 
-class CustomerMarketingInMemorySendLedger implements CustomerMarketingTelegramCanarySendAttemptLedger {
-  private readonly keys = new Set<string>();
-
-  reserve(input: CustomerMarketingTelegramCanarySendReservation): 'reserved' | 'consumed' {
-    const key = `${input.workspaceHash}:${input.resourceDigest}`;
-    if (this.keys.has(key)) return 'consumed';
-    this.keys.add(key);
-    return 'reserved';
+  verifyReservation(input: CustomerMarketingTelegramCanarySendReservationProof): boolean {
+    if (!SHA256_PATTERN.test(input.workspaceHash)
+      || !SHA256_PATTERN.test(input.bindingDigest)
+      || !SHA256_PATTERN.test(input.resourceDigest)
+      || !isIdentifier(input.attemptId)) return false;
+    try {
+      const raw = this.settings.getSetting(
+        `${STORAGE_PREFIX}:${input.workspaceHash}:${input.resourceDigest}`,
+      );
+      if (!raw) return false;
+      const value = JSON.parse(raw) as unknown;
+      if (!isPlainRecord(value)
+        || !hasExactKeys(value, [
+          'version', 'workspaceHash', 'bindingDigest', 'resourceDigest', 'attemptId', 'reservedAt',
+        ])
+        || value.version !== 1
+        || value.workspaceHash !== input.workspaceHash
+        || value.bindingDigest !== input.bindingDigest
+        || value.resourceDigest !== input.resourceDigest
+        || value.attemptId !== input.attemptId
+        || !isCanonicalIsoTimestamp(value.reservedAt)) return false;
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -83,28 +105,36 @@ export class CustomerMarketingTelegramCanarySendCoordinator {
   private readonly id: () => string;
   private readonly ledger: CustomerMarketingTelegramCanarySendAttemptLedger;
 
-  constructor(options: CustomerMarketingTelegramCanarySendCoordinatorOptions = {}) {
+  constructor(options: CustomerMarketingTelegramCanarySendCoordinatorOptions) {
+    if (!options?.ledger
+      || typeof options.ledger.reserve !== 'function'
+      || typeof options.ledger.verifyReservation !== 'function') {
+      throw new Error('Telegram canary send requires a durable ledger.');
+    }
     this.now = options.now ?? (() => new Date().toISOString());
     this.id = options.id ?? (() => `canary-send-${randomUUID()}`);
-    this.ledger = options.ledger ?? new CustomerMarketingInMemorySendLedger();
+    this.ledger = options.ledger;
   }
 
   async send(
     input: CustomerMarketingTelegramCanarySendCoordinatorInput,
     handlers: CustomerMarketingTelegramCanarySendHandlers,
   ): Promise<Pick<CustomerMarketingTelegramCanarySendResult, 'ok' | 'outcome' | 'receipt' | 'detail'>> {
-    this.assertInput(input);
-    const key = `${input.workspaceHash}:${input.resourceDigest}`;
+    const snapshot = this.snapshotInput(input);
+    const key = `${snapshot.workspaceHash}:${snapshot.resourceDigest}`;
     if (this.consumed.has(key)) return this.notPerformed('attempt-already-consumed');
-    if (!await handlers.confirm(input)) return this.notPerformed('operator-cancelled');
+    if (!await handlers.confirm(snapshot)) return this.notPerformed('operator-cancelled');
+    if (!await handlers.reauthorize(snapshot)) {
+      return this.notPerformed('authority-changed-after-confirmation');
+    }
     if (this.consumed.has(key)) return this.notPerformed('attempt-already-consumed');
 
     const attemptId = this.id();
     const reservedAt = this.now();
     const reservation = this.ledger.reserve({
-      workspaceHash: input.workspaceHash,
-      bindingDigest: input.bindingDigest,
-      resourceDigest: input.resourceDigest,
+      workspaceHash: snapshot.workspaceHash,
+      bindingDigest: snapshot.bindingDigest,
+      resourceDigest: snapshot.resourceDigest,
       attemptId,
       reservedAt,
     });
@@ -116,17 +146,17 @@ export class CustomerMarketingTelegramCanarySendCoordinator {
     this.consumed.add(key);
     let outcome: Awaited<ReturnType<CustomerMarketingTelegramCanarySendHandlers['execute']>>;
     try {
-      outcome = await handlers.execute({ ...input, attemptId });
+      outcome = await handlers.execute(Object.freeze({ ...snapshot, attemptId }));
     } catch {
       outcome = { outcome: 'unknown', detail: 'external-outcome-unknown' };
     }
     if (outcome.outcome === 'not_performed') {
-      return this.notPerformed(outcome.detail ?? 'preflight-changed-after-confirmation');
+      return this.notPerformed(safeNotPerformedDetail(outcome.detail));
     }
     const canonical = {
       attemptId,
-      bindingDigest: input.bindingDigest,
-      resourceDigest: input.resourceDigest,
+      bindingDigest: snapshot.bindingDigest,
+      resourceDigest: snapshot.resourceDigest,
       createdAt: reservedAt,
       outcome: outcome.outcome,
     };
@@ -140,18 +170,27 @@ export class CustomerMarketingTelegramCanarySendCoordinator {
       receipt,
       detail: outcome.outcome === 'performed'
         ? 'private-canary-send-complete'
-        : outcome.detail ?? 'external-outcome-unknown',
+        : 'external-outcome-unknown',
     };
   }
 
-  private assertInput(input: CustomerMarketingTelegramCanarySendCoordinatorInput): void {
-    if (!SHA256_PATTERN.test(input.workspaceHash)
-      || !SHA256_PATTERN.test(input.bindingDigest)
-      || !SHA256_PATTERN.test(input.resourceDigest)
-      || input.text !== input.text.trim()
-      || input.text.length < 1
-      || input.text.length > 4_096
-      || /[\u0000\u007f]/.test(input.text)) throw new Error('Invalid Telegram canary send input.');
+  private snapshotInput(
+    input: CustomerMarketingTelegramCanarySendCoordinatorInput,
+  ): Readonly<CustomerMarketingTelegramCanarySendCoordinatorInput> {
+    const snapshot = {
+      workspaceHash: input.workspaceHash,
+      bindingDigest: input.bindingDigest,
+      resourceDigest: input.resourceDigest,
+      text: input.text,
+    };
+    if (!SHA256_PATTERN.test(snapshot.workspaceHash)
+      || !SHA256_PATTERN.test(snapshot.bindingDigest)
+      || !SHA256_PATTERN.test(snapshot.resourceDigest)
+      || snapshot.text !== snapshot.text.trim()
+      || snapshot.text.length < 1
+      || snapshot.text.length > 4_096
+      || /[\u0000\u007f]/.test(snapshot.text)) throw new Error('Invalid Telegram canary send input.');
+    return Object.freeze(snapshot);
   }
 
   private notPerformed(
@@ -165,6 +204,37 @@ function isIdentifier(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(value);
 }
 
-function isCanonicalIsoTimestamp(value: string): boolean {
-  return Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+function isCanonicalIsoTimestamp(value: unknown): value is string {
+  return typeof value === 'string'
+    && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString() === value;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
+}
+
+const SAFE_NOT_PERFORMED_DETAILS = new Set([
+  'authority-changed-after-confirmation',
+  'state-changed-after-confirmation',
+  'source-changed-after-confirmation',
+  'credential-or-chat-unavailable',
+  'request-invalid',
+  'resource-digest-mismatch',
+  'rate-limited',
+  'execute-policy-blocked',
+  'approval-invalid',
+  'preflight-changed-after-confirmation',
+]);
+
+function safeNotPerformedDetail(value: string | undefined): string {
+  return value && SAFE_NOT_PERFORMED_DETAILS.has(value)
+    ? value
+    : 'external-operation-not-performed';
 }

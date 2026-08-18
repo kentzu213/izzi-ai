@@ -564,8 +564,9 @@ function setupIPC() {
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
   const customerMarketingCanaryNamedApprovalStore = new CustomerMarketingCanaryNamedApprovalStore(dbManager);
+  const customerMarketingCanarySendLedger = new CustomerMarketingTelegramCanarySendLedger(dbManager);
   const customerMarketingCanarySendCoordinator = new CustomerMarketingTelegramCanarySendCoordinator({
-    ledger: new CustomerMarketingTelegramCanarySendLedger(dbManager),
+    ledger: customerMarketingCanarySendLedger,
   });
   // CMR-224: Live.md is the one memory file the operator edits by hand. Create it
   // from the template on first run; never overwrite an existing or unreadable file.
@@ -663,7 +664,7 @@ function setupIPC() {
         return result.response === 0;
       },
       execute: async ({
-        attemptId, workspaceId, workspaceHash, role, plan, candidate, approval,
+        attemptId, workspaceId, workspaceHash, bindingDigest, role, plan, candidate, approval,
       }) => {
         const chatId = customerMarketingTelegramSandboxConfig.getPrivateSandboxChatId(workspaceId);
         const credential = customerMarketingCredentialVault.listStatuses(workspaceId)
@@ -689,6 +690,7 @@ function setupIPC() {
         const runtime = new CustomerMarketingTelegramCanaryRuntime(
           customerMarketingCanaryController,
           connector,
+          customerMarketingCanarySendLedger,
         );
         const result = await runtime.execute({
           workspaceHash,
@@ -709,6 +711,11 @@ function setupIPC() {
           },
           operation: 'execute',
           approval,
+        }, {
+          workspaceHash,
+          bindingDigest,
+          resourceDigest: candidate.resourceDigest,
+          attemptId,
         });
         if (result.ok && result.status === 'executed' && result.externalActionPerformed) {
           return { outcome: 'performed' as const };

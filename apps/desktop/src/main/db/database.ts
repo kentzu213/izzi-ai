@@ -204,6 +204,17 @@ export class DatabaseManager {
       .run(key, value, new Date().toISOString());
   }
 
+  setSettingIfAbsent(key: string, value: string): boolean {
+    const result = this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO NOTHING`,
+      )
+      .run(key, value, new Date().toISOString());
+    return result.changes === 1;
+  }
+
   deleteSetting(key: string): void {
     this.db.prepare('DELETE FROM settings WHERE key = ?').run(key);
   }

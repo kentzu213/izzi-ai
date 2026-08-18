@@ -53,7 +53,10 @@ import type { CustomerMarketingSafeStorage } from './customer-marketing-credenti
 import type { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing-telegram-sandbox-config';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing-canary-named-approval';
 import { CustomerMarketingConnectorOperationStore } from './customer-marketing-connector-operation-store';
-import { CustomerMarketingTelegramCanarySendCoordinator } from './customer-marketing-telegram-canary-send';
+import {
+  CustomerMarketingTelegramCanarySendCoordinator,
+  CustomerMarketingTelegramCanarySendLedger,
+} from './customer-marketing-telegram-canary-send';
 import type { CustomerMarketingTelegramCanarySendRuntime } from './customer-marketing-service';
 import type {
   CustomerMarketingWorkspaceGateway,
@@ -72,6 +75,12 @@ class MemorySettings {
 
   setSetting(key: string, value: string): void {
     this.values.set(key, value);
+  }
+
+  setSettingIfAbsent(key: string, value: string): boolean {
+    if (this.values.has(key)) return false;
+    this.values.set(key, value);
+    return true;
   }
 
   deleteSetting(key: string): void {
@@ -6092,6 +6101,7 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       canarySendCoordinator: new CustomerMarketingTelegramCanarySendCoordinator({
         now: () => fixedNow,
         id: () => 'canary-send-attempt-1',
+        ledger: new CustomerMarketingTelegramCanarySendLedger(new MemorySettings()),
       }),
       telegramCanarySendRuntime: runtime,
       connectorOperationStore,
@@ -6238,7 +6248,9 @@ describe('CustomerMarketingService CMR-230 Telegram one-shot send', () => {
       const context = setup({
         workspaceGateway: remote.gateway,
         canaryController: controller,
-        canarySendCoordinator: new CustomerMarketingTelegramCanarySendCoordinator(),
+        canarySendCoordinator: new CustomerMarketingTelegramCanarySendCoordinator({
+          ledger: new CustomerMarketingTelegramCanarySendLedger(new MemorySettings()),
+        }),
         telegramCanarySendRuntime: { confirm, execute },
       });
 
