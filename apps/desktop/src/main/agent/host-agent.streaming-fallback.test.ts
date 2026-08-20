@@ -5,7 +5,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
 /**
  * Guards the trigger for the non-streaming fallback: codex-lb on a Codex/ChatGPT
  * account rejects streaming+function-calling for some models (e.g. gpt-5.6-sol)
@@ -80,6 +79,7 @@ describe('runHostAgentTurn production fallback', () => {
     }));
     expect(requests.map(({ body }) => body.stream)).toEqual([true, false]);
     expect(requests.map(({ body }) => body.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol']);
+    expect(requests.map(({ body }) => body.reasoning_effort)).toEqual(['high', 'high']);
     expect(requests.every(({ body }) => body.tools === undefined && body.tool_choice === undefined)).toBe(true);
     expect(requests[0].headers['X-Source-Platform']).toBe('starizzi');
     expect(requests[0].headers['Idempotency-Key']).toBeTruthy();
@@ -117,7 +117,67 @@ describe('runHostAgentTurn production fallback', () => {
     const headers = init?.headers as Record<string, string>;
     expect(Array.isArray(body.tools)).toBe(true);
     expect(body.tool_choice).toBe('auto');
+    expect(body.reasoning_effort).toBe('high');
     expect(headers['X-Source-Platform']).toBeUndefined();
     expect(headers['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('omits reasoning_effort for a non-Sol model in the tool loop', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        'data: {"choices":[{"delta":{"content":"PLAIN_OK"}}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await runHostAgentTurn({
+      config: {
+        baseUrl: 'http://127.0.0.1:2455/v1',
+        authType: 'bearer',
+        selectedModel: 'gpt-5.4',
+      },
+      apiKey: 'test-key',
+      message: 'reply exactly PLAIN_OK',
+      history: [],
+      images: [],
+      mode: 'agent',
+      turnId: 'turn-plain',
+      requestApproval: async () => 'deny',
+    });
+
+    expect(result).toEqual({ reply: 'PLAIN_OK' });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it('sends a configured reasoning_effort override in the tool loop', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        'data: {"choices":[{"delta":{"content":"OVERRIDE_OK"}}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await runHostAgentTurn({
+      config: {
+        baseUrl: 'http://127.0.0.1:2455/v1',
+        authType: 'bearer',
+        selectedModel: 'gpt-5.6-sol',
+        reasoningEffort: 'low',
+      },
+      apiKey: 'test-key',
+      message: 'reply exactly OVERRIDE_OK',
+      history: [],
+      images: [],
+      mode: 'agent',
+      turnId: 'turn-override',
+      requestApproval: async () => 'deny',
+    });
+
+    expect(result).toEqual({ reply: 'OVERRIDE_OK' });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.reasoning_effort).toBe('low');
   });
 });

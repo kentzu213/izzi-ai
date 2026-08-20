@@ -14,7 +14,7 @@
 import { randomUUID } from 'crypto';
 import { buildAuthHeaders, resolveChatCompletionsUrl } from './custom-openai-provider';
 import { buildIzziRequestHeaders, isOfficialIzziApiUrl, modelSupportsTools } from './izzi-request-headers';
-import type { CustomProviderConfig } from './provider-settings-store';
+import { resolveReasoningEffort, type CustomProviderConfig } from './provider-settings-store';
 import { HOST_TOOLS, classifyToolRisk, executeHostTool, summarizeToolCall, type OpenAiTool, type ToolRisk } from './agent-tools';
 import { needsApproval, type PermissionMode } from './agent-permissions';
 import { extractSseEvents, type AgentTurnEvent } from '../../shared/agent-turn-events';
@@ -281,6 +281,8 @@ export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ re
     ...buildAuthHeaders(config.authType, apiKey),
   };
   const model = config.selectedModel;
+  const reasoningEffort = resolveReasoningEffort(config);
+  const reasoningBody = reasoningEffort ? { reasoning_effort: reasoningEffort } : {};
   // The production Izzi route currently cannot serve direct Sol tool calls.
   // Keep tools intact for local/custom Codex-LB endpoints that do support them.
   const supportsTools = !isOfficialIzziApiUrl(url) || modelSupportsTools(model);
@@ -327,6 +329,7 @@ export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ re
         model,
         messages,
         ...(supportsTools ? { tools, tool_choice: 'auto' } : {}),
+        ...reasoningBody,
         stream,
       });
       const roundHeaders = {
@@ -450,6 +453,7 @@ export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ re
                 'Bạn đã dùng hết số bước công cụ cho lượt này — DỪNG gọi công cụ. Tổng kết ngắn gọn: đã làm được gì, kiểm chứng được gì, và còn bước nào chưa xong. Nếu chưa hoàn tất, nói rõ để người dùng nhắn "tiếp tục".',
             },
           ],
+          ...reasoningBody,
           stream: true,
         },
         (text) => emit?.({ turnId, kind: 'delta', text }),

@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.46
+
+Reliable Sol agent routing through the local Cockpit gateway.
+
+- Send `reasoning_effort=high` automatically whenever the selected custom model is `gpt-5.6-sol`.
+- Preserve an optional reasoning override across provider settings and legacy configurations.
+- Apply the same routing to normal provider calls, streaming fallback calls, connection tests, and host-agent tool loops.
+- Add regression coverage for provider persistence, tool-loop requests, and streaming fallback behavior.
+
 ## 1.14.0-beta.42
 
 Isolated Customer Marketing staging authentication.

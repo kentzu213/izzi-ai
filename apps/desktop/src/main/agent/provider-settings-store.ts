@@ -18,12 +18,20 @@ export type AllowedModel = (typeof ALLOWED_MODELS)[number];
 export type AuthType = 'bearer' | 'x-api-key';
 export type ActiveProvider = 'managed' | 'custom';
 
+export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/** Model that defaults to reasoning_effort=high when no explicit setting is stored. */
+const HIGH_EFFORT_DEFAULT_MODEL = 'gpt-5.6-sol';
+
 /** Non-secret custom provider configuration (persisted as JSON). */
 export interface CustomProviderConfig {
   baseUrl: string;
   authType: AuthType;
   /** Model id to request. Any non-empty string (endpoint validates). */
   selectedModel: string;
+  /** Optional reasoning effort; absent ⇒ provider default (high for gpt-5.6-sol). */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ValidationResult {
@@ -90,7 +98,30 @@ export function validateCustomConfig(config: Partial<CustomProviderConfig> | nul
     errors.push('Model không được để trống');
   }
 
+  // reasoningEffort: optional, but when present it must be a known value.
+  if (
+    config.reasoningEffort !== undefined &&
+    !REASONING_EFFORTS.includes(config.reasoningEffort as ReasoningEffort)
+  ) {
+    errors.push('Reasoning effort không hợp lệ (minimal/low/medium/high)');
+  }
+
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Effective reasoning effort for outgoing requests: an explicit valid setting
+ * wins; otherwise gpt-5.6-sol defaults to 'high' and every other model keeps
+ * the endpoint's own default (no reasoning_effort field sent).
+ */
+export function resolveReasoningEffort(
+  config: Pick<CustomProviderConfig, 'selectedModel' | 'reasoningEffort'> | null | undefined,
+): ReasoningEffort | undefined {
+  if (!config) return undefined;
+  if (config.reasoningEffort && REASONING_EFFORTS.includes(config.reasoningEffort)) {
+    return config.reasoningEffort;
+  }
+  return config.selectedModel === HIGH_EFFORT_DEFAULT_MODEL ? 'high' : undefined;
 }
 
 /**
@@ -124,6 +155,7 @@ export class ProviderSettingsStore {
         baseUrl: config.baseUrl,
         authType: config.authType,
         selectedModel: config.selectedModel,
+        ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
       }),
     );
   }

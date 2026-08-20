@@ -56,9 +56,16 @@ const PRESETS: Preset[] = [
   },
 ];
 
+type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
+
 interface CustomProviderApi {
   getConfig: () => Promise<{
-    config: { baseUrl: string; authType: AuthType; selectedModel: string } | null;
+    config: {
+      baseUrl: string;
+      authType: AuthType;
+      selectedModel: string;
+      reasoningEffort?: ReasoningEffort;
+    } | null;
     enabled: boolean;
     hasKey: boolean;
     maskedKeyHint: string | null;
@@ -67,6 +74,7 @@ interface CustomProviderApi {
     baseUrl: string;
     authType: AuthType;
     selectedModel: string;
+    reasoningEffort?: ReasoningEffort;
     apiKey?: string;
   }) => Promise<{ ok: boolean; errors?: string[] }>;
   setEnabled: (enabled: boolean) => Promise<unknown>;
@@ -85,6 +93,9 @@ export function ModelConnectionsPage() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [authType, setAuthType] = useState<AuthType>('bearer');
+  // Optional stored reasoning effort — preserved through save; main-process
+  // defaulting (high for gpt-5.6-sol) applies when unset.
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
   const [apiKey, setApiKey] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [hasKey, setHasKey] = useState(false);
@@ -105,6 +116,7 @@ export function ModelConnectionsPage() {
           setPresetId(configuredPreset?.id ?? 'custom');
           setModel(c.config.selectedModel || '');
           setAuthType(c.config.authType || 'bearer');
+          setReasoningEffort(c.config.reasoningEffort);
         }
         setEnabled(!!c?.enabled);
         setHasKey(!!c?.hasKey);
@@ -142,6 +154,7 @@ export function ModelConnectionsPage() {
       baseUrl: baseUrl.trim(),
       authType,
       selectedModel: model.trim(),
+      reasoningEffort,
       apiKey: apiKey.trim() || undefined,
     });
     if (!save?.ok) {

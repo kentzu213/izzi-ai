@@ -147,12 +147,14 @@ export class AgentService extends EventEmitter {
     baseUrl: string;
     authType: AuthType;
     selectedModel: CustomProviderConfig['selectedModel'];
+    reasoningEffort?: CustomProviderConfig['reasoningEffort'];
     apiKey?: string;
   }): { ok: boolean; errors?: string[] } {
     const config: CustomProviderConfig = {
       baseUrl: input.baseUrl,
       authType: input.authType,
       selectedModel: input.selectedModel,
+      ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     };
     const validation = validateCustomConfig(config);
     if (!validation.ok) {

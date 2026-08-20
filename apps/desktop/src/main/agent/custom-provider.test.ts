@@ -24,6 +24,7 @@ import { SecretStore } from './secret-store';
 import {
   ALLOWED_MODELS,
   ProviderSettingsStore,
+  resolveReasoningEffort,
   validateCustomConfig,
   type CustomProviderConfig,
 } from './provider-settings-store';
@@ -71,7 +72,6 @@ beforeEach(() => {
   encryptionAvailable = true;
   axiosRequest.mockReset();
 });
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -149,10 +149,90 @@ describe('validateCustomConfig', () => {
     expect(res.ok).toBe(false);
   });
 
+  it('accepts an omitted or valid reasoningEffort, rejects an unknown value', () => {
+    expect(validateCustomConfig(VALID_CONFIG).ok).toBe(true);
+    expect(validateCustomConfig({ ...VALID_CONFIG, reasoningEffort: 'high' }).ok).toBe(true);
+    expect(validateCustomConfig({ ...VALID_CONFIG, reasoningEffort: 'minimal' }).ok).toBe(true);
+    expect(validateCustomConfig({ ...VALID_CONFIG, reasoningEffort: 'ultra' as any }).ok).toBe(false);
+  });
+
   it('every ALLOWED_MODELS entry validates', () => {
     for (const model of ALLOWED_MODELS) {
       expect(validateCustomConfig({ ...VALID_CONFIG, selectedModel: model }).ok).toBe(true);
     }
+  });
+});
+
+// 2b. Reasoning-effort resolution ─────────────────────────────────────────────
+describe('resolveReasoningEffort', () => {
+  it('defaults to high for gpt-5.6-sol when no setting is stored', () => {
+    expect(resolveReasoningEffort({ selectedModel: 'gpt-5.6-sol' })).toBe('high');
+  });
+
+  it('leaves other models on the endpoint default (undefined)', () => {
+    for (const model of ['gpt-5.4', 'gpt-5.6-terra', 'izzi-smart', 'grok-4.5-high']) {
+      expect(resolveReasoningEffort({ selectedModel: model })).toBeUndefined();
+    }
+  });
+
+  it('an explicit valid setting wins over the model default', () => {
+    expect(resolveReasoningEffort({ selectedModel: 'gpt-5.6-sol', reasoningEffort: 'low' })).toBe('low');
+    expect(resolveReasoningEffort({ selectedModel: 'gpt-5.4', reasoningEffort: 'medium' })).toBe('medium');
+  });
+
+  it('ignores an invalid stored value and falls back to the model default', () => {
+    expect(resolveReasoningEffort({ selectedModel: 'gpt-5.6-sol', reasoningEffort: 'ultra' as any })).toBe('high');
+    expect(resolveReasoningEffort({ selectedModel: 'gpt-5.4', reasoningEffort: 'ultra' as any })).toBeUndefined();
+    expect(resolveReasoningEffort(null)).toBeUndefined();
+  });
+});
+
+// 2c. reasoning_effort in provider request bodies ─────────────────────────────
+describe('CustomOpenAIProvider reasoning_effort request bodies', () => {
+  function mockStreamOk() {
+    axiosRequest.mockResolvedValue({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      data: fakeStream(['data: [DONE]\n']),
+    });
+  }
+
+  it('streamChat sends reasoning_effort=high for gpt-5.6-sol by default', async () => {
+    mockStreamOk();
+    const provider = new CustomOpenAIProvider({ ...VALID_CONFIG, selectedModel: 'gpt-5.6-sol' }, FAKE_KEY);
+    await collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] }));
+    expect(axiosRequest.mock.calls[0][0].data).toMatchObject({
+      model: 'gpt-5.6-sol',
+      reasoning_effort: 'high',
+      stream: true,
+    });
+  });
+
+  it('streamChat omits reasoning_effort for other models', async () => {
+    mockStreamOk();
+    const provider = new CustomOpenAIProvider(VALID_CONFIG, FAKE_KEY);
+    await collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] }));
+    expect(axiosRequest.mock.calls[0][0].data.reasoning_effort).toBeUndefined();
+  });
+
+  it('streamChat honors an explicit configured effort for a non-sol model', async () => {
+    mockStreamOk();
+    const provider = new CustomOpenAIProvider({ ...VALID_CONFIG, reasoningEffort: 'medium' }, FAKE_KEY);
+    await collect(provider.streamChat({ sessionId: 's', message: 'hi', history: [] }));
+    expect(axiosRequest.mock.calls[0][0].data.reasoning_effort).toBe('medium');
+  });
+
+  it('testConnection probe includes reasoning_effort=high for gpt-5.6-sol and omits it otherwise', async () => {
+    axiosRequest.mockResolvedValue({ status: 200, headers: {}, data: { ok: true } });
+    const sol = new CustomOpenAIProvider({ ...VALID_CONFIG, selectedModel: 'gpt-5.6-sol' }, FAKE_KEY);
+    await sol.testConnection();
+    expect(axiosRequest.mock.calls[0][0].data).toMatchObject({ model: 'gpt-5.6-sol', reasoning_effort: 'high' });
+
+    axiosRequest.mockClear();
+    axiosRequest.mockResolvedValue({ status: 200, headers: {}, data: { ok: true } });
+    const other = new CustomOpenAIProvider(VALID_CONFIG, FAKE_KEY);
+    await other.testConnection();
+    expect(axiosRequest.mock.calls[0][0].data.reasoning_effort).toBeUndefined();
   });
 });
 
@@ -317,6 +397,7 @@ describe('CustomOpenAIProvider streaming fallback', () => {
     expect(axiosRequest).toHaveBeenCalledTimes(2);
     expect(axiosRequest.mock.calls.map(([request]) => request.data.stream)).toEqual([true, false]);
     expect(axiosRequest.mock.calls.map(([request]) => request.data.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol']);
+    expect(axiosRequest.mock.calls.map(([request]) => request.data.reasoning_effort)).toEqual(['high', 'high']);
     const firstHeaders = axiosRequest.mock.calls[0][0].headers;
     const retryHeaders = axiosRequest.mock.calls[1][0].headers;
     expect(firstHeaders['X-Source-Platform']).toBe('starizzi');
@@ -386,6 +467,38 @@ describe('ProviderSettingsStore + SecretStore smoke (in-memory db)', () => {
 
     settings.clearConfig();
     expect(settings.getConfig()).toBeNull();
+  });
+
+  it('persists reasoningEffort when set and omits the field when absent', () => {
+    const db = createFakeDb();
+    const settings = new ProviderSettingsStore(db);
+
+    settings.saveConfig({ ...VALID_CONFIG, reasoningEffort: 'high' });
+    expect(settings.getConfig()).toEqual({ ...VALID_CONFIG, reasoningEffort: 'high' });
+
+    settings.saveConfig(VALID_CONFIG);
+    expect(db.getSetting('custom_provider_config')).not.toContain('reasoningEffort');
+    expect(settings.getConfig()).toEqual(VALID_CONFIG);
+  });
+
+  it('reads a legacy config JSON without reasoningEffort; sol defaults to high, others do not', () => {
+    const db = createFakeDb();
+    const settings = new ProviderSettingsStore(db);
+    db.setSetting(
+      'custom_provider_config',
+      JSON.stringify({ baseUrl: HTTPS_URL, authType: 'bearer', selectedModel: 'gpt-5.6-sol' }),
+    );
+
+    const config = settings.getConfig();
+    expect(config).toEqual({ baseUrl: HTTPS_URL, authType: 'bearer', selectedModel: 'gpt-5.6-sol' });
+    expect(validateCustomConfig(config).ok).toBe(true);
+    expect(resolveReasoningEffort(config)).toBe('high');
+
+    db.setSetting(
+      'custom_provider_config',
+      JSON.stringify({ baseUrl: HTTPS_URL, authType: 'bearer', selectedModel: 'gpt-5.4' }),
+    );
+    expect(resolveReasoningEffort(settings.getConfig())).toBeUndefined();
   });
 
   it('migrates an enabled legacy loopback :2455 connection exactly once without touching config or key', () => {

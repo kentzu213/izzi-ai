@@ -2,7 +2,7 @@ import axios from 'axios';
 import { randomUUID } from 'crypto';
 import type { ChatProvider, ProviderTestResult } from './chat-provider';
 import { readStreamBody, streamOpenAISse } from './openai-sse';
-import type { CustomProviderConfig } from './provider-settings-store';
+import { resolveReasoningEffort, type CustomProviderConfig } from './provider-settings-store';
 import { buildIzziRequestHeaders } from './izzi-request-headers';
 import type {
   ManagedAgentStatus,
@@ -112,6 +112,12 @@ export class CustomOpenAIProvider implements ChatProvider {
     return resolveChatCompletionsUrl(this.config.baseUrl);
   }
 
+  /** reasoning_effort for request bodies; {} when the endpoint default applies. */
+  private reasoningEffortBody(): { reasoning_effort?: string } {
+    const effort = resolveReasoningEffort(this.config);
+    return effort ? { reasoning_effort: effort } : {};
+  }
+
   private buildHeaders(
     accept = 'text/event-stream',
     url = this.getChatUrl(),
@@ -141,7 +147,7 @@ export class CustomOpenAIProvider implements ChatProvider {
       response = await axios.request<NodeJS.ReadableStream>({
         method: 'POST',
         url: chatUrl,
-        data: { model: this.config.selectedModel, messages, stream: true },
+        data: { model: this.config.selectedModel, messages, stream: true, ...this.reasoningEffortBody() },
         responseType: 'stream',
         validateStatus: () => true,
         headers: this.buildHeaders('text/event-stream', chatUrl, idempotencyKey),
@@ -159,7 +165,7 @@ export class CustomOpenAIProvider implements ChatProvider {
           fallback = await axios.request({
             method: 'POST',
             url: chatUrl,
-            data: { model: this.config.selectedModel, messages, stream: false },
+            data: { model: this.config.selectedModel, messages, stream: false, ...this.reasoningEffortBody() },
             validateStatus: () => true,
             headers: this.buildHeaders('application/json', chatUrl, idempotencyKey),
             timeout: REQUEST_TIMEOUT_MS,
@@ -204,6 +210,7 @@ export class CustomOpenAIProvider implements ChatProvider {
           messages: [{ role: 'user', content: 'ping' }],
           max_tokens: 1,
           stream: false,
+          ...this.reasoningEffortBody(),
         },
         validateStatus: () => true,
         headers: this.buildHeaders('application/json'),
