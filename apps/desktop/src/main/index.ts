@@ -51,6 +51,8 @@ import type { AgentRunStatus, AgentTask, AgentTaskStatus, IntegrationProvider } 
 import { isRunStatus, sanitizeGoal, sanitizeRunEntry, type RunEntryInput } from './agent/run-helpers';
 import { UpdaterService } from './updater/updater-service';
 import { SetupWizardService } from './setup/setup-wizard-service';
+import { BudgetService } from './budget/budget-service';
+import { registerBudgetIpc } from './budget/budget-ipc';
 import { registerAgentIpcHandlers, shutdownAgents } from './agents';
 import { DockerAgentService, type DockerAgentPayload } from './agents/docker-agent-service';
 import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
@@ -380,6 +382,8 @@ async function inspectConfiguredF5Tts(): Promise<CustomerF5TtsStatus> {
 }
 
 function setupIPC() {
+  registerBudgetIpc(new BudgetService(dbManager));
+
   const marketingWorkspace = new MarketingWorkspaceService(
     path.join(app.getPath('userData'), 'marketing-room.json'),
     app.getAppPath(),

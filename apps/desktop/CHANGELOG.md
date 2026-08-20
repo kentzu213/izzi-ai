@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.47
+
+Budget dashboard IPC wiring and local persistence.
+
+- Register all renderer budget channels in the Electron main process.
+- Persist budget limits and local usage entries through the existing SQLite-backed store.
+- Add regression coverage for the IPC bridge, rolling budget status, and retention purge.
+- Keep the Sol `gpt-5.6-sol` high-reasoning route unchanged and covered by the existing agent tests.
+
 ## 1.14.0-beta.46
 
 Reliable Sol agent routing through the local Cockpit gateway.
