@@ -238,6 +238,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [autopostReady, setAutopostReady] = useState(false);
   const [autopostLoading, setAutopostLoading] = useState(true);
   const [autopostError, setAutopostError] = useState('');
+  const [autopostMaster, setAutopostMaster] = useState<{ enabled: boolean; connected: boolean } | null>(null);
+  const [autopostMasterBusy, setAutopostMasterBusy] = useState(false);
   const [connectingChannel, setConnectingChannel] = useState<AutopostChannel | null>(null);
   const [connectNotice, setConnectNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -348,8 +350,9 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setAutopostLoading(true);
     setAutopostError('');
     try {
-      const result = await api.listAccounts();
+      const [result, masterStatus] = await Promise.all([api.listAccounts(), api.getStatus()]);
       if (request !== autopostRequestId.current) return;
+      setAutopostMaster({ enabled: Boolean(masterStatus?.enabled), connected: Boolean(masterStatus?.connected) });
       if (!result.ok) {
         setAutopostReady(false);
         setAutopostAccounts([]);
@@ -362,6 +365,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       if (request !== autopostRequestId.current) return;
       setAutopostReady(false);
       setAutopostAccounts([]);
+      setAutopostMaster(null);
       setAutopostError(connectErrorLabel());
     } finally {
       if (request === autopostRequestId.current) setAutopostLoading(false);
@@ -548,6 +552,29 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setAutopostError('Không mở được cửa sổ kết nối.');
     } finally {
       setConnectingChannel(null);
+    }
+  };
+
+  const setAutopostBridgeEnabled = async (nextEnabled: boolean) => {
+    const api = window.electronAPI?.autopost;
+    if (!api || !canConnectChannels || autopostMasterBusy || connectingChannel) return;
+    setAutopostMasterBusy(true);
+    setAutopostError('');
+    setConnectNotice('');
+    try {
+      const changed = await api.setEnabled(nextEnabled);
+      if (!changed.ok) {
+        setAutopostError(connectErrorLabel(changed.error));
+        return;
+      }
+      setConnectNotice(nextEnabled
+        ? 'Đã bật Auto Post. Tiếp theo: kết nối kênh, quay lại Izzi AI rồi bấm Tải lại.'
+        : 'Đã ngắt Auto Post. Facebook và YouTube sẽ không kết nối được cho tới khi bật lại.');
+      await loadAutopostAccounts();
+    } catch {
+      setAutopostError(connectErrorLabel());
+    } finally {
+      setAutopostMasterBusy(false);
     }
   };
 
@@ -824,6 +851,21 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       ? `Vault cục bộ · ${credentialStateLabel(telegramCredential.state)}`
       : 'Chưa có khóa Telegram trong vault cục bộ.';
 
+  const masterChecking = autopostLoading && !autopostMaster;
+  const masterConnected = Boolean(autopostMaster?.connected);
+  const masterEnabled = Boolean(autopostMaster?.enabled);
+  const masterStateClass: ChannelConnectionState = masterChecking
+    ? 'unknown'
+    : masterConnected ? 'connected' : masterEnabled ? 'attention' : 'disconnected';
+  const masterLabel = masterChecking
+    ? 'Đang kiểm tra…'
+    : masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
+  const masterMeta = masterConnected
+    ? 'Auto Post sẵn sàng nhận kết nối Facebook Test Page và YouTube Private.'
+    : masterEnabled
+      ? 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
+      : 'Bật để kết nối Facebook Test Page và YouTube Private qua Auto-Post Tool.';
+
   const connectionCards: Array<{
     key: AutopostChannel | 'telegram';
     label: string;
@@ -845,7 +887,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       actionLabel: facebookState === 'connected' ? 'Kết nối lại Facebook' : 'Kết nối Facebook',
       onAction: () => { void connectChannel('facebook'); },
       busy: connectingChannel === 'facebook',
-      disabled: !canConnectChannels || autopostLoading || Boolean(connectingChannel),
+      disabled: !canConnectChannels || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
       note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
     },
     {
@@ -857,7 +899,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       actionLabel: youtubeState === 'connected' ? 'Kết nối lại YouTube' : 'Kết nối YouTube',
       onAction: () => { void connectChannel('youtube'); },
       busy: connectingChannel === 'youtube',
-      disabled: !canConnectChannels || autopostLoading || Boolean(connectingChannel),
+      disabled: !canConnectChannels || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
       note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
     },
     {
@@ -878,8 +920,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     ? 'Đang kiểm tra trạng thái kết nối kênh.'
     : connectNotice
       || autopostError
-      || `Facebook ${channelStateLabel(facebookState)}. YouTube ${channelStateLabel(youtubeState)}. `
-        + `Telegram ${channelStateLabel(telegramState)}.`;
+      || `Auto Post ${masterLabel}. Facebook ${channelStateLabel(facebookState)}. `
+        + `YouTube ${channelStateLabel(youtubeState)}. Telegram ${channelStateLabel(telegramState)}.`;
 
   const connectionCenter = (
     <section className="cmr-connect-center" aria-labelledby="cmr-connect-heading">
@@ -894,7 +936,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           className="cmr-icon-button"
           aria-label="Tải lại trạng thái kết nối kênh"
           title="Tải lại"
-          disabled={autopostLoading || Boolean(connectingChannel)}
+          disabled={autopostLoading || autopostMasterBusy || Boolean(connectingChannel)}
           onClick={() => void loadAutopostAccounts()}
         >
           <RefreshIcon className="cmr-icon" />
@@ -903,6 +945,43 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       <div className="cmr-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {connectAnnouncement}
       </div>
+      <div className={`cmr-connect-master is-${masterStateClass}`} aria-busy={masterChecking || autopostMasterBusy}>
+        <div className="cmr-connect-master__status">
+          <span className="cmr-eyebrow">Cầu nối Auto Post</span>
+          <strong className={`cmr-connect-state cmr-connect-state--${masterStateClass}`}>{masterLabel}</strong>
+          <p>{masterMeta}</p>
+        </div>
+        {masterEnabled ? (
+          <button
+            type="button"
+            className="cmr-button cmr-button--quiet cmr-connect-master__action"
+            disabled={!canConnectChannels || autopostMasterBusy || autopostLoading || Boolean(connectingChannel)}
+            aria-busy={autopostMasterBusy}
+            onClick={() => void setAutopostBridgeEnabled(false)}
+          >
+            {autopostMasterBusy ? 'Đang xử lý…' : 'Ngắt'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="cmr-button cmr-button--primary cmr-connect-master__action"
+            disabled={!canConnectChannels || autopostMasterBusy || autopostLoading || Boolean(connectingChannel)}
+            aria-busy={autopostMasterBusy}
+            onClick={() => void setAutopostBridgeEnabled(true)}
+          >
+            {autopostMasterBusy ? 'Đang xử lý…' : 'Kết nối Auto-Post'}
+          </button>
+        )}
+        {!canConnectChannels && (
+          <small className="cmr-permission-note">Chỉ Owner hoặc Manager có thể bật hoặc ngắt Auto Post.</small>
+        )}
+      </div>
+      <ol className="cmr-connect-flow">
+        <li>Bật Auto Post bằng nút Kết nối Auto-Post.</li>
+        <li>Bấm kết nối Facebook Test Page hoặc YouTube Private.</li>
+        <li>Hoàn tất đăng nhập trên trình duyệt rồi quay lại Izzi AI.</li>
+        <li>Bấm Tải lại để cập nhật trạng thái.</li>
+      </ol>
       <div className="cmr-connect-grid" aria-busy={autopostLoading}>
         {connectionCards.map((card) => (
           <article key={card.key} className={`cmr-connect-card cmr-connect-card--${card.key} is-${card.state}`}>

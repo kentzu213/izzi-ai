@@ -176,6 +176,29 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(mainSource).not.toContain('accounts: Array.isArray(r.data)');
   });
 
+  it('surfaces the Auto Post master control with the four bridge states', () => {
+    expect(pageSource).toContain('const [autopostMaster, setAutopostMaster] = useState');
+    expect(pageSource).toContain('Promise.all([api.listAccounts(), api.getStatus()])');
+    expect(pageSource).toContain("masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");
+    expect(pageSource).toContain("'Đang kiểm tra…'");
+    expect(pageSource).toContain('Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.');
+    expect(pageSource).toContain('void setAutopostBridgeEnabled(true)');
+    expect(pageSource).toContain('void setAutopostBridgeEnabled(false)');
+    expect(pageSource).toContain('await api.setEnabled(nextEnabled)');
+    expect(pageSource).toContain('Kết nối Auto-Post');
+    expect(pageSource).toContain("'Ngắt'");
+    expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể bật hoặc ngắt Auto Post.');
+  });
+
+  it('keeps the master control redacted and states the explicit connect flow', () => {
+    expect(pageSource).toContain('Bấm Tải lại để cập nhật trạng thái.');
+    expect(pageSource).not.toContain('backendUrl');
+    expect(stylesSource).toMatch(/\.cmr-connect-master \{[\s\S]*?border-left: 2px solid/);
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-master[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+    );
+  });
+
   it('refreshes on focus and keeps Telegram on its secure setup form', () => {
     expect(pageSource).toContain("window.addEventListener('focus', onFocus)");
     expect(pageSource).toContain("window.removeEventListener('focus', onFocus)");

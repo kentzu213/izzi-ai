@@ -1,4 +1,10 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.52
+
+- Add a visible Auto Post master connection control to the Marketing Channels page.
+- Show the customer connection flow and clear bridge states before Facebook Test Page or YouTube Private OAuth.
+- Keep Telegram Sandbox on the existing secure local-vault setup flow.
+
 ## 1.14.0-beta.51
 
 Customer-facing Marketing channel connection center.
