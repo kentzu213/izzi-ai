@@ -1,4 +1,5 @@
 import type { AIProvider, ModelProviderConfig } from './agent-registry';
+import { LOCAL_COCKPIT_BASE_URL, LOCAL_COCKPIT_LABEL } from '../../shared/local-cockpit';
 
 /**
  * Model-selection standard (Izzi AI):
@@ -77,6 +78,7 @@ export function connectionActionForProvider(
 /** Human label for the local group, derived from the connection's base URL. */
 export function deriveEndpointLabel(baseUrl: string | undefined | null): string {
   const url = (baseUrl ?? '').toString();
+  if (url === LOCAL_COCKPIT_BASE_URL || url.includes(':51226')) return LOCAL_COCKPIT_LABEL;
   if (url.includes(':2455')) return 'codex-lb (local)';
   if (url.includes(':4000')) return '9router (local · smart-route)';
   if (/https?:\/\/(api\.)?izziapi\.com\/v1/i.test(url)) return 'Izzi API (direct)';

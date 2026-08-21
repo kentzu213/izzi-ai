@@ -3,6 +3,13 @@ import {
   getModelCreditPolicy,
   MODEL_CREDIT_NOTICE_VI,
 } from '../../shared/model-credit-policy';
+import {
+  LOCAL_COCKPIT_BASE_URL,
+  LOCAL_COCKPIT_LABEL,
+  LOCAL_COCKPIT_MODEL,
+  LOCAL_COCKPIT_REASONING_EFFORT,
+} from '../../shared/local-cockpit';
+import { useAgentGatewayStore } from '../store/agentGateway';
 
 type AuthType = 'bearer' | 'x-api-key';
 
@@ -19,13 +26,13 @@ interface Preset {
 // Known local OpenAI-compatible routers + a free-form custom option.
 const PRESETS: Preset[] = [
   {
-    id: 'codex-lb',
-    label: 'codex-lb (local)',
+    id: 'cockpit',
+    label: LOCAL_COCKPIT_LABEL,
     icon: '🖥️',
-    baseUrl: 'http://127.0.0.1:2455/v1',
-    model: 'gpt-5.6-sol',
+    baseUrl: LOCAL_COCKPIT_BASE_URL,
+    model: LOCAL_COCKPIT_MODEL,
     authType: 'bearer',
-    hint: 'codex-lb chạy bằng Docker ở cổng 2455. Mở http://127.0.0.1:2455 để lấy API key (sk-...), rồi dán vào ô API key bên dưới.',
+    hint: 'Cockpit API Service chạy local ở cổng 51226 và phân phối model qua chuẩn OpenAI-compatible.',
   },
   {
     id: 'izzi-direct',
@@ -90,6 +97,7 @@ function getApi(): CustomProviderApi | undefined {
 
 export function ModelConnectionsPage() {
   const api = getApi();
+  const routeExternalSessionsToCustom = useAgentGatewayStore((state) => state.routeExternalSessionsToCustom);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [authType, setAuthType] = useState<AuthType>('bearer');
@@ -100,7 +108,7 @@ export function ModelConnectionsPage() {
   const [enabled, setEnabled] = useState(false);
   const [hasKey, setHasKey] = useState(false);
   const [maskedHint, setMaskedHint] = useState<string | null>(null);
-  const [presetId, setPresetId] = useState('codex-lb');
+  const [presetId, setPresetId] = useState('cockpit');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -192,20 +200,22 @@ export function ModelConnectionsPage() {
     try {
       const r = await api.autoConnectLocal();
       if (r?.ok) {
-        setPresetId('codex-lb');
-        setBaseUrl('http://127.0.0.1:2455/v1');
-        setModel('gpt-5.6-sol');
+        setPresetId('cockpit');
+        setBaseUrl(LOCAL_COCKPIT_BASE_URL);
+        setModel(LOCAL_COCKPIT_MODEL);
         setAuthType('bearer');
+        setReasoningEffort(LOCAL_COCKPIT_REASONING_EFFORT);
         setEnabled(true);
+        routeExternalSessionsToCustom(LOCAL_COCKPIT_MODEL);
         await refreshKeyState();
         setNotice({
           ok: true,
-          text: 'Đã kết nối codex-lb (local) từ CODEX_LB_API_KEY. Mở tab Chat agent và chat như thường.',
+          text: 'Đã kết nối Cockpit local với GPT-5.6 Sol (high). Agent ngoài Izzi sẽ dùng tuyến này ngay.',
         });
       } else if (r?.reason === 'no-env-key') {
         setNotice({
           ok: false,
-          text: 'Không thấy CODEX_LB_API_KEY trên máy. Chọn preset codex-lb, dán API key rồi bấm "Lưu & Bật".',
+          text: 'Không thấy khóa Cockpit được chiếu vào CODEX_LB_API_KEY. Kiểm tra Cockpit rồi thử lại.',
         });
       } else {
         setNotice({ ok: false, text: 'Không kết nối nhanh được. Thử dán key thủ công rồi "Lưu & Bật".' });
@@ -224,6 +234,7 @@ export function ModelConnectionsPage() {
       if (!(await persist())) return;
       await api.setEnabled(true);
       setEnabled(true);
+      routeExternalSessionsToCustom(model.trim());
       setApiKey('');
       await refreshKeyState();
       setNotice({ ok: true, text: 'Đã lưu & bật. Mở tab Chat agent — tin nhắn sẽ đi qua endpoint này.' });
@@ -283,8 +294,8 @@ export function ModelConnectionsPage() {
 
       <div className="model-conn__quick">
         <div className="model-conn__quick-text">
-          <b>Kết nối nhanh codex-lb (local)</b>
-          <span>Tự lấy API key từ máy (CODEX_LB_API_KEY) và bật ngay — không cần dán gì.</span>
+          <b>Kết nối nhanh Cockpit (local)</b>
+          <span>Dùng khóa gateway đã chiếu trên máy và bật GPT-5.6 Sol (high).</span>
         </div>
         <button
           type="button"
@@ -325,7 +336,7 @@ export function ModelConnectionsPage() {
             className="input"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="http://127.0.0.1:2455/v1"
+            placeholder={LOCAL_COCKPIT_BASE_URL}
           />
         </label>
         <label className="model-conn__field">
@@ -397,9 +408,8 @@ export function ModelConnectionsPage() {
         <summary>Hướng dẫn nhanh</summary>
         <ol>
           <li>
-            <b>codex-lb</b>: đảm bảo container codex-lb đang chạy (Docker) ở <code>127.0.0.1:2455</code>. Mở{' '}
-            <code>http://127.0.0.1:2455</code> lấy API key, chọn preset codex-lb, dán key rồi bấm{' '}
-            <b>Lưu &amp; Bật</b>.
+            <b>Cockpit local</b>: đảm bảo Cockpit API Service đang chạy ở <code>127.0.0.1:51226</code>, rồi bấm{' '}
+            <b>Kết nối nhanh</b>. App sẽ dùng khóa gateway đã chiếu trên máy, không hiện khóa trong giao diện.
           </li>
           <li>
             <b>Izzi API direct</b>: chọn preset Izzi API, dán Izzi API key, rồi đổi model giữa <code>izzi-smart</code>,

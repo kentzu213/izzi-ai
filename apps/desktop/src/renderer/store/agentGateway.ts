@@ -17,6 +17,12 @@ import { connectionActionForProvider, deriveEndpointLabel } from '../types/model
 import type { AgentTurnEvent } from '../../shared/agent-turn-events';
 import { sanitizeStoredSessions, capForPersist, pickActiveId } from './gatewayPersist';
 import { shouldUseIzziApiRoute } from './agentGateway-routing';
+import {
+  LOCAL_COCKPIT_BASE_URL,
+  LOCAL_COCKPIT_LABEL,
+  LOCAL_COCKPIT_MODEL,
+  LOCAL_COCKPIT_REASONING_EFFORT,
+} from '../../shared/local-cockpit';
 
 interface GatewayPersistApi {
   list?: () => Promise<unknown[]>;
@@ -99,6 +105,8 @@ interface AgentGatewayState {
    * izzi regardless (handled by sendGatewayMessage).
    */
   setActiveModel: (model: string, provider: AIProvider) => Promise<void>;
+  /** Route every non-Izzi agent session through the explicitly enabled local connection. */
+  routeExternalSessionsToCustom: (model: string) => void;
   /** Change a Docker agent's reasoning effort (rewrites config + restarts container). */
   setReasoningEffort: (effort: string) => Promise<boolean>;
 
@@ -120,7 +128,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
   hydrated: false,
   availableModels: [],
   availableModelsState: 'idle',
-  availableModelsLabel: 'codex-lb (local)',
+  availableModelsLabel: LOCAL_COCKPIT_LABEL,
 
   hydrateFromDisk: async () => {
     if (get().hydrated) return;
@@ -236,9 +244,9 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       agentName: agent.displayName,
       agentIcon: agent.icon,
       messages: [],
-      model: agent.id === 'hermes' ? 'gpt-5.5' : 'izzi-smart',
+      model: agent.id === 'hermes' ? LOCAL_COCKPIT_MODEL : 'izzi-smart',
       provider: agent.id === 'hermes' ? 'custom' : 'izzi',
-      reasoningEffort: agent.id === 'hermes' ? 'xhigh' : undefined,
+      reasoningEffort: agent.id === 'hermes' ? LOCAL_COCKPIT_REASONING_EFFORT : undefined,
       createdAt: new Date().toISOString(),
       isActive: true,
     };
@@ -770,9 +778,9 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       agentName: agent.displayName,
       agentIcon: agent.icon,
       messages: [],
-      model: agent.id === 'hermes' ? 'gpt-5.5' : 'izzi-smart',
+      model: agent.id === 'hermes' ? LOCAL_COCKPIT_MODEL : 'izzi-smart',
       provider: agent.id === 'hermes' ? 'custom' : 'izzi',
-      reasoningEffort: agent.id === 'hermes' ? 'xhigh' : undefined,
+      reasoningEffort: agent.id === 'hermes' ? LOCAL_COCKPIT_REASONING_EFFORT : undefined,
       createdAt: new Date().toISOString(),
       isActive: true,
     };
@@ -825,7 +833,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         // Point the single custom connection at this model + enable it, so generic
         // agents call exactly it (config.selectedModel is what the endpoint receives).
         const c = await api.getConfig();
-        const baseUrl = c?.config?.baseUrl || 'http://127.0.0.1:2455/v1';
+        const baseUrl = c?.config?.baseUrl || LOCAL_COCKPIT_BASE_URL;
         const authType = c?.config?.authType || 'bearer';
         await api.saveConfig({ baseUrl, authType, selectedModel: model });
         await api.setEnabled?.(true);
@@ -845,6 +853,23 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         ),
       }));
     }
+  },
+
+  routeExternalSessionsToCustom: (model) => {
+    const agents = new Map(get().agents.map((agent) => [agent.id, agent]));
+    set((state) => ({
+      sessions: state.sessions.map((session) => {
+        const agent = agents.get(session.agentId);
+        if (!agent || agent.runtime === 'izzi') return session;
+        return {
+          ...session,
+          model,
+          provider: 'custom',
+          reasoningEffort:
+            model === LOCAL_COCKPIT_MODEL ? LOCAL_COCKPIT_REASONING_EFFORT : session.reasoningEffort,
+        };
+      }),
+    }));
   },
 
   setReasoningEffort: async (effort) => {

@@ -41,6 +41,11 @@ import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
 import { runHostAgentTurn } from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
+import {
+  LOCAL_COCKPIT_BASE_URL,
+  LOCAL_COCKPIT_MODEL,
+  LOCAL_COCKPIT_REASONING_EFFORT,
+} from '../shared/local-cockpit';
 import { AutopostAuth } from './autopost/autopost-auth';
 import { AutopostClient } from './autopost/autopost-client';
 import { AUTOPOST_TOOLS, classifyAutopostRisk, executeAutopostTool, isAutopostTool } from './autopost/autopost-tools';
@@ -1193,9 +1198,8 @@ function setupIPC() {
     return agentService.listProviderModels();
   });
 
-  // One-click local connection ("Kết nối nhanh codex-lb"): read the codex-lb key
-  // from the environment (CODEX_LB_API_KEY) in the MAIN process and wire the app
-  // to the local codex-lb router (127.0.0.1:2455, gpt-5.5) + enable it. Explicit
+  // One-click local Cockpit connection: read the projected local gateway key from
+  // the environment in the MAIN process and wire the app to Cockpit + Sol high.
   // user action from the "Kết nối Model" tab; the key stays in main, never returned.
   ipcMain.handle(
     'customProvider:autoConnectLocal',
@@ -1206,16 +1210,17 @@ function setupIPC() {
         const settings = new ProviderSettingsStore(dbManager);
         const secrets = new SecretStore(dbManager);
         settings.saveConfig({
-          baseUrl: 'http://127.0.0.1:2455/v1',
+          baseUrl: LOCAL_COCKPIT_BASE_URL,
           authType: 'bearer',
-          selectedModel: 'gpt-5.6-sol',
+          selectedModel: LOCAL_COCKPIT_MODEL,
+          reasoningEffort: LOCAL_COCKPIT_REASONING_EFFORT,
         });
         secrets.setKey(envKey);
         settings.setEnabled(true);
         dbManager.appendDiagnosticEvent({
           type: 'model_connection.autoconnect',
           status: 'info',
-          detail: 'Manually connected local codex-lb from CODEX_LB_API_KEY env (Kết nối nhanh).',
+          detail: 'Manually connected local Cockpit from the projected gateway key (Kết nối nhanh).',
         });
         return { ok: true, enabled: true };
       } catch {
@@ -1562,17 +1567,6 @@ function setupIPC() {
  * Only an enabled local :2455 config is disabled; config/key are preserved and
  * every hosted/custom endpoint is untouched. Generic agents then use the Izzi
  * SmartRouter path. Manual local Codex-LB connection remains available in UI.
- * Zero-config local model connection. If the machine exposes a codex-lb key in
- * the environment (CODEX_LB_API_KEY — the same var the Codex CLI uses) AND no
- * model connection is currently enabled, wire the app's custom provider to the
- * local codex-lb router (127.0.0.1:2455, gpt-5.5) and enable it, so the gateway's
- * non-izzi agents chat through it out of the box — no manual setup.
- *
- * Fires whenever nothing is enabled (not just first run) so it also repairs a
- * half-configured state — e.g. a connection that was saved by "Kiểm tra kết nối"
- * but never enabled, which otherwise leaves chat falling through to the empty
- * Hermes reply. An already-enabled connection is respected and left untouched;
- * the key value is only referenced by name (never logged).
  */
 function migrateLegacyCodexLbConnection(db: DatabaseManager): void {
   try {
@@ -1586,8 +1580,6 @@ function migrateLegacyCodexLbConnection(db: DatabaseManager): void {
       });
       console.log('[OpenClaw] Migrated legacy local Codex-LB route to Izzi SmartRouter default');
     }
-    // Respect an active connection the user has enabled — don't clobber it.
-    // But if nothing is enabled, chat can't reach any model, so wire local codex-lb.
   } catch {
     // Best-effort: a failure here must never block startup.
   }

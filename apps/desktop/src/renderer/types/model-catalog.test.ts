@@ -76,6 +76,7 @@ describe('model-catalog', () => {
   // Feature: model-selection-standard, Property 4: endpoint label reflects the
   // port (codex-lb :2455 / 9router :4000) and always returns a non-empty label.
   it('deriveEndpointLabel maps local ports, hosted Izzi endpoints, and always returns a label', () => {
+    expect(deriveEndpointLabel('http://127.0.0.1:51226/v1')).toBe('Cockpit (local)');
     expect(deriveEndpointLabel('http://127.0.0.1:2455/v1')).toBe('codex-lb (local)');
     expect(deriveEndpointLabel('http://127.0.0.1:4000/v1')).toContain('9router');
     expect(deriveEndpointLabel('https://api.izziapi.com/v1')).toBe('Izzi API (direct)');
