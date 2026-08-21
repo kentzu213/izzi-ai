@@ -212,10 +212,15 @@ export function ModelConnectionsPage() {
           ok: true,
           text: 'Đã kết nối Cockpit local với GPT-5.6 Sol (high). Agent ngoài Izzi sẽ dùng tuyến này ngay.',
         });
-      } else if (r?.reason === 'no-env-key') {
+      } else if (r?.reason === 'no-env-key' || r?.reason === 'no-local-key') {
         setNotice({
           ok: false,
-          text: 'Không thấy khóa Cockpit được chiếu vào CODEX_LB_API_KEY. Kiểm tra Cockpit rồi thử lại.',
+          text: 'Không thấy khóa local của Cockpit. Mở Cockpit, kiểm tra API Service rồi thử lại.',
+        });
+      } else if (r?.reason === 'connection-failed') {
+        setNotice({
+          ok: false,
+          text: 'Cockpit chưa chấp nhận khóa local hiện tại. Chạy kiểm tra tuyến Cockpit rồi thử lại.',
         });
       } else {
         setNotice({ ok: false, text: 'Không kết nối nhanh được. Thử dán key thủ công rồi "Lưu & Bật".' });

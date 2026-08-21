@@ -41,11 +41,7 @@ import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
 import { runHostAgentTurn } from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
-import {
-  LOCAL_COCKPIT_BASE_URL,
-  LOCAL_COCKPIT_MODEL,
-  LOCAL_COCKPIT_REASONING_EFFORT,
-} from '../shared/local-cockpit';
+import { buildLocalCockpitConfig, resolveLocalCockpitKey } from './agent/local-cockpit-connection';
 import { AutopostAuth } from './autopost/autopost-auth';
 import { AutopostClient } from './autopost/autopost-client';
 import { AUTOPOST_TOOLS, classifyAutopostRisk, executeAutopostTool, isAutopostTool } from './autopost/autopost-tools';
@@ -1204,23 +1200,24 @@ function setupIPC() {
   ipcMain.handle(
     'customProvider:autoConnectLocal',
     async (): Promise<{ ok: boolean; enabled?: boolean; reason?: string }> => {
-      const envKey = (process.env.CODEX_LB_API_KEY || process.env.CODEX_LB_KEY || '').trim();
-      if (!envKey) return { ok: false, reason: 'no-env-key' };
+      const keyResolution = resolveLocalCockpitKey();
+      if (!keyResolution) return { ok: false, reason: 'no-local-key' };
       try {
+        const config = buildLocalCockpitConfig();
+        const candidateKey = keyResolution.key;
+        const redactCandidate = (text: string) => text.split(candidateKey).join('[REDACTED]');
+        const probe = await new CustomOpenAIProvider(config, candidateKey, redactCandidate).testConnection();
+        if (!probe.ok) return { ok: false, reason: 'connection-failed' };
+
         const settings = new ProviderSettingsStore(dbManager);
         const secrets = new SecretStore(dbManager);
-        settings.saveConfig({
-          baseUrl: LOCAL_COCKPIT_BASE_URL,
-          authType: 'bearer',
-          selectedModel: LOCAL_COCKPIT_MODEL,
-          reasoningEffort: LOCAL_COCKPIT_REASONING_EFFORT,
-        });
-        secrets.setKey(envKey);
+        settings.saveConfig(config);
+        secrets.setKey(candidateKey);
         settings.setEnabled(true);
         dbManager.appendDiagnosticEvent({
           type: 'model_connection.autoconnect',
           status: 'info',
-          detail: 'Manually connected local Cockpit from the projected gateway key (Kết nối nhanh).',
+          detail: `Manually connected local Cockpit after a successful probe (${keyResolution.source}).`,
         });
         return { ok: true, enabled: true };
       } catch {

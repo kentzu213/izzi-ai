@@ -107,6 +107,14 @@ Complete every bounded product slice before starting the next one:
 
 Do not stack unrelated local changes or continue speculative implementation before the current public artifact has been exercised.
 
+## Mandatory Codex-Claude Collaboration
+
+- Every Codex task in this repository must obtain a current-task Claude Code contribution through the durable Unified Loop queue.
+- Codex remains the master orchestrator, local state owner, integrator, verifier, and user-facing reporter.
+- Claude Code owns only the bounded technical or advisory lane assigned in its hashed packet; a task is not complete until Codex validates the matching Claude receipt and completion gate.
+- Do not merely enqueue work and move on. Monitor the packet, materially integrate the receipt, and preserve the same correlation ID and content hash through verification.
+- Never send secrets, credentials, raw transcripts, or broad logs to Claude Code. Use the configured Claude-lane model routing and do not substitute Codex or ChatGPT when Claude is unavailable.
+
 ## Keeping the Index Fresh
 
 After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
