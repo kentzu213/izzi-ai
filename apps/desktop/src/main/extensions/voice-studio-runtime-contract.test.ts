@@ -221,7 +221,7 @@ describe('Voice Studio local runtime contract', () => {
 
   it('fails the desktop package when the required current OCX cannot be generated', () => {
     expect(desktopMain).toContain("'ext-voice-studio': 'voice-studio-0.2.0.ocx'");
-    expect(beforePack).toContain("REQUIRED_BUNDLED_EXTENSIONS = new Set(['voice-studio'])");
+    expect(beforePack).toContain("REQUIRED_BUNDLED_EXTENSIONS = new Set(['voice-studio', 'social-auto-poster'])");
     expect(beforePack).toContain('Failed to pack required extension');
     expect(beforePack).toContain("'--exclude=__pycache__'");
     expect(beforePack).not.toContain('could not pack bundled extensions (falling back');

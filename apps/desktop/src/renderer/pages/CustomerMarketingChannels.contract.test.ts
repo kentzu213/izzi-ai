@@ -6,6 +6,8 @@ const pagePath = fileURLToPath(new URL('./CustomerMarketingChannels.tsx', import
 const pageSource = readFileSync(pagePath, 'utf8');
 const stylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.css', import.meta.url));
 const stylesSource = readFileSync(stylesPath, 'utf8');
+const mainPath = fileURLToPath(new URL('../../main/index.ts', import.meta.url));
+const mainSource = readFileSync(mainPath, 'utf8');
 
 describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
   it('loads connector evidence with credentials and exposes bounded local health controls', () => {
@@ -146,5 +148,51 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     );
     expect(pageSource).toMatch(/cmr-telegram-send-action[\s\S]{0,500}cmr-button cmr-button--danger/);
     expect(pageSource).toMatch(/cmr-telegram-rollback-action[\s\S]{0,500}cmr-button cmr-button--quiet/);
+  });
+});
+
+describe('CustomerMarketingChannels connection center contract', () => {
+  it('renders the three connection surfaces before workflow controls', () => {
+    expect(pageSource).toContain('const connectionCenter = (');
+    expect(pageSource).toMatch(/<\/header>\s*\n\s*\{connectionCenter\}/);
+    expect(pageSource).toContain("label: 'Facebook Test Page'");
+    expect(pageSource).toContain("label: 'YouTube Private'");
+    expect(pageSource).toContain("label: 'Telegram Sandbox'");
+    expect(pageSource).toContain('Chỉ dùng Trang thử nghiệm (Test Page).');
+    expect(pageSource).toContain('Video thử nghiệm luôn ở chế độ Riêng tư (Private).');
+  });
+
+  it('uses Auto Post redacted account metadata and keeps OAuth in main', () => {
+    expect(pageSource).toContain('api.listAccounts()');
+    expect(pageSource).toContain('readAutopostAccounts(Array.isArray(result.accounts) ? result.accounts : [])');
+    expect(pageSource).toContain('const status = await api.getStatus();');
+    expect(pageSource).toContain('const enabled = await api.setEnabled(true);');
+    expect(pageSource).toContain('const result = await api.beginConnect(channel);');
+    expect(pageSource).not.toContain('redirectUrl');
+    expect(pageSource).not.toContain('window.open(');
+    expect(pageSource).not.toContain('api.createDraft(');
+    expect(pageSource).not.toContain('api.listPosts(');
+    expect(mainSource).toContain('accounts: summarizeAutopostAccounts(r.data)');
+    expect(mainSource).not.toContain('accounts: Array.isArray(r.data)');
+  });
+
+  it('refreshes on focus and keeps Telegram on its secure setup form', () => {
+    expect(pageSource).toContain("window.addEventListener('focus', onFocus)");
+    expect(pageSource).toContain("window.removeEventListener('focus', onFocus)");
+    expect(pageSource).toContain('aria-label="Tải lại trạng thái kết nối kênh"');
+    expect(pageSource).toContain('telegramTokenInput.current?.focus()');
+    expect(pageSource).toContain('ref={telegramTokenInput}');
+    expect(pageSource).toContain("const CHANNEL_CONNECT_ROLES: CustomerRole[] = ['owner', 'manager']");
+  });
+
+  it('keeps the connection center responsive and touch safe', () => {
+    expect(stylesSource).toMatch(/\.cmr-connect-grid \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+    expect(stylesSource).toMatch(/\.cmr-connect-card \{[\s\S]*?border-left: 2px solid/);
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-center \.cmr-icon-button[\s\S]*?min-height: 44px;/,
+    );
   });
 });

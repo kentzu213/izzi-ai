@@ -43,7 +43,17 @@ import { runHostAgentTurn } from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
 import { buildLocalCockpitConfig, healLocalCockpitKey, resolveLocalCockpitKey } from './agent/local-cockpit-connection';
 import { AutopostAuth } from './autopost/autopost-auth';
-import { AutopostClient } from './autopost/autopost-client';
+import {
+  AUTOPOST_EXTENSION_ID,
+  createAutopostExtensionEnsurer,
+} from './autopost/autopost-runtime';
+import {
+  AutopostClient,
+  isAllowedAutopostConnectUrl,
+  isAutopostConnectPlatform,
+  summarizeAutopostAccounts,
+  type AutopostAccountSummary,
+} from './autopost/autopost-client';
 import { AUTOPOST_TOOLS, classifyAutopostRisk, executeAutopostTool, isAutopostTool } from './autopost/autopost-tools';
 import type { LoadedExtension } from './extensions/extension-loader';
 import { IntegrationsService } from './integrations/integrations-service';
@@ -151,6 +161,7 @@ let localServiceManager: LocalServiceManager;
 let updateChecker: ExtensionUpdateChecker;
 let agentService: AgentService;
 let autopostAuth: AutopostAuth;
+let ensureCurrentAutopostExtension: (() => Promise<void>) | null = null;
 let integrationsService: IntegrationsService;
 let onboardingService: OnboardingService;
 let updaterService: UpdaterService;
@@ -1292,20 +1303,51 @@ function setupIPC() {
       };
     },
   );
-  ipcMain.handle('autopost:setEnabled', async (_event, enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> => {
-    dbManager.setSetting('autopost_enabled', enabled ? '1' : '0');
-    if (enabled) await syncAutopostExtensionCredentials();
-    else autopostAuth.clear();
-    return { ok: true, enabled: !!enabled };
-  });
+  ipcMain.handle(
+    'autopost:setEnabled',
+    async (_event, enabled: boolean): Promise<{ ok: boolean; enabled: boolean; error?: string }> => {
+      if (!enabled) {
+        dbManager.setSetting('autopost_enabled', '0');
+        autopostAuth.clear();
+        return { ok: true, enabled: false };
+      }
+      const started = await ensureSocialAutoPosterRunning();
+      if (!started.ok) {
+        dbManager.setSetting('autopost_enabled', '0');
+        return { ok: false, enabled: false, error: started.error };
+      }
+      dbManager.setSetting('autopost_enabled', '1');
+      await syncAutopostExtensionCredentials();
+      return { ok: true, enabled: true };
+    },
+  );
+  ipcMain.handle(
+    'autopost:beginConnect',
+    async (_event, platform: unknown): Promise<{ ok: boolean; error?: string }> => {
+      if (!isAutopostConnectPlatform(platform)) return { ok: false, error: 'unsupported-platform' };
+      const result = await new AutopostClient(autopostAuth).beginConnect(platform);
+      if (!result.ok || !result.redirectUrl) {
+        return { ok: false, error: result.error || 'connect-failed' };
+      }
+      if (!isAllowedAutopostConnectUrl(platform, result.redirectUrl)) {
+        return { ok: false, error: 'untrusted-redirect' };
+      }
+      try {
+        await shell.openExternal(result.redirectUrl);
+        return { ok: true };
+      } catch {
+        return { ok: false, error: 'open-browser-failed' };
+      }
+    },
+  );
   // Read surfaces for the in-app Auto-Post page (native, over the same REST bridge
   // + izzi JWT). The JWT stays in main; the renderer only ever sees plain data.
   ipcMain.handle(
     'autopost:listAccounts',
-    async (): Promise<{ ok: boolean; accounts?: unknown[]; error?: string }> => {
+    async (): Promise<{ ok: boolean; accounts?: AutopostAccountSummary[]; error?: string }> => {
       const r = await new AutopostClient(autopostAuth).listAccounts();
       if (!r.ok) return { ok: false, error: r.error };
-      return { ok: true, accounts: Array.isArray(r.data) ? (r.data as unknown[]) : [] };
+      return { ok: true, accounts: summarizeAutopostAccounts(r.data) };
     },
   );
   ipcMain.handle(
@@ -1619,6 +1661,29 @@ function isSocialAutoPosterActive(): boolean {
   return socialAutoPosterExt()?.state === 'running';
 }
 
+async function ensureSocialAutoPosterRunning(): Promise<{ ok: boolean; error?: string }> {
+  if (!ensureCurrentAutopostExtension) {
+    return { ok: false, error: 'extension-update-failed' };
+  }
+  try {
+    await ensureCurrentAutopostExtension();
+  } catch {
+    return { ok: false, error: 'extension-update-failed' };
+  }
+  const ext = socialAutoPosterExt();
+  if (!ext) return { ok: false, error: 'extension-not-installed' };
+  try {
+    if (ext.state === 'disabled') extensionLoader.enableExtension(ext.id);
+    // startExtension ensures the managed service before its running-host short circuit.
+    await extensionLoader.startExtension(ext.id, { withService: true });
+    return isSocialAutoPosterActive()
+      ? { ok: true }
+      : { ok: false, error: 'extension-start-failed' };
+  } catch {
+    return { ok: false, error: 'extension-service-unavailable' };
+  }
+}
+
 /**
  * Push the Auto-Post backend URL + a fresh JWT (+ workspace) into the Social Auto
  * Poster extension's storage so its commands hit Auto-Post with the izzi identity —
@@ -1724,6 +1789,18 @@ async function initServices() {
   } catch (err: any) {
     console.error('[OpenClaw] Extension loader init failed:', err.message);
   }
+
+  ensureCurrentAutopostExtension = createAutopostExtensionEnsurer({
+    bundledOcxPath: path.join(
+      process.resourcesPath,
+      'bundled-extensions',
+      BUNDLED_OCX[AUTOPOST_EXTENSION_ID],
+    ),
+    bundledOcxExists: (filePath) => fs.existsSync(filePath),
+    getExtension: () => extensionLoader.getExtension(AUTOPOST_EXTENSION_ID),
+    installFromOcx: (filePath, permissions) => extensionLoader.installFromOcx(filePath, permissions),
+    stopExtension: (extensionId) => extensionLoader.stopExtension(extensionId),
+  });
 
   // Start auto-update checker for installed extensions
   updateChecker = new ExtensionUpdateChecker(extensionLoader);

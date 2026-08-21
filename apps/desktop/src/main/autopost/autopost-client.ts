@@ -23,6 +23,106 @@ export interface AutopostResult {
   error?: string;
 }
 
+export const AUTOPOST_CONNECT_PLATFORMS = ['facebook', 'youtube'] as const;
+export type AutopostConnectPlatform = (typeof AUTOPOST_CONNECT_PLATFORMS)[number];
+
+export function isAutopostConnectPlatform(value: unknown): value is AutopostConnectPlatform {
+  return typeof value === 'string'
+    && (AUTOPOST_CONNECT_PLATFORMS as readonly string[]).includes(value);
+}
+
+export interface AutopostConnectResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  redirectUrl?: string;
+}
+
+export interface AutopostAccountSummary {
+  id: string;
+  platform: string;
+  name: string;
+  status: string;
+  active: boolean;
+}
+
+const AUTOPOST_ACCOUNT_PLATFORMS = new Set([
+  'facebook',
+  'youtube',
+  'google',
+  'tiktok',
+  'instagram',
+  'x',
+  'twitter',
+  'threads',
+]);
+const AUTOPOST_ACCOUNT_STATUSES = new Set([
+  'active',
+  'connected',
+  'valid',
+  'inactive',
+  'expired',
+  'revoked',
+  'error',
+  'pending',
+  'disconnected',
+]);
+
+function accountString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 200);
+  }
+  return '';
+}
+
+/** Allowlist account display metadata before it crosses the main/renderer boundary. */
+export function summarizeAutopostAccounts(input: unknown): AutopostAccountSummary[] {
+  if (!Array.isArray(input)) return [];
+  const summaries: AutopostAccountSummary[] = [];
+  for (const row of input) {
+    if (!row || typeof row !== 'object') continue;
+    const record = row as Record<string, unknown>;
+    const rawPlatform = accountString(record, ['platform', 'provider', 'network']).toLowerCase();
+    const platform = AUTOPOST_ACCOUNT_PLATFORMS.has(rawPlatform) ? rawPlatform : 'social';
+    const rawStatus = accountString(record, ['status', 'state']).toLowerCase();
+    const status = AUTOPOST_ACCOUNT_STATUSES.has(rawStatus) ? rawStatus : 'unknown';
+    const inactive = record.isActive === false
+      || record.active === false
+      || ['inactive', 'expired', 'revoked', 'error', 'disconnected'].includes(status);
+    summaries.push({
+      id: accountString(record, ['id', 'accountId']),
+      platform,
+      name: accountString(record, ['accountName', 'displayName', 'channelTitle', 'name', 'username'])
+        || 'Tài khoản đã liên kết',
+      status,
+      active: !inactive,
+    });
+  }
+  return summaries;
+}
+
+const AUTOPOST_CONNECT_HOSTS: Record<AutopostConnectPlatform, readonly string[]> = {
+  facebook: ['www.facebook.com', 'facebook.com', 'm.facebook.com', 'web.facebook.com'],
+  youtube: ['accounts.google.com'],
+};
+
+export function isAllowedAutopostConnectUrl(
+  platform: AutopostConnectPlatform,
+  rawUrl: string,
+): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  return url.protocol === 'https:'
+    && !url.username
+    && !url.password
+    && AUTOPOST_CONNECT_HOSTS[platform].includes(url.hostname.toLowerCase());
+}
+
 /** Pull a concise message out of a NestJS-style error body. */
 function extractError(data: unknown): string | null {
   if (!data || typeof data !== 'object') return typeof data === 'string' ? data : null;
@@ -66,6 +166,20 @@ export class AutopostClient {
   /** GET /social-auth/accounts — connected FB/YT/TikTok accounts in the workspace. */
   listAccounts(): Promise<AutopostResult> {
     return this.request('/social-auth/accounts', 'GET');
+  }
+
+  /** Ask Auto Post to mint the OAuth URL. The caller must validate and open it in main. */
+  async beginConnect(platform: AutopostConnectPlatform): Promise<AutopostConnectResult> {
+    if (!isAutopostConnectPlatform(platform)) return { ok: false, error: 'unsupported-platform' };
+    const res = await this.request(`/social-auth/connect/${encodeURIComponent(platform)}`, 'GET');
+    if (!res.ok) return { ok: false, status: res.status, error: res.error || 'connect-failed' };
+    const redirectUrl = res.data && typeof res.data === 'object'
+      ? (res.data as { redirectUrl?: unknown }).redirectUrl
+      : null;
+    if (typeof redirectUrl !== 'string' || !redirectUrl.trim()) {
+      return { ok: false, status: res.status, error: 'missing-redirect-url' };
+    }
+    return { ok: true, status: res.status, redirectUrl: redirectUrl.trim() };
   }
 
   /** GET /posts — posts in the workspace, optionally filtered by status. */

@@ -267,6 +267,32 @@ declare global {
     openMediaVideoPreview: (input: CustomerMediaVideoPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
   }
+
+  type AutopostConnectPlatform = 'facebook' | 'youtube';
+
+  interface AutopostAccountSummary {
+    id: string;
+    platform: string;
+    name: string;
+    status: string;
+    active: boolean;
+  }
+
+  interface ElectronAutopostApi {
+    getStatus: () => Promise<{
+      enabled: boolean;
+      connected: boolean;
+      backendUrl: string;
+      workspaceId: string | null;
+      accounts: number | null;
+    }>;
+    setEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean; error?: string }>;
+    listAccounts: () => Promise<{ ok: boolean; accounts?: AutopostAccountSummary[]; error?: string }>;
+    beginConnect: (platform: AutopostConnectPlatform) => Promise<{ ok: boolean; error?: string }>;
+    listPosts: (status?: string) => Promise<{ ok: boolean; posts?: unknown[]; error?: string }>;
+    createDraft: (input: { content: string; title?: string }) => Promise<{ ok: boolean; error?: string }>;
+    openWeb: () => Promise<{ ok: boolean; url: string }>;
+  }
   /**
    * The renderer view of the preload `electronAPI`. The new graph/memory
    * namespaces are typed precisely from the shared models (Req 7.4); all other
@@ -282,6 +308,7 @@ declare global {
     affiliate?: ElectronAffiliateApi;
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
+    autopost?: ElectronAutopostApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }

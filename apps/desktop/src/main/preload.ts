@@ -340,10 +340,16 @@ const electronAPI = {
       workspaceId: string | null;
       accounts: number | null;
     }> => ipcRenderer.invoke('autopost:getStatus'),
-    setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+    setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean; error?: string }> =>
       ipcRenderer.invoke('autopost:setEnabled', enabled),
-    listAccounts: (): Promise<{ ok: boolean; accounts?: unknown[]; error?: string }> =>
+    listAccounts: (): Promise<{
+      ok: boolean;
+      accounts?: Array<{ id: string; platform: string; name: string; status: string; active: boolean }>;
+      error?: string;
+    }> =>
       ipcRenderer.invoke('autopost:listAccounts'),
+    beginConnect: (platform: 'facebook' | 'youtube'): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('autopost:beginConnect', platform),
     listPosts: (status?: string): Promise<{ ok: boolean; posts?: unknown[]; error?: string }> =>
       ipcRenderer.invoke('autopost:listPosts', status),
     createDraft: (input: { content: string; title?: string }): Promise<{ ok: boolean; error?: string }> =>

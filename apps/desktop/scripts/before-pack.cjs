@@ -17,7 +17,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const REQUIRED_BUNDLED_EXTENSIONS = new Set(['voice-studio']);
+const REQUIRED_BUNDLED_EXTENSIONS = new Set(['voice-studio', 'social-auto-poster']);
 
 exports.default = async function beforePack(_context) {
   const appDir = path.resolve(__dirname, '..'); // apps/desktop

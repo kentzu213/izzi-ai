@@ -48,6 +48,77 @@ const PROVIDER_META: Record<CustomerMarketingIntegrationProvider, { label: strin
   crm: { label: 'CRM' },
 };
 
+type AutopostChannel = 'facebook' | 'youtube';
+const CHANNEL_CONNECT_ROLES: CustomerRole[] = ['owner', 'manager'];
+type ChannelConnectionState = 'connected' | 'attention' | 'disconnected' | 'unknown';
+
+interface MarketingAutopostAccountSummary {
+  platform: string;
+  label: string;
+  active: boolean;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function readAutopostAccounts(rows: unknown[]): MarketingAutopostAccountSummary[] {
+  const accounts: MarketingAutopostAccountSummary[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const record = row as Record<string, unknown>;
+    const platform = firstString(record, ['platform', 'provider', 'network'])
+      .toLocaleLowerCase('en-US');
+    if (!platform) continue;
+    const status = firstString(record, ['status', 'state']).toLocaleLowerCase('en-US');
+    const inactive = record.isActive === false
+      || record.active === false
+      || status === 'inactive'
+      || status === 'expired'
+      || status === 'revoked';
+    accounts.push({
+      platform,
+      label: firstString(record, ['name', 'accountName', 'displayName', 'channelTitle', 'username'])
+        || 'Tài khoản đã liên kết',
+      active: !inactive,
+    });
+  }
+  return accounts;
+}
+
+function matchesChannel(platform: string, channel: AutopostChannel): boolean {
+  return channel === 'youtube'
+    ? platform.includes('youtube') || platform.includes('google')
+    : platform.includes('facebook');
+}
+
+function channelStateLabel(state: ChannelConnectionState): string {
+  if (state === 'connected') return 'Đã kết nối';
+  if (state === 'attention') return 'Cần kết nối lại';
+  if (state === 'unknown') return 'Chưa xác định';
+  return 'Chưa kết nối';
+}
+
+function connectErrorLabel(code?: string): string {
+  if (code === 'not-connected') return 'Auto Post chưa sẵn sàng. Bấm Kết nối để khởi động lại.';
+  if (code === 'extension-not-installed') return 'Chưa cài tiện ích Auto Post từ Marketplace.';
+  if (code === 'extension-service-unavailable' || code === 'extension-start-failed') {
+    return 'Dịch vụ Auto Post chưa chạy được. Hãy kiểm tra Docker rồi thử lại.';
+  }
+  if (code === 'extension-update-failed') {
+    return 'Không cập nhật được tiện ích Auto Post đi kèm Izzi AI. Hãy cập nhật ứng dụng rồi thử lại.';
+  }
+  if (code === 'untrusted-redirect') return 'Liên kết đăng nhập không thuộc nhà cung cấp hợp lệ nên đã bị chặn.';
+  if (code === 'missing-redirect-url') return 'Auto Post chưa cấu hình OAuth cho kênh này.';
+  if (code === 'open-browser-failed') return 'Không mở được trình duyệt mặc định.';
+  if (code === 'unsupported-platform') return 'Kênh này chưa được hỗ trợ kết nối tại đây.';
+  return 'Không kết nối được Auto Post. Hãy thử lại.';
+}
+
 function shortDigest(value: string): string {
   return `${value.slice(0, 10)}…${value.slice(-6)}`;
 }
@@ -163,8 +234,16 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramSendBusy, setTelegramSendBusy] = useState(false);
   const [telegramSendError, setTelegramSendError] = useState('');
   const [telegramSendAnnouncement, setTelegramSendAnnouncement] = useState('');
+  const [autopostAccounts, setAutopostAccounts] = useState<MarketingAutopostAccountSummary[]>([]);
+  const [autopostReady, setAutopostReady] = useState(false);
+  const [autopostLoading, setAutopostLoading] = useState(true);
+  const [autopostError, setAutopostError] = useState('');
+  const [connectingChannel, setConnectingChannel] = useState<AutopostChannel | null>(null);
+  const [connectNotice, setConnectNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
+  const autopostRequestId = useRef(0);
+  const telegramTokenInput = useRef<HTMLInputElement>(null);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
   const telegramCandidatePreview = useRef<HTMLDivElement>(null);
   const telegramApprovalReceipt = useRef<HTMLDivElement>(null);
@@ -256,6 +335,50 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     void loadCredentials();
   }, [loadCredentials]);
 
+  const loadAutopostAccounts = useCallback(async () => {
+    const api = window.electronAPI?.autopost;
+    if (!api) {
+      setAutopostReady(false);
+      setAutopostAccounts([]);
+      setAutopostLoading(false);
+      setAutopostError('Kết nối kênh cần chạy trong Izzi AI Desktop.');
+      return;
+    }
+    const request = ++autopostRequestId.current;
+    setAutopostLoading(true);
+    setAutopostError('');
+    try {
+      const result = await api.listAccounts();
+      if (request !== autopostRequestId.current) return;
+      if (!result.ok) {
+        setAutopostReady(false);
+        setAutopostAccounts([]);
+        setAutopostError(connectErrorLabel(result.error));
+        return;
+      }
+      setAutopostReady(true);
+      setAutopostAccounts(readAutopostAccounts(Array.isArray(result.accounts) ? result.accounts : []));
+    } catch {
+      if (request !== autopostRequestId.current) return;
+      setAutopostReady(false);
+      setAutopostAccounts([]);
+      setAutopostError(connectErrorLabel());
+    } finally {
+      if (request === autopostRequestId.current) setAutopostLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAutopostAccounts();
+    return () => { autopostRequestId.current += 1; };
+  }, [loadAutopostAccounts]);
+
+  useEffect(() => {
+    const onFocus = () => { void loadAutopostAccounts(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadAutopostAccounts]);
+
   const filteredSources = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('vi-VN');
     return term ? sources.filter((source) => (
@@ -272,6 +395,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const canReview = REVIEW_ROLES.includes(role);
   const canRevokeCredentials = CREDENTIAL_REVOKE_ROLES.includes(role);
   const canConfigureTelegram = CREDENTIAL_REVOKE_ROLES.includes(role);
+  const canConnectChannels = CHANNEL_CONNECT_ROLES.includes(role);
   const connectedCredentialCount = credentials.filter((item) => item.state === 'connected').length;
   const canaryEnabled = Boolean(
     canaryReadiness?.controlPlane?.enabled && !canaryReadiness.controlPlane.killSwitch,
@@ -395,6 +519,42 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     } finally {
       setTelegramSetupBusy(false);
     }
+  };
+
+  const connectChannel = async (channel: AutopostChannel) => {
+    const api = window.electronAPI?.autopost;
+    if (!api || !canConnectChannels || connectingChannel) return;
+    setConnectingChannel(channel);
+    setAutopostError('');
+    setConnectNotice('');
+    try {
+      const status = await api.getStatus();
+      if (!status.enabled || !status.connected) {
+        const enabled = await api.setEnabled(true);
+        if (!enabled.ok) {
+          setAutopostError(connectErrorLabel(enabled.error));
+          return;
+        }
+      }
+      const result = await api.beginConnect(channel);
+      if (!result.ok) {
+        setAutopostError(connectErrorLabel(result.error));
+        return;
+      }
+      setConnectNotice(channel === 'facebook'
+        ? 'Đã mở Facebook. Sau khi chọn Test Page, quay lại Izzi AI.'
+        : 'Đã mở Google. Sau khi cấp quyền YouTube, quay lại Izzi AI.');
+    } catch {
+      setAutopostError('Không mở được cửa sổ kết nối.');
+    } finally {
+      setConnectingChannel(null);
+    }
+  };
+
+  const focusTelegramSetup = () => {
+    if (!canConfigureTelegram) return;
+    setConnectNotice('Nhập khóa Telegram trong phần cấu hình sandbox bên dưới.');
+    window.requestAnimationFrame(() => telegramTokenInput.current?.focus());
   };
 
   const prepare = async () => {
@@ -634,6 +794,146 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setTelegramSendBusy(false);
     }
   };
+
+  const autopostChannelState = (channel: AutopostChannel): ChannelConnectionState => {
+    if (!autopostReady) return 'unknown';
+    const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
+    if (matched.length === 0) return 'disconnected';
+    return matched.some((item) => item.active) ? 'connected' : 'attention';
+  };
+
+  const autopostChannelDetail = (channel: AutopostChannel): string => {
+    if (autopostLoading) return 'Đang đọc trạng thái từ Auto Post…';
+    if (!autopostReady) return 'Chưa đọc được trạng thái từ Auto Post.';
+    const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
+    if (matched.length === 0) return 'Chưa có tài khoản nào cho kênh này.';
+    return matched.map((item) => `${item.label}${item.active ? '' : ' · cần cấp quyền lại'}`).join(' · ');
+  };
+
+  const facebookState = autopostChannelState('facebook');
+  const youtubeState = autopostChannelState('youtube');
+  const telegramCredential = credentials.find((item) => item.provider === 'telegram') ?? null;
+  const telegramState: ChannelConnectionState = telegramCredential
+    ? telegramCredential.state === 'connected'
+      ? 'connected'
+      : telegramCredential.state === 'disconnected' ? 'disconnected' : 'attention'
+    : credentialLoading || credentialBridgeStatus !== 'synced' ? 'unknown' : 'disconnected';
+  const telegramDetail = credentialLoading
+    ? 'Đang đọc trạng thái vault cục bộ…'
+    : telegramCredential
+      ? `Vault cục bộ · ${credentialStateLabel(telegramCredential.state)}`
+      : 'Chưa có khóa Telegram trong vault cục bộ.';
+
+  const connectionCards: Array<{
+    key: AutopostChannel | 'telegram';
+    label: string;
+    scope: string;
+    state: ChannelConnectionState;
+    detail: string;
+    actionLabel: string;
+    onAction: () => void;
+    busy: boolean;
+    disabled: boolean;
+    note: string;
+  }> = [
+    {
+      key: 'facebook',
+      label: 'Facebook Test Page',
+      scope: 'Chỉ dùng Trang thử nghiệm (Test Page). Auto Post giữ khóa; Izzi AI không lưu token Facebook.',
+      state: facebookState,
+      detail: autopostChannelDetail('facebook'),
+      actionLabel: facebookState === 'connected' ? 'Kết nối lại Facebook' : 'Kết nối Facebook',
+      onAction: () => { void connectChannel('facebook'); },
+      busy: connectingChannel === 'facebook',
+      disabled: !canConnectChannels || autopostLoading || Boolean(connectingChannel),
+      note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
+    },
+    {
+      key: 'youtube',
+      label: 'YouTube Private',
+      scope: 'Video thử nghiệm luôn ở chế độ Riêng tư (Private). Auto Post giữ khóa; Izzi AI không lưu token YouTube.',
+      state: youtubeState,
+      detail: autopostChannelDetail('youtube'),
+      actionLabel: youtubeState === 'connected' ? 'Kết nối lại YouTube' : 'Kết nối YouTube',
+      onAction: () => { void connectChannel('youtube'); },
+      busy: connectingChannel === 'youtube',
+      disabled: !canConnectChannels || autopostLoading || Boolean(connectingChannel),
+      note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
+    },
+    {
+      key: 'telegram',
+      label: 'Telegram Sandbox',
+      scope: 'Chỉ chat sandbox riêng tư. Khóa nằm trong vault cục bộ của Izzi AI.',
+      state: telegramState,
+      detail: telegramDetail,
+      actionLabel: telegramState === 'connected' ? 'Cập nhật khóa Telegram' : 'Nhập khóa Telegram',
+      onAction: focusTelegramSetup,
+      busy: false,
+      disabled: !canConfigureTelegram,
+      note: canConfigureTelegram ? '' : 'Chỉ Owner hoặc Manager có thể cấu hình Telegram sandbox.',
+    },
+  ];
+
+  const connectAnnouncement = autopostLoading
+    ? 'Đang kiểm tra trạng thái kết nối kênh.'
+    : connectNotice
+      || autopostError
+      || `Facebook ${channelStateLabel(facebookState)}. YouTube ${channelStateLabel(youtubeState)}. `
+        + `Telegram ${channelStateLabel(telegramState)}.`;
+
+  const connectionCenter = (
+    <section className="cmr-connect-center" aria-labelledby="cmr-connect-heading">
+      <div className="cmr-connect-center__heading">
+        <div>
+          <span className="cmr-eyebrow">Kết nối kênh · Auto Post giữ khóa</span>
+          <h3 id="cmr-connect-heading">Trung tâm kết nối</h3>
+          <p>Facebook và YouTube dùng Auto Post làm nơi giữ khóa duy nhất. Kết nối không tự đăng nội dung.</p>
+        </div>
+        <button
+          type="button"
+          className="cmr-icon-button"
+          aria-label="Tải lại trạng thái kết nối kênh"
+          title="Tải lại"
+          disabled={autopostLoading || Boolean(connectingChannel)}
+          onClick={() => void loadAutopostAccounts()}
+        >
+          <RefreshIcon className="cmr-icon" />
+        </button>
+      </div>
+      <div className="cmr-sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {connectAnnouncement}
+      </div>
+      <div className="cmr-connect-grid" aria-busy={autopostLoading}>
+        {connectionCards.map((card) => (
+          <article key={card.key} className={`cmr-connect-card cmr-connect-card--${card.key} is-${card.state}`}>
+            <div className="cmr-connect-card__identity">
+              <StatusIcon className="cmr-icon" />
+              <span>
+                <strong>{card.label}</strong>
+                <small className={`cmr-connect-state cmr-connect-state--${card.state}`}>
+                  {channelStateLabel(card.state)}
+                </small>
+              </span>
+            </div>
+            <p className="cmr-connect-card__scope">{card.scope}</p>
+            <p className="cmr-connect-card__detail">{card.detail}</p>
+            <button
+              type="button"
+              className="cmr-button cmr-button--primary cmr-connect-card__action"
+              disabled={card.disabled || card.busy}
+              aria-busy={card.busy}
+              onClick={card.onAction}
+            >
+              {card.busy ? 'Đang mở trình duyệt…' : card.actionLabel}
+            </button>
+            {card.note && <small className="cmr-permission-note">{card.note}</small>}
+          </article>
+        ))}
+      </div>
+      {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
+      {autopostError && <div className="cmr-credential-error" role="alert">{autopostError}</div>}
+    </section>
+  );
 
   const sourceColumn = (
     <section className="cmr-channel-column cmr-channel-column--sources" aria-labelledby="cmr-channel-sources-heading">
@@ -948,6 +1248,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           <span aria-hidden="true" />{bridgeLabel(status)}
         </div>
       </header>
+      {connectionCenter}
       <section className="cmr-credential-panel" aria-labelledby="cmr-credential-heading">
         <div className="cmr-credential-panel__heading">
           <div>
@@ -1099,6 +1400,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
               <input
                 type="password"
                 autoComplete="off"
+                ref={telegramTokenInput}
                 value={telegramToken}
                 disabled={telegramSetupBusy || credentialVaultState !== 'ready'}
                 onChange={(event) => setTelegramToken(event.target.value)}

@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.51
+
+Customer-facing Marketing channel connection center.
+
+- Add clear Facebook Test Page, YouTube Private, and Telegram Sandbox connection controls before
+  the workflow area, with responsive status, retry, and role-aware actions.
+- Keep Facebook and YouTube OAuth redirects in the Electron main process and expose only bounded,
+  redacted account metadata to the renderer.
+- Automatically replace stale or service-less Auto Post extensions with the trusted bundled 0.3.0
+  package before starting its managed backend, preserving only declared grants.
+- Require the current Auto Post package during desktop release builds and cover exact OAuth hosts,
+  stale-extension repair, credential redaction, and connection UX with regression tests.
+
 ## 1.14.0-beta.50
 
 Probe-gated custom-provider auth and opt-in unsigned prerelease publication.
