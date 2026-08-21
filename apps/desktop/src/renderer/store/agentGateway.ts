@@ -876,12 +876,16 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       // point the connection at the model, prove it answers with the stored key,
       // and only then enable it. A failed probe restores the previous config and
       // leaves both the enabled flag and the session untouched.
-      if (!api?.getConfig || !api?.saveConfig || !api?.testConnection) {
+      if (!api?.getConfig || !api?.saveConfig || !api?.testConnection || !api?.setEnabled) {
         set({ errorMessage: probeFailureNotice('thiếu cầu nối app để kiểm tra kết nối') });
         return;
       }
       let previous: { baseUrl: string; authType: string; selectedModel?: string } | null = null;
       try {
+        // The connection may already be enabled from an earlier config: turn it
+        // off before the new model is saved so nothing routes through an
+        // unproven endpoint while the probe runs.
+        await api.setEnabled(false);
         const c = await api.getConfig();
         previous = c?.config ?? null;
         await api.saveConfig({
@@ -895,7 +899,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
           set({ errorMessage: probeFailureNotice(probe?.message) });
           return;
         }
-        await api.setEnabled?.(true);
+        await api.setEnabled(true);
         set({ errorMessage: null });
       } catch (err) {
         try {
@@ -930,6 +934,15 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
     const api = (window as any).electronAPI?.customProvider;
     if (!api?.testConnection || !api?.setEnabled) {
       const message = 'thiếu cầu nối app để kiểm tra kết nối';
+      set({ errorMessage: probeFailureNotice(message) });
+      return { ok: false, message };
+    }
+    // The connection may already be enabled with an older config: turn it off
+    // before probing so a broken endpoint/key never keeps serving traffic.
+    try {
+      await api.setEnabled(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       set({ errorMessage: probeFailureNotice(message) });
       return { ok: false, message };
     }

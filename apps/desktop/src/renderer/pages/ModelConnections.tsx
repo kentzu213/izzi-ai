@@ -178,6 +178,10 @@ export function ModelConnectionsPage() {
     setBusy(true);
     setNotice(null);
     try {
+      // Saving the edited endpoint/key replaces the live config, so an already
+      // enabled connection must go off first — a broken save never serves traffic.
+      await api.setEnabled(false);
+      setEnabled(false);
       if (!(await persist())) return;
       const r = await api.testConnection(apiKey.trim() ? { apiKey: apiKey.trim() } : undefined);
       setNotice(
@@ -238,6 +242,10 @@ export function ModelConnectionsPage() {
     setBusy(true);
     setNotice(null);
     try {
+      // The connection may already be enabled with the previous config: turn it
+      // off before saving so the unproven endpoint/key never serves traffic.
+      await api.setEnabled(false);
+      setEnabled(false);
       if (!(await persist())) return;
       // Save alone proves nothing: the connection is only enabled and the agent
       // sessions are only rerouted after an authenticated probe succeeds.
