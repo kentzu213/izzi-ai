@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.50
+
+Probe-gated custom-provider auth and opt-in unsigned prerelease publication.
+
+- Require a successful authenticated connection probe before any UI path enables the custom
+  connection or reroutes sessions to it; a failed probe reports the reason and changes nothing.
+- Self-heal a rotated local Cockpit key from the canonical `codex_local_access.json` apiKey through
+  one authenticated probe, logging only the outcome and never the secret.
+- Fail closed for sessions explicitly bound to the custom provider instead of falling through to the
+  Docker agent.
+- Publish an unsigned Windows prerelease only under an explicit repository opt-in; stable releases
+  still require a valid Authenticode signature and the default stays draft.
+
 ## 1.14.0-beta.47
 
 Budget dashboard IPC wiring and local persistence.
