@@ -30,7 +30,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Public baseline: `v1.14.0-beta.52`, commit `5735952`.
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
-- Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. Full suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change.
+- Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
 
 ## Ordered Backlog
 
