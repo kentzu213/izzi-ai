@@ -17,6 +17,15 @@ import type {
 } from './agent/types';
 import type { DesktopUpdaterState } from './updater/types';
 import type {
+  NativeMarketingAccountListResult,
+  NativeMarketingOAuthStateResult,
+  NativeMarketingPlatform,
+  NativeMarketingPostListResult,
+  NativeMarketingPostResult,
+  NativeMarketingWorkspaceListResult,
+  NativeMarketingWorkspaceResult,
+} from './marketing/native-marketing-client';
+import type {
   GraphNode,
   GraphLink,
   MemoryItemDTO,
@@ -355,6 +364,32 @@ const electronAPI = {
     createDraft: (input: { content: string; title?: string }): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('autopost:createDraft', input),
     openWeb: (): Promise<{ ok: boolean; url: string }> => ipcRenderer.invoke('autopost:openWeb'),
+  },
+
+  // Native Marketing (native-marketing): the in-app surface backed by IzziAPI
+  // /api/marketing. Every result is an allowlisted summary or a bounded error
+  // code — the izzi/Supabase access token stays in main and is never bridged.
+  nativeMarketing: {
+    listWorkspaces: (): Promise<NativeMarketingWorkspaceListResult> =>
+      ipcRenderer.invoke('nativeMarketing:listWorkspaces'),
+    createWorkspace: (
+      input: { name: string; slug?: string },
+    ): Promise<NativeMarketingWorkspaceResult> =>
+      ipcRenderer.invoke('nativeMarketing:createWorkspace', input),
+    listAccounts: (workspaceId: string): Promise<NativeMarketingAccountListResult> =>
+      ipcRenderer.invoke('nativeMarketing:listAccounts', workspaceId),
+    createOAuthState: (
+      workspaceId: string,
+      platform: NativeMarketingPlatform,
+    ): Promise<NativeMarketingOAuthStateResult> =>
+      ipcRenderer.invoke('nativeMarketing:createOAuthState', workspaceId, platform),
+    listPosts: (workspaceId: string, status?: string): Promise<NativeMarketingPostListResult> =>
+      ipcRenderer.invoke('nativeMarketing:listPosts', workspaceId, status),
+    createDraftPost: (
+      workspaceId: string,
+      input: { platform: NativeMarketingPlatform; content: string; title?: string },
+    ): Promise<NativeMarketingPostResult> =>
+      ipcRenderer.invoke('nativeMarketing:createDraftPost', workspaceId, input),
   },
 
   integrations: {

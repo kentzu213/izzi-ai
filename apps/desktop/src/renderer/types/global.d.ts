@@ -293,6 +293,124 @@ declare global {
     createDraft: (input: { content: string; title?: string }) => Promise<{ ok: boolean; error?: string }>;
     openWeb: () => Promise<{ ok: boolean; url: string }>;
   }
+
+  /**
+   * Native Marketing (native-marketing, Phase 1) — the in-app surface backed by
+   * IzziAPI `/api/marketing`. These mirror the main-process allowlists in
+   * `main/marketing/native-marketing-client`: every field here is one the main
+   * process explicitly rebuilt, so no token, cookie or provider credential can
+   * appear on this side. Failures are bounded codes, never server error text.
+   */
+  type NativeMarketingPlatform = 'facebook' | 'instagram' | 'threads' | 'youtube' | 'tiktok' | 'linkedin' | 'x';
+
+  type NativeMarketingPostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+
+  type NativeMarketingOperatingMode = 'copilot' | 'semi_autonomous' | 'guarded_autonomous';
+
+  type NativeMarketingRole = 'owner' | 'manager' | 'editor' | 'reviewer' | 'viewer';
+
+  type NativeMarketingPlan = 'free' | 'starter' | 'pro' | 'max' | 'ultra';
+
+  type NativeMarketingAccountStatus =
+    | 'connected'
+    | 'pending'
+    | 'expired'
+    | 'needs_reauth'
+    | 'revoked'
+    | 'error'
+    | 'disconnected';
+
+  type NativeMarketingErrorCode =
+    | 'configuration-required'
+    | 'not-signed-in'
+    | 'invalid-workspace-id'
+    | 'invalid-workspace-name'
+    | 'invalid-operating-mode'
+    | 'unsupported-platform'
+    | 'invalid-post-status'
+    | 'invalid-draft'
+    | 'invalid-response'
+    | 'auth-required'
+    | 'forbidden'
+    | 'not-found'
+    | 'conflict'
+    | 'rate-limited'
+    | 'server-error'
+    | 'request-rejected'
+    | 'network-error';
+
+  interface NativeMarketingFailure {
+    ok: false;
+    error: NativeMarketingErrorCode;
+  }
+
+  interface NativeMarketingWorkspaceSummary {
+    id: string;
+    name: string;
+    role: NativeMarketingRole;
+    plan: NativeMarketingPlan;
+    creditsLimit: number | null;
+    creditsUsed: number | null;
+  }
+
+  interface NativeMarketingAccountSummary {
+    id: string;
+    platform: NativeMarketingPlatform;
+    name: string;
+    status: NativeMarketingAccountStatus;
+    active: boolean;
+  }
+
+  interface NativeMarketingPostSummary {
+    id: string;
+    title: string;
+    status: NativeMarketingPostStatus;
+    excerpt: string;
+    scheduledAt: string | null;
+    updatedAt: string | null;
+  }
+
+  type NativeMarketingWorkspaceListResult =
+    | { ok: true; workspaces: NativeMarketingWorkspaceSummary[] }
+    | NativeMarketingFailure;
+
+  type NativeMarketingWorkspaceResult =
+    | { ok: true; workspace: NativeMarketingWorkspaceSummary }
+    | NativeMarketingFailure;
+
+  type NativeMarketingAccountListResult =
+    | { ok: true; accounts: NativeMarketingAccountSummary[] }
+    | NativeMarketingFailure;
+
+  type NativeMarketingPostListResult =
+    | { ok: true; posts: NativeMarketingPostSummary[] }
+    | NativeMarketingFailure;
+
+  type NativeMarketingPostResult =
+    | { ok: true; post: NativeMarketingPostSummary }
+    | NativeMarketingFailure;
+
+  /** Only the opaque state for the next provider step — no authorize URL/secret. */
+  type NativeMarketingOAuthStateResult =
+    | { ok: true; platform: NativeMarketingPlatform; state: string }
+    | NativeMarketingFailure;
+
+  interface ElectronNativeMarketingApi {
+    listWorkspaces: () => Promise<NativeMarketingWorkspaceListResult>;
+    createWorkspace: (
+      input: { name: string; slug?: string },
+    ) => Promise<NativeMarketingWorkspaceResult>;
+    listAccounts: (workspaceId: string) => Promise<NativeMarketingAccountListResult>;
+    createOAuthState: (
+      workspaceId: string,
+      platform: NativeMarketingPlatform,
+    ) => Promise<NativeMarketingOAuthStateResult>;
+    listPosts: (workspaceId: string, status?: string) => Promise<NativeMarketingPostListResult>;
+    createDraftPost: (
+      workspaceId: string,
+      input: { platform: NativeMarketingPlatform; content: string; title?: string },
+    ) => Promise<NativeMarketingPostResult>;
+  }
   /**
    * The renderer view of the preload `electronAPI`. The new graph/memory
    * namespaces are typed precisely from the shared models (Req 7.4); all other
@@ -309,6 +427,7 @@ declare global {
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;
+    nativeMarketing?: ElectronNativeMarketingApi;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
   }

@@ -72,6 +72,16 @@ import { AgentSessionCapturer } from './agents/agent-session-graph';
 import { SessionRecorder } from './agents/agent-session-recorder';
 import { registerMarketingIpc } from './marketing/marketing-ipc';
 import { MarketingWorkspaceService } from './marketing/marketing-workspace';
+import {
+  isNativeMarketingPlatform,
+  NativeMarketingClient,
+  type NativeMarketingAccountListResult,
+  type NativeMarketingOAuthStateResult,
+  type NativeMarketingPostListResult,
+  type NativeMarketingPostResult,
+  type NativeMarketingWorkspaceListResult,
+  type NativeMarketingWorkspaceResult,
+} from './marketing/native-marketing-client';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
@@ -1391,6 +1401,92 @@ function setupIPC() {
       return { ok: false, url };
     }
   });
+
+  // Native Marketing (native-marketing, Phase 1): the in-app Marketing surface
+  // talking straight to IzziAPI /api/marketing with the existing izzi/Supabase
+  // session. Deliberately separate from the autopost:* bridge above — no
+  // extension backend, no loopback origin, and the access token never leaves
+  // main. The renderer only ever receives allowlisted summaries plus bounded
+  // error codes. Provider OAuth exchange and publishing are NOT wired here yet.
+  let nativeMarketingClient: NativeMarketingClient | null = null;
+  const getNativeMarketingClient = (): NativeMarketingClient => {
+    if (!nativeMarketingClient) {
+      // A reviewed https origin only; anything else leaves the client disabled
+      // and every call fails closed with 'configuration-required'.
+      nativeMarketingClient = new NativeMarketingClient(authManager, {
+        baseUrl: process.env.IZZI_NATIVE_MARKETING_API_URL,
+      });
+    }
+    return nativeMarketingClient;
+  };
+  const nativeMarketingRecord = (raw: unknown): Record<string, unknown> =>
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+
+  ipcMain.handle(
+    'nativeMarketing:listWorkspaces',
+    async (): Promise<NativeMarketingWorkspaceListResult> =>
+      getNativeMarketingClient().listWorkspaces(),
+  );
+  ipcMain.handle(
+    'nativeMarketing:createWorkspace',
+    async (_event, input: unknown): Promise<NativeMarketingWorkspaceResult> => {
+      const record = nativeMarketingRecord(input);
+      if (typeof record.name !== 'string') return { ok: false, error: 'invalid-workspace-name' };
+      return getNativeMarketingClient().createWorkspace({
+        name: record.name,
+        slug: typeof record.slug === 'string' ? record.slug : undefined,
+      });
+    },
+  );
+  ipcMain.handle(
+    'nativeMarketing:listAccounts',
+    async (_event, workspaceId: unknown): Promise<NativeMarketingAccountListResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      return getNativeMarketingClient().listAccounts(workspaceId.trim());
+    },
+  );
+  // Mint the provider CSRF state for a channel connect. Only the opaque state
+  // value comes back — the provider code exchange is a separate, later step.
+  ipcMain.handle(
+    'nativeMarketing:createOAuthState',
+    async (_event, workspaceId: unknown, platform: unknown): Promise<NativeMarketingOAuthStateResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      if (!isNativeMarketingPlatform(platform)) return { ok: false, error: 'unsupported-platform' };
+      return getNativeMarketingClient().createOAuthState(workspaceId.trim(), platform);
+    },
+  );
+  ipcMain.handle(
+    'nativeMarketing:listPosts',
+    async (_event, workspaceId: unknown, status?: unknown): Promise<NativeMarketingPostListResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      if (status !== undefined && status !== null && typeof status !== 'string') {
+        return { ok: false, error: 'invalid-post-status' };
+      }
+      return getNativeMarketingClient().listPosts(
+        workspaceId.trim(),
+        typeof status === 'string' && status ? status : undefined,
+      );
+    },
+  );
+  // Drafts only: no accounts and no schedule are ever sent, so this surface
+  // cannot publish.
+  ipcMain.handle(
+    'nativeMarketing:createDraftPost',
+    async (_event, workspaceId: unknown, input: unknown): Promise<NativeMarketingPostResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      const record = nativeMarketingRecord(input);
+      if (!isNativeMarketingPlatform(record.platform)) return { ok: false, error: 'unsupported-platform' };
+      if (typeof record.content !== 'string') return { ok: false, error: 'invalid-draft' };
+      if (record.title !== undefined && typeof record.title !== 'string') {
+        return { ok: false, error: 'invalid-draft' };
+      }
+      return getNativeMarketingClient().createDraftPost(workspaceId.trim(), {
+        platform: record.platform,
+        content: record.content,
+        title: typeof record.title === 'string' ? record.title : undefined,
+      });
+    },
+  );
 
   // Chat directly against the user-configured OpenAI-compatible endpoint
   // (codex-lb / 9router / any OpenAI-compatible). Streams content deltas to the
