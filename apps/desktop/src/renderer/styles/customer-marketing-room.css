@@ -3645,6 +3645,12 @@
   line-height: 1.45;
 }
 
+.cmr-connect-center__reload {
+  width: auto;
+  padding: 0 12px;
+  gap: 6px;
+}
+
 .cmr-connect-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

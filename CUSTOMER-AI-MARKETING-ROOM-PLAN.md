@@ -1,11 +1,10 @@
 # Customer AI Marketing Room Plan
 
-Product status: in_progress (78% weighted delivery scope; 97% local product scope; source:
-`CUSTOMER-AI-MARKETING-ROOM-PLAN.md` weighted rubric and verified checklist)
-Vertical slice status: verified_local_packaged_seven_day_workflow
+Product status: in_progress (historical weighted rubric retained; current execution state is in `MASTER_PLAN.md`)
+Vertical slice status: verified_public_beta53_channel_connection_ux
 Backend foundation status: verified_local_not_deployed
-Quality gate status: verified_workspace_eslint9_dependency_audit_and_renderer_budget
-Last verified: 2026-08-12 ICT. Beta34 is public, installed, and smoke-tested. The tenant-safe backend, rate limit, two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, CMR-115 retry recovery, CMR-116 server-derived per-run billing linkage, and CMR-117 hard plan entitlement are public. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is technical Marketing Room reliability and remote staging readiness.
+Quality gate status: verified_beta52_full_desktop_suite_lint_build_release_and_installer
+Last verified: 2026-08-21 ICT. Izzi AI beta.52 is the public baseline and beta.53 contains the bounded channel-connection UX correction pending release/install verification. The tenant-safe backend, rate limit, local two-device profile sync, capability registry, quota reconciliation, aggregate real-billing-ledger reconciliation, backend-owned seven-day workflow API, desktop bridge, retry recovery, per-run billing linkage, hard plan entitlement, and the channel connection center are public/local verified. No remote migration or deployment occurred. Video/F5 work is deferred by user decision; the active scope is integration authority, workflow execution, safety gates, and remote staging readiness.
 Scope: first production-shaped customer slice on the existing Starizzi / IzziAPI core.
 
 The weighted delivery score is intentionally not a raw checkbox count. The

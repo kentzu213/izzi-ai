@@ -178,7 +178,9 @@ describe('CustomerMarketingChannels connection center contract', () => {
 
   it('surfaces the Auto Post master control with the four bridge states', () => {
     expect(pageSource).toContain('const [autopostMaster, setAutopostMaster] = useState');
-    expect(pageSource).toContain('Promise.all([api.listAccounts(), api.getStatus()])');
+    expect(pageSource).toContain('const masterStatus = await api.getStatus();');
+    expect(pageSource).toMatch(/if \(!masterStatus\?\.connected\)[\s\S]{0,240}setAutopostAccounts\(\[\]\)/);
+    expect(pageSource).not.toContain('Promise.all([api.listAccounts(), api.getStatus()])');
     expect(pageSource).toContain("masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");
     expect(pageSource).toContain("'Đang kiểm tra…'");
     expect(pageSource).toContain('Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.');
@@ -188,6 +190,11 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain('Kết nối Auto-Post');
     expect(pageSource).toContain("'Ngắt'");
     expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể bật hoặc ngắt Auto Post.');
+    expect(pageSource).toContain('Bật Auto Post ở trên trước, rồi kết nối kênh này.');
+    expect(pageSource).toContain('!masterConnected || autopostLoading');
+    expect(pageSource).toContain('cmr-connect-center__reload');
+    expect(stylesSource).toContain('.cmr-connect-center__reload');
+    expect(pageSource).toContain('Kho khóa provider');
   });
 
   it('keeps the master control redacted and states the explicit connect flow', () => {
@@ -204,6 +211,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain("window.removeEventListener('focus', onFocus)");
     expect(pageSource).toContain('aria-label="Tải lại trạng thái kết nối kênh"');
     expect(pageSource).toContain('telegramTokenInput.current?.focus()');
+    expect(pageSource).toContain("scrollIntoView({ block: 'center' })");
     expect(pageSource).toContain('ref={telegramTokenInput}');
     expect(pageSource).toContain("const CHANNEL_CONNECT_ROLES: CustomerRole[] = ['owner', 'manager']");
   });

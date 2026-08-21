@@ -1684,6 +1684,14 @@ function HomeView({
               <span className="cmr-setup-health__ring">{snapshot.workspace.onboardingComplete ? '✓' : '!'}</span>
               <div><strong>{snapshot.workspace.onboardingComplete ? 'Workspace đã sẵn sàng' : 'Cần hoàn tất setup'}</strong><span>Brand, audience và policy đã được lưu riêng.</span></div>
             </div>
+            <div className="cmr-setup-health">
+              <span className="cmr-setup-health__ring">↗</span>
+              <div>
+                <strong>Kết nối kênh đăng bài</strong>
+                <span>Bật Auto Post rồi liên kết Facebook Test Page hoặc YouTube Private.</span>
+                <button type="button" className="cmr-text-button" onClick={() => onOpen('channels')}>Mở Trung tâm kết nối →</button>
+              </div>
+            </div>
           </section>
           <section className="cmr-panel cmr-guardrail-panel">
             <div className="cmr-guardrail-panel__icon"><StatusIcon className="cmr-icon" /></div>

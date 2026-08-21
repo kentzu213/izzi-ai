@@ -350,9 +350,16 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setAutopostLoading(true);
     setAutopostError('');
     try {
-      const [result, masterStatus] = await Promise.all([api.listAccounts(), api.getStatus()]);
+      const masterStatus = await api.getStatus();
       if (request !== autopostRequestId.current) return;
       setAutopostMaster({ enabled: Boolean(masterStatus?.enabled), connected: Boolean(masterStatus?.connected) });
+      if (!masterStatus?.connected) {
+        setAutopostReady(false);
+        setAutopostAccounts([]);
+        return;
+      }
+      const result = await api.listAccounts();
+      if (request !== autopostRequestId.current) return;
       if (!result.ok) {
         setAutopostReady(false);
         setAutopostAccounts([]);
@@ -581,7 +588,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const focusTelegramSetup = () => {
     if (!canConfigureTelegram) return;
     setConnectNotice('Nhập khóa Telegram trong phần cấu hình sandbox bên dưới.');
-    window.requestAnimationFrame(() => telegramTokenInput.current?.focus());
+    window.requestAnimationFrame(() => {
+      telegramTokenInput.current?.scrollIntoView({ block: 'center' });
+      telegramTokenInput.current?.focus();
+    });
   };
 
   const prepare = async () => {
@@ -822,7 +832,24 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     }
   };
 
+  const masterChecking = autopostLoading && !autopostMaster;
+  const masterConnected = Boolean(autopostMaster?.connected);
+  const masterEnabled = Boolean(autopostMaster?.enabled);
+  const masterStateClass: ChannelConnectionState = masterChecking
+    ? 'unknown'
+    : masterConnected ? 'connected' : masterEnabled ? 'attention' : 'disconnected';
+  const masterLabel = masterChecking
+    ? 'Đang kiểm tra…'
+    : masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
+  const masterMeta = masterConnected
+    ? 'Auto Post sẵn sàng nhận kết nối Facebook Test Page và YouTube Private.'
+    : masterEnabled
+      ? 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
+      : 'Bật để kết nối Facebook Test Page và YouTube Private qua Auto-Post Tool.';
+
   const autopostChannelState = (channel: AutopostChannel): ChannelConnectionState => {
+    if (masterChecking) return 'unknown';
+    if (!masterConnected) return 'disconnected';
     if (!autopostReady) return 'unknown';
     const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'disconnected';
@@ -831,6 +858,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
 
   const autopostChannelDetail = (channel: AutopostChannel): string => {
     if (autopostLoading) return 'Đang đọc trạng thái từ Auto Post…';
+    if (!masterConnected) return 'Bật Auto Post ở trên trước, rồi kết nối kênh này.';
     if (!autopostReady) return 'Chưa đọc được trạng thái từ Auto Post.';
     const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'Chưa có tài khoản nào cho kênh này.';
@@ -850,21 +878,6 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     : telegramCredential
       ? `Vault cục bộ · ${credentialStateLabel(telegramCredential.state)}`
       : 'Chưa có khóa Telegram trong vault cục bộ.';
-
-  const masterChecking = autopostLoading && !autopostMaster;
-  const masterConnected = Boolean(autopostMaster?.connected);
-  const masterEnabled = Boolean(autopostMaster?.enabled);
-  const masterStateClass: ChannelConnectionState = masterChecking
-    ? 'unknown'
-    : masterConnected ? 'connected' : masterEnabled ? 'attention' : 'disconnected';
-  const masterLabel = masterChecking
-    ? 'Đang kiểm tra…'
-    : masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
-  const masterMeta = masterConnected
-    ? 'Auto Post sẵn sàng nhận kết nối Facebook Test Page và YouTube Private.'
-    : masterEnabled
-      ? 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
-      : 'Bật để kết nối Facebook Test Page và YouTube Private qua Auto-Post Tool.';
 
   const connectionCards: Array<{
     key: AutopostChannel | 'telegram';
@@ -887,8 +900,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       actionLabel: facebookState === 'connected' ? 'Kết nối lại Facebook' : 'Kết nối Facebook',
       onAction: () => { void connectChannel('facebook'); },
       busy: connectingChannel === 'facebook',
-      disabled: !canConnectChannels || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
-      note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
+      disabled: !canConnectChannels || !masterConnected || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
+      note: !canConnectChannels
+        ? 'Chỉ Owner hoặc Manager có thể kết nối kênh.'
+        : !masterConnected ? 'Bật Auto Post ở trên trước.' : '',
     },
     {
       key: 'youtube',
@@ -899,8 +914,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       actionLabel: youtubeState === 'connected' ? 'Kết nối lại YouTube' : 'Kết nối YouTube',
       onAction: () => { void connectChannel('youtube'); },
       busy: connectingChannel === 'youtube',
-      disabled: !canConnectChannels || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
-      note: canConnectChannels ? '' : 'Chỉ Owner hoặc Manager có thể kết nối kênh.',
+      disabled: !canConnectChannels || !masterConnected || autopostLoading || autopostMasterBusy || Boolean(connectingChannel),
+      note: !canConnectChannels
+        ? 'Chỉ Owner hoặc Manager có thể kết nối kênh.'
+        : !masterConnected ? 'Bật Auto Post ở trên trước.' : '',
     },
     {
       key: 'telegram',
@@ -933,13 +950,14 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         </div>
         <button
           type="button"
-          className="cmr-icon-button"
+          className="cmr-icon-button cmr-connect-center__reload"
           aria-label="Tải lại trạng thái kết nối kênh"
           title="Tải lại"
           disabled={autopostLoading || autopostMasterBusy || Boolean(connectingChannel)}
           onClick={() => void loadAutopostAccounts()}
         >
           <RefreshIcon className="cmr-icon" />
+          <span>Tải lại</span>
         </button>
       </div>
       <div className="cmr-sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -976,6 +994,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           <small className="cmr-permission-note">Chỉ Owner hoặc Manager có thể bật hoặc ngắt Auto Post.</small>
         )}
       </div>
+      {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
+      {autopostError && <div className="cmr-credential-error" role="alert">{autopostError}</div>}
       <ol className="cmr-connect-flow">
         <li>Bật Auto Post bằng nút Kết nối Auto-Post.</li>
         <li>Bấm kết nối Facebook Test Page hoặc YouTube Private.</li>
@@ -1009,8 +1029,6 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           </article>
         ))}
       </div>
-      {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
-      {autopostError && <div className="cmr-credential-error" role="alert">{autopostError}</div>}
     </section>
   );
 
@@ -1332,7 +1350,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         <div className="cmr-credential-panel__heading">
           <div>
             <span className="cmr-eyebrow">Provider vault</span>
-            <h3 id="cmr-credential-heading">Kết nối kênh</h3>
+            <h3 id="cmr-credential-heading">Kho khóa provider</h3>
           </div>
           <div className={'cmr-credential-vault cmr-credential-vault--' + credentialBridgeStatus}>
             <span aria-hidden="true" />
