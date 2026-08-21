@@ -12,3 +12,16 @@ export function shouldUseIzziApiRoute(
 ): boolean {
   return runtime === 'izzi' || provider === 'izzi';
 }
+
+/**
+ * A session the user explicitly bound to the custom endpoint must stay on it.
+ * When the custom connection is missing, disabled or broken the turn fails
+ * closed with an actionable notice — it must never silently fall through to the
+ * Docker container, which answers as a different model with different auth.
+ */
+export function requiresCustomProviderRoute(
+  runtime: ExternalAgent['runtime'],
+  provider: AIProvider,
+): boolean {
+  return runtime !== 'izzi' && provider === 'custom';
+}

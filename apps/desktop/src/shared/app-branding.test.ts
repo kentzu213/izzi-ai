@@ -128,7 +128,8 @@ describe('Izzi AI desktop branding contract', () => {
     expect(workflowSource).toContain('pnpm test:signing-policy');
     expect(workflowSource).toContain('verify-windows-signing-policy.ps1');
     expect(workflowSource).toContain('broadDistributionAllowed=$env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED');
-    expect(workflowSource).toContain("if ($env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED -ne 'true')");
+    expect(workflowSource).toContain('publishAllowed=$env:WINDOWS_PUBLISH_ALLOWED');
+    expect(workflowSource).toContain("if ($env:WINDOWS_PUBLISH_ALLOWED -ne 'true')");
     expect(workflowSource).toContain('keeping the release draft for internal evaluation');
     expect(workflowSource.indexOf('Test Windows signing policy')).toBeLessThan(
       workflowSource.indexOf('Package Windows'),
@@ -148,6 +149,48 @@ describe('Izzi AI desktop branding contract', () => {
       expect(localReleaseSource).not.toContain('--publish always');
       expect(localReleaseSource).toContain('--publish never');
     }
+  });
+
+  it('publishes unsigned prereleases only behind an explicit opt-in and never unsigned stables', () => {
+    const workflowSource = readFileSync(
+      new URL('../../../../.github/workflows/release-desktop.yml', import.meta.url),
+      'utf8',
+    );
+    const policySource = readFileSync(
+      new URL('../../scripts/verify-windows-signing-policy.ps1', import.meta.url),
+      'utf8',
+    );
+    const policyTestSource = readFileSync(
+      new URL('../../scripts/test-windows-signing-policy.ps1', import.meta.url),
+      'utf8',
+    );
+
+    // The opt-in only ever reaches the verifier as an explicit repository variable.
+    expect(workflowSource).toContain(
+      'UNSIGNED_PRERELEASE_PUBLISH_OPT_IN: ${{ vars.ALLOW_UNSIGNED_PRERELEASE_PUBLISH }}',
+    );
+    expect(workflowSource).toContain('-UnsignedPrereleaseOptIn $optIn');
+    expect(workflowSource).toContain('publish_allowed: ${{ steps.windows-signing-policy.outputs.publish_allowed }}');
+    expect(workflowSource).toContain(
+      'WINDOWS_PUBLISH_ALLOWED: ${{ needs.build-windows.outputs.publish_allowed }}',
+    );
+    expect(workflowSource).toContain(
+      'Stable releases require a valid Authenticode signature before publication.',
+    );
+
+    // Stable Authenticode enforcement precedes (and is unaffected by) the opt-in.
+    expect(policySource).toContain('[string]$UnsignedPrereleaseOptIn = ""');
+    expect(policySource).toContain('$unsignedPublishOptIn = $UnsignedPrereleaseOptIn.Trim() -eq "true"');
+    expect(policySource).toContain('requires Authenticode status Valid');
+    expect(policySource).toContain('publishAllowed = $unsignedPublishOptIn');
+    expect(policySource.indexOf('requires Authenticode status Valid')).toBeLessThan(
+      policySource.indexOf('publishAllowed = $unsignedPublishOptIn'),
+    );
+
+    // Both branches of the opt-in are covered by the signing-policy self-test.
+    expect(policyTestSource).toContain('Unsigned prerelease publish default mismatch');
+    expect(policyTestSource).toContain('Unsigned prerelease opt-in publish mismatch');
+    expect(policyTestSource).toContain('Unsigned stable release was not rejected under opt-in');
   });
 
   it('provisions target-native optional packages without a third-party Electron mirror', () => {

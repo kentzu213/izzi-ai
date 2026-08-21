@@ -41,7 +41,7 @@ import { SecretStore } from './agent/secret-store';
 import { CustomOpenAIProvider } from './agent/custom-openai-provider';
 import { runHostAgentTurn } from './agent/host-agent';
 import { AgentPermissionStore, isPermissionMode, type PermissionMode } from './agent/agent-permissions';
-import { buildLocalCockpitConfig, resolveLocalCockpitKey } from './agent/local-cockpit-connection';
+import { buildLocalCockpitConfig, healLocalCockpitKey, resolveLocalCockpitKey } from './agent/local-cockpit-connection';
 import { AutopostAuth } from './autopost/autopost-auth';
 import { AutopostClient } from './autopost/autopost-client';
 import { AUTOPOST_TOOLS, classifyAutopostRisk, executeAutopostTool, isAutopostTool } from './autopost/autopost-tools';
@@ -1379,8 +1379,31 @@ function setupIPC() {
       const secrets = new SecretStore(dbManager);
       if (!settings.isCustomEnabled()) return { error: 'disabled' };
       const cfg = settings.getConfig();
-      const key = secrets.getKey();
-      if (!cfg || !key) return { error: 'not-configured' };
+      const storedKey = secrets.getKey();
+      if (!cfg || !storedKey) return { error: 'not-configured' };
+
+      // A local Cockpit restart rotates the loopback key, which would 401 every
+      // turn until the user reconnects by hand. Re-read the canonical
+      // codex_local_access.json apiKey and adopt it only after ONE authenticated
+      // probe. The secret never leaves main: only the outcome is logged.
+      const heal = await healLocalCockpitKey({
+        config: cfg,
+        currentKey: storedKey,
+        probe: (candidate) =>
+          new CustomOpenAIProvider(cfg, candidate, (t) => t.split(candidate).join('[REDACTED]')).testConnection(),
+        persist: (candidate) => secrets.setKey(candidate),
+      });
+      if (heal.status === 'rotated' || heal.status === 'rotation-rejected') {
+        dbManager.appendDiagnosticEvent({
+          type: 'model_connection.local_cockpit_key',
+          status: heal.status === 'rotated' ? 'info' : 'error',
+          detail:
+            heal.status === 'rotated'
+              ? `Adopted a rotated local Cockpit key from ${heal.source} after a successful probe.`
+              : 'A rotated local Cockpit key failed its probe; kept the stored key.',
+        });
+      }
+      const key = heal.key ?? storedKey;
 
       const history = Array.isArray(payload?.history)
         ? payload.history

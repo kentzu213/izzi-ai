@@ -16,7 +16,7 @@ import { TOP_AGENTS } from '../types/agent-registry';
 import { connectionActionForProvider, deriveEndpointLabel } from '../types/model-catalog';
 import type { AgentTurnEvent } from '../../shared/agent-turn-events';
 import { sanitizeStoredSessions, capForPersist, pickActiveId } from './gatewayPersist';
-import { shouldUseIzziApiRoute } from './agentGateway-routing';
+import { requiresCustomProviderRoute, shouldUseIzziApiRoute } from './agentGateway-routing';
 import {
   LOCAL_COCKPIT_BASE_URL,
   LOCAL_COCKPIT_LABEL,
@@ -35,6 +35,12 @@ function gatewayPersistApi(): GatewayPersistApi | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as unknown as { electronAPI?: { gatewaySessions?: GatewayPersistApi } }).electronAPI
     ?.gatewaySessions;
+}
+
+/** Renderer-safe notice for a failed connection probe (never claims success). */
+function probeFailureNotice(message?: string): string {
+  const detail = typeof message === 'string' && message.trim() ? message.trim() : 'không kết nối được endpoint';
+  return `Kết nối model thất bại: ${detail}. Kết nối chưa được bật.`;
 }
 
 function createLocalId(prefix: string): string {
@@ -105,6 +111,11 @@ interface AgentGatewayState {
    * izzi regardless (handled by sendGatewayMessage).
    */
   setActiveModel: (model: string, provider: AIProvider) => Promise<void>;
+  /**
+   * Enable the custom connection and reroute sessions to it — but only after an
+   * authenticated probe succeeds. A failed probe changes nothing and reports why.
+   */
+  enableCustomRouting: (model: string) => Promise<{ ok: boolean; message?: string }>;
   /** Route every non-Izzi agent session through the explicitly enabled local connection. */
   routeExternalSessionsToCustom: (model: string) => void;
   /** Change a Docker agent's reasoning effort (rewrites config + restarts container). */
@@ -553,6 +564,38 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         }
       }
 
+      // Fail closed: this session is explicitly bound to the custom endpoint, but
+      // the connection is missing, disabled or without a key. Answering from the
+      // Docker container would silently swap the model and the auth the user
+      // chose, so stop here with an actionable notice instead.
+      if (requiresCustomProviderRoute(agent.runtime, session.provider)) {
+        set((state) => ({
+          isSending: false,
+          currentTurnId: null,
+          errorMessage: 'Kết nối model tùy chỉnh chưa sẵn sàng.',
+          sessions: state.sessions.map((s) =>
+            s.id === session.id
+              ? {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? {
+                          ...m,
+                          content:
+                            '⚠️ Phiên này đang dùng kết nối model tùy chỉnh nhưng kết nối chưa bật hoặc chưa có API key.\n\n' +
+                            'Mở tab "Kết nối Model", bấm "Lưu & Bật" để kiểm tra kết nối rồi thử lại. ' +
+                            'Tin nhắn sẽ không được chuyển sang agent Docker.',
+                          state: 'done' as const,
+                        }
+                      : m,
+                  ),
+                }
+              : s,
+          ),
+        }));
+        return true;
+      }
+
       // Docker agents with an OpenAI-compatible endpoint (e.g. Hermes) route
       // through the main process via IPC — the API key stays in main and is
       // never exposed to the renderer.
@@ -828,23 +871,50 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const api = (window as any).electronAPI?.customProvider;
     const action = connectionActionForProvider(provider);
-    try {
-      if (action === 'enable-custom' && api?.getConfig && api?.saveConfig) {
-        // Point the single custom connection at this model + enable it, so generic
-        // agents call exactly it (config.selectedModel is what the endpoint receives).
-        const c = await api.getConfig();
-        const baseUrl = c?.config?.baseUrl || LOCAL_COCKPIT_BASE_URL;
-        const authType = c?.config?.authType || 'bearer';
-        await api.saveConfig({ baseUrl, authType, selectedModel: model });
-        await api.setEnabled?.(true);
-      } else if (action === 'disable-custom' && api?.setEnabled) {
-        // An Izzi-hosted model was picked (SmartRouter, Grok, or Sol): turn the
-        // custom connection off. sendGatewayMessage then uses the authenticated
-        // main-process Izzi bridge for both native and generic agents.
-        await api.setEnabled(false);
+    if (action === 'enable-custom') {
+      // Picking a custom model must never enable or reroute a broken endpoint:
+      // point the connection at the model, prove it answers with the stored key,
+      // and only then enable it. A failed probe restores the previous config and
+      // leaves both the enabled flag and the session untouched.
+      if (!api?.getConfig || !api?.saveConfig || !api?.testConnection) {
+        set({ errorMessage: probeFailureNotice('thiếu cầu nối app để kiểm tra kết nối') });
+        return;
       }
-    } catch {
-      /* best-effort: still reflect the pick on the session below */
+      let previous: { baseUrl: string; authType: string; selectedModel?: string } | null = null;
+      try {
+        const c = await api.getConfig();
+        previous = c?.config ?? null;
+        await api.saveConfig({
+          baseUrl: previous?.baseUrl || LOCAL_COCKPIT_BASE_URL,
+          authType: previous?.authType || 'bearer',
+          selectedModel: model,
+        });
+        const probe = await api.testConnection();
+        if (!probe?.ok) {
+          if (previous) await api.saveConfig(previous);
+          set({ errorMessage: probeFailureNotice(probe?.message) });
+          return;
+        }
+        await api.setEnabled?.(true);
+        set({ errorMessage: null });
+      } catch (err) {
+        try {
+          if (previous) await api.saveConfig(previous);
+        } catch {
+          /* best-effort restore — the probe already failed closed */
+        }
+        set({ errorMessage: probeFailureNotice(err instanceof Error ? err.message : undefined) });
+        return;
+      }
+    } else if (action === 'disable-custom' && api?.setEnabled) {
+      // An Izzi-hosted model was picked (SmartRouter, Grok, or Sol): turn the
+      // custom connection off. sendGatewayMessage then uses the authenticated
+      // main-process Izzi bridge for both native and generic agents.
+      try {
+        await api.setEnabled(false);
+      } catch {
+        /* best-effort: still reflect the pick on the session below */
+      }
     }
     if (session) {
       set((state) => ({
@@ -853,6 +923,37 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         ),
       }));
     }
+  },
+
+  enableCustomRouting: async (model) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = (window as any).electronAPI?.customProvider;
+    if (!api?.testConnection || !api?.setEnabled) {
+      const message = 'thiếu cầu nối app để kiểm tra kết nối';
+      set({ errorMessage: probeFailureNotice(message) });
+      return { ok: false, message };
+    }
+    let probe: { ok?: boolean; message?: string } | undefined;
+    try {
+      probe = await api.testConnection();
+    } catch (err) {
+      probe = { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+    // Fail closed: no enablement and no rerouting until the endpoint answers.
+    if (!probe?.ok) {
+      set({ errorMessage: probeFailureNotice(probe?.message) });
+      return { ok: false, message: probe?.message };
+    }
+    try {
+      await api.setEnabled(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      set({ errorMessage: probeFailureNotice(message) });
+      return { ok: false, message };
+    }
+    set({ errorMessage: null });
+    get().routeExternalSessionsToCustom(model);
+    return { ok: true };
   },
 
   routeExternalSessionsToCustom: (model) => {

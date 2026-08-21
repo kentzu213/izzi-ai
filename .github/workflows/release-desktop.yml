@@ -14,6 +14,7 @@ jobs:
     runs-on: windows-latest
     outputs:
       broad_distribution_allowed: ${{ steps.windows-signing-policy.outputs.broad_distribution_allowed }}
+      publish_allowed: ${{ steps.windows-signing-policy.outputs.publish_allowed }}
     defaults:
       run:
         working-directory: apps/desktop
@@ -77,14 +78,22 @@ jobs:
       - name: Enforce Windows signing policy
         id: windows-signing-policy
         shell: pwsh
+        env:
+          # Explicit opt-in for publishing an unsigned prerelease. Absent or any
+          # value other than 'true' keeps the release a draft. Stable releases
+          # always require a valid Authenticode signature regardless of this.
+          UNSIGNED_PRERELEASE_PUBLISH_OPT_IN: ${{ vars.ALLOW_UNSIGNED_PRERELEASE_PUBLISH }}
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $installer = (Resolve-Path "release/Izzi-AI-$version-win-x64.exe").Path
+          $optIn = "$($env:UNSIGNED_PRERELEASE_PUBLISH_OPT_IN)"
           $receipt = & ./scripts/verify-windows-signing-policy.ps1 `
-            -Tag $env:GITHUB_REF_NAME -InstallerPath $installer | ConvertFrom-Json
+            -Tag $env:GITHUB_REF_NAME -InstallerPath $installer `
+            -UnsignedPrereleaseOptIn $optIn | ConvertFrom-Json
           "channel=$($receipt.channel)" >> $env:GITHUB_OUTPUT
           "signature=$($receipt.signature)" >> $env:GITHUB_OUTPUT
           "broad_distribution_allowed=$($receipt.broadDistributionAllowed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "publish_allowed=$($receipt.publishAllowed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Ensure GitHub release exists
         shell: pwsh
@@ -93,6 +102,7 @@ jobs:
           WINDOWS_SIGNING_CHANNEL: ${{ steps.windows-signing-policy.outputs.channel }}
           WINDOWS_SIGNATURE: ${{ steps.windows-signing-policy.outputs.signature }}
           WINDOWS_BROAD_DISTRIBUTION_ALLOWED: ${{ steps.windows-signing-policy.outputs.broad_distribution_allowed }}
+          WINDOWS_PUBLISH_ALLOWED: ${{ steps.windows-signing-policy.outputs.publish_allowed }}
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = $env:GITHUB_REF_NAME
@@ -103,6 +113,7 @@ jobs:
           - channel=$env:WINDOWS_SIGNING_CHANNEL
           - signature=$env:WINDOWS_SIGNATURE
           - broadDistributionAllowed=$env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED
+          - publishAllowed=$env:WINDOWS_PUBLISH_ALLOWED
           "@
           $existing = gh release view $tag --repo $env:GITHUB_REPOSITORY `
             --json tagName,isDraft,isPrerelease 2>$null
@@ -237,6 +248,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WINDOWS_BROAD_DISTRIBUTION_ALLOWED: ${{ needs.build-windows.outputs.broad_distribution_allowed }}
+          WINDOWS_PUBLISH_ALLOWED: ${{ needs.build-windows.outputs.publish_allowed }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -280,9 +292,13 @@ jobs:
             $unexpected = $assets.name | Where-Object { $_ -notin $requiredNames }
             throw "Unexpected release inventory: $($unexpected -join ', ')"
           }
-          if ($env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED -ne 'true') {
+          if ($env:WINDOWS_PUBLISH_ALLOWED -ne 'true') {
             Write-Host 'Unsigned prerelease inventory verified; keeping the release draft for internal evaluation.'
+            Write-Host 'Set the ALLOW_UNSIGNED_PRERELEASE_PUBLISH repository variable to true to publish it.'
             exit 0
+          }
+          if ($env:WINDOWS_BROAD_DISTRIBUTION_ALLOWED -ne 'true' -and -not $env:GITHUB_REF_NAME.Contains('-')) {
+            throw 'Stable releases require a valid Authenticode signature before publication.'
           }
           & gh release edit $env:GITHUB_REF_NAME `
             --repo $env:GITHUB_REPOSITORY --draft=false

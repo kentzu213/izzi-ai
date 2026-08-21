@@ -98,6 +98,7 @@ function getApi(): CustomProviderApi | undefined {
 export function ModelConnectionsPage() {
   const api = getApi();
   const routeExternalSessionsToCustom = useAgentGatewayStore((state) => state.routeExternalSessionsToCustom);
+  const enableCustomRouting = useAgentGatewayStore((state) => state.enableCustomRouting);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [authType, setAuthType] = useState<AuthType>('bearer');
@@ -232,16 +233,26 @@ export function ModelConnectionsPage() {
     }
   }
 
-  async function handleSaveEnable() {    if (!api?.saveConfig) return;
+  async function handleSaveEnable() {
+    if (!api?.saveConfig) return;
     setBusy(true);
     setNotice(null);
     try {
       if (!(await persist())) return;
-      await api.setEnabled(true);
-      setEnabled(true);
-      routeExternalSessionsToCustom(model.trim());
+      // Save alone proves nothing: the connection is only enabled and the agent
+      // sessions are only rerouted after an authenticated probe succeeds.
+      const routed = await enableCustomRouting(model.trim());
       setApiKey('');
       await refreshKeyState();
+      if (!routed.ok) {
+        setEnabled(false);
+        setNotice({
+          ok: false,
+          text: `Đã lưu nhưng CHƯA bật: kết nối thất bại (${routed.message || 'không kết nối được endpoint'}). Kiểm tra endpoint/API key rồi thử lại.`,
+        });
+        return;
+      }
+      setEnabled(true);
       setNotice({ ok: true, text: 'Đã lưu & bật. Mở tab Chat agent — tin nhắn sẽ đi qua endpoint này.' });
     } catch {
       setNotice({ ok: false, text: 'Lỗi khi lưu' });
@@ -255,9 +266,24 @@ export function ModelConnectionsPage() {
     const next = !enabled;
     setBusy(true);
     try {
-      await api.setEnabled(next);
-      setEnabled(next);
-      setNotice({ ok: true, text: next ? 'Đã bật kết nối' : 'Đã tắt — chat quay lại luồng agent mặc định' });
+      if (next) {
+        // Turning the connection back on is also a probe-gated path.
+        const routed = await enableCustomRouting(model.trim());
+        if (!routed.ok) {
+          setEnabled(false);
+          setNotice({
+            ok: false,
+            text: `Chưa bật được: kết nối thất bại (${routed.message || 'không kết nối được endpoint'}).`,
+          });
+          return;
+        }
+        setEnabled(true);
+        setNotice({ ok: true, text: 'Đã bật kết nối' });
+        return;
+      }
+      await api.setEnabled(false);
+      setEnabled(false);
+      setNotice({ ok: true, text: 'Đã tắt — chat quay lại luồng agent mặc định' });
     } catch {
       setNotice({ ok: false, text: 'Không đổi được trạng thái' });
     } finally {
