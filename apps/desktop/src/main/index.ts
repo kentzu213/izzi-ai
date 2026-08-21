@@ -122,6 +122,8 @@ import type { LiveProfile } from '../shared/memory-trace/live-profile';
 // Live.md is workspace-scoped rather than session-scoped: it outlives any one
 // chat, so its trace units share one boundary.
 const LIVE_PROFILE_BOUNDARY_ID = 'workspace:local';
+const NATIVE_RUNTIME_SMOKE_ARG = '--izzi-native-runtime-smoke';
+const nativeRuntimeSmoke = process.argv.includes(NATIVE_RUNTIME_SMOKE_ARG);
 
 installMainProcessOutputSafety({ stdout: process.stdout, stderr: process.stderr });
 
@@ -281,7 +283,7 @@ function getAppIcon(): Electron.NativeImage | undefined {
 }
 
 // The isolated staging profile must not replace the production OAuth/deep-link handler.
-if (DESKTOP_RUNTIME_PROFILE.registerProtocol) {
+if (!nativeRuntimeSmoke && DESKTOP_RUNTIME_PROFILE.registerProtocol) {
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
       app.setAsDefaultProtocolClient('openclaw', process.execPath, [path.resolve(process.argv[1])]);
@@ -1907,6 +1909,13 @@ app.on('open-url', (event, url) => {
 });
 
 app.whenReady().then(async () => {
+  if (nativeRuntimeSmoke) {
+    dbManager = new DatabaseManager();
+    dbManager.initialize();
+    dbManager.close();
+    app.exit(0);
+    return;
+  }
   await initServices();
   setupIPC();
 

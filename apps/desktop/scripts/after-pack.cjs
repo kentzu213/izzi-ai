@@ -1,5 +1,7 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const ARCH_NAMES = {
   1: 'x64',
@@ -78,6 +80,36 @@ exports.default = async function afterPack(context) {
       throw new Error(
         `[after-pack] Missing ${nativeExtension} payload in Sharp runtime package: ${packageName}`,
       );
+    }
+  }
+
+  if (context.electronPlatformName === 'win32') {
+    const executablePath = path.join(
+      context.appOutDir,
+      `${context.packager.appInfo.productFilename}.exe`,
+    );
+    const smokeProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'izzi-native-smoke-'));
+    try {
+      const env = { ...process.env };
+      delete env.ELECTRON_RUN_AS_NODE;
+      delete env.IZZI_DESKTOP_RUNTIME_PROFILE;
+      const smoke = spawnSync(executablePath, [
+        '--izzi-native-runtime-smoke',
+        `--user-data-dir=${smokeProfile}`,
+      ], {
+        encoding: 'utf8',
+        env,
+        timeout: 30_000,
+        windowsHide: true,
+      });
+      if (smoke.error || smoke.status !== 0 || smoke.signal) {
+        const diagnostic = String(smoke.stderr || smoke.error?.message || smoke.signal || smoke.status)
+          .replace(/\s+/g, ' ')
+          .slice(0, 600);
+        throw new Error(`Packaged Electron native runtime smoke failed: ${diagnostic}`);
+      }
+    } finally {
+      fs.rmSync(smokeProfile, { force: true, recursive: true });
     }
   }
 };

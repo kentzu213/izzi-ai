@@ -11,6 +11,8 @@ Customer-facing Marketing channel connection center.
   package before starting its managed backend, preserving only declared grants.
 - Require the current Auto Post package during desktop release builds and cover exact OAuth hosts,
   stale-extension repair, credential redaction, and connection UX with regression tests.
+- Rebuild `better-sqlite3` explicitly for Electron before Windows packaging and make `afterPack`
+  launch the packaged app in native-runtime smoke mode, preventing wrong-ABI installers.
 
 ## 1.14.0-beta.50
 

@@ -271,7 +271,7 @@ describe('Izzi AI desktop branding contract', () => {
           'lib/sharp-win32-x64-0.35.3.node',
           'lib/libvips-42.dll',
         ],
-      }))).resolves.toBeUndefined();
+      }))).rejects.toThrow('Packaged Electron native runtime smoke failed');
       await expect(afterPack(fixture('darwin', 1, {
         '@img/sharp-darwin-x64': ['lib/sharp-darwin-x64.node'],
         '@img/sharp-libvips-darwin-x64': ['lib/libvips-cpp.dylib'],

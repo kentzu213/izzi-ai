@@ -73,7 +73,7 @@ jobs:
         working-directory: .
 
       - name: Package Windows
-        run: npx electron-builder --win --config electron-builder.json --publish never
+        run: pnpm rebuild:native:electron && npx electron-builder --win --config electron-builder.json --config.npmRebuild=false --publish never
 
       - name: Enforce Windows signing policy
         id: windows-signing-policy
