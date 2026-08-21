@@ -240,6 +240,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [autopostError, setAutopostError] = useState('');
   const [autopostMaster, setAutopostMaster] = useState<{ enabled: boolean; connected: boolean } | null>(null);
   const [autopostMasterBusy, setAutopostMasterBusy] = useState(false);
+  const [nativeMarketingMode, setNativeMarketingMode] = useState(false);
+  const [nativeWorkspaceId, setNativeWorkspaceId] = useState('');
   const [connectingChannel, setConnectingChannel] = useState<AutopostChannel | null>(null);
   const [connectNotice, setConnectNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -338,6 +340,48 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   }, [loadCredentials]);
 
   const loadAutopostAccounts = useCallback(async () => {
+    const nativeApi = window.electronAPI?.nativeMarketing;
+    if (nativeApi) {
+      const request = ++autopostRequestId.current;
+      setNativeMarketingMode(true);
+      setAutopostLoading(true);
+      setAutopostError('');
+      try {
+        const workspaces = await nativeApi.listWorkspaces();
+        if (request !== autopostRequestId.current) return;
+        if (!workspaces.ok || workspaces.workspaces.length === 0) {
+          setNativeWorkspaceId('');
+          setAutopostMaster({ enabled: true, connected: false });
+          setAutopostReady(false);
+          setAutopostAccounts([]);
+          setAutopostError(workspaces.ok ? 'Chưa có native Marketing workspace cho tài khoản này.' : workspaces.error);
+          return;
+        }
+        const workspaceId = workspaces.workspaces[0].id;
+        setNativeWorkspaceId(workspaceId);
+        const accounts = await nativeApi.listAccounts(workspaceId);
+        if (request !== autopostRequestId.current) return;
+        setAutopostMaster({ enabled: true, connected: accounts.ok });
+        if (!accounts.ok) {
+          setAutopostReady(false);
+          setAutopostAccounts([]);
+          setAutopostError(accounts.error);
+          return;
+        }
+        setAutopostReady(true);
+        setAutopostAccounts(readAutopostAccounts(accounts.accounts));
+      } catch {
+        if (request !== autopostRequestId.current) return;
+        setAutopostMaster({ enabled: true, connected: false });
+        setAutopostReady(false);
+        setAutopostAccounts([]);
+        setAutopostError('Native Marketing API không phản hồi.');
+      } finally {
+        if (request === autopostRequestId.current) setAutopostLoading(false);
+      }
+      return;
+    }
+    setNativeMarketingMode(false);
     const api = window.electronAPI?.autopost;
     if (!api) {
       setAutopostReady(false);
@@ -533,6 +577,28 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   };
 
   const connectChannel = async (channel: AutopostChannel) => {
+    const nativeApi = window.electronAPI?.nativeMarketing;
+    if (nativeApi && nativeWorkspaceId) {
+      if (!canConnectChannels || connectingChannel) return;
+      setConnectingChannel(channel);
+      setAutopostError('');
+      setConnectNotice('');
+      try {
+        const result = await nativeApi.createOAuthState(nativeWorkspaceId, channel);
+        if (!result.ok) {
+          setAutopostError(result.error);
+          return;
+        }
+        setConnectNotice(
+          `${channel === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'}: phiên OAuth native đã được chuẩn bị. Provider exchange sẽ mở ở bước tiếp theo; chưa có tài khoản nào được kết nối.`,
+        );
+      } catch {
+        setAutopostError('Native Marketing API không tạo được phiên kết nối.');
+      } finally {
+        setConnectingChannel(null);
+      }
+      return;
+    }
     const api = window.electronAPI?.autopost;
     if (!api || !canConnectChannels || connectingChannel) return;
     setConnectingChannel(channel);
@@ -842,9 +908,13 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     ? 'Đang kiểm tra…'
     : masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
   const masterMeta = masterConnected
-    ? 'Auto Post sẵn sàng nhận kết nối Facebook Test Page và YouTube Private.'
+    ? nativeMarketingMode
+      ? 'Native Marketing API đang đọc trực tiếp workspace và tài khoản từ IzziAPI.'
+      : 'Auto Post sẵn sàng nhận kết nối Facebook Test Page và YouTube Private.'
     : masterEnabled
-      ? 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
+      ? nativeMarketingMode
+        ? 'Tài khoản chưa có native Marketing workspace.'
+        : 'Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.'
       : 'Bật để kết nối Facebook Test Page và YouTube Private qua Auto-Post Tool.';
 
   const autopostChannelState = (channel: AutopostChannel): ChannelConnectionState => {
@@ -857,9 +927,11 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   };
 
   const autopostChannelDetail = (channel: AutopostChannel): string => {
-    if (autopostLoading) return 'Đang đọc trạng thái từ Auto Post…';
-    if (!masterConnected) return 'Bật Auto Post ở trên trước, rồi kết nối kênh này.';
-    if (!autopostReady) return 'Chưa đọc được trạng thái từ Auto Post.';
+    if (autopostLoading) return `Đang đọc trạng thái từ ${nativeMarketingMode ? 'Native Marketing API' : 'Auto Post'}…`;
+    if (!masterConnected) return nativeMarketingMode
+      ? 'Chưa có native Marketing workspace.'
+      : 'Bật Auto Post ở trên trước, rồi kết nối kênh này.';
+    if (!autopostReady) return `Chưa đọc được trạng thái từ ${nativeMarketingMode ? 'Native Marketing API' : 'Auto Post'}.`;
     const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'Chưa có tài khoản nào cho kênh này.';
     return matched.map((item) => `${item.label}${item.active ? '' : ' · cần cấp quyền lại'}`).join(' · ');
@@ -944,9 +1016,11 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     <section className="cmr-connect-center" aria-labelledby="cmr-connect-heading">
       <div className="cmr-connect-center__heading">
         <div>
-          <span className="cmr-eyebrow">Kết nối kênh · Auto Post giữ khóa</span>
+          <span className="cmr-eyebrow">Kết nối kênh · {nativeMarketingMode ? 'IzziAPI native' : 'Auto Post giữ khóa'}</span>
           <h3 id="cmr-connect-heading">Trung tâm kết nối</h3>
-          <p>Facebook và YouTube dùng Auto Post làm nơi giữ khóa duy nhất. Kết nối không tự đăng nội dung.</p>
+          <p>{nativeMarketingMode
+            ? 'Izzi AI đọc trạng thái native trực tiếp từ IzziAPI. Kết nối không tự đăng nội dung.'
+            : 'Facebook và YouTube dùng Auto Post làm nơi giữ khóa duy nhất. Kết nối không tự đăng nội dung.'}</p>
         </div>
         <button
           type="button"
@@ -965,11 +1039,13 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       </div>
       <div className={`cmr-connect-master is-${masterStateClass}`} aria-busy={masterChecking || autopostMasterBusy}>
         <div className="cmr-connect-master__status">
-          <span className="cmr-eyebrow">Cầu nối Auto Post</span>
+          <span className="cmr-eyebrow">{nativeMarketingMode ? 'Native Marketing API' : 'Cầu nối Auto Post'}</span>
           <strong className={`cmr-connect-state cmr-connect-state--${masterStateClass}`}>{masterLabel}</strong>
           <p>{masterMeta}</p>
         </div>
-        {masterEnabled ? (
+        {nativeMarketingMode ? (
+          <small className="cmr-permission-note">Workspace: {nativeWorkspaceId || 'chưa có'}</small>
+        ) : masterEnabled ? (
           <button
             type="button"
             className="cmr-button cmr-button--quiet cmr-connect-master__action"
@@ -997,7 +1073,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
       {autopostError && <div className="cmr-credential-error" role="alert">{autopostError}</div>}
       <ol className="cmr-connect-flow">
-        <li>Bật Auto Post bằng nút Kết nối Auto-Post.</li>
+        <li>{nativeMarketingMode ? 'Native Marketing API đã được tích hợp trong Izzi AI.' : 'Bật Auto Post bằng nút Kết nối Auto-Post.'}</li>
         <li>Bấm kết nối Facebook Test Page hoặc YouTube Private.</li>
         <li>Hoàn tất đăng nhập trên trình duyệt rồi quay lại Izzi AI.</li>
         <li>Bấm Tải lại để cập nhật trạng thái.</li>
