@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CustomerMarketingWorkspaceClient } from './customer-marketing-workspace-client';
+import {
+  CustomerMarketingWorkspaceClient,
+  customerMarketingResourceAuditReceiptDigest,
+} from './customer-marketing-workspace-client';
 import type {
   CustomerMarketingAnalyticsReport,
   CustomerMarketingAnalyticsWindow,
+  CustomerMarketingResourceAuditKind,
+  CustomerMarketingResourceAuditReceiptV1,
   CustomerOnboardingProfile,
 } from '../../shared/customer-marketing-types';
 
@@ -11,6 +16,10 @@ const OTHER_WORKSPACE_ID = '99999999-9999-4999-8999-999999999999';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const INVITATION_ID = '33333333-3333-4333-8333-333333333333';
 const WORKFLOW_ID = '66666666-6666-4666-8666-666666666666';
+const AUDIT_RESOURCE_ID = '44444444-4444-4444-8444-444444444444';
+const OTHER_RESOURCE_ID = '88888888-8888-4888-8888-888888888888';
+const AUDIT_RECEIPT_ID = '77777777-7777-4777-8777-777777777777';
+const AUDIT_RECEIPT_ID_B = '7a7a7a7a-7b7b-4c7c-8d7d-7e7e7e7e7e7e';
 const INVITATION_TOKEN = 'InviteToken_0123456789-abcdef';
 const INVITATION_IDEMPOTENCY_KEY = 'A'.repeat(32);
 const ANALYTICS_FROM = '2026-07-01T00:00:00.000Z';
@@ -253,6 +262,44 @@ function workflowRun(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+function auditEvidence(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: AUDIT_RECEIPT_ID,
+    resourceId: AUDIT_RESOURCE_ID,
+    kind: 'campaign',
+    action: 'approved',
+    fromStatus: 'in_review',
+    toStatus: 'approved',
+    revision: 2,
+    reviewerHash: 'a'.repeat(64),
+    detail: 'Duyet sau khi kiem tra brand guardrails',
+    occurredAt: '2026-08-20T02:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** Signs whatever evidence it is given, so field checks are proven apart from the hash check. */
+function auditReceipt(overrides: Record<string, unknown> = {}, workspaceId = WORKSPACE_ID) {
+  const evidence = auditEvidence(overrides);
+  return {
+    ...evidence,
+    receiptDigest: customerMarketingResourceAuditReceiptDigest(
+      workspaceId,
+      evidence as unknown as Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'>,
+    ),
+  };
+}
+
+function auditEnvelope(overrides: Record<string, unknown> = {}) {
+  return {
+    workspaceId: WORKSPACE_ID,
+    resourceId: AUDIT_RESOURCE_ID,
+    receipts: [auditReceipt()],
+    ...overrides,
+  };
+}
+
 describe('CustomerMarketingWorkspaceClient', () => {
   it('keeps request failures fail-closed when the packaged diagnostic stream is unavailable', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {
@@ -1407,5 +1454,133 @@ describe('CustomerMarketingWorkspaceClient', () => {
     })).resolves.toEqual({ status: 'unavailable', run: null });
     await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
       .resolves.toEqual({ status: 'unavailable', run: null });
+  });
+
+  it('reads lifecycle receipts through the token-scoped audit route without a renderer workspace id', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      workspaceId: WORKSPACE_ID,
+      resourceId: AUDIT_RESOURCE_ID,
+      receipts: [auditReceipt(), auditReceipt({
+        id: AUDIT_RECEIPT_ID_B,
+        action: 'submitted',
+        fromStatus: 'draft',
+        toStatus: 'in_review',
+        revision: 1,
+        detail: null,
+        occurredAt: '2026-08-19T02:00:00.000Z',
+      })],
+    }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.listMarketingResourceAudit(WORKSPACE_ID, 'campaign', AUDIT_RESOURCE_ID))
+      .resolves.toEqual({
+        status: 'synced',
+        receipts: [auditReceipt(), auditReceipt({
+          id: AUDIT_RECEIPT_ID_B,
+          action: 'submitted',
+          fromStatus: 'draft',
+          toStatus: 'in_review',
+          revision: 1,
+          detail: null,
+          occurredAt: '2026-08-19T02:00:00.000Z',
+        })],
+      });
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(`https://api.example.test/api/marketing/audit?resourceId=${AUDIT_RESOURCE_ID}`);
+    expect(String(url)).not.toContain(WORKSPACE_ID);
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer test-token' });
+  });
+
+  it('fails closed for malformed, forged, extended, or cross-tenant audit payloads', async () => {
+    const bodies: unknown[] = [
+      // Envelope bound to another tenant, even when its receipts are internally consistent.
+      { workspaceId: OTHER_WORKSPACE_ID, resourceId: AUDIT_RESOURCE_ID, receipts: [auditReceipt({}, OTHER_WORKSPACE_ID)] },
+      auditEnvelope({ resourceId: OTHER_RESOURCE_ID }),
+      auditEnvelope({ receipts: [{ ...auditReceipt(), receiptDigest: 'b'.repeat(64) }] }),
+      auditEnvelope({ receipts: [auditReceipt({ resourceId: OTHER_RESOURCE_ID })] }),
+      auditEnvelope({ receipts: [auditReceipt({ kind: 'content' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ id: 'not-a-uuid' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ action: 'deleted' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ toStatus: 'published' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ fromStatus: 'published' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ revision: -1 })] }),
+      auditEnvelope({ receipts: [auditReceipt({ revision: 1.5 })] }),
+      auditEnvelope({ receipts: [auditReceipt({ reviewerHash: 'ZZ'.repeat(32) })] }),
+      auditEnvelope({ receipts: [auditReceipt({ detail: '' })] }),
+      auditEnvelope({ receipts: [auditReceipt({ detail: 'x'.repeat(241) })] }),
+      auditEnvelope({ receipts: [auditReceipt({ detail: `note${String.fromCharCode(0)}` })] }),
+      auditEnvelope({ receipts: [auditReceipt({ occurredAt: '2026-08-20' })] }),
+      auditEnvelope({ receipts: [{ ...auditReceipt(), systemPrompt: 'must-not-enter-desktop' }] }),
+      auditEnvelope({ receipts: [{ ...auditReceipt(), detail: undefined }] }),
+      auditEnvelope({ receipts: [auditReceipt(), auditReceipt()] }),
+      auditEnvelope({ receipts: Array.from({ length: 201 }, () => auditReceipt()) }),
+      auditEnvelope({ receipts: {} }),
+      { ...auditEnvelope(), token: 'should-not-be-trusted' },
+      { receipts: [] },
+      null,
+    ];
+
+    for (const body of bodies) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+      const client = new CustomerMarketingWorkspaceClient(
+        { getAccessToken: vi.fn(async () => 'test-token') },
+        { enabled: true, fetchImpl },
+      );
+      await expect(client.listMarketingResourceAudit(WORKSPACE_ID, 'campaign', AUDIT_RESOURCE_ID))
+        .resolves.toEqual({ status: 'unavailable', receipts: [] });
+    }
+  });
+
+  it('maps audit transport failures onto bridge statuses', async () => {
+    for (const [status, expected] of [
+      [403, 'forbidden'],
+      [404, 'not_found'],
+      [409, 'conflict'],
+      [429, 'quota_exceeded'],
+      [500, 'unavailable'],
+    ] as const) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ error: { code: 'denied' } }, status));
+      const client = new CustomerMarketingWorkspaceClient(
+        { getAccessToken: vi.fn(async () => 'test-token') },
+        { enabled: true, fetchImpl },
+      );
+      await expect(client.listMarketingResourceAudit(WORKSPACE_ID, 'campaign', AUDIT_RESOURCE_ID))
+        .resolves.toEqual({ status: expected, receipts: [] });
+    }
+  });
+
+  it('never issues an audit request for a disabled bridge or an unvalidated target', async () => {
+    const disabledFetch = vi.fn<typeof fetch>();
+    const disabledAuth = vi.fn(async () => 'test-token');
+    const disabled = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: disabledAuth },
+      { enabled: false, fetchImpl: disabledFetch },
+    );
+    await expect(disabled.listMarketingResourceAudit(WORKSPACE_ID, 'campaign', AUDIT_RESOURCE_ID))
+      .resolves.toEqual({ status: 'local', receipts: [] });
+    expect(disabledFetch).not.toHaveBeenCalled();
+    expect(disabledAuth).not.toHaveBeenCalled();
+
+    const fetchImpl = vi.fn<typeof fetch>();
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, fetchImpl },
+    );
+    const targets: Array<[string, CustomerMarketingResourceAuditKind, string]> = [
+      ['not-a-uuid', 'campaign', AUDIT_RESOURCE_ID],
+      [WORKSPACE_ID, 'asset' as CustomerMarketingResourceAuditKind, AUDIT_RESOURCE_ID],
+      [WORKSPACE_ID, 'campaign', 'not-a-uuid'],
+      [WORKSPACE_ID, 'campaign', `${AUDIT_RESOURCE_ID}?workspaceId=${OTHER_WORKSPACE_ID}`],
+    ];
+    for (const [workspaceId, kind, resourceId] of targets) {
+      await expect(client.listMarketingResourceAudit(workspaceId, kind, resourceId))
+        .resolves.toEqual({ status: 'unavailable', receipts: [] });
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

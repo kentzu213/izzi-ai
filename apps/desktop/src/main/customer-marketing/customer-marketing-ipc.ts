@@ -8,6 +8,7 @@ import type {
   CustomerProductMarketingContextMutationResult,
   CustomerProductMarketingContextV1,
   CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceAuditResult,
   CustomerMarketingResourceListResult,
   CustomerMarketingResourceMutationResult,
   CustomerMarketingWorkflowListResult,
@@ -72,6 +73,7 @@ import {
   parseMarketingCalendarInput,
   parseMarketingAnalyticsWindow,
   parseMarketingResourceArchiveInput,
+  parseMarketingResourceAuditInput,
   parseMarketingResourceCreateInput,
   parseMarketingResourceKind,
   parseMarketingResourceReviewInput,
@@ -353,6 +355,16 @@ export function registerCustomerMarketingIpc(
     const parsed = parseMarketingAnalyticsWindow(payload);
     if (!parsed) throw new Error('Payload analytics marketing khong hop le.');
     return service.getMarketingAnalytics(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:listMarketingResourceAudit', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingResourceAuditResult> => {
+    trusted(event);
+    const parsed = parseMarketingResourceAuditInput(payload);
+    if (!parsed) throw new Error('Payload audit marketing không hợp lệ.');
+    return service.listMarketingResourceAudit(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingWorkflowSources', async (

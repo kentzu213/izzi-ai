@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { IZZI_API_BASE } from '../config/public-config';
 import type {
   CustomerAssignableRole,
@@ -18,8 +19,13 @@ import type {
   CustomerMarketingCalendarInput,
   CustomerMarketingResource,
   CustomerMarketingResourceArchiveInput,
+  CustomerMarketingResourceAuditAction,
+  CustomerMarketingResourceAuditInput,
+  CustomerMarketingResourceAuditKind,
+  CustomerMarketingResourceAuditReceiptV1,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingResourceKind,
+  CustomerMarketingResourceLifecycleStatus,
   CustomerMarketingResourceReviewInput,
   CustomerMarketingResourceUpdateInput,
   CustomerObjective,
@@ -246,6 +252,11 @@ export interface CustomerMarketingResourceArchiveState {
   deleted: boolean;
 }
 
+export interface CustomerMarketingResourceAuditState {
+  status: CustomerMarketingBridgeStatus;
+  receipts: CustomerMarketingResourceAuditReceiptV1[];
+}
+
 export interface CustomerMarketingResourceGatewayCreateInput {
   workspaceId: string;
   idempotencyKey: string;
@@ -284,6 +295,11 @@ export interface CustomerMarketingWorkspaceGateway {
   updateMarketingResource(input: CustomerMarketingResourceGatewayUpdateInput): Promise<CustomerMarketingResourceState>;
   reviewMarketingResource(input: CustomerMarketingResourceGatewayReviewInput): Promise<CustomerMarketingResourceState>;
   archiveMarketingResource(input: CustomerMarketingResourceGatewayArchiveInput): Promise<CustomerMarketingResourceArchiveState>;
+  listMarketingResourceAudit?(
+    workspaceId: string,
+    kind: CustomerMarketingResourceAuditKind,
+    resourceId: string,
+  ): Promise<CustomerMarketingResourceAuditState>;
   startSevenDayWorkflow?(input: CustomerMarketingWorkflowStartInput): Promise<CustomerMarketingWorkflowState>;
   getSevenDayWorkflow?(workspaceId: string, runId: string): Promise<CustomerMarketingWorkflowState>;
   resumeSevenDayWorkflow?(input: CustomerMarketingWorkflowResumeInput): Promise<CustomerMarketingWorkflowState>;
@@ -391,6 +407,18 @@ const MARKETING_RESOURCE_FIELDS: Record<CustomerMarketingResourceKind, readonly 
 const MARKETING_RESOURCE_BASE_FIELDS = [
   'id', 'workspaceId', 'kind', 'status', 'revision', 'title', 'metadata', 'createdAt', 'updatedAt',
 ] as const;
+const MARKETING_AUDIT_POLICY_REVISION = 'cmr-407.v1';
+const MARKETING_AUDIT_KINDS = new Set<CustomerMarketingResourceAuditKind>(['campaign', 'content']);
+const MARKETING_AUDIT_ACTIONS = new Set<CustomerMarketingResourceAuditAction>([
+  'created', 'updated', 'submitted', 'approved', 'rejected', 'archived',
+]);
+const MARKETING_AUDIT_RECEIPT_FIELDS = [
+  'id', 'resourceId', 'kind', 'action', 'fromStatus', 'toStatus', 'revision',
+  'reviewerHash', 'detail', 'occurredAt', 'receiptDigest',
+] as const;
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+const MAX_MARKETING_AUDIT_DETAIL_LENGTH = 240;
+const MAX_MARKETING_AUDIT_RECEIPTS = 200;
 const MAX_MARKETING_ANALYTICS_WINDOW_MS = 366 * 24 * 60 * 60 * 1_000;
 const MARKETING_ANALYTICS_OMITTED_METRICS = [
   'impressions', 'reach', 'clicks', 'conversions', 'revenue',
@@ -756,6 +784,109 @@ function parseMarketingAnalyticsEnvelope(
       },
     },
   };
+}
+
+/** Audit detail is short printable evidence text: control characters are rejected. */
+function validAuditDetail(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== 'string' || value.length < 1
+    || value.length > MAX_MARKETING_AUDIT_DETAIL_LENGTH) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
+}
+
+/**
+ * Binds one receipt to the authoritative workspace and the audit policy revision, so a
+ * receipt minted for another tenant or an older policy cannot be replayed into this pane.
+ */
+export function customerMarketingResourceAuditReceiptDigest(
+  workspaceId: string,
+  receipt: Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'>,
+): string {
+  return createHash('sha256')
+    .update(JSON.stringify([
+      MARKETING_AUDIT_POLICY_REVISION,
+      workspaceId,
+      receipt.id,
+      receipt.resourceId,
+      receipt.kind,
+      receipt.action,
+      receipt.fromStatus,
+      receipt.toStatus,
+      receipt.revision,
+      receipt.reviewerHash,
+      receipt.detail,
+      receipt.occurredAt,
+    ]), 'utf8')
+    .digest('hex');
+}
+
+function parseMarketingAuditReceipt(
+  value: unknown,
+  expectedWorkspaceId: string,
+  expectedKind: CustomerMarketingResourceAuditKind,
+  expectedResourceId: string,
+): CustomerMarketingResourceAuditReceiptV1 | null {
+  const receipt = exactRecord(value, MARKETING_AUDIT_RECEIPT_FIELDS);
+  if (!receipt
+    || typeof receipt.id !== 'string' || !UUID_PATTERN.test(receipt.id)
+    || receipt.resourceId !== expectedResourceId
+    || receipt.kind !== expectedKind
+    || !MARKETING_AUDIT_ACTIONS.has(receipt.action as CustomerMarketingResourceAuditAction)
+    || (receipt.fromStatus !== null
+      && !MARKETING_RESOURCE_STATUSES.has(receipt.fromStatus as CustomerMarketingResourceLifecycleStatus))
+    || !MARKETING_RESOURCE_STATUSES.has(receipt.toStatus as CustomerMarketingResourceLifecycleStatus)
+    || !Number.isSafeInteger(receipt.revision) || Number(receipt.revision) < 0
+    || typeof receipt.reviewerHash !== 'string' || !SHA256_HEX_PATTERN.test(receipt.reviewerHash)
+    || !validAuditDetail(receipt.detail)
+    || !validIso(receipt.occurredAt)
+    || typeof receipt.receiptDigest !== 'string' || !SHA256_HEX_PATTERN.test(receipt.receiptDigest)) return null;
+
+  const evidence: Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'> = {
+    id: receipt.id,
+    resourceId: expectedResourceId,
+    kind: expectedKind,
+    action: receipt.action as CustomerMarketingResourceAuditAction,
+    fromStatus: receipt.fromStatus as CustomerMarketingResourceLifecycleStatus | null,
+    toStatus: receipt.toStatus as CustomerMarketingResourceLifecycleStatus,
+    revision: receipt.revision as number,
+    reviewerHash: receipt.reviewerHash,
+    detail: receipt.detail as string | null,
+    occurredAt: receipt.occurredAt,
+  };
+  return customerMarketingResourceAuditReceiptDigest(expectedWorkspaceId, evidence) === receipt.receiptDigest
+    ? { ...evidence, receiptDigest: receipt.receiptDigest }
+    : null;
+}
+
+function parseMarketingAuditEnvelope(
+  value: unknown,
+  expectedWorkspaceId: string,
+  expectedKind: CustomerMarketingResourceAuditKind,
+  expectedResourceId: string,
+): CustomerMarketingResourceAuditReceiptV1[] | null {
+  const envelope = exactRecord(value, ['workspaceId', 'resourceId', 'receipts']);
+  if (!envelope || envelope.workspaceId !== expectedWorkspaceId || envelope.resourceId !== expectedResourceId
+    || !Array.isArray(envelope.receipts) || envelope.receipts.length > MAX_MARKETING_AUDIT_RECEIPTS) return null;
+  const receipts = envelope.receipts.map((item) => parseMarketingAuditReceipt(
+    item,
+    expectedWorkspaceId,
+    expectedKind,
+    expectedResourceId,
+  ));
+  if (receipts.some((receipt) => receipt === null)) return null;
+  const parsed = receipts as CustomerMarketingResourceAuditReceiptV1[];
+  return new Set(parsed.map((receipt) => receipt.id)).size === parsed.length ? parsed : null;
+}
+
+export function parseMarketingResourceAuditInput(value: unknown): CustomerMarketingResourceAuditInput | null {
+  const record = exactRecord(value, ['kind', 'resourceId']);
+  if (!record || !MARKETING_AUDIT_KINDS.has(record.kind as CustomerMarketingResourceAuditKind)
+    || typeof record.resourceId !== 'string' || !UUID_PATTERN.test(record.resourceId)) return null;
+  return { kind: record.kind as CustomerMarketingResourceAuditKind, resourceId: record.resourceId };
 }
 
 function parseMarketingResource(
@@ -1613,6 +1744,28 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     return parsed
       ? { status: 'synced', resource: parsed.resource }
       : { status: 'unavailable', resource: null };
+  }
+
+  /**
+   * Reads server-owned lifecycle receipts. The route is tenant-scoped by the bearer token,
+   * so the response envelope is re-checked against the authoritative workspace id here.
+   */
+  async listMarketingResourceAudit(
+    workspaceId: string,
+    kind: CustomerMarketingResourceAuditKind,
+    resourceId: string,
+  ): Promise<CustomerMarketingResourceAuditState> {
+    if (!this.enabled) return { status: 'local', receipts: [] };
+    if (!UUID_PATTERN.test(workspaceId) || !MARKETING_AUDIT_KINDS.has(kind)
+      || !UUID_PATTERN.test(resourceId)) return { status: 'unavailable', receipts: [] };
+    const result = await this.request(
+      `/api/marketing/audit?resourceId=${encodeURIComponent(resourceId)}`,
+    );
+    if (!result.ok) return { status: marketingFailureStatus(result.status), receipts: [] };
+    const receipts = parseMarketingAuditEnvelope(result.body, workspaceId, kind, resourceId);
+    return receipts
+      ? { status: 'synced', receipts }
+      : { status: 'unavailable', receipts: [] };
   }
 
   async createMarketingResource(

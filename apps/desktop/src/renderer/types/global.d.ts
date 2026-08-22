@@ -21,6 +21,8 @@ import type {
   CustomerMarketingCalendarInput,
   CustomerMarketingResourceArchiveInput,
   CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceAuditInput,
+  CustomerMarketingResourceAuditResult,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingResourceKind,
   CustomerMarketingResourceListResult,
@@ -239,6 +241,8 @@ declare global {
     listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;
+    /** Read-only lifecycle receipts; the workspace is derived in main, never sent from here. */
+    listMarketingResourceAudit: (input: CustomerMarketingResourceAuditInput) => Promise<CustomerMarketingResourceAuditResult>;
     listMarketingWorkflowSources: (target: CustomerMarketingWorkflowTarget) => Promise<CustomerMarketingWorkflowSourceListResult>;
     listMarketingWorkflows: (target: CustomerMarketingWorkflowTarget) => Promise<CustomerMarketingWorkflowListResult>;
     prepareMarketingWorkflow: (input: CustomerMarketingWorkflowPrepareRequest) => Promise<CustomerMarketingWorkflowMutationResult>;

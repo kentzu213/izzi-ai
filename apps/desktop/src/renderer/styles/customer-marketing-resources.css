@@ -542,6 +542,139 @@
   font-size: 9px;
 }
 
+/* Read-only lifecycle receipts (Lich su quyet dinh). Evidence only: no secret material. */
+.cmrr-audit {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--cmr-border);
+}
+
+.cmrr-audit__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cmrr-audit__heading h4 {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cmrr-audit__heading span {
+  color: var(--cmr-dim);
+  font-size: 9px;
+}
+
+.cmrr-audit__note {
+  margin: 0;
+  color: var(--cmr-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cmrr-audit__note--warn {
+  color: #ff9da2;
+}
+
+.cmrr-audit__list {
+  display: flex;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  flex-direction: column;
+  gap: 7px;
+  list-style: none;
+}
+
+.cmrr-audit__item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 8px;
+  background: rgba(229, 238, 238, 0.03);
+}
+
+.cmrr-audit__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 10px;
+}
+
+.cmrr-audit__action {
+  padding: 3px 7px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 6px;
+  color: var(--cmr-muted);
+  font-size: 9px;
+}
+
+.cmrr-audit__action--approved {
+  border-color: rgba(57, 217, 138, 0.24);
+  color: var(--cmr-green);
+  background: rgba(57, 217, 138, 0.07);
+}
+
+.cmrr-audit__action--submitted {
+  border-color: rgba(240, 183, 95, 0.26);
+  color: var(--cmr-gold);
+  background: rgba(240, 183, 95, 0.08);
+}
+
+.cmrr-audit__action--rejected,
+.cmrr-audit__action--archived {
+  border-color: rgba(255, 107, 114, 0.22);
+  color: #ff9da2;
+  background: rgba(255, 107, 114, 0.07);
+}
+
+.cmrr-audit__transition {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--cmr-text);
+  font-size: 11px;
+}
+
+.cmrr-audit__time {
+  margin-left: auto;
+  color: var(--cmr-dim);
+  font-size: 10px;
+}
+
+.cmrr-audit__detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--cmr-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cmrr-audit__hash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  color: var(--cmr-dim);
+  font-size: 9px;
+}
+
+.cmrr-audit__hash code {
+  overflow-wrap: anywhere;
+  font-family: var(--cmr-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 9px;
+}
+
 .cmrr-detail__actions {
   display: flex;
   flex-wrap: wrap;

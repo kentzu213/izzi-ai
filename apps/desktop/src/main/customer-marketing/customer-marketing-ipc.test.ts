@@ -211,6 +211,7 @@ function serviceMock() {
     updateMarketingResource: vi.fn(async () => ({ ok: true, status: 'synced', resource: null })),
     reviewMarketingResource: vi.fn(async () => ({ ok: true, status: 'synced', resource: null })),
     archiveMarketingResource: vi.fn(async () => ({ ok: true, status: 'synced', deleted: true })),
+    listMarketingResourceAudit: vi.fn(async () => ({ ok: true, status: 'synced', receipts: [] })),
   };
 }
 
@@ -1227,5 +1228,58 @@ describe('customer marketing CMR-230B Telegram one-shot send IPC', () => {
     await expect(send!(event('https://attacker.example/customer-marketing'), input))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.sendTelegramCanary).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing CMR-407 resource audit IPC', () => {
+  const input = {
+    kind: 'campaign',
+    resourceId: '44444444-4444-4444-8444-444444444444',
+  };
+
+  it('forwards exactly the kind and resource id, with no renderer workspace scope', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const audit = electronMocks.handlers.get('customerMarketing:listMarketingResourceAudit');
+    expect(audit).toBeTypeOf('function');
+
+    await expect(audit!(event(), input)).resolves.toEqual({
+      ok: true,
+      status: 'synced',
+      receipts: [],
+    });
+    expect(service.listMarketingResourceAudit).toHaveBeenCalledTimes(1);
+    expect(service.listMarketingResourceAudit).toHaveBeenCalledWith(input);
+  });
+
+  it.each([
+    { ...input, workspaceId: '11111111-1111-4111-8111-111111111111' },
+    { ...input, token: 'renderer-controlled' },
+    { ...input, reviewerHash: 'a'.repeat(64) },
+    { ...input, receiptDigest: 'b'.repeat(64) },
+    { ...input, limit: 500 },
+    { kind: 'asset', resourceId: input.resourceId },
+    { kind: 'campaign', resourceId: 'not-a-uuid' },
+    { kind: 'campaign' },
+    { resourceId: input.resourceId },
+    input.resourceId,
+    null,
+  ])('rejects extended or malformed audit payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const audit = electronMocks.handlers.get('customerMarketing:listMarketingResourceAudit');
+
+    await expect(audit!(event(), payload)).rejects.toThrow('Payload audit marketing');
+    expect(service.listMarketingResourceAudit).not.toHaveBeenCalled();
+  });
+
+  it('rejects an untrusted renderer before audit payload parsing', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const audit = electronMocks.handlers.get('customerMarketing:listMarketingResourceAudit');
+
+    await expect(audit!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.listMarketingResourceAudit).not.toHaveBeenCalled();
   });
 });

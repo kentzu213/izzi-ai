@@ -23,6 +23,9 @@ import type {
   CustomerMarketingCampaignResource,
   CustomerMarketingContentResource,
   CustomerMarketingResource,
+  CustomerMarketingResourceAuditAction,
+  CustomerMarketingResourceAuditInput,
+  CustomerMarketingResourceAuditReceiptV1,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingResourceKind,
   CustomerMarketingResourceLifecycleStatus,
@@ -34,6 +37,16 @@ import '../styles/customer-marketing-resources.css';
 interface CustomerMarketingResourcesProps {
   kind: CustomerMarketingResourceKind;
   role: CustomerRole;
+}
+
+/**
+ * Read-only decision trail for the selected resource. `idle` means the kind has no
+ * server-owned review lifecycle (asset/knowledge), so nothing is fetched or rendered.
+ */
+interface ResourceAuditState {
+  status: 'idle' | 'loading' | 'ready' | 'unavailable';
+  receipts: CustomerMarketingResourceAuditReceiptV1[];
+  message: string;
 }
 
 interface ResourceDraft {
@@ -106,6 +119,15 @@ const STATUS_FILTERS: Array<{ value: 'all' | CustomerMarketingResourceLifecycleS
   { value: 'approved', label: 'Đã duyệt' },
   { value: 'rejected', label: 'Cần chỉnh sửa' },
 ];
+
+const AUDIT_ACTION_LABELS: Record<CustomerMarketingResourceAuditAction, string> = {
+  created: 'Khởi tạo',
+  updated: 'Cập nhật',
+  submitted: 'Gửi duyệt',
+  approved: 'Phê duyệt',
+  rejected: 'Yêu cầu sửa',
+  archived: 'Lưu trữ',
+};
 
 const CONTENT_CHANNELS = [
   'facebook',
@@ -520,16 +542,70 @@ function ResourceFields({
   );
 }
 
+/**
+ * Renders the server-signed decision trail. Only evidence is shown - decision,
+ * transition, revision, truncated receipt hash and time. The reviewer hash and any
+ * other identity material stay in main and are never painted here.
+ */
+function ResourceAuditTrail({ audit }: { audit: ResourceAuditState }) {
+  if (audit.status === 'idle') return null;
+  return (
+    <section className="cmrr-audit" aria-label="Lịch sử quyết định">
+      <div className="cmrr-audit__heading">
+        <h4>Lịch sử quyết định</h4>
+        <span>Chỉ đọc · biên nhận do IzziAPI ký</span>
+      </div>
+      {audit.status === 'loading' && (
+        <p className="cmrr-audit__note" role="status">Đang tải lịch sử quyết định...</p>
+      )}
+      {audit.status === 'unavailable' && (
+        <p className="cmrr-audit__note cmrr-audit__note--warn" role="status">{audit.message}</p>
+      )}
+      {audit.status === 'ready' && audit.receipts.length === 0 && (
+        <p className="cmrr-audit__note" role="status">Chưa có quyết định nào được ghi nhận cho revision này.</p>
+      )}
+      {audit.status === 'ready' && audit.receipts.length > 0 && (
+        <ol className="cmrr-audit__list">
+          {audit.receipts.map((receipt) => (
+            <li key={receipt.id} className="cmrr-audit__item">
+              <div className="cmrr-audit__row">
+                <span className={`cmrr-audit__action cmrr-audit__action--${receipt.action}`}>
+                  {AUDIT_ACTION_LABELS[receipt.action]}
+                </span>
+                <span className="cmrr-audit__transition">
+                  {receipt.fromStatus ? STATUS_LABELS[receipt.fromStatus] : 'Khởi tạo'}
+                  {' → '}
+                  {STATUS_LABELS[receipt.toStatus]}
+                </span>
+                <time className="cmrr-audit__time" dateTime={receipt.occurredAt}>
+                  {formatDate(receipt.occurredAt, true)}
+                </time>
+              </div>
+              {receipt.detail && <p className="cmrr-audit__detail">{receipt.detail}</p>}
+              <div className="cmrr-audit__hash">
+                <span>revision r{receipt.revision}</span>
+                <code title={receipt.receiptDigest}>sha256:{receipt.receiptDigest.slice(0, 16)}…</code>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 function ResourceDetail({
   resource,
   role,
   busy,
+  audit,
   onEdit,
   onReview,
 }: {
   resource: CustomerMarketingResource;
   role: CustomerRole;
   busy: boolean;
+  audit: ResourceAuditState;
   onEdit: () => void;
   onReview: (action: 'submit' | 'approve' | 'reject') => Promise<void>;
 }) {
@@ -586,6 +662,8 @@ function ResourceDetail({
         </div>
       )}
 
+      <ResourceAuditTrail audit={audit} />
+
       <div className="cmrr-detail__actions">
         {canEdit && <button type="button" className="cmr-button" disabled={busy} onClick={onEdit}><DesignIcon className="cmr-button__icon" /> Sửa</button>}
         {canEdit && (resource.status === 'draft' || resource.status === 'rejected') && (
@@ -639,6 +717,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
   const [bridgeStatus, setBridgeStatus] = useState<CustomerMarketingBridgeStatus>('unavailable');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [audit, setAudit] = useState<ResourceAuditState>({ status: 'idle', receipts: [], message: '' });
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ResourceDraft>(() => emptyDraft(kind));
@@ -779,6 +858,50 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     () => [...resources, ...calendarResources].find((resource) => resource.id === selectedId) ?? null,
     [calendarResources, resources, selectedId],
   );
+
+  // Only reviewed kinds own a lifecycle receipt trail; the renderer sends the resource it
+  // already shows and never a workspace id, so main stays the sole tenant authority.
+  const auditTarget = useMemo<CustomerMarketingResourceAuditInput | null>(
+    () => (selected && (selected.kind === 'campaign' || selected.kind === 'content')
+      ? { kind: selected.kind, resourceId: selected.id }
+      : null),
+    [selected],
+  );
+
+  useEffect(() => {
+    if (!auditTarget) {
+      setAudit({ status: 'idle', receipts: [], message: '' });
+      return;
+    }
+    const api = customerApi();
+    if (!api?.listMarketingResourceAudit) {
+      setAudit({
+        status: 'unavailable',
+        receipts: [],
+        message: 'Lịch sử quyết định cần chạy trong Izzi AI Desktop.',
+      });
+      return;
+    }
+    let active = true;
+    setAudit({ status: 'loading', receipts: [], message: '' });
+    void (async () => {
+      try {
+        const result = await api.listMarketingResourceAudit(auditTarget);
+        if (!active) return;
+        setAudit(result.ok
+          ? { status: 'ready', receipts: result.receipts, message: '' }
+          : { status: 'unavailable', receipts: [], message: result.error || bridgeMessage(result.status) });
+      } catch (reason) {
+        if (!active) return;
+        setAudit({
+          status: 'unavailable',
+          receipts: [],
+          message: reason instanceof Error ? reason.message : bridgeMessage('unavailable'),
+        });
+      }
+    })();
+    return () => { active = false; };
+  }, [auditTarget]);
 
   const openCreate = () => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -994,7 +1117,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
         </div>
         <aside id="cmrr-resource-detail" className="cmrr-detail-pane" aria-live="polite">
           {selected ? (
-            <ResourceDetail resource={selected} role={role} busy={busy} onEdit={openEdit} onReview={review} />
+            <ResourceDetail resource={selected} role={role} busy={busy} audit={audit} onEdit={openEdit} onReview={review} />
           ) : (
             <div className="cmrr-empty cmrr-empty--detail">
               <StatusIcon className="cmrr-empty__icon" />

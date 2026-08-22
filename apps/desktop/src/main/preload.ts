@@ -66,6 +66,8 @@ import type {
   CustomerMarketingCalendarInput,
   CustomerMarketingResourceArchiveInput,
   CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceAuditInput,
+  CustomerMarketingResourceAuditResult,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingResourceKind,
   CustomerMarketingResourceListResult,
@@ -688,6 +690,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:listMarketingCalendar', input),
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow): Promise<CustomerMarketingAnalyticsResult> =>
       ipcRenderer.invoke('customerMarketing:getMarketingAnalytics', input),
+    // Read-only lifecycle receipts. Main derives the workspace from the authenticated
+    // identity, so the renderer sends only the resource it already has on screen.
+    listMarketingResourceAudit: (input: CustomerMarketingResourceAuditInput): Promise<CustomerMarketingResourceAuditResult> =>
+      ipcRenderer.invoke('customerMarketing:listMarketingResourceAudit', input),
     listMarketingWorkflowSources: (target: CustomerMarketingWorkflowTarget): Promise<CustomerMarketingWorkflowSourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingWorkflowSources', target),
     listMarketingWorkflows: (target: CustomerMarketingWorkflowTarget): Promise<CustomerMarketingWorkflowListResult> =>

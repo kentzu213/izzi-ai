@@ -5,6 +5,7 @@ import type {
   CustomerMarketingAnalyticsReport,
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingResource,
+  CustomerMarketingResourceAuditReceiptV1,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingSnapshot,
   CustomerMarketingWorkflowTarget,
@@ -388,6 +389,25 @@ function marketingAnalyticsReport(): CustomerMarketingAnalyticsReport {
   };
 }
 
+function marketingAuditReceipt(
+  overrides: Partial<CustomerMarketingResourceAuditReceiptV1> = {},
+): CustomerMarketingResourceAuditReceiptV1 {
+  return {
+    id: '77777777-7777-4777-8777-777777777777',
+    resourceId: '44444444-4444-4444-8444-444444444444',
+    kind: 'campaign',
+    action: 'approved',
+    fromStatus: 'in_review',
+    toStatus: 'approved',
+    revision: 2,
+    reviewerHash: 'a'.repeat(64),
+    detail: 'Duyet sau khi kiem tra brand guardrails',
+    occurredAt: '2026-08-20T02:00:00.000Z',
+    receiptDigest: 'b'.repeat(64),
+    ...overrides,
+  };
+}
+
 function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'unavailable' = 'synced') {
   const workspace = remoteWorkspace({ role, plan: 'starter' });
   const resource = marketingCampaignResource({ workspaceId: workspace.id });
@@ -402,6 +422,9 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
   const updateMarketingResource = vi.fn(async () => ({ status: 'synced' as const, resource }));
   const reviewMarketingResource = vi.fn(async () => ({ status: 'synced' as const, resource }));
   const archiveMarketingResource = vi.fn(async () => ({ status: 'synced' as const, deleted: true }));
+  const listMarketingResourceAudit = vi.fn<
+    NonNullable<CustomerMarketingWorkspaceGateway['listMarketingResourceAudit']>
+  >(async () => ({ status: 'synced', receipts: [marketingAuditReceipt()] }));
   const report = marketingAnalyticsReport();
   const getMarketingAnalytics = vi.fn(async () => ({ status: 'synced' as const, report }));
   const gateway: CustomerMarketingWorkspaceGateway = {
@@ -417,6 +440,7 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
     updateMarketingResource,
     reviewMarketingResource,
     archiveMarketingResource,
+    listMarketingResourceAudit,
   };
   return {
     gateway,
@@ -428,6 +452,7 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
     updateMarketingResource,
     reviewMarketingResource,
     archiveMarketingResource,
+    listMarketingResourceAudit,
     getMarketingAnalytics,
   };
 }
@@ -6581,5 +6606,143 @@ describe('CustomerMarketingService CMR-402 external action gate', () => {
     });
     expect(remote.getCurrent).not.toHaveBeenCalled();
     expect(remote.archiveMarketingResource).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerMarketingService CMR-407 resource decision history', () => {
+  const SUBMITTED_RECEIPT_ID = '7a7a7a7a-7b7b-4c7c-8d7d-7e7e7e7e7e7e';
+  const OTHER_RESOURCE_ID = '88888888-8888-4888-8888-888888888888';
+
+  it('reads receipts for the authoritative workspace only and orders them newest first', async () => {
+    const remote = marketingResourceGateway('viewer');
+    remote.listMarketingResourceAudit.mockResolvedValue({
+      status: 'synced',
+      receipts: [
+        marketingAuditReceipt({
+          id: SUBMITTED_RECEIPT_ID,
+          action: 'submitted',
+          fromStatus: 'draft',
+          toStatus: 'in_review',
+          revision: 1,
+          detail: null,
+          occurredAt: '2026-08-19T02:00:00.000Z',
+        }),
+        marketingAuditReceipt(),
+      ],
+    });
+    const context = setup({ workspaceGateway: remote.gateway });
+
+    const result = await context.service.listMarketingResourceAudit({
+      kind: 'campaign',
+      resourceId: remote.resource.id,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('synced');
+    expect(result.receipts.map((receipt) => receipt.action)).toEqual(['approved', 'submitted']);
+    expect(remote.listMarketingResourceAudit).toHaveBeenCalledWith(
+      remote.workspace.id,
+      'campaign',
+      remote.resource.id,
+    );
+  });
+
+  it('reports an authoritative empty history as a successful read', async () => {
+    const remote = marketingResourceGateway('manager');
+    remote.listMarketingResourceAudit.mockResolvedValue({ status: 'synced', receipts: [] });
+    const context = setup({ workspaceGateway: remote.gateway });
+
+    await expect(context.service.listMarketingResourceAudit({
+      kind: 'content',
+      resourceId: remote.resource.id,
+    })).resolves.toEqual({ ok: true, status: 'synced', receipts: [] });
+  });
+
+  it('rejects renderer-supplied identity or malformed targets before resolving authority', async () => {
+    const remote = marketingResourceGateway('owner');
+    const context = setup({ workspaceGateway: remote.gateway });
+    const payloads = [
+      { kind: 'campaign', resourceId: remote.resource.id, workspaceId: remote.workspace.id },
+      { kind: 'campaign', resourceId: remote.resource.id, token: 'renderer-token' },
+      { kind: 'asset', resourceId: remote.resource.id },
+      { kind: 'campaign', resourceId: 'not-a-uuid' },
+      { kind: 'campaign' },
+      null,
+    ];
+
+    for (const payload of payloads) {
+      const result = await context.service.listMarketingResourceAudit(payload as never);
+      expect(result).toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+      expect(result.error).toBeTruthy();
+    }
+    expect(remote.getCurrent).not.toHaveBeenCalled();
+    expect(remote.listMarketingResourceAudit).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when workspace authority is unavailable', async () => {
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const context = setup({ workspaceGateway: remote.gateway });
+
+    await expect(context.service.listMarketingResourceAudit({
+      kind: 'campaign',
+      resourceId: remote.resource.id,
+    })).resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+    expect(remote.listMarketingResourceAudit).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the bridge cannot serve the audit route at all', async () => {
+    const remote = marketingResourceGateway('owner');
+    const { listMarketingResourceAudit: _unwired, ...gateway } = remote.gateway;
+    const context = setup({ workspaceGateway: gateway });
+
+    const result = await context.service.listMarketingResourceAudit({
+      kind: 'campaign',
+      resourceId: remote.resource.id,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+    expect(result.error).toBeTruthy();
+    expect(_unwired).not.toHaveBeenCalled();
+  });
+
+  it.each(['forbidden', 'not_found', 'unavailable'] as const)(
+    'surfaces a %s bridge status without inventing receipts',
+    async (status) => {
+      const remote = marketingResourceGateway('manager');
+      remote.listMarketingResourceAudit.mockResolvedValue({ status, receipts: [] });
+      const context = setup({ workspaceGateway: remote.gateway });
+
+      const result = await context.service.listMarketingResourceAudit({
+        kind: 'campaign',
+        resourceId: remote.resource.id,
+      });
+
+      expect(result).toMatchObject({ ok: false, status, receipts: [] });
+      expect(result.error).toBeTruthy();
+    },
+  );
+
+  it('fails closed on gateway rejection or receipts bound to another resource', async () => {
+    const remote = marketingResourceGateway('manager');
+    remote.listMarketingResourceAudit.mockRejectedValueOnce(new Error('audit route unavailable'));
+    const context = setup({ workspaceGateway: remote.gateway });
+    const request = { kind: 'campaign' as const, resourceId: remote.resource.id };
+
+    await expect(context.service.listMarketingResourceAudit(request))
+      .resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+
+    remote.listMarketingResourceAudit.mockResolvedValue({
+      status: 'synced',
+      receipts: [marketingAuditReceipt({ resourceId: OTHER_RESOURCE_ID })],
+    });
+    await expect(context.service.listMarketingResourceAudit(request))
+      .resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+
+    remote.listMarketingResourceAudit.mockResolvedValue({
+      status: 'synced',
+      receipts: [marketingAuditReceipt({ kind: 'content' })],
+    });
+    await expect(context.service.listMarketingResourceAudit(request))
+      .resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
   });
 });

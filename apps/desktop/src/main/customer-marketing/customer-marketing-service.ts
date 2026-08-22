@@ -35,6 +35,7 @@ import {
   type CustomerMarketingWorkflowWrapper,
 } from './customer-marketing-workflow-wrappers';
 import type {
+  CustomerMarketingResourceAuditState,
   CustomerMarketingWorkspaceGateway,
   CustomerMarketingWorkspaceState,
   CustomerMarketingWorkflowState,
@@ -47,6 +48,7 @@ import {
   parseMarketingCalendarInput,
   parseMarketingAnalyticsWindow,
   parseMarketingResourceArchiveInput,
+  parseMarketingResourceAuditInput,
   parseMarketingResourceCreateInput,
   parseMarketingResourceKind,
   parseMarketingResourceReviewInput,
@@ -69,6 +71,8 @@ import type {
   CustomerMarketingResource,
   CustomerMarketingResourceArchiveInput,
   CustomerMarketingResourceArchiveResult,
+  CustomerMarketingResourceAuditInput,
+  CustomerMarketingResourceAuditResult,
   CustomerMarketingResourceCreateInput,
   CustomerMarketingResourceKind,
   CustomerMarketingResourceListResult,
@@ -1815,6 +1819,70 @@ export class CustomerMarketingService {
       return { ok: false, status, report: null, error: publicMarketingResourceError(status) };
     }
     return { ok: true, status: 'synced', report: state.report };
+  }
+
+  /**
+   * Read-only lifecycle receipts for one reviewed resource. The workspace comes from the
+   * authenticated identity, so a renderer cannot widen the audit read to another tenant.
+   */
+  async listMarketingResourceAudit(
+    input: CustomerMarketingResourceAuditInput,
+  ): Promise<CustomerMarketingResourceAuditResult> {
+    const parsed = parseMarketingResourceAuditInput(input);
+    if (!parsed) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        receipts: [],
+        error: 'Yêu cầu lịch sử quyết định marketing không hợp lệ.',
+      };
+    }
+    const authority = await this.resolveMarketingResourceAuthority();
+    if (authority.status !== 'synced') {
+      return { ok: false, status: authority.status, receipts: [], error: authority.error };
+    }
+    const readAudit = this.workspaceGateway!.listMarketingResourceAudit;
+    if (!readAudit) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        receipts: [],
+        error: publicMarketingResourceError('unavailable'),
+      };
+    }
+    let state: CustomerMarketingResourceAuditState;
+    try {
+      state = await readAudit.call(
+        this.workspaceGateway!,
+        authority.workspace.id,
+        parsed.kind,
+        parsed.resourceId,
+      );
+    } catch {
+      state = { status: 'unavailable', receipts: [] };
+    }
+    if (state.status !== 'synced') {
+      return {
+        ok: false,
+        status: state.status,
+        receipts: [],
+        error: publicMarketingResourceError(state.status),
+      };
+    }
+    if (state.receipts.some((receipt) => (
+      receipt.resourceId !== parsed.resourceId || receipt.kind !== parsed.kind
+    ))) {
+      return {
+        ok: false,
+        status: 'unavailable',
+        receipts: [],
+        error: publicMarketingResourceError('unavailable'),
+      };
+    }
+    const receipts = [...state.receipts].sort(
+      (left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt),
+    );
+    return { ok: true, status: 'synced', receipts };
   }
 
   async listIntegrationCredentials(): Promise<CustomerMarketingCredentialListResult> {

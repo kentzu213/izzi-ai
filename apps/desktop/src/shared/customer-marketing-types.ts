@@ -713,6 +713,51 @@ export interface CustomerMarketingResourceArchiveResult {
   error?: string;
 }
 
+export type CustomerMarketingResourceAuditKind = Extract<
+  CustomerMarketingResourceKind,
+  'campaign' | 'content'
+>;
+
+export type CustomerMarketingResourceAuditAction =
+  | 'created'
+  | 'updated'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'archived';
+
+/**
+ * Server-owned lifecycle receipt for one reviewed resource transition. It carries
+ * decision evidence only: no resource body, storage path, workspace identity, or
+ * reviewer identity beyond an opaque hash.
+ */
+export interface CustomerMarketingResourceAuditReceiptV1 {
+  id: string;
+  resourceId: string;
+  kind: CustomerMarketingResourceAuditKind;
+  action: CustomerMarketingResourceAuditAction;
+  fromStatus: CustomerMarketingResourceLifecycleStatus | null;
+  toStatus: CustomerMarketingResourceLifecycleStatus;
+  revision: number;
+  reviewerHash: string;
+  detail: string | null;
+  occurredAt: string;
+  receiptDigest: string;
+}
+
+/** Renderer request. Main derives the workspace from authenticated identity. */
+export interface CustomerMarketingResourceAuditInput {
+  kind: CustomerMarketingResourceAuditKind;
+  resourceId: string;
+}
+
+export interface CustomerMarketingResourceAuditResult {
+  ok: boolean;
+  status: CustomerMarketingBridgeStatus;
+  receipts: CustomerMarketingResourceAuditReceiptV1[];
+  error?: string;
+}
+
 export type CustomerMarketingWorkflowTarget = 'social' | 'seo' | 'email' | 'crm';
 export type CustomerMarketingWorkflowPolicyRevision = 'cmr-306.v1';
 export type CustomerMarketingWorkflowAllowedOperation = 'read' | 'draft' | 'validate';
