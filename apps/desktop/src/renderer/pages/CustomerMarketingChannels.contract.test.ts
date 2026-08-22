@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+const readNormalized = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const pagePath = fileURLToPath(new URL('./CustomerMarketingChannels.tsx', import.meta.url));
-const pageSource = readFileSync(pagePath, 'utf8');
+const pageSource = readNormalized(pagePath);
 const stylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.css', import.meta.url));
-const stylesSource = readFileSync(stylesPath, 'utf8');
+const stylesSource = readNormalized(stylesPath);
 const mainPath = fileURLToPath(new URL('../../main/index.ts', import.meta.url));
-const mainSource = readFileSync(mainPath, 'utf8');
+const mainSource = readNormalized(mainPath);
 
 describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
   it('loads connector evidence with credentials and exposes bounded local health controls', () => {
@@ -154,7 +155,7 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
 describe('CustomerMarketingChannels connection center contract', () => {
   it('renders the three connection surfaces before workflow controls', () => {
     expect(pageSource).toContain('const connectionCenter = (');
-    expect(pageSource).toMatch(/<\/header>\s*\n\s*\{connectionCenter\}/);
+    expect(pageSource).toMatch(/<\/header>\s*\{connectionCenter\}/);
     expect(pageSource).toContain("label: 'Facebook Test Page'");
     expect(pageSource).toContain("label: 'YouTube Private'");
     expect(pageSource).toContain("label: 'Telegram Sandbox'");
@@ -162,12 +163,13 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain('Video thử nghiệm luôn ở chế độ Riêng tư (Private).');
   });
 
-  it('uses Auto Post redacted account metadata and keeps OAuth in main', () => {
-    expect(pageSource).toContain('api.listAccounts()');
-    expect(pageSource).toContain('readAutopostAccounts(Array.isArray(result.accounts) ? result.accounts : [])');
-    expect(pageSource).toContain('const status = await api.getStatus();');
-    expect(pageSource).toContain('const enabled = await api.setEnabled(true);');
-    expect(pageSource).toContain('const result = await api.beginConnect(channel);');
+  it('uses native workspace account metadata and keeps OAuth in main', () => {
+    expect(pageSource).toContain('nativeApi.listWorkspaces()');
+    expect(pageSource).toContain("nativeApi.createWorkspace({ name: 'Izzi Marketing' })");
+    expect(pageSource).toContain('nativeApi.listAccounts(workspaceId)');
+    expect(pageSource).toContain('readAutopostAccounts(accounts.accounts)');
+    expect(pageSource).toContain('nativeApi.beginConnect(nativeWorkspaceId, channel)');
+    expect(pageSource).toContain('nativeApi.onOAuthStatus');
     expect(pageSource).not.toContain('redirectUrl');
     expect(pageSource).not.toContain('window.open(');
     expect(pageSource).not.toContain('api.createDraft(');
@@ -176,21 +178,19 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(mainSource).not.toContain('accounts: Array.isArray(r.data)');
   });
 
-  it('surfaces the Auto Post master control with the four bridge states', () => {
+  it('surfaces the native master status without the legacy Auto Post path', () => {
     expect(pageSource).toContain('const [autopostMaster, setAutopostMaster] = useState');
-    expect(pageSource).toContain('const masterStatus = await api.getStatus();');
-    expect(pageSource).toMatch(/if \(!masterStatus\?\.connected\)[\s\S]{0,240}setAutopostAccounts\(\[\]\)/);
-    expect(pageSource).not.toContain('Promise.all([api.listAccounts(), api.getStatus()])');
     expect(pageSource).toContain("masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");
     expect(pageSource).toContain("'Đang kiểm tra…'");
-    expect(pageSource).toContain('Hãy đăng nhập izzi trong Izzi AI để cấp quyền cho Auto-Post.');
-    expect(pageSource).toContain('void setAutopostBridgeEnabled(true)');
-    expect(pageSource).toContain('void setAutopostBridgeEnabled(false)');
-    expect(pageSource).toContain('await api.setEnabled(nextEnabled)');
-    expect(pageSource).toContain('Kết nối Auto-Post');
-    expect(pageSource).toContain("'Ngắt'");
-    expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể bật hoặc ngắt Auto Post.');
-    expect(pageSource).toContain('Bật Auto Post ở trên trước, rồi kết nối kênh này.');
+    expect(pageSource).toContain('Native Marketing API đang đọc trực tiếp workspace và tài khoản từ IzziAPI.');
+    expect(pageSource).toContain('Tài khoản chưa có native Marketing workspace.');
+    expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể kết nối kênh.');
+    expect(pageSource).not.toMatch(/electronAPI\??\.autopost/);
+    expect(pageSource).not.toContain('setAutopostBridgeEnabled');
+    expect(pageSource).not.toContain('connectErrorLabel');
+    expect(pageSource).not.toContain('api.setEnabled');
+    expect(pageSource).not.toContain('api.beginConnect(channel)');
+    expect(pageSource).not.toContain('Kết nối Auto-Post');
     expect(pageSource).toContain('!masterConnected || autopostLoading');
     expect(pageSource).toContain('cmr-connect-center__reload');
     expect(stylesSource).toContain('.cmr-connect-center__reload');
@@ -227,3 +227,13 @@ describe('CustomerMarketingChannels connection center contract', () => {
     );
   });
 });
+  it('reports the native-unavailable state instead of an Auto Post fallback', () => {
+    expect(pageSource).toContain('Native Marketing API chưa khả dụng trong bản Izzi AI này.');
+    expect(pageSource).toContain('Cập nhật Izzi AI Desktop để dùng Native Marketing API.');
+    expect(pageSource).toMatch(
+      /setNativeMarketingMode\(false\);[\s\S]{0,400}setAutopostError\('Native Marketing API chưa khả dụng/,
+    );
+    expect(pageSource).toContain("'request-rejected'");
+    expect(pageSource).toContain('Không hoàn tất được kết nối native. Chưa lưu tài khoản nào.');
+    expect(pageSource).toContain('Chưa có native Marketing workspace. Bấm Tải lại rồi thử lại.');
+  });
