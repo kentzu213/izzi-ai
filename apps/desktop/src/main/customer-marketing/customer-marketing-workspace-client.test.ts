@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   CustomerMarketingWorkspaceClient,
-  customerMarketingResourceAuditReceiptDigest,
 } from './customer-marketing-workspace-client';
 import type {
   CustomerMarketingAnalyticsReport,
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingResourceAuditKind,
-  CustomerMarketingResourceAuditReceiptV1,
   CustomerOnboardingProfile,
 } from '../../shared/customer-marketing-types';
 
@@ -263,39 +261,38 @@ function workflowRun(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function auditEvidence(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function auditDetail(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: AUDIT_RECEIPT_ID,
-    resourceId: AUDIT_RESOURCE_ID,
     kind: 'campaign',
-    action: 'approved',
+    reviewAction: 'approve',
     fromStatus: 'in_review',
     toStatus: 'approved',
-    revision: 2,
-    reviewerHash: 'a'.repeat(64),
-    detail: 'Duyet sau khi kiem tra brand guardrails',
-    occurredAt: '2026-08-20T02:00:00.000Z',
+    fromRevision: 1,
+    toRevision: 2,
     ...overrides,
   };
 }
 
-/** Signs whatever evidence it is given, so field checks are proven apart from the hash check. */
-function auditReceipt(overrides: Record<string, unknown> = {}, workspaceId = WORKSPACE_ID) {
-  const evidence = auditEvidence(overrides);
+function auditRow(overrides: Record<string, unknown> = {}) {
   return {
-    ...evidence,
-    receiptDigest: customerMarketingResourceAuditReceiptDigest(
-      workspaceId,
-      evidence as unknown as Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'>,
-    ),
+    id: AUDIT_RECEIPT_ID,
+    workspace_id: WORKSPACE_ID,
+    resource_id: AUDIT_RESOURCE_ID,
+    post_id: null,
+    action: 'resource.review.approved',
+    detail: auditDetail(),
+    receipt_hash: 'a'.repeat(64),
+    occurred_at: '2026-08-20T02:00:00.000Z',
+    ...overrides,
   };
 }
 
 function auditEnvelope(overrides: Record<string, unknown> = {}) {
   return {
+    success: true,
     workspaceId: WORKSPACE_ID,
     resourceId: AUDIT_RESOURCE_ID,
-    receipts: [auditReceipt()],
+    receipts: [auditRow()],
     ...overrides,
   };
 }
@@ -1456,19 +1453,22 @@ describe('CustomerMarketingWorkspaceClient', () => {
       .resolves.toEqual({ status: 'unavailable', run: null });
   });
 
-  it('reads lifecycle receipts through the token-scoped audit route without a renderer workspace id', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
-      workspaceId: WORKSPACE_ID,
-      resourceId: AUDIT_RESOURCE_ID,
-      receipts: [auditReceipt(), auditReceipt({
-        id: AUDIT_RECEIPT_ID_B,
-        action: 'submitted',
+  it('reads the raw server audit rows through the token-scoped route without a renderer workspace id', async () => {
+    const submitted = auditRow({
+      id: AUDIT_RECEIPT_ID_B,
+      action: 'resource.review.submitted',
+      detail: auditDetail({
+        reviewAction: 'submit',
         fromStatus: 'draft',
         toStatus: 'in_review',
-        revision: 1,
-        detail: null,
-        occurredAt: '2026-08-19T02:00:00.000Z',
-      })],
+        fromRevision: 0,
+        toRevision: 1,
+      }),
+      occurred_at: '2026-08-19T02:00:00.000Z',
+    });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      ...auditEnvelope(),
+      receipts: [auditRow(), submitted],
     }));
     const client = new CustomerMarketingWorkspaceClient(
       { getAccessToken: vi.fn(async () => 'test-token') },
@@ -1478,15 +1478,34 @@ describe('CustomerMarketingWorkspaceClient', () => {
     await expect(client.listMarketingResourceAudit(WORKSPACE_ID, 'campaign', AUDIT_RESOURCE_ID))
       .resolves.toEqual({
         status: 'synced',
-        receipts: [auditReceipt(), auditReceipt({
-          id: AUDIT_RECEIPT_ID_B,
-          action: 'submitted',
-          fromStatus: 'draft',
-          toStatus: 'in_review',
-          revision: 1,
-          detail: null,
-          occurredAt: '2026-08-19T02:00:00.000Z',
-        })],
+        receipts: [
+          {
+            id: AUDIT_RECEIPT_ID,
+            resourceId: AUDIT_RESOURCE_ID,
+            kind: 'campaign',
+            action: 'approved',
+            fromStatus: 'in_review',
+            toStatus: 'approved',
+            revision: 2,
+            reviewerHash: null,
+            detail: null,
+            occurredAt: '2026-08-20T02:00:00.000Z',
+            receiptDigest: 'a'.repeat(64),
+          },
+          {
+            id: AUDIT_RECEIPT_ID_B,
+            resourceId: AUDIT_RESOURCE_ID,
+            kind: 'campaign',
+            action: 'submitted',
+            fromStatus: 'draft',
+            toStatus: 'in_review',
+            revision: 1,
+            reviewerHash: null,
+            detail: null,
+            occurredAt: '2026-08-19T02:00:00.000Z',
+            receiptDigest: 'a'.repeat(64),
+          },
+        ],
       });
 
     const [url, init] = fetchImpl.mock.calls[0];
@@ -1498,27 +1517,22 @@ describe('CustomerMarketingWorkspaceClient', () => {
 
   it('fails closed for malformed, forged, extended, or cross-tenant audit payloads', async () => {
     const bodies: unknown[] = [
-      // Envelope bound to another tenant, even when its receipts are internally consistent.
-      { workspaceId: OTHER_WORKSPACE_ID, resourceId: AUDIT_RESOURCE_ID, receipts: [auditReceipt({}, OTHER_WORKSPACE_ID)] },
+      { ...auditEnvelope(), workspaceId: OTHER_WORKSPACE_ID },
       auditEnvelope({ resourceId: OTHER_RESOURCE_ID }),
-      auditEnvelope({ receipts: [{ ...auditReceipt(), receiptDigest: 'b'.repeat(64) }] }),
-      auditEnvelope({ receipts: [auditReceipt({ resourceId: OTHER_RESOURCE_ID })] }),
-      auditEnvelope({ receipts: [auditReceipt({ kind: 'content' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ id: 'not-a-uuid' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ action: 'deleted' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ toStatus: 'published' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ fromStatus: 'published' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ revision: -1 })] }),
-      auditEnvelope({ receipts: [auditReceipt({ revision: 1.5 })] }),
-      auditEnvelope({ receipts: [auditReceipt({ reviewerHash: 'ZZ'.repeat(32) })] }),
-      auditEnvelope({ receipts: [auditReceipt({ detail: '' })] }),
-      auditEnvelope({ receipts: [auditReceipt({ detail: 'x'.repeat(241) })] }),
-      auditEnvelope({ receipts: [auditReceipt({ detail: `note${String.fromCharCode(0)}` })] }),
-      auditEnvelope({ receipts: [auditReceipt({ occurredAt: '2026-08-20' })] }),
-      auditEnvelope({ receipts: [{ ...auditReceipt(), systemPrompt: 'must-not-enter-desktop' }] }),
-      auditEnvelope({ receipts: [{ ...auditReceipt(), detail: undefined }] }),
-      auditEnvelope({ receipts: [auditReceipt(), auditReceipt()] }),
-      auditEnvelope({ receipts: Array.from({ length: 201 }, () => auditReceipt()) }),
+      auditEnvelope({ receipts: [{ ...auditRow(), resource_id: OTHER_RESOURCE_ID }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), workspace_id: OTHER_WORKSPACE_ID }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), post_id: OTHER_RESOURCE_ID }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), id: 'not-a-uuid' }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), action: 'resource.review.deleted' }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), detail: auditDetail({ kind: 'content' }) }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), detail: auditDetail({ toStatus: 'published' }) }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), detail: auditDetail({ fromRevision: -1 }) }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), detail: auditDetail({ toRevision: 1.5 }) }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), detail: auditDetail({ reviewAction: 'reject' }) }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), occurred_at: '2026-08-20' }] }),
+      auditEnvelope({ receipts: [{ ...auditRow(), systemPrompt: 'must-not-enter-desktop' }] }),
+      auditEnvelope({ receipts: [auditRow(), auditRow()] }),
+      auditEnvelope({ receipts: Array.from({ length: 201 }, () => auditRow()) }),
       auditEnvelope({ receipts: {} }),
       { ...auditEnvelope(), token: 'should-not-be-trusted' },
       { receipts: [] },

@@ -739,7 +739,7 @@ export interface CustomerMarketingResourceAuditReceiptV1 {
   fromStatus: CustomerMarketingResourceLifecycleStatus | null;
   toStatus: CustomerMarketingResourceLifecycleStatus;
   revision: number;
-  reviewerHash: string;
+  reviewerHash: string | null;
   detail: string | null;
   occurredAt: string;
   receiptDigest: string;

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { IZZI_API_BASE } from '../config/public-config';
 import type {
   CustomerAssignableRole,
@@ -407,17 +406,14 @@ const MARKETING_RESOURCE_FIELDS: Record<CustomerMarketingResourceKind, readonly 
 const MARKETING_RESOURCE_BASE_FIELDS = [
   'id', 'workspaceId', 'kind', 'status', 'revision', 'title', 'metadata', 'createdAt', 'updatedAt',
 ] as const;
-const MARKETING_AUDIT_POLICY_REVISION = 'cmr-407.v1';
 const MARKETING_AUDIT_KINDS = new Set<CustomerMarketingResourceAuditKind>(['campaign', 'content']);
-const MARKETING_AUDIT_ACTIONS = new Set<CustomerMarketingResourceAuditAction>([
-  'created', 'updated', 'submitted', 'approved', 'rejected', 'archived',
-]);
+const MARKETING_AUDIT_ACTIONS = new Set<string>([
+  'resource.review.submitted', 'resource.review.approved', 'resource.review.rejected',
+] as const);
 const MARKETING_AUDIT_RECEIPT_FIELDS = [
-  'id', 'resourceId', 'kind', 'action', 'fromStatus', 'toStatus', 'revision',
-  'reviewerHash', 'detail', 'occurredAt', 'receiptDigest',
+  'id', 'workspace_id', 'resource_id', 'post_id', 'action', 'detail', 'receipt_hash', 'occurred_at',
 ] as const;
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
-const MAX_MARKETING_AUDIT_DETAIL_LENGTH = 240;
 const MAX_MARKETING_AUDIT_RECEIPTS = 200;
 const MAX_MARKETING_ANALYTICS_WINDOW_MS = 366 * 24 * 60 * 60 * 1_000;
 const MARKETING_ANALYTICS_OMITTED_METRICS = [
@@ -786,42 +782,12 @@ function parseMarketingAnalyticsEnvelope(
   };
 }
 
-/** Audit detail is short printable evidence text: control characters are rejected. */
-function validAuditDetail(value: unknown): value is string | null {
-  if (value === null) return true;
-  if (typeof value !== 'string' || value.length < 1
-    || value.length > MAX_MARKETING_AUDIT_DETAIL_LENGTH) return false;
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return false;
-  }
-  return true;
-}
-
-/**
- * Binds one receipt to the authoritative workspace and the audit policy revision, so a
- * receipt minted for another tenant or an older policy cannot be replayed into this pane.
- */
-export function customerMarketingResourceAuditReceiptDigest(
-  workspaceId: string,
-  receipt: Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'>,
-): string {
-  return createHash('sha256')
-    .update(JSON.stringify([
-      MARKETING_AUDIT_POLICY_REVISION,
-      workspaceId,
-      receipt.id,
-      receipt.resourceId,
-      receipt.kind,
-      receipt.action,
-      receipt.fromStatus,
-      receipt.toStatus,
-      receipt.revision,
-      receipt.reviewerHash,
-      receipt.detail,
-      receipt.occurredAt,
-    ]), 'utf8')
-    .digest('hex');
+function auditAction(value: unknown): CustomerMarketingResourceAuditAction | null {
+  if (typeof value !== 'string' || !MARKETING_AUDIT_ACTIONS.has(value)) return null;
+  if (value === 'resource.review.submitted') return 'submitted';
+  if (value === 'resource.review.approved') return 'approved';
+  if (value === 'resource.review.rejected') return 'rejected';
+  return null;
 }
 
 function parseMarketingAuditReceipt(
@@ -831,35 +797,39 @@ function parseMarketingAuditReceipt(
   expectedResourceId: string,
 ): CustomerMarketingResourceAuditReceiptV1 | null {
   const receipt = exactRecord(value, MARKETING_AUDIT_RECEIPT_FIELDS);
-  if (!receipt
+  const detail = receipt ? exactRecord(receipt.detail, [
+    'fromRevision', 'fromStatus', 'kind', 'reviewAction', 'toRevision', 'toStatus',
+  ]) : null;
+  const action = receipt ? auditAction(receipt.action) : null;
+  const reviewAction = action === 'submitted' ? 'submit' : action === 'approved' ? 'approve' : 'reject';
+  if (!receipt || !detail || !action
     || typeof receipt.id !== 'string' || !UUID_PATTERN.test(receipt.id)
-    || receipt.resourceId !== expectedResourceId
-    || receipt.kind !== expectedKind
-    || !MARKETING_AUDIT_ACTIONS.has(receipt.action as CustomerMarketingResourceAuditAction)
-    || (receipt.fromStatus !== null
-      && !MARKETING_RESOURCE_STATUSES.has(receipt.fromStatus as CustomerMarketingResourceLifecycleStatus))
-    || !MARKETING_RESOURCE_STATUSES.has(receipt.toStatus as CustomerMarketingResourceLifecycleStatus)
-    || !Number.isSafeInteger(receipt.revision) || Number(receipt.revision) < 0
-    || typeof receipt.reviewerHash !== 'string' || !SHA256_HEX_PATTERN.test(receipt.reviewerHash)
-    || !validAuditDetail(receipt.detail)
-    || !validIso(receipt.occurredAt)
-    || typeof receipt.receiptDigest !== 'string' || !SHA256_HEX_PATTERN.test(receipt.receiptDigest)) return null;
+    || receipt.workspace_id !== expectedWorkspaceId
+    || receipt.resource_id !== expectedResourceId
+    || receipt.post_id !== null
+    || detail.kind !== expectedKind
+    || detail.reviewAction !== reviewAction
+    || (detail.fromStatus !== null
+      && !MARKETING_RESOURCE_STATUSES.has(detail.fromStatus as CustomerMarketingResourceLifecycleStatus))
+    || !MARKETING_RESOURCE_STATUSES.has(detail.toStatus as CustomerMarketingResourceLifecycleStatus)
+    || !Number.isSafeInteger(detail.fromRevision) || Number(detail.fromRevision) < 0
+    || !Number.isSafeInteger(detail.toRevision) || Number(detail.toRevision) < 0
+    || typeof receipt.receipt_hash !== 'string' || !SHA256_HEX_PATTERN.test(receipt.receipt_hash)
+    || !validIso(receipt.occurred_at)) return null;
 
-  const evidence: Omit<CustomerMarketingResourceAuditReceiptV1, 'receiptDigest'> = {
+  return {
     id: receipt.id,
     resourceId: expectedResourceId,
     kind: expectedKind,
-    action: receipt.action as CustomerMarketingResourceAuditAction,
-    fromStatus: receipt.fromStatus as CustomerMarketingResourceLifecycleStatus | null,
-    toStatus: receipt.toStatus as CustomerMarketingResourceLifecycleStatus,
-    revision: receipt.revision as number,
-    reviewerHash: receipt.reviewerHash,
-    detail: receipt.detail as string | null,
-    occurredAt: receipt.occurredAt,
+    action,
+    fromStatus: detail.fromStatus as CustomerMarketingResourceLifecycleStatus | null,
+    toStatus: detail.toStatus as CustomerMarketingResourceLifecycleStatus,
+    revision: detail.toRevision as number,
+    reviewerHash: null,
+    detail: null,
+    occurredAt: receipt.occurred_at,
+    receiptDigest: receipt.receipt_hash,
   };
-  return customerMarketingResourceAuditReceiptDigest(expectedWorkspaceId, evidence) === receipt.receiptDigest
-    ? { ...evidence, receiptDigest: receipt.receiptDigest }
-    : null;
 }
 
 function parseMarketingAuditEnvelope(
@@ -868,8 +838,8 @@ function parseMarketingAuditEnvelope(
   expectedKind: CustomerMarketingResourceAuditKind,
   expectedResourceId: string,
 ): CustomerMarketingResourceAuditReceiptV1[] | null {
-  const envelope = exactRecord(value, ['workspaceId', 'resourceId', 'receipts']);
-  if (!envelope || envelope.workspaceId !== expectedWorkspaceId || envelope.resourceId !== expectedResourceId
+  const envelope = exactRecord(value, ['success', 'workspaceId', 'resourceId', 'receipts']);
+  if (!envelope || envelope.success !== true || envelope.workspaceId !== expectedWorkspaceId || envelope.resourceId !== expectedResourceId
     || !Array.isArray(envelope.receipts) || envelope.receipts.length > MAX_MARKETING_AUDIT_RECEIPTS) return null;
   const receipts = envelope.receipts.map((item) => parseMarketingAuditReceipt(
     item,
