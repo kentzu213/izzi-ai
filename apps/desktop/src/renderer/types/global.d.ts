@@ -390,9 +390,19 @@ declare global {
     | { ok: true; post: NativeMarketingPostSummary }
     | NativeMarketingFailure;
 
-  /** Only the opaque state for the next provider step — no authorize URL/secret. */
+  interface NativeMarketingOAuthSession {
+    state: string;
+    authorizeUrl: string;
+    expiresAt: string | null;
+  }
+
   type NativeMarketingOAuthStateResult =
-    | { ok: true; platform: NativeMarketingPlatform; state: string }
+    | { ok: true; platform: NativeMarketingPlatform; state: NativeMarketingOAuthSession }
+    | NativeMarketingFailure;
+
+  type NativeMarketingOAuthCallbackResult =
+    | { ok: true; platform: NativeMarketingPlatform; exchange: 'linked'; account: NativeMarketingAccountSummary }
+    | { ok: true; platform: NativeMarketingPlatform; exchange: 'not_configured' | 'not_requested' | 'not_implemented'; account: null }
     | NativeMarketingFailure;
 
   interface ElectronNativeMarketingApi {
@@ -405,6 +415,11 @@ declare global {
       workspaceId: string,
       platform: NativeMarketingPlatform,
     ) => Promise<NativeMarketingOAuthStateResult>;
+    beginConnect: (
+      workspaceId: string,
+      platform: NativeMarketingPlatform,
+    ) => Promise<{ ok: boolean; error?: string }>;
+    onOAuthStatus: (listener: (result: NativeMarketingOAuthCallbackResult) => void) => () => void;
     listPosts: (workspaceId: string, status?: string) => Promise<NativeMarketingPostListResult>;
     createDraftPost: (
       workspaceId: string,

@@ -22,8 +22,8 @@
  *     server-supplied error text is never forwarded.
  *
  * Scope of this slice: workspaces (list/create), accounts (read), posts (read),
- * OAuth state (issue) and draft posts (create). Provider OAuth exchange,
- * publishing and scheduling are deliberately NOT implemented here.
+ * OAuth state (issue/complete) and draft posts (create). Publishing and
+ * scheduling are deliberately NOT implemented here.
  *
  * @module main/marketing/native-marketing-client
  */
@@ -176,17 +176,36 @@ export type NativeMarketingPostResult =
   | { ok: true; post: NativeMarketingPostSummary }
   | NativeMarketingFailure;
 
-/**
- * The OAuth handshake value for the NEXT provider step — and nothing else. No
- * authorization URL, client id, verifier or redirect target is surfaced here.
- */
+/** Public OAuth session material. Tokens and provider secrets never enter this type. */
+export interface NativeMarketingOAuthSession {
+  state: string;
+  authorizeUrl: string;
+  expiresAt: string | null;
+}
+
 export type NativeMarketingOAuthStateResult =
-  | { ok: true; platform: NativeMarketingPlatform; state: string }
+  | { ok: true; platform: NativeMarketingPlatform; state: NativeMarketingOAuthSession }
+  | NativeMarketingFailure;
+
+export type NativeMarketingOAuthCallbackResult =
+  | {
+    ok: true;
+    platform: NativeMarketingPlatform;
+    exchange: 'linked';
+    account: NativeMarketingAccountSummary;
+  }
+  | {
+    ok: true;
+    platform: NativeMarketingPlatform;
+    exchange: 'not_configured' | 'not_requested' | 'not_implemented';
+    account: null;
+  }
   | NativeMarketingFailure;
 
 const MARKETING_ROOT = '/api/marketing';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OAUTH_STATE_PATTERN = /^[A-Za-z0-9._~-]{16,512}$/;
+const OAUTH_CODE_PATTERN = /^[A-Za-z0-9._~+\/%=-]{8,2048}$/;
 const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**
@@ -420,12 +439,49 @@ export function parseNativeMarketingOAuthState(
   raw: unknown,
   expectedWorkspaceId: string,
   expectedPlatform: NativeMarketingPlatform,
-): string | null {
+): NativeMarketingOAuthSession | null {
   const envelope = recordValue(raw);
   if (!envelope || envelope.workspaceId !== expectedWorkspaceId) return null;
   if (envelope.platform !== expectedPlatform) return null;
   const state = typeof envelope.state === 'string' ? envelope.state : '';
-  return OAUTH_STATE_PATTERN.test(state) ? state : null;
+  if (!OAUTH_STATE_PATTERN.test(state)) return null;
+  const authorizeUrl = parseNativeMarketingAuthorizeUrl(envelope.authorizeUrl, expectedPlatform, state);
+  if (!authorizeUrl) return null;
+  const expiresAt = envelope.expiresAt === undefined || envelope.expiresAt === null
+    ? null
+    : nullableIso(envelope.expiresAt);
+  if (envelope.expiresAt !== undefined && envelope.expiresAt !== null && !expiresAt) return null;
+  return { state, authorizeUrl, expiresAt };
+}
+
+const NATIVE_MARKETING_PROVIDER_HOSTS: Record<'facebook' | 'youtube', string> = {
+  facebook: 'www.facebook.com',
+  youtube: 'accounts.google.com',
+};
+
+function parseNativeMarketingAuthorizeUrl(
+  raw: unknown,
+  platform: NativeMarketingPlatform,
+  state: string,
+): string | null {
+  if (platform !== 'facebook' && platform !== 'youtube') return null;
+  if (typeof raw !== 'string' || raw.length > 4096) return null;
+  try {
+    const url = new URL(raw);
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.hash
+      || url.hostname.toLowerCase() !== NATIVE_MARKETING_PROVIDER_HOSTS[platform]
+      || url.searchParams.get('state') !== state
+      || url.searchParams.has('client_secret')
+      || url.searchParams.has('clientSecret')
+    ) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 /** Normalize a caller-supplied draft, or null when it is not postable. Pure. */
@@ -522,6 +578,42 @@ export class NativeMarketingClient {
     if (!result.ok) return result;
     const state = parseNativeMarketingOAuthState(result.body, workspaceId, platform);
     return state ? { ok: true, platform, state } : { ok: false, error: 'invalid-response' };
+  }
+
+  /** POST /api/marketing/oauth/callback — consume state and link one account. */
+  async completeOAuth(
+    workspaceId: string,
+    platform: NativeMarketingPlatform,
+    state: string,
+    code: string,
+  ): Promise<NativeMarketingOAuthCallbackResult> {
+    if (!UUID_PATTERN.test(workspaceId)) return { ok: false, error: 'invalid-workspace-id' };
+    if (!isNativeMarketingPlatform(platform)) return { ok: false, error: 'unsupported-platform' };
+    if (!OAUTH_STATE_PATTERN.test(state) || !OAUTH_CODE_PATTERN.test(code)) {
+      return { ok: false, error: 'request-rejected' };
+    }
+    const result = await this.request(`${MARKETING_ROOT}/oauth/callback`, {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, platform, state, code }),
+    });
+    if (!result.ok) return result;
+    const envelope = recordValue(result.body);
+    if (!envelope || envelope.workspaceId !== workspaceId || envelope.platform !== platform) {
+      return { ok: false, error: 'invalid-response' };
+    }
+    const exchange = envelope.exchange;
+    if (exchange === 'linked') {
+      const account = parseNativeMarketingAccount(envelope.account);
+      return account ? { ok: true, platform, exchange, account } : { ok: false, error: 'invalid-response' };
+    }
+    if (
+      exchange === 'not_configured'
+      || exchange === 'not_requested'
+      || exchange === 'not_implemented'
+    ) {
+      return { ok: true, platform, exchange, account: null };
+    }
+    return { ok: false, error: 'invalid-response' };
   }
 
   /** GET /api/marketing/posts?workspaceId=:id — posts, optionally by status. */

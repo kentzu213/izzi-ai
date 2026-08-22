@@ -349,15 +349,29 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       try {
         const workspaces = await nativeApi.listWorkspaces();
         if (request !== autopostRequestId.current) return;
-        if (!workspaces.ok || workspaces.workspaces.length === 0) {
+        if (!workspaces.ok) {
           setNativeWorkspaceId('');
           setAutopostMaster({ enabled: true, connected: false });
           setAutopostReady(false);
           setAutopostAccounts([]);
-          setAutopostError(workspaces.ok ? 'Chưa có native Marketing workspace cho tài khoản này.' : workspaces.error);
+          setAutopostError(workspaces.error);
           return;
         }
-        const workspaceId = workspaces.workspaces[0].id;
+        let workspace = workspaces.workspaces[0];
+        if (!workspace) {
+          const created = await nativeApi.createWorkspace({ name: 'Izzi Marketing' });
+          if (request !== autopostRequestId.current) return;
+          if (!created.ok) {
+            setNativeWorkspaceId('');
+            setAutopostMaster({ enabled: true, connected: false });
+            setAutopostReady(false);
+            setAutopostAccounts([]);
+            setAutopostError(created.error);
+            return;
+          }
+          workspace = created.workspace;
+        }
+        const workspaceId = workspace.id;
         setNativeWorkspaceId(workspaceId);
         const accounts = await nativeApi.listAccounts(workspaceId);
         if (request !== autopostRequestId.current) return;
@@ -432,6 +446,25 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     const onFocus = () => { void loadAutopostAccounts(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
+  }, [loadAutopostAccounts]);
+
+  useEffect(() => {
+    const nativeApi = window.electronAPI?.nativeMarketing;
+    if (!nativeApi?.onOAuthStatus) return undefined;
+    return nativeApi.onOAuthStatus((result) => {
+      setConnectingChannel(null);
+      if (result.ok && result.exchange === 'linked') {
+        setConnectNotice(`${result.platform === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'} đã kết nối thành công.`);
+        setAutopostError('');
+      } else if (result.ok) {
+        setAutopostError('OAuth đã hoàn tất nhưng provider chưa trả về tài khoản để lưu.');
+      } else {
+        setAutopostError(result.error === 'request-rejected'
+          ? 'Kết nối OAuth đã bị hủy hoặc không hợp lệ. Chưa lưu tài khoản nào.'
+          : 'Không hoàn tất được kết nối native. Chưa lưu tài khoản nào.');
+      }
+      void loadAutopostAccounts();
+    });
   }, [loadAutopostAccounts]);
 
   const filteredSources = useMemo(() => {
@@ -584,13 +617,13 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setAutopostError('');
       setConnectNotice('');
       try {
-        const result = await nativeApi.createOAuthState(nativeWorkspaceId, channel);
+        const result = await nativeApi.beginConnect(nativeWorkspaceId, channel);
         if (!result.ok) {
           setAutopostError(result.error);
           return;
         }
         setConnectNotice(
-          `${channel === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'}: phiên OAuth native đã được chuẩn bị. Provider exchange sẽ mở ở bước tiếp theo; chưa có tài khoản nào được kết nối.`,
+          `${channel === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'}: đã mở cửa sổ cấp quyền. Hoàn tất trên trình duyệt rồi quay lại Izzi AI.`,
         );
       } catch {
         setAutopostError('Native Marketing API không tạo được phiên kết nối.');

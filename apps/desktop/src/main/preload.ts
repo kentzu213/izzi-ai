@@ -18,6 +18,7 @@ import type {
 import type { DesktopUpdaterState } from './updater/types';
 import type {
   NativeMarketingAccountListResult,
+  NativeMarketingOAuthCallbackResult,
   NativeMarketingOAuthStateResult,
   NativeMarketingPlatform,
   NativeMarketingPostListResult,
@@ -383,6 +384,16 @@ const electronAPI = {
       platform: NativeMarketingPlatform,
     ): Promise<NativeMarketingOAuthStateResult> =>
       ipcRenderer.invoke('nativeMarketing:createOAuthState', workspaceId, platform),
+    beginConnect: (
+      workspaceId: string,
+      platform: NativeMarketingPlatform,
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('nativeMarketing:beginConnect', workspaceId, platform),
+    onOAuthStatus: (listener: (result: NativeMarketingOAuthCallbackResult) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, result: NativeMarketingOAuthCallbackResult) => listener(result);
+      ipcRenderer.on('nativeMarketing:oauthStatus', handler);
+      return () => ipcRenderer.removeListener('nativeMarketing:oauthStatus', handler);
+    },
     listPosts: (workspaceId: string, status?: string): Promise<NativeMarketingPostListResult> =>
       ipcRenderer.invoke('nativeMarketing:listPosts', workspaceId, status),
     createDraftPost: (

@@ -76,6 +76,7 @@ import {
   isNativeMarketingPlatform,
   NativeMarketingClient,
   type NativeMarketingAccountListResult,
+  type NativeMarketingOAuthCallbackResult,
   type NativeMarketingOAuthStateResult,
   type NativeMarketingPostListResult,
   type NativeMarketingPostResult,
@@ -186,6 +187,26 @@ let customerMarketingService: CustomerMarketingService;
 let customerMarketingInvitationCoordinator: CustomerMarketingInvitationCoordinator | null = null;
 let bufferedCustomerMarketingInvitationStatus: CustomerWorkspaceInvitationAcceptanceResult | null = null;
 const queuedProtocolUrls: string[] = [];
+let nativeMarketingClient: NativeMarketingClient | null = null;
+const pendingNativeMarketingOAuth = new Map<string, {
+  workspaceId: string;
+  platform: 'facebook' | 'youtube';
+  expiresAt: string | null;
+}>();
+
+function getNativeMarketingClient(): NativeMarketingClient {
+  if (!nativeMarketingClient) {
+    nativeMarketingClient = new NativeMarketingClient(authManager, {
+      baseUrl: process.env.IZZI_NATIVE_MARKETING_API_URL,
+    });
+  }
+  return nativeMarketingClient;
+}
+
+function sendNativeMarketingOAuthStatus(result: NativeMarketingOAuthCallbackResult): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('nativeMarketing:oauthStatus', result);
+}
 
 /**
  * Resolve the Izzi credential for the LLM proxy, never logged / never sent to the
@@ -1402,23 +1423,13 @@ function setupIPC() {
     }
   });
 
-  // Native Marketing (native-marketing, Phase 1): the in-app Marketing surface
+  // Native Marketing: the in-app Marketing surface
   // talking straight to IzziAPI /api/marketing with the existing izzi/Supabase
   // session. Deliberately separate from the autopost:* bridge above — no
   // extension backend, no loopback origin, and the access token never leaves
   // main. The renderer only ever receives allowlisted summaries plus bounded
-  // error codes. Provider OAuth exchange and publishing are NOT wired here yet.
-  let nativeMarketingClient: NativeMarketingClient | null = null;
-  const getNativeMarketingClient = (): NativeMarketingClient => {
-    if (!nativeMarketingClient) {
-      // A reviewed https origin only; anything else leaves the client disabled
-      // and every call fails closed with 'configuration-required'.
-      nativeMarketingClient = new NativeMarketingClient(authManager, {
-        baseUrl: process.env.IZZI_NATIVE_MARKETING_API_URL,
-      });
-    }
-    return nativeMarketingClient;
-  };
+  // error codes. Provider tokens stay in the backend; the browser only receives
+  // a public authorize URL and returns a code through the fixed deep link.
   const nativeMarketingRecord = (raw: unknown): Record<string, unknown> =>
     raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
 
@@ -1453,6 +1464,29 @@ function setupIPC() {
       if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
       if (!isNativeMarketingPlatform(platform)) return { ok: false, error: 'unsupported-platform' };
       return getNativeMarketingClient().createOAuthState(workspaceId.trim(), platform);
+    },
+  );
+  ipcMain.handle(
+    'nativeMarketing:beginConnect',
+    async (_event, workspaceId: unknown, platform: unknown): Promise<{ ok: boolean; error?: string }> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      if (!isNativeMarketingPlatform(platform) || (platform !== 'facebook' && platform !== 'youtube')) {
+        return { ok: false, error: 'unsupported-platform' };
+      }
+      const result = await getNativeMarketingClient().createOAuthState(workspaceId.trim(), platform);
+      if (!result.ok) return result;
+      pendingNativeMarketingOAuth.set(result.state.state, {
+        workspaceId: workspaceId.trim(),
+        platform,
+        expiresAt: result.state.expiresAt,
+      });
+      try {
+        await shell.openExternal(result.state.authorizeUrl);
+        return { ok: true };
+      } catch {
+        pendingNativeMarketingOAuth.delete(result.state.state);
+        return { ok: false, error: 'network-error' };
+      }
     },
   );
   ipcMain.handle(
@@ -1931,8 +1965,46 @@ function handleOAuthCallback(url: string) {
   }
 }
 
+function handleNativeMarketingOAuthCallback(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+  if (
+    parsed.protocol !== 'openclaw:'
+    || parsed.hostname !== 'marketing'
+    || parsed.pathname !== '/oauth/callback'
+  ) return;
+
+  const state = parsed.searchParams.get('state') || '';
+  const pending = pendingNativeMarketingOAuth.get(state);
+  if (!pending) return;
+  pendingNativeMarketingOAuth.delete(state);
+
+  const expiresAt = pending.expiresAt ? Date.parse(pending.expiresAt) : Number.NaN;
+  if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
+    sendNativeMarketingOAuthStatus({ ok: false, error: 'request-rejected' });
+    return;
+  }
+
+  const providerError = parsed.searchParams.get('error');
+  const code = parsed.searchParams.get('code') || '';
+  if (providerError || !code) {
+    sendNativeMarketingOAuthStatus({ ok: false, error: 'request-rejected' });
+    return;
+  }
+
+  void getNativeMarketingClient()
+    .completeOAuth(pending.workspaceId, pending.platform, state, code)
+    .then(sendNativeMarketingOAuthStatus)
+    .catch(() => sendNativeMarketingOAuthStatus({ ok: false, error: 'network-error' }));
+}
+
 function isSupportedProtocolUrl(url: string): boolean {
   return url.startsWith('openclaw://auth/callback')
+    || url.startsWith('openclaw://marketing/oauth/callback')
     || url.startsWith('openclaw://customer-marketing/invitations/accept?token=');
 }
 
@@ -1958,6 +2030,10 @@ function handleProtocolUrl(url: string): void {
       return;
     }
     handleOAuthCallback(url);
+    return;
+  }
+  if (url.startsWith('openclaw://marketing/oauth/callback')) {
+    handleNativeMarketingOAuthCallback(url);
     return;
   }
   if (!customerMarketingInvitationCoordinator) {

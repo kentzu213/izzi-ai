@@ -180,7 +180,7 @@ describe('response allowlisting', () => {
     expect(JSON.stringify(posts)).not.toContain('leaked-note');
   });
 
-  it('returns only the opaque OAuth state value', () => {
+  it('returns the opaque state plus a validated public authorize URL', () => {
     const state = 'nzB3Qk9y_state-value.1234';
     expect(parseNativeMarketingOAuthState(
       {
@@ -189,11 +189,26 @@ describe('response allowlisting', () => {
         state,
         clientId: 'leaked-client-id',
         codeVerifier: 'leaked-verifier',
-        authorizeUrl: 'https://facebook.com/oauth?client_secret=leaked',
+        authorizeUrl: `https://www.facebook.com/v21.0/dialog/oauth?state=${state}`,
       },
       WORKSPACE_ID,
       'facebook',
-    )).toBe(state);
+    )).toEqual({
+      state,
+      authorizeUrl: `https://www.facebook.com/v21.0/dialog/oauth?state=${state}`,
+      expiresAt: null,
+    });
+
+    expect(parseNativeMarketingOAuthState(
+      {
+        workspaceId: WORKSPACE_ID,
+        platform: 'facebook',
+        state,
+        authorizeUrl: `https://www.facebook.com/oauth?state=${state}&client_secret=leaked`,
+      },
+      WORKSPACE_ID,
+      'facebook',
+    )).toBeNull();
 
     expect(parseNativeMarketingOAuthState(
       { workspaceId: WORKSPACE_ID, platform: 'instagram', state },
@@ -352,12 +367,14 @@ describe('NativeMarketingClient', () => {
     expect(JSON.stringify(result)).not.toContain(TOKEN);
   });
 
-  it('issues an OAuth state that exposes only the platform and state', async () => {
+  it('issues an OAuth session without exposing provider secrets', async () => {
     const state = 'nzB3Qk9y_state-value.1234';
     const fetchImpl = vi.fn(async () => jsonResponse({
       workspaceId: WORKSPACE_ID,
       platform: 'facebook',
       state,
+      expiresAt: '2026-08-22T12:00:00.000Z',
+      authorizeUrl: `https://www.facebook.com/v21.0/dialog/oauth?state=${state}`,
       clientSecret: 'leaked-secret',
     }, 201));
     const client = new NativeMarketingClient(tokenProvider(), {
@@ -371,7 +388,53 @@ describe('NativeMarketingClient', () => {
     expect(url).toBe(`${REVIEWED_ORIGIN}/api/marketing/oauth/state`);
     expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)))
       .toEqual({ workspaceId: WORKSPACE_ID, platform: 'facebook' });
-    expect(result).toEqual({ ok: true, platform: 'facebook', state });
+    expect(result).toEqual({
+      ok: true,
+      platform: 'facebook',
+      state: {
+        state,
+        authorizeUrl: `https://www.facebook.com/v21.0/dialog/oauth?state=${state}`,
+        expiresAt: '2026-08-22T12:00:00.000Z',
+      },
+    });
     expect(JSON.stringify(result)).not.toContain('leaked-secret');
+  });
+
+  it('completes native OAuth and returns only the linked account summary', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      workspaceId: WORKSPACE_ID,
+      platform: 'facebook',
+      status: 'state_consumed',
+      exchange: 'linked',
+      account: {
+        id: ACCOUNT_ID,
+        platform: 'facebook',
+        displayName: 'Test Page',
+        status: 'connected',
+        active: true,
+        accessToken: 'must-not-cross-ipc',
+      },
+    }));
+    const client = new NativeMarketingClient(tokenProvider(), {
+      baseUrl: REVIEWED_ORIGIN,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const result = await client.completeOAuth(WORKSPACE_ID, 'facebook', 'nzB3Qk9y_state-value.1234', 'code-value-1234');
+    expect(result).toEqual({
+      ok: true,
+      platform: 'facebook',
+      exchange: 'linked',
+      account: {
+        id: ACCOUNT_ID,
+        platform: 'facebook',
+        name: 'Test Page',
+        status: 'connected',
+        active: true,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('must-not-cross-ipc');
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)))
+      .toMatchObject({ workspaceId: WORKSPACE_ID, platform: 'facebook' });
   });
 });
