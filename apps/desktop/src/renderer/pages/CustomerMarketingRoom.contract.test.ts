@@ -83,6 +83,9 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).toContain('snapshot.workspace.bridgeHealth');
     expect(roomSource).toContain('<WorkspaceBridgeStatus snapshot={snapshot} />');
     expect(roomSource).toContain('<OnboardingRoom snapshot={snapshot}');
+    expect(roomSource).toContain("disabled: 'Marketing Workspace chưa bật'");
+    expect(roomSource).not.toContain('Cầu nối Marketing chưa bật');
+    expect(roomSource).not.toContain('Bật Auto Post');
   });
 
   it('shows the main-process context signer before save and keeps reviewer authority outside the form', () => {

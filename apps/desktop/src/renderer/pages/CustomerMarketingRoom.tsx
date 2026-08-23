@@ -975,7 +975,7 @@ function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerP
 
 function WorkspaceBridgeStatus({ snapshot }: { snapshot: CustomerMarketingSnapshot }) {
   const bridgeLabels = {
-    disabled: 'Cầu nối Marketing chưa bật',
+    disabled: 'Marketing Workspace chưa bật',
     configuration_required: 'Cấu hình staging không hợp lệ',
     auth_required: 'Cần đăng nhập môi trường Marketing',
     tunnel_unavailable: 'Tunnel staging mất kết nối',
@@ -1688,7 +1688,7 @@ function HomeView({
               <span className="cmr-setup-health__ring">↗</span>
               <div>
                 <strong>Kết nối kênh đăng bài</strong>
-                <span>Bật Auto Post rồi liên kết Facebook Test Page hoặc YouTube Private.</span>
+                <span>Khởi tạo Marketing Workspace rồi liên kết Facebook Test Page hoặc YouTube Private.</span>
                 <button type="button" className="cmr-text-button" onClick={() => onOpen('channels')}>Mở Trung tâm kết nối →</button>
               </div>
             </div>

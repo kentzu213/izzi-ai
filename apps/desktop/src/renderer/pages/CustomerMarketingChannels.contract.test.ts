@@ -167,7 +167,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain('nativeApi.listWorkspaces()');
     expect(pageSource).toContain("nativeApi.createWorkspace({ name: 'Izzi Marketing' })");
     expect(pageSource).toContain('nativeApi.listAccounts(workspaceId)');
-    expect(pageSource).toContain('readAutopostAccounts(accounts.accounts)');
+    expect(pageSource).toContain('readNativeAccounts(accounts.accounts)');
     expect(pageSource).toContain('nativeApi.beginConnect(nativeWorkspaceId, channel)');
     expect(pageSource).toContain('nativeApi.onOAuthStatus');
     expect(pageSource).not.toContain('redirectUrl');
@@ -179,19 +179,22 @@ describe('CustomerMarketingChannels connection center contract', () => {
   });
 
   it('surfaces the native master status without the legacy Auto Post path', () => {
-    expect(pageSource).toContain('const [autopostMaster, setAutopostMaster] = useState');
-    expect(pageSource).toContain("masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");
+    expect(pageSource).toContain('const [nativeMaster, setNativeMaster] = useState');
+    expect(pageSource).toContain("masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");
+    expect(pageSource).toContain("nativeUnavailable");
+    expect(pageSource).toContain("? 'Không khả dụng'");
+    expect(pageSource).toContain("'Chưa khởi tạo workspace'");
     expect(pageSource).toContain("'Đang kiểm tra…'");
     expect(pageSource).toContain('Native Marketing API đang đọc trực tiếp workspace và tài khoản từ IzziAPI.');
     expect(pageSource).toContain('Tài khoản chưa có native Marketing workspace.');
     expect(pageSource).toContain('Chỉ Owner hoặc Manager có thể kết nối kênh.');
     expect(pageSource).not.toMatch(/electronAPI\??\.autopost/);
-    expect(pageSource).not.toContain('setAutopostBridgeEnabled');
+    expect(pageSource).not.toMatch(/autopost/i);
     expect(pageSource).not.toContain('connectErrorLabel');
     expect(pageSource).not.toContain('api.setEnabled');
     expect(pageSource).not.toContain('api.beginConnect(channel)');
     expect(pageSource).not.toContain('Kết nối Auto-Post');
-    expect(pageSource).toContain('!masterConnected || autopostLoading');
+    expect(pageSource).toContain('!masterConnected || nativeLoading');
     expect(pageSource).toContain('cmr-connect-center__reload');
     expect(stylesSource).toContain('.cmr-connect-center__reload');
     expect(pageSource).toContain('Kho khóa provider');
@@ -226,14 +229,35 @@ describe('CustomerMarketingChannels connection center contract', () => {
       /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-center \.cmr-icon-button[\s\S]*?min-height: 44px;/,
     );
   });
-});
+
+  it('exposes an explicit workspace activation action instead of silent auto-create', () => {
+    expect(pageSource).toContain('const [nativeWorkspaceMissing, setNativeWorkspaceMissing] = useState(false)');
+    expect(pageSource).toContain('const [activatingWorkspace, setActivatingWorkspace] = useState(false)');
+    expect(pageSource).toContain('Khởi tạo workspace Marketing');
+    expect(pageSource).toContain('Đã khởi tạo native Marketing workspace. Bây giờ có thể kết nối kênh.');
+    expect(pageSource).toMatch(
+      /const activateWorkspace = async[\s\S]{0,700}createWorkspace\(\{ name: 'Izzi Marketing' \}\)/,
+    );
+    expect(pageSource.match(/createWorkspace\(/g)).toHaveLength(1);
+    expect(pageSource).toMatch(
+      /if \(!workspace\) \{\s*setNativeWorkspaceId\(''\);\s*setNativeWorkspaceMissing\(true\);/,
+    );
+    expect(pageSource).toContain('disabled={!canConnectChannels || activatingWorkspace || nativeLoading}');
+    expect(pageSource).toContain('Cần khởi tạo native Marketing workspace trước.');
+    expect(pageSource).toContain('Khởi tạo native Marketing workspace nếu chưa có.');
+    expect(stylesSource).toContain('.cmr-connect-master__action');
+  });
+
   it('reports the native-unavailable state instead of an Auto Post fallback', () => {
     expect(pageSource).toContain('Native Marketing API chưa khả dụng trong bản Izzi AI này.');
     expect(pageSource).toContain('Cập nhật Izzi AI Desktop để dùng Native Marketing API.');
     expect(pageSource).toMatch(
-      /setNativeMarketingMode\(false\);[\s\S]{0,400}setAutopostError\('Native Marketing API chưa khả dụng/,
+      /setNativeMarketingMode\(false\);[\s\S]{0,400}setNativeError\('Native Marketing API chưa khả dụng/,
     );
     expect(pageSource).toContain("'request-rejected'");
     expect(pageSource).toContain('Không hoàn tất được kết nối native. Chưa lưu tài khoản nào.');
-    expect(pageSource).toContain('Chưa có native Marketing workspace. Bấm Tải lại rồi thử lại.');
+    expect(pageSource).toContain('Chưa có native Marketing workspace. Hãy khởi tạo workspace trước.');
+    expect(pageSource).toContain("'not-found': 'IzziAPI chưa triển khai Native Marketing API trên môi trường hiện tại.'");
+    expect(pageSource).not.toContain('Bridge gián đoạn');
   });
+});

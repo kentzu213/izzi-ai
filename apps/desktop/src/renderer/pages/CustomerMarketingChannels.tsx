@@ -48,11 +48,11 @@ const PROVIDER_META: Record<CustomerMarketingIntegrationProvider, { label: strin
   crm: { label: 'CRM' },
 };
 
-type AutopostChannel = 'facebook' | 'youtube';
+type NativeChannel = 'facebook' | 'youtube';
 const CHANNEL_CONNECT_ROLES: CustomerRole[] = ['owner', 'manager'];
 type ChannelConnectionState = 'connected' | 'attention' | 'disconnected' | 'unknown';
 
-interface MarketingAutopostAccountSummary {
+interface NativeMarketingAccountRow {
   platform: string;
   label: string;
   active: boolean;
@@ -66,8 +66,8 @@ function firstString(record: Record<string, unknown>, keys: string[]): string {
   return '';
 }
 
-function readAutopostAccounts(rows: unknown[]): MarketingAutopostAccountSummary[] {
-  const accounts: MarketingAutopostAccountSummary[] = [];
+function readNativeAccounts(rows: unknown[]): NativeMarketingAccountRow[] {
+  const accounts: NativeMarketingAccountRow[] = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
     const record = row as Record<string, unknown>;
@@ -90,7 +90,7 @@ function readAutopostAccounts(rows: unknown[]): MarketingAutopostAccountSummary[
   return accounts;
 }
 
-function matchesChannel(platform: string, channel: AutopostChannel): boolean {
+function matchesChannel(platform: string, channel: NativeChannel): boolean {
   return channel === 'youtube'
     ? platform.includes('youtube') || platform.includes('google')
     : platform.includes('facebook');
@@ -101,6 +101,22 @@ function channelStateLabel(state: ChannelConnectionState): string {
   if (state === 'attention') return 'Cần kết nối lại';
   if (state === 'unknown') return 'Chưa xác định';
   return 'Chưa kết nối';
+}
+
+function nativeMarketingErrorLabel(error: string): string {
+  const labels: Record<string, string> = {
+    'configuration-required': 'Native Marketing API chưa được cấu hình trên môi trường này.',
+    'not-signed-in': 'Hãy đăng nhập Izzi AI để đọc workspace Marketing.',
+    'auth-required': 'Phiên đăng nhập IzziAPI đã hết hạn. Hãy đăng nhập lại.',
+    forbidden: 'Tài khoản hiện tại không có quyền quản lý workspace Marketing.',
+    'not-found': 'IzziAPI chưa triển khai Native Marketing API trên môi trường hiện tại.',
+    conflict: 'Workspace đã thay đổi. Hãy tải lại trạng thái.',
+    'rate-limited': 'IzziAPI đang giới hạn yêu cầu. Hãy thử lại sau.',
+    'server-error': 'IzziAPI đang gặp sự cố khi đọc workspace Marketing.',
+    'network-error': 'Không kết nối được IzziAPI. Hãy kiểm tra mạng rồi tải lại.',
+    'request-rejected': 'IzziAPI đã từ chối yêu cầu Marketing.',
+  };
+  return labels[error] ?? 'Không hoàn tất được yêu cầu Native Marketing.';
 }
 
 function shortDigest(value: string): string {
@@ -145,7 +161,7 @@ function credentialBridgeLabel(
   if (status === 'synced') return vaultStateLabel(vaultState);
   if (status === 'forbidden') return 'Không có quyền';
   if (status === 'conflict') return 'Cần tải lại';
-  return 'Bridge gián đoạn';
+  return 'Workspace API gián đoạn';
 }
 
 function credentialEmptyLabel(
@@ -218,18 +234,20 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramSendBusy, setTelegramSendBusy] = useState(false);
   const [telegramSendError, setTelegramSendError] = useState('');
   const [telegramSendAnnouncement, setTelegramSendAnnouncement] = useState('');
-  const [autopostAccounts, setAutopostAccounts] = useState<MarketingAutopostAccountSummary[]>([]);
-  const [autopostReady, setAutopostReady] = useState(false);
-  const [autopostLoading, setAutopostLoading] = useState(true);
-  const [autopostError, setAutopostError] = useState('');
-  const [autopostMaster, setAutopostMaster] = useState<{ enabled: boolean; connected: boolean } | null>(null);
+  const [nativeAccounts, setNativeAccounts] = useState<NativeMarketingAccountRow[]>([]);
+  const [nativeAccountsReady, setNativeAccountsReady] = useState(false);
+  const [nativeLoading, setNativeLoading] = useState(true);
+  const [nativeError, setNativeError] = useState('');
+  const [nativeMaster, setNativeMaster] = useState<{ enabled: boolean; connected: boolean } | null>(null);
   const [nativeMarketingMode, setNativeMarketingMode] = useState(false);
   const [nativeWorkspaceId, setNativeWorkspaceId] = useState('');
-  const [connectingChannel, setConnectingChannel] = useState<AutopostChannel | null>(null);
+  const [nativeWorkspaceMissing, setNativeWorkspaceMissing] = useState(false);
+  const [activatingWorkspace, setActivatingWorkspace] = useState(false);
+  const [connectingChannel, setConnectingChannel] = useState<NativeChannel | null>(null);
   const [connectNotice, setConnectNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
-  const autopostRequestId = useRef(0);
+  const nativeRequestId = useRef(0);
   const telegramTokenInput = useRef<HTMLInputElement>(null);
   const manifestHeading = useRef<HTMLHeadingElement>(null);
   const telegramCandidatePreview = useRef<HTMLDivElement>(null);
@@ -322,81 +340,78 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     void loadCredentials();
   }, [loadCredentials]);
 
-  const loadAutopostAccounts = useCallback(async () => {
+  const loadNativeAccounts = useCallback(async () => {
     const nativeApi = window.electronAPI?.nativeMarketing;
     if (nativeApi) {
-      const request = ++autopostRequestId.current;
+      const request = ++nativeRequestId.current;
       setNativeMarketingMode(true);
-      setAutopostLoading(true);
-      setAutopostError('');
+      setNativeLoading(true);
+      setNativeError('');
+      setNativeWorkspaceMissing(false);
       try {
         const workspaces = await nativeApi.listWorkspaces();
-        if (request !== autopostRequestId.current) return;
+        if (request !== nativeRequestId.current) return;
         if (!workspaces.ok) {
           setNativeWorkspaceId('');
-          setAutopostMaster({ enabled: true, connected: false });
-          setAutopostReady(false);
-          setAutopostAccounts([]);
-          setAutopostError(workspaces.error);
+          setNativeMaster({ enabled: true, connected: false });
+          setNativeAccountsReady(false);
+          setNativeAccounts([]);
+          setNativeError(nativeMarketingErrorLabel(workspaces.error));
           return;
         }
-        let workspace = workspaces.workspaces[0];
+        const workspace = workspaces.workspaces[0];
         if (!workspace) {
-          const created = await nativeApi.createWorkspace({ name: 'Izzi Marketing' });
-          if (request !== autopostRequestId.current) return;
-          if (!created.ok) {
-            setNativeWorkspaceId('');
-            setAutopostMaster({ enabled: true, connected: false });
-            setAutopostReady(false);
-            setAutopostAccounts([]);
-            setAutopostError(created.error);
-            return;
-          }
-          workspace = created.workspace;
+          setNativeWorkspaceId('');
+          setNativeWorkspaceMissing(true);
+          setNativeMaster({ enabled: true, connected: false });
+          setNativeAccountsReady(false);
+          setNativeAccounts([]);
+          return;
         }
         const workspaceId = workspace.id;
         setNativeWorkspaceId(workspaceId);
         const accounts = await nativeApi.listAccounts(workspaceId);
-        if (request !== autopostRequestId.current) return;
-        setAutopostMaster({ enabled: true, connected: accounts.ok });
+        if (request !== nativeRequestId.current) return;
+        setNativeMaster({ enabled: true, connected: accounts.ok });
         if (!accounts.ok) {
-          setAutopostReady(false);
-          setAutopostAccounts([]);
-          setAutopostError(accounts.error);
+          setNativeAccountsReady(false);
+          setNativeAccounts([]);
+          setNativeError(nativeMarketingErrorLabel(accounts.error));
           return;
         }
-        setAutopostReady(true);
-        setAutopostAccounts(readAutopostAccounts(accounts.accounts));
+        setNativeAccountsReady(true);
+        setNativeAccounts(readNativeAccounts(accounts.accounts));
       } catch {
-        if (request !== autopostRequestId.current) return;
-        setAutopostMaster({ enabled: true, connected: false });
-        setAutopostReady(false);
-        setAutopostAccounts([]);
-        setAutopostError('Native Marketing API không phản hồi.');
+        if (request !== nativeRequestId.current) return;
+        setNativeMaster({ enabled: true, connected: false });
+        setNativeAccountsReady(false);
+        setNativeAccounts([]);
+        setNativeError('Native Marketing API không phản hồi.');
       } finally {
-        if (request === autopostRequestId.current) setAutopostLoading(false);
+        if (request === nativeRequestId.current) setNativeLoading(false);
       }
       return;
     }
     setNativeMarketingMode(false);
     setNativeWorkspaceId('');
-    setAutopostMaster(null);
-    setAutopostReady(false);
-    setAutopostAccounts([]);
-    setAutopostLoading(false);
-    setAutopostError('Native Marketing API chưa khả dụng trong bản Izzi AI này.');
+    setNativeWorkspaceMissing(false);
+    setNativeMaster(null);
+    setNativeAccountsReady(false);
+    setNativeAccounts([]);
+    setNativeLoading(false);
+    setNativeError('Native Marketing API chưa khả dụng trong bản Izzi AI này.');
   }, []);
 
   useEffect(() => {
-    void loadAutopostAccounts();
-    return () => { autopostRequestId.current += 1; };
-  }, [loadAutopostAccounts]);
+    void loadNativeAccounts();
+    return () => { nativeRequestId.current += 1; };
+  }, [loadNativeAccounts]);
 
   useEffect(() => {
-    const onFocus = () => { void loadAutopostAccounts(); };
+    const onFocus = () => { void loadNativeAccounts(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [loadAutopostAccounts]);
+  }, [loadNativeAccounts]);
 
   useEffect(() => {
     const nativeApi = window.electronAPI?.nativeMarketing;
@@ -405,17 +420,17 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       setConnectingChannel(null);
       if (result.ok && result.exchange === 'linked') {
         setConnectNotice(`${result.platform === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'} đã kết nối thành công.`);
-        setAutopostError('');
+        setNativeError('');
       } else if (result.ok) {
-        setAutopostError('OAuth đã hoàn tất nhưng provider chưa trả về tài khoản để lưu.');
+        setNativeError('OAuth đã hoàn tất nhưng provider chưa trả về tài khoản để lưu.');
       } else {
-        setAutopostError(result.error === 'request-rejected'
+        setNativeError(result.error === 'request-rejected'
           ? 'Kết nối OAuth đã bị hủy hoặc không hợp lệ. Chưa lưu tài khoản nào.'
           : 'Không hoàn tất được kết nối native. Chưa lưu tài khoản nào.');
       }
-      void loadAutopostAccounts();
+      void loadNativeAccounts();
     });
-  }, [loadAutopostAccounts]);
+  }, [loadNativeAccounts]);
 
   const filteredSources = useMemo(() => {
     const term = query.trim().toLocaleLowerCase('vi-VN');
@@ -559,27 +574,48 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     }
   };
 
-  const connectChannel = async (channel: AutopostChannel) => {
+  const activateWorkspace = async () => {
     const nativeApi = window.electronAPI?.nativeMarketing;
-    if (!nativeApi || !canConnectChannels || connectingChannel) return;
+    if (!nativeApi || !canConnectChannels || activatingWorkspace || nativeLoading) return;
+    setActivatingWorkspace(true);
+    setNativeError('');
+    setConnectNotice('');
+    try {
+      const created = await nativeApi.createWorkspace({ name: 'Izzi Marketing' });
+      if (!created.ok) {
+        setNativeError(nativeMarketingErrorLabel(created.error));
+        return;
+      }
+      setConnectNotice('Đã khởi tạo native Marketing workspace. Bây giờ có thể kết nối kênh.');
+      await loadNativeAccounts();
+    } catch {
+      setNativeError('Native Marketing API không phản hồi khi khởi tạo workspace.');
+    } finally {
+      setActivatingWorkspace(false);
+    }
+  };
+
+  const connectChannel = async (channel: NativeChannel) => {
+    const nativeApi = window.electronAPI?.nativeMarketing;
+    if (!nativeApi || !canConnectChannels || connectingChannel || activatingWorkspace) return;
     if (!nativeWorkspaceId) {
-      setAutopostError('Chưa có native Marketing workspace. Bấm Tải lại rồi thử lại.');
+      setNativeError('Chưa có native Marketing workspace. Hãy khởi tạo workspace trước.');
       return;
     }
     setConnectingChannel(channel);
-    setAutopostError('');
+    setNativeError('');
     setConnectNotice('');
     try {
       const result = await nativeApi.beginConnect(nativeWorkspaceId, channel);
       if (!result.ok) {
-        setAutopostError(result.error);
+        setNativeError(nativeMarketingErrorLabel(result.error));
         return;
       }
       setConnectNotice(
         `${channel === 'facebook' ? 'Facebook Test Page' : 'YouTube Private'}: đã mở cửa sổ cấp quyền. Hoàn tất trên trình duyệt rồi quay lại Izzi AI.`,
       );
     } catch {
-      setAutopostError('Native Marketing API không tạo được phiên kết nối.');
+      setNativeError('Native Marketing API không tạo được phiên kết nối.');
     } finally {
       setConnectingChannel(null);
     }
@@ -832,43 +868,55 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     }
   };
 
-  const masterChecking = autopostLoading && !autopostMaster;
-  const masterConnected = Boolean(autopostMaster?.connected);
-  const masterEnabled = Boolean(autopostMaster?.enabled);
+  const masterChecking = nativeLoading && !nativeMaster;
+  const masterConnected = Boolean(nativeMaster?.connected);
+  const masterEnabled = Boolean(nativeMaster?.enabled);
+  const nativeUnavailable = Boolean(nativeError);
   const masterStateClass: ChannelConnectionState = masterChecking
     ? 'unknown'
-    : masterConnected ? 'connected' : masterEnabled ? 'attention' : 'disconnected';
+    : masterConnected ? 'connected' : nativeUnavailable ? 'disconnected' : masterEnabled ? 'attention' : 'disconnected';
   const masterLabel = masterChecking
     ? 'Đang kiểm tra…'
-    : masterConnected ? 'Đã kết nối' : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
+    : masterConnected
+      ? 'Đã kết nối'
+      : nativeUnavailable
+        ? 'Không khả dụng'
+      : nativeWorkspaceMissing
+        ? 'Chưa khởi tạo workspace'
+        : masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối';
   const masterMeta = masterConnected
-      ? 'Native Marketing API đang đọc trực tiếp workspace và tài khoản từ IzziAPI.'
-    : masterEnabled
-      ? 'Tài khoản chưa có native Marketing workspace.'
-      : 'Native Marketing API chưa khả dụng trong bản Izzi AI này.';
+    ? 'Native Marketing API đang đọc trực tiếp workspace và tài khoản từ IzziAPI.'
+    : nativeUnavailable
+      ? 'Không thể xác nhận workspace Marketing từ IzziAPI.'
+    : nativeWorkspaceMissing
+      ? 'Tài khoản chưa có native Marketing workspace. Bấm Khởi tạo workspace Marketing để bắt đầu.'
+      : masterEnabled
+        ? 'Chưa đọc được trạng thái workspace từ IzziAPI.'
+        : 'Native Marketing API chưa khả dụng trong bản Izzi AI này.';
 
-  const autopostChannelState = (channel: AutopostChannel): ChannelConnectionState => {
+  const nativeChannelState = (channel: NativeChannel): ChannelConnectionState => {
     if (masterChecking) return 'unknown';
     if (!masterConnected) return 'disconnected';
-    if (!autopostReady) return 'unknown';
-    const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
+    if (!nativeAccountsReady) return 'unknown';
+    const matched = nativeAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'disconnected';
     return matched.some((item) => item.active) ? 'connected' : 'attention';
   };
 
-  const autopostChannelDetail = (channel: AutopostChannel): string => {
-    if (autopostLoading) return 'Đang đọc trạng thái từ Native Marketing API…';
+  const nativeChannelDetail = (channel: NativeChannel): string => {
+    if (nativeLoading) return 'Đang đọc trạng thái từ Native Marketing API…';
+    if (nativeWorkspaceMissing) return 'Chưa có native Marketing workspace. Hãy khởi tạo trước.';
     if (!masterConnected) return nativeMarketingMode
-      ? 'Chưa có native Marketing workspace.'
+      ? 'Chưa đọc được workspace từ IzziAPI.'
       : 'Native Marketing API chưa khả dụng.';
-    if (!autopostReady) return 'Chưa đọc được trạng thái từ Native Marketing API.';
-    const matched = autopostAccounts.filter((item) => matchesChannel(item.platform, channel));
+    if (!nativeAccountsReady) return 'Chưa đọc được trạng thái từ Native Marketing API.';
+    const matched = nativeAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'Chưa có tài khoản nào cho kênh này.';
     return matched.map((item) => `${item.label}${item.active ? '' : ' · cần cấp quyền lại'}`).join(' · ');
   };
 
-  const facebookState = autopostChannelState('facebook');
-  const youtubeState = autopostChannelState('youtube');
+  const facebookState = nativeChannelState('facebook');
+  const youtubeState = nativeChannelState('youtube');
   const telegramCredential = credentials.find((item) => item.provider === 'telegram') ?? null;
   const telegramState: ChannelConnectionState = telegramCredential
     ? telegramCredential.state === 'connected'
@@ -882,7 +930,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       : 'Chưa có khóa Telegram trong vault cục bộ.';
 
   const connectionCards: Array<{
-    key: AutopostChannel | 'telegram';
+    key: NativeChannel | 'telegram';
     label: string;
     scope: string;
     state: ChannelConnectionState;
@@ -898,28 +946,32 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       label: 'Facebook Test Page',
       scope: 'Chỉ dùng Trang thử nghiệm (Test Page). IzziAPI giữ khóa; Izzi AI không lưu token Facebook.',
       state: facebookState,
-      detail: autopostChannelDetail('facebook'),
+      detail: nativeChannelDetail('facebook'),
       actionLabel: facebookState === 'connected' ? 'Kết nối lại Facebook' : 'Kết nối Facebook',
       onAction: () => { void connectChannel('facebook'); },
       busy: connectingChannel === 'facebook',
-      disabled: !canConnectChannels || !masterConnected || autopostLoading || Boolean(connectingChannel),
+      disabled: !canConnectChannels || !masterConnected || nativeLoading || activatingWorkspace || Boolean(connectingChannel),
       note: !canConnectChannels
         ? 'Chỉ Owner hoặc Manager có thể kết nối kênh.'
-        : !masterConnected ? 'Cần native Marketing workspace trước.' : '',
+        : nativeWorkspaceMissing
+          ? 'Cần khởi tạo native Marketing workspace trước.'
+          : !masterConnected ? 'Chưa đọc được workspace từ IzziAPI. Bấm Tải lại.' : '',
     },
     {
       key: 'youtube',
       label: 'YouTube Private',
       scope: 'Video thử nghiệm luôn ở chế độ Riêng tư (Private). IzziAPI giữ khóa; Izzi AI không lưu token YouTube.',
       state: youtubeState,
-      detail: autopostChannelDetail('youtube'),
+      detail: nativeChannelDetail('youtube'),
       actionLabel: youtubeState === 'connected' ? 'Kết nối lại YouTube' : 'Kết nối YouTube',
       onAction: () => { void connectChannel('youtube'); },
       busy: connectingChannel === 'youtube',
-      disabled: !canConnectChannels || !masterConnected || autopostLoading || Boolean(connectingChannel),
+      disabled: !canConnectChannels || !masterConnected || nativeLoading || activatingWorkspace || Boolean(connectingChannel),
       note: !canConnectChannels
         ? 'Chỉ Owner hoặc Manager có thể kết nối kênh.'
-        : !masterConnected ? 'Cần native Marketing workspace trước.' : '',
+        : nativeWorkspaceMissing
+          ? 'Cần khởi tạo native Marketing workspace trước.'
+          : !masterConnected ? 'Chưa đọc được workspace từ IzziAPI. Bấm Tải lại.' : '',
     },
     {
       key: 'telegram',
@@ -935,10 +987,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     },
   ];
 
-  const connectAnnouncement = autopostLoading
+  const connectAnnouncement = nativeLoading
     ? 'Đang kiểm tra trạng thái kết nối kênh.'
     : connectNotice
-      || autopostError
+      || nativeError
       || `Native Marketing ${masterLabel}. Facebook ${channelStateLabel(facebookState)}. `
         + `YouTube ${channelStateLabel(youtubeState)}. Telegram ${channelStateLabel(telegramState)}.`;
 
@@ -955,8 +1007,8 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           className="cmr-icon-button cmr-connect-center__reload"
           aria-label="Tải lại trạng thái kết nối kênh"
           title="Tải lại"
-          disabled={autopostLoading || Boolean(connectingChannel)}
-          onClick={() => void loadAutopostAccounts()}
+          disabled={nativeLoading || activatingWorkspace || Boolean(connectingChannel)}
+          onClick={() => void loadNativeAccounts()}
         >
           <RefreshIcon className="cmr-icon" />
           <span>Tải lại</span>
@@ -971,6 +1023,17 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           <strong className={`cmr-connect-state cmr-connect-state--${masterStateClass}`}>{masterLabel}</strong>
           <p>{masterMeta}</p>
         </div>
+        {nativeMarketingMode && nativeWorkspaceMissing && !masterChecking ? (
+          <button
+            type="button"
+            className="cmr-button cmr-button--primary cmr-connect-master__action"
+            disabled={!canConnectChannels || activatingWorkspace || nativeLoading}
+            aria-busy={activatingWorkspace}
+            onClick={() => void activateWorkspace()}
+          >
+            {activatingWorkspace ? 'Đang khởi tạo…' : 'Khởi tạo workspace Marketing'}
+          </button>
+        ) : null}
         {nativeMarketingMode ? (
           <small className="cmr-permission-note">Workspace: {nativeWorkspaceId || 'chưa có'}</small>
         ) : (
@@ -981,14 +1044,14 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         )}
       </div>
       {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
-      {autopostError && <div className="cmr-credential-error" role="alert">{autopostError}</div>}
+      {nativeError && <div className="cmr-credential-error" role="alert">{nativeError}</div>}
       <ol className="cmr-connect-flow">
-        <li>Native Marketing API đã được tích hợp trong Izzi AI.</li>
+        <li>Khởi tạo native Marketing workspace nếu chưa có.</li>
         <li>Bấm kết nối Facebook Test Page hoặc YouTube Private.</li>
         <li>Hoàn tất đăng nhập trên trình duyệt rồi quay lại Izzi AI.</li>
         <li>Bấm Tải lại để cập nhật trạng thái.</li>
       </ol>
-      <div className="cmr-connect-grid" aria-busy={autopostLoading}>
+      <div className="cmr-connect-grid" aria-busy={nativeLoading}>
         {connectionCards.map((card) => (
           <article key={card.key} className={`cmr-connect-card cmr-connect-card--${card.key} is-${card.state}`}>
             <div className="cmr-connect-card__identity">
