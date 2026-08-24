@@ -87,4 +87,22 @@ describe('CustomerMarketingResources CMR-407 decision history contract', () => {
       expect(stylesSource).toContain(selector);
     }
   });
+
+  it('integrates private video selection and upload without exposing a local path to the renderer', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:selectMarketingAssetVideo')");
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:uploadMarketingAssetVideo', input)");
+    expect(rendererTypesSource).toContain('selectMarketingAssetVideo: ()');
+    expect(rendererTypesSource).toContain('uploadMarketingAssetVideo: (');
+    expect(ipcSource).toContain("ipcMain.handle('customerMarketing:selectMarketingAssetVideo'");
+    expect(ipcSource).toContain("ipcMain.handle('customerMarketing:uploadMarketingAssetVideo'");
+    expect(resourcesSource).toContain('api.selectMarketingAssetVideo()');
+    expect(resourcesSource).toContain('api.uploadMarketingAssetVideo({');
+    expect(resourcesSource).toContain('selectionId: assetSelection!.selectionId');
+    expect(resourcesSource).toContain('Tạo và tải video');
+    expect(resourcesSource).toContain('Video được tải riêng tư');
+    expect(resourcesSource).not.toContain('type="file"');
+    expect(resourcesSource).not.toContain('filePath');
+    expect(resourcesSource).not.toContain('sourcePath');
+    expect(stylesSource).toContain('.cmrr-asset-picker {');
+  });
 });

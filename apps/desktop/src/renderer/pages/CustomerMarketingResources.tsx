@@ -20,6 +20,7 @@ import {
 } from '../components/AppIcons';
 import type {
   CustomerMarketingBridgeStatus,
+  CustomerMarketingAssetSelection,
   CustomerMarketingCampaignResource,
   CustomerMarketingContentResource,
   CustomerMarketingResource,
@@ -433,11 +434,19 @@ function ResourceFields({
   draft,
   setDraft,
   campaigns,
+  assetSelection,
+  selectingAsset,
+  editingAsset,
+  onSelectAsset,
 }: {
   kind: CustomerMarketingResourceKind;
   draft: ResourceDraft;
   setDraft: Dispatch<SetStateAction<ResourceDraft>>;
   campaigns: CustomerMarketingCampaignResource[];
+  assetSelection: CustomerMarketingAssetSelection | null;
+  selectingAsset: boolean;
+  editingAsset: boolean;
+  onSelectAsset: () => void;
 }) {
   const field = (key: keyof ResourceDraft, value: string) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -500,23 +509,35 @@ function ResourceFields({
         <>
           <div className="cmrr-boundary-note cmrr-field--wide" role="note">
             <StatusIcon className="cmr-icon" />
-            <span>Thao tác này đăng ký metadata và quota; chưa truyền tệp ra khỏi máy.</span>
+            <span>Video được tải riêng tư vào workspace IzziAPI; đường dẫn trên máy không được đưa vào giao diện hoặc API.</span>
           </div>
-          <label className="cmrr-field">
-            <span>MIME type</span>
-            <input value={draft.mimeType} maxLength={120} required onChange={(event) => field('mimeType', event.target.value)} />
-          </label>
-          <label className="cmrr-field">
-            <span>Dung lượng (byte)</span>
-            <input type="number" min="1" max={50 * 1024 * 1024} value={draft.sizeBytes} required onChange={(event) => field('sizeBytes', event.target.value)} />
-          </label>
+          <div className="cmrr-asset-picker">
+            <div className="cmrr-asset-picker__action">
+              <div>
+                <strong>{editingAsset ? 'Tệp video hiện tại' : 'Video nguồn'}</strong>
+                <span>{editingAsset ? 'Danh tính tệp được khóa để giữ checksum nhất quán.' : 'MP4, M4V, MOV hoặc WebM, tối đa 50 MB.'}</span>
+              </div>
+              {!editingAsset && (
+                <button type="button" className="cmr-button" disabled={selectingAsset} onClick={onSelectAsset}>
+                  <DesignIcon className="cmr-button__icon" />
+                  {selectingAsset ? 'Đang kiểm tra...' : assetSelection ? 'Chọn video khác' : 'Chọn video'}
+                </button>
+              )}
+            </div>
+            {(assetSelection || editingAsset) ? (
+              <div className="cmrr-asset-picker__summary" aria-live="polite">
+                <strong>{assetSelection?.fileName || draft.title}</strong>
+                <span>{assetSelection?.mimeType || draft.mimeType}</span>
+                <span>{formatBytes(assetSelection?.sizeBytes ?? Number(draft.sizeBytes))}</span>
+                <code>{(assetSelection?.checksum || draft.checksum).slice(0, 16)}...</code>
+              </div>
+            ) : (
+              <span className="cmrr-asset-picker__empty">Chưa chọn video.</span>
+            )}
+          </div>
           <label className="cmrr-field cmrr-field--wide">
             <span>Alt text</span>
             <textarea value={draft.altText} maxLength={1000} rows={3} onChange={(event) => field('altText', event.target.value)} />
-          </label>
-          <label className="cmrr-field cmrr-field--wide">
-            <span>Checksum SHA/MD5 (nếu có)</span>
-            <input value={draft.checksum} maxLength={128} onChange={(event) => field('checksum', event.target.value)} />
           </label>
         </>
       )}
@@ -721,6 +742,8 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ResourceDraft>(() => emptyDraft(kind));
+  const [assetSelection, setAssetSelection] = useState<CustomerMarketingAssetSelection | null>(null);
+  const [selectingAsset, setSelectingAsset] = useState(false);
   const editorRef = useRef<HTMLFormElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -907,6 +930,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setEditingId(null);
     setDraft(emptyDraft(kind));
+    setAssetSelection(null);
     setError('');
     setNotice('');
     setEditorOpen(true);
@@ -917,6 +941,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setEditingId(selected.id);
     setDraft(draftFromResource(selected));
+    setAssetSelection(null);
     setError('');
     setNotice('');
     setEditorOpen(true);
@@ -935,6 +960,38 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     setSelectedId(resource.id);
   };
 
+  const selectAssetVideo = async () => {
+    const api = customerApi();
+    if (!api?.selectMarketingAssetVideo) {
+      setError('Trình chọn video cần chạy trong Izzi AI Desktop.');
+      return;
+    }
+    setSelectingAsset(true);
+    setError('');
+    try {
+      const result = await api.selectMarketingAssetVideo();
+      if (result.canceled) return;
+      if (!result.selection) {
+        setError(result.error || 'Không thể kiểm tra video đã chọn.');
+        return;
+      }
+      setAssetSelection(result.selection);
+      setDraft((current) => ({
+        ...current,
+        title: current.title || result.selection!.fileName
+          .replace(/\.[^.]+$/, '')
+          .replace(/[-_]+/g, ' '),
+        mimeType: result.selection!.mimeType,
+        sizeBytes: String(result.selection!.sizeBytes),
+        checksum: result.selection!.checksum,
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Không thể kiểm tra video đã chọn.');
+    } finally {
+      setSelectingAsset(false);
+    }
+  };
+
   const save = async (event: FormEvent) => {
     event.preventDefault();
     const api = customerApi();
@@ -948,20 +1005,40 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
       return;
     }
     const editing = editingId ? resources.find((resource) => resource.id === editingId) ?? selected : null;
+    if (kind === 'asset' && !editing && !assetSelection) {
+      setError('Hãy chọn một video trước khi tải lên.');
+      return;
+    }
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const result = editing
         ? await api.updateMarketingResource(updateInput(editing, draft))
-        : await api.createMarketingResource(createInput(kind, draft));
+        : kind === 'asset'
+          ? await api.uploadMarketingAssetVideo({
+            selectionId: assetSelection!.selectionId,
+            title: draft.title,
+            altText: draft.altText,
+            tags: draft.tags,
+          })
+          : await api.createMarketingResource(createInput(kind, draft));
       setBridgeStatus(result.status);
       if (!result.ok || !result.resource) {
+        if (result.resource) replaceResource(result.resource);
         setError(result.error || bridgeMessage(result.status));
         return;
       }
       replaceResource(result.resource);
-      setNotice(result.duplicate ? 'Yêu cầu trước đó đã được xác nhận, không tạo bản trùng.' : 'Đã lưu dữ liệu vào workspace.');
+      const uploadStatus = 'uploadStatus' in result ? result.uploadStatus : null;
+      setNotice(uploadStatus === 'replayed'
+        ? 'Video đã có trong kho riêng tư; IzziAPI đã xác nhận lại checksum.'
+        : uploadStatus === 'uploaded'
+          ? 'Đã tạo asset và tải video vào kho riêng tư.'
+          : result.duplicate
+            ? 'Yêu cầu trước đó đã được xác nhận, không tạo bản trùng.'
+            : 'Đã lưu dữ liệu vào workspace.');
+      if (uploadStatus) setAssetSelection(null);
       closeEditor();
       if (kind === 'content' && displayMode === 'calendar') void loadCalendar();
     } catch (reason) {
@@ -1144,13 +1221,34 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
             </div>
             {error && <div className="cmr-alert cmr-alert--error cmrr-editor__feedback" role="alert">{error}</div>}
             <div className="cmrr-editor__body">
-              <ResourceFields kind={kind} draft={draft} setDraft={setDraft} campaigns={campaigns} />
+              <ResourceFields
+                kind={kind}
+                draft={draft}
+                setDraft={setDraft}
+                campaigns={campaigns}
+                assetSelection={assetSelection}
+                selectingAsset={selectingAsset}
+                editingAsset={kind === 'asset' && Boolean(editingId)}
+                onSelectAsset={() => void selectAssetVideo()}
+              />
             </div>
             <div className="cmrr-editor__footer">
-              <span>{editingId && selected ? `Lưu dựa trên revision ${selected.revision}` : 'Tạo trong workspace hiện tại'}</span>
+              <span>{editingId && selected
+                ? `Lưu dựa trên revision ${selected.revision}`
+                : kind === 'asset'
+                  ? 'Tạo asset rồi tải video riêng tư'
+                  : 'Tạo trong workspace hiện tại'}</span>
               <div>
                 <button type="button" className="cmr-button" disabled={busy} onClick={closeEditor}>Hủy</button>
-                <button type="submit" className="cmr-button cmr-button--primary" disabled={busy}>{busy ? 'Đang lưu...' : 'Lưu'}</button>
+                <button
+                  type="submit"
+                  className="cmr-button cmr-button--primary"
+                  disabled={busy || selectingAsset || kind === 'asset' && !editingId && !assetSelection}
+                >
+                  {busy
+                    ? kind === 'asset' && !editingId ? 'Đang tải video...' : 'Đang lưu...'
+                    : kind === 'asset' && !editingId ? 'Tạo và tải video' : 'Lưu'}
+                </button>
               </div>
             </div>
           </form>
