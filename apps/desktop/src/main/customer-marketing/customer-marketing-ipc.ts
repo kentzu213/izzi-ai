@@ -5,6 +5,8 @@ import type {
   CustomerGoalInput,
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
+  CustomerMarketingAssetSelectionResult,
+  CustomerMarketingAssetUploadResult,
   CustomerProductMarketingContextMutationResult,
   CustomerProductMarketingContextV1,
   CustomerMarketingResourceArchiveResult,
@@ -28,6 +30,7 @@ import type {
   CustomerWorkspaceInvitationAcceptanceResult,
   CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
+import { parseCustomerMarketingAssetUploadInput } from './customer-marketing-asset-files';
 import {
   parseCustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
@@ -425,6 +428,33 @@ export function registerCustomerMarketingIpc(
     const parsed = parseMarketingResourceCreateInput(payload);
     if (!parsed) throw new Error('Payload tài nguyên marketing không hợp lệ.');
     return service.createMarketingResource(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:selectMarketingAssetVideo', async (
+    event,
+  ): Promise<CustomerMarketingAssetSelectionResult> => {
+    trusted(event);
+    const selection = await dialog.showOpenDialog({
+      title: 'Chọn video để tải riêng tư lên IzziAPI',
+      properties: ['openFile'],
+      filters: [{ name: 'Video', extensions: ['mp4', 'm4v', 'mov', 'webm'] }],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
+    try {
+      return await service.selectMarketingAssetVideo(selection.filePaths[0]);
+    } catch {
+      return { canceled: false, error: 'Không thể kiểm tra video đã chọn.' };
+    }
+  });
+
+  ipcMain.handle('customerMarketing:uploadMarketingAssetVideo', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingAssetUploadResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingAssetUploadInput(payload);
+    if (!parsed) throw new Error('Payload upload video marketing không hợp lệ.');
+    return service.uploadMarketingAssetVideo(parsed);
   });
 
   ipcMain.handle('customerMarketing:updateMarketingResource', async (

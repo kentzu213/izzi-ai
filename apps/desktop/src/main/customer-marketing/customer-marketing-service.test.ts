@@ -66,6 +66,7 @@ import type {
   RemoteMarketingWorkflowRun,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
+import type { CustomerMarketingAssetFileGateway } from './customer-marketing-asset-files';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -331,6 +332,25 @@ function marketingContentResource(overrides: Partial<CustomerMarketingResource> 
   } as CustomerMarketingResource;
 }
 
+function marketingAssetResource(overrides: Partial<CustomerMarketingResource> = {}): CustomerMarketingResource {
+  return {
+    id: '66666666-6666-4666-8666-666666666666',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
+    kind: 'asset',
+    status: 'draft',
+    revision: 0,
+    title: 'Product launch',
+    metadata: { tags: 'launch, youtube', sourceFileName: 'launch.mp4' },
+    createdAt: '2026-08-24T01:00:00.000Z',
+    updatedAt: '2026-08-24T01:00:00.000Z',
+    mimeType: 'video/mp4',
+    sizeBytes: 4,
+    altText: 'IzziAPI product launch',
+    checksum: 'a'.repeat(64),
+    ...overrides,
+  } as CustomerMarketingResource;
+}
+
 function marketingCampaignCreateInput(): CustomerMarketingResourceCreateInput {
   return {
     kind: 'campaign',
@@ -422,6 +442,11 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
   const updateMarketingResource = vi.fn(async () => ({ status: 'synced' as const, resource }));
   const reviewMarketingResource = vi.fn(async () => ({ status: 'synced' as const, resource }));
   const archiveMarketingResource = vi.fn(async () => ({ status: 'synced' as const, deleted: true }));
+  const uploadMarketingAssetContent = vi.fn(async () => ({
+    status: 'synced' as const,
+    outcome: 'uploaded' as const,
+    reconciliationRequired: false,
+  }));
   const listMarketingResourceAudit = vi.fn<
     NonNullable<CustomerMarketingWorkspaceGateway['listMarketingResourceAudit']>
   >(async () => ({ status: 'synced', receipts: [marketingAuditReceipt()] }));
@@ -440,6 +465,7 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
     updateMarketingResource,
     reviewMarketingResource,
     archiveMarketingResource,
+    uploadMarketingAssetContent,
     listMarketingResourceAudit,
   };
   return {
@@ -452,6 +478,7 @@ function marketingResourceGateway(role: CustomerRole, authority: 'synced' | 'una
     updateMarketingResource,
     reviewMarketingResource,
     archiveMarketingResource,
+    uploadMarketingAssetContent,
     listMarketingResourceAudit,
     getMarketingAnalytics,
   };
@@ -658,6 +685,7 @@ function setup(options?: {
     canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator;
     telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime;
     connectorOperationStore?: CustomerMarketingConnectorOperationStore;
+    assetFiles?: CustomerMarketingAssetFileGateway;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -688,6 +716,7 @@ function setup(options?: {
     options?.canarySendCoordinator,
     options?.telegramCanarySendRuntime,
     options?.connectorOperationStore,
+    options?.assetFiles,
   );
   return {
     db,
@@ -713,6 +742,164 @@ function setupDirector(director: ReturnType<typeof vi.fn>) {
   };
   return setup({ director, workspaceGateway: gateway });
 }
+
+describe('Customer Marketing private video asset upload', () => {
+  const selection = {
+    selectionId: '77777777-7777-4777-8777-777777777777',
+    fileName: 'launch.mp4',
+    mimeType: 'video/mp4',
+    sizeBytes: 4,
+    checksum: 'a'.repeat(64),
+  };
+
+  function fileGateway() {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+        controller.close();
+      },
+    });
+    return {
+      select: vi.fn(async () => selection),
+      prepare: vi.fn(async () => ({
+        selection,
+        idempotencyKey: '88888888-8888-4888-8888-888888888888',
+        body,
+      })),
+      release: vi.fn(),
+      consume: vi.fn(),
+    } satisfies CustomerMarketingAssetFileGateway;
+  }
+
+  it('derives tenant scope in main, creates one asset and uploads the selected bytes', async () => {
+    const remote = marketingResourceGateway('owner');
+    const asset = marketingAssetResource({ workspaceId: remote.workspace.id });
+    remote.createMarketingResource.mockResolvedValue({ status: 'synced', resource: asset, duplicate: false });
+    const files = fileGateway();
+    const context = setup({ workspaceGateway: remote.gateway, assetFiles: files });
+
+    await expect(context.service.selectMarketingAssetVideo('C:\\trusted\\launch.mp4')).resolves.toEqual({
+      canceled: false,
+      selection,
+    });
+    const result = await context.service.uploadMarketingAssetVideo({
+      selectionId: selection.selectionId,
+      title: ' Product launch ',
+      altText: ' IzziAPI product launch ',
+      tags: ' launch, youtube ',
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      status: 'synced',
+      resource: asset,
+      uploadStatus: 'uploaded',
+      reconciliationRequired: false,
+    });
+    expect(files.select).toHaveBeenCalledWith('C:\\trusted\\launch.mp4');
+    expect(remote.createMarketingResource).toHaveBeenCalledWith({
+      workspaceId: remote.workspace.id,
+      idempotencyKey: '88888888-8888-4888-8888-888888888888',
+      resource: {
+        kind: 'asset',
+        title: 'Product launch',
+        metadata: { tags: 'launch, youtube', sourceFileName: 'launch.mp4' },
+        mimeType: 'video/mp4',
+        sizeBytes: 4,
+        altText: 'IzziAPI product launch',
+        checksum: 'a'.repeat(64),
+      },
+    });
+    expect(remote.uploadMarketingAssetContent).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: remote.workspace.id,
+      resourceId: asset.id,
+      mimeType: 'video/mp4',
+      sizeBytes: 4,
+      checksum: 'a'.repeat(64),
+    }));
+    expect(files.consume).toHaveBeenCalledWith(selection.selectionId);
+    expect(JSON.stringify(remote.createMarketingResource.mock.calls)).not.toContain('C:\\trusted');
+  });
+
+  it('keeps the selection for an explicit reconciliation-required retry', async () => {
+    const remote = marketingResourceGateway('owner');
+    const asset = marketingAssetResource({
+      workspaceId: remote.workspace.id,
+      altText: null,
+      metadata: { sourceFileName: 'launch.mp4' },
+    });
+    remote.createMarketingResource.mockResolvedValue({ status: 'synced', resource: asset, duplicate: true });
+    remote.uploadMarketingAssetContent.mockResolvedValue({
+      status: 'conflict',
+      outcome: null,
+      reason: 'storage_conflict',
+      reconciliationRequired: true,
+    });
+    const files = fileGateway();
+    const context = setup({ workspaceGateway: remote.gateway, assetFiles: files });
+
+    await expect(context.service.uploadMarketingAssetVideo({
+      selectionId: selection.selectionId,
+      title: 'Product launch',
+      altText: '',
+      tags: '',
+    })).resolves.toMatchObject({
+      ok: false,
+      status: 'conflict',
+      resource: asset,
+      uploadStatus: null,
+      reconciliationRequired: true,
+    });
+    expect(files.consume).not.toHaveBeenCalled();
+  });
+
+  it('requires reconciliation when the upload gateway loses its response', async () => {
+    const remote = marketingResourceGateway('owner');
+    const asset = marketingAssetResource({ workspaceId: remote.workspace.id });
+    remote.createMarketingResource.mockResolvedValue({ status: 'synced', resource: asset, duplicate: false });
+    remote.uploadMarketingAssetContent.mockRejectedValue(new Error('transport lost'));
+    const files = fileGateway();
+    const context = setup({ workspaceGateway: remote.gateway, assetFiles: files });
+
+    await expect(context.service.uploadMarketingAssetVideo({
+      selectionId: selection.selectionId,
+      title: 'Product launch',
+      altText: 'IzziAPI product launch',
+      tags: 'launch, youtube',
+    })).resolves.toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      resource: asset,
+      uploadStatus: null,
+      reconciliationRequired: true,
+    });
+    expect(files.consume).not.toHaveBeenCalled();
+    expect(files.release).toHaveBeenCalledWith(selection.selectionId);
+  });
+
+  it('rejects expanded renderer input and unauthorized roles before file or upload access', async () => {
+    const remote = marketingResourceGateway('viewer');
+    const files = fileGateway();
+    const context = setup({ workspaceGateway: remote.gateway, assetFiles: files });
+
+    await expect(context.service.uploadMarketingAssetVideo({
+      selectionId: selection.selectionId,
+      title: 'Product launch',
+      altText: '',
+      tags: '',
+      workspaceId: remote.workspace.id,
+    } as never)).resolves.toMatchObject({ ok: false, status: 'unavailable' });
+    await expect(context.service.uploadMarketingAssetVideo({
+      selectionId: selection.selectionId,
+      title: 'Product launch',
+      altText: '',
+      tags: '',
+    })).resolves.toMatchObject({ ok: false, status: 'forbidden' });
+    expect(files.prepare).not.toHaveBeenCalled();
+    expect(remote.createMarketingResource).not.toHaveBeenCalled();
+    expect(remote.uploadMarketingAssetContent).not.toHaveBeenCalled();
+  });
+});
 
 describe('Customer Marketing PageSpeed authority', () => {
   const auditInput = { url: 'https://izziapi.com/', strategy: 'mobile' } as const;

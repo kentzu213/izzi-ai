@@ -256,6 +256,22 @@ export interface CustomerMarketingResourceAuditState {
   receipts: CustomerMarketingResourceAuditReceiptV1[];
 }
 
+export interface CustomerMarketingAssetContentUploadInput {
+  workspaceId: string;
+  resourceId: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksum: string;
+  body: ReadableStream<Uint8Array>;
+}
+
+export interface CustomerMarketingAssetContentUploadState {
+  status: CustomerMarketingBridgeStatus;
+  outcome: 'uploaded' | 'replayed' | null;
+  reconciliationRequired: boolean;
+  reason?: string;
+}
+
 export interface CustomerMarketingResourceGatewayCreateInput {
   workspaceId: string;
   idempotencyKey: string;
@@ -291,6 +307,9 @@ export interface CustomerMarketingWorkspaceGateway {
   getMarketingAnalytics(workspaceId: string, input: CustomerMarketingAnalyticsWindow): Promise<CustomerMarketingAnalyticsState>;
   getMarketingResource(workspaceId: string, kind: CustomerMarketingResourceKind, resourceId: string): Promise<CustomerMarketingResourceState>;
   createMarketingResource(input: CustomerMarketingResourceGatewayCreateInput): Promise<CustomerMarketingResourceState>;
+  uploadMarketingAssetContent?(
+    input: CustomerMarketingAssetContentUploadInput,
+  ): Promise<CustomerMarketingAssetContentUploadState>;
   updateMarketingResource(input: CustomerMarketingResourceGatewayUpdateInput): Promise<CustomerMarketingResourceState>;
   reviewMarketingResource(input: CustomerMarketingResourceGatewayReviewInput): Promise<CustomerMarketingResourceState>;
   archiveMarketingResource(input: CustomerMarketingResourceGatewayArchiveInput): Promise<CustomerMarketingResourceArchiveState>;
@@ -313,11 +332,30 @@ interface ClientOptions {
   baseUrl?: string;
   enabled?: boolean;
   timeoutMs?: number;
+  assetUploadTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   env?: NodeJS.ProcessEnv;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const VIDEO_CONTENT_TYPE_PATTERN = /^video\/[a-z0-9.+-]+$/;
+const MAX_MARKETING_ASSET_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MARKETING_ASSET_UPLOAD_BLOCK_REASONS = new Set([
+  'invalid_request',
+  'feature_disabled',
+  'dependency_unavailable',
+  'workspace_forbidden',
+  'asset_not_found',
+  'asset_not_writable',
+  'metadata_mismatch',
+  'resource_changed',
+  'checksum_mismatch',
+  'storage_rejected',
+  'storage_conflict',
+  'storage_state_uncertain',
+  'cleanup_required',
+]);
 const REVIEWED_MARKETING_API_ORIGINS = new Set([
   'https://marketing-staging.izziapi.com',
 ]);
@@ -1040,6 +1078,16 @@ function marketingFailureStatus(status?: number): Exclude<CustomerMarketingBridg
   return 'unavailable';
 }
 
+function marketingAssetUploadFailureStatus(
+  status?: number,
+): Exclude<CustomerMarketingBridgeStatus, 'synced' | 'local'> {
+  if (status === 403) return 'forbidden';
+  if (status === 404) return 'not_found';
+  if (status === 409) return 'conflict';
+  if (status === 429) return 'quota_exceeded';
+  return 'unavailable';
+}
+
 function numberValue(raw: unknown, key: string): number {
   const value = ownValue(raw, key);
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
@@ -1370,6 +1418,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
   private readonly enabled: boolean;
   private readonly configurationValid: boolean;
   private readonly timeoutMs: number;
+  private readonly assetUploadTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
   private bridgeHealth: CustomerMarketingBridgeHealth;
 
@@ -1385,6 +1434,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       || options.enabled !== undefined
       || REVIEWED_MARKETING_API_ORIGINS.has(configuredUrl ?? IZZI_API_BASE);
     this.timeoutMs = options.timeoutMs ?? 6_000;
+    this.assetUploadTimeoutMs = options.assetUploadTimeoutMs ?? 120_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.bridgeHealth = !this.enabled
       ? 'disabled'
@@ -1764,6 +1814,124 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     return parsed
       ? { status: 'synced', resource: parsed.resource, duplicate: parsed.duplicate }
       : { status: 'unavailable', resource: null };
+  }
+
+  async uploadMarketingAssetContent(
+    input: CustomerMarketingAssetContentUploadInput,
+  ): Promise<CustomerMarketingAssetContentUploadState> {
+    const unavailable = (reconciliationRequired = false): CustomerMarketingAssetContentUploadState => ({
+      status: 'unavailable',
+      outcome: null,
+      reconciliationRequired,
+    });
+    const valid = input != null
+      && UUID_PATTERN.test(input.workspaceId)
+      && UUID_PATTERN.test(input.resourceId)
+      && VIDEO_CONTENT_TYPE_PATTERN.test(input.mimeType)
+      && input.mimeType === input.mimeType.trim().toLowerCase()
+      && Number.isSafeInteger(input.sizeBytes)
+      && input.sizeBytes > 0
+      && input.sizeBytes <= MAX_MARKETING_ASSET_UPLOAD_BYTES
+      && SHA256_PATTERN.test(input.checksum)
+      && input.body != null
+      && typeof input.body.cancel === 'function';
+    if (!valid || !this.enabled || !this.configurationValid) {
+      try { await input?.body?.cancel(); } catch { /* Best-effort local stream cleanup. */ }
+      return !this.enabled
+        ? { status: 'local', outcome: null, reconciliationRequired: false }
+        : unavailable();
+    }
+
+    let token: string | null = null;
+    try {
+      token = await this.auth.getAccessToken();
+    } catch {
+      token = null;
+    }
+    if (!token || token.length > 8_192) {
+      this.bridgeHealth = 'auth_required';
+      try { await input.body.cancel(); } catch { /* Best-effort local stream cleanup. */ }
+      return { status: 'unavailable', outcome: null, reconciliationRequired: false };
+    }
+
+    const requestPath = `/api/marketing/assets/${input.workspaceId}/${input.resourceId}/content`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.assetUploadTimeoutMs);
+    try {
+      const requestInit = {
+        method: 'PUT',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': input.mimeType,
+          'Content-Length': String(input.sizeBytes),
+          'X-Content-SHA256': input.checksum,
+        },
+        body: input.body,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' };
+      const response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, requestInit);
+      let payload: Record<string, unknown> | null = null;
+      try {
+        const text = await response.text();
+        if (text.length <= 4_096) {
+          const parsed = JSON.parse(text) as unknown;
+          if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            payload = parsed as Record<string, unknown>;
+          }
+        }
+      } catch {
+        payload = null;
+      }
+
+      if (response.ok && payload && (payload.status === 'uploaded' || payload.status === 'replayed')) {
+        if (
+          payload.workspaceId === input.workspaceId
+          && payload.resourceId === input.resourceId
+          && payload.checksum === input.checksum
+          && payload.sizeBytes === input.sizeBytes
+        ) {
+          this.bridgeHealth = 'connected';
+          return {
+            status: 'synced',
+            outcome: payload.status,
+            reconciliationRequired: false,
+          };
+        }
+      }
+
+      if (!response.ok && payload?.status === 'blocked'
+        && typeof payload.reason === 'string'
+        && MARKETING_ASSET_UPLOAD_BLOCK_REASONS.has(payload.reason)
+        && typeof payload.reconciliationRequired === 'boolean') {
+        const status = marketingAssetUploadFailureStatus(response.status);
+        this.bridgeHealth = response.status >= 500 ? 'backend_unavailable' : 'connected';
+        this.logFailure(requestPath, response.status);
+        return {
+          status,
+          outcome: null,
+          reason: payload.reason,
+          reconciliationRequired: payload.reconciliationRequired,
+        };
+      }
+
+      if (response.status === 401) this.bridgeHealth = 'auth_required';
+      else if (response.status >= 500) this.bridgeHealth = 'backend_unavailable';
+      else this.bridgeHealth = 'connected';
+      this.logFailure(requestPath, response.status);
+      return {
+        status: marketingAssetUploadFailureStatus(response.status),
+        outcome: null,
+        reconciliationRequired: response.ok || response.status === 409 || response.status >= 500,
+      };
+    } catch {
+      this.bridgeHealth = 'backend_unavailable';
+      this.logFailure(requestPath);
+      return unavailable(true);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async updateMarketingResource(

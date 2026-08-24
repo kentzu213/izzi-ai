@@ -706,6 +706,32 @@ export interface CustomerMarketingResourceMutationResult {
   error?: string;
 }
 
+export interface CustomerMarketingAssetSelection {
+  selectionId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksum: string;
+}
+
+export interface CustomerMarketingAssetSelectionResult {
+  canceled: boolean;
+  selection?: CustomerMarketingAssetSelection;
+  error?: string;
+}
+
+export interface CustomerMarketingAssetUploadInput {
+  selectionId: string;
+  title: string;
+  altText: string;
+  tags: string;
+}
+
+export interface CustomerMarketingAssetUploadResult extends CustomerMarketingResourceMutationResult {
+  uploadStatus: 'uploaded' | 'replayed' | null;
+  reconciliationRequired: boolean;
+}
+
 export interface CustomerMarketingResourceArchiveResult {
   ok: boolean;
   status: CustomerMarketingBridgeStatus;

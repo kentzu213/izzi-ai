@@ -45,6 +45,10 @@ import type {
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
 import {
+  parseCustomerMarketingAssetUploadInput,
+  type CustomerMarketingAssetFileGateway,
+} from './customer-marketing-asset-files';
+import {
   parseMarketingCalendarInput,
   parseMarketingAnalyticsWindow,
   parseMarketingResourceArchiveInput,
@@ -67,6 +71,9 @@ import type {
   CustomerMarketingBridgeStatus,
   CustomerMarketingAnalyticsResult,
   CustomerMarketingAnalyticsWindow,
+  CustomerMarketingAssetSelectionResult,
+  CustomerMarketingAssetUploadInput,
+  CustomerMarketingAssetUploadResult,
   CustomerMarketingCalendarInput,
   CustomerMarketingResource,
   CustomerMarketingResourceArchiveInput,
@@ -1228,6 +1235,7 @@ export class CustomerMarketingService {
     private readonly canarySendCoordinator?: CustomerMarketingTelegramCanarySendCoordinator,
     private readonly telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime,
     private readonly connectorOperationStore?: CustomerMarketingConnectorOperationStore,
+    private readonly assetFiles: CustomerMarketingAssetFileGateway | null = null,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -2995,6 +3003,136 @@ export class CustomerMarketingService {
       });
     } catch {
       return { allowed: false, executed: false, denialReason: 'approval_invalid' };
+    }
+  }
+
+  async selectMarketingAssetVideo(sourcePath: string): Promise<CustomerMarketingAssetSelectionResult> {
+    if (!this.assetFiles) {
+      return { canceled: false, error: 'Trình chọn video riêng tư chưa sẵn sàng.' };
+    }
+    try {
+      const selection = await this.assetFiles.select(sourcePath);
+      return selection
+        ? { canceled: false, selection }
+        : { canceled: false, error: 'Video không hợp lệ, quá 50 MB hoặc không thể đọc an toàn.' };
+    } catch {
+      return { canceled: false, error: 'Không thể kiểm tra video đã chọn.' };
+    }
+  }
+
+  async uploadMarketingAssetVideo(
+    input: CustomerMarketingAssetUploadInput,
+  ): Promise<CustomerMarketingAssetUploadResult> {
+    const parsed = parseCustomerMarketingAssetUploadInput(input);
+    const failure = (
+      status: CustomerMarketingBridgeStatus,
+      error: string,
+      resource: CustomerMarketingResource | null = null,
+      reconciliationRequired = false,
+    ): CustomerMarketingAssetUploadResult => ({
+      ok: false,
+      status,
+      resource,
+      uploadStatus: null,
+      reconciliationRequired,
+      error,
+    });
+    if (!parsed) return failure('unavailable', 'Thông tin upload video không hợp lệ.');
+    if (!this.assetFiles || !this.workspaceGateway?.uploadMarketingAssetContent) {
+      return failure('unavailable', 'Upload video riêng tư chưa sẵn sàng.');
+    }
+
+    const authority = await this.authorizeMarketingResourceMutation(MARKETING_AUTHOR_ROLES);
+    if (authority.status !== 'synced') return failure(authority.status, authority.error);
+
+    let prepared: Awaited<ReturnType<CustomerMarketingAssetFileGateway['prepare']>>;
+    try {
+      prepared = await this.assetFiles.prepare(parsed.selectionId);
+    } catch {
+      prepared = null;
+    }
+    if (!prepared) {
+      return failure('unavailable', 'Video đã thay đổi, hết hạn hoặc đang được tải lên. Hãy chọn lại video.');
+    }
+
+    let uploaded = false;
+    try {
+      const resourceInput: CustomerMarketingResourceCreateInput = {
+        kind: 'asset',
+        title: parsed.title,
+        metadata: {
+          ...(parsed.tags ? { tags: parsed.tags } : {}),
+          sourceFileName: prepared.selection.fileName,
+        },
+        mimeType: prepared.selection.mimeType,
+        sizeBytes: prepared.selection.sizeBytes,
+        altText: parsed.altText || null,
+        checksum: prepared.selection.checksum,
+      };
+      let created: Awaited<ReturnType<CustomerMarketingWorkspaceGateway['createMarketingResource']>>;
+      try {
+        created = await this.workspaceGateway.createMarketingResource({
+          workspaceId: authority.workspace.id,
+          idempotencyKey: prepared.idempotencyKey,
+          resource: resourceInput,
+        });
+      } catch {
+        created = { status: 'unavailable', resource: null };
+      }
+      if (created.status !== 'synced' || !created.resource) {
+        try { await prepared.body.cancel(); } catch { /* Best-effort local stream cleanup. */ }
+        const status = created.status === 'synced' ? 'unavailable' : created.status;
+        return failure(status, publicMarketingResourceError(status));
+      }
+      const asset = created.resource;
+      if (
+        asset.workspaceId !== authority.workspace.id
+        || asset.kind !== 'asset'
+        || asset.title !== resourceInput.title
+        || asset.mimeType !== resourceInput.mimeType
+        || asset.sizeBytes !== resourceInput.sizeBytes
+        || asset.checksum !== resourceInput.checksum
+        || asset.altText !== resourceInput.altText
+        || asset.metadata.sourceFileName !== prepared.selection.fileName
+        || (parsed.tags ? asset.metadata.tags !== parsed.tags : 'tags' in asset.metadata)
+      ) {
+        try { await prepared.body.cancel(); } catch { /* Best-effort local stream cleanup. */ }
+        return failure('unavailable', 'IzziAPI trả về asset không khớp video đã chọn.');
+      }
+
+      let uploadState: Awaited<ReturnType<NonNullable<
+        CustomerMarketingWorkspaceGateway['uploadMarketingAssetContent']
+      >>>;
+      try {
+        uploadState = await this.workspaceGateway.uploadMarketingAssetContent({
+          workspaceId: authority.workspace.id,
+          resourceId: asset.id,
+          mimeType: prepared.selection.mimeType,
+          sizeBytes: prepared.selection.sizeBytes,
+          checksum: prepared.selection.checksum,
+          body: prepared.body,
+        });
+      } catch {
+        uploadState = { status: 'unavailable', outcome: null, reconciliationRequired: true };
+      }
+      if (uploadState.status !== 'synced' || !uploadState.outcome) {
+        const error = uploadState.reconciliationRequired
+          ? 'Trạng thái lưu video chưa xác định; cần đối soát trước khi thử lại.'
+          : publicMarketingResourceError(uploadState.status);
+        return failure(uploadState.status, error, asset, uploadState.reconciliationRequired);
+      }
+
+      uploaded = true;
+      this.assetFiles.consume(parsed.selectionId);
+      return {
+        ok: true,
+        status: 'synced',
+        resource: asset,
+        uploadStatus: uploadState.outcome,
+        reconciliationRequired: false,
+      };
+    } finally {
+      if (!uploaded) this.assetFiles.release(parsed.selectionId);
     }
   }
 

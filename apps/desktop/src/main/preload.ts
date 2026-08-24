@@ -63,6 +63,9 @@ import type {
   CustomerProductMarketingContextSaveInput,
   CustomerProductMarketingContextV1,
   CustomerMarketingAnalyticsWindow,
+  CustomerMarketingAssetSelectionResult,
+  CustomerMarketingAssetUploadInput,
+  CustomerMarketingAssetUploadResult,
   CustomerMarketingCalendarInput,
   CustomerMarketingResourceArchiveInput,
   CustomerMarketingResourceArchiveResult,
@@ -706,6 +709,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:checkExternalActionGate', input),
     createMarketingResource: (input: CustomerMarketingResourceCreateInput): Promise<CustomerMarketingResourceMutationResult> =>
       ipcRenderer.invoke('customerMarketing:createMarketingResource', input),
+    selectMarketingAssetVideo: (): Promise<CustomerMarketingAssetSelectionResult> =>
+      ipcRenderer.invoke('customerMarketing:selectMarketingAssetVideo'),
+    uploadMarketingAssetVideo: (input: CustomerMarketingAssetUploadInput): Promise<CustomerMarketingAssetUploadResult> =>
+      ipcRenderer.invoke('customerMarketing:uploadMarketingAssetVideo', input),
     updateMarketingResource: (input: CustomerMarketingResourceUpdateInput): Promise<CustomerMarketingResourceMutationResult> =>
       ipcRenderer.invoke('customerMarketing:updateMarketingResource', input),
     reviewMarketingResource: (input: CustomerMarketingResourceReviewInput): Promise<CustomerMarketingResourceMutationResult> =>

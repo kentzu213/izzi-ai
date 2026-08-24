@@ -212,6 +212,23 @@ function serviceMock() {
     reviewMarketingResource: vi.fn(async () => ({ ok: true, status: 'synced', resource: null })),
     archiveMarketingResource: vi.fn(async () => ({ ok: true, status: 'synced', deleted: true })),
     listMarketingResourceAudit: vi.fn(async () => ({ ok: true, status: 'synced', receipts: [] })),
+    selectMarketingAssetVideo: vi.fn(async () => ({
+      canceled: false,
+      selection: {
+        selectionId: '77777777-7777-4777-8777-777777777777',
+        fileName: 'launch.mp4',
+        mimeType: 'video/mp4',
+        sizeBytes: 4,
+        checksum: 'a'.repeat(64),
+      },
+    })),
+    uploadMarketingAssetVideo: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      resource: null,
+      uploadStatus: 'uploaded',
+      reconciliationRequired: false,
+    })),
   };
 }
 
@@ -344,6 +361,43 @@ describe('customer marketing media IPC', () => {
 
     await expect(handler!(event())).resolves.toEqual({ canceled: true });
     expect(service.importMediaProject).not.toHaveBeenCalled();
+  });
+
+  it('selects a private marketing video only through the main-process dialog', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    electronMocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['C:\\trusted\\launch.mp4'] });
+    const handler = electronMocks.handlers.get('customerMarketing:selectMarketingAssetVideo');
+
+    const result = await handler!(event(), { path: 'C:\\renderer-controlled\\secret.mp4' });
+
+    expect(service.selectMarketingAssetVideo).toHaveBeenCalledWith('C:\\trusted\\launch.mp4');
+    expect(service.selectMarketingAssetVideo).not.toHaveBeenCalledWith('C:\\renderer-controlled\\secret.mp4');
+    expect(JSON.stringify(result)).not.toContain('C:\\trusted');
+  });
+
+  it('passes only the exact asset upload form and rejects renderer scope or paths', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:uploadMarketingAssetVideo');
+    const input = {
+      selectionId: '77777777-7777-4777-8777-777777777777',
+      title: 'Product launch',
+      altText: 'IzziAPI launch video',
+      tags: 'launch, youtube',
+    };
+
+    await expect(handler!(event(), input)).resolves.toMatchObject({ ok: true, uploadStatus: 'uploaded' });
+    expect(service.uploadMarketingAssetVideo).toHaveBeenCalledWith(input);
+
+    for (const expanded of [
+      { ...input, workspaceId: '11111111-1111-4111-8111-111111111111' },
+      { ...input, filePath: 'C:\\private\\launch.mp4' },
+      { ...input, accessToken: 'renderer-token' },
+    ]) {
+      await expect(handler!(event(), expanded)).rejects.toThrow('Payload upload video marketing không hợp lệ');
+    }
+    expect(service.uploadMarketingAssetVideo).toHaveBeenCalledTimes(1);
   });
 
   it('rejects non-object preview payloads before service execution', async () => {

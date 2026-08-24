@@ -114,6 +114,7 @@ import { LiveProfileStore } from './memory-trace/live-profile-store';
 import { registerLiveProfileIpc } from './memory-trace/live-profile-ipc';
 import { TraceStore } from './memory-trace/trace-store';
 import { CustomerMarketingWorkspaceClient } from './customer-marketing/customer-marketing-workspace-client';
+import { CustomerMarketingAssetFileRegistry } from './customer-marketing/customer-marketing-asset-files';
 import { CustomerMarketingInvitationCoordinator } from './customer-marketing/customer-marketing-invitation-coordinator';
 import {
   CustomerVideoStudioService,
@@ -610,6 +611,7 @@ function setupIPC() {
     : new CustomerMarketingWorkspaceClient(authManager);
   const customerMarketingCredentialVault = new CustomerMarketingCredentialVault(dbManager);
   const customerMarketingConnectorOperationStore = new CustomerMarketingConnectorOperationStore(dbManager);
+  const customerMarketingAssetFiles = new CustomerMarketingAssetFileRegistry();
   const customerMarketingTelegramSandboxConfig = new CustomerMarketingTelegramSandboxConfigStore(dbManager);
   const customerMarketingCanaryController = new CustomerMarketingCanaryController();
   const customerMarketingCanaryNamedApprovalStore = new CustomerMarketingCanaryNamedApprovalStore(dbManager);
@@ -776,6 +778,7 @@ function setupIPC() {
       },
     },
     customerMarketingConnectorOperationStore,
+    customerMarketingAssetFiles,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

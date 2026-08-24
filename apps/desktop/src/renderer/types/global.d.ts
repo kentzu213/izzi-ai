@@ -14,6 +14,9 @@ import type {
   CustomerGoalInput,
   CustomerMarketingSnapshot,
   CustomerMarketingAnalyticsResult,
+  CustomerMarketingAssetSelectionResult,
+  CustomerMarketingAssetUploadInput,
+  CustomerMarketingAssetUploadResult,
   CustomerProductMarketingContextMutationResult,
   CustomerProductMarketingContextSaveInput,
   CustomerProductMarketingContextV1,
@@ -249,6 +252,10 @@ declare global {
     reviewMarketingWorkflow: (input: CustomerMarketingWorkflowReviewRequest) => Promise<CustomerMarketingWorkflowMutationResult>;
     checkExternalActionGate: (input: CustomerMarketingActionGateRequest) => Promise<CustomerMarketingActionGateResult>;
     createMarketingResource: (input: CustomerMarketingResourceCreateInput) => Promise<CustomerMarketingResourceMutationResult>;
+    selectMarketingAssetVideo: () => Promise<CustomerMarketingAssetSelectionResult>;
+    uploadMarketingAssetVideo: (
+      input: CustomerMarketingAssetUploadInput,
+    ) => Promise<CustomerMarketingAssetUploadResult>;
     updateMarketingResource: (input: CustomerMarketingResourceUpdateInput) => Promise<CustomerMarketingResourceMutationResult>;
     reviewMarketingResource: (input: CustomerMarketingResourceReviewInput) => Promise<CustomerMarketingResourceMutationResult>;
     archiveMarketingResource: (input: CustomerMarketingResourceArchiveInput) => Promise<CustomerMarketingResourceArchiveResult>;
