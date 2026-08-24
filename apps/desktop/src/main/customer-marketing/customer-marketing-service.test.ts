@@ -67,6 +67,7 @@ import type {
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
 import type { CustomerMarketingAssetFileGateway } from './customer-marketing-asset-files';
+import type { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -686,6 +687,7 @@ function setup(options?: {
     telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime;
     connectorOperationStore?: CustomerMarketingConnectorOperationStore;
     assetFiles?: CustomerMarketingAssetFileGateway;
+    legacyImportRegistry?: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -717,6 +719,7 @@ function setup(options?: {
     options?.telegramCanarySendRuntime,
     options?.connectorOperationStore,
     options?.assetFiles,
+    options?.legacyImportRegistry,
   );
   return {
     db,
@@ -727,6 +730,84 @@ function setup(options?: {
     },
   };
 }
+
+describe('CustomerMarketingService legacy Auto Post reconciliation', () => {
+  it.each(['owner', 'manager'] as const)('allows %s to create a local read-only preview', async (role) => {
+    const workspace = remoteWorkspace({ role });
+    const gateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+    } satisfies CustomerMarketingWorkspaceGateway;
+    const preview = {
+      selectionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      fileName: 'auto-post-export.json',
+      manifestDigest: 'a'.repeat(64),
+      source: {
+        application: '@auto-post/api' as const,
+        appVersion: '1.1.1',
+        exportedAt: '2026-08-24T03:00:00.000Z',
+        workspaceName: 'Legacy Room',
+      },
+      counts: {
+        socialAccounts: 0, campaigns: 0, posts: 0, schedules: 0, mediaAssets: 0,
+        templates: 0, hashtagSets: 0, rssSources: 0, analytics: 0,
+      },
+      plan: {
+        migrate: { campaigns: 0, content: 0, schedules: 0 },
+        reconnect: { accounts: 0 },
+        reupload: { media: 0 },
+        review: { records: 0 },
+      },
+      ready: true,
+      issues: [],
+    };
+    const legacyImportRegistry = { preview: vi.fn(async () => preview) };
+    const context = setup({ workspaceGateway: gateway, legacyImportRegistry });
+
+    await expect(context.service.previewLegacyAutoPostImport('F:\\safe\\manifest.json')).resolves.toEqual({
+      ok: true,
+      status: 'synced',
+      preview,
+    });
+    expect(legacyImportRegistry.preview).toHaveBeenCalledWith('F:\\safe\\manifest.json');
+  });
+
+  it('denies editor before the local manifest is read', async () => {
+    const workspace = remoteWorkspace({ role: 'editor' });
+    const gateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+    } satisfies CustomerMarketingWorkspaceGateway;
+    const legacyImportRegistry = { preview: vi.fn() };
+    const context = setup({ workspaceGateway: gateway, legacyImportRegistry });
+
+    const result = await context.service.previewLegacyAutoPostImport('F:\\safe\\manifest.json');
+
+    expect(result).toMatchObject({ ok: false, status: 'forbidden' });
+    expect(legacyImportRegistry.preview).not.toHaveBeenCalled();
+  });
+
+  it('keeps the workspace bridge synced when the selected local manifest is invalid', async () => {
+    const workspace = remoteWorkspace({ role: 'owner' });
+    const gateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced' as const, workspace })),
+    } satisfies CustomerMarketingWorkspaceGateway;
+    const context = setup({
+      workspaceGateway: gateway,
+      legacyImportRegistry: { preview: vi.fn(async () => null) },
+    });
+
+    await expect(context.service.previewLegacyAutoPostImport('F:\\safe\\invalid.json')).resolves.toMatchObject({
+      ok: false,
+      status: 'synced',
+      preview: null,
+    });
+  });
+});
 
 function setupDirector(director: ReturnType<typeof vi.fn>) {
   const workspace = remoteWorkspace();

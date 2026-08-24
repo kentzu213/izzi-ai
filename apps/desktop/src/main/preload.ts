@@ -55,6 +55,9 @@ import type {
   MarketingWorkspaceSnapshot,
 } from '../shared/marketing-types';
 import type {
+  CustomerMarketingLegacyImportSelectionResult,
+} from '../shared/customer-marketing-legacy-import-types';
+import type {
   CustomerDirectorInput,
   CustomerGoalInput,
   CustomerMarketingSnapshot,
@@ -689,6 +692,8 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:sendTelegramCanary', input),
     listMarketingResources: (kind: CustomerMarketingResourceKind): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
+    selectLegacyAutoPostManifest: (): Promise<CustomerMarketingLegacyImportSelectionResult> =>
+      ipcRenderer.invoke('customerMarketing:selectLegacyAutoPostManifest'),
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingCalendar', input),
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow): Promise<CustomerMarketingAnalyticsResult> =>
