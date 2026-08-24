@@ -48,6 +48,10 @@ import {
   parseCustomerMarketingAssetUploadInput,
   type CustomerMarketingAssetFileGateway,
 } from './customer-marketing-asset-files';
+import { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
+import type {
+  CustomerMarketingLegacyImportResult,
+} from '../../shared/customer-marketing-legacy-import-types';
 import {
   parseMarketingCalendarInput,
   parseMarketingAnalyticsWindow,
@@ -1236,6 +1240,8 @@ export class CustomerMarketingService {
     private readonly telegramCanarySendRuntime?: CustomerMarketingTelegramCanarySendRuntime,
     private readonly connectorOperationStore?: CustomerMarketingConnectorOperationStore,
     private readonly assetFiles: CustomerMarketingAssetFileGateway | null = null,
+    private readonly legacyImportRegistry: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>
+      = new CustomerMarketingLegacyImportRegistry(),
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -1762,6 +1768,32 @@ export class CustomerMarketingService {
       };
     }
     return { ok: true, status: 'synced', resources: state.resources };
+  }
+
+  async previewLegacyAutoPostImport(filePath: string): Promise<CustomerMarketingLegacyImportResult> {
+    const authority = await this.authorizeMarketingResourceMutation(new Set(['owner', 'manager']));
+    if (authority.status !== 'synced') {
+      return { ok: false, status: authority.status, preview: null, error: authority.error };
+    }
+    try {
+      const preview = await this.legacyImportRegistry.preview(filePath);
+      if (!preview) {
+        return {
+          ok: false,
+          status: 'synced',
+          preview: null,
+          error: 'Bản xuất Auto Post không đúng định dạng an toàn hoặc có chứa trường không được phép.',
+        };
+      }
+      return { ok: true, status: 'synced', preview };
+    } catch {
+      return {
+        ok: false,
+        status: 'synced',
+        preview: null,
+        error: 'Không thể đối soát bản xuất Auto Post đã chọn.',
+      };
+    }
   }
 
   async listMarketingCalendar(

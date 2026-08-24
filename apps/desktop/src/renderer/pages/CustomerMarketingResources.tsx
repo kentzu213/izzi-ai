@@ -33,6 +33,10 @@ import type {
   CustomerMarketingResourceUpdateInput,
   CustomerRole,
 } from '../../shared/customer-marketing-types';
+import type {
+  CustomerMarketingLegacyImportIssueCode,
+  CustomerMarketingLegacyImportPreview,
+} from '../../shared/customer-marketing-legacy-import-types';
 import '../styles/customer-marketing-resources.css';
 
 interface CustomerMarketingResourcesProps {
@@ -151,8 +155,71 @@ const KIND_ICONS = {
   knowledge: KnowledgeIcon,
 } as const;
 
+const LEGACY_ISSUE_LABELS: Record<CustomerMarketingLegacyImportIssueCode, string> = {
+  duplicate_id: 'Có ID bị trùng',
+  broken_reference: 'Có liên kết dữ liệu bị thiếu',
+  platform_mismatch: 'Kênh lịch đăng không khớp tài khoản',
+  unsupported_platform: 'Có kênh chưa được Izzi AI hỗ trợ',
+};
+
 function customerApi(): ElectronCustomerMarketingApi | null {
   return window.electronAPI?.customerMarketing ?? null;
+}
+
+function LegacyImportPreview({ preview }: { preview: CustomerMarketingLegacyImportPreview }) {
+  return (
+    <div className="cmrr-import-summary">
+      <section className="cmrr-import-source" aria-label="Nguồn bản xuất">
+        <div>
+          <span className="cmr-eyebrow">Nguồn đối soát</span>
+          <strong>{preview.source.workspaceName}</strong>
+          <small>{preview.fileName} · Auto Post {preview.source.appVersion}</small>
+        </div>
+        <span className={`cmrr-import-readiness ${preview.ready ? 'is-ready' : 'is-blocked'}`}>
+          {preview.ready ? 'Sẵn sàng cho bước lập kế hoạch' : 'Cần sửa dữ liệu nguồn'}
+        </span>
+      </section>
+
+      <section aria-labelledby="cmrr-import-plan-title">
+        <div className="cmrr-import-section-heading">
+          <h4 id="cmrr-import-plan-title">Phương án chuyển đổi</h4>
+          <span>Chỉ đọc, chưa nhập dữ liệu</span>
+        </div>
+        <dl className="cmrr-import-plan">
+          <div><dt>Chuyển sang Izzi AI</dt><dd>{preview.plan.migrate.campaigns + preview.plan.migrate.content + preview.plan.migrate.schedules}</dd><small>{preview.plan.migrate.campaigns} chiến dịch · {preview.plan.migrate.content} nội dung · {preview.plan.migrate.schedules} lịch</small></div>
+          <div><dt>Kết nối lại</dt><dd>{preview.plan.reconnect.accounts}</dd><small>Tài khoản mạng xã hội, không mang token cũ</small></div>
+          <div><dt>Tải lại media</dt><dd>{preview.plan.reupload.media}</dd><small>Video và hình ảnh cần tải lại an toàn</small></div>
+          <div><dt>Cần xem xét</dt><dd>{preview.plan.review.records}</dd><small>Mẫu, hashtag, RSS, analytics hoặc kênh chưa hỗ trợ</small></div>
+        </dl>
+      </section>
+
+      <section className="cmrr-import-counts" aria-labelledby="cmrr-import-counts-title">
+        <div className="cmrr-import-section-heading">
+          <h4 id="cmrr-import-counts-title">Dữ liệu tìm thấy</h4>
+          <code>{preview.manifestDigest.slice(0, 16)}</code>
+        </div>
+        <div>
+          <span>Chiến dịch <b>{preview.counts.campaigns}</b></span>
+          <span>Nội dung <b>{preview.counts.posts}</b></span>
+          <span>Lịch đăng <b>{preview.counts.schedules}</b></span>
+          <span>Tài khoản <b>{preview.counts.socialAccounts}</b></span>
+          <span>Media <b>{preview.counts.mediaAssets}</b></span>
+          <span>Dữ liệu phụ <b>{preview.counts.templates + preview.counts.hashtagSets + preview.counts.rssSources + preview.counts.analytics}</b></span>
+        </div>
+      </section>
+
+      {preview.issues.length > 0 && (
+        <section className="cmrr-import-issues" aria-labelledby="cmrr-import-issues-title">
+          <h4 id="cmrr-import-issues-title">Điểm cần xử lý</h4>
+          <ul>{preview.issues.map((issue) => <li key={issue.code}><span>{LEGACY_ISSUE_LABELS[issue.code]}</span><b>{issue.count}</b></li>)}</ul>
+        </section>
+      )}
+
+      <p className="cmrr-import-security-note">
+        Token, ID tài khoản, nội dung bài và đường dẫn local không được hiển thị hoặc chuyển vào giao diện này.
+      </p>
+    </div>
+  );
 }
 
 function emptyDraft(kind: CustomerMarketingResourceKind): ResourceDraft {
@@ -744,13 +811,23 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
   const [draft, setDraft] = useState<ResourceDraft>(() => emptyDraft(kind));
   const [assetSelection, setAssetSelection] = useState<CustomerMarketingAssetSelection | null>(null);
   const [selectingAsset, setSelectingAsset] = useState(false);
+  const [legacyPreview, setLegacyPreview] = useState<CustomerMarketingLegacyImportPreview | null>(null);
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const [legacyBusy, setLegacyBusy] = useState(false);
   const editorRef = useRef<HTMLFormElement>(null);
+  const legacyRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   const canEdit = role === 'owner' || role === 'manager' || role === 'editor';
+  const canReconcileLegacy = role === 'owner' || role === 'manager';
 
   const closeEditor = useCallback(() => {
     setEditorOpen(false);
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
+  }, []);
+
+  const closeLegacyPreview = useCallback(() => {
+    setLegacyOpen(false);
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }, []);
 
@@ -852,6 +929,32 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [busy, closeEditor, editorOpen]);
+
+  useEffect(() => {
+    if (!legacyOpen) return;
+    legacyRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !legacyBusy) {
+        event.preventDefault();
+        closeLegacyPreview();
+        return;
+      }
+      if (event.key !== 'Tab' || !legacyRef.current) return;
+      const focusable = [...legacyRef.current.querySelectorAll<HTMLElement>('button:not([disabled])')];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [closeLegacyPreview, legacyBusy, legacyOpen]);
 
   const visibleResources = useMemo(() => {
     const source = kind === 'content' && displayMode === 'calendar' ? calendarResources : resources;
@@ -992,6 +1095,33 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     }
   };
 
+  const selectLegacyAutoPostManifest = async () => {
+    const api = customerApi();
+    if (!api?.selectLegacyAutoPostManifest) {
+      setError('Đối soát Auto Post cần chạy trong Izzi AI Desktop.');
+      return;
+    }
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setLegacyBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api.selectLegacyAutoPostManifest();
+      if (result.canceled) return;
+      setBridgeStatus(result.status);
+      if (!result.ok || !result.preview) {
+        setError(result.error || 'Không thể đối soát bản xuất Auto Post.');
+        return;
+      }
+      setLegacyPreview(result.preview);
+      setLegacyOpen(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Không thể đối soát bản xuất Auto Post.');
+    } finally {
+      setLegacyBusy(false);
+    }
+  };
+
   const save = async (event: FormEvent) => {
     event.preventDefault();
     const api = customerApi();
@@ -1077,7 +1207,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
 
   return (
     <div className="cmr-view-stack cmrr-root">
-      <div className="cmrr-main" aria-hidden={editorOpen || undefined} inert={editorOpen ? true : undefined}>
+      <div className="cmrr-main" aria-hidden={editorOpen || legacyOpen || undefined} inert={editorOpen || legacyOpen ? true : undefined}>
       <div className="cmr-view-intro cmr-view-intro--row">
         <div>
           <span className="cmr-eyebrow">{copy.eyebrow}</span>
@@ -1091,6 +1221,11 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
           <button type="button" className="cmr-icon-button" onClick={() => void load()} disabled={loading || busy} title="Làm mới dữ liệu" aria-label="Làm mới dữ liệu">
             <RefreshIcon className="cmr-icon" />
           </button>
+          {kind === 'campaign' && canReconcileLegacy && (
+            <button type="button" className="cmr-button" onClick={() => void selectLegacyAutoPostManifest()} disabled={legacyBusy || busy}>
+              <StatusIcon className="cmr-button__icon" /> {legacyBusy ? 'Đang đối soát...' : 'Đối soát Auto Post'}
+            </button>
+          )}
           {canEdit && <button type="button" className="cmr-button cmr-button--primary" onClick={openCreate}><Icon className="cmr-button__icon" /> {copy.create}</button>}
         </div>
       </div>
@@ -1252,6 +1387,31 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
               </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {legacyOpen && legacyPreview && (
+        <div className="cmrr-editor-overlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !legacyBusy) closeLegacyPreview();
+        }}>
+          <div ref={legacyRef} className="cmrr-editor cmrr-import-drawer" role="dialog" aria-modal="true" aria-labelledby="cmrr-import-title">
+            <div className="cmrr-editor__header">
+              <div>
+                <span className="cmr-eyebrow">Auto Post migration</span>
+                <h3 id="cmrr-import-title">Đối soát dữ liệu cũ</h3>
+              </div>
+              <button type="button" className="cmr-icon-button" aria-label="Đóng" title="Đóng" disabled={legacyBusy} onClick={closeLegacyPreview}>
+                <CloseIcon className="cmr-icon" />
+              </button>
+            </div>
+            <div className="cmrr-editor__body">
+              <LegacyImportPreview preview={legacyPreview} />
+            </div>
+            <div className="cmrr-editor__footer cmrr-import-footer">
+              <span>Preview hết hạn sau 15 phút; chọn lại file để làm mới.</span>
+              <button type="button" className="cmr-button cmr-button--primary" onClick={closeLegacyPreview}>Đã hiểu</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

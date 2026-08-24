@@ -105,4 +105,27 @@ describe('CustomerMarketingResources CMR-407 decision history contract', () => {
     expect(resourcesSource).not.toContain('sourcePath');
     expect(stylesSource).toContain('.cmrr-asset-picker {');
   });
+
+  it('exposes one read-only Auto Post reconciliation path without renderer file access', () => {
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:selectLegacyAutoPostManifest')");
+    expect(preloadSource.match(/customerMarketing:selectLegacyAutoPostManifest/g)).toHaveLength(1);
+    expect(rendererTypesSource).toContain('selectLegacyAutoPostManifest: ()');
+    expect(ipcSource).toContain("ipcMain.handle('customerMarketing:selectLegacyAutoPostManifest'");
+    expect(ipcSource).toContain("filters: [{ name: 'Auto Post migration', extensions: ['json'] }]");
+    expect(resourcesSource).toContain('api.selectLegacyAutoPostManifest()');
+    expect(resourcesSource).toContain('Đối soát Auto Post');
+    expect(resourcesSource).not.toContain('type="file"');
+    expect(resourcesSource).not.toContain('legacyFilePath');
+  });
+
+  it('keeps the Auto Post reconciliation drawer preview-only', () => {
+    expect(resourcesSource).toContain('Chỉ đọc, chưa nhập dữ liệu');
+    expect(resourcesSource).toContain('Kết nối lại');
+    expect(resourcesSource).toContain('Tải lại media');
+    expect(resourcesSource).toContain('Cần xem xét');
+    expect(resourcesSource).not.toContain('executeLegacyAutoPostImport');
+    expect(resourcesSource).not.toContain('importLegacyAutoPost');
+    expect(stylesSource).toContain('.cmrr-import-summary {');
+    expect(stylesSource).toContain('.cmrr-import-plan {');
+  });
 });

@@ -68,6 +68,9 @@ import {
   parseCustomerMarketingPageSpeedInput,
   type CustomerMarketingPageSpeedResult,
 } from '../../shared/customer-marketing-pagespeed';
+import type {
+  CustomerMarketingLegacyImportSelectionResult,
+} from '../../shared/customer-marketing-legacy-import-types';
 import {
   parseCustomerMarketingActionGateRequest,
   type CustomerMarketingActionGateResult,
@@ -337,6 +340,20 @@ export function registerCustomerMarketingIpc(
     const parsed = parseMarketingResourceKind(kind);
     if (!parsed) throw new Error('Payload loại tài nguyên marketing không hợp lệ.');
     return service.listMarketingResources(parsed);
+  });
+
+  ipcMain.handle('customerMarketing:selectLegacyAutoPostManifest', async (
+    event,
+  ): Promise<CustomerMarketingLegacyImportSelectionResult> => {
+    trusted(event);
+    const selection = await dialog.showOpenDialog({
+      title: 'Chọn bản xuất từ Izzi Auto Post',
+      properties: ['openFile'],
+      filters: [{ name: 'Auto Post migration', extensions: ['json'] }],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
+    const result = await service.previewLegacyAutoPostImport(selection.filePaths[0]);
+    return { canceled: false, ...result };
   });
 
   ipcMain.handle('customerMarketing:listMarketingCalendar', async (

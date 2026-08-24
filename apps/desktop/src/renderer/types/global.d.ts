@@ -85,6 +85,9 @@ import type {
   CustomerMarketingPageSpeedInput,
   CustomerMarketingPageSpeedResult,
 } from '../../shared/customer-marketing-pagespeed';
+import type {
+  CustomerMarketingLegacyImportSelectionResult,
+} from '../../shared/customer-marketing-legacy-import-types';
 
 export {};
 
@@ -242,6 +245,7 @@ declare global {
       input: CustomerMarketingTelegramCanarySendRequest,
     ) => Promise<CustomerMarketingTelegramCanarySendResult>;
     listMarketingResources: (kind: CustomerMarketingResourceKind) => Promise<CustomerMarketingResourceListResult>;
+    selectLegacyAutoPostManifest: () => Promise<CustomerMarketingLegacyImportSelectionResult>;
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput) => Promise<CustomerMarketingResourceListResult>;
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow) => Promise<CustomerMarketingAnalyticsResult>;
     /** Read-only lifecycle receipts; the workspace is derived in main, never sent from here. */
