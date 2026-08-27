@@ -75,9 +75,11 @@ import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import {
   isNativeMarketingPlatform,
   NativeMarketingClient,
+  type NativeMarketingAccountHealthResult,
   type NativeMarketingAccountListResult,
   type NativeMarketingOAuthCallbackResult,
   type NativeMarketingOAuthStateResult,
+  type NativeMarketingOperatingMode,
   type NativeMarketingPostListResult,
   type NativeMarketingPostResult,
   type NativeMarketingWorkspaceListResult,
@@ -1448,7 +1450,9 @@ function setupIPC() {
       if (typeof record.name !== 'string') return { ok: false, error: 'invalid-workspace-name' };
       return getNativeMarketingClient().createWorkspace({
         name: record.name,
-        slug: typeof record.slug === 'string' ? record.slug : undefined,
+        operatingMode: typeof record.operatingMode === 'string'
+          ? record.operatingMode as NativeMarketingOperatingMode
+          : undefined,
       });
     },
   );
@@ -1457,6 +1461,13 @@ function setupIPC() {
     async (_event, workspaceId: unknown): Promise<NativeMarketingAccountListResult> => {
       if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
       return getNativeMarketingClient().listAccounts(workspaceId.trim());
+    },
+  );
+  ipcMain.handle(
+    'nativeMarketing:listAccountHealth',
+    async (_event, workspaceId: unknown): Promise<NativeMarketingAccountHealthResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      return getNativeMarketingClient().listAccountHealth(workspaceId.trim());
     },
   );
   // Mint the provider CSRF state for a channel connect. Only the opaque state

@@ -56,39 +56,7 @@ type ChannelConnectionState = 'connected' | 'attention' | 'disconnected' | 'unkn
 interface NativeMarketingAccountRow {
   platform: string;
   label: string;
-  active: boolean;
-}
-
-function firstString(record: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
-
-function readNativeAccounts(rows: unknown[]): NativeMarketingAccountRow[] {
-  const accounts: NativeMarketingAccountRow[] = [];
-  for (const row of rows) {
-    if (!row || typeof row !== 'object') continue;
-    const record = row as Record<string, unknown>;
-    const platform = firstString(record, ['platform', 'provider', 'network'])
-      .toLocaleLowerCase('en-US');
-    if (!platform) continue;
-    const status = firstString(record, ['status', 'state']).toLocaleLowerCase('en-US');
-    const inactive = record.isActive === false
-      || record.active === false
-      || status === 'inactive'
-      || status === 'expired'
-      || status === 'revoked';
-    accounts.push({
-      platform,
-      label: firstString(record, ['name', 'accountName', 'displayName', 'channelTitle', 'username'])
-        || 'Tài khoản đã liên kết',
-      active: !inactive,
-    });
-  }
-  return accounts;
+  readiness: NativeMarketingAccountReadiness;
 }
 
 function matchesChannel(platform: string, channel: NativeChannel): boolean {
@@ -150,6 +118,13 @@ function credentialStateLabel(state: CustomerMarketingCredentialConnectionState)
   if (state === 'locked') return 'Đã khóa';
   if (state === 'invalid') return 'Cần kiểm tra';
   return 'Chưa kết nối';
+}
+
+function accountReadinessLabel(readiness: NativeMarketingAccountReadiness): string {
+  if (readiness === 'expired') return 'token đã hết hạn';
+  if (readiness === 'revoked') return 'quyền đã thu hồi';
+  if (readiness === 'needs_reauth') return 'cần cấp quyền lại';
+  return '';
 }
 
 function credentialGrantPermissionLabel(
@@ -378,17 +353,21 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         }
         const workspaceId = workspace.id;
         setNativeWorkspaceId(workspaceId);
-        const accounts = await nativeApi.listAccounts(workspaceId);
+        const health = await nativeApi.listAccountHealth(workspaceId);
         if (request !== nativeRequestId.current) return;
-        setNativeMaster({ enabled: true, connected: accounts.ok });
-        if (!accounts.ok) {
+        setNativeMaster({ enabled: true, connected: health.ok });
+        if (!health.ok) {
           setNativeAccountsReady(false);
           setNativeAccounts([]);
-          setNativeError(nativeMarketingErrorLabel(accounts.error));
+          setNativeError(nativeMarketingErrorLabel(health.error));
           return;
         }
         setNativeAccountsReady(true);
-        setNativeAccounts(readNativeAccounts(accounts.accounts));
+        setNativeAccounts(health.health.accounts.map((item) => ({
+          platform: item.platform,
+          label: item.name,
+          readiness: item.readiness,
+        })));
       } catch {
         if (request !== nativeRequestId.current) return;
         setNativeMaster({ enabled: true, connected: false });
@@ -908,7 +887,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     if (!nativeAccountsReady) return 'unknown';
     const matched = nativeAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'disconnected';
-    return matched.some((item) => item.active) ? 'connected' : 'attention';
+    return matched.some((item) => item.readiness === 'ready') ? 'connected' : 'attention';
   };
 
   const nativeChannelDetail = (channel: NativeChannel): string => {
@@ -920,7 +899,10 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     if (!nativeAccountsReady) return 'Chưa đọc được trạng thái từ Native Marketing API.';
     const matched = nativeAccounts.filter((item) => matchesChannel(item.platform, channel));
     if (matched.length === 0) return 'Chưa có tài khoản nào cho kênh này.';
-    return matched.map((item) => `${item.label}${item.active ? '' : ' · cần cấp quyền lại'}`).join(' · ');
+    return matched.map((item) => {
+      const detail = accountReadinessLabel(item.readiness);
+      return `${item.label}${detail ? ` · ${detail}` : ''}`;
+    }).join(' · ');
   };
 
   const facebookState = nativeChannelState('facebook');
