@@ -23,7 +23,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 ### MKT-00 - Customer Marketing foundation [done]
 
 - Tenant-safe Customer Marketing Room, typed IPC, onboarding, goals, approvals, AI Director boundary, capability registry, Brand Center, workflow API/bridge, quota and billing provenance, hard entitlement, retry recovery, local cross-device harness, renderer performance and ESLint gates are implemented and locally verified.
-- The 17-file Marketing migration bundle is deployed atomically in production from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`. Postflight confirms the schema is ready, prior row counts are unchanged, and no external provider action or spend occurred.
+- The 17-file Marketing migration bundle was deployed atomically from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`. Production now runs backend merge commit `0c900b7d645b2bbb818f000c7c14f8cd2642a105`, which preserves that schema and adds a fail-closed Supabase public-key deployment preflight.
 
 ### MKT-01 - Channel connection center [done]
 
@@ -31,7 +31,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
-- Current installed baseline is `v1.14.0-beta.60` at desktop merge commit `8108610`; the retained Windows profile and authenticated session survived the installation.
+- Current installed baseline is `v1.14.0-beta.61` at desktop merge commit `a44821c`; the retained Windows profile and authenticated session survived the installation.
 
 ## Ordered Backlog
 
@@ -53,8 +53,10 @@ Progress checkpoint:
 - Health, revoke, and Telegram canary readiness now inherit the grant state. Credential bytes remain inside main, and publish/spend/bulk execution is unchanged.
 - Implementation and local evidence are recorded in `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
 - NM-012 production account readiness is released as `v1.14.0-beta.60`, desktop merge commit `8108610`. Workspace activation now follows the backend contract, and the Marketing UI reads backend-owned OAuth/account readiness without creating a second token authority.
-- Production was cut over from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`: 17/17 migrations applied atomically, schema postflight passed, and existing rows remained unchanged. The VPS runtime now has the required `SUPABASE_PUBLISHABLE_KEY`; no secret value is recorded in the repository or worklogs.
+- Production now runs backend merge commit `0c900b7d645b2bbb818f000c7c14f8cd2642a105`. Its release preflight fails closed when neither supported Supabase public key is usable, rejects placeholders and accidental service-role key reuse, and never prints credential bytes.
 - Installed smoke retained authentication, opened the single `Izzi Marketing` Owner/Pro workspace, returned `backend_oauth` authority with zero connected accounts, and performed no external action. Evidence is recorded in `worklogs/2026-08-28-nm-012-production-account-readiness.md`.
+- NM-014 is released as `v1.14.0-beta.61`, desktop merge commit `a44821c222019cd0fbb0d983e5868ec21d76b753`. Provider Vault now derives authority from the uniquely bound Native Marketing workspace for six bounded vault operations while resource, workflow, and canary-send paths stay on the legacy bridge and fail closed.
+- Installed beta.61 smoke retained authentication, reported `Vault sẵn sàng`, synchronized credential/operation/readiness summaries, and performed no external action. Evidence is recorded in `worklogs/2026-08-28-nm-014-provider-vault-native-authority.md`.
 
 Acceptance evidence:
 
@@ -63,7 +65,7 @@ Acceptance evidence:
 - Packaged local staging proves configure -> health -> revoke -> audit with token bytes absent from renderer responses and logs.
 - Publish, spend, bulk send, and commercial render remain denied.
 
-Dependencies: the production schema and account-health foundation are ready. Remaining work is the bounded provider-route contract and deployment preflight hardening; external publishing remains out of scope.
+Dependencies: the production schema, account-health foundation, deployment preflight, and Native Marketing Provider Vault authority are ready. Remaining work is the bounded authenticated provider-route contract; external publishing remains out of scope.
 
 ### MKT-03 - Live model execution for the seven-day workflow [pending]
 
@@ -114,4 +116,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Continue MKT-02 with a backend deployment preflight guard for the required Supabase publishable key, then implement the smallest authenticated provider-route contract. Do not enable external publishing as a shortcut.
+Continue MKT-02 with the smallest authenticated provider-route contract. Keep OAuth, publish, schedule, spend, customer import, bulk send, and every external provider action disabled.
