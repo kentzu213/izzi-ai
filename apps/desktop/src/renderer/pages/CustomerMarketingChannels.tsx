@@ -608,7 +608,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     try {
       const result = await nativeApi.beginConnect(nativeWorkspaceId, channel);
       if (!result.ok) {
-        setNativeError(nativeMarketingErrorLabel(result.error));
+        setNativeError(nativeMarketingErrorLabel(result.error ?? 'request-rejected'));
         return;
       }
       setConnectNotice(
