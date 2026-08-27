@@ -23,7 +23,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 ### MKT-00 - Customer Marketing foundation [done]
 
 - Tenant-safe Customer Marketing Room, typed IPC, onboarding, goals, approvals, AI Director boundary, capability registry, Brand Center, workflow API/bridge, quota and billing provenance, hard entitlement, retry recovery, local cross-device harness, renderer performance and ESLint gates are implemented and locally verified.
-- The 17-file Marketing migration bundle was deployed atomically from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`. Production now runs backend merge commit `0c900b7d645b2bbb818f000c7c14f8cd2642a105`, which preserves that schema and adds a fail-closed Supabase public-key deployment preflight.
+- The 17-file Marketing migration bundle was deployed atomically from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`. Production now runs backend merge commit `7c8821bd11f95433d170d8e25ffdd4a1edc676c9`, which preserves that schema and deployment preflight and adds the authenticated provider-route contract.
 
 ### MKT-01 - Channel connection center [done]
 
@@ -31,11 +31,11 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
-- Current installed baseline is `v1.14.0-beta.61` at desktop merge commit `a44821c`; the retained Windows profile and authenticated session survived the installation.
+- Current installed baseline is `v1.14.0-beta.62` at desktop merge commit `7a890e5`; the retained Windows profile and authenticated session survived the installation.
 
 ## Ordered Backlog
 
-### MKT-02 - Integration authority and provider routes [in_progress]
+### MKT-02 - Integration authority and provider routes [done]
 
 Goal: make every provider connection usable by the future marketing workflow without creating a second token authority.
 
@@ -57,15 +57,18 @@ Progress checkpoint:
 - Installed smoke retained authentication, opened the single `Izzi Marketing` Owner/Pro workspace, returned `backend_oauth` authority with zero connected accounts, and performed no external action. Evidence is recorded in `worklogs/2026-08-28-nm-012-production-account-readiness.md`.
 - NM-014 is released as `v1.14.0-beta.61`, desktop merge commit `a44821c222019cd0fbb0d983e5868ec21d76b753`. Provider Vault now derives authority from the uniquely bound Native Marketing workspace for six bounded vault operations while resource, workflow, and canary-send paths stay on the legacy bridge and fail closed.
 - Installed beta.61 smoke retained authentication, reported `Vault sẵn sàng`, synchronized credential/operation/readiness summaries, and performed no external action. Evidence is recorded in `worklogs/2026-08-28-nm-014-provider-vault-native-authority.md`.
+- NM-015 backend PR `kentzu213/izzi-backend#25` is deployed at production commit `7c8821bd11f95433d170d8e25ffdd4a1edc676c9`. `GET /api/marketing/provider-routes` returns the workspace-bound `marketing-provider-routes.v1` manifest with only `read`, `draft`, and `validate`; publish, schedule, send, bulk, spend, integration writes, and contact writes remain denied.
+- NM-015 desktop PR `kentzu213/izzi-ai#13` and release PR `#14` are published as `v1.14.0-beta.62`, merge commit `7a890e5a056928092227d709cd748f048c1a765d`. Electron independently validates the exact contract and exposes only bounded route identities, readiness counts, and fixed policy values through IPC.
+- Installed beta.62 retained authentication, reported updater version `1.14.0-beta.62`, verified all 7 providers and 4 internal route resources, and recorded zero request, console, page, or overflow errors at 1280x900 and 390x844. `externalExecution` stayed `blocked` and `externalActionPerformed` stayed `false`. Evidence is recorded in `worklogs/2026-08-28-nm-015-provider-routes.md`.
 
 Acceptance evidence:
 
 - Focused vault, grant, revoke, health, audit, RLS/PostgREST boundary tests pass.
 - Renderer receives no token, OAuth URL, backend secret, or filesystem path.
-- Packaged local staging proves configure -> health -> revoke -> audit with token bytes absent from renderer responses and logs.
+- Deterministic vault and authority tests cover configure -> health -> revoke -> audit with token bytes absent from renderer responses and logs. Installed smoke remains read-only and does not mutate a live provider account.
 - Publish, spend, bulk send, and commercial render remain denied.
 
-Dependencies: the production schema, account-health foundation, deployment preflight, and Native Marketing Provider Vault authority are ready. Remaining work is the bounded authenticated provider-route contract; external publishing remains out of scope.
+Dependencies: complete. The production schema, account-health foundation, deployment preflight, Provider Vault authority, and bounded authenticated provider-route contract are all released. External publishing remains out of scope.
 
 ### MKT-03 - Live model execution for the seven-day workflow [pending]
 
@@ -116,4 +119,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Continue MKT-02 with the smallest authenticated provider-route contract. Keep OAuth, publish, schedule, spend, customer import, bulk send, and every external provider action disabled.
+Start MKT-03 with the smallest approved, budgeted model-backed draft path behind the existing feature flag. Preserve reviewer approval, tenant scope, retry idempotency, and the zero-external-action boundary; do not enable publish, schedule, spend, customer import, bulk send, or provider execution.
