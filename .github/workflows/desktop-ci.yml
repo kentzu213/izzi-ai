@@ -71,6 +71,10 @@ jobs:
       - name: Build workspace
         run: pnpm build:all
 
+      - name: Run Customer Marketing safety core
+        if: runner.os == 'Windows'
+        run: pnpm --filter @openclaw/desktop test:marketing-safety-core
+
       - name: Enforce renderer bundle budget
         run: pnpm test:renderer-budget
 

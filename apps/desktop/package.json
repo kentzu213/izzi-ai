@@ -31,7 +31,8 @@
     "test:clean-host-lifecycle": "pwsh -NoProfile -File scripts/test-cmr216-clean-host-lifecycle.ps1",
     "test:clean-host-bundle": "pwsh -NoProfile -File scripts/test-cmr216-clean-host-bundle.ps1",
     "test:clean-host-attestation": "pwsh -NoProfile -File scripts/test-cmr216d-host-attestation.ps1",
-    "test:marketing-staging-launcher": "pwsh -NoProfile -File scripts/test-customer-marketing-staging-launcher.ps1"
+    "test:marketing-staging-launcher": "pwsh -NoProfile -File scripts/test-customer-marketing-staging-launcher.ps1",
+    "test:marketing-safety-core": "node scripts/customer-marketing-packaged-safety-harness.cjs ."
   },
   "dependencies": {
     "@kentzu213/graph-view": "file:vendor/kentzu213-graph-view-0.1.1.tgz",
