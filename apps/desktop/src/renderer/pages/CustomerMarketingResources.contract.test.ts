@@ -106,26 +106,46 @@ describe('CustomerMarketingResources CMR-407 decision history contract', () => {
     expect(stylesSource).toContain('.cmrr-asset-picker {');
   });
 
-  it('exposes one read-only Auto Post reconciliation path without renderer file access', () => {
+  it('exposes main-owned Auto Post selection plus one exact confirmed mutation path', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:selectLegacyAutoPostManifest')");
     expect(preloadSource.match(/customerMarketing:selectLegacyAutoPostManifest/g)).toHaveLength(1);
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:importLegacyAutoPostManifest', input)");
+    expect(preloadSource.match(/customerMarketing:importLegacyAutoPostManifest/g)).toHaveLength(1);
     expect(rendererTypesSource).toContain('selectLegacyAutoPostManifest: ()');
+    expect(rendererTypesSource).toContain('importLegacyAutoPostManifest: (');
     expect(ipcSource).toContain("ipcMain.handle('customerMarketing:selectLegacyAutoPostManifest'");
+    expect(ipcSource).toContain("ipcMain.handle('customerMarketing:importLegacyAutoPostManifest'");
     expect(ipcSource).toContain("filters: [{ name: 'Auto Post migration', extensions: ['json'] }]");
     expect(resourcesSource).toContain('api.selectLegacyAutoPostManifest()');
+    expect(resourcesSource).toContain('api.importLegacyAutoPostManifest({');
+    expect(resourcesSource).toContain('selectionId: legacyPreview.selectionId');
+    expect(resourcesSource).toContain('confirmed: true');
     expect(resourcesSource).toContain('Đối soát Auto Post');
     expect(resourcesSource).not.toContain('type="file"');
     expect(resourcesSource).not.toContain('legacyFilePath');
+    expect(resourcesSource).not.toContain('legacyWorkspaceId');
+    expect(resourcesSource).not.toContain('legacyAccessToken');
+    expect(resourcesSource).not.toContain('legacyIdempotencyKey');
   });
 
-  it('keeps the Auto Post reconciliation drawer preview-only', () => {
+  it('requires a visible preview and a separate confirmation before import', () => {
     expect(resourcesSource).toContain('Chỉ đọc, chưa nhập dữ liệu');
     expect(resourcesSource).toContain('Kết nối lại');
     expect(resourcesSource).toContain('Tải lại media');
     expect(resourcesSource).toContain('Cần xem xét');
-    expect(resourcesSource).not.toContain('executeLegacyAutoPostImport');
-    expect(resourcesSource).not.toContain('importLegacyAutoPost');
+    expect(resourcesSource).toContain("useState<'preview' | 'confirm' | 'result'>('preview')");
+    expect(resourcesSource).toContain('Tiếp tục xác nhận');
+    expect(resourcesSource).toContain('Xác nhận và nhập');
+    expect(resourcesSource).toContain('Dữ liệu sẽ được tạo trong workspace Izzi AI hiện tại.');
+    expect(resourcesSource).toContain('disabled={!legacyPreview.ready || legacyBusy}');
+    expect(resourcesSource).toContain("legacyStep === 'confirm'");
+    expect(resourcesSource).toContain("legacyStep === 'result'");
+    expect(resourcesSource).toContain('legacyReceipt.counts.campaigns');
+    expect(resourcesSource).toContain('legacyReceipt.counts.content');
+    expect(resourcesSource).toContain('legacyResult.reconciliationRequired');
     expect(stylesSource).toContain('.cmrr-import-summary {');
     expect(stylesSource).toContain('.cmrr-import-plan {');
+    expect(stylesSource).toContain('.cmrr-import-confirmation {');
+    expect(stylesSource).toContain('.cmrr-import-result {');
   });
 });

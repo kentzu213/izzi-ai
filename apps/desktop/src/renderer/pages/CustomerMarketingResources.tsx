@@ -35,7 +35,9 @@ import type {
 } from '../../shared/customer-marketing-types';
 import type {
   CustomerMarketingLegacyImportIssueCode,
+  CustomerMarketingLegacyImportMutationResult,
   CustomerMarketingLegacyImportPreview,
+  CustomerMarketingLegacyImportReceiptSummary,
 } from '../../shared/customer-marketing-legacy-import-types';
 import '../styles/customer-marketing-resources.css';
 
@@ -218,6 +220,78 @@ function LegacyImportPreview({ preview }: { preview: CustomerMarketingLegacyImpo
       <p className="cmrr-import-security-note">
         Token, ID tài khoản, nội dung bài và đường dẫn local không được hiển thị hoặc chuyển vào giao diện này.
       </p>
+    </div>
+  );
+}
+
+function LegacyImportConfirmation({ preview }: { preview: CustomerMarketingLegacyImportPreview }) {
+  return (
+    <div className="cmrr-import-confirmation">
+      <div>
+        <span className="cmr-eyebrow">Bước xác nhận cuối</span>
+        <h4>Xác nhận nhập dữ liệu</h4>
+        <p>Dữ liệu sẽ được tạo trong workspace Izzi AI hiện tại.</p>
+      </div>
+      <dl>
+        <div><dt>Chiến dịch và nội dung</dt><dd>{preview.plan.migrate.campaigns + preview.plan.migrate.content}</dd></div>
+        <div><dt>Lịch hỗ trợ</dt><dd>{preview.plan.migrate.schedules}</dd></div>
+        <div><dt>Tác vụ kết nối lại</dt><dd>{preview.plan.reconnect.accounts}</dd></div>
+        <div><dt>Tác vụ tải media</dt><dd>{preview.plan.reupload.media}</dd></div>
+      </dl>
+      <p className="cmrr-import-confirmation__warning">
+        Tệp gốc sẽ được đọc và kiểm tra hash thêm một lần. Token cũ không được nhập; tài khoản và media chỉ tạo tác vụ kết nối hoặc tải lại.
+      </p>
+    </div>
+  );
+}
+
+function LegacyImportResult({
+  legacyResult,
+  legacyReceipt,
+}: {
+  legacyResult: CustomerMarketingLegacyImportMutationResult;
+  legacyReceipt: CustomerMarketingLegacyImportReceiptSummary | null;
+}) {
+  if (legacyReceipt) {
+    return (
+      <div className="cmrr-import-result is-success" role="status">
+        <div>
+          <span className="cmr-eyebrow">Đã xác nhận bởi IzziAPI</span>
+          <h4>{legacyResult.reconciled
+            ? 'Đã đối soát và hoàn tất nhập dữ liệu'
+            : legacyReceipt.duplicate
+              ? 'Bản nhập này đã được áp dụng trước đó'
+              : 'Đã nhập dữ liệu thành công'}</h4>
+          <p>Receipt chỉ hiển thị số lượng an toàn, không chứa nội dung hoặc định danh dữ liệu cũ.</p>
+        </div>
+        <dl>
+          <div><dt>Chiến dịch</dt><dd>{legacyReceipt.counts.campaigns}</dd></div>
+          <div><dt>Nội dung</dt><dd>{legacyReceipt.counts.content}</dd></div>
+          <div><dt>Kết nối tài khoản</dt><dd>{legacyReceipt.counts.accountReconnectTasks}</dd></div>
+          <div><dt>Tải lại media</dt><dd>{legacyReceipt.counts.mediaReuploadTasks}</dd></div>
+          <div><dt>Kết nối lịch</dt><dd>{legacyReceipt.counts.scheduleReconnectTasks}</dd></div>
+          <div><dt>Cần xem xét</dt><dd>{legacyReceipt.counts.recordReviewTasks}</dd></div>
+        </dl>
+        <small>Hoàn tất {formatDate(legacyReceipt.occurredAt, true)} · Mapper {legacyReceipt.mapperVersion}</small>
+      </div>
+    );
+  }
+
+  if (legacyResult.reconciliationRequired) {
+    return (
+      <div className="cmrr-import-result is-uncertain" role="alert">
+        <span className="cmr-eyebrow">Cần đối soát</span>
+        <h4>Chưa thể xác nhận kết quả nhập</h4>
+        <p>Izzi AI đã không gửi lại yêu cầu để tránh tạo bản trùng. Hãy đóng cửa sổ và kiểm tra lại tài nguyên sau ít phút.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cmrr-import-result is-error" role="alert">
+      <span className="cmr-eyebrow">Chưa nhập dữ liệu</span>
+      <h4>Yêu cầu không được áp dụng</h4>
+      <p>{legacyResult.error || 'Không thể nhập dữ liệu Auto Post vào workspace hiện tại.'}</p>
     </div>
   );
 }
@@ -814,6 +888,9 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
   const [legacyPreview, setLegacyPreview] = useState<CustomerMarketingLegacyImportPreview | null>(null);
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [legacyBusy, setLegacyBusy] = useState(false);
+  const [legacyStep, setLegacyStep] = useState<'preview' | 'confirm' | 'result'>('preview');
+  const [legacyResult, setLegacyResult] = useState<CustomerMarketingLegacyImportMutationResult | null>(null);
+  const [legacyReceipt, setLegacyReceipt] = useState<CustomerMarketingLegacyImportReceiptSummary | null>(null);
   const editorRef = useRef<HTMLFormElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -828,6 +905,10 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
 
   const closeLegacyPreview = useCallback(() => {
     setLegacyOpen(false);
+    setLegacyPreview(null);
+    setLegacyStep('preview');
+    setLegacyResult(null);
+    setLegacyReceipt(null);
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }, []);
 
@@ -932,7 +1013,9 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
 
   useEffect(() => {
     if (!legacyOpen) return;
-    legacyRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    const initial = legacyRef.current?.querySelector<HTMLButtonElement>('[data-legacy-autofocus]:not([disabled])')
+      ?? legacyRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])');
+    initial?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !legacyBusy) {
         event.preventDefault();
@@ -954,7 +1037,7 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [closeLegacyPreview, legacyBusy, legacyOpen]);
+  }, [closeLegacyPreview, legacyBusy, legacyOpen, legacyStep]);
 
   const visibleResources = useMemo(() => {
     const source = kind === 'content' && displayMode === 'calendar' ? calendarResources : resources;
@@ -1103,6 +1186,9 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
     }
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setLegacyBusy(true);
+    setLegacyStep('preview');
+    setLegacyResult(null);
+    setLegacyReceipt(null);
     setError('');
     setNotice('');
     try {
@@ -1117,6 +1203,49 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
       setLegacyOpen(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Không thể đối soát bản xuất Auto Post.');
+    } finally {
+      setLegacyBusy(false);
+    }
+  };
+
+  const importLegacyAutoPostManifest = async () => {
+    const api = customerApi();
+    if (!legacyPreview || !legacyPreview.ready || !api?.importLegacyAutoPostManifest) {
+      setLegacyResult({
+        ok: false,
+        status: 'unavailable',
+        receipt: null,
+        reconciled: false,
+        reconciliationRequired: false,
+        error: 'Nhập Auto Post cần chạy trong Izzi AI Desktop với một preview còn hiệu lực.',
+      });
+      setLegacyReceipt(null);
+      setLegacyStep('result');
+      return;
+    }
+    setLegacyBusy(true);
+    try {
+      const result = await api.importLegacyAutoPostManifest({
+        selectionId: legacyPreview.selectionId,
+        confirmed: true,
+      });
+      setBridgeStatus(result.status);
+      setLegacyResult(result);
+      setLegacyReceipt(result.receipt);
+      setLegacyStep('result');
+      if (result.ok) void load();
+    } catch {
+      setBridgeStatus('unavailable');
+      setLegacyResult({
+        ok: false,
+        status: 'unavailable',
+        receipt: null,
+        reconciled: false,
+        reconciliationRequired: true,
+        error: 'Chưa thể xác nhận kết quả nhập dữ liệu.',
+      });
+      setLegacyReceipt(null);
+      setLegacyStep('result');
     } finally {
       setLegacyBusy(false);
     }
@@ -1394,22 +1523,85 @@ export function CustomerMarketingResources({ kind, role }: CustomerMarketingReso
         <div className="cmrr-editor-overlay" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !legacyBusy) closeLegacyPreview();
         }}>
-          <div ref={legacyRef} className="cmrr-editor cmrr-import-drawer" role="dialog" aria-modal="true" aria-labelledby="cmrr-import-title">
+          <div
+            ref={legacyRef}
+            className="cmrr-editor cmrr-import-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cmrr-import-title"
+            aria-busy={legacyBusy}
+          >
             <div className="cmrr-editor__header">
               <div>
                 <span className="cmr-eyebrow">Auto Post migration</span>
-                <h3 id="cmrr-import-title">Đối soát dữ liệu cũ</h3>
+                <h3 id="cmrr-import-title">{legacyStep === 'preview'
+                  ? 'Kiểm tra dữ liệu cũ'
+                  : legacyStep === 'confirm'
+                    ? 'Xác nhận nhập dữ liệu'
+                    : 'Kết quả nhập dữ liệu'}</h3>
               </div>
               <button type="button" className="cmr-icon-button" aria-label="Đóng" title="Đóng" disabled={legacyBusy} onClick={closeLegacyPreview}>
                 <CloseIcon className="cmr-icon" />
               </button>
             </div>
             <div className="cmrr-editor__body">
-              <LegacyImportPreview preview={legacyPreview} />
+              {legacyBusy && legacyStep === 'confirm' && (
+                <div className="cmrr-import-progress" role="status">Đang đọc lại tệp và xác nhận với IzziAPI...</div>
+              )}
+              {legacyStep === 'preview' && <LegacyImportPreview preview={legacyPreview} />}
+              {legacyStep === 'confirm' && <LegacyImportConfirmation preview={legacyPreview} />}
+              {legacyStep === 'result' && legacyResult && (
+                <LegacyImportResult legacyResult={legacyResult} legacyReceipt={legacyReceipt} />
+              )}
             </div>
             <div className="cmrr-editor__footer cmrr-import-footer">
-              <span>Preview hết hạn sau 15 phút; chọn lại file để làm mới.</span>
-              <button type="button" className="cmr-button cmr-button--primary" onClick={closeLegacyPreview}>Đã hiểu</button>
+              {legacyStep === 'preview' && (
+                <>
+                  <span>Preview hết hạn sau 15 phút; chọn lại tệp để làm mới.</span>
+                  <div>
+                    <button type="button" className="cmr-button" disabled={legacyBusy} onClick={closeLegacyPreview}>Hủy</button>
+                    <button
+                      type="button"
+                      className="cmr-button cmr-button--primary"
+                      data-legacy-autofocus="true"
+                      disabled={!legacyPreview.ready || legacyBusy}
+                      onClick={() => setLegacyStep('confirm')}
+                    >
+                      Tiếp tục xác nhận
+                    </button>
+                  </div>
+                </>
+              )}
+              {legacyStep === 'confirm' && (
+                <>
+                  <span>Sau khi bấm xác nhận, selection này chỉ được sử dụng một lần.</span>
+                  <div>
+                    <button type="button" className="cmr-button" disabled={legacyBusy} onClick={() => setLegacyStep('preview')}>Quay lại</button>
+                    <button
+                      type="button"
+                      className="cmr-button cmr-button--primary"
+                      data-legacy-autofocus="true"
+                      disabled={legacyBusy}
+                      onClick={() => void importLegacyAutoPostManifest()}
+                    >
+                      {legacyBusy ? 'Đang kiểm tra và nhập...' : 'Xác nhận và nhập'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {legacyStep === 'result' && (
+                <>
+                  <span>{legacyResult?.ok ? 'Có thể tải lại danh sách để xem dữ liệu mới.' : 'Chọn lại tệp để bắt đầu một lượt xác nhận mới.'}</span>
+                  <button
+                    type="button"
+                    className="cmr-button cmr-button--primary"
+                    data-legacy-autofocus="true"
+                    onClick={closeLegacyPreview}
+                  >
+                    Đóng
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
