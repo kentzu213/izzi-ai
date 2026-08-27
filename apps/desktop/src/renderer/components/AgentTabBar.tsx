@@ -58,13 +58,21 @@ export function AgentTabBar({
 
   return (
     <div className="gw-tabbar glass-surface">
-      <div className="gw-tabbar__tabs">
+      <div className="gw-tabbar__tabs" role="tablist" aria-label="Phiên Agent">
         {sessions.map((session) => (
-          <button
+          <div
             key={session.id}
             className={`gw-tab ${session.id === activeSessionId ? 'gw-tab--active' : ''}`}
+            role="tab"
+            aria-selected={session.id === activeSessionId}
+            tabIndex={session.id === activeSessionId ? 0 : -1}
             onClick={() => onSwitchSession(session.id)}
-            type="button"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSwitchSession(session.id);
+              }
+            }}
           >
             <span className={`gw-tab__dot ${getAgentStatus(session.agentId)}`} />
             <span className="gw-tab__icon">{monogram(session.agentName)}</span>
@@ -78,10 +86,11 @@ export function AgentTabBar({
               }}
               type="button"
               title="Đóng tab"
+              aria-label={`Đóng tab ${session.agentName}`}
             >
               ×
             </button>
-          </button>
+          </div>
         ))}
       </div>
       <button className="gw-tabbar__add" onClick={onAddAgent} type="button" title="Thêm Agent">
