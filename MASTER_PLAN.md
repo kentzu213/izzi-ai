@@ -31,7 +31,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
-- Current installed baseline is `v1.14.0-beta.63` at desktop merge commit `2930169bf77a425d5e630e5aebbd25302dc999c6`; the retained Windows profile and authenticated session survived the installation.
+- Current installed baseline is `v1.14.0-beta.64` at desktop merge commit `315c105b047ed816c1bd91e1bdc386cc09b712c4`; the retained Windows profile and authenticated session survived the installation.
 
 ## Ordered Backlog
 
@@ -86,13 +86,22 @@ Acceptance: complete. Local and packaged staging create a model-backed draft, re
 
 Dependencies: complete. MKT-02 integration authority and IzziAPI model health were verified before release.
 
-### MKT-04 - End-to-end safety gate suite [pending]
+### MKT-04 - End-to-end safety gate suite [done]
 
 Build the packaged-staging suite for publish/spend/bulk gates, integrations, billing reconciliation, recovery, console/network health, and Internal Marketing Room regression.
 
-Acceptance: deterministic pass/fail receipt, zero secret leakage, zero unapproved external actions, and release CI coverage.
+Progress checkpoint:
 
-Dependencies: MKT-02 and MKT-03.
+- Product PR [#19](https://github.com/kentzu213/izzi-ai/pull/19) merged at `38e7be0747e04f5aede63e349d47b5f002e3ecb2`; release PR [#20](https://github.com/kentzu213/izzi-ai/pull/20) merged at `315c105b047ed816c1bd91e1bdc386cc09b712c4` and published `v1.14.0-beta.64` with 12 assets.
+- The deterministic core covers publish, spend, bulk, destructive, kill-switch, spend-cap, provider-route, retry, idempotency, recovery, billing reconciliation, `gpt-5.6-sol` identity, disabled tools, provenance, and the pending-approval stop.
+- The packaged renderer smoke blocks fetch, HTTP/HTTPS, net, TLS, WebSocket, and renderer requests, then validates the real `app.asar` at 1280x900 and 390x844. Release workflow [33122607322](https://github.com/kentzu213/izzi-ai/actions/runs/33122607322) ran the suite after Windows packaging and before signing policy enforcement.
+- Installed beta.64 smoke retained authentication, reported updater version `1.14.0-beta.64`, validated all 7 workflow-ready providers, preserved `externalExecution=blocked`, and found zero request, console, page, or horizontal-overflow errors.
+- The final installed-package receipt at `F:\Ai Tools\Codex\Temp\izzi-ai-beta64-mkt04-packaged-safety-final\customer-marketing-packaged-safety-receipt.json` reports core/UI pass, two viewports, zero console/load/process/network/secret errors, and zero external actions.
+- Follow-up PR [#21](https://github.com/kentzu213/izzi-ai/pull/21) makes the safety runner portable when the installed package is outside the repository. It changes test orchestration only, so it does not create new application bytes or a second product release.
+
+Acceptance: complete. The suite emits deterministic pass/fail receipts, leaks no synthetic secret, performs no network or external marketing action, runs before signing in release CI, and passes against the installed beta.64 package.
+
+Dependencies: complete. MKT-02 and MKT-03 are released and covered by the aggregate suite.
 
 ### MKT-05 - Staging deployment, security review, and reviewer approval [pending_external]
 
@@ -127,4 +136,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Start MKT-04 by turning the current model, approval, provider-route, billing, recovery, and renderer checks into one packaged-staging safety suite with a deterministic receipt. Keep publish, schedule, spend, customer import, bulk send, and provider execution disabled.
+Prepare MKT-05 staging deployment and security-review inputs: disposable host, exact allowlist, secret owner, rollback command, migration digest, and reviewer sign-off. Keep publish, schedule, spend, customer import, bulk send, and provider execution disabled; no production cutover is authorized by MKT-04.
