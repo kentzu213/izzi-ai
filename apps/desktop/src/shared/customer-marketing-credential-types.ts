@@ -19,15 +19,37 @@ export type CustomerMarketingIntegrationProvider =
 export type CustomerMarketingCredentialConnectionState =
   | 'connected'
   | 'disconnected'
+  | 'expired'
   | 'locked'
   | 'invalid';
 
 export type CustomerMarketingCredentialVaultState = 'ready' | 'locked';
 
+export const CUSTOMER_MARKETING_CREDENTIAL_GRANT_PERMISSIONS = [
+  'validate',
+  'sandbox_execute',
+] as const;
+
+export const CUSTOMER_MARKETING_CREDENTIAL_GRANT_TTL_MS = 90 * 24 * 60 * 60 * 1_000;
+
+export type CustomerMarketingCredentialGrantPermission =
+  (typeof CUSTOMER_MARKETING_CREDENTIAL_GRANT_PERMISSIONS)[number];
+
+export interface CustomerMarketingCredentialGrantInput {
+  permissions: CustomerMarketingCredentialGrantPermission[];
+  expiresAt: string;
+}
+
+export interface CustomerMarketingCredentialGrantSummary
+extends CustomerMarketingCredentialGrantInput {
+  digest: string;
+}
+
 export interface CustomerMarketingCredentialStatus {
   provider: CustomerMarketingIntegrationProvider;
   state: CustomerMarketingCredentialConnectionState;
   updatedAt: string | null;
+  grant: CustomerMarketingCredentialGrantSummary | null;
 }
 
 export interface CustomerMarketingCredentialListResult {

@@ -1,6 +1,8 @@
 import {
   isCustomerMarketingIntegrationProvider,
   type CustomerMarketingCredentialConnectionState,
+  type CustomerMarketingCredentialGrantPermission,
+  type CustomerMarketingCredentialStatus,
   type CustomerMarketingIntegrationProvider,
 } from '../../shared/customer-marketing-credential-types';
 import {
@@ -9,14 +11,14 @@ import {
 } from './customer-marketing-connector-sdk';
 
 export interface CustomerMarketingConnectorCredentialSource {
-  getCredential(workspaceId: string, provider: CustomerMarketingIntegrationProvider): string | null;
+  getCredential(
+    workspaceId: string,
+    provider: CustomerMarketingIntegrationProvider,
+    permission: CustomerMarketingCredentialGrantPermission,
+  ): string | null;
   listStatuses(workspaceId: string): {
     vaultState: 'ready' | 'locked';
-    credentials: Array<{
-      provider: CustomerMarketingIntegrationProvider;
-      state: CustomerMarketingCredentialConnectionState;
-      updatedAt: string | null;
-    }>;
+    credentials: CustomerMarketingCredentialStatus[];
   };
 }
 
@@ -74,7 +76,7 @@ export class CustomerMarketingConnectorVaultAdapter {
         detail: 'credential-unavailable',
       };
     }
-    const secret = this.vault.getCredential(this.workspaceId, this.provider);
+    const secret = this.vault.getCredential(this.workspaceId, this.provider, 'validate');
     if (!secret) {
       return {
         ok: false,
@@ -110,7 +112,7 @@ export class CustomerMarketingConnectorVaultAdapter {
     ) => CustomerMarketingConnectorCredentialOperationResult | Promise<CustomerMarketingConnectorCredentialOperationResult>,
   ): Promise<boolean> {
     if (this.status() !== 'connected') return false;
-    const secret = this.vault.getCredential(this.workspaceId, this.provider);
+    const secret = this.vault.getCredential(this.workspaceId, this.provider, 'sandbox_execute');
     if (!secret) return false;
     try {
       return (await operation(secret)).ok === true;

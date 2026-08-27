@@ -18,14 +18,20 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(pageSource).toContain('receipt.provider === item.provider');
     expect(pageSource).toContain('Lần kiểm tra');
     expect(pageSource).toContain('Receipt gần nhất');
+    expect(pageSource).toContain('Quyền & hiệu lực');
+    expect(pageSource).toContain('item.grant.permissions');
+    expect(pageSource).toContain('formatTime(item.grant.expiresAt)');
     expect(pageSource).toContain("aria-label={'Kiểm tra cục bộ ' + providerLabel}");
     expect(pageSource).not.toMatch(/checkIntegrationHealth\(\{[^}]*\b(workspaceId|revision|token|chatId|url)\b/);
     expect(pageSource).not.toContain('executeConnector');
+    expect(pageSource).not.toContain('item.secret');
+    expect(pageSource).not.toContain('item.token');
   });
 
   it('keeps connector evidence scan-friendly and responsive', () => {
     expect(stylesSource).toMatch(/\.cmr-credential-row__evidence \{[\s\S]*?grid-template-columns:/);
     expect(stylesSource).toMatch(/\.cmr-credential-row__actions \{[\s\S]*?display: flex;/);
+    expect(stylesSource).toContain('.cmr-credential-row--expired');
     expect(stylesSource).toMatch(
       /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-row[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
     );

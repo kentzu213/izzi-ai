@@ -142,10 +142,12 @@ import {
   parseCustomerProductMarketingContext,
   parseCustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
-import type {
-  CustomerMarketingCredentialListResult,
-  CustomerMarketingCredentialRevokeInput,
-  CustomerMarketingCredentialRevokeResult,
+import {
+  CUSTOMER_MARKETING_CREDENTIAL_GRANT_TTL_MS,
+  type CustomerMarketingCredentialGrantInput,
+  type CustomerMarketingCredentialListResult,
+  type CustomerMarketingCredentialRevokeInput,
+  type CustomerMarketingCredentialRevokeResult,
 } from '../../shared/customer-marketing-credential-types';
 import type {
   CustomerMarketingConnectorHealthInput,
@@ -2227,7 +2229,7 @@ export class CustomerMarketingService {
         status: 'synced',
         provider: input.provider,
         revoked,
-        credential: { provider: input.provider, state: 'disconnected', updatedAt: null },
+        credential: { provider: input.provider, state: 'disconnected', updatedAt: null, grant: null },
         ...(operationReceipt
           ? {
             operationsRevision: operationReceipt.stateRevision,
@@ -2363,12 +2365,18 @@ export class CustomerMarketingService {
     }
     let chatWritten = false;
     try {
+      const credentialGrant: CustomerMarketingCredentialGrantInput = {
+        permissions: ['validate', 'sandbox_execute'],
+        expiresAt: new Date(
+          Date.now() + CUSTOMER_MARKETING_CREDENTIAL_GRANT_TTL_MS,
+        ).toISOString(),
+      };
       this.telegramSandboxConfig.setPrivateSandboxChatId(
         workspaceId,
         input.privateSandboxChatId,
       );
       chatWritten = true;
-      this.credentialVault.setCredential(workspaceId, 'telegram', input.token);
+      this.credentialVault.setCredential(workspaceId, 'telegram', input.token, credentialGrant);
       return {
         ok: true,
         status: 'synced',

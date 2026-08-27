@@ -2205,12 +2205,13 @@
 }
 
 .cmr-credential-row--connected .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-green); }
+.cmr-credential-row--expired .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-red); }
 .cmr-credential-row--locked .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-gold); }
 .cmr-credential-row--invalid .cmr-credential-row__identity > .cmr-icon { color: var(--cmr-red); }
 
 .cmr-credential-row__evidence {
   display: grid;
-  grid-template-columns: minmax(130px, 0.8fr) minmax(220px, 1.4fr);
+  grid-template-columns: minmax(180px, 1.2fr) minmax(130px, 0.8fr) minmax(220px, 1.4fr);
   gap: 16px;
   min-width: 0;
 }

@@ -5408,6 +5408,38 @@ describe('CustomerMarketingService CMR-306 workflow bridge', () => {
     expect(JSON.stringify(result)).not.toContain('secret');
   });
 
+  it('records an expired provider grant as unavailable without reading credential bytes', async () => {
+    const remote = marketingResourceGateway('manager');
+    const getCredential = vi.fn();
+    const listStatuses = vi.fn(() => ({
+      vaultState: 'ready' as const,
+      credentials: [{
+        provider: 'telegram' as const,
+        state: 'expired' as const,
+        updatedAt: '2026-07-26T00:00:00.000Z',
+        grant: {
+          permissions: ['validate', 'sandbox_execute'] as const,
+          expiresAt: '2026-08-01T00:00:00.000Z',
+          digest: 'a'.repeat(64),
+        },
+      }],
+    }));
+    const operations = new CustomerMarketingConnectorOperationStore(new MemorySettings());
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn(), getCredential } as never,
+      connectorOperationStore: operations,
+    });
+
+    await expect(context.service.checkIntegrationHealth({ provider: 'telegram' }))
+      .resolves.toMatchObject({
+        ok: true,
+        health: 'unavailable',
+        operationReceipt: { operation: 'health', outcome: 'unavailable' },
+      });
+    expect(getCredential).not.toHaveBeenCalled();
+  });
+
   it.each(['owner', 'manager'] as CustomerRole[])('allows %s to revoke a workspace credential', async (role) => {
     const remote = marketingResourceGateway(role);
     const revokeCredential = vi.fn((workspaceId: string, provider: string) => {
@@ -5669,7 +5701,15 @@ describe('CustomerMarketingService CMR-230 Telegram sandbox setup', () => {
       privateSandboxChatConfigured: true,
       externalActionPerformed: false,
     });
-    expect(setCredential).toHaveBeenCalledWith(remote.workspace.id, 'telegram', token);
+    expect(setCredential).toHaveBeenCalledWith(
+      remote.workspace.id,
+      'telegram',
+      token,
+      {
+        permissions: ['validate', 'sandbox_execute'],
+        expiresAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      },
+    );
     expect(setPrivateSandboxChatId).toHaveBeenCalledWith(remote.workspace.id, privateSandboxChatId);
     expect(JSON.stringify(result)).not.toContain(token);
     expect(JSON.stringify(result)).not.toContain(privateSandboxChatId);

@@ -11,7 +11,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 ## Operating Rules
 
 - Codex owns orchestration, state, integration, verification, release, and user reporting.
-- Claude Code is the technical collaborator for code, debug, test, and bounded review work; every task needs a current receipt and completion gate.
+- Claude Code is required only for deep T2/T3 technical work unless the user explicitly authorizes `relaxed_mode`; Codex remains the sole orchestrator, integrator, verifier, and reporter.
 - No ChatGPT web lane unless the user explicitly requests it in that task.
 - Fable is the default Claude lane; only the configured Claude-lane Fable to Opus 5 fallback is allowed for quota/rate-limit/overload.
 - Never run a real post, upload, spend, bulk send, or destructive external action in smoke tests without a separately bounded approval.
@@ -46,9 +46,11 @@ Scope:
 
 Progress checkpoint:
 
-- Public baseline `v1.14.0-beta.56` provides the Owner/Manager-only, read-only Auto Post migration preview.
-- NM-010c now adds the bounded confirmed mutation: one-shot local selection, exact-byte SHA-256 binding, tenant/role authority in main, one POST maximum, one GET reconciliation after an uncertain outcome, strict renderer-safe receipts, and no token migration.
-- Local verification and remaining release work are recorded in `worklogs/2026-08-27-nm-010c-native-auto-post-import.md`.
+- Public baseline `v1.14.0-beta.58` includes the bounded native Auto Post import and its renderer error-narrowing patch.
+- NM-011 candidate `1.14.0-beta.59` adds encrypted credential envelope v2 with workspace/provider binding, explicit `validate` and `sandbox_execute` permissions, a maximum 90-day grant, exact-expiry fail-closed behavior, and a renderer-safe grant digest/summary.
+- Legacy credential envelopes without a scoped grant are reported invalid and require an explicit reconnect; no credential is silently upgraded into a new authority.
+- Health, revoke, and Telegram canary readiness now inherit the grant state. Credential bytes remain inside main, and publish/spend/bulk execution is unchanged.
+- Implementation and local evidence are recorded in `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
 
 Acceptance evidence:
 
@@ -100,7 +102,7 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 ## Release Gate Per Task
 
 1. Read current repo state and task-specific instructions.
-2. Obtain the current Claude Code receipt and pass the completion gate.
+2. For Claude-routed T2/T3 work, obtain the current Claude Code receipt and pass the completion gate; for Codex-local or authorized `relaxed_mode`, record the route and verify independently.
 3. Implement only the bounded task scope.
 4. Run focused tests, full relevant tests, lint/build, security/diff checks, and packaged smoke when the task touches the desktop.
 5. Update this task list and an evidence note.
@@ -108,4 +110,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Start MKT-02 with a read-only integration authority audit, then implement the smallest missing local contract discovered by that audit. Do not enable external publishing as a shortcut.
+Package and exercise NM-011 candidate `1.14.0-beta.59`, then continue MKT-02 with the smallest authenticated backend provider-route contract. Do not enable external publishing as a shortcut.

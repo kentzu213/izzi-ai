@@ -1,173 +1,81 @@
-# Izzi AI — current state
+# Izzi AI current state
 
-Timestamp: **2026-07-28 17:42 ICT**
-Canonical GitHub repo: `kentzu213/izzi-ai`
-Released desktop version: `v1.14.0-beta.4`
-Release commit: `fc60923` (`fix(brand): pin Izzi AI Windows identity and icon`)
-Installed Windows app: `F:\IzziAI\Izzi AI.exe`
-Local profile retained at: `%APPDATA%\@openclaw`
+Timestamp: 2026-08-27 19:35 ICT
 
-## 2026-07-28 branding and repository release (COMPLETE)
+## Canonical product
 
-- Renamed the GitHub repository from `kentzu213/starizzi-app` to `kentzu213/izzi-ai`.
-- Renamed the visible Windows product, installer, shortcuts, and window title to `Izzi AI`.
-- Kept `com.izziapi.openclaw` as the stable AppUserModelID so upgrades reuse the existing
-  `%APPDATA%\@openclaw` profile and updater identity.
-- Rebuilt the official cyan `S` Windows icon with 7 frames: 16, 24, 32, 48, 64, 128, and 256 px.
-- Verified the icon extracted from the packaged and installed executables differs from the source
-  `32x32.png` by `0/1024` pixels.
-- Verified the clean release worktree with branding tests **3/3**, full desktop tests **904/904**,
-  TypeScript/Vite production build, Electron native dependency rebuild, and NSIS packaging.
-- Published `v1.14.0-beta.4` with installer, blockmap, and `latest.yml`; remote SHA-256 values
-  match the locally built artifacts.
-- Installed and launched the release successfully. Windows has one uninstall entry, both shortcuts
-  point to `F:\IzziAI\Izzi AI.exe`, the window title is `Izzi AI`, and the process is responsive.
-- Profile preservation was measured before and after the final install:
-  **3276 files / 901672269 bytes** on both sides.
-- Voice Studio and Docker runtime work was intentionally excluded from the branding release.
+- Repository: `kentzu213/izzi-ai`
+- Branch: `main`
+- Released desktop: `v1.14.0-beta.58`
+- Released commit: `df0e120`
+- Installed Windows app: `F:\IzziAI\Izzi\Izzi AI.exe`
+- Stable profile: `%APPDATA%\@openclaw`
+- Windows installer remains unsigned because no signing certificate is configured.
 
-## Active follow-ups after beta.4
+## Goal state
 
-- Voice Studio image build remains blocked by the `perth` package/runtime mismatch. The image must
-  use the package that provides `PerthImplicitWatermarker` and then pass a fresh runtime smoke test.
-- `LocalServiceManager` must retain Docker connection variables (`DOCKER_HOST`, `DOCKER_CONTEXT`,
-  and TLS variables) while scrubbing only Compose and managed-service overrides.
-- GitNexus MCP returned `Transport closed` during the release pass. The prior branding impact result
-  was `LOW` with `0` affected execution flows; current fallback verification used `git diff`,
-  focused/full tests, production build, and packaged artifact checks. Reconnect/re-index remains an
-  operational task.
-- The Windows installer is unsigned because no code-signing certificate is configured.
+- MKT-01 Channel connection center: complete.
+- MKT-02 Integration authority and provider routes: in progress.
+- MKT-03 through MKT-07: pending in the dependency order in `MASTER_PLAN.md`.
+- Video work is out of the active scope. Technical Marketing Room work has priority.
 
-## Previous 2026-07-27 baseline
+## Released baseline
 
-Repo: `F:\Ai Tools\Tool Starizzi - B2C - Openclaw`
-Branch: `feature/aibase-my-graph-ui-sync`
-HEAD before this session: `066b2d9` (feat(desktop): Customer AI Marketing Room + server-authoritative member roles)
-Working tree: **dirty before this session began** — 84 modified files of pre-existing user WIP
-(Agent / Graph / Vault / ProjectsHub work). None of it was touched, reverted or committed by this
-session except where explicitly noted below.
+- Beta.57 shipped the bounded native Auto Post manifest import: exact-byte
+  SHA-256 binding, Owner/Manager authority, one POST maximum, one GET
+  reconciliation after an uncertain outcome, strict redacted receipts, and no
+  token migration.
+- Beta.58 narrowed optional native Marketing connection errors to the existing
+  renderer-safe fallback.
+- Both releases passed Windows and macOS CI and published a complete 12-asset
+  inventory.
 
-No secrets are recorded in this file. Configuration is referenced by variable NAME only.
+## Active NM-011 candidate
 
-## Gate status
+Candidate version: `1.14.0-beta.59`.
 
-| Gate | State | Evidence |
-|---|---|---|
-| CMR-007 commercial TTS | **PASS (local)** — LICENSE_VERIFIED + TEST_VERIFIED | Socrates `APPROVE`; `docs/compliance/tts-model-license-evidence.md` |
-| CMR-404 dependency audit | **PARTIAL** — audit 74 → 20; ESLint still absent | `docs/compliance/cmr-404-dependency-audit.md` |
-| CMR-406 staging deploy | **HUMAN_ONLY_BLOCKER** | no staging infra exists — see below |
-| CMR-407 final sign-off | **BLOCKED_BY_CMR_406** | dependency unsatisfied by design |
-| izzi session-memory hook | **NOT STARTED** | deferred; see below |
+- Credential envelope v2 binds workspace, provider, permissions, expiry, issue
+  time, and a redacted SHA-256 grant digest.
+- Permissions are explicit: `validate` and `sandbox_execute`.
+- Grant lifetime is capped at 90 days and fails closed at the exact expiry
+  boundary.
+- Legacy envelopes without a scoped grant are invalid and require reconnect;
+  they are never silently promoted.
+- Health, revoke, and Telegram canary readiness inherit the grant state without
+  reading credential bytes.
+- Renderer receives no token, OAuth URL, backend secret, chat id, endpoint, or
+  filesystem path.
+- Publish, spend, bulk send, and commercial render behavior are unchanged.
 
-## CMR-007 — commercial TTS gate (PASS, local scope)
+## Local evidence
 
-Verdict: **VieNeu-TTS v3 Turbo (Apache-2.0) is approved for commercial render; F5 ViVoice
-(CC-BY-NC-SA-4.0) is not.** F5 remains usable for non-commercial/internal work.
+- Focused NM-011 suite: 273/273 pass using the command recorded in
+  `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
+- Full desktop suite: 1695/1695 pass in 122 files with
+  `pnpm --filter @openclaw/desktop test`.
+- Main and renderer TypeScript, workspace lint, production build, and renderer
+  budget 2/2 pass using the commands in the NM-011 worklog.
+- High-confidence credential pattern scan: 0 hits in desktop source/scripts and
+  root tools using the scoped command in the NM-011 worklog.
+- Dependency audit: one high advisory in Electron's `extract-zip` devDependency;
+  the advisory lists no patched release. The packaged inventory contains 9135
+  ASAR entries and 0 `extract-zip` entries.
+- Electron directory package starts at FileVersion `1.14.0-beta.59` with the
+  retained profile. Playwright smoke passes at 1280x800 and 390x844 with no
+  horizontal overflow; keyboard focus reaches a visible button with a 2px
+  focus outline.
+- No external provider action was performed.
 
-Chain verified from upstream sources on 2026-07-27: project code, `vieneu` PyPI package and the
-v3 Turbo checkpoint are Apache-2.0; the MOSS-Audio-Tokenizer-Nano codec ships under the
-Apache-2.0 MOSS-TTS family licence; `sea-g2p` carries an Apache-2.0 `LICENSE`. v3 Turbo is a
-from-scratch architecture, so it does not inherit the NeuTTS Air / Emilia non-commercial lineage.
+## Operating mode
 
-Code delivered:
-- `apps/desktop/src/main/customer-marketing/commercial-voice-license.ts` (new) — audited
-  registry + `verifyCommercialVoiceLicense` + `readVoiceStudioLicenseEvidence`.
-- `apps/desktop/src/main/customer-marketing/customer-video-studio-service.ts` — commercial voice
-  gate is now provider-agnostic; Voice Studio evidence fields; async readiness.
-- `apps/desktop/src/main/index.ts` — verifier is now actually wired (it never was), Voice Studio
-  readiness uses the managed-service `/health/ready` check on the allocated port.
-- `extensions/voice-studio/service/backend/{app.py,requirements.txt}` — `/health/ready` reports
-  the installed SDK version; `vieneu==3.2.3` pinned.
-- `extensions/voice-studio/service/docker-compose.izzi.yml` — image pinned by digest
-  (`sha256:746cead1…295f`, resolved live) instead of `:latest`.
-
-Two rounds of Socrates review were required. Round 1 found the real defect: the gate depended on
-a verifier callback that was never wired, and a declared model id could be unpinned. Both closed:
-the verifier now requires `repo@<hex>` plus a full SHA-256 checkpoint hash.
-
-Known residual (documented, not hidden): the gate verifies the operator's **declaration**; it does
-not cryptographically attest the downloaded weights. The pinned image predates the `vieneu==3.2.3`
-pin, so `/health/ready` will report a lower SDK version until the image is rebuilt.
-
-## CMR-404 — dependency + lint (PARTIAL)
-
-`pnpm audit --prod`: **74 → 47 → 20** findings (26 high → 14 high). Fixed by raising two direct
-dependency floors inside their existing caret ranges (`axios ^1.15.1`, `hono ^4.12.27`) and a
-`pnpm dedupe` that dropped a stale `@hono/node-server@…(hono@4.12.9)` peer resolution. Includes the
-Hono JWT NumericDate advisory, which matters for tenant isolation.
-
-Verified after the change: `tsc -p tsconfig.main.json --noEmit` exit 0; full desktop suite
-**824/824 pass (65 files)**; `vite build` exit 0, max chunk 375.83 kB.
-
-Remaining 20 are transitive through the electron-builder / sharp packaging chain and need
-`pnpm.overrides` plus a packaging smoke test — deliberately not forced.
-
-**ESLint: not installed at all** — no `eslint.config.*`, no `.eslintrc*`, and `eslint` /
-`@typescript-eslint/*` absent from `node_modules`, so `lint` (`eslint src/`) cannot run. This is a
-green-field ESLint 9 flat-config build-out across 6 workspace projects, left as the next task
-rather than half-applied. `tsc --noEmit` is the currently enforced static gate.
-
-**Uncommitted on purpose:** `apps/desktop/package.json` and `pnpm-lock.yaml` hold the axios floor
-raise **mixed with pre-existing user WIP** (version 1.11.0 → 1.12.0, `test:smoke` change, added
-`hyperframes` dependency). Committing them would sweep that WIP into an unrelated commit, so they
-were left in the working tree for the owner to commit. `apps/marketplace-api/package.json`
-contained only the hono change and was committed.
-
-## CMR-406 — staging deploy (HUMAN_ONLY_BLOCKER)
-
-Searched before declaring the blocker: no `fly.toml`, `render.yaml`, `railway.json`, `vercel.json`,
-no `.env.staging*`, no staging CI workflow (`.github/workflows` has only `desktop-ci.yml`,
-`publish-voice-image.yml`, `release-desktop.yml`), no deploy script in `apps/marketplace-api`
-(`dev`/`build`/`start`/`seed` only), and `apps/marketplace-api/supabase/migrations/` is **empty**.
-No Starizzi staging credentials exist in the environment (the `KIRO_*` variables present belong to
-a different project).
-
-So this is not a permissions problem — **the staging target does not exist yet**. What is missing,
-precisely:
-
-1. A staging host/target decision for `apps/marketplace-api` (container host, Supabase project, or
-   VPS) — nothing in the repo names one.
-2. Values, supplied through the environment or a secret manager (never pasted into chat or a repo
-   file), for the names already declared in `apps/marketplace-api/.env.example`:
-   `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `FRONTEND_URL`, `IZZI_BACKEND_URL`, `PORT`,
-   `EXTENSION_STORAGE_PATH`, `COMMISSION_RATE`, `MAX_EXTENSION_SIZE_MB`.
-3. Actual migration files. The Supabase migrations directory is empty, so there is no
-   production-like schema to apply or approve yet.
-4. Explicit owner approval for applying a production-like migration.
-
-Next command once 1–3 exist (nothing destructive before approval):
-
-```powershell
-pnpm --filter ./apps/marketplace-api build
-# then, against the staging project only:
-supabase link --project-ref <staging-ref>
-supabase db push --dry-run
-```
-
-## CMR-407 — final sign-off (BLOCKED_BY_CMR_406)
-
-Unchanged and correctly blocked. Socrates will not approve a final release while the
-staging/production gates are open, and no route around that was attempted.
-
-## izzi session-memory hook (not started)
-
-Historic failure: `MODULE_NOT_FOUND` for `.kiro/hooks/izzi-session-memory.mjs` because the hook
-command uses a path relative to a cwd that is not the workspace root. Parked deliberately: it does
-not block any CMR gate, and the CMR work had priority. Requires verifying the actual Kiro hook
-runtime (events fired, real cwd, duplicate writers) before changing anything.
-
-## Test / build status at close
-
-- Full desktop suite: **824/824 pass**, 65 files.
-- `tsc -p tsconfig.main.json --noEmit`: clean.
-- `vite build`: clean, max chunk 375.83 kB.
-- `pnpm audit --prod`: 20 findings (14 high, 6 moderate), triaged above.
+- `relaxed_mode` is active from the user's exact authorization
+  `cho phép nới rule`.
+- Claude was not used because its usage is exhausted.
+- ChatGPT web was not requested or used.
+- Codex remains implementation owner, verifier, integrator, and reporter.
 
 ## Next action
 
-1. Fix the Voice Studio `perth` dependency/runtime contract and rebuild the pinned image.
-2. Correct Docker environment scrubbing in `LocalServiceManager`, then run focused and full tests.
-3. Restore persistent GitNexus MCP health and index the active Voice worktree.
-4. Resume the Customer AI Marketing Room phases in `CUSTOMER-AI-MARKETING-ROOM-PLAN.md`.
-5. Continue CMR-404 (ESLint and transitive overrides), then repair the session-memory hook.
-6. CMR-406 still needs the documented staging inputs from the owner; CMR-407 follows it.
+Review the exact diff, then commit, push, tag, verify the release assets, install
+the public Windows artifact, and exercise the installed Marketing Channels
+workflow.

@@ -3,22 +3,43 @@ import {
   CustomerMarketingConnectorVaultAdapter,
   type CustomerMarketingConnectorCredentialSource,
 } from './customer-marketing-connector-vault-adapter';
+import type {
+  CustomerMarketingCredentialGrantPermission,
+} from '../../shared/customer-marketing-credential-types';
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const SECRET = 'synthetic-telegram-secret-never-export';
 
 class FakeVault implements CustomerMarketingConnectorCredentialSource {
   secret: string | null = SECRET;
-  status: 'connected' | 'disconnected' | 'locked' | 'invalid' = 'connected';
+  status: 'connected' | 'disconnected' | 'expired' | 'locked' | 'invalid' = 'connected';
+  permissions: CustomerMarketingCredentialGrantPermission[] = ['validate', 'sandbox_execute'];
+  requestedPermissions: CustomerMarketingCredentialGrantPermission[] = [];
 
-  getCredential(workspaceId: string, provider: 'telegram'): string | null {
-    return workspaceId === WORKSPACE_ID && provider === 'telegram' ? this.secret : null;
+  getCredential(
+    workspaceId: string,
+    provider: 'telegram',
+    permission: CustomerMarketingCredentialGrantPermission,
+  ): string | null {
+    this.requestedPermissions.push(permission);
+    return workspaceId === WORKSPACE_ID
+      && provider === 'telegram'
+      && this.permissions.includes(permission) ? this.secret : null;
   }
 
   listStatuses(workspaceId: string) {
     return {
       vaultState: 'ready' as const,
-      credentials: [{ provider: 'telegram' as const, state: this.status, updatedAt: null }],
+      credentials: [{
+        provider: 'telegram' as const,
+        state: this.status,
+        updatedAt: null,
+        grant: this.status === 'connected' ? {
+          permissions: this.permissions,
+          expiresAt: '2026-10-24T00:00:00.000Z',
+          digest: 'a'.repeat(64),
+        } : null,
+      }],
       workspaceId,
     };
   }
@@ -44,6 +65,7 @@ describe('CustomerMarketingConnectorVaultAdapter', () => {
     });
 
     expect(callbackSecret).toBe(SECRET);
+    expect(vault.requestedPermissions).toEqual(['validate']);
     expect(result).toMatchObject({ ok: true, status: 'valid' });
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
@@ -59,6 +81,7 @@ describe('CustomerMarketingConnectorVaultAdapter', () => {
     });
 
     expect(callbackSecret).toBe(SECRET);
+    expect(vault.requestedPermissions).toEqual(['sandbox_execute']);
     expect(result).toBe(true);
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
@@ -78,6 +101,20 @@ describe('CustomerMarketingConnectorVaultAdapter', () => {
     expect(called).toBe(false);
   });
 
+  it('does not expose credential bytes when the grant omits sandbox execution', async () => {
+    const vault = new FakeVault();
+    vault.permissions = ['validate'];
+    const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
+    let called = false;
+
+    expect(await adapter.executeWithCredential(async () => {
+      called = true;
+      return { ok: true };
+    })).toBe(false);
+    expect(called).toBe(false);
+    expect(vault.requestedPermissions).toEqual(['sandbox_execute']);
+  });
+
   it('fails closed when an async credential validator returns malformed output', async () => {
     const vault = new FakeVault();
     const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
@@ -93,7 +130,7 @@ describe('CustomerMarketingConnectorVaultAdapter', () => {
     const vault = new FakeVault();
     const adapter = new CustomerMarketingConnectorVaultAdapter(vault, WORKSPACE_ID, 'telegram');
 
-    for (const status of ['locked', 'disconnected', 'invalid'] as const) {
+    for (const status of ['locked', 'disconnected', 'expired', 'invalid'] as const) {
       vault.status = status;
       expect((await adapter.health()).status).toBe('unavailable');
       expect((await adapter.validate(() => ({ valid: true, detail: 'must not run' }))).status).toBe('forbidden');

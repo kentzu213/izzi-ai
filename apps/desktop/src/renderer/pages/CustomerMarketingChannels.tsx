@@ -9,6 +9,7 @@ import type {
 } from '../../shared/customer-marketing-types';
 import type {
   CustomerMarketingCredentialConnectionState,
+  CustomerMarketingCredentialGrantPermission,
   CustomerMarketingCredentialStatus,
   CustomerMarketingCredentialVaultState,
   CustomerMarketingIntegrationProvider,
@@ -145,9 +146,16 @@ function bridgeLabel(status: CustomerMarketingBridgeStatus): string {
 
 function credentialStateLabel(state: CustomerMarketingCredentialConnectionState): string {
   if (state === 'connected') return 'Đã kết nối';
+  if (state === 'expired') return 'Grant đã hết hạn';
   if (state === 'locked') return 'Đã khóa';
   if (state === 'invalid') return 'Cần kiểm tra';
   return 'Chưa kết nối';
+}
+
+function credentialGrantPermissionLabel(
+  permission: CustomerMarketingCredentialGrantPermission,
+): string {
+  return permission === 'validate' ? 'Xác minh' : 'Thực thi sandbox';
 }
 
 function vaultStateLabel(state: CustomerMarketingCredentialVaultState): string {
@@ -1439,6 +1447,14 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
                   </span>
                 </div>
                 <div className="cmr-credential-row__evidence">
+                  <span>
+                    <small>Quyền & hiệu lực</small>
+                    <strong title={item.grant?.digest}>
+                      {item.grant
+                        ? `${item.grant.permissions.map(credentialGrantPermissionLabel).join(', ')} · đến ${formatTime(item.grant.expiresAt)}`
+                        : 'Chưa có grant hợp lệ'}
+                    </strong>
+                  </span>
                   <span>
                     <small>Lần kiểm tra</small>
                     <strong className={lastHealth?.outcome === 'ready' ? 'is-ready' : ''}>
