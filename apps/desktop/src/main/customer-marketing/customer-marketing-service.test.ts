@@ -690,6 +690,7 @@ function setup(options?: {
     assetFiles?: CustomerMarketingAssetFileGateway;
     legacyImportRegistry?: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>;
     integrationAuthorityGateway?: CustomerMarketingIntegrationAuthorityGateway;
+    modelDraftExecutionEnabled?: boolean;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -723,6 +724,7 @@ function setup(options?: {
     options?.assetFiles,
     options?.legacyImportRegistry,
     options?.integrationAuthorityGateway,
+    options?.modelDraftExecutionEnabled ?? false,
   );
   return {
     db,
@@ -812,19 +814,59 @@ describe('CustomerMarketingService legacy Auto Post reconciliation', () => {
   });
 });
 
-function setupDirector(director: ReturnType<typeof vi.fn>) {
+function setupDirector(
+  director: ReturnType<typeof vi.fn>,
+  options: { modelDraftExecutionEnabled?: boolean; reservedCreditsUsed?: number } = {},
+) {
   const workspace = remoteWorkspace();
   const gateway: CustomerMarketingWorkspaceGateway = {
     ...memberGatewayMethods(),
     getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
     ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
-    reserveQuota: vi.fn(async () => ({
-      status: 'reserved',
-      duplicate: false,
-      quota: workspace.quota!,
-    })),
+    reserveQuota: vi.fn(async () => {
+      if (options.reservedCreditsUsed !== undefined) {
+        workspace.quota = {
+          ...workspace.quota!,
+          creditsUsed: options.reservedCreditsUsed,
+        };
+      }
+      return { status: 'reserved', duplicate: false, quota: workspace.quota! };
+    }),
   };
-  return setup({ director, workspaceGateway: gateway });
+  return setup({
+    director,
+    workspaceGateway: gateway,
+    modelDraftExecutionEnabled: options.modelDraftExecutionEnabled,
+  });
+}
+
+function modelDraftReply(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    strategySummary: 'Ưu tiên một nội dung Facebook có bằng chứng và CTA rõ ràng.',
+    contentDraft: {
+      channel: 'facebook',
+      locale: 'vi',
+      title: 'Một API cho workflow AI của đội ngũ nhỏ',
+      body: 'proof-api-catalog: Khám phá catalog API cho nhiều workflow AI và chọn luồng phù hợp với nhu cầu.',
+      callToAction: 'Dùng thử workflow phù hợp với nhu cầu của bạn.',
+    },
+    approvalNote: 'Duyệt thông điệp, proof claim và CTA trước mọi hành động bên ngoài.',
+    ...overrides,
+  });
+}
+
+function modelExecution() {
+  return {
+    requestedModel: 'gpt-5.6-sol',
+    servedModel: 'gpt-5.6-sol',
+    usage: {
+      promptTokens: 640,
+      completionTokens: 180,
+      totalTokens: 820,
+      cachedTokens: 120,
+    },
+  };
 }
 
 describe('Customer Marketing private video asset upload', () => {
@@ -2007,6 +2049,7 @@ describe('CustomerMarketingService AI Director', () => {
 
     expect(result.ok).toBe(true);
     expect(director).toHaveBeenCalledTimes(1);
+    expect(director.mock.calls[0][1]).toBeUndefined();
     expect(director.mock.calls[0][0]).toEqual(expect.objectContaining({
       enableTools: false,
       agentId: 'customer-marketing-director',
@@ -2034,6 +2077,181 @@ describe('CustomerMarketingService AI Director', () => {
     expect(durableArtifact?.sha256).toBe(durableApproval.digest);
     expect(durableArtifact?.content).toContain('Research the audience');
     expect(durableArtifact?.content).toContain('"brandGuardianReview":{"status":"passed"');
+    expect(durableArtifact?.content).not.toContain('modelExecution');
+  });
+
+  it('creates one model-backed draft with bounded cost and provenance behind the staging gate', async () => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply(),
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, {
+      modelDraftExecutionEnabled: true,
+      reservedCreditsUsed: 13.5,
+    });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one evidence-led Facebook draft for the next seven days',
+      channels: ['facebook', 'seo'],
+      automationMode: 'semi_autonomous',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0]).toMatchObject({
+      status: 'awaiting_approval',
+      stage: 'awaiting_strategy_approval',
+      directorReply: expect.stringContaining('Bản nháp facebook (vi)'),
+    });
+    expect(result.snapshot?.approvals[0].status).toBe('pending');
+    expect(result.snapshot?.externalActionsAllowed).toBe(false);
+    expect(director).toHaveBeenCalledTimes(1);
+    expect(director.mock.calls[0][0]).toEqual(expect.objectContaining({
+      enableTools: false,
+      model: 'gpt-5.6-sol',
+    }));
+    expect(director.mock.calls[0][0].systemPrompt).toContain('JSON');
+    expect(director.mock.calls[0][1]).toEqual({
+      idempotencyKey: expect.stringMatching(/^marketing-draft:(?:run-)?[0-9a-f-]+$/),
+    });
+
+    const durableRaw = Array.from(context.db.values.entries())
+      .find(([key]) => key.startsWith('customer_marketing_workflows:v1:'))?.[1];
+    const durable = JSON.parse(durableRaw!) as {
+      approvals: Array<{ artifactId: string }>;
+      artifacts: Array<{ id: string; content: string }>;
+    };
+    const approvalArtifact = durable.artifacts.find(
+      (artifact) => artifact.id === durable.approvals[0]?.artifactId,
+    );
+    const evidence = JSON.parse(approvalArtifact!.content);
+    expect(evidence.modelExecution).toMatchObject({
+      schemaVersion: 1,
+      type: 'customer_marketing_model_draft',
+      featureGate: 'customer-marketing-staging',
+      capabilityId: 'ai-marketing-director',
+      requestedModel: 'gpt-5.6-sol',
+      servedModel: 'gpt-5.6-sol',
+      usage: modelExecution().usage,
+      cost: {
+        metric: 'credits',
+        ceilingUnits: 1,
+        reservedUnits: 1,
+        workspaceCreditsUsedAfterReservation: 13.5,
+      },
+      toolsEnabled: false,
+      externalActionPerformed: false,
+      draft: {
+        contentDraft: {
+          channel: 'facebook',
+          locale: 'vi',
+        },
+      },
+    });
+    expect(evidence.modelExecution.promptSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(evidence.modelExecution.responseSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(evidence.modelExecution.idempotencyKeySha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(approvalArtifact?.content).not.toContain('marketing-draft:');
+    expect(evidence.guardrails.externalActionsAllowed).toBe(false);
+    expect(result.snapshot?.workspace.usedCredits).toBe(13.5);
+  });
+
+  it('retries an ambiguous model call once with the same main-owned idempotency key', async () => {
+    const workspace = remoteWorkspace();
+    const reserveQuota = vi.fn(async () => ({
+      status: 'reserved' as const,
+      duplicate: false,
+      quota: workspace.quota!,
+    }));
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      reserveQuota,
+    };
+    const director = vi.fn()
+      .mockResolvedValueOnce({ reply: '', error: 'network' })
+      .mockResolvedValueOnce({ reply: modelDraftReply(), execution: modelExecution() });
+    const context = setup({
+      director,
+      workspaceGateway: gateway,
+      modelDraftExecutionEnabled: true,
+    });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one retry-safe Facebook draft for the next seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(reserveQuota).toHaveBeenCalledTimes(1);
+    expect(director).toHaveBeenCalledTimes(2);
+    expect(director.mock.calls[1][0]).toEqual(director.mock.calls[0][0]);
+    expect(director.mock.calls[1][1]).toEqual(director.mock.calls[0][1]);
+  });
+
+  it('blocks malformed model draft output without revising the approval artifact', async () => {
+    const director = vi.fn(async () => ({
+      reply: 'This is prose rather than the required JSON draft.',
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one structured Facebook draft for the next seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('đúng cấu trúc');
+    expect(result.snapshot?.runs[0]).toMatchObject({
+      status: 'blocked',
+      stage: 'model_output_invalid',
+    });
+    const durableRaw = Array.from(context.db.values.entries())
+      .find(([key]) => key.startsWith('customer_marketing_workflows:v1:'))?.[1];
+    expect(durableRaw).not.toContain('modelExecution');
+    expect(result.snapshot?.approvals[0].status).toBe('pending');
+  });
+
+  it('blocks a model draft when served-model or token provenance is missing', async () => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply(),
+      execution: { requestedModel: 'gpt-5.6-sol' },
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one provenance-bound Facebook draft for seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('provenance');
+    expect(result.snapshot?.runs[0].stage).toBe('model_provenance_invalid');
+    expect(result.snapshot?.approvals[0].status).toBe('pending');
+  });
+
+  it('blocks a model draft when the served model differs from the fixed route', async () => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply(),
+      execution: { ...modelExecution(), servedModel: 'gpt-5.6-terra' },
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one fixed-route Facebook draft for seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('provenance');
+    expect(result.snapshot?.runs[0].stage).toBe('model_provenance_invalid');
+    expect(result.snapshot?.approvals[0].status).toBe('pending');
   });
 
   it('blocks an unsafe director revision before it can replace approval evidence', async () => {
@@ -2251,7 +2469,11 @@ describe('CustomerMarketingService AI Director', () => {
       reserveQuota: vi.fn(async () => ({ status, quota: null })),
     };
     const director = vi.fn(async () => ({ reply: 'must not run' }));
-    const context = setup({ director, workspaceGateway: gateway });
+    const context = setup({
+      director,
+      workspaceGateway: gateway,
+      modelDraftExecutionEnabled: true,
+    });
     await completeOnboarding(context.service);
 
     const result = await context.service.askDirector({
