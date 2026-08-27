@@ -1,6 +1,6 @@
 # Izzi AI Marketing Room - Master Task List
 
-Status date: 2026-08-27 (Asia/Ho_Chi_Minh)
+Status date: 2026-08-28 (Asia/Ho_Chi_Minh)
 
 This file is the execution task list for the customer-facing Izzi AI Marketing Room. The older `CUSTOMER-AI-MARKETING-ROOM-PLAN.md` remains the historical product rubric; current delivery state, owners, dependencies, and evidence are maintained here.
 
@@ -15,7 +15,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - No ChatGPT web lane unless the user explicitly requests it in that task.
 - Fable is the default Claude lane; only the configured Claude-lane Fable to Opus 5 fallback is allowed for quota/rate-limit/overload.
 - Never run a real post, upload, spend, bulk send, or destructive external action in smoke tests without a separately bounded approval.
-- Finish each milestone as a small public release: focused tests, full relevant checks, build, installer smoke, GitHub update, and evidence.
+- Finish each product milestone as a small public release: focused tests, full relevant checks, build, installer smoke, GitHub update, and evidence. Documentation-only reconciliation uses a reviewed GitHub PR and does not create a product release when application bytes are unchanged.
 - Video/F5-TTS commercial production remains deferred. Local preview/runtime evidence is retained, but it is not a marketing launch dependency.
 
 ## Verified Baseline
@@ -23,7 +23,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 ### MKT-00 - Customer Marketing foundation [done]
 
 - Tenant-safe Customer Marketing Room, typed IPC, onboarding, goals, approvals, AI Director boundary, capability registry, Brand Center, workflow API/bridge, quota and billing provenance, hard entitlement, retry recovery, local cross-device harness, renderer performance and ESLint gates are implemented and locally verified.
-- The backend schema/migrations and remote routes are public, but remote staging/production deployment is not claimed.
+- The 17-file Marketing migration bundle is deployed atomically in production from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`. Postflight confirms the schema is ready, prior row counts are unchanged, and no external provider action or spend occurred.
 
 ### MKT-01 - Channel connection center [done]
 
@@ -31,6 +31,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
+- Current installed baseline is `v1.14.0-beta.60` at desktop merge commit `8108610`; the retained Windows profile and authenticated session survived the installation.
 
 ## Ordered Backlog
 
@@ -51,6 +52,9 @@ Progress checkpoint:
 - Legacy credential envelopes without a scoped grant are reported invalid and require an explicit reconnect; no credential is silently upgraded into a new authority.
 - Health, revoke, and Telegram canary readiness now inherit the grant state. Credential bytes remain inside main, and publish/spend/bulk execution is unchanged.
 - Implementation and local evidence are recorded in `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
+- NM-012 production account readiness is released as `v1.14.0-beta.60`, desktop merge commit `8108610`. Workspace activation now follows the backend contract, and the Marketing UI reads backend-owned OAuth/account readiness without creating a second token authority.
+- Production was cut over from backend commit `f6cb454c7c8e34650807153ce828bcb155bf310f`: 17/17 migrations applied atomically, schema postflight passed, and existing rows remained unchanged. The VPS runtime now has the required `SUPABASE_PUBLISHABLE_KEY`; no secret value is recorded in the repository or worklogs.
+- Installed smoke retained authentication, opened the single `Izzi Marketing` Owner/Pro workspace, returned `backend_oauth` authority with zero connected accounts, and performed no external action. Evidence is recorded in `worklogs/2026-08-28-nm-012-production-account-readiness.md`.
 
 Acceptance evidence:
 
@@ -59,7 +63,7 @@ Acceptance evidence:
 - Packaged local staging proves configure -> health -> revoke -> audit with token bytes absent from renderer responses and logs.
 - Publish, spend, bulk send, and commercial render remain denied.
 
-Dependencies: none for local implementation. Remote deployment is a later task.
+Dependencies: the production schema and account-health foundation are ready. Remaining work is the bounded provider-route contract and deployment preflight hardening; external publishing remains out of scope.
 
 ### MKT-03 - Live model execution for the seven-day workflow [pending]
 
@@ -79,7 +83,7 @@ Dependencies: MKT-02 and MKT-03.
 
 ### MKT-05 - Staging deployment, security review, and reviewer approval [pending_external]
 
-Deploy the reviewed backend migration and feature gate to a disposable staging environment using the lowest-cost approved host. Record host allowlist, secrets ownership, rollback, migration digest, security review, and reviewer sign-off.
+Deploy the future workflow/model-execution feature gate to a disposable staging environment using the lowest-cost approved host. Record host allowlist, secrets ownership, rollback, migration digest, security review, and reviewer sign-off. The earlier NM-012 production schema/account-readiness cutover does not authorize model execution or publishing.
 
 Dependencies: MKT-04. Requires staging credentials, hosting choice, and reviewer approval; no production cutover is implied.
 
@@ -110,4 +114,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Continue MKT-02 with the smallest authenticated backend provider-route contract. Do not enable external publishing as a shortcut.
+Continue MKT-02 with a backend deployment preflight guard for the required Supabase publishable key, then implement the smallest authenticated provider-route contract. Do not enable external publishing as a shortcut.

@@ -1,13 +1,14 @@
 # Izzi AI current state
 
-Timestamp: 2026-08-27 20:51 ICT
+Timestamp: 2026-08-28 00:20 ICT
 
 ## Canonical product
 
 - Repository: `kentzu213/izzi-ai`
 - Branch: `main`
-- Released desktop: `v1.14.0-beta.59`
-- Released commit: `dc30bd6`
+- Released desktop: `v1.14.0-beta.60`
+- Released desktop commit: `81086103eec446bc6672549ba6f99684d49d81ee`
+- Production backend commit: `f6cb454c7c8e34650807153ce828bcb155bf310f`
 - Installed Windows app: `F:\IzziAI\Izzi\Izzi AI.exe`
 - Stable profile: `%APPDATA%\@openclaw`
 - Windows installer remains unsigned because no signing certificate is configured.
@@ -27,8 +28,10 @@ Timestamp: 2026-08-27 20:51 ICT
   token migration.
 - Beta.58 narrowed optional native Marketing connection errors to the existing
   renderer-safe fallback.
-- Both releases passed Windows and macOS CI and published a complete 12-asset
-  inventory.
+- Beta.59 added scoped provider grants. Beta.60 added backend-owned account
+  readiness and corrected the workspace activation contract.
+- Every product release through beta.60 passed Windows and macOS CI and
+  published a complete 12-asset inventory.
 
 ## Released NM-011 provider grant v2
 
@@ -47,39 +50,56 @@ Released version: `1.14.0-beta.59`.
   filesystem path.
 - Publish, spend, bulk send, and commercial render behavior are unchanged.
 
-## Local evidence
+## NM-012 production account readiness
 
-- Focused NM-011 suite: 273/273 pass using the command recorded in
-  `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
-- Full desktop suite: 1695/1695 pass in 122 files with
-  `pnpm --filter @openclaw/desktop test`.
-- Main and renderer TypeScript, workspace lint, production build, and renderer
-  budget 2/2 pass using the commands in the NM-011 worklog.
-- High-confidence credential pattern scan: 0 hits in desktop source/scripts and
-  root tools using the scoped command in the NM-011 worklog.
-- Dependency audit: one high advisory in Electron's `extract-zip` devDependency;
-  the advisory lists no patched release. The packaged inventory contains 9135
-  ASAR entries and 0 `extract-zip` entries.
-- Electron directory package starts at FileVersion `1.14.0-beta.59` with the
-  retained profile. Playwright smoke passes at 1280x800 and 390x844 with no
-  horizontal overflow; keyboard focus reaches a visible button with a 2px
-  focus outline.
-- No external provider action was performed.
+- Desktop account health now uses the backend OAuth authority and returns only
+  renderer-safe readiness summaries. Workspace activation sends the supported
+  `name` and optional `operatingMode` fields and validates names at 2-100
+  characters.
+- The 17-file Marketing migration bundle was applied atomically in production.
+  Postflight confirms the schema is ready, prior row counts are unchanged, and
+  no existing catalog data was lost.
+- The first real app request exposed a missing VPS
+  `SUPABASE_PUBLISHABLE_KEY`. The public key was added securely to the runtime
+  environment, a dated backup was retained, and no secret value was written to
+  the repository or worklogs.
+- Backend live, ready, and version checks pass after restoring the reviewed
+  `f6cb454` image. Publishing, scheduling, spend, customer import, bulk send,
+  and provider OAuth actions remain disabled.
 
-## Release evidence
+## Verification evidence
 
-- Desktop CI passed on Windows and macOS. Release Desktop run `33075519884`
-  completed successfully and published all 12 required assets.
-- Public Windows installer: 185,956,016 bytes, SHA-256
-  `a7b64d0a9ff0b1a37d5db970e4525b3fea765ae34b0e31ef5e0895512c8f291f`.
-- Public installer hash matched locally and installed with exit code 0.
-- Installed FileVersion is `1.14.0-beta.59` at
-  `F:\IzziAI\Izzi\Izzi AI.exe`.
-- Installed-profile Playwright smoke opened `AI Marketing -> Kênh -> Trung tâm
-  kết nối`, reported zero page/console errors and zero horizontal overflow at
-  1280x800, and retained the existing 3,489-file profile.
-- Screenshot:
-  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.59-installed-marketing-channels.png`.
+- Full backend suite: 1546 passed, 93 skipped. Production security audit: 0
+  findings.
+- Production migration: 17/17 applied atomically; postflight schema and data
+  preservation checks passed. Receipt:
+  `F:\Ai Tools\Codex\Temp\izzi-marketing-production-cutover-f6cb454-receipt.json`.
+- Full desktop suite: 1704/1704. Lint, main and renderer type checks, full
+  workspace build, release contracts, renderer budget, and signing policy all
+  passed.
+- Production dependency audit: 0 known vulnerabilities.
+- No external provider action was performed and spend remained `0 VND`.
+
+## Release and installed smoke
+
+- Desktop CI passed on Windows and macOS. Release Desktop run `33096486915`
+  published all 12 required assets at `v1.14.0-beta.60`.
+- Public Windows installer: 185,958,122 bytes, SHA-256
+  `d7c5fb7ea5ed75ca0b77fbe6ccb5da5afb472f7ad5f2877359bda9b6dd3e2803`.
+- The installer completed with exit code 0. The executable and Windows registry
+  report `1.14.0-beta.60`; manual updater check returns `idle` at the current
+  version.
+- The retained profile stayed at 3,493 files, and database, Preferences, and
+  Local State hashes were unchanged across installation.
+- The authenticated smoke found exactly one `Izzi Marketing` Owner/Pro
+  workspace with zero credits used. Account health returned
+  `authority=backend_oauth`, `externalActionPerformed=false`, and no connected
+  accounts. No OAuth control was clicked.
+- No horizontal overflow, header collision, or tab clipping was observed at
+  1280x800 or 1024x720. Screenshots:
+  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.60-installed-marketing-channels.png`
+  and
+  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.60-installed-marketing-compact.png`.
 
 ## Operating mode
 
@@ -91,6 +111,7 @@ Released version: `1.14.0-beta.59`.
 
 ## Next action
 
-Continue MKT-02 with the smallest authenticated backend provider-route contract.
-Keep publish, spend, bulk send, customer import, and external provider actions
-disabled.
+Add a deployment preflight guard for the required Supabase publishable key,
+then continue MKT-02 with the smallest authenticated backend provider-route
+contract. Keep publish, schedule, spend, bulk send, customer import, and
+external provider actions disabled.
