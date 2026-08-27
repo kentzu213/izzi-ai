@@ -461,7 +461,7 @@ declare global {
   interface ElectronNativeMarketingApi {
     listWorkspaces: () => Promise<NativeMarketingWorkspaceListResult>;
     createWorkspace: (
-      input: { name: string; slug?: string },
+      input: { name: string; operatingMode?: NativeMarketingOperatingMode },
     ) => Promise<NativeMarketingWorkspaceResult>;
     listAccounts: (workspaceId: string) => Promise<NativeMarketingAccountListResult>;
     listAccountHealth: (workspaceId: string) => Promise<NativeMarketingAccountHealthResult>;

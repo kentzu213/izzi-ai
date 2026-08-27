@@ -276,6 +276,12 @@ describe('NativeMarketingClient', () => {
 
     await expect(client.createWorkspace({ name: '   ' }))
       .resolves.toEqual({ ok: false, error: 'invalid-workspace-name' });
+    await expect(client.createWorkspace({ name: 'x' }))
+      .resolves.toEqual({ ok: false, error: 'invalid-workspace-name' });
+    await expect(client.createWorkspace({ name: 'x'.repeat(101) }))
+      .resolves.toEqual({ ok: false, error: 'invalid-workspace-name' });
+    await expect(client.createWorkspace({ name: 'Native Workspace', operatingMode: 'unsafe' as never }))
+      .resolves.toEqual({ ok: false, error: 'invalid-operating-mode' });
     expect(fetchImpl).not.toHaveBeenCalled();
 
     const created = await client.createWorkspace({ name: 'Native Workspace' });
@@ -283,7 +289,17 @@ describe('NativeMarketingClient', () => {
 
     expect(created.ok).toBe(true);
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ name: 'Native Workspace', slug: 'native-workspace' });
+    expect(JSON.parse(String(init.body))).toEqual({ name: 'Native Workspace' });
+
+    await client.createWorkspace({
+      name: 'Guarded Workspace',
+      operatingMode: 'guarded_autonomous',
+    });
+    const [, guardedInit] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(guardedInit.body))).toEqual({
+      name: 'Guarded Workspace',
+      operatingMode: 'guarded_autonomous',
+    });
   });
 
   it('rejects unsupported platforms and bad workspace ids before any request', async () => {

@@ -21,6 +21,7 @@ import type {
   NativeMarketingAccountListResult,
   NativeMarketingOAuthCallbackResult,
   NativeMarketingOAuthStateResult,
+  NativeMarketingOperatingMode,
   NativeMarketingPlatform,
   NativeMarketingPostListResult,
   NativeMarketingPostResult,
@@ -385,7 +386,7 @@ const electronAPI = {
     listWorkspaces: (): Promise<NativeMarketingWorkspaceListResult> =>
       ipcRenderer.invoke('nativeMarketing:listWorkspaces'),
     createWorkspace: (
-      input: { name: string; slug?: string },
+      input: { name: string; operatingMode?: NativeMarketingOperatingMode },
     ): Promise<NativeMarketingWorkspaceResult> =>
       ipcRenderer.invoke('nativeMarketing:createWorkspace', input),
     listAccounts: (workspaceId: string): Promise<NativeMarketingAccountListResult> =>

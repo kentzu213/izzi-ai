@@ -195,7 +195,6 @@ export interface NativeMarketingDraftInput {
 
 export interface NativeMarketingWorkspaceCreateInput {
   name: string;
-  slug?: string;
   operatingMode?: NativeMarketingOperatingMode;
 }
 
@@ -357,22 +356,6 @@ function boundedText(raw: unknown, maxLength: number): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed && trimmed.length <= maxLength ? trimmed : null;
-}
-
-function boundedSlug(raw: unknown): string | null {
-  const slug = boundedText(raw, 63)?.toLowerCase() ?? null;
-  return slug && /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) ? slug : null;
-}
-
-function slugifyWorkspaceName(name: string): string {
-  const slug = name
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
-  return slug || 'marketing-workspace';
 }
 
 function safeCount(raw: unknown): number | null {
@@ -708,13 +691,15 @@ export class NativeMarketingClient {
 
   /** POST /api/marketing/workspaces — create the native workspace. */
   async createWorkspace(input: NativeMarketingWorkspaceCreateInput): Promise<NativeMarketingWorkspaceResult> {
-    const name = boundedText(input?.name, 160);
-    if (!name) return { ok: false, error: 'invalid-workspace-name' };
-    const slug = boundedSlug(input?.slug) ?? slugifyWorkspaceName(name);
-    if (!slug) return { ok: false, error: 'invalid-workspace-name' };
+    const name = boundedText(input?.name, 100);
+    if (!name || name.length < 2) return { ok: false, error: 'invalid-workspace-name' };
+    const operatingMode = input?.operatingMode;
+    if (operatingMode !== undefined && !isNativeMarketingOperatingMode(operatingMode)) {
+      return { ok: false, error: 'invalid-operating-mode' };
+    }
     const result = await this.request(`${MARKETING_ROOT}/workspaces`, {
       method: 'POST',
-      body: JSON.stringify({ name, slug }),
+      body: JSON.stringify(operatingMode ? { name, operatingMode } : { name }),
     });
     if (!result.ok) return result;
     const envelope = recordValue(result.body);

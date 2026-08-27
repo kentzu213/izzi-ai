@@ -79,6 +79,7 @@ import {
   type NativeMarketingAccountListResult,
   type NativeMarketingOAuthCallbackResult,
   type NativeMarketingOAuthStateResult,
+  type NativeMarketingOperatingMode,
   type NativeMarketingPostListResult,
   type NativeMarketingPostResult,
   type NativeMarketingWorkspaceListResult,
@@ -1449,7 +1450,9 @@ function setupIPC() {
       if (typeof record.name !== 'string') return { ok: false, error: 'invalid-workspace-name' };
       return getNativeMarketingClient().createWorkspace({
         name: record.name,
-        slug: typeof record.slug === 'string' ? record.slug : undefined,
+        operatingMode: typeof record.operatingMode === 'string'
+          ? record.operatingMode as NativeMarketingOperatingMode
+          : undefined,
       });
     },
   );
