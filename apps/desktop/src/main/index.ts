@@ -675,7 +675,7 @@ function setupIPC() {
       },
       state: extension.state,
     })),
-    (payload) => izziAgent.chat(payload),
+    (payload, options) => izziAgent.chat(payload, undefined, options),
     customerVideoStudio,
     customerMarketingWorkspaceClient,
     (value) => clipboard.writeText(value),
@@ -785,6 +785,7 @@ function setupIPC() {
     customerMarketingAssetFiles,
     undefined,
     new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient()),
+    DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

@@ -16,7 +16,7 @@
  */
 import { ipcMain } from 'electron';
 import type { AuthManager } from '../auth/auth-manager';
-import { buildIzziSourceHeaders, isOfficialIzziApiUrl, modelSupportsTools } from '../agent/izzi-request-headers';
+import { buildIzziRequestHeaders, isOfficialIzziApiUrl, modelSupportsTools } from '../agent/izzi-request-headers';
 import {
   buildExtensionTools,
   executeExtensionTool,
@@ -61,9 +61,75 @@ export interface IzziAgentChatPayload {
 export interface IzziAgentChatResult {
   reply: string;
   error?: string;
+  execution?: IzziAgentModelExecution;
+}
+
+export interface IzziAgentChatRequestOptions {
+  idempotencyKey?: string;
+}
+
+export interface IzziAgentModelExecution {
+  requestedModel: string;
+  servedModel: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cachedTokens: number;
+  };
+}
+
+export function rendererSafeIzziAgentChatResult(
+  result: IzziAgentChatResult,
+): Pick<IzziAgentChatResult, 'reply' | 'error'> {
+  return {
+    reply: result.reply,
+    ...(result.error ? { error: result.error } : {}),
+  };
 }
 
 const ROLES = new Set(['system', 'user', 'assistant']);
+const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
+const HIGH_REASONING_MODEL = 'gpt-5.6-sol';
+
+function nonNegativeInteger(value: unknown): number | null {
+  return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : null;
+}
+
+function parseModelExecution(
+  value: unknown,
+  requestedModel: string,
+): IzziAgentModelExecution | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const response = value as {
+    model?: unknown;
+    usage?: {
+      prompt_tokens?: unknown;
+      completion_tokens?: unknown;
+      total_tokens?: unknown;
+      prompt_tokens_details?: { cached_tokens?: unknown };
+    };
+  };
+  const servedModel = typeof response.model === 'string' ? response.model.trim().slice(0, 160) : '';
+  const promptTokens = nonNegativeInteger(response.usage?.prompt_tokens);
+  const completionTokens = nonNegativeInteger(response.usage?.completion_tokens);
+  const totalTokens = nonNegativeInteger(response.usage?.total_tokens);
+  const cachedTokens = nonNegativeInteger(response.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
+  if (
+    !servedModel
+    || promptTokens === null
+    || completionTokens === null
+    || totalTokens === null
+    || totalTokens < 1
+    || promptTokens + completionTokens !== totalTokens
+    || cachedTokens > promptTokens
+  ) return undefined;
+  return {
+    requestedModel,
+    servedModel,
+    usage: { promptTokens, completionTokens, totalTokens, cachedTokens },
+  };
+}
 
 /** True for a base64 data URL that carries an image (the only image form we accept). */
 function isDataImage(u: unknown): u is string {
@@ -111,6 +177,7 @@ export class IzziAgent {
   async chat(
     payload: IzziAgentChatPayload,
     onEvent?: (evt: AgentTurnEvent) => void,
+    requestOptions: IzziAgentChatRequestOptions = {},
   ): Promise<IzziAgentChatResult> {
     const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
     const images = Array.isArray(payload?.images) ? payload.images.filter(isDataImage) : [];
@@ -125,6 +192,12 @@ export class IzziAgent {
     // Legacy aliases become canonical izzi-smart; explicit ids such as
     // grok-4.5-high pass through unchanged.
     const model = normalizeIzziAgentModel(payload.model);
+    const requestedIdempotencyKey = requestOptions.idempotencyKey?.trim();
+    if (
+      requestedIdempotencyKey
+      && (payload.enableTools || !IDEMPOTENCY_KEY_PATTERN.test(requestedIdempotencyKey))
+    ) return { reply: '', error: 'invalid-request-options' };
+    const idempotencyKey = requestedIdempotencyKey || undefined;
     const history: IzziAgentMessage[] = Array.isArray(payload.history)
       ? payload.history
           .filter(
@@ -152,6 +225,7 @@ export class IzziAgent {
     try {
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const body: Record<string, unknown> = { model, messages: reqMessages, stream: false, max_tokens: 1200 };
+        if (model === HIGH_REASONING_MODEL) body.reasoning_effort = 'high';
         if (tools) {
           body.tools = tools;
           body.tool_choice = 'auto';
@@ -161,12 +235,14 @@ export class IzziAgent {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`,
-            ...buildIzziSourceHeaders(`${IZZI_LLM_BASE}/chat/completions`),
+            ...buildIzziRequestHeaders(`${IZZI_LLM_BASE}/chat/completions`, idempotencyKey),
           },
           body: JSON.stringify(body),
         });
         if (!res.ok) return { reply: '', error: `http ${res.status}` };
         const data = (await res.json()) as {
+          model?: unknown;
+          usage?: unknown;
           choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }> } }>;
         };
         const msg = data?.choices?.[0]?.message;
@@ -176,7 +252,7 @@ export class IzziAgent {
         if (!tools || !toolIndex || !Array.isArray(toolCalls) || toolCalls.length === 0) {
           const content = msg?.content;
           return typeof content === 'string' && content.length > 0
-            ? { reply: content }
+            ? { reply: content, execution: parseModelExecution(data, model) }
             : { reply: '', error: 'empty-response' };
         }
 
@@ -216,7 +292,7 @@ export class IzziAgent {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`,
-            ...buildIzziSourceHeaders(`${IZZI_LLM_BASE}/chat/completions`),
+            ...buildIzziRequestHeaders(`${IZZI_LLM_BASE}/chat/completions`),
           },
           body: JSON.stringify({
             model,
@@ -277,6 +353,6 @@ export function registerIzziAgentIpc(agent: IzziAgent, recorder?: SessionRecorde
         turnId,
       });
     }
-    return result;
+    return rendererSafeIzziAgentChatResult(result);
   });
 }

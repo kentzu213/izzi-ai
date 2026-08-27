@@ -69,6 +69,7 @@ describe('IzziAgent production credential and model capability', () => {
     const request = fetchMock.mock.calls[0][1];
     const body = JSON.parse(request.body);
     expect(body.model).toBe('gpt-5.6-sol');
+    expect(body.reasoning_effort).toBe('high');
     expect(body.tools).toBeUndefined();
     expect(body.tool_choice).toBeUndefined();
     expect(request.headers['X-Source-Platform']).toBe('starizzi');

@@ -1,4 +1,18 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.63
+
+Staging-only, model-backed Marketing Director draft.
+
+- Generate one approval-gated marketing draft with the fixed `gpt-5.6-sol`
+  high-reasoning route while keeping tools and external actions disabled.
+- Reserve one workspace credit per run and bind a single bounded network retry
+  to the same main-owned idempotency key.
+- Validate the exact draft schema and fail closed when output, usage, or served
+  model provenance is missing or inconsistent.
+- Record bounded model, usage, cost, and SHA-256 evidence in the pending approval
+  artifact without exposing execution metadata or the idempotency key to the
+  renderer.
+
 ## 1.14.0-beta.52
 
 - Add a visible Auto Post master connection control to the Marketing Channels page.
@@ -86,7 +100,8 @@ Faster AI Marketing workspace startup.
 - Keep snapshot IPC payload-free and deduplicate concurrent media probes in the
   Electron main process.
 - Reduce the measured warm Chat-to-AI-Marketing dashboard time to 890 ms, with
-  no desktop or mobile overflow and no captured renderer error.
+  no desktop or mobile overflow and no captured renderer error; evidence is in
+  `docs/DESKTOP-BETA31-MARKETING-SNAPSHOT-LATENCY-EVIDENCE.md`.
 
 ## 1.14.0-beta.30
 
@@ -94,13 +109,14 @@ Faster renderer startup with guarded lazy loading.
 
 - Keep Chat and authentication in the initial renderer while loading secondary
   workspaces on demand, reducing the entry JavaScript from about 1.02 MB to
-  about 355 KB.
+  about 355 KB as measured by `pnpm build`.
 - Preload the primary AI Marketing workspace after Chat becomes interactive and
   show a responsive, reduced-motion-safe loading shell for immediate navigation.
 - Keep shared mobile navigation styling in the eager stylesheet so Chat remains
   correctly styled before the AI Marketing chunk loads.
 - Enforce a 400 KB renderer entry budget and a 500 KB per-chunk ceiling in both
-  desktop CI and release packaging.
+  desktop CI and release packaging through
+  `node tools/renderer-bundle-budget.test.mjs`.
 
 ## 1.14.0-beta.29
 

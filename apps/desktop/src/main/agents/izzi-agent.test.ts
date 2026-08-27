@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { IzziAgent } from './izzi-agent';
+import { IzziAgent, rendererSafeIzziAgentChatResult } from './izzi-agent';
 import type { ExtensionToolHost } from './extension-tools';
 
 const auth = { getApiKey: () => 'izzi_key' } as any;
@@ -51,6 +51,58 @@ describe('IzziAgent tool-calling', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe('grok-4.5-high');
+  });
+
+  it('uses a main-owned idempotency key and returns bounded model usage provenance', async () => {
+    const fetchMock = mockFetchSequence([{
+      model: 'gpt-5.6-sol',
+      usage: {
+        prompt_tokens: 640,
+        completion_tokens: 180,
+        total_tokens: 820,
+        prompt_tokens_details: { cached_tokens: 120 },
+      },
+      choices: [{ message: { content: '{"schemaVersion":1}' } }],
+    }]);
+    vi.stubGlobal('fetch', fetchMock);
+    const agent = new IzziAgent(auth, toolHost);
+
+    const result = await agent.chat(
+      { systemPrompt: 's', message: 'draft', model: 'gpt-5.6-sol', enableTools: false },
+      undefined,
+      { idempotencyKey: 'marketing-draft:run-11111111-1111-4111-8111-111111111111' },
+    );
+
+    expect(fetchMock.mock.calls[0][1].headers['Idempotency-Key'])
+      .toBe('marketing-draft:run-11111111-1111-4111-8111-111111111111');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      model: 'gpt-5.6-sol',
+      reasoning_effort: 'high',
+    });
+    expect(result.execution).toEqual({
+      requestedModel: 'gpt-5.6-sol',
+      servedModel: 'gpt-5.6-sol',
+      usage: {
+        promptTokens: 640,
+        completionTokens: 180,
+        totalTokens: 820,
+        cachedTokens: 120,
+      },
+    });
+  });
+
+  it('redacts internal execution provenance from the renderer result', () => {
+    const result = rendererSafeIzziAgentChatResult({
+      reply: 'draft ready',
+      execution: {
+        requestedModel: 'izzi-smart',
+        servedModel: 'gpt-5.6-sol',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedTokens: 0 },
+      },
+    });
+
+    expect(result).toEqual({ reply: 'draft ready' });
+    expect(result).not.toHaveProperty('execution');
   });
 
   it('enableTools: executes the tool_call, loops, returns final answer', async () => {
