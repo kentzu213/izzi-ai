@@ -1,14 +1,14 @@
 # Izzi AI current state
 
-Timestamp: 2026-08-28 04:29 ICT
+Timestamp: 2026-08-28 05:48 ICT
 
 ## Canonical product
 
 - Repository: `kentzu213/izzi-ai`
 - Branch: `main`
-- Released desktop: `v1.14.0-beta.63`
-- Released desktop merge commit: `2930169bf77a425d5e630e5aebbd25302dc999c6`
-- Released product merge commit: `78f133a24ffbe587faa46e4b230a9ca34627e6d0`
+- Released desktop: `v1.14.0-beta.64`
+- Released desktop merge commit: `315c105b047ed816c1bd91e1bdc386cc09b712c4`
+- Released product merge commit: `38e7be0747e04f5aede63e349d47b5f002e3ecb2`
 - Production backend commit: `7c8821bd11f95433d170d8e25ffdd4a1edc676c9`
 - Installed Windows app: `F:\IzziAI\Izzi\Izzi AI.exe`
 - Stable profile: `%APPDATA%\@openclaw\desktop`
@@ -19,7 +19,8 @@ Timestamp: 2026-08-28 04:29 ICT
 - MKT-01 Channel connection center: complete.
 - MKT-02 Integration authority and provider routes: complete.
 - MKT-03 Live model execution: complete.
-- MKT-04 through MKT-07: pending in the dependency order in `MASTER_PLAN.md`.
+- MKT-04 Packaged end-to-end safety gate suite: complete.
+- MKT-05 through MKT-07: pending in the dependency order in `MASTER_PLAN.md`.
 - Video work is outside the active scope. Technical Marketing Room work has priority.
 
 ## Released baseline
@@ -33,11 +34,12 @@ Timestamp: 2026-08-28 04:29 ICT
   fail-closed legacy bridge. Beta.62 adds the authenticated, fail-closed
   provider-route manifest and its bounded readiness UI. Beta.63 adds the
   staging-only, approval-gated `gpt-5.6-sol` model draft with bounded cost and
-  provenance evidence.
+  provenance evidence. Beta.64 adds the deterministic core and packaged UI
+  safety suite and runs it after Windows packaging and before signing.
 - Release Desktop workflow
-  [33117009878](https://github.com/kentzu213/izzi-ai/actions/runs/33117009878)
+  [33122607322](https://github.com/kentzu213/izzi-ai/actions/runs/33122607322)
   completed successfully and published 12 assets; evidence:
-  `gh release view v1.14.0-beta.63 --repo kentzu213/izzi-ai`.
+  `gh release view v1.14.0-beta.64 --repo kentzu213/izzi-ai`.
 
 ## Production backend
 
@@ -93,8 +95,34 @@ Timestamp: 2026-08-28 04:29 ICT
   CI. Full implementation and release evidence is in
   `worklogs/2026-08-28-nm-016-model-backed-draft.md`.
 
+## MKT-04 Packaged safety suite
+
+- Product PR [#19](https://github.com/kentzu213/izzi-ai/pull/19) and release PR
+  [#20](https://github.com/kentzu213/izzi-ai/pull/20) shipped the aggregate suite
+  as `v1.14.0-beta.64`.
+- Core coverage composes action gates, kill switch, spend cap, provider routes,
+  workflow recovery, stable retry/idempotency, billing reconciliation, exact
+  `gpt-5.6-sol` identity, disabled tools, provenance, and the pending-approval
+  stop into one deterministic receipt.
+- UI coverage loads the packaged renderer at 1280x900 and 390x844 while
+  blocking fetch, HTTP/HTTPS, net, TLS, WebSocket, and renderer requests.
+- Follow-up PR [#21](https://github.com/kentzu213/izzi-ai/pull/21) gives only the
+  Electron-as-Node core subprocess a repository-bounded module path, clears it
+  from the UI subprocess, and makes the runner work against an independently
+  installed package. This test-orchestration patch does not change app bytes.
+- Full evidence is in
+  `worklogs/2026-08-28-mkt-04-packaged-safety-suite.md`.
+
 ## Verification evidence
 
+- MKT-04 local verification passed all 1,734 desktop tests across 127 files,
+  lint, build, the 4-check suite contract, the installed packaged suite, and a
+  production dependency audit with no known vulnerability. Added-line
+  credential scan returned zero matches.
+- Release workflow
+  [33122607322](https://github.com/kentzu213/izzi-ai/actions/runs/33122607322)
+  passed Windows and macOS jobs. The Windows job ran the packaged safety suite
+  after packaging and before signing policy enforcement.
 - Desktop PR [#16](https://github.com/kentzu213/izzi-ai/pull/16) passed Windows
   and macOS CI in workflow
   [33116402078](https://github.com/kentzu213/izzi-ai/actions/runs/33116402078).
@@ -111,14 +139,14 @@ Timestamp: 2026-08-28 04:29 ICT
 ## Release and installed smoke
 
 - Public prerelease:
-  `https://github.com/kentzu213/izzi-ai/releases/tag/v1.14.0-beta.63`.
+  `https://github.com/kentzu213/izzi-ai/releases/tag/v1.14.0-beta.64`.
 - Windows installer SHA-256:
-  `b6c9ef3968f25b1b473dcd82708da012487c1cc3c84ff69af0f005e4ea49e0db`,
+  `214d421493b8f9010d383989ad1b7e85d9f61e5245dd631b335f418e9f647231`,
   verified by `Get-FileHash` against the GitHub asset digest.
-- Windows registry and the in-app updater report `1.14.0-beta.63`; updater state
+- FileVersion and the in-app updater report `1.14.0-beta.64`; updater state
   is `idle` with no available newer version.
 - Installed smoke through
-  `F:\Ai Tools\Codex\Temp\izzi-ai-beta63-installed-smoke.cjs` retained
+  `F:\Ai Tools\Codex\Temp\izzi-ai-beta64-installed-smoke.cjs` retained
   authentication, found Native Marketing connected, and validated the provider
   route contract without invoking OAuth or a provider action.
 - The smoke returned 7 providers, 4 route resources, 0 connected providers,
@@ -126,8 +154,12 @@ Timestamp: 2026-08-28 04:29 ICT
   `externalActionPerformed=false`; it found zero request, console, page, or
   horizontal-overflow errors at 1280x900 and 390x844.
 - Screenshots:
-  `F:\Ai Tools\Codex\Temp\izzi-ai-beta63-mkt03-desktop.png`
-  and `F:\Ai Tools\Codex\Temp\izzi-ai-beta63-mkt03-compact.png`.
+  `F:\Ai Tools\Codex\Temp\izzi-ai-beta64-mkt04-desktop.png`
+  and `F:\Ai Tools\Codex\Temp\izzi-ai-beta64-mkt04-compact.png`.
+- The installed-package safety receipt at
+  `F:\Ai Tools\Codex\Temp\izzi-ai-beta64-mkt04-packaged-safety-final\customer-marketing-packaged-safety-receipt.json`
+  reports core/UI pass, two viewports, and zero console, load, renderer-process,
+  network, secret, or external-action failures.
 - The packaged model canary receipt at
   `F:\Ai Tools\Codex\Temp\mkt03-installed-canary-beta63-20260828-042806.json`
   records one quota reservation, one Sol-high call, pending approval, zero
@@ -142,6 +174,7 @@ Timestamp: 2026-08-28 04:29 ICT
 
 ## Next action
 
-Start MKT-04 by composing the existing model, approval, provider-route, billing,
-recovery, and renderer checks into one deterministic packaged-staging safety
-suite. External provider execution remains disabled.
+Prepare MKT-05 staging inputs: disposable host, host allowlist, secret owner,
+rollback command, migration digest, security review, and reviewer approval.
+External provider execution remains disabled, and MKT-04 does not authorize a
+production cutover.
