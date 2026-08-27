@@ -83,6 +83,7 @@ describe('MKT-04 packaged Customer Marketing safety suite contract', () => {
     expect(release.indexOf('name: Run packaged Customer Marketing safety suite'))
       .toBeLessThan(release.indexOf('name: Enforce Windows signing policy'));
     expect(runner).toContain("$start.Environment['ELECTRON_RUN_AS_NODE'] = '1'");
+    expect(runner).toContain("$start.Environment['NODE_PATH'] = $desktopNodeModules");
     expect(runner).toContain('externalActionsPerformed');
     expect(runner).toContain('externalActionsPerformed = $observedExternalActions');
     expect(runner).toContain('secretLeakCount');

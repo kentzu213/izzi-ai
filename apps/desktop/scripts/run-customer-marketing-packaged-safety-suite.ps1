@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $suiteVersion = 'mkt-04.v1'
 $desktopRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$desktopNodeModules = (Resolve-Path -LiteralPath (Join-Path $desktopRoot 'node_modules')).Path
 
 function Assert-Safety {
   param([bool]$Condition, [string]$Code)
@@ -41,8 +42,10 @@ function Invoke-SafetyProcess {
   }
   if ($RunAsNode) {
     $start.Environment['ELECTRON_RUN_AS_NODE'] = '1'
+    $start.Environment['NODE_PATH'] = $desktopNodeModules
   } else {
     [void]$start.Environment.Remove('ELECTRON_RUN_AS_NODE')
+    [void]$start.Environment.Remove('NODE_PATH')
   }
   $process = [System.Diagnostics.Process]::new()
   $process.StartInfo = $start
