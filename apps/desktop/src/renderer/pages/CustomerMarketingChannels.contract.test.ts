@@ -169,6 +169,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain('nativeApi.listAccounts(workspaceId)');
     expect(pageSource).toContain('readNativeAccounts(accounts.accounts)');
     expect(pageSource).toContain('nativeApi.beginConnect(nativeWorkspaceId, channel)');
+    expect(pageSource).toContain("nativeMarketingErrorLabel(result.error ?? 'request-rejected')");
     expect(pageSource).toContain('nativeApi.onOAuthStatus');
     expect(pageSource).not.toContain('redirectUrl');
     expect(pageSource).not.toContain('window.open(');
