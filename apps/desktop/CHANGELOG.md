@@ -1,4 +1,20 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.64
+
+Packaged Customer Marketing safety gate suite.
+
+- Verify publish, spend, bulk-send, destructive, kill-switch, and spend-cap
+  gates against the actual packaged runtime before a Windows release can sign
+  or publish.
+- Reconcile model retry, quota reservation, workflow recovery, approval state,
+  provider-route policy, Sol model provenance, and secret redaction in one
+  deterministic receipt.
+- Render the packaged AI Marketing channel center at desktop and compact sizes,
+  block all HTTP/HTTPS requests, and fail on console, load, process, overflow,
+  secret, or external-action evidence.
+- Remove remote font loading so the packaged renderer starts without Google
+  Fonts or CDN network requests and falls back to installed system fonts.
+
 ## 1.14.0-beta.63
 
 Staging-only, model-backed Marketing Director draft.
