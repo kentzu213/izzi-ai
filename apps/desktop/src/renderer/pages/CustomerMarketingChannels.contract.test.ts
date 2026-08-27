@@ -9,6 +9,10 @@ const stylesPath = fileURLToPath(new URL('../styles/customer-marketing-room.css'
 const stylesSource = readNormalized(stylesPath);
 const mainPath = fileURLToPath(new URL('../../main/index.ts', import.meta.url));
 const mainSource = readNormalized(mainPath);
+const preloadPath = fileURLToPath(new URL('../../main/preload.ts', import.meta.url));
+const preloadSource = readNormalized(preloadPath);
+const globalTypesPath = fileURLToPath(new URL('../types/global.d.ts', import.meta.url));
+const globalTypesSource = readNormalized(globalTypesPath);
 
 describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
   it('loads connector evidence with credentials and exposes bounded local health controls', () => {
@@ -169,11 +173,14 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain('Video thử nghiệm luôn ở chế độ Riêng tư (Private).');
   });
 
-  it('uses native workspace account metadata and keeps OAuth in main', () => {
+  it('uses backend-authoritative account health and keeps OAuth in main', () => {
     expect(pageSource).toContain('nativeApi.listWorkspaces()');
     expect(pageSource).toContain("nativeApi.createWorkspace({ name: 'Izzi Marketing' })");
-    expect(pageSource).toContain('nativeApi.listAccounts(workspaceId)');
-    expect(pageSource).toContain('readNativeAccounts(accounts.accounts)');
+    expect(pageSource).toContain('nativeApi.listAccountHealth(workspaceId)');
+    expect(pageSource).toContain('health.health.accounts');
+    expect(pageSource).toContain("item.readiness === 'ready'");
+    expect(pageSource).not.toContain('nativeApi.listAccounts(workspaceId)');
+    expect(pageSource).not.toContain('readNativeAccounts(accounts.accounts)');
     expect(pageSource).toContain('nativeApi.beginConnect(nativeWorkspaceId, channel)');
     expect(pageSource).toContain("nativeMarketingErrorLabel(result.error ?? 'request-rejected')");
     expect(pageSource).toContain('nativeApi.onOAuthStatus');
@@ -181,6 +188,11 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).not.toContain('window.open(');
     expect(pageSource).not.toContain('api.createDraft(');
     expect(pageSource).not.toContain('api.listPosts(');
+    expect(mainSource).toContain("'nativeMarketing:listAccountHealth'");
+    expect(mainSource).toContain('getNativeMarketingClient().listAccountHealth(workspaceId.trim())');
+    expect(preloadSource).toContain("ipcRenderer.invoke('nativeMarketing:listAccountHealth', workspaceId)");
+    expect(globalTypesSource).toContain('listAccountHealth: (workspaceId: string)');
+    expect(preloadSource).not.toMatch(/listAccountHealth:\s*\([^)]*\b(token|provider|url|action)\b/);
     expect(mainSource).toContain('accounts: summarizeAutopostAccounts(r.data)');
     expect(mainSource).not.toContain('accounts: Array.isArray(r.data)');
   });

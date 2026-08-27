@@ -17,6 +17,7 @@ import type {
 } from './agent/types';
 import type { DesktopUpdaterState } from './updater/types';
 import type {
+  NativeMarketingAccountHealthResult,
   NativeMarketingAccountListResult,
   NativeMarketingOAuthCallbackResult,
   NativeMarketingOAuthStateResult,
@@ -389,6 +390,8 @@ const electronAPI = {
       ipcRenderer.invoke('nativeMarketing:createWorkspace', input),
     listAccounts: (workspaceId: string): Promise<NativeMarketingAccountListResult> =>
       ipcRenderer.invoke('nativeMarketing:listAccounts', workspaceId),
+    listAccountHealth: (workspaceId: string): Promise<NativeMarketingAccountHealthResult> =>
+      ipcRenderer.invoke('nativeMarketing:listAccountHealth', workspaceId),
     createOAuthState: (
       workspaceId: string,
       platform: NativeMarketingPlatform,

@@ -93,6 +93,33 @@ export const NATIVE_MARKETING_ACCOUNT_STATUSES = [
 ] as const;
 export type NativeMarketingAccountStatus = (typeof NATIVE_MARKETING_ACCOUNT_STATUSES)[number];
 
+export const NATIVE_MARKETING_BACKEND_ACCOUNT_STATUSES = [
+  'connected',
+  'needs_reauth',
+  'revoked',
+] as const;
+export type NativeMarketingBackendAccountStatus =
+  (typeof NATIVE_MARKETING_BACKEND_ACCOUNT_STATUSES)[number];
+
+export const NATIVE_MARKETING_ACCOUNT_READINESS_STATES = [
+  'ready',
+  'expired',
+  'needs_reauth',
+  'revoked',
+] as const;
+export type NativeMarketingAccountReadiness =
+  (typeof NATIVE_MARKETING_ACCOUNT_READINESS_STATES)[number];
+
+export const NATIVE_MARKETING_ACCOUNT_READINESS_REASONS = [
+  'account_connected',
+  'token_expired',
+  'access_token_missing',
+  'account_needs_reauth',
+  'account_revoked',
+] as const;
+export type NativeMarketingAccountReadinessReason =
+  (typeof NATIVE_MARKETING_ACCOUNT_READINESS_REASONS)[number];
+
 /** Every failure the renderer can observe. Bounded on purpose. */
 export type NativeMarketingErrorCode =
   | 'configuration-required'
@@ -128,6 +155,27 @@ export interface NativeMarketingAccountSummary {
   name: string;
   status: NativeMarketingAccountStatus;
   active: boolean;
+}
+
+/** Token-free readiness row independently checked by the desktop main process. */
+export interface NativeMarketingAccountHealthSummary {
+  id: string;
+  platform: NativeMarketingPlatform;
+  name: string;
+  accountStatus: NativeMarketingBackendAccountStatus;
+  tokenExpiresAt: string | null;
+  hasAccessToken: boolean;
+  hasRefreshToken: boolean;
+  readiness: NativeMarketingAccountReadiness;
+  reason: NativeMarketingAccountReadinessReason;
+}
+
+export interface NativeMarketingAccountHealthSnapshot {
+  workspaceId: string;
+  checkedAt: string;
+  authority: 'backend_oauth';
+  externalActionPerformed: false;
+  accounts: NativeMarketingAccountHealthSummary[];
 }
 
 export interface NativeMarketingPostSummary {
@@ -166,6 +214,10 @@ export type NativeMarketingWorkspaceResult =
 
 export type NativeMarketingAccountListResult =
   | { ok: true; accounts: NativeMarketingAccountSummary[] }
+  | NativeMarketingFailure;
+
+export type NativeMarketingAccountHealthResult =
+  | { ok: true; health: NativeMarketingAccountHealthSnapshot }
   | NativeMarketingFailure;
 
 export type NativeMarketingPostListResult =
@@ -271,6 +323,27 @@ export function isNativeMarketingPostStatus(value: unknown): value is NativeMark
 export function isNativeMarketingOperatingMode(value: unknown): value is NativeMarketingOperatingMode {
   return typeof value === 'string'
     && (NATIVE_MARKETING_OPERATING_MODES as readonly string[]).includes(value);
+}
+
+function isNativeMarketingBackendAccountStatus(
+  value: unknown,
+): value is NativeMarketingBackendAccountStatus {
+  return typeof value === 'string'
+    && (NATIVE_MARKETING_BACKEND_ACCOUNT_STATUSES as readonly string[]).includes(value);
+}
+
+function isNativeMarketingAccountReadiness(
+  value: unknown,
+): value is NativeMarketingAccountReadiness {
+  return typeof value === 'string'
+    && (NATIVE_MARKETING_ACCOUNT_READINESS_STATES as readonly string[]).includes(value);
+}
+
+function isNativeMarketingAccountReadinessReason(
+  value: unknown,
+): value is NativeMarketingAccountReadinessReason {
+  return typeof value === 'string'
+    && (NATIVE_MARKETING_ACCOUNT_READINESS_REASONS as readonly string[]).includes(value);
 }
 
 function recordValue(raw: unknown): Record<string, unknown> | null {
@@ -391,6 +464,104 @@ export function parseNativeMarketingAccountList(
   return accounts.some((account) => account === null)
     ? null
     : accounts as NativeMarketingAccountSummary[];
+}
+
+function expectedAccountReadiness(input: {
+  accountStatus: NativeMarketingBackendAccountStatus;
+  tokenExpiresAt: string | null;
+  hasAccessToken: boolean;
+  checkedAt: string;
+}): Pick<NativeMarketingAccountHealthSummary, 'readiness' | 'reason'> {
+  if (input.accountStatus === 'revoked') {
+    return { readiness: 'revoked', reason: 'account_revoked' };
+  }
+  if (input.accountStatus === 'needs_reauth') {
+    return { readiness: 'needs_reauth', reason: 'account_needs_reauth' };
+  }
+  if (
+    input.tokenExpiresAt !== null
+    && Date.parse(input.tokenExpiresAt) <= Date.parse(input.checkedAt)
+  ) {
+    return { readiness: 'expired', reason: 'token_expired' };
+  }
+  if (!input.hasAccessToken) {
+    return { readiness: 'needs_reauth', reason: 'access_token_missing' };
+  }
+  return { readiness: 'ready', reason: 'account_connected' };
+}
+
+/**
+ * Parse the read-only backend OAuth authority snapshot. The desktop recomputes
+ * each decision so a contradictory `ready` label fails closed at the main/IPC
+ * boundary instead of reaching the renderer.
+ */
+export function parseNativeMarketingAccountHealth(
+  raw: unknown,
+  expectedWorkspaceId: string,
+): NativeMarketingAccountHealthSnapshot | null {
+  const envelope = recordValue(raw);
+  if (
+    !envelope
+    || envelope.success !== true
+    || envelope.workspaceId !== expectedWorkspaceId
+    || envelope.authority !== 'backend_oauth'
+    || envelope.externalActionPerformed !== false
+  ) return null;
+
+  const checkedAt = nullableIso(envelope.checkedAt);
+  const rows = envelope.accounts;
+  if (!checkedAt || !Array.isArray(rows) || rows.length > MAX_ACCOUNTS) return null;
+
+  const accounts: NativeMarketingAccountHealthSummary[] = [];
+  for (const rawRow of rows) {
+    const row = recordValue(rawRow);
+    if (!row || row.workspaceId !== expectedWorkspaceId) return null;
+
+    const id = typeof row.id === 'string' ? row.id : '';
+    const platform = row.platform;
+    const accountStatus = row.accountStatus;
+    const tokenExpiresAt = row.tokenExpiresAt === null ? null : nullableIso(row.tokenExpiresAt);
+    const readiness = row.readiness;
+    const reason = row.reason;
+    if (
+      !UUID_PATTERN.test(id)
+      || !isNativeMarketingPlatform(platform)
+      || !isNativeMarketingBackendAccountStatus(accountStatus)
+      || (row.tokenExpiresAt !== null && tokenExpiresAt === null)
+      || typeof row.hasAccessToken !== 'boolean'
+      || typeof row.hasRefreshToken !== 'boolean'
+      || !isNativeMarketingAccountReadiness(readiness)
+      || !isNativeMarketingAccountReadinessReason(reason)
+    ) return null;
+
+    const expected = expectedAccountReadiness({
+      accountStatus,
+      tokenExpiresAt,
+      hasAccessToken: row.hasAccessToken,
+      checkedAt,
+    });
+    if (readiness !== expected.readiness || reason !== expected.reason) return null;
+
+    accounts.push({
+      id,
+      platform,
+      name: boundedText(row.displayName, 160) ?? platform,
+      accountStatus,
+      tokenExpiresAt,
+      hasAccessToken: row.hasAccessToken,
+      hasRefreshToken: row.hasRefreshToken,
+      readiness,
+      reason,
+    });
+  }
+
+  return {
+    workspaceId: expectedWorkspaceId,
+    checkedAt,
+    authority: 'backend_oauth',
+    externalActionPerformed: false,
+    accounts,
+  };
 }
 
 /** Allowlist one post record down to display-safe, length-bounded fields. Pure. */
@@ -558,6 +729,27 @@ export class NativeMarketingClient {
     if (!result.ok) return result;
     const accounts = parseNativeMarketingAccountList(result.body, workspaceId);
     return accounts ? { ok: true, accounts } : { ok: false, error: 'invalid-response' };
+  }
+
+  /**
+   * GET /api/marketing/accounts/health - stored OAuth readiness only. This is a
+   * read-only backend check and never performs a provider request or action.
+   */
+  async listAccountHealth(
+    workspaceId: string,
+    platform?: NativeMarketingPlatform,
+  ): Promise<NativeMarketingAccountHealthResult> {
+    if (!UUID_PATTERN.test(workspaceId)) return { ok: false, error: 'invalid-workspace-id' };
+    if (platform !== undefined && !isNativeMarketingPlatform(platform)) {
+      return { ok: false, error: 'unsupported-platform' };
+    }
+    const platformQuery = platform ? `&platform=${encodeURIComponent(platform)}` : '';
+    const result = await this.request(
+      `${MARKETING_ROOT}/accounts/health?workspaceId=${encodeURIComponent(workspaceId)}${platformQuery}`,
+    );
+    if (!result.ok) return result;
+    const health = parseNativeMarketingAccountHealth(result.body, workspaceId);
+    return health ? { ok: true, health } : { ok: false, error: 'invalid-response' };
   }
 
   /**

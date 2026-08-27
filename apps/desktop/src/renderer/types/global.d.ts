@@ -381,6 +381,35 @@ declare global {
     active: boolean;
   }
 
+  type NativeMarketingBackendAccountStatus = 'connected' | 'needs_reauth' | 'revoked';
+  type NativeMarketingAccountReadiness = 'ready' | 'expired' | 'needs_reauth' | 'revoked';
+  type NativeMarketingAccountReadinessReason =
+    | 'account_connected'
+    | 'token_expired'
+    | 'access_token_missing'
+    | 'account_needs_reauth'
+    | 'account_revoked';
+
+  interface NativeMarketingAccountHealthSummary {
+    id: string;
+    platform: NativeMarketingPlatform;
+    name: string;
+    accountStatus: NativeMarketingBackendAccountStatus;
+    tokenExpiresAt: string | null;
+    hasAccessToken: boolean;
+    hasRefreshToken: boolean;
+    readiness: NativeMarketingAccountReadiness;
+    reason: NativeMarketingAccountReadinessReason;
+  }
+
+  interface NativeMarketingAccountHealthSnapshot {
+    workspaceId: string;
+    checkedAt: string;
+    authority: 'backend_oauth';
+    externalActionPerformed: false;
+    accounts: NativeMarketingAccountHealthSummary[];
+  }
+
   interface NativeMarketingPostSummary {
     id: string;
     title: string;
@@ -400,6 +429,10 @@ declare global {
 
   type NativeMarketingAccountListResult =
     | { ok: true; accounts: NativeMarketingAccountSummary[] }
+    | NativeMarketingFailure;
+
+  type NativeMarketingAccountHealthResult =
+    | { ok: true; health: NativeMarketingAccountHealthSnapshot }
     | NativeMarketingFailure;
 
   type NativeMarketingPostListResult =
@@ -431,6 +464,7 @@ declare global {
       input: { name: string; slug?: string },
     ) => Promise<NativeMarketingWorkspaceResult>;
     listAccounts: (workspaceId: string) => Promise<NativeMarketingAccountListResult>;
+    listAccountHealth: (workspaceId: string) => Promise<NativeMarketingAccountHealthResult>;
     createOAuthState: (
       workspaceId: string,
       platform: NativeMarketingPlatform,
