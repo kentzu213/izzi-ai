@@ -1,117 +1,109 @@
 # Izzi AI current state
 
-Timestamp: 2026-08-28 00:20 ICT
+Timestamp: 2026-08-28 01:29 ICT
 
 ## Canonical product
 
 - Repository: `kentzu213/izzi-ai`
 - Branch: `main`
-- Released desktop: `v1.14.0-beta.60`
-- Released desktop commit: `81086103eec446bc6672549ba6f99684d49d81ee`
-- Production backend commit: `f6cb454c7c8e34650807153ce828bcb155bf310f`
+- Released desktop: `v1.14.0-beta.61`
+- Released desktop merge commit: `a44821c222019cd0fbb0d983e5868ec21d76b753`
+- Released product commit: `cdbee30561507c534aeacff0ba272ae4cedf28bf`
+- Production backend commit: `0c900b7d645b2bbb818f000c7c14f8cd2642a105`
 - Installed Windows app: `F:\IzziAI\Izzi\Izzi AI.exe`
-- Stable profile: `%APPDATA%\@openclaw`
-- Windows installer remains unsigned because no signing certificate is configured.
+- Stable profile: `%APPDATA%\@openclaw\desktop`
+- Windows installer remains unsigned because a signing certificate is not configured.
 
 ## Goal state
 
 - MKT-01 Channel connection center: complete.
 - MKT-02 Integration authority and provider routes: in progress.
 - MKT-03 through MKT-07: pending in the dependency order in `MASTER_PLAN.md`.
-- Video work is out of the active scope. Technical Marketing Room work has priority.
+- Video work is outside the active scope. Technical Marketing Room work has priority.
 
 ## Released baseline
 
-- Beta.57 shipped the bounded native Auto Post manifest import: exact-byte
-  SHA-256 binding, Owner/Manager authority, one POST maximum, one GET
-  reconciliation after an uncertain outcome, strict redacted receipts, and no
-  token migration.
-- Beta.58 narrowed optional native Marketing connection errors to the existing
-  renderer-safe fallback.
-- Beta.59 added scoped provider grants. Beta.60 added backend-owned account
-  readiness and corrected the workspace activation contract.
-- Every product release through beta.60 passed Windows and macOS CI and
-  published a complete 12-asset inventory.
+- Beta.57 shipped the bounded native Auto Post manifest import. Beta.58 narrowed
+  optional Native Marketing connection errors. Beta.59 added scoped provider
+  grants. Beta.60 added backend-owned account readiness and corrected workspace
+  activation.
+- Beta.61 restores Provider Vault through the Native Marketing workspace
+  authority without moving resource, workflow, or canary-send execution off the
+  fail-closed legacy bridge.
+- Release Desktop workflow `33102035989` completed successfully and published
+  12 assets; evidence: `gh release view v1.14.0-beta.61 --repo kentzu213/izzi-ai`.
 
-## Released NM-011 provider grant v2
+## Production backend
 
-Released version: `1.14.0-beta.59`.
+- Backend PR [#24](https://github.com/kentzu213/izzi-backend/pull/24)
+  merged the fail-closed Supabase public-key deployment preflight at
+  `0c900b7d645b2bbb818f000c7c14f8cd2642a105`.
+- The preflight accepts either supported public-key name, rejects empty values,
+  placeholders, unresolved references, and accidental service-role key reuse,
+  and does not print credential bytes.
+- Public `Invoke-WebRequest` probes to `https://api.izziapi.com/healthz/live`,
+  `/healthz/ready`, and `/version` returned HTTP 200 and the exact production SHA
+  `0c900b7d645b2bbb818f000c7c14f8cd2642a105`. Readiness reports Supabase,
+  fixed-price billing, payload expiry, and Codex LB as healthy.
 
-- Credential envelope v2 binds workspace, provider, permissions, expiry, issue
-  time, and a redacted SHA-256 grant digest.
-- Permissions are explicit: `validate` and `sandbox_execute`.
-- Grant lifetime is capped at 90 days and fails closed at the exact expiry
-  boundary.
-- Legacy envelopes without a scoped grant are invalid and require reconnect;
-  they are never silently promoted.
-- Health, revoke, and Telegram canary readiness inherit the grant state without
-  reading credential bytes.
-- Renderer receives no token, OAuth URL, backend secret, chat id, endpoint, or
-  filesystem path.
-- Publish, spend, bulk send, and commercial render behavior are unchanged.
+## NM-014 Provider Vault native authority
 
-## NM-012 production account readiness
-
-- Desktop account health now uses the backend OAuth authority and returns only
-  renderer-safe readiness summaries. Workspace activation sends the supported
-  `name` and optional `operatingMode` fields and validates names at 2-100
-  characters.
-- The 17-file Marketing migration bundle was applied atomically in production.
-  Postflight confirms the schema is ready, prior row counts are unchanged, and
-  no existing catalog data was lost.
-- The first real app request exposed a missing VPS
-  `SUPABASE_PUBLISHABLE_KEY`. The public key was added securely to the runtime
-  environment, a dated backup was retained, and no secret value was written to
-  the repository or worklogs.
-- Backend live, ready, and version checks pass after restoring the reviewed
-  `f6cb454` image. Publishing, scheduling, spend, customer import, bulk send,
-  and provider OAuth actions remain disabled.
+- Provider Vault resolves the uniquely bound Native Marketing workspace and
+  uses that authority for credential summaries, operation summaries, health,
+  revoke, canary readiness, and Telegram sandbox configuration.
+- Multiple available workspaces without an unambiguous binding fail closed.
+  Read-only authority resolution does not overwrite the Customer Marketing
+  workspace record.
+- Resource, workflow, canary-send, OAuth, publish, schedule, spend, customer
+  import, bulk send, and every external provider action remain outside this
+  authority slice.
+- Implementation evidence is in
+  `worklogs/2026-08-28-nm-014-provider-vault-native-authority.md`.
 
 ## Verification evidence
 
-- Full backend suite: 1546 passed, 93 skipped. Production security audit: 0
-  findings.
-- Production migration: 17/17 applied atomically; postflight schema and data
-  preservation checks passed. Receipt:
-  `F:\Ai Tools\Codex\Temp\izzi-marketing-production-cutover-f6cb454-receipt.json`.
-- Full desktop suite: 1704/1704. Lint, main and renderer type checks, full
-  workspace build, release contracts, renderer budget, and signing policy all
-  passed.
-- Production dependency audit: 0 known vulnerabilities.
-- No external provider action was performed and spend remained `0 VND`.
+- Desktop PR [#11](https://github.com/kentzu213/izzi-ai/pull/11) records
+  262 focused tests and 1,714 full desktop tests across 124 files, plus passing
+  build, typecheck, lint, renderer budget, and repository contracts.
+- Signing policy passed 11 checks; the production dependency audit and scoped
+  credential scan each reported zero findings in PR #11.
+- Backend PR [#24](https://github.com/kentzu213/izzi-backend/pull/24) records
+  6 focused deployment-gate tests, 1,547 passing backend tests, 93 skipped tests,
+  two release-package contract tests, a passing TypeScript build, and a clean
+  production dependency audit.
 
 ## Release and installed smoke
 
-- Desktop CI passed on Windows and macOS. Release Desktop run `33096486915`
-  published all 12 required assets at `v1.14.0-beta.60`.
-- Public Windows installer: 185,958,122 bytes, SHA-256
-  `d7c5fb7ea5ed75ca0b77fbe6ccb5da5afb472f7ad5f2877359bda9b6dd3e2803`.
-- The installer completed with exit code 0. The executable and Windows registry
-  report `1.14.0-beta.60`; manual updater check returns `idle` at the current
-  version.
-- The retained profile stayed at 3,493 files, and database, Preferences, and
-  Local State hashes were unchanged across installation.
-- The authenticated smoke found exactly one `Izzi Marketing` Owner/Pro
-  workspace with zero credits used. Account health returned
-  `authority=backend_oauth`, `externalActionPerformed=false`, and no connected
-  accounts. No OAuth control was clicked.
-- No horizontal overflow, header collision, or tab clipping was observed at
-  1280x800 or 1024x720. Screenshots:
-  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.60-installed-marketing-channels.png`
-  and
-  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.60-installed-marketing-compact.png`.
+- Public prerelease:
+  `https://github.com/kentzu213/izzi-ai/releases/tag/v1.14.0-beta.61`.
+- Windows installer SHA-256:
+  `9cd2a632b938fa2a20a8ab4c57d5bd7c1c681ba10d662ce4ada98db138b537a7`.
+- Windows registry and the in-app updater report `1.14.0-beta.61`; updater state
+  is `idle` with no available newer version.
+- Installed smoke through
+  `F:\Ai Tools\Codex\Temp\nm-014-installed-app-smoke.cjs` retained
+  authentication, found Native Marketing connected, and reported
+  `Vault sẵn sàng`.
+- The same smoke returned nine disconnected provider summaries with no grants,
+  zero operation receipts, `liveReady=false`, and
+  `externalActionPerformed=false`; it found zero request, console, page, or
+  horizontal-overflow errors.
+- The retained profile contained 3,489 files after installation; database,
+  Preferences, and Local State byte counts and hashes matched the pre-install
+  receipt at
+  `F:\Ai Tools\Codex\Temp\izzi-ai-beta61-preinstall-profile.json`.
+- Screenshot:
+  `F:\Ai Tools\Codex\Temp\izzi-ai-beta61-nm014-provider-vault-smoke.png`.
 
 ## Operating mode
 
-- `relaxed_mode` is active from the user's exact authorization
-  `cho phép nới rule`.
-- Claude was not used because its usage is exhausted.
-- ChatGPT web was not requested or used.
+- `relaxed_mode` remains active from the user's authorization because Claude
+  usage is exhausted.
+- Claude and ChatGPT web were not used for this continuation.
 - Codex remains implementation owner, verifier, integrator, and reporter.
 
 ## Next action
 
-Add a deployment preflight guard for the required Supabase publishable key,
-then continue MKT-02 with the smallest authenticated backend provider-route
-contract. Keep publish, schedule, spend, bulk send, customer import, and
-external provider actions disabled.
+Continue MKT-02 with the smallest authenticated provider-route contract. Keep
+OAuth, publish, schedule, spend, customer import, bulk send, and every external
+provider action disabled.
