@@ -52,6 +52,7 @@ import {
   type CustomerMarketingAssetFileGateway,
 } from './customer-marketing-asset-files';
 import { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
+import type { CustomerMarketingIntegrationAuthorityGateway } from './customer-marketing-integration-authority';
 import {
   parseCustomerMarketingLegacyImportConfirmedInput,
   type CustomerMarketingLegacyImportConfirmedInput,
@@ -1273,6 +1274,7 @@ export class CustomerMarketingService {
     private readonly legacyImportRegistry: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>
       & Partial<Pick<CustomerMarketingLegacyImportRegistry, 'consume'>>
       = new CustomerMarketingLegacyImportRegistry(),
+    private readonly integrationAuthorityGateway: CustomerMarketingIntegrationAuthorityGateway | null = null,
   ) {}
 
   private async prepareRemoteSevenDayWorkflow(
@@ -2049,7 +2051,7 @@ export class CustomerMarketingService {
   }
 
   async listIntegrationCredentials(): Promise<CustomerMarketingCredentialListResult> {
-    const authority = await this.resolveMarketingResourceAuthority();
+    const authority = await this.resolveIntegrationAuthority();
     if (authority.status !== 'synced') {
       return {
         ok: false,
@@ -2083,7 +2085,7 @@ export class CustomerMarketingService {
   }
 
   async listConnectorOperations(): Promise<CustomerMarketingConnectorOperationListResult> {
-    const authority = await this.resolveMarketingResourceAuthority();
+    const authority = await this.resolveIntegrationAuthority();
     if (authority.status !== 'synced') {
       return {
         ok: false,
@@ -2117,7 +2119,7 @@ export class CustomerMarketingService {
   async checkIntegrationHealth(
     input: CustomerMarketingConnectorHealthInput,
   ): Promise<CustomerMarketingConnectorHealthResult> {
-    const authority = await this.resolveMarketingResourceAuthority();
+    const authority = await this.resolveIntegrationAuthority();
     const unavailable = (error: string): CustomerMarketingConnectorHealthResult => ({
       ok: false,
       status: authority.status === 'synced' ? 'unavailable' : authority.status,
@@ -2166,7 +2168,7 @@ export class CustomerMarketingService {
   async revokeIntegrationCredential(
     input: CustomerMarketingCredentialRevokeInput,
   ): Promise<CustomerMarketingCredentialRevokeResult> {
-    const authority = await this.authorizeMarketingResourceMutation(MARKETING_CREDENTIAL_REVOKE_ROLES);
+    const authority = await this.authorizeIntegrationMutation(MARKETING_CREDENTIAL_REVOKE_ROLES);
     if (authority.status !== 'synced') {
       return {
         ok: false,
@@ -2250,7 +2252,7 @@ export class CustomerMarketingService {
   }
 
   async getCanaryReadiness(): Promise<CustomerMarketingCanaryReadinessResult> {
-    const authority = await this.resolveMarketingResourceAuthority();
+    const authority = await this.resolveIntegrationAuthority();
     if (authority.status !== 'synced') {
       return {
         ok: false,
@@ -2321,7 +2323,7 @@ export class CustomerMarketingService {
   async configureTelegramSandbox(
     input: CustomerMarketingTelegramSandboxSetupInput,
   ): Promise<CustomerMarketingTelegramSandboxSetupResult> {
-    const authority = await this.authorizeMarketingResourceMutation(MARKETING_CREDENTIAL_REVOKE_ROLES);
+    const authority = await this.authorizeIntegrationMutation(MARKETING_CREDENTIAL_REVOKE_ROLES);
     if (authority.status !== 'synced') {
       return {
         ok: false,
@@ -5532,6 +5534,33 @@ export class CustomerMarketingService {
     const syncedRecord = this.applyRemoteWorkspace(record, workspaceState.workspace);
     if (syncedRecord !== record) this.writeRecord(identity, syncedRecord);
     return { status: 'synced', identity, workspace: workspaceState.workspace };
+  }
+
+  private async resolveIntegrationAuthority(): Promise<CustomerMarketingResourceAuthority> {
+    if (!this.integrationAuthorityGateway) return this.resolveMarketingResourceAuthority();
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    let state: Awaited<ReturnType<CustomerMarketingIntegrationAuthorityGateway['resolve']>>;
+    try {
+      state = await this.integrationAuthorityGateway.resolve(record.workspaceId);
+    } catch {
+      return { status: 'unavailable', error: publicMarketingResourceError('unavailable') };
+    }
+    if (state.status !== 'synced') {
+      return { status: state.status, error: publicMarketingResourceError(state.status) };
+    }
+    return { status: 'synced', identity, workspace: state.workspace };
+  }
+
+  private async authorizeIntegrationMutation(
+    allowedRoles: ReadonlySet<CustomerRole>,
+  ): Promise<CustomerMarketingResourceAuthority> {
+    const authority = await this.resolveIntegrationAuthority();
+    if (authority.status !== 'synced') return authority;
+    if (!allowedRoles.has(authority.workspace.role)) {
+      return { status: 'forbidden', error: publicMarketingResourceError('forbidden') };
+    }
+    return authority;
   }
 
   private async authorizeMarketingResourceMutation(

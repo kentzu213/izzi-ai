@@ -68,6 +68,7 @@ import type {
 } from './customer-marketing-workspace-client';
 import type { CustomerMarketingAssetFileGateway } from './customer-marketing-asset-files';
 import type { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
+import type { CustomerMarketingIntegrationAuthorityGateway } from './customer-marketing-integration-authority';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -688,6 +689,7 @@ function setup(options?: {
     connectorOperationStore?: CustomerMarketingConnectorOperationStore;
     assetFiles?: CustomerMarketingAssetFileGateway;
     legacyImportRegistry?: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>;
+    integrationAuthorityGateway?: CustomerMarketingIntegrationAuthorityGateway;
 }) {
   const db = new MemorySettings();
   let identity: CustomerIdentity | null = options?.identity ?? {
@@ -720,6 +722,7 @@ function setup(options?: {
     options?.connectorOperationStore,
     options?.assetFiles,
     options?.legacyImportRegistry,
+    options?.integrationAuthorityGateway,
   );
   return {
     db,
@@ -5323,6 +5326,134 @@ describe('CustomerMarketingService CMR-306 workflow bridge', () => {
       expectedRevision: remote.resource.revision,
     })).resolves.toMatchObject({ ok: false, status: 'forbidden', workflow: null });
     expect(remote.getMarketingResource).not.toHaveBeenCalled();
+  });
+
+  it('uses native workspace authority for the Provider Vault read surface without rewriting local state', async () => {
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const nativeWorkspace = remoteWorkspace({
+      id: '33333333-3333-4333-8333-333333333333',
+      role: 'manager',
+      plan: 'pro',
+    });
+    const integrationAuthorityGateway = {
+      resolve: vi.fn(async () => ({ status: 'synced' as const, workspace: nativeWorkspace })),
+    } satisfies CustomerMarketingIntegrationAuthorityGateway;
+    const listStatuses = vi.fn(() => ({
+      vaultState: 'ready' as const,
+      credentials: [{
+        provider: 'telegram' as const,
+        state: 'connected' as const,
+        updatedAt: null,
+        grant: null,
+      }],
+    }));
+    const operations = new CustomerMarketingConnectorOperationStore(new MemorySettings());
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      integrationAuthorityGateway,
+      credentialVault: { listStatuses, revokeCredential: vi.fn() },
+      connectorOperationStore: operations,
+      canaryReadinessSource: {
+        status: () => ({ enabled: false, killSwitch: false, bindingDigest: null, stateRevision: 0 }),
+        privateSandboxChatConfigured: () => false,
+      },
+    });
+
+    await expect(context.service.listIntegrationCredentials()).resolves.toMatchObject({
+      ok: true,
+      status: 'synced',
+      vaultState: 'ready',
+    });
+    await expect(context.service.listConnectorOperations()).resolves.toMatchObject({
+      ok: true,
+      status: 'synced',
+      revision: 0,
+    });
+    await expect(context.service.checkIntegrationHealth({ provider: 'telegram' })).resolves.toMatchObject({
+      ok: true,
+      status: 'synced',
+      health: 'ready',
+    });
+    await expect(context.service.getCanaryReadiness()).resolves.toMatchObject({
+      ok: true,
+      status: 'synced',
+      credentialState: 'connected',
+      externalActionPerformed: false,
+    });
+
+    expect(integrationAuthorityGateway.resolve).toHaveBeenCalledTimes(4);
+    expect(listStatuses).toHaveBeenCalledWith(nativeWorkspace.id);
+    expect(remote.getCurrent).not.toHaveBeenCalled();
+    expect([...context.db.values.keys()].some((key) => key.startsWith('customer_marketing:v1:'))).toBe(false);
+  });
+
+  it('uses native workspace authority only for allowlisted Provider Vault mutations', async () => {
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const nativeWorkspace = remoteWorkspace({
+      id: '44444444-4444-4444-8444-444444444444',
+      role: 'owner',
+      plan: 'pro',
+    });
+    const integrationAuthorityGateway = {
+      resolve: vi.fn(async () => ({ status: 'synced' as const, workspace: nativeWorkspace })),
+    } satisfies CustomerMarketingIntegrationAuthorityGateway;
+    const setCredential = vi.fn();
+    const revokeCredential = vi.fn(() => true);
+    const setPrivateSandboxChatId = vi.fn();
+    const context = setup({
+      workspaceGateway: remote.gateway,
+      integrationAuthorityGateway,
+      credentialVault: {
+        listStatuses: vi.fn(() => ({ vaultState: 'ready', credentials: [] })),
+        setCredential,
+        revokeCredential,
+      },
+      telegramSandboxConfig: {
+        getPrivateSandboxChatId: vi.fn(() => null),
+        setPrivateSandboxChatId,
+        clear: vi.fn(),
+        isConfigured: vi.fn(),
+      },
+      connectorOperationStore: new CustomerMarketingConnectorOperationStore(new MemorySettings()),
+    });
+    const token = ['123456789', 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef_123456'].join(':');
+
+    await expect(context.service.configureTelegramSandbox({
+      token,
+      privateSandboxChatId: '-1001234567890',
+    })).resolves.toMatchObject({ ok: true, status: 'synced', externalActionPerformed: false });
+    await expect(context.service.revokeIntegrationCredential({ provider: 'facebook' }))
+      .resolves.toMatchObject({ ok: true, status: 'synced', revoked: true });
+
+    expect(setCredential).toHaveBeenCalledWith(
+      nativeWorkspace.id,
+      'telegram',
+      token,
+      expect.objectContaining({ permissions: ['validate', 'sandbox_execute'] }),
+    );
+    expect(setPrivateSandboxChatId).toHaveBeenCalledWith(nativeWorkspace.id, '-1001234567890');
+    expect(revokeCredential).toHaveBeenCalledWith(nativeWorkspace.id, 'facebook');
+    expect(integrationAuthorityGateway.resolve).toHaveBeenCalledTimes(2);
+    expect(remote.getCurrent).not.toHaveBeenCalled();
+  });
+
+  it('keeps non-vault marketing resources behind the disabled workspace bridge', async () => {
+    const remote = marketingResourceGateway('owner', 'unavailable');
+    const integrationAuthorityGateway = {
+      resolve: vi.fn(async () => ({
+        status: 'synced' as const,
+        workspace: remoteWorkspace({ id: '55555555-5555-4555-8555-555555555555' }),
+      })),
+    } satisfies CustomerMarketingIntegrationAuthorityGateway;
+    const context = setup({ workspaceGateway: remote.gateway, integrationAuthorityGateway });
+
+    await expect(context.service.listMarketingResources('campaign')).resolves.toMatchObject({
+      ok: false,
+      status: 'unavailable',
+      resources: [],
+    });
+    expect(remote.getCurrent).toHaveBeenCalledTimes(1);
+    expect(integrationAuthorityGateway.resolve).not.toHaveBeenCalled();
   });
 
   it('lists credential status only after remote workspace authority is synchronized', async () => {

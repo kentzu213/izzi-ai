@@ -163,6 +163,13 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
 });
 
 describe('CustomerMarketingChannels connection center contract', () => {
+  it('wires Provider Vault authority to the native IzziAPI workspace client in main', () => {
+    expect(mainSource).toContain("import { NativeMarketingIntegrationAuthorityGateway }");
+    expect(mainSource).toContain('new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient())');
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:listIntegrationCredentials')");
+    expect(preloadSource).not.toMatch(/listIntegrationCredentials:\s*\([^)]*workspaceId/);
+  });
+
   it('renders the three connection surfaces before workflow controls', () => {
     expect(pageSource).toContain('const connectionCenter = (');
     expect(pageSource).toMatch(/<\/header>\s*\{connectionCenter\}/);
