@@ -47,7 +47,7 @@ Scope:
 Progress checkpoint:
 
 - Public baseline `v1.14.0-beta.58` includes the bounded native Auto Post import and its renderer error-narrowing patch.
-- NM-011 candidate `1.14.0-beta.59` adds encrypted credential envelope v2 with workspace/provider binding, explicit `validate` and `sandbox_execute` permissions, a maximum 90-day grant, exact-expiry fail-closed behavior, and a renderer-safe grant digest/summary.
+- Public release `v1.14.0-beta.59`, commit `dc30bd6`, adds encrypted credential envelope v2 with workspace/provider binding, explicit `validate` and `sandbox_execute` permissions, a maximum 90-day grant, exact-expiry fail-closed behavior, and a renderer-safe grant digest/summary.
 - Legacy credential envelopes without a scoped grant are reported invalid and require an explicit reconnect; no credential is silently upgraded into a new authority.
 - Health, revoke, and Telegram canary readiness now inherit the grant state. Credential bytes remain inside main, and publish/spend/bulk execution is unchanged.
 - Implementation and local evidence are recorded in `worklogs/2026-08-27-nm-011-provider-grant-v2.md`.
@@ -110,4 +110,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Package and exercise NM-011 candidate `1.14.0-beta.59`, then continue MKT-02 with the smallest authenticated backend provider-route contract. Do not enable external publishing as a shortcut.
+Continue MKT-02 with the smallest authenticated backend provider-route contract. Do not enable external publishing as a shortcut.

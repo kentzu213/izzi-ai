@@ -1,13 +1,13 @@
 # Izzi AI current state
 
-Timestamp: 2026-08-27 19:35 ICT
+Timestamp: 2026-08-27 20:51 ICT
 
 ## Canonical product
 
 - Repository: `kentzu213/izzi-ai`
 - Branch: `main`
-- Released desktop: `v1.14.0-beta.58`
-- Released commit: `df0e120`
+- Released desktop: `v1.14.0-beta.59`
+- Released commit: `dc30bd6`
 - Installed Windows app: `F:\IzziAI\Izzi\Izzi AI.exe`
 - Stable profile: `%APPDATA%\@openclaw`
 - Windows installer remains unsigned because no signing certificate is configured.
@@ -30,9 +30,9 @@ Timestamp: 2026-08-27 19:35 ICT
 - Both releases passed Windows and macOS CI and published a complete 12-asset
   inventory.
 
-## Active NM-011 candidate
+## Released NM-011 provider grant v2
 
-Candidate version: `1.14.0-beta.59`.
+Released version: `1.14.0-beta.59`.
 
 - Credential envelope v2 binds workspace, provider, permissions, expiry, issue
   time, and a redacted SHA-256 grant digest.
@@ -66,6 +66,21 @@ Candidate version: `1.14.0-beta.59`.
   focus outline.
 - No external provider action was performed.
 
+## Release evidence
+
+- Desktop CI passed on Windows and macOS. Release Desktop run `33075519884`
+  completed successfully and published all 12 required assets.
+- Public Windows installer: 185,956,016 bytes, SHA-256
+  `a7b64d0a9ff0b1a37d5db970e4525b3fea765ae34b0e31ef5e0895512c8f291f`.
+- Public installer hash matched locally and installed with exit code 0.
+- Installed FileVersion is `1.14.0-beta.59` at
+  `F:\IzziAI\Izzi\Izzi AI.exe`.
+- Installed-profile Playwright smoke opened `AI Marketing -> Kênh -> Trung tâm
+  kết nối`, reported zero page/console errors and zero horizontal overflow at
+  1280x800, and retained the existing 3,489-file profile.
+- Screenshot:
+  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.59-installed-marketing-channels.png`.
+
 ## Operating mode
 
 - `relaxed_mode` is active from the user's exact authorization
@@ -76,6 +91,6 @@ Candidate version: `1.14.0-beta.59`.
 
 ## Next action
 
-Review the exact diff, then commit, push, tag, verify the release assets, install
-the public Windows artifact, and exercise the installed Marketing Channels
-workflow.
+Continue MKT-02 with the smallest authenticated backend provider-route contract.
+Keep publish, spend, bulk send, customer import, and external provider actions
+disabled.

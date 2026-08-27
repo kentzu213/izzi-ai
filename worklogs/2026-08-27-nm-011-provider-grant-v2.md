@@ -59,6 +59,21 @@ was inserted into the retained user profile.
 
 ## Release state
 
-Candidate version: `1.14.0-beta.59`. Local package and visual smoke pass. GitHub
-release asset verification, installation, and installed-profile smoke are
-pending.
+- Commit `dc30bd6` was pushed to `main` and tagged `v1.14.0-beta.59`.
+- Desktop CI passed on Windows and macOS. Release Desktop run `33075519884`
+  passed Windows packaging, macOS x64/arm64 packaging, the 12-asset inventory
+  gate, and prerelease publication.
+- The public release contains 12 uploaded assets with GitHub SHA-256 digests.
+  The Windows installer is 185,956,016 bytes with SHA-256
+  `a7b64d0a9ff0b1a37d5db970e4525b3fea765ae34b0e31ef5e0895512c8f291f`.
+- The public installer was downloaded to drive F, matched the GitHub digest,
+  and installed with exit code 0 at `F:\IzziAI\Izzi\Izzi AI.exe`.
+- The installed executable reports FileVersion `1.14.0-beta.59`. Playwright
+  opened the retained `%APPDATA%\@openclaw\desktop` profile, navigated to
+  `AI Marketing -> Kênh -> Trung tâm kết nối`, observed no page or console
+  errors, and measured no horizontal overflow at 1280x800.
+- The retained profile stayed at 3,489 files across the install and smoke; its
+  byte count changed by only 19 bytes of runtime state. No onboarding reset or
+  external provider action occurred.
+- Installed smoke screenshot:
+  `F:\Ai Tools\Codex\Temp\izzi-ai-v1.14.0-beta.59-installed-marketing-channels.png`.
