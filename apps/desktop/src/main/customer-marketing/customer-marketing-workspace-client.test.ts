@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CustomerMarketingWorkspaceClient,
@@ -22,6 +23,9 @@ const INVITATION_TOKEN = 'InviteToken_0123456789-abcdef';
 const INVITATION_IDEMPOTENCY_KEY = 'A'.repeat(32);
 const ANALYTICS_FROM = '2026-07-01T00:00:00.000Z';
 const ANALYTICS_TO = '2026-07-31T23:59:59.999Z';
+const LEGACY_MANIFEST_BYTES = Buffer.from('{"schema":"izzi-auto-post-migration","version":1}', 'utf8');
+const LEGACY_MANIFEST_DIGEST = createHash('sha256').update(LEGACY_MANIFEST_BYTES).digest('hex');
+const LEGACY_RECEIPT_ID = '55555555-5555-4555-8555-555555555555';
 const FORBIDDEN_CAPABILITY_FIELDS = [
   'internalAction',
   'internalId',
@@ -271,6 +275,44 @@ function auditDetail(overrides: Record<string, unknown> = {}): Record<string, un
     toRevision: 2,
     ...overrides,
   };
+}
+
+function legacyImportReceipt(overrides: Record<string, unknown> = {}) {
+  const receipt = {
+    receiptId: LEGACY_RECEIPT_ID,
+    workspaceId: WORKSPACE_ID,
+    manifestDigest: LEGACY_MANIFEST_DIGEST,
+    status: 'applied',
+    duplicate: false,
+    schemaVersion: 'izzi-auto-post-migration.v1',
+    mapperVersion: 'nm-010c.2',
+    counts: {
+      campaigns: 1,
+      content: 2,
+      accountReconnectTasks: 3,
+      mediaReuploadTasks: 1,
+      scheduleReconnectTasks: 1,
+      recordReviewTasks: 4,
+    },
+    occurredAt: '2026-08-24T04:00:00.000Z',
+    ...overrides,
+  };
+  const receiptDigest = createHash('sha256').update([
+    'native-marketing-legacy-import-receipt:v1',
+    receipt.workspaceId,
+    receipt.manifestDigest,
+    receipt.status,
+    receipt.schemaVersion,
+    receipt.mapperVersion,
+    receipt.counts.campaigns,
+    receipt.counts.content,
+    receipt.counts.accountReconnectTasks,
+    receipt.counts.mediaReuploadTasks,
+    receipt.counts.scheduleReconnectTasks,
+    receipt.counts.recordReviewTasks,
+    receipt.occurredAt,
+  ].join('|')).digest('hex');
+  return { ...receipt, receiptDigest };
 }
 
 function auditRow(overrides: Record<string, unknown> = {}) {
@@ -1595,6 +1637,207 @@ describe('CustomerMarketingWorkspaceClient', () => {
       await expect(client.listMarketingResourceAudit(workspaceId, kind, resourceId))
         .resolves.toEqual({ status: 'unavailable', receipts: [] });
     }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([201, 200])('posts exact legacy manifest bytes and accepts a strict %i receipt', async (status) => {
+    const receipt = legacyImportReceipt({ duplicate: status === 200 });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      receipt,
+    }, status));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: LEGACY_MANIFEST_BYTES,
+    })).resolves.toEqual({
+      status: 'synced',
+      receipt,
+      reconciliationRequired: false,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/imports/legacy-auto-post`,
+      expect.objectContaining({
+        method: 'POST',
+        redirect: 'error',
+        cache: 'no-store',
+        body: LEGACY_MANIFEST_BYTES,
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+          'X-Content-SHA256': LEGACY_MANIFEST_DIGEST,
+          'Idempotency-Key': `legacy-import:${LEGACY_MANIFEST_DIGEST}`,
+        },
+      }),
+    );
+  });
+
+  it('marks malformed success and server failure as ambiguous without retrying POST', async () => {
+    for (const response of [
+      jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        manifestDigest: LEGACY_MANIFEST_DIGEST,
+        receipt: { ...legacyImportReceipt(), secret: 'must-fail-closed' },
+      }, 201),
+      jsonResponse({ error: { code: 'internal_error' } }, 503),
+    ]) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response);
+      const client = new CustomerMarketingWorkspaceClient(
+        { getAccessToken: vi.fn(async () => 'test-token') },
+        { enabled: true, fetchImpl },
+      );
+
+      await expect(client.importLegacyAutoPost({
+        workspaceId: WORKSPACE_ID,
+        manifestDigest: LEGACY_MANIFEST_DIGEST,
+        bytes: LEGACY_MANIFEST_BYTES,
+      })).resolves.toEqual({
+        status: 'unavailable',
+        receipt: null,
+        reconciliationRequired: true,
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('cancels an oversized legacy receipt body without buffering or retrying POST', async () => {
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(32 * 1024 + 1));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(body, {
+      status: 201,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, fetchImpl },
+    );
+
+    await expect(client.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: LEGACY_MANIFEST_BYTES,
+    })).resolves.toEqual({
+      status: 'unavailable',
+      receipt: null,
+      reconciliationRequired: true,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(canceled).toBe(true);
+  });
+
+  it('marks transport loss and timeout as ambiguous without retrying POST', async () => {
+    const transportFetch = vi.fn<typeof fetch>().mockRejectedValue(new Error('transport lost'));
+    const transportClient = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, fetchImpl: transportFetch },
+    );
+    await expect(transportClient.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: LEGACY_MANIFEST_BYTES,
+    })).resolves.toMatchObject({ status: 'unavailable', reconciliationRequired: true });
+    expect(transportFetch).toHaveBeenCalledTimes(1);
+
+    const timeoutFetch = vi.fn<typeof fetch>().mockImplementation((_url, init) => (
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      })
+    ));
+    const timeoutClient = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, timeoutMs: 5, fetchImpl: timeoutFetch },
+    );
+    await expect(timeoutClient.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: LEGACY_MANIFEST_BYTES,
+    })).resolves.toMatchObject({ status: 'unavailable', reconciliationRequired: true });
+    expect(timeoutFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 401, 403, 404, 409, 413, 415, 429])(
+    'does not mark deterministic HTTP %i failure as ambiguous',
+    async (status) => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ error: { code: 'rejected' } }, status));
+      const client = new CustomerMarketingWorkspaceClient(
+        { getAccessToken: vi.fn(async () => 'test-token') },
+        { enabled: true, fetchImpl },
+      );
+      const result = await client.importLegacyAutoPost({
+        workspaceId: WORKSPACE_ID,
+        manifestDigest: LEGACY_MANIFEST_DIGEST,
+        bytes: LEGACY_MANIFEST_BYTES,
+      });
+
+      expect(result).toMatchObject({ receipt: null, reconciliationRequired: false });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('reads one exact bound receipt for reconciliation and maps a missing receipt', async () => {
+    const receipt = legacyImportReceipt({ duplicate: true });
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        manifestDigest: LEGACY_MANIFEST_DIGEST,
+        receipt,
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 'not_found' } }, 404));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.getLegacyAutoPostImportReceipt(
+      WORKSPACE_ID,
+      LEGACY_MANIFEST_DIGEST,
+    )).resolves.toEqual({ status: 'synced', receipt });
+    await expect(client.getLegacyAutoPostImportReceipt(
+      WORKSPACE_ID,
+      LEGACY_MANIFEST_DIGEST,
+    )).resolves.toEqual({ status: 'not_found', receipt: null });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      `https://api.example.test/api/marketing/workspaces/${WORKSPACE_ID}/imports/legacy-auto-post/${LEGACY_MANIFEST_DIGEST}`,
+      expect.objectContaining({ method: 'GET', redirect: 'error', cache: 'no-store' }),
+    );
+  });
+
+  it('does not dispatch a legacy import with invalid binding, changed bytes, or missing auth', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const invalid = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, fetchImpl },
+    );
+    await expect(invalid.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: Buffer.from('changed', 'utf8'),
+    })).resolves.toEqual({ status: 'unavailable', receipt: null, reconciliationRequired: false });
+
+    const noAuth = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => null) },
+      { enabled: true, fetchImpl },
+    );
+    await expect(noAuth.importLegacyAutoPost({
+      workspaceId: WORKSPACE_ID,
+      manifestDigest: LEGACY_MANIFEST_DIGEST,
+      bytes: LEGACY_MANIFEST_BYTES,
+    })).resolves.toEqual({ status: 'unavailable', receipt: null, reconciliationRequired: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

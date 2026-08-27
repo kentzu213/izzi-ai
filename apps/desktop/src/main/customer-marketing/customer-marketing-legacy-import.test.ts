@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -255,5 +255,60 @@ describe('CustomerMarketingLegacyImportRegistry', () => {
       { code: 'unsupported_platform', count: 1 },
     ]);
     expect(JSON.stringify(preview)).not.toContain('ffffffff-ffff-4fff-8fff-ffffffffffff');
+  });
+
+  it('re-reads stable exact bytes and consumes a ready selection only once', async () => {
+    const { filePath, bytes } = await fixture(validManifest());
+    const registry = new CustomerMarketingLegacyImportRegistry();
+    const preview = await registry.preview(filePath);
+
+    const consumed = await registry.consume(preview!.selectionId);
+
+    expect(consumed).toEqual({
+      bytes,
+      manifestDigest: createHash('sha256').update(bytes).digest('hex'),
+    });
+    expect(Object.keys(consumed!).sort()).toEqual(['bytes', 'manifestDigest']);
+    await expect(registry.consume(preview!.selectionId)).resolves.toBeNull();
+  });
+
+  it('rejects a selection when the original file metadata changes after preview', async () => {
+    const { filePath } = await fixture(validManifest());
+    const registry = new CustomerMarketingLegacyImportRegistry();
+    const preview = await registry.preview(filePath);
+    const changed = new Date(Date.now() + 60_000);
+    await utimes(filePath, changed, changed);
+
+    await expect(registry.consume(preview!.selectionId)).resolves.toBeNull();
+    await expect(registry.consume(preview!.selectionId)).resolves.toBeNull();
+  });
+
+  it('rejects changed bytes even when the replacement has the same size', async () => {
+    const { filePath, bytes } = await fixture(validManifest());
+    const registry = new CustomerMarketingLegacyImportRegistry();
+    const preview = await registry.preview(filePath);
+    const replacement = Buffer.from(bytes.toString('utf8').replace('Launch post', 'Launch p0st'), 'utf8');
+    expect(replacement.byteLength).toBe(bytes.byteLength);
+    await writeFile(filePath, replacement);
+
+    await expect(registry.consume(preview!.selectionId)).resolves.toBeNull();
+  });
+
+  it('rejects unknown, expired, and not-ready selections before returning bytes', async () => {
+    let now = 1_000;
+    const registry = new CustomerMarketingLegacyImportRegistry(() => now, 500);
+    const valid = await fixture(validManifest(), 'valid.json');
+    const validPreview = await registry.preview(valid.filePath);
+    now = 1_500;
+
+    await expect(registry.consume(validPreview!.selectionId)).resolves.toBeNull();
+    await expect(registry.consume('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).resolves.toBeNull();
+
+    const brokenManifest = validManifest();
+    brokenManifest.records.posts[0].campaignId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const broken = await fixture(brokenManifest, 'broken.json');
+    const brokenPreview = await registry.preview(broken.filePath);
+    expect(brokenPreview?.ready).toBe(false);
+    await expect(registry.consume(brokenPreview!.selectionId)).resolves.toBeNull();
   });
 });

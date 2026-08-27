@@ -31,7 +31,15 @@ interface ParsedManifest {
 interface StoredSelection {
   filePath: string;
   manifestDigest: string;
+  sizeBytes: number;
+  mtimeMs: number;
+  ready: boolean;
   expiresAt: number;
+}
+
+export interface CustomerMarketingLegacyImportConsumedSelection {
+  bytes: Buffer;
+  manifestDigest: string;
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -340,12 +348,64 @@ export class CustomerMarketingLegacyImportRegistry {
 
       const manifestDigest = createHash('sha256').update(bytes).digest('hex');
       const selectionId = randomUUID();
+      const preview = buildPreview(parsed, path.basename(filePath), manifestDigest, selectionId);
       this.selections.set(selectionId, {
         filePath,
         manifestDigest,
+        sizeBytes: after.size,
+        mtimeMs: after.mtimeMs,
+        ready: preview.ready,
         expiresAt: this.now() + this.selectionTtlMs,
       });
-      return buildPreview(parsed, path.basename(filePath), manifestDigest, selectionId);
+      return preview;
+    } catch {
+      return null;
+    }
+  }
+
+  async consume(selectionId: string): Promise<CustomerMarketingLegacyImportConsumedSelection | null> {
+    this.pruneExpired();
+    const selection = this.selections.get(selectionId);
+    if (!selection) return null;
+
+    // Consumption is deliberately one-shot even when validation fails. A caller must
+    // create a fresh preview before any later POST instead of reusing stale authority.
+    this.selections.delete(selectionId);
+    if (!selection.ready) return null;
+
+    try {
+      const before = await lstat(selection.filePath);
+      if (
+        !before.isFile()
+        || before.isSymbolicLink()
+        || before.size <= 0
+        || before.size > MAX_MANIFEST_BYTES
+        || before.size !== selection.sizeBytes
+        || before.mtimeMs !== selection.mtimeMs
+      ) return null;
+
+      const bytes = await readFile(selection.filePath);
+      const after = await lstat(selection.filePath);
+      if (
+        !after.isFile()
+        || after.isSymbolicLink()
+        || after.size !== before.size
+        || after.mtimeMs !== before.mtimeMs
+        || bytes.byteLength !== before.size
+      ) return null;
+
+      const parsed = parseManifest(JSON.parse(bytes.toString('utf8')));
+      if (!parsed) return null;
+      const manifestDigest = createHash('sha256').update(bytes).digest('hex');
+      if (manifestDigest !== selection.manifestDigest) return null;
+      const verifiedPreview = buildPreview(
+        parsed,
+        path.basename(selection.filePath),
+        manifestDigest,
+        selectionId,
+      );
+      if (!verifiedPreview.ready) return null;
+      return { bytes, manifestDigest };
     } catch {
       return null;
     }

@@ -35,12 +35,15 @@ import {
   type CustomerMarketingWorkflowWrapper,
 } from './customer-marketing-workflow-wrappers';
 import type {
+  CustomerMarketingLegacyImportPostState,
+  CustomerMarketingLegacyImportReceiptState,
   CustomerMarketingResourceAuditState,
   CustomerMarketingWorkspaceGateway,
   CustomerMarketingWorkspaceState,
   CustomerMarketingWorkflowState,
   RemoteMarketingMember,
   RemoteMarketingProfile,
+  RemoteCustomerMarketingLegacyImportReceipt,
   RemoteMarketingWorkflowRun,
   RemoteMarketingWorkspace,
 } from './customer-marketing-workspace-client';
@@ -49,8 +52,12 @@ import {
   type CustomerMarketingAssetFileGateway,
 } from './customer-marketing-asset-files';
 import { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
-import type {
-  CustomerMarketingLegacyImportResult,
+import {
+  parseCustomerMarketingLegacyImportConfirmedInput,
+  type CustomerMarketingLegacyImportConfirmedInput,
+  type CustomerMarketingLegacyImportMutationResult,
+  type CustomerMarketingLegacyImportReceiptSummary,
+  type CustomerMarketingLegacyImportResult,
 } from '../../shared/customer-marketing-legacy-import-types';
 import {
   parseMarketingCalendarInput,
@@ -348,6 +355,27 @@ function publicMarketingResourceError(status: CustomerMarketingBridgeStatus): st
   if (status === 'conflict') return 'Tài nguyên đã thay đổi; hãy tải lại phiên bản mới nhất.';
   if (status === 'quota_exceeded') return 'Workspace đã đạt giới hạn tài nguyên của gói hiện tại.';
   return 'Không thể xác nhận dữ liệu marketing với IzziAPI.';
+}
+
+function publicLegacyImportError(status: CustomerMarketingBridgeStatus): string {
+  if (status === 'forbidden') return 'Vai trò hiện tại không có quyền nhập dữ liệu Auto Post.';
+  if (status === 'conflict') return 'Bản xem trước đã thay đổi hoặc hết hạn. Hãy chọn lại tệp.';
+  if (status === 'quota_exceeded') return 'Workspace đã đạt giới hạn nhập dữ liệu của gói hiện tại.';
+  if (status === 'local') return 'Nhập Auto Post chỉ khả dụng khi workspace đã kết nối IzziAPI.';
+  return 'Không thể xác nhận kết quả nhập dữ liệu với IzziAPI.';
+}
+
+function rendererLegacyImportReceipt(
+  receipt: RemoteCustomerMarketingLegacyImportReceipt,
+): CustomerMarketingLegacyImportReceiptSummary {
+  return {
+    status: 'applied',
+    duplicate: receipt.duplicate,
+    schemaVersion: 'izzi-auto-post-migration.v1',
+    mapperVersion: receipt.mapperVersion,
+    counts: { ...receipt.counts },
+    occurredAt: receipt.occurredAt,
+  };
 }
 
 function planMeetsMinimum(plan: string, minimum: CustomerMarketingPlan): boolean {
@@ -1241,6 +1269,7 @@ export class CustomerMarketingService {
     private readonly connectorOperationStore?: CustomerMarketingConnectorOperationStore,
     private readonly assetFiles: CustomerMarketingAssetFileGateway | null = null,
     private readonly legacyImportRegistry: Pick<CustomerMarketingLegacyImportRegistry, 'preview'>
+      & Partial<Pick<CustomerMarketingLegacyImportRegistry, 'consume'>>
       = new CustomerMarketingLegacyImportRegistry(),
   ) {}
 
@@ -1794,6 +1823,98 @@ export class CustomerMarketingService {
         error: 'Không thể đối soát bản xuất Auto Post đã chọn.',
       };
     }
+  }
+
+  async importLegacyAutoPost(
+    input: CustomerMarketingLegacyImportConfirmedInput,
+  ): Promise<CustomerMarketingLegacyImportMutationResult> {
+    const failure = (
+      status: CustomerMarketingBridgeStatus,
+      error: string,
+      reconciliationRequired = false,
+    ): CustomerMarketingLegacyImportMutationResult => ({
+      ok: false,
+      status,
+      receipt: null,
+      reconciled: false,
+      reconciliationRequired,
+      error,
+    });
+    const parsed = parseCustomerMarketingLegacyImportConfirmedInput(input);
+    if (!parsed) return failure('unavailable', 'Yêu cầu xác nhận nhập Auto Post không hợp lệ.');
+
+    const authority = await this.authorizeMarketingResourceMutation(new Set(['owner', 'manager']));
+    if (authority.status !== 'synced') {
+      return failure(authority.status, authority.error);
+    }
+    const consume = this.legacyImportRegistry.consume;
+    const postImport = this.workspaceGateway?.importLegacyAutoPost;
+    const getReceipt = this.workspaceGateway?.getLegacyAutoPostImportReceipt;
+    if (!consume || !postImport || !getReceipt || !this.workspaceGateway) {
+      return failure('unavailable', publicLegacyImportError('unavailable'));
+    }
+
+    let selection: Awaited<ReturnType<CustomerMarketingLegacyImportRegistry['consume']>> = null;
+    try {
+      selection = await consume.call(this.legacyImportRegistry, parsed.selectionId);
+    } catch {
+      selection = null;
+    }
+    if (!selection) return failure('conflict', publicLegacyImportError('conflict'));
+
+    const receiptIsBound = (receipt: RemoteCustomerMarketingLegacyImportReceipt | null):
+      receipt is RemoteCustomerMarketingLegacyImportReceipt => Boolean(
+      receipt
+      && receipt.workspaceId === authority.workspace.id
+      && receipt.manifestDigest === selection.manifestDigest,
+    );
+    const success = (
+      receipt: RemoteCustomerMarketingLegacyImportReceipt,
+      reconciled: boolean,
+    ): CustomerMarketingLegacyImportMutationResult => ({
+      ok: true,
+      status: 'synced',
+      receipt: rendererLegacyImportReceipt(receipt),
+      reconciled,
+      reconciliationRequired: false,
+    });
+
+    let posted: CustomerMarketingLegacyImportPostState;
+    try {
+      posted = await postImport.call(this.workspaceGateway, {
+        workspaceId: authority.workspace.id,
+        manifestDigest: selection.manifestDigest,
+        bytes: selection.bytes,
+      });
+    } catch {
+      posted = { status: 'unavailable', receipt: null, reconciliationRequired: true };
+    }
+    if (posted.status === 'synced' && receiptIsBound(posted.receipt)) {
+      return success(posted.receipt, false);
+    }
+
+    if (posted.reconciliationRequired || posted.status === 'synced') {
+      let reconciled: CustomerMarketingLegacyImportReceiptState;
+      try {
+        reconciled = await getReceipt.call(
+          this.workspaceGateway,
+          authority.workspace.id,
+          selection.manifestDigest,
+        );
+      } catch {
+        reconciled = { status: 'unavailable', receipt: null };
+      }
+      if (reconciled.status === 'synced' && receiptIsBound(reconciled.receipt)) {
+        return success(reconciled.receipt, true);
+      }
+      return failure(
+        'unavailable',
+        'Chưa thể xác nhận kết quả nhập. Izzi AI sẽ không tự gửi lại yêu cầu; hãy kiểm tra lại sau.',
+        true,
+      );
+    }
+
+    return failure(posted.status, publicLegacyImportError(posted.status));
   }
 
   async listMarketingCalendar(

@@ -1063,7 +1063,105 @@
   line-height: 1.55;
 }
 
-.cmrr-import-footer > .cmr-button {
+.cmrr-import-confirmation {
+  display: grid;
+  gap: 18px;
+}
+
+.cmrr-import-result {
+  display: grid;
+  gap: 18px;
+}
+
+.cmrr-import-confirmation h4,
+.cmrr-import-result h4 {
+  margin: 5px 0 0;
+  color: var(--cmr-text);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.cmrr-import-confirmation p,
+.cmrr-import-result p {
+  margin: 7px 0 0;
+  color: var(--cmr-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.cmrr-import-confirmation dl,
+.cmrr-import-result dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--cmr-border);
+  border-radius: 7px;
+  background: var(--cmr-border);
+  gap: 1px;
+}
+
+.cmrr-import-confirmation dl > div,
+.cmrr-import-result dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 10px;
+  padding: 10px 11px;
+  background: #0b1118;
+}
+
+.cmrr-import-confirmation dt,
+.cmrr-import-result dt {
+  overflow-wrap: anywhere;
+  color: var(--cmr-muted);
+  font-size: 10px;
+}
+
+.cmrr-import-confirmation dd,
+.cmrr-import-result dd {
+  margin: 0;
+  color: var(--cmr-text);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.cmrr-import-confirmation__warning,
+.cmrr-import-result {
+  padding: 13px 14px;
+  border-left: 2px solid var(--cmr-cyan);
+  background: rgba(37, 215, 193, 0.05);
+}
+
+.cmrr-import-result.is-uncertain {
+  border-left-color: #f0b75f;
+  background: rgba(240, 183, 95, 0.06);
+}
+
+.cmrr-import-result.is-error {
+  border-left-color: #ef6d7a;
+  background: rgba(239, 109, 122, 0.06);
+}
+
+.cmrr-import-result > small {
+  color: var(--cmr-dim);
+  font-size: 9px;
+}
+
+.cmrr-import-progress {
+  margin-bottom: 14px;
+  padding: 9px 11px;
+  border: 1px solid rgba(37, 215, 193, 0.24);
+  border-radius: 6px;
+  color: var(--cmr-cyan);
+  background: rgba(37, 215, 193, 0.06);
+  font-size: 10px;
+}
+
+.cmrr-import-footer > .cmr-button,
+.cmrr-import-footer > div {
   flex: 0 0 auto;
 }
 
@@ -1256,11 +1354,14 @@
   }
 
   .cmrr-import-plan,
-  .cmrr-import-counts > div:last-child {
+  .cmrr-import-counts > div:last-child,
+  .cmrr-import-confirmation dl,
+  .cmrr-import-result dl {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .cmrr-import-footer > .cmr-button {
+  .cmrr-import-footer > .cmr-button,
+  .cmrr-import-footer .cmr-button {
     min-height: 44px;
   }
 }

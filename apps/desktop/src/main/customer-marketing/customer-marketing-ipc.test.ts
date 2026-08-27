@@ -196,6 +196,50 @@ function serviceMock() {
     openMediaVideoPreview: vi.fn(async () => ({ ok: true })),
     repairVoiceStudio: vi.fn(async () => ({ ok: true, outcome: 'ready' })),
     listMarketingResources: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
+    previewLegacyAutoPostImport: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      preview: {
+        selectionId: '77777777-7777-4777-8777-777777777777',
+        fileName: 'auto-post-export.json',
+        manifestDigest: 'a'.repeat(64),
+        source: {
+          application: '@auto-post/api',
+          appVersion: '1.1.1',
+          exportedAt: '2026-08-24T03:00:00.000Z',
+          workspaceName: 'Legacy Room',
+        },
+        counts: {
+          socialAccounts: 0, campaigns: 0, posts: 0, schedules: 0, mediaAssets: 0,
+          templates: 0, hashtagSets: 0, rssSources: 0, analytics: 0,
+        },
+        plan: {
+          migrate: { campaigns: 0, content: 0, schedules: 0 },
+          reconnect: { accounts: 0 },
+          reupload: { media: 0 },
+          review: { records: 0 },
+        },
+        ready: true,
+        issues: [],
+      },
+    })),
+    importLegacyAutoPost: vi.fn(async () => ({
+      ok: true,
+      status: 'synced',
+      receipt: {
+        status: 'applied',
+        duplicate: false,
+        schemaVersion: 'izzi-auto-post-migration.v1',
+        mapperVersion: 'nm-010c.2',
+        counts: {
+          campaigns: 0, content: 0, accountReconnectTasks: 0,
+          mediaReuploadTasks: 0, scheduleReconnectTasks: 0, recordReviewTasks: 0,
+        },
+        occurredAt: '2026-08-24T04:00:00.000Z',
+      },
+      reconciled: false,
+      reconciliationRequired: false,
+    })),
     listMarketingCalendar: vi.fn(async () => ({ ok: true, status: 'synced', resources: [] })),
     getMarketingAnalytics: vi.fn(async () => ({ ok: true, status: 'synced', report: null })),
     listMarketingWorkflowSources: vi.fn(async () => ({ ok: true, status: 'synced', sources: [] })),
@@ -299,6 +343,62 @@ describe('customer marketing PageSpeed IPC', () => {
     await expect(handler!(event('https://attacker.example/customer-marketing'), auditInput))
       .rejects.toThrow('sender không hợp lệ');
     expect(service.measurePageSpeed).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer marketing legacy Auto Post IPC', () => {
+  const input = {
+    selectionId: '77777777-7777-4777-8777-777777777777',
+    confirmed: true,
+  } as const;
+
+  it('keeps file selection in main and returns no local path', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    electronMocks.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['C:\\trusted\\auto-post-export.json'],
+    });
+    const handler = electronMocks.handlers.get('customerMarketing:selectLegacyAutoPostManifest');
+
+    const result = await handler!(event(), { filePath: 'C:\\renderer-controlled\\secret.json' });
+
+    expect(service.previewLegacyAutoPostImport).toHaveBeenCalledWith('C:\\trusted\\auto-post-export.json');
+    expect(JSON.stringify(result)).not.toContain('C:\\trusted');
+    expect(JSON.stringify(result)).not.toContain('renderer-controlled');
+  });
+
+  it('passes only the exact selection id and literal confirmation to the mutation service', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:importLegacyAutoPostManifest');
+
+    await expect(handler!(event(), input)).resolves.toMatchObject({ ok: true, status: 'synced' });
+    expect(service.importLegacyAutoPost).toHaveBeenCalledWith(input);
+
+    for (const malformed of [
+      { ...input, confirmed: false },
+      { ...input, selectionId: 'not-a-uuid' },
+      { ...input, workspaceId: '11111111-1111-4111-8111-111111111111' },
+      { ...input, manifestDigest: 'a'.repeat(64) },
+      { ...input, filePath: 'C:\\private\\manifest.json' },
+      { ...input, retry: true },
+      input.selectionId,
+      null,
+    ]) {
+      await expect(handler!(event(), malformed)).rejects.toThrow('Payload nhập Auto Post không hợp lệ');
+    }
+    expect(service.importLegacyAutoPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an untrusted sender before parsing or import execution', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:importLegacyAutoPostManifest');
+
+    await expect(handler!(event('https://attacker.example/customer-marketing'), input))
+      .rejects.toThrow('sender không hợp lệ');
+    expect(service.importLegacyAutoPost).not.toHaveBeenCalled();
   });
 });
 

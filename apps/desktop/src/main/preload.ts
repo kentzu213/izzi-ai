@@ -55,6 +55,8 @@ import type {
   MarketingWorkspaceSnapshot,
 } from '../shared/marketing-types';
 import type {
+  CustomerMarketingLegacyImportConfirmedInput,
+  CustomerMarketingLegacyImportMutationResult,
   CustomerMarketingLegacyImportSelectionResult,
 } from '../shared/customer-marketing-legacy-import-types';
 import type {
@@ -694,6 +696,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:listMarketingResources', kind),
     selectLegacyAutoPostManifest: (): Promise<CustomerMarketingLegacyImportSelectionResult> =>
       ipcRenderer.invoke('customerMarketing:selectLegacyAutoPostManifest'),
+    importLegacyAutoPostManifest: (
+      input: CustomerMarketingLegacyImportConfirmedInput,
+    ): Promise<CustomerMarketingLegacyImportMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:importLegacyAutoPostManifest', input),
     listMarketingCalendar: (input?: CustomerMarketingCalendarInput): Promise<CustomerMarketingResourceListResult> =>
       ipcRenderer.invoke('customerMarketing:listMarketingCalendar', input),
     getMarketingAnalytics: (input: CustomerMarketingAnalyticsWindow): Promise<CustomerMarketingAnalyticsResult> =>

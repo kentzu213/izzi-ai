@@ -1,6 +1,6 @@
 # Izzi AI Marketing Room - Master Task List
 
-Status date: 2026-08-21 (Asia/Ho_Chi_Minh)
+Status date: 2026-08-27 (Asia/Ho_Chi_Minh)
 
 This file is the execution task list for the customer-facing Izzi AI Marketing Room. The older `CUSTOMER-AI-MARKETING-ROOM-PLAN.md` remains the historical product rubric; current delivery state, owners, dependencies, and evidence are maintained here.
 
@@ -43,6 +43,12 @@ Scope:
 - Audit and close the gap between existing local credential vault/Telegram sandbox/Auto Post OAuth and the backend integration contract.
 - Define provider-scoped grants, expiry, revoke, health receipts, audit records, and renderer-safe summaries.
 - Add only bounded real route contracts for campaign/content/assets/knowledge integration; no publish executor is enabled by this task.
+
+Progress checkpoint:
+
+- Public baseline `v1.14.0-beta.56` provides the Owner/Manager-only, read-only Auto Post migration preview.
+- NM-010c now adds the bounded confirmed mutation: one-shot local selection, exact-byte SHA-256 binding, tenant/role authority in main, one POST maximum, one GET reconciliation after an uncertain outcome, strict renderer-safe receipts, and no token migration.
+- Local verification and remaining release work are recorded in `worklogs/2026-08-27-nm-010c-native-auto-post-import.md`.
 
 Acceptance evidence:
 

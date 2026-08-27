@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { IZZI_API_BASE } from '../config/public-config';
 import type {
   CustomerAssignableRole,
@@ -272,6 +273,43 @@ export interface CustomerMarketingAssetContentUploadState {
   reason?: string;
 }
 
+export interface RemoteCustomerMarketingLegacyImportReceipt {
+  receiptId: string;
+  workspaceId: string;
+  manifestDigest: string;
+  status: 'applied';
+  duplicate: boolean;
+  schemaVersion: 'izzi-auto-post-migration.v1';
+  mapperVersion: string;
+  counts: {
+    campaigns: number;
+    content: number;
+    accountReconnectTasks: number;
+    mediaReuploadTasks: number;
+    scheduleReconnectTasks: number;
+    recordReviewTasks: number;
+  };
+  occurredAt: string;
+  receiptDigest: string;
+}
+
+export interface CustomerMarketingLegacyImportGatewayInput {
+  workspaceId: string;
+  manifestDigest: string;
+  bytes: Uint8Array;
+}
+
+export interface CustomerMarketingLegacyImportPostState {
+  status: CustomerMarketingBridgeStatus;
+  receipt: RemoteCustomerMarketingLegacyImportReceipt | null;
+  reconciliationRequired: boolean;
+}
+
+export interface CustomerMarketingLegacyImportReceiptState {
+  status: CustomerMarketingBridgeStatus;
+  receipt: RemoteCustomerMarketingLegacyImportReceipt | null;
+}
+
 export interface CustomerMarketingResourceGatewayCreateInput {
   workspaceId: string;
   idempotencyKey: string;
@@ -310,6 +348,13 @@ export interface CustomerMarketingWorkspaceGateway {
   uploadMarketingAssetContent?(
     input: CustomerMarketingAssetContentUploadInput,
   ): Promise<CustomerMarketingAssetContentUploadState>;
+  importLegacyAutoPost?(
+    input: CustomerMarketingLegacyImportGatewayInput,
+  ): Promise<CustomerMarketingLegacyImportPostState>;
+  getLegacyAutoPostImportReceipt?(
+    workspaceId: string,
+    manifestDigest: string,
+  ): Promise<CustomerMarketingLegacyImportReceiptState>;
   updateMarketingResource(input: CustomerMarketingResourceGatewayUpdateInput): Promise<CustomerMarketingResourceState>;
   reviewMarketingResource(input: CustomerMarketingResourceGatewayReviewInput): Promise<CustomerMarketingResourceState>;
   archiveMarketingResource(input: CustomerMarketingResourceGatewayArchiveInput): Promise<CustomerMarketingResourceArchiveState>;
@@ -341,6 +386,11 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VIDEO_CONTENT_TYPE_PATTERN = /^video\/[a-z0-9.+-]+$/;
 const MAX_MARKETING_ASSET_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_LEGACY_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
+const MAX_LEGACY_IMPORT_RESPONSE_BYTES = 32 * 1024;
+const MAX_LEGACY_IMPORT_RECEIPT_COUNT = 70_000;
+const LEGACY_IMPORT_SCHEMA_VERSION = 'izzi-auto-post-migration.v1';
+const LEGACY_IMPORT_RECEIPT_DIGEST_PREFIX = 'native-marketing-legacy-import-receipt:v1';
 const MARKETING_ASSET_UPLOAD_BLOCK_REASONS = new Set([
   'invalid_request',
   'feature_disabled',
@@ -525,6 +575,130 @@ function validIso(value: unknown): value is string {
 
 function validUtcIso(value: unknown): value is string {
   return validIso(value) && value.endsWith('Z');
+}
+
+async function boundedLegacyImportJson(response: Response): Promise<unknown | null> {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    const normalized = contentLength.trim();
+    if (!/^(?:0|[1-9]\d*)$/.test(normalized)
+      || !Number.isSafeInteger(Number(normalized))
+      || Number(normalized) > MAX_LEGACY_IMPORT_RESPONSE_BYTES) {
+      try { await response.body?.cancel(); } catch { /* Best-effort response cleanup. */ }
+      return null;
+    }
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_LEGACY_IMPORT_RESPONSE_BYTES) {
+        try { await reader.cancel(); } catch { /* Best-effort response cleanup. */ }
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return JSON.parse(Buffer.concat(chunks, totalBytes).toString('utf8')) as unknown;
+  } catch {
+    return null;
+  } finally {
+    try { reader.releaseLock(); } catch { /* Reader may already be released by the runtime. */ }
+  }
+}
+
+function validLegacyImportReceiptCount(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 0
+    && (value as number) <= MAX_LEGACY_IMPORT_RECEIPT_COUNT;
+}
+
+function legacyImportReceiptDigest(receipt: RemoteCustomerMarketingLegacyImportReceipt): string {
+  return createHash('sha256').update([
+    LEGACY_IMPORT_RECEIPT_DIGEST_PREFIX,
+    receipt.workspaceId,
+    receipt.manifestDigest,
+    receipt.status,
+    receipt.schemaVersion,
+    receipt.mapperVersion,
+    receipt.counts.campaigns,
+    receipt.counts.content,
+    receipt.counts.accountReconnectTasks,
+    receipt.counts.mediaReuploadTasks,
+    receipt.counts.scheduleReconnectTasks,
+    receipt.counts.recordReviewTasks,
+    receipt.occurredAt,
+  ].join('|')).digest('hex');
+}
+
+function parseLegacyImportReceiptEnvelope(
+  value: unknown,
+  expectedWorkspaceId: string,
+  expectedManifestDigest: string,
+): RemoteCustomerMarketingLegacyImportReceipt | null {
+  const envelope = exactRecord(value, ['workspaceId', 'manifestDigest', 'receipt']);
+  if (
+    !envelope
+    || envelope.workspaceId !== expectedWorkspaceId
+    || envelope.manifestDigest !== expectedManifestDigest
+  ) return null;
+  const receipt = exactRecord(envelope.receipt, [
+    'receiptId',
+    'workspaceId',
+    'manifestDigest',
+    'status',
+    'duplicate',
+    'schemaVersion',
+    'mapperVersion',
+    'counts',
+    'occurredAt',
+    'receiptDigest',
+  ]);
+  const counts = receipt ? exactRecord(receipt.counts, [
+    'campaigns',
+    'content',
+    'accountReconnectTasks',
+    'mediaReuploadTasks',
+    'scheduleReconnectTasks',
+    'recordReviewTasks',
+  ]) : null;
+  if (
+    !receipt
+    || !counts
+    || typeof receipt.receiptId !== 'string'
+    || !UUID_PATTERN.test(receipt.receiptId)
+    || receipt.workspaceId !== expectedWorkspaceId
+    || receipt.manifestDigest !== expectedManifestDigest
+    || receipt.status !== 'applied'
+    || typeof receipt.duplicate !== 'boolean'
+    || receipt.schemaVersion !== LEGACY_IMPORT_SCHEMA_VERSION
+    || typeof receipt.mapperVersion !== 'string'
+    || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(receipt.mapperVersion)
+    || !validUtcIso(receipt.occurredAt)
+    || typeof receipt.receiptDigest !== 'string'
+    || !SHA256_PATTERN.test(receipt.receiptDigest)
+    || !Object.values(counts).every(validLegacyImportReceiptCount)
+  ) return null;
+
+  const parsed: RemoteCustomerMarketingLegacyImportReceipt = {
+    receiptId: receipt.receiptId,
+    workspaceId: expectedWorkspaceId,
+    manifestDigest: expectedManifestDigest,
+    status: 'applied',
+    duplicate: receipt.duplicate,
+    schemaVersion: LEGACY_IMPORT_SCHEMA_VERSION,
+    mapperVersion: receipt.mapperVersion,
+    counts: counts as unknown as RemoteCustomerMarketingLegacyImportReceipt['counts'],
+    occurredAt: receipt.occurredAt,
+    receiptDigest: receipt.receiptDigest,
+  };
+  return parsed.receiptDigest === legacyImportReceiptDigest(parsed) ? parsed : null;
 }
 
 function validNullableText(value: unknown, maxLength: number): value is string | null {
@@ -1786,6 +1960,147 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     return receipts
       ? { status: 'synced', receipts }
       : { status: 'unavailable', receipts: [] };
+  }
+
+  async importLegacyAutoPost(
+    input: CustomerMarketingLegacyImportGatewayInput,
+  ): Promise<CustomerMarketingLegacyImportPostState> {
+    const failure = (
+      status: CustomerMarketingBridgeStatus = 'unavailable',
+      reconciliationRequired = false,
+    ): CustomerMarketingLegacyImportPostState => ({ status, receipt: null, reconciliationRequired });
+    const valid = input != null
+      && UUID_PATTERN.test(input.workspaceId)
+      && SHA256_PATTERN.test(input.manifestDigest)
+      && input.bytes instanceof Uint8Array
+      && input.bytes.byteLength > 0
+      && input.bytes.byteLength <= MAX_LEGACY_IMPORT_BODY_BYTES
+      && createHash('sha256').update(input.bytes).digest('hex') === input.manifestDigest;
+    if (!this.enabled) return failure('local');
+    if (!valid || !this.configurationValid) return failure();
+
+    let token: string | null = null;
+    try {
+      token = await this.auth.getAccessToken();
+    } catch {
+      token = null;
+    }
+    if (!token || token.length > 8_192) {
+      this.bridgeHealth = 'auth_required';
+      return failure();
+    }
+
+    const requestPath = `/api/marketing/workspaces/${input.workspaceId}/imports/legacy-auto-post`;
+    const diagnosticPath = '/api/marketing/workspaces/:workspaceId/imports/legacy-auto-post';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let dispatched = false;
+    try {
+      const requestInit = {
+        method: 'POST',
+        redirect: 'error',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Content-SHA256': input.manifestDigest,
+          'Idempotency-Key': `legacy-import:${input.manifestDigest}`,
+        },
+        body: input.bytes,
+      } as RequestInit & { cache: 'no-store'; body: Uint8Array };
+      dispatched = true;
+      const response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, requestInit);
+      const payload = await boundedLegacyImportJson(response);
+      const receipt = (response.status === 200 || response.status === 201)
+        ? parseLegacyImportReceiptEnvelope(payload, input.workspaceId, input.manifestDigest)
+        : null;
+      if (
+        receipt
+        && ((response.status === 200 && receipt.duplicate) || (response.status === 201 && !receipt.duplicate))
+      ) {
+        this.bridgeHealth = 'connected';
+        return { status: 'synced', receipt, reconciliationRequired: false };
+      }
+
+      if (response.status === 401) this.bridgeHealth = 'auth_required';
+      else if (response.status >= 500) this.bridgeHealth = 'backend_unavailable';
+      else this.bridgeHealth = 'connected';
+      this.logFailure(diagnosticPath, response.status);
+      const reconciliationRequired = response.status === 408
+        || response.status >= 500
+        || (response.status >= 200 && response.status < 300);
+      return failure(marketingFailureStatus(response.status), reconciliationRequired);
+    } catch {
+      this.bridgeHealth = 'backend_unavailable';
+      this.logFailure(diagnosticPath);
+      return failure('unavailable', dispatched);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async getLegacyAutoPostImportReceipt(
+    workspaceId: string,
+    manifestDigest: string,
+  ): Promise<CustomerMarketingLegacyImportReceiptState> {
+    const failure = (status: CustomerMarketingBridgeStatus = 'unavailable'):
+      CustomerMarketingLegacyImportReceiptState => ({ status, receipt: null });
+    if (!this.enabled) return failure('local');
+    if (
+      !this.configurationValid
+      || !UUID_PATTERN.test(workspaceId)
+      || !SHA256_PATTERN.test(manifestDigest)
+    ) return failure();
+
+    let token: string | null = null;
+    try {
+      token = await this.auth.getAccessToken();
+    } catch {
+      token = null;
+    }
+    if (!token || token.length > 8_192) {
+      this.bridgeHealth = 'auth_required';
+      return failure();
+    }
+
+    const requestPath = `/api/marketing/workspaces/${workspaceId}/imports/legacy-auto-post/${manifestDigest}`;
+    const diagnosticPath = '/api/marketing/workspaces/:workspaceId/imports/legacy-auto-post/:digest';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const requestInit = {
+        method: 'GET',
+        redirect: 'error',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      } as RequestInit & { cache: 'no-store' };
+      const response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, requestInit);
+      const payload = await boundedLegacyImportJson(response);
+      if (response.status === 200) {
+        const receipt = parseLegacyImportReceiptEnvelope(payload, workspaceId, manifestDigest);
+        if (receipt) {
+          this.bridgeHealth = 'connected';
+          return { status: 'synced', receipt };
+        }
+      }
+
+      if (response.status === 401) this.bridgeHealth = 'auth_required';
+      else if (response.status >= 500) this.bridgeHealth = 'backend_unavailable';
+      else this.bridgeHealth = 'connected';
+      this.logFailure(diagnosticPath, response.status);
+      return failure(marketingFailureStatus(response.status));
+    } catch {
+      this.bridgeHealth = 'backend_unavailable';
+      this.logFailure(diagnosticPath);
+      return failure();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async createMarketingResource(

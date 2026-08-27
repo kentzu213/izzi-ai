@@ -68,8 +68,10 @@ import {
   parseCustomerMarketingPageSpeedInput,
   type CustomerMarketingPageSpeedResult,
 } from '../../shared/customer-marketing-pagespeed';
-import type {
-  CustomerMarketingLegacyImportSelectionResult,
+import {
+  parseCustomerMarketingLegacyImportConfirmedInput,
+  type CustomerMarketingLegacyImportMutationResult,
+  type CustomerMarketingLegacyImportSelectionResult,
 } from '../../shared/customer-marketing-legacy-import-types';
 import {
   parseCustomerMarketingActionGateRequest,
@@ -354,6 +356,16 @@ export function registerCustomerMarketingIpc(
     if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
     const result = await service.previewLegacyAutoPostImport(selection.filePaths[0]);
     return { canceled: false, ...result };
+  });
+
+  ipcMain.handle('customerMarketing:importLegacyAutoPostManifest', async (
+    event,
+    payload: unknown,
+  ): Promise<CustomerMarketingLegacyImportMutationResult> => {
+    trusted(event);
+    const parsed = parseCustomerMarketingLegacyImportConfirmedInput(payload);
+    if (!parsed) throw new Error('Payload nhập Auto Post không hợp lệ.');
+    return service.importLegacyAutoPost(parsed);
   });
 
   ipcMain.handle('customerMarketing:listMarketingCalendar', async (
