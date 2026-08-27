@@ -31,7 +31,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
-- Current installed baseline is `v1.14.0-beta.62` at desktop merge commit `7a890e5`; the retained Windows profile and authenticated session survived the installation.
+- Current installed baseline is `v1.14.0-beta.63` at desktop merge commit `2930169bf77a425d5e630e5aebbd25302dc999c6`; the retained Windows profile and authenticated session survived the installation.
 
 ## Ordered Backlog
 
@@ -70,13 +70,21 @@ Acceptance evidence:
 
 Dependencies: complete. The production schema, account-health foundation, deployment preflight, Provider Vault authority, and bounded authenticated provider-route contract are all released. External publishing remains out of scope.
 
-### MKT-03 - Live model execution for the seven-day workflow [pending]
+### MKT-03 - Live model execution for the seven-day workflow [done]
 
 Replace deterministic template-only drafts with approved, budgeted model execution behind the existing local feature flag. Preserve reviewer approval, per-run credit ceiling, tenant scope, retry idempotency, and fail-closed behavior.
 
-Acceptance: local staging creates a model-backed draft, records cost/provenance, survives retry, and never performs an external action.
+Progress checkpoint:
 
-Dependencies: MKT-02 integration authority and existing Cockpit/Izzi API health.
+- Product PR [#16](https://github.com/kentzu213/izzi-ai/pull/16) merged at `78f133a24ffbe587faa46e4b230a9ca34627e6d0`; release PR [#17](https://github.com/kentzu213/izzi-ai/pull/17) merged at `2930169bf77a425d5e630e5aebbd25302dc999c6` and published `v1.14.0-beta.63`.
+- The existing Customer Marketing staging profile now requests exactly one `gpt-5.6-sol` draft with `reasoning_effort=high`, tools disabled, one-credit ceiling, a main-owned idempotency key, and at most one network retry with the same payload and key.
+- Exact JSON schema, served-model identity, token usage, and approval evidence are validated fail-closed. Renderer IPC receives no model execution metadata or idempotency key.
+- The packaged canary receipt at `F:\Ai Tools\Codex\Temp\mkt03-installed-canary-beta63-20260828-042806.json` records one quota reservation, one model call, `gpt-5.6-sol` requested and served, valid usage, pending reviewer approval, zero external marketing actions, and successful temporary-key revocation.
+- Installed UI smoke evidence is stored at `F:\Ai Tools\Codex\Temp\izzi-ai-beta63-installed-smoke.json`; the updater reported `1.14.0-beta.63`, authentication was retained, the provider contract remained fail-closed, and desktop/mobile layouts had no captured request, console, page, or overflow error.
+
+Acceptance: complete. Local and packaged staging create a model-backed draft, record bounded cost/provenance, preserve retry idempotency, stop at pending approval, and never perform an external action.
+
+Dependencies: complete. MKT-02 integration authority and IzziAPI model health were verified before release.
 
 ### MKT-04 - End-to-end safety gate suite [pending]
 
@@ -119,4 +127,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Start MKT-03 with the smallest approved, budgeted model-backed draft path behind the existing feature flag. Preserve reviewer approval, tenant scope, retry idempotency, and the zero-external-action boundary; do not enable publish, schedule, spend, customer import, bulk send, or provider execution.
+Start MKT-04 by turning the current model, approval, provider-route, billing, recovery, and renderer checks into one packaged-staging safety suite with a deterministic receipt. Keep publish, schedule, spend, customer import, bulk send, and provider execution disabled.
