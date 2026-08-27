@@ -75,6 +75,14 @@ jobs:
       - name: Package Windows
         run: pnpm rebuild:native:electron && npx electron-builder --win --config electron-builder.json --config.npmRebuild=false --publish never
 
+      - name: Run packaged Customer Marketing safety suite
+        shell: pwsh
+        run: >-
+          ./scripts/run-customer-marketing-packaged-safety-suite.ps1
+          -PackagedAppRoot ./release/win-unpacked
+          -ElectronPath ./node_modules/electron/dist/electron.exe
+          -ProofDirectory "$env:RUNNER_TEMP/izzi-mkt04-packaged-safety"
+
       - name: Enforce Windows signing policy
         id: windows-signing-policy
         shell: pwsh
