@@ -120,6 +120,66 @@ export const NATIVE_MARKETING_ACCOUNT_READINESS_REASONS = [
 export type NativeMarketingAccountReadinessReason =
   (typeof NATIVE_MARKETING_ACCOUNT_READINESS_REASONS)[number];
 
+export const NATIVE_MARKETING_PROVIDER_ROUTE_CONTRACT_VERSION =
+  'marketing-provider-routes.v1' as const;
+export const NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS = [
+  'read',
+  'draft',
+  'validate',
+] as const;
+export const NATIVE_MARKETING_PROVIDER_DENIED_OPERATIONS = [
+  'publish',
+  'schedule',
+  'send',
+  'bulk',
+  'spend',
+  'integration.write',
+  'contacts.write',
+] as const;
+export const NATIVE_MARKETING_PROVIDER_ROUTE_RESOURCES = [
+  'campaign',
+  'content',
+  'asset',
+  'knowledge',
+] as const;
+export const NATIVE_MARKETING_PROVIDER_ROUTE_IDS = [
+  'marketing.workspace.campaign.v1',
+  'marketing.workspace.content.v1',
+  'marketing.workspace.asset.v1',
+  'marketing.workspace.knowledge.v1',
+] as const;
+// The v1 wire contract uses the backend's canonical provider order. Keep this
+// separate from the older UI platform list so parsing remains deterministic
+// without changing unrelated Native Marketing behavior.
+export const NATIVE_MARKETING_PROVIDER_PLATFORMS = [
+  'facebook',
+  'instagram',
+  'linkedin',
+  'threads',
+  'tiktok',
+  'x',
+  'youtube',
+] as const satisfies readonly NativeMarketingPlatform[];
+export const NATIVE_MARKETING_PROVIDER_CONNECTION_STATES = [
+  'ready',
+  'expired',
+  'needs_reauth',
+  'revoked',
+  'invalid',
+  'disconnected',
+] as const;
+
+export type NativeMarketingProviderAllowedOperation =
+  (typeof NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS)[number];
+export type NativeMarketingProviderDeniedOperation =
+  (typeof NATIVE_MARKETING_PROVIDER_DENIED_OPERATIONS)[number];
+export type NativeMarketingProviderRouteResource =
+  (typeof NATIVE_MARKETING_PROVIDER_ROUTE_RESOURCES)[number];
+export type NativeMarketingProviderRouteId =
+  (typeof NATIVE_MARKETING_PROVIDER_ROUTE_IDS)[number];
+export type NativeMarketingProviderConnectionState =
+  (typeof NATIVE_MARKETING_PROVIDER_CONNECTION_STATES)[number];
+
 /** Every failure the renderer can observe. Bounded on purpose. */
 export type NativeMarketingErrorCode =
   | 'configuration-required'
@@ -178,6 +238,48 @@ export interface NativeMarketingAccountHealthSnapshot {
   accounts: NativeMarketingAccountHealthSummary[];
 }
 
+export interface NativeMarketingProviderConnectionCounts {
+  total: number;
+  ready: number;
+  expired: number;
+  needsReauth: number;
+  revoked: number;
+  invalid: number;
+}
+
+export interface NativeMarketingProviderRouteDefinition {
+  id: NativeMarketingProviderRouteId;
+  resource: NativeMarketingProviderRouteResource;
+  operations: NativeMarketingProviderAllowedOperation[];
+}
+
+export interface NativeMarketingProviderSummary {
+  platform: NativeMarketingPlatform;
+  adapter: 'implemented' | 'not_implemented';
+  connection: {
+    state: NativeMarketingProviderConnectionState;
+    counts: NativeMarketingProviderConnectionCounts;
+  };
+  routeIds: NativeMarketingProviderRouteId[];
+  workflowReady: true;
+  liveReady: false;
+}
+
+export interface NativeMarketingProviderRouteSnapshot {
+  contractVersion: typeof NATIVE_MARKETING_PROVIDER_ROUTE_CONTRACT_VERSION;
+  workspaceId: string;
+  checkedAt: string;
+  authority: 'backend_oauth';
+  policy: {
+    allowedOperations: NativeMarketingProviderAllowedOperation[];
+    deniedOperations: NativeMarketingProviderDeniedOperation[];
+    externalExecution: 'blocked';
+  };
+  routes: NativeMarketingProviderRouteDefinition[];
+  providers: NativeMarketingProviderSummary[];
+  externalActionPerformed: false;
+}
+
 export interface NativeMarketingPostSummary {
   id: string;
   title: string;
@@ -217,6 +319,10 @@ export type NativeMarketingAccountListResult =
 
 export type NativeMarketingAccountHealthResult =
   | { ok: true; health: NativeMarketingAccountHealthSnapshot }
+  | NativeMarketingFailure;
+
+export type NativeMarketingProviderRouteResult =
+  | { ok: true; providerRoutes: NativeMarketingProviderRouteSnapshot }
   | NativeMarketingFailure;
 
 export type NativeMarketingPostListResult =
@@ -547,6 +653,163 @@ export function parseNativeMarketingAccountHealth(
   };
 }
 
+function exactStringArray(
+  raw: unknown,
+  expected: readonly string[],
+): raw is string[] {
+  return Array.isArray(raw)
+    && raw.length === expected.length
+    && raw.every((value, index) => value === expected[index]);
+}
+
+function expectedProviderConnectionState(
+  counts: NativeMarketingProviderConnectionCounts,
+): NativeMarketingProviderConnectionState {
+  if (counts.invalid > 0) return 'invalid';
+  if (counts.ready > 0) return 'ready';
+  if (counts.needsReauth > 0) return 'needs_reauth';
+  if (counts.expired > 0) return 'expired';
+  if (counts.revoked > 0) return 'revoked';
+  return 'disconnected';
+}
+
+function parseProviderConnectionCounts(
+  raw: unknown,
+): NativeMarketingProviderConnectionCounts | null {
+  const counts = recordValue(raw);
+  if (!counts) return null;
+  const parsed = {
+    total: safeCount(counts.total),
+    ready: safeCount(counts.ready),
+    expired: safeCount(counts.expired),
+    needsReauth: safeCount(counts.needsReauth),
+    revoked: safeCount(counts.revoked),
+    invalid: safeCount(counts.invalid),
+  };
+  if (Object.values(parsed).some((value) => value === null)) return null;
+  const normalized = parsed as NativeMarketingProviderConnectionCounts;
+  if (
+    normalized.total > MAX_ACCOUNTS
+    || normalized.total !== normalized.ready
+      + normalized.expired
+      + normalized.needsReauth
+      + normalized.revoked
+      + normalized.invalid
+  ) return null;
+  return normalized;
+}
+
+/**
+ * Parse the backend provider-route manifest and independently revalidate its
+ * closed policy. The renderer receives no executor, route URL, account id, or
+ * provider payload; only fixed route identities and bounded readiness counts.
+ */
+export function parseNativeMarketingProviderRoutes(
+  raw: unknown,
+  expectedWorkspaceId: string,
+): NativeMarketingProviderRouteSnapshot | null {
+  const envelope = recordValue(raw);
+  const policy = envelope ? recordValue(envelope.policy) : null;
+  if (
+    !envelope
+    || envelope.success !== true
+    || envelope.contractVersion !== NATIVE_MARKETING_PROVIDER_ROUTE_CONTRACT_VERSION
+    || envelope.workspaceId !== expectedWorkspaceId
+    || envelope.authority !== 'backend_oauth'
+    || envelope.externalActionPerformed !== false
+    || !policy
+    || !exactStringArray(
+      policy.allowedOperations,
+      NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS,
+    )
+    || !exactStringArray(
+      policy.deniedOperations,
+      NATIVE_MARKETING_PROVIDER_DENIED_OPERATIONS,
+    )
+    || policy.externalExecution !== 'blocked'
+  ) return null;
+
+  const checkedAt = nullableIso(envelope.checkedAt);
+  if (!checkedAt) return null;
+
+  if (!Array.isArray(envelope.routes)
+    || envelope.routes.length !== NATIVE_MARKETING_PROVIDER_ROUTE_IDS.length) {
+    return null;
+  }
+  const routes: NativeMarketingProviderRouteDefinition[] = [];
+  for (let index = 0; index < NATIVE_MARKETING_PROVIDER_ROUTE_IDS.length; index += 1) {
+    const route = recordValue(envelope.routes[index]);
+    if (
+      !route
+      || route.id !== NATIVE_MARKETING_PROVIDER_ROUTE_IDS[index]
+      || route.resource !== NATIVE_MARKETING_PROVIDER_ROUTE_RESOURCES[index]
+      || !exactStringArray(
+        route.operations,
+        NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS,
+      )
+    ) return null;
+    routes.push({
+      id: NATIVE_MARKETING_PROVIDER_ROUTE_IDS[index],
+      resource: NATIVE_MARKETING_PROVIDER_ROUTE_RESOURCES[index],
+      operations: [...NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS],
+    });
+  }
+
+  if (!Array.isArray(envelope.providers)
+    || envelope.providers.length !== NATIVE_MARKETING_PROVIDER_PLATFORMS.length) {
+    return null;
+  }
+  const providers: NativeMarketingProviderSummary[] = [];
+  for (let index = 0; index < NATIVE_MARKETING_PROVIDER_PLATFORMS.length; index += 1) {
+    const provider = recordValue(envelope.providers[index]);
+    const platform = NATIVE_MARKETING_PROVIDER_PLATFORMS[index];
+    const connection = provider ? recordValue(provider.connection) : null;
+    const counts = connection ? parseProviderConnectionCounts(connection.counts) : null;
+    const expectedAdapter = platform === 'facebook' || platform === 'youtube'
+      ? 'implemented'
+      : 'not_implemented';
+    if (
+      !provider
+      || provider.platform !== platform
+      || provider.adapter !== expectedAdapter
+      || !connection
+      || !counts
+      || !(NATIVE_MARKETING_PROVIDER_CONNECTION_STATES as readonly unknown[])
+        .includes(connection.state)
+      || connection.state !== expectedProviderConnectionState(counts)
+      || !exactStringArray(provider.routeIds, NATIVE_MARKETING_PROVIDER_ROUTE_IDS)
+      || provider.workflowReady !== true
+      || provider.liveReady !== false
+    ) return null;
+    providers.push({
+      platform,
+      adapter: expectedAdapter,
+      connection: {
+        state: connection.state as NativeMarketingProviderConnectionState,
+        counts,
+      },
+      routeIds: [...NATIVE_MARKETING_PROVIDER_ROUTE_IDS],
+      workflowReady: true,
+      liveReady: false,
+    });
+  }
+
+  return {
+    contractVersion: NATIVE_MARKETING_PROVIDER_ROUTE_CONTRACT_VERSION,
+    workspaceId: expectedWorkspaceId,
+    checkedAt,
+    authority: 'backend_oauth',
+    policy: {
+      allowedOperations: [...NATIVE_MARKETING_PROVIDER_ALLOWED_OPERATIONS],
+      deniedOperations: [...NATIVE_MARKETING_PROVIDER_DENIED_OPERATIONS],
+      externalExecution: 'blocked',
+    },
+    routes,
+    providers,
+    externalActionPerformed: false,
+  };
+}
+
 /** Allowlist one post record down to display-safe, length-bounded fields. Pure. */
 export function parseNativeMarketingPost(raw: unknown): NativeMarketingPostSummary | null {
   const post = recordValue(raw);
@@ -735,6 +998,25 @@ export class NativeMarketingClient {
     if (!result.ok) return result;
     const health = parseNativeMarketingAccountHealth(result.body, workspaceId);
     return health ? { ok: true, health } : { ok: false, error: 'invalid-response' };
+  }
+
+  /**
+   * GET /api/marketing/provider-routes - internal workflow routes and bounded
+   * provider readiness. This read never invokes a provider or exposes an
+   * external executor to main, preload, or renderer.
+   */
+  async listProviderRoutes(
+    workspaceId: string,
+  ): Promise<NativeMarketingProviderRouteResult> {
+    if (!UUID_PATTERN.test(workspaceId)) return { ok: false, error: 'invalid-workspace-id' };
+    const result = await this.request(
+      `${MARKETING_ROOT}/provider-routes?workspaceId=${encodeURIComponent(workspaceId)}`,
+    );
+    if (!result.ok) return result;
+    const providerRoutes = parseNativeMarketingProviderRoutes(result.body, workspaceId);
+    return providerRoutes
+      ? { ok: true, providerRoutes }
+      : { ok: false, error: 'invalid-response' };
   }
 
   /**

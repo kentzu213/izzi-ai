@@ -204,6 +204,26 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(mainSource).not.toContain('accounts: Array.isArray(r.data)');
   });
 
+  it('loads the backend provider-route contract without exposing an executor', () => {
+    expect(pageSource).toContain('nativeApi.listProviderRoutes(workspaceId)');
+    expect(pageSource).toContain('providerRoutes.providerRoutes');
+    expect(pageSource).toContain('Phạm vi workflow');
+    expect(pageSource).toContain('Đọc · Tạo nháp · Kiểm tra');
+    expect(pageSource).toContain('Xuất bản, lên lịch, gửi hàng loạt và chi tiêu đang khóa.');
+    expect(pageSource).toContain('provider.liveReady === false');
+    expect(mainSource).toContain("'nativeMarketing:listProviderRoutes'");
+    expect(mainSource).toContain('getNativeMarketingClient().listProviderRoutes(workspaceId.trim())');
+    expect(preloadSource).toContain("ipcRenderer.invoke('nativeMarketing:listProviderRoutes', workspaceId)");
+    expect(globalTypesSource).toContain('listProviderRoutes: (workspaceId: string)');
+    expect(preloadSource).not.toMatch(/listProviderRoutes:\s*\([^)]*\b(token|provider|url|action)\b/);
+    expect(pageSource).not.toContain('executeProviderRoute');
+    expect(pageSource).not.toContain('provider.routeIds');
+    expect(stylesSource).toMatch(/\.cmr-provider-routes \{[\s\S]*?grid-template-columns:/);
+    expect(stylesSource).toMatch(
+      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-provider-routes[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+    );
+  });
+
   it('surfaces the native master status without the legacy Auto Post path', () => {
     expect(pageSource).toContain('const [nativeMaster, setNativeMaster] = useState');
     expect(pageSource).toContain("masterEnabled ? 'Đã bật, chưa xác thực' : 'Chưa kết nối'");

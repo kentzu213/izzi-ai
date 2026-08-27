@@ -82,6 +82,7 @@ import {
   type NativeMarketingOperatingMode,
   type NativeMarketingPostListResult,
   type NativeMarketingPostResult,
+  type NativeMarketingProviderRouteResult,
   type NativeMarketingWorkspaceListResult,
   type NativeMarketingWorkspaceResult,
 } from './marketing/native-marketing-client';
@@ -1471,6 +1472,13 @@ function setupIPC() {
     async (_event, workspaceId: unknown): Promise<NativeMarketingAccountHealthResult> => {
       if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
       return getNativeMarketingClient().listAccountHealth(workspaceId.trim());
+    },
+  );
+  ipcMain.handle(
+    'nativeMarketing:listProviderRoutes',
+    async (_event, workspaceId: unknown): Promise<NativeMarketingProviderRouteResult> => {
+      if (typeof workspaceId !== 'string') return { ok: false, error: 'invalid-workspace-id' };
+      return getNativeMarketingClient().listProviderRoutes(workspaceId.trim());
     },
   );
   // Mint the provider CSRF state for a channel connect. Only the opaque state

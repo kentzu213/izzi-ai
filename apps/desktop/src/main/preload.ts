@@ -25,6 +25,7 @@ import type {
   NativeMarketingPlatform,
   NativeMarketingPostListResult,
   NativeMarketingPostResult,
+  NativeMarketingProviderRouteResult,
   NativeMarketingWorkspaceListResult,
   NativeMarketingWorkspaceResult,
 } from './marketing/native-marketing-client';
@@ -393,6 +394,8 @@ const electronAPI = {
       ipcRenderer.invoke('nativeMarketing:listAccounts', workspaceId),
     listAccountHealth: (workspaceId: string): Promise<NativeMarketingAccountHealthResult> =>
       ipcRenderer.invoke('nativeMarketing:listAccountHealth', workspaceId),
+    listProviderRoutes: (workspaceId: string): Promise<NativeMarketingProviderRouteResult> =>
+      ipcRenderer.invoke('nativeMarketing:listProviderRoutes', workspaceId),
     createOAuthState: (
       workspaceId: string,
       platform: NativeMarketingPlatform,

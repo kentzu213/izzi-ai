@@ -219,6 +219,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
   const [telegramSendAnnouncement, setTelegramSendAnnouncement] = useState('');
   const [nativeAccounts, setNativeAccounts] = useState<NativeMarketingAccountRow[]>([]);
   const [nativeAccountsReady, setNativeAccountsReady] = useState(false);
+  const [nativeProviderRoutes, setNativeProviderRoutes] = useState<NativeMarketingProviderRouteSnapshot | null>(null);
   const [nativeLoading, setNativeLoading] = useState(true);
   const [nativeError, setNativeError] = useState('');
   const [nativeMaster, setNativeMaster] = useState<{ enabled: boolean; connected: boolean } | null>(null);
@@ -339,6 +340,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           setNativeMaster({ enabled: true, connected: false });
           setNativeAccountsReady(false);
           setNativeAccounts([]);
+          setNativeProviderRoutes(null);
           setNativeError(nativeMarketingErrorLabel(workspaces.error));
           return;
         }
@@ -349,20 +351,28 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           setNativeMaster({ enabled: true, connected: false });
           setNativeAccountsReady(false);
           setNativeAccounts([]);
+          setNativeProviderRoutes(null);
           return;
         }
         const workspaceId = workspace.id;
         setNativeWorkspaceId(workspaceId);
-        const health = await nativeApi.listAccountHealth(workspaceId);
+        const [health, providerRoutes] = await Promise.all([
+          nativeApi.listAccountHealth(workspaceId),
+          nativeApi.listProviderRoutes(workspaceId),
+        ]);
         if (request !== nativeRequestId.current) return;
-        setNativeMaster({ enabled: true, connected: health.ok });
-        if (!health.ok) {
+        setNativeMaster({ enabled: true, connected: health.ok && providerRoutes.ok });
+        if (!health.ok || !providerRoutes.ok) {
           setNativeAccountsReady(false);
           setNativeAccounts([]);
-          setNativeError(nativeMarketingErrorLabel(health.error));
+          setNativeProviderRoutes(null);
+          setNativeError(nativeMarketingErrorLabel(
+            health.ok ? providerRoutes.error : health.error,
+          ));
           return;
         }
         setNativeAccountsReady(true);
+        setNativeProviderRoutes(providerRoutes.providerRoutes);
         setNativeAccounts(health.health.accounts.map((item) => ({
           platform: item.platform,
           label: item.name,
@@ -373,6 +383,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         setNativeMaster({ enabled: true, connected: false });
         setNativeAccountsReady(false);
         setNativeAccounts([]);
+        setNativeProviderRoutes(null);
         setNativeError('Native Marketing API không phản hồi.');
       } finally {
         if (request === nativeRequestId.current) setNativeLoading(false);
@@ -385,6 +396,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
     setNativeMaster(null);
     setNativeAccountsReady(false);
     setNativeAccounts([]);
+    setNativeProviderRoutes(null);
     setNativeLoading(false);
     setNativeError('Native Marketing API chưa khả dụng trong bản Izzi AI này.');
   }, []);
@@ -919,6 +931,16 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
       ? `Vault cục bộ · ${credentialStateLabel(telegramCredential.state)}`
       : 'Chưa có khóa Telegram trong vault cục bộ.';
 
+  const boundedProviderCount = nativeProviderRoutes?.providers.filter((provider) => (
+    provider.workflowReady && provider.liveReady === false
+  )).length ?? 0;
+  const connectedProviderCount = nativeProviderRoutes?.providers.filter((provider) => (
+    provider.connection.state === 'ready'
+  )).length ?? 0;
+  const providerRouteStatus = nativeLoading
+    ? 'Đang xác minh'
+    : nativeProviderRoutes ? 'Đã xác minh' : 'Chưa khả dụng';
+
   const connectionCards: Array<{
     key: NativeChannel | 'telegram';
     label: string;
@@ -1032,6 +1054,31 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
         {!canConnectChannels && (
           <small className="cmr-permission-note">Chỉ Owner hoặc Manager có thể kết nối kênh.</small>
         )}
+      </div>
+      <div
+        className={`cmr-provider-routes ${nativeProviderRoutes ? 'is-ready' : 'is-unavailable'}`}
+        aria-label="Phạm vi workflow IzziAPI"
+        aria-busy={nativeLoading}
+      >
+        <div className="cmr-provider-routes__status">
+          <span className="cmr-eyebrow">Phạm vi workflow</span>
+          <strong>{providerRouteStatus}</strong>
+          <small>
+            {nativeProviderRoutes
+              ? `${boundedProviderCount}/${nativeProviderRoutes.providers.length} kênh có luồng nội bộ · ${connectedProviderCount} kênh đã kết nối`
+              : 'Chưa đọc được contract từ IzziAPI.'}
+          </small>
+        </div>
+        <div>
+          <span>Thao tác nội bộ</span>
+          <strong>Đọc · Tạo nháp · Kiểm tra</strong>
+          <small>Chiến dịch · Nội dung · Tài nguyên · Tri thức</small>
+        </div>
+        <div className="cmr-provider-routes__locked">
+          <span>Hành động bên ngoài</span>
+          <strong>Đang khóa</strong>
+          <small>Xuất bản, lên lịch, gửi hàng loạt và chi tiêu đang khóa.</small>
+        </div>
       </div>
       {connectNotice && <div className="cmr-connect-notice" role="status">{connectNotice}</div>}
       {nativeError && <div className="cmr-credential-error" role="alert">{nativeError}</div>}

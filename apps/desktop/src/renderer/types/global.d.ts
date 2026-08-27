@@ -410,6 +410,56 @@ declare global {
     accounts: NativeMarketingAccountHealthSummary[];
   }
 
+  type NativeMarketingProviderConnectionState =
+    | 'ready'
+    | 'expired'
+    | 'needs_reauth'
+    | 'revoked'
+    | 'invalid'
+    | 'disconnected';
+
+  interface NativeMarketingProviderConnectionCounts {
+    total: number;
+    ready: number;
+    expired: number;
+    needsReauth: number;
+    revoked: number;
+    invalid: number;
+  }
+
+  interface NativeMarketingProviderRouteDefinition {
+    id: 'marketing.workspace.campaign.v1' | 'marketing.workspace.content.v1' | 'marketing.workspace.asset.v1' | 'marketing.workspace.knowledge.v1';
+    resource: 'campaign' | 'content' | 'asset' | 'knowledge';
+    operations: Array<'read' | 'draft' | 'validate'>;
+  }
+
+  interface NativeMarketingProviderSummary {
+    platform: NativeMarketingPlatform;
+    adapter: 'implemented' | 'not_implemented';
+    connection: {
+      state: NativeMarketingProviderConnectionState;
+      counts: NativeMarketingProviderConnectionCounts;
+    };
+    routeIds: NativeMarketingProviderRouteDefinition['id'][];
+    workflowReady: true;
+    liveReady: false;
+  }
+
+  interface NativeMarketingProviderRouteSnapshot {
+    contractVersion: 'marketing-provider-routes.v1';
+    workspaceId: string;
+    checkedAt: string;
+    authority: 'backend_oauth';
+    policy: {
+      allowedOperations: Array<'read' | 'draft' | 'validate'>;
+      deniedOperations: Array<'publish' | 'schedule' | 'send' | 'bulk' | 'spend' | 'integration.write' | 'contacts.write'>;
+      externalExecution: 'blocked';
+    };
+    routes: NativeMarketingProviderRouteDefinition[];
+    providers: NativeMarketingProviderSummary[];
+    externalActionPerformed: false;
+  }
+
   interface NativeMarketingPostSummary {
     id: string;
     title: string;
@@ -433,6 +483,10 @@ declare global {
 
   type NativeMarketingAccountHealthResult =
     | { ok: true; health: NativeMarketingAccountHealthSnapshot }
+    | NativeMarketingFailure;
+
+  type NativeMarketingProviderRouteResult =
+    | { ok: true; providerRoutes: NativeMarketingProviderRouteSnapshot }
     | NativeMarketingFailure;
 
   type NativeMarketingPostListResult =
@@ -465,6 +519,7 @@ declare global {
     ) => Promise<NativeMarketingWorkspaceResult>;
     listAccounts: (workspaceId: string) => Promise<NativeMarketingAccountListResult>;
     listAccountHealth: (workspaceId: string) => Promise<NativeMarketingAccountHealthResult>;
+    listProviderRoutes: (workspaceId: string) => Promise<NativeMarketingProviderRouteResult>;
     createOAuthState: (
       workspaceId: string,
       platform: NativeMarketingPlatform,
