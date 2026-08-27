@@ -93,6 +93,7 @@ import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketin
 import { CustomerMarketingCanaryController } from './customer-marketing/customer-marketing-canary-controller';
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing/customer-marketing-canary-named-approval';
 import { CustomerMarketingConnectorVaultAdapter } from './customer-marketing/customer-marketing-connector-vault-adapter';
+import { NativeMarketingIntegrationAuthorityGateway } from './customer-marketing/customer-marketing-integration-authority';
 import { CustomerMarketingTelegramSandboxConnector } from './customer-marketing/customer-marketing-telegram-sandbox-connector';
 import { CustomerMarketingTelegramBotApiTransport } from './customer-marketing/customer-marketing-telegram-bot-api-transport';
 import { CustomerMarketingTelegramCanaryRuntime } from './customer-marketing/customer-marketing-telegram-canary-runtime';
@@ -781,6 +782,8 @@ function setupIPC() {
     },
     customerMarketingConnectorOperationStore,
     customerMarketingAssetFiles,
+    undefined,
+    new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient()),
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
