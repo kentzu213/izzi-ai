@@ -4186,6 +4186,46 @@ describe('CustomerMarketingService backend workspace sync', () => {
     expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
   });
 
+  it('returns onboarding after a background media probe stalls', async () => {
+    vi.useFakeTimers();
+    try {
+      const workspace = remoteWorkspace({ role: 'owner' });
+      const gateway: CustomerMarketingWorkspaceGateway = {
+        ...memberGatewayMethods(),
+        getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+        ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+        reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+      };
+      const mediaRuntime = mediaRuntimeFixture();
+      vi.mocked(mediaRuntime.getToolchain).mockImplementation(() => new Promise(() => undefined));
+      const context = setup({ workspaceGateway: gateway, mediaRuntime });
+
+      const initialSnapshot = context.service.getInitialSnapshot(0);
+      await vi.runOnlyPendingTimersAsync();
+      await initialSnapshot;
+
+      let settled = false;
+      const save = context.service.saveOnboarding(onboarding()).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(settled).toBe(true);
+      await expect(save).resolves.toMatchObject({
+        ok: true,
+        snapshot: {
+          workspace: { syncStatus: 'synced', profileSyncStatus: 'synced' },
+          capabilityCatalog: { status: 'synced' },
+          media: { toolchain: { previewAvailable: false } },
+        },
+      });
+      expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses backend workspace identity, membership, plan, and quota when available', async () => {
     const workspace = remoteWorkspace();
     const gateway: CustomerMarketingWorkspaceGateway = {

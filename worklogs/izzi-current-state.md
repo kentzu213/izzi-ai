@@ -1,6 +1,6 @@
 # Izzi AI current state
 
-Timestamp: 2026-08-28 05:48 ICT
+Timestamp: 2026-08-29 19:43 ICT
 
 ## Canonical product
 
@@ -20,7 +20,8 @@ Timestamp: 2026-08-28 05:48 ICT
 - MKT-02 Integration authority and provider routes: complete.
 - MKT-03 Live model execution: complete.
 - MKT-04 Packaged end-to-end safety gate suite: complete.
-- MKT-05 through MKT-07: pending in the dependency order in `MASTER_PLAN.md`.
+- MKT-05 staging and rollback gates: complete, awaiting Nguyễn Nghĩa's review.
+- MKT-06 and MKT-07: not started; dependency order remains enforced in `MASTER_PLAN.md`.
 - Video work is outside the active scope. Technical Marketing Room work has priority.
 
 ## Released baseline
@@ -113,6 +114,25 @@ Timestamp: 2026-08-28 05:48 ICT
 - Full evidence is in
   `worklogs/2026-08-28-mkt-04-packaged-safety-suite.md`.
 
+## MKT-05 Staging readiness
+
+- Backend PR [#27](https://github.com/kentzu213/izzi-backend/pull/27) is merged at
+  `08316aaf85a53b5c5d9128558b51d1385cbf9f55`. The staging runtime is healthy at
+  `https://marketing-staging.izziapi.com` on the exact candidate image recorded
+  in `worklogs/2026-08-29-mkt-05-staging-readiness.md`.
+- The forward-only ACL migration revoked direct trigger-function execution from
+  all four API-facing roles without changing the historical migration, trigger
+  binding, function identity, or existing usage-event count.
+- Security Advisor reports zero errors and no trigger ACL finding. The remaining
+  23 warnings are documented and do not expand the MKT-05 execution surface.
+- The packaged beta.64 staging smoke exposed an optional Video Studio probe that
+  could keep `saveOnboarding` pending after the profile API returned HTTP 200.
+  The candidate now bounds every snapshot media probe to 250 ms and returns a
+  fail-closed unavailable toolchain while the shared probe continues safely.
+- The final packaged smoke completed 70 requests and 19 checks with zero runtime
+  errors, zero external actions, and cleanup `0/0`. MKT-05 remains
+  `awaiting_reviewer`; production and real providers were not touched.
+
 ## Verification evidence
 
 - MKT-04 local verification passed all 1,734 desktop tests across 127 files,
@@ -174,7 +194,6 @@ Timestamp: 2026-08-28 05:48 ICT
 
 ## Next action
 
-Prepare MKT-05 staging inputs: disposable host, host allowlist, secret owner,
-rollback command, migration digest, security review, and reviewer approval.
-External provider execution remains disabled, and MKT-04 does not authorize a
-production cutover.
+Reviewer Nguyễn Nghĩa reviews the MKT-05 evidence. MKT-06 and MKT-07 remain
+blocked on that sign-off. External provider execution remains disabled, and no
+production cutover is authorized.

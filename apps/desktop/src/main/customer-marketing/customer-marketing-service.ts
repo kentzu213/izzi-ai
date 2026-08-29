@@ -5670,13 +5670,11 @@ export class CustomerMarketingService {
     };
   }
 
-  private async resolveMediaToolchain(timeoutMs?: number): Promise<CustomerMediaToolchain> {
+  private async resolveMediaToolchain(
+    timeoutMs = INITIAL_MEDIA_TOOLCHAIN_BUDGET_MS,
+  ): Promise<CustomerMediaToolchain> {
     if (!this.mediaRuntime) return unavailableMediaToolchain();
     const probe = this.getMediaToolchainProbe();
-    if (timeoutMs === undefined) {
-      return probe;
-    }
-
     const budgetMs = Math.min(Math.max(timeoutMs, 0), 1_000);
     return new Promise((resolve) => {
       let settled = false;

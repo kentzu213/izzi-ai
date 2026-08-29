@@ -103,11 +103,19 @@ Acceptance: complete. The suite emits deterministic pass/fail receipts, leaks no
 
 Dependencies: complete. MKT-02 and MKT-03 are released and covered by the aggregate suite.
 
-### MKT-05 - Staging deployment, security review, and reviewer approval [pending_external]
+### MKT-05 - Staging deployment, security review, and reviewer approval [awaiting_reviewer]
 
 Deploy the future workflow/model-execution feature gate to a disposable staging environment using the lowest-cost approved host. Record host allowlist, secrets ownership, rollback, migration digest, security review, and reviewer sign-off. The earlier NM-012 production schema/account-readiness cutover does not authorize model execution or publishing.
 
-Dependencies: MKT-04. Requires staging credentials, hosting choice, and reviewer approval; no production cutover is implied.
+Progress checkpoint:
+
+- Backend PR [#27](https://github.com/kentzu213/izzi-backend/pull/27) merged at `08316aaf85a53b5c5d9128558b51d1385cbf9f55`. The forward-only trigger ACL migration digest is `6271b214da8023a7b8e3e3a9d6f589c6989b65cb6ba7c1cf294efba1e6688ff9`; the historical migration remained byte-identical.
+- `https://marketing-staging.izziapi.com` is healthy on Supabase project `bogwhtnknhquxhktormu` and image `sha256:ee4d197117d5e68370531c540667e54506b97100e0fbf56aec6803aceec72612`. The reviewed rollback image is `sha256:1110c02c309551befe4e8825894b997012e18a32e86e784eea0bbf49581f9285`.
+- Trigger execution is denied to `PUBLIC`, `anon`, `authenticated`, and `service_role`. Security Advisor reports `0 ERROR`, `23 WARN`, and no remaining trigger ACL finding; 22 warnings are the reviewed authenticated SECURITY DEFINER RPC surface and one is leaked-password protection that requires Supabase Pro.
+- Online readiness, Windows PowerShell 5.1 rollback rehearsal, and the patched beta.64 packaged-desktop smoke passed. The desktop receipt records 70 requests, 19 checks, zero runtime errors, zero external actions, and cleanup `0/0`.
+- Evidence and exact receipt hashes are recorded in `worklogs/2026-08-29-mkt-05-staging-readiness.md`. Production was not changed, no provider was contacted, and spend remained `0 VND`.
+
+Dependencies: MKT-04 is complete. Technical staging and rollback gates are complete; reviewer Nguyễn Nghĩa must sign off before MKT-06. No production cutover is implied.
 
 ### MKT-06 - Remote cross-device proof and remote workflow enablement [pending_external]
 
@@ -136,4 +144,4 @@ Restore persistent MCP/index health for the active worktree, retain CLI/shell fa
 
 ## Current Next Action
 
-Prepare MKT-05 staging deployment and security-review inputs: disposable host, exact allowlist, secret owner, rollback command, migration digest, and reviewer sign-off. Keep publish, schedule, spend, customer import, bulk send, and provider execution disabled; no production cutover is authorized by MKT-04.
+Reviewer Nguyễn Nghĩa reviews the MKT-05 evidence and either signs off or requests a bounded correction. Do not begin MKT-06 or MKT-07 until approval. Keep publish, schedule, spend, customer import, bulk send, and provider execution disabled; no production cutover is authorized.
