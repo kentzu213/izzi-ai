@@ -153,7 +153,8 @@ declare global {
       message: string;
       history?: { role: 'system' | 'user' | 'assistant'; content: string }[];
       model?: string;
-    }) => Promise<{ reply: string; error?: string }>;
+      maxTokens?: number;
+    }) => Promise<{ reply: string; error?: string; truncated?: boolean }>;
   }
 
   /** Affiliate DTOs — mirror the main-process AffiliateClient (money flow). */

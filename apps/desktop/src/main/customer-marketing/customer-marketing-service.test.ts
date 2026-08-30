@@ -4259,6 +4259,127 @@ describe('CustomerMarketingService backend workspace sync', () => {
     expect(JSON.stringify(snapshot)).not.toContain('marketing-staging.izziapi.com');
   });
 
+
+  // The backend auto-creates an untouched profile row together with a new workspace.
+  // Adopting that stub used to wipe a completed local onboarding and reset `completed`
+  // to false, which then blocked every downstream workflow on the first connect.
+  it('keeps a completed local onboarding when the remote profile has never been authored', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-first-connect',
+      name: 'Owner A',
+      plan: 'pro',
+      balance: 75,
+    };
+    const local = setup({ identity });
+    await local.service.saveOnboarding(onboarding('IzziAPI'));
+
+    const stub = remoteProfile({
+      business: { name: '', industry: '', website: '', offer: '', region: '' },
+      objectives: [],
+      channels: [],
+      resources: [],
+      completedSteps: [],
+      completed: false,
+      revision: 0,
+    });
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace: remoteWorkspace() })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace: remoteWorkspace() })),
+      getProfile: vi.fn(async () => ({ status: 'synced', profile: stub })),
+    };
+    const connected = new CustomerMarketingService(
+      local.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      gateway,
+    );
+
+    const snapshot = await connected.getSnapshot();
+
+    expect(snapshot.onboarding?.completed).toBe(true);
+    expect(snapshot.onboarding?.business.name).toBe('IzziAPI');
+    expect(snapshot.workspace.onboardingComplete).toBe(true);
+  });
+
+  // A profile that has actually been authored remotely still wins.
+  it('adopts an authored remote profile over the local copy', async () => {
+    const identity: CustomerIdentity = {
+      id: 'tenant-authored-remote',
+      name: 'Owner A',
+      plan: 'pro',
+      balance: 75,
+    };
+    const local = setup({ identity });
+    await local.service.saveOnboarding(onboarding('IzziAPI'));
+
+    const authored = remoteProfile({ completed: true, revision: 4 });
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace: remoteWorkspace() })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace: remoteWorkspace() })),
+      getProfile: vi.fn(async () => ({ status: 'synced', profile: authored })),
+    };
+    const connected = new CustomerMarketingService(
+      local.db,
+      () => identity,
+      () => [],
+      undefined,
+      null,
+      gateway,
+    );
+
+    const snapshot = await connected.getSnapshot();
+
+    expect(snapshot.onboarding?.business.name).toBe(authored.business.name);
+  });
+
+  // A gateway that is switched off reports `local`, which is distinct from an enabled
+  // gateway that cannot confirm the workspace (`unavailable`). Local-only mode must stay
+  // usable, otherwise the room can never reach its own approval gate.
+  it('allows local-only authoring when the workspace gateway is disabled', async () => {
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'local', workspace: null })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'local', workspace: null })),
+      reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+    };
+    const context = setup({ workspaceGateway: gateway });
+
+    const snapshot = await context.service.getSnapshot();
+
+    expect(snapshot.workspace.syncStatus).toBe('local');
+    expect(snapshot.productMarketingContextAuthority).toEqual({
+      reviewerName: 'Owner A',
+      canSave: true,
+      status: 'local',
+      scopeToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+      authorityToken: expect.stringMatching(/^v1\.[a-f0-9]{64}$/),
+    });
+  });
+
+  it('still forbids a disabled-gateway reviewer role from authoring context', async () => {
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'local', workspace: null })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'local', workspace: null })),
+      reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await context.service.saveOnboarding(onboarding());
+    context.db.updateOnlyRecord({ role: 'reviewer' });
+
+    const snapshot = await context.service.getSnapshot();
+
+    expect(snapshot.productMarketingContextAuthority).toMatchObject({
+      canSave: false,
+      status: 'forbidden',
+      authorityToken: null,
+    });
+  });
+
   it('fails closed when a cached local owner loses backend authority confirmation', async () => {
     const identity: CustomerIdentity = {
       id: 'tenant-authority-offline',

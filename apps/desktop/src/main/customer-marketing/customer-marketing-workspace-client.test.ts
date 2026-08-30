@@ -409,29 +409,43 @@ describe('CustomerMarketingWorkspaceClient', () => {
     expect(reachableButForbidden.getBridgeHealth()).toBe('connected');
   });
 
-  it('accepts only the reviewed HTTPS staging origin from runtime configuration', async () => {
+  it('accepts only reviewed HTTPS origins from runtime configuration', async () => {
     const auth = { getAccessToken: vi.fn(async () => 'test-token') };
-    const missingUrlFetch = vi.fn<typeof fetch>();
-    const missingUrl = new CustomerMarketingWorkspaceClient(auth, {
-      env: { STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true' },
-      fetchImpl: missingUrlFetch,
-    });
-    await expect(missingUrl.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
-    expect(missingUrl.getBridgeHealth()).toBe('configuration_required');
-    expect(missingUrlFetch).not.toHaveBeenCalled();
 
+    // Default origin: the reviewed production gateway, so a request is issued.
+    const defaultFetch = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ workspaces: [] }));
+    const defaultOrigin = new CustomerMarketingWorkspaceClient(auth, {
+      env: {},
+      fetchImpl: defaultFetch,
+    });
+    await defaultOrigin.getCurrent();
+    expect(defaultOrigin.getBridgeHealth()).toBe('connected');
+    expect(defaultFetch).toHaveBeenCalledWith(
+      'https://api.izziapi.com/api/marketing/workspaces',
+      expect.any(Object),
+    );
+
+    // An origin outside the reviewed set fails closed and never reaches the network.
     const rejectedFetch = vi.fn<typeof fetch>();
     const rejected = new CustomerMarketingWorkspaceClient(auth, {
-      env: {
-        STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true',
-        STARIZZI_CUSTOMER_MARKETING_API_URL: 'https://api.izziapi.com',
-      },
+      env: { STARIZZI_CUSTOMER_MARKETING_API_URL: 'https://marketing.not-reviewed.test' },
       fetchImpl: rejectedFetch,
     });
     await expect(rejected.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
     expect(rejected.getBridgeHealth()).toBe('configuration_required');
     expect(rejectedFetch).not.toHaveBeenCalled();
 
+    // A plaintext variant of a reviewed host is still not reviewed.
+    const insecureFetch = vi.fn<typeof fetch>();
+    const insecure = new CustomerMarketingWorkspaceClient(auth, {
+      env: { STARIZZI_CUSTOMER_MARKETING_API_URL: 'http://api.izziapi.com' },
+      fetchImpl: insecureFetch,
+    });
+    await expect(insecure.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+    expect(insecure.getBridgeHealth()).toBe('configuration_required');
+    expect(insecureFetch).not.toHaveBeenCalled();
+
+    // The reviewed staging origin keeps working.
     const acceptedFetch = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ workspaces: [] }));
     const accepted = new CustomerMarketingWorkspaceClient(auth, {
       env: {
@@ -446,6 +460,25 @@ describe('CustomerMarketingWorkspaceClient', () => {
       'https://marketing-staging.izziapi.com/api/marketing/workspaces',
       expect.any(Object),
     );
+  });
+
+  it('treats the kill switch as the only way to disable the bridge from the environment', async () => {
+    const auth = { getAccessToken: vi.fn(async () => 'test-token') };
+
+    const killedFetch = vi.fn<typeof fetch>();
+    const killed = new CustomerMarketingWorkspaceClient(auth, {
+      env: { STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'false' },
+      fetchImpl: killedFetch,
+    });
+    await expect(killed.getCurrent()).resolves.toEqual({ status: 'local', workspace: null });
+    expect(killed.getBridgeHealth()).toBe('disabled');
+    expect(killedFetch).not.toHaveBeenCalled();
+
+    const liveFetch = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ workspaces: [] }));
+    const live = new CustomerMarketingWorkspaceClient(auth, { env: {}, fetchImpl: liveFetch });
+    await live.getCurrent();
+    expect(live.getBridgeHealth()).toBe('connected');
+    expect(liveFetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not make backend calls unless the customer API is enabled', async () => {
