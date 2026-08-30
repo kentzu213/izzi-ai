@@ -88,6 +88,9 @@ function shortError(err: unknown): string {
 }
 
 export class GraphClient {
+  /** Guards the once-per-process record of a missing memory collection. */
+  private memoryRouteReported = false;
+
   constructor(
     private readonly auth: AuthManager,
     private readonly db: DatabaseManager,
@@ -159,7 +162,13 @@ export class GraphClient {
       });
       if (res.status === 401) return [];
       if (!res.ok) {
-        this.logFailure('memory.list', res.status);
+        // A 404 here means the authenticated caller has no memory collection yet; the
+        // route itself exists. Log it once so the backend gap stays visible without
+        // filling diagnostics with one error per refresh.
+        if (res.status !== 404 || !this.memoryRouteReported) {
+          if (res.status === 404) this.memoryRouteReported = true;
+          this.logFailure('memory.list', res.status);
+        }
         return [];
       }
       const data = await res.json();

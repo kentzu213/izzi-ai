@@ -1573,15 +1573,19 @@ export class CustomerMarketingService {
   ): CustomerMarketingSnapshot['productMarketingContextAuthority'] {
     const reviewerName = productMarketingReviewerName(identity);
     let status: CustomerMarketingSnapshot['productMarketingContextAuthority']['status'];
+    // A switched-off gateway reports `local`; an enabled gateway that cannot confirm the
+    // workspace reports `unavailable`. Only the latter must lock authoring, otherwise
+    // local-only mode can never reach its own approval gate.
     if (
       this.workspaceGateway
+      && workspaceState.status !== 'local'
       && (workspaceState.status !== 'synced' || !workspaceState.workspace)
     ) {
       status = 'unavailable';
     } else if (!MARKETING_AUTHOR_ROLES.has(record.role)) {
       status = 'forbidden';
     } else {
-      status = this.workspaceGateway ? 'confirmed' : 'local';
+      status = workspaceState.status === 'synced' ? 'confirmed' : 'local';
     }
     const canSave = status === 'confirmed' || status === 'local';
     const scopeToken = `v1.${createHmac('sha256', this.productMarketingAuthorityKey)
@@ -6018,6 +6022,20 @@ export class CustomerMarketingService {
       completed: profile.completed,
       updatedAt: profile.updatedAt,
     };
+    // A workspace created moments ago carries an untouched profile row. Adopting it would
+    // discard a completed local onboarding and reset `completed`, which blocks every
+    // downstream workflow. Keep the local profile and take only the remote revision, so
+    // the next save pushes local state up instead of losing it.
+    if (
+      !profile.completed
+      && profile.completedSteps.length === 0
+      && record.onboarding?.completed === true
+    ) {
+      if (record.profileRevision === profile.revision && record.profileSyncStatus === profileSyncStatus) {
+        return record;
+      }
+      return { ...record, profileRevision: profile.revision, profileSyncStatus };
+    }
     if (
       record.profileRevision === profile.revision
       && record.profileSyncStatus === profileSyncStatus

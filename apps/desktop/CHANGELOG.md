@@ -1,4 +1,32 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.65
+
+Open the real Customer Marketing backend and make model turns work again.
+
+- Allow-list the reviewed production origin `https://api.izziapi.com` for the Customer
+  Marketing bridge and switch the bridge to opt-out. The previous sole entry,
+  `marketing-staging.izziapi.com`, answers HTTP 502, so every shipped build stayed
+  `configuration_required` and the room could never sync a workspace. Authentication,
+  server-derived roles, RLS and quota reservation are unchanged, and an origin outside
+  the reviewed set still fails closed.
+- Send an `Idempotency-Key` on every gateway chat request. Fixed-price SmartRouter
+  routes — including the app default `izzi-smart`, `auto`, every `gpt-5.6-*` and
+  `grok-4.5-high` — were refused with `invalid_request_error`, which silently pushed
+  every turn onto per-token models.
+- Stop a foreign `OPENAI_API_KEY` on the host from shadowing the authenticated `izzi-`
+  desktop key, which made every model call fail with HTTP 401.
+- Replace the hardcoded 1200-token output budget with a caller-supplied budget
+  (default 4096, ceiling 16000) and report `finish_reason=length` as `truncated`
+  instead of presenting a cut-off answer as complete.
+- Surface the gateway error type and message instead of a bare `http 400`.
+- Treat a switched-off workspace gateway as local mode rather than an unconfirmed
+  backend, so Product Marketing Context stays authorable offline.
+- Keep a completed local onboarding when the backend returns the untouched profile row
+  it creates alongside a new workspace, instead of overwriting it and resetting
+  `completed` to false.
+- Report no integrations instead of rejecting `integrations:list` when the endpoint is
+  absent, and record a missing memory collection once instead of once per refresh.
+
 ## 1.14.0-beta.64
 
 Packaged Customer Marketing safety gate suite.

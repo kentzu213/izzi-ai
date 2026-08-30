@@ -609,7 +609,8 @@ const electronAPI = {
       agentId?: string;
       agentName?: string;
       images?: string[];
-    }): Promise<{ reply: string; error?: string }> =>
+      maxTokens?: number;
+    }): Promise<{ reply: string; error?: string; truncated?: boolean }> =>
       ipcRenderer.invoke('izziAgent:chat', payload),
   },
 

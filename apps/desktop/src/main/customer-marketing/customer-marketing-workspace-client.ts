@@ -407,6 +407,7 @@ const MARKETING_ASSET_UPLOAD_BLOCK_REASONS = new Set([
   'cleanup_required',
 ]);
 const REVIEWED_MARKETING_API_ORIGINS = new Set([
+  'https://api.izziapi.com',
   'https://marketing-staging.izziapi.com',
 ]);
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
@@ -1603,7 +1604,11 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     const env = options.env ?? process.env;
     const configuredUrl = env.STARIZZI_CUSTOMER_MARKETING_API_URL?.trim().replace(/\/$/, '');
     this.baseUrl = (options.baseUrl ?? configuredUrl ?? IZZI_API_BASE).replace(/\/$/, '');
-    this.enabled = options.enabled ?? env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED === 'true';
+    // Opt-out rather than opt-in: the flag was never set in any build, so the reviewed
+    // production origin above could never be reached. `false` remains an explicit kill
+    // switch; the reviewed-origin check below still guards every request.
+    const enabledFlag = env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED?.trim().toLowerCase();
+    this.enabled = options.enabled ?? enabledFlag !== 'false';
     this.configurationValid = options.baseUrl !== undefined
       || options.enabled !== undefined
       || REVIEWED_MARKETING_API_ORIGINS.has(configuredUrl ?? IZZI_API_BASE);

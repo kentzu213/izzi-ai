@@ -14,6 +14,7 @@
  *
  * @module main/agents/izzi-agent
  */
+import { randomUUID } from 'node:crypto';
 import { ipcMain } from 'electron';
 import type { AuthManager } from '../auth/auth-manager';
 import { buildIzziRequestHeaders, isOfficialIzziApiUrl, modelSupportsTools } from '../agent/izzi-request-headers';
@@ -27,6 +28,53 @@ import type { SessionRecorder } from './agent-session-recorder';
 
 const IZZI_LLM_BASE = 'https://api.izziapi.com/v1';
 const MAX_TOOL_ITERATIONS = 20;
+/**
+ * Output budget for one turn. The previous hardcoded 1200 silently truncated any
+ * long-form answer (a plan, a report) mid-sentence and reported it as complete.
+ * Callers may raise it up to the ceiling; the gateway still enforces its own limits.
+ */
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+const MAX_OUTPUT_TOKENS_CEILING = 16000;
+
+/** Clamp a caller-supplied output budget into the supported range. */
+export function resolveIzziAgentMaxTokens(requested: unknown): number {
+  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
+    return DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+  const value = Math.trunc(requested);
+  if (value < 1) return DEFAULT_MAX_OUTPUT_TOKENS;
+  return Math.min(value, MAX_OUTPUT_TOKENS_CEILING);
+}
+
+/**
+ * Turn a gateway failure into a message the caller can act on. The gateway documents
+ * `{ error: { type, message } }`; discarding it left every failure as a bare
+ * `http 400` with no way to tell a bad model id from a bad request shape.
+ */
+export async function readIzziAgentHttpError(res: {
+  status: number;
+  json: () => Promise<unknown>;
+}): Promise<string> {
+  try {
+    const body = await res.json();
+    const error = (body as { error?: unknown } | null)?.error;
+    if (typeof error === 'string' && error.trim().length > 0) {
+      return `http ${res.status}: ${error.trim().slice(0, 300)}`;
+    }
+    if (error && typeof error === 'object') {
+      const detail = error as { type?: unknown; code?: unknown; message?: unknown };
+      const kind = typeof detail.type === 'string'
+        ? detail.type
+        : typeof detail.code === 'string' ? detail.code : '';
+      const message = typeof detail.message === 'string' ? detail.message : '';
+      const text = [kind, message].filter((part) => part.length > 0).join(': ');
+      if (text.length > 0) return `http ${res.status}: ${text.slice(0, 300)}`;
+    }
+  } catch {
+    // A non-JSON error body carries nothing extra; fall back to the status alone.
+  }
+  return `http ${res.status}`;
+}
 
 /** Canonicalize legacy SmartRouter aliases; preserve explicit model routes. */
 export function normalizeIzziAgentModel(model: string | null | undefined): string {
@@ -56,12 +104,16 @@ export interface IzziAgentChatPayload {
   agentName?: string;
   /** Pasted image attachments as data URLs; sent as multimodal `image_url` parts. */
   images?: string[];
+  /** Output budget for this turn; clamped to the supported ceiling. */
+  maxTokens?: number;
 }
 
 export interface IzziAgentChatResult {
   reply: string;
   error?: string;
   execution?: IzziAgentModelExecution;
+  /** True when the model stopped because it hit the output budget, not because it finished. */
+  truncated?: boolean;
 }
 
 export interface IzziAgentChatRequestOptions {
@@ -81,10 +133,11 @@ export interface IzziAgentModelExecution {
 
 export function rendererSafeIzziAgentChatResult(
   result: IzziAgentChatResult,
-): Pick<IzziAgentChatResult, 'reply' | 'error'> {
+): Pick<IzziAgentChatResult, 'reply' | 'error' | 'truncated'> {
   return {
     reply: result.reply,
     ...(result.error ? { error: result.error } : {}),
+    ...(result.truncated ? { truncated: true } : {}),
   };
 }
 
@@ -158,8 +211,11 @@ export class IzziAgent {
 
   /** Resolve a credential without ever exposing it outside the main process. */
   private async resolveKey(): Promise<string | null> {
-    const envKey = process.env.OPENAI_API_KEY;
-    if (typeof envKey === 'string' && envKey.trim().length > 0) return envKey.trim();
+    // The chat endpoint below is pinned to the official IzziAPI gateway, which only
+    // accepts `izzi-` keys. A foreign OPENAI_API_KEY left on the host must not shadow
+    // the authenticated desktop key, or every turn fails with a bare HTTP 401.
+    const envKey = process.env.OPENAI_API_KEY?.trim();
+    if (envKey && envKey.startsWith('izzi-')) return envKey;
     const chatUrl = `${IZZI_LLM_BASE}/chat/completions`;
     if (!isOfficialIzziApiUrl(chatUrl)) return null;
     if (typeof this.auth.ensureDesktopApiKey === 'function') {
@@ -189,15 +245,20 @@ export class IzziAgent {
     if (!key) return { reply: '', error: 'no-key' };
 
     const system = typeof payload.systemPrompt === 'string' ? payload.systemPrompt : '';
-    // Legacy aliases become canonical izzi-smart; explicit ids such as
-    // grok-4.5-high pass through unchanged.
+    // Legacy SmartRouter aliases become the gateway's canonical route; explicit ids
+    // such as claude-sonnet-4.5 pass through unchanged.
     const model = normalizeIzziAgentModel(payload.model);
+    const maxTokens = resolveIzziAgentMaxTokens(payload.maxTokens);
     const requestedIdempotencyKey = requestOptions.idempotencyKey?.trim();
     if (
       requestedIdempotencyKey
       && (payload.enableTools || !IDEMPOTENCY_KEY_PATTERN.test(requestedIdempotencyKey))
     ) return { reply: '', error: 'invalid-request-options' };
     const idempotencyKey = requestedIdempotencyKey || undefined;
+    const chatUrl = `${IZZI_LLM_BASE}/chat/completions`;
+    // Fixed-price routes are refused without this header; mint one per request.
+    const nextIdempotencyKey = (): string | undefined => idempotencyKey
+      ?? (isOfficialIzziApiUrl(chatUrl) ? randomUUID() : undefined);
     const history: IzziAgentMessage[] = Array.isArray(payload.history)
       ? payload.history
           .filter(
@@ -224,7 +285,12 @@ export class IzziAgent {
 
     try {
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const body: Record<string, unknown> = { model, messages: reqMessages, stream: false, max_tokens: 1200 };
+        const body: Record<string, unknown> = {
+          model,
+          messages: reqMessages,
+          stream: false,
+          max_tokens: maxTokens,
+        };
         if (model === HIGH_REASONING_MODEL) body.reasoning_effort = 'high';
         if (tools) {
           body.tools = tools;
@@ -235,16 +301,17 @@ export class IzziAgent {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`,
-            ...buildIzziRequestHeaders(`${IZZI_LLM_BASE}/chat/completions`, idempotencyKey),
+            ...buildIzziRequestHeaders(chatUrl, nextIdempotencyKey()),
           },
           body: JSON.stringify(body),
         });
-        if (!res.ok) return { reply: '', error: `http ${res.status}` };
+        if (!res.ok) return { reply: '', error: await readIzziAgentHttpError(res) };
         const data = (await res.json()) as {
           model?: unknown;
           usage?: unknown;
-          choices?: Array<{ message?: { content?: unknown; tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }> } }>;
+          choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }> } }>;
         };
+        const truncated = data?.choices?.[0]?.finish_reason === 'length';
         const msg = data?.choices?.[0]?.message;
         const toolCalls = msg?.tool_calls;
 
@@ -252,7 +319,11 @@ export class IzziAgent {
         if (!tools || !toolIndex || !Array.isArray(toolCalls) || toolCalls.length === 0) {
           const content = msg?.content;
           return typeof content === 'string' && content.length > 0
-            ? { reply: content, execution: parseModelExecution(data, model) }
+            ? {
+              reply: content,
+              execution: parseModelExecution(data, model),
+              ...(truncated ? { truncated: true } : {}),
+            }
             : { reply: '', error: 'empty-response' };
         }
 
@@ -292,7 +363,7 @@ export class IzziAgent {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`,
-            ...buildIzziRequestHeaders(`${IZZI_LLM_BASE}/chat/completions`),
+            ...buildIzziRequestHeaders(chatUrl, nextIdempotencyKey()),
           },
           body: JSON.stringify({
             model,
@@ -305,7 +376,7 @@ export class IzziAgent {
               },
             ],
             stream: false,
-            max_tokens: 1200,
+            max_tokens: maxTokens,
           }),
         });
         if (res.ok) {

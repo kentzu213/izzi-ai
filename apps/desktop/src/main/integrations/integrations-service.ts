@@ -134,6 +134,11 @@ export class IntegrationsService {
       timeout: 15000,
     });
 
+    if (response.status === 404) {
+      // The integrations API is not deployed on this host (404 even without a token).
+      // Report "no connections" instead of rejecting the IPC call on every route open.
+      return [];
+    }
     if (response.status >= 400) {
       throw new Error(`Integrations endpoint returned HTTP ${response.status}`);
     }
