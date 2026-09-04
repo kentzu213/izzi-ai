@@ -2,7 +2,6 @@
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
 import {
-  CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
   resolveDesktopRuntimeProfile,
 } from './config/desktop-runtime-profile';
 import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
@@ -210,7 +209,7 @@ function getNativeMarketingClient(): NativeMarketingClient {
       // workspace client instead of silently falling back to production.
       baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
         ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
-      allowLoopback: DESKTOP_RUNTIME_PROFILE.id === CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+      allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
     });
   }
   return nativeMarketingClient;
