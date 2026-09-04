@@ -2606,6 +2606,41 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.workspace.usedCredits).toBe(13.5);
   });
 
+  it('does not start backend-owned seven-day generation for a Director turn', async () => {
+    const workspace = remoteWorkspace();
+    const startSevenDayWorkflow = vi.fn();
+    const resumeSevenDayWorkflow = vi.fn();
+    const reserveQuota = vi.fn(async () => ({
+      status: 'quota_exceeded' as const,
+      quota: null,
+    }));
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...memberGatewayMethods(),
+      getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+      ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+      startSevenDayWorkflow,
+      resumeSevenDayWorkflow,
+      reserveQuota,
+    };
+    const director = vi.fn(async () => ({ reply: 'must not run' }));
+    const context = setup({ director, workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a measurable campaign for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.snapshot?.runs[0]).toMatchObject({
+      id: expect.stringMatching(/^run-[0-9a-f-]{36}$/),
+      stage: 'quota_exceeded',
+    });
+    expect(reserveQuota).toHaveBeenCalledTimes(1);
+    expect(startSevenDayWorkflow).not.toHaveBeenCalled();
+    expect(resumeSevenDayWorkflow).not.toHaveBeenCalled();
+    expect(director).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['quota_exceeded', 'quota', 'quota_exceeded'],
     ['unavailable', 'xác nhận quota', 'quota_unavailable'],

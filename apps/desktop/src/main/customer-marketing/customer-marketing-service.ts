@@ -4135,7 +4135,10 @@ export class CustomerMarketingService {
     };
   }
 
-  async createGoal(input: CustomerGoalInput): Promise<CustomerMutationResult> {
+  async createGoal(
+    input: CustomerGoalInput,
+    options: { prepareRemoteSevenDayWorkflow?: boolean } = {},
+  ): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
     let record = this.readRecord(identity);
     if (!record.onboarding?.completed) {
@@ -4180,7 +4183,7 @@ export class CustomerMarketingService {
     const automationMode = AUTOMATION_MODES.includes(input?.automationMode as CustomerAutomationMode)
       ? input.automationMode as CustomerAutomationMode
       : profile.automationMode;
-    const remoteWorkflow = workspaceState.workspace
+    const remoteWorkflow = options.prepareRemoteSevenDayWorkflow !== false && workspaceState.workspace
       ? await this.prepareRemoteSevenDayWorkflow(identity, record, workspaceState.workspace.id, goal, channels)
       : null;
     if (remoteWorkflow && 'error' in remoteWorkflow) {
@@ -4302,7 +4305,11 @@ export class CustomerMarketingService {
 
   async askDirector(input: CustomerDirectorInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
-    const created = await this.createGoal(input);
+    // An AI Director turn and a server-owned seven-day workflow are distinct
+    // billable operations. The Director owns its reservation and model call
+    // below; starting the remote workflow here would generate and reserve a
+    // second time before this operation can enforce its own quota boundary.
+    const created = await this.createGoal(input, { prepareRemoteSevenDayWorkflow: false });
     if (!created.ok || !created.snapshot) return created;
     const record = this.readRecord(identity);
     const run = record.runs[0];

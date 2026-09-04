@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.68
+
+Separate AI Director conversations from backend-owned seven-day generation.
+
+- A Director turn now creates only its local approval workflow, reserves its own
+  authoritative workspace credit, and invokes the configured Director model once.
+- The standalone seven-day workflow remains server-owned, so it keeps its own
+  idempotent generation, billing ledger, and approval boundary without a duplicate
+  desktop reservation or model call.
+
 ## 1.14.0-beta.67
 
 Align native Marketing connector authority with the selected desktop runtime profile.
