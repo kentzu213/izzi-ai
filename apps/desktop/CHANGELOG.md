@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.67
+
+Align native Marketing connector authority with the selected desktop runtime profile.
+
+- The local staging profile now routes Provider Vault workspace checks to the same
+  loopback API as the Customer Marketing workspace client.
+- Production/default builds retain their reviewed native Marketing origin behavior.
+
 ## 1.14.0-beta.66
 
 Harden the seven-day Marketing Room workflow and keep optional media probes bounded.

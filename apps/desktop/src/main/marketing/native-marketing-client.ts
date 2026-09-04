@@ -37,6 +37,8 @@ export interface NativeMarketingTokenProvider {
 export interface NativeMarketingClientOptions {
   /** Reviewed https origin override; an unreviewed value disables the client. */
   baseUrl?: string | null;
+  /** Only the explicit local staging runtime may use a loopback origin. */
+  allowLoopback?: boolean;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
@@ -389,7 +391,10 @@ const MAX_CONTENT_LENGTH = 20_000;
  * fails closed) for an unreviewed origin, http, loopback, embedded
  * credentials, or a URL carrying a path/query/fragment. Pure.
  */
-export function resolveNativeMarketingBaseUrl(override?: string | null): string | null {
+export function resolveNativeMarketingBaseUrl(
+  override?: string | null,
+  allowLoopback = false,
+): string | null {
   const candidate = typeof override === 'string' && override.trim()
     ? override.trim()
     : IZZI_API_BASE;
@@ -399,8 +404,16 @@ export function resolveNativeMarketingBaseUrl(override?: string | null): string 
   } catch {
     return null;
   }
-  if (url.protocol !== 'https:' || url.username || url.password) return null;
+  if (url.username || url.password) return null;
   if (url.pathname !== '/' || url.search || url.hash) return null;
+  if (allowLoopback
+    && url.protocol === 'http:'
+    && url.hostname === '127.0.0.1'
+    && Number(url.port) >= 1_024
+    && Number(url.port) <= 65_535) {
+    return url.origin;
+  }
+  if (url.protocol !== 'https:') return null;
   return REVIEWED_NATIVE_MARKETING_ORIGINS.includes(url.origin) ? url.origin : null;
 }
 
@@ -930,7 +943,7 @@ export class NativeMarketingClient {
     private readonly auth: NativeMarketingTokenProvider,
     options: NativeMarketingClientOptions = {},
   ) {
-    this.baseUrl = resolveNativeMarketingBaseUrl(options.baseUrl);
+    this.baseUrl = resolveNativeMarketingBaseUrl(options.baseUrl, options.allowLoopback);
     this.timeoutMs = options.timeoutMs ?? 8_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }

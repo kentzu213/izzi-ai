@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
   CUSTOMER_MARKETING_STAGING_PROFILE_ID,
   resolveDesktopRuntimeProfile,
 } from './desktop-runtime-profile';
@@ -28,6 +29,24 @@ function stagingEnv(): NodeJS.ProcessEnv {
 }
 
 const STAGING_PROFILE_ARGUMENT = `--izzi-runtime-profile=${CUSTOMER_MARKETING_STAGING_PROFILE_ID}`;
+const LOCAL_STAGING_PROFILE_ARGUMENT = `--izzi-runtime-profile=${CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID}`;
+
+function localStagingEnv(): NodeJS.ProcessEnv {
+  const origin = 'http://127.0.0.1:43123';
+  return {
+    IZZI_DESKTOP_RUNTIME_PROFILE: CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+    OPENCLAW_API_URL: origin,
+    OPENCLAW_SUPABASE_URL: origin,
+    OPENCLAW_SUPABASE_ANON_KEY: [
+      'header',
+      Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url'),
+      'test-signature',
+    ].join('.'),
+    OPENCLAW_WEB_URL: origin,
+    STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'true',
+    STARIZZI_CUSTOMER_MARKETING_API_URL: origin,
+  };
+}
 
 describe('desktop runtime profile', () => {
   it('keeps the default desktop protocol, updater and OAuth behavior unchanged', () => {
@@ -58,6 +77,62 @@ describe('desktop runtime profile', () => {
       updaterEnabled: false,
       googleOAuthEnabled: false,
     });
+  });
+
+  it('accepts an explicitly selected, loopback-only local staging profile', () => {
+    const userData = path.resolve('C:/Temp/IzziAI-Customer-Marketing-Local-Staging');
+    expect(resolveDesktopRuntimeProfile(localStagingEnv(), [], {
+      runtimeProfile: CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+      userDataDir: userData,
+    })).toEqual({
+      id: CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+      customerMarketingStaging: true,
+      marketingApiBaseUrl: 'http://127.0.0.1:43123',
+      userDataPath: userData,
+      singleInstanceLock: false,
+      registerProtocol: false,
+      updaterEnabled: false,
+      googleOAuthEnabled: false,
+    });
+  });
+
+  it.each([
+    ['localhost alias', { OPENCLAW_API_URL: 'http://localhost:43123' }],
+    ['non-loopback API', { OPENCLAW_API_URL: 'https://api.izziapi.com' }],
+    ['different Marketing origin', { STARIZZI_CUSTOMER_MARKETING_API_URL: 'http://127.0.0.1:43124' }],
+    ['different Supabase origin', { OPENCLAW_SUPABASE_URL: 'http://127.0.0.1:43124' }],
+    ['disabled bridge', { STARIZZI_CUSTOMER_MARKETING_API_ENABLED: 'false' }],
+  ])('rejects %s in the local staging profile', (_label, override) => {
+    expect(() => resolveDesktopRuntimeProfile(
+      { ...localStagingEnv(), ...override },
+      [
+        LOCAL_STAGING_PROFILE_ARGUMENT,
+        '--user-data-dir=C:/Temp/IzziAI-Customer-Marketing-Local-Staging',
+      ],
+    )).toThrow(/local staging profile/i);
+  });
+
+  it('rejects privileged tokens and shared userData in the local staging profile', () => {
+    const privilegedKey = [
+      'header',
+      Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url'),
+      'signature',
+    ].join('.');
+    expect(() => resolveDesktopRuntimeProfile(
+      { ...localStagingEnv(), OPENCLAW_SUPABASE_ANON_KEY: privilegedKey },
+      [
+        LOCAL_STAGING_PROFILE_ARGUMENT,
+        '--user-data-dir=C:/Temp/IzziAI-Customer-Marketing-Local-Staging',
+      ],
+    )).toThrow(/anon/i);
+    expect(() => resolveDesktopRuntimeProfile(
+      localStagingEnv(),
+      [LOCAL_STAGING_PROFILE_ARGUMENT, '--user-data-dir=C:/Users/owner/AppData/Roaming/@openclaw'],
+    )).toThrow(/userData/i);
+  });
+
+  it('does not activate the local staging profile from environment variables alone', () => {
+    expect(() => resolveDesktopRuntimeProfile(localStagingEnv(), [])).toThrow(/explicit/i);
   });
 
   it('applies isolated Electron userData before the shared instance lock', () => {
