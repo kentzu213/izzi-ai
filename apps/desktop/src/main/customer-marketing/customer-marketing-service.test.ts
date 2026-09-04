@@ -1925,6 +1925,89 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(reviewed.snapshot?.runs[0]).toMatchObject({ status: 'completed', progress: 100 });
   });
 
+  it('does not submit approval while remote generation is incomplete', async () => {
+    const base = marketingResourceGateway('manager');
+    const reviewSevenDayWorkflow = vi.fn();
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow: vi.fn(async () => ({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow(),
+        duplicate: false,
+      })),
+      resumeSevenDayWorkflow: vi.fn(),
+      getSevenDayWorkflow: vi.fn(async () => ({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({ contentGenerationState: 'failed' }),
+      })),
+      reviewSevenDayWorkflow,
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+    const created = await context.service.createGoal({ goal: 'Build a backend-owned seven day campaign' });
+
+    const reviewed = await context.service.reviewApproval({
+      approvalId: created.snapshot!.approvals[0].id,
+      decision: 'approved',
+    });
+
+    expect(reviewed.ok).toBe(false);
+    expect(reviewSevenDayWorkflow).not.toHaveBeenCalled();
+    expect((await context.service.getSnapshot()).approvals[0].status).toBe('pending');
+  });
+
+  it.each(['response', 'conflict'] as const)(
+    'does not complete local approval when the remote %s reports unauthored content',
+    async (path) => {
+      const base = marketingResourceGateway('manager');
+      const getSevenDayWorkflow = vi.fn().mockResolvedValueOnce({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({ contentGenerationState: 'complete' }),
+      });
+      if (path === 'conflict') {
+        getSevenDayWorkflow.mockResolvedValueOnce({
+          status: 'synced' as const,
+          run: remoteSevenDayWorkflow({
+            status: 'approved',
+            contentGenerationState: 'failed',
+          }),
+        });
+      }
+      const reviewSevenDayWorkflow = vi.fn(async () => path === 'response'
+        ? {
+          status: 'synced' as const,
+          run: remoteSevenDayWorkflow({
+            status: 'approved',
+            contentGenerationState: 'failed',
+          }),
+          duplicate: false,
+        }
+        : { status: 'conflict' as const, run: null });
+      const gateway: CustomerMarketingWorkspaceGateway = {
+        ...base.gateway,
+        startSevenDayWorkflow: vi.fn(async () => ({
+          status: 'synced' as const,
+          run: remoteSevenDayWorkflow(),
+          duplicate: false,
+        })),
+        resumeSevenDayWorkflow: vi.fn(),
+        getSevenDayWorkflow,
+        reviewSevenDayWorkflow,
+      };
+      const context = setup({ workspaceGateway: gateway });
+      await completeOnboarding(context.service);
+      const created = await context.service.createGoal({ goal: 'Build a backend-owned seven day campaign' });
+
+      const reviewed = await context.service.reviewApproval({
+        approvalId: created.snapshot!.approvals[0].id,
+        decision: 'approved',
+      });
+
+      expect(reviewed.ok).toBe(false);
+      expect((await context.service.getSnapshot()).approvals[0].status).toBe('pending');
+    },
+  );
+
   it('fails closed without local workflow state when backend automation quota is denied', async () => {
     const base = marketingResourceGateway('manager');
     const resumeSevenDayWorkflow = vi.fn();
@@ -1942,6 +2025,72 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     const snapshot = await context.service.getSnapshot();
     expect(snapshot.runs).toHaveLength(0);
     expect(snapshot.approvals).toHaveLength(0);
+  });
+
+  it('refuses a run that reaches approval with unauthored seven-day content', async () => {
+    const base = marketingResourceGateway('manager');
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow: vi.fn(async () => ({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({ status: 'queued', revision: 0, currentStep: 0, approval: null }),
+        duplicate: false,
+      })),
+      // A backend regression that let the approval step through while the bodies were
+      // still shell copy must not produce local approval state.
+      resumeSevenDayWorkflow: vi.fn(async () => ({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({ contentGenerationState: 'failed' }),
+        duplicate: false,
+      })),
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.createGoal({ goal: 'Build a backend-owned seven day campaign' });
+
+    expect(result.ok).toBe(false);
+    const snapshot = await context.service.getSnapshot();
+    expect(snapshot.runs).toHaveLength(0);
+    expect(snapshot.approvals).toHaveLength(0);
+  });
+
+  it('still accepts a run from a backend that does not report the generation state', async () => {
+    const base = marketingResourceGateway('manager');
+    let step = 0;
+    const gateway: CustomerMarketingWorkspaceGateway = {
+      ...base.gateway,
+      startSevenDayWorkflow: vi.fn(async () => ({
+        status: 'synced' as const,
+        run: remoteSevenDayWorkflow({
+          status: 'queued', revision: 0, currentStep: 0, approval: null, contentGenerationState: null,
+        }),
+        duplicate: false,
+      })),
+      // An older backend omits the field entirely, which the parser reports as null.
+      // That must not be read as an unfinished generation.
+      resumeSevenDayWorkflow: vi.fn(async () => {
+        step += 1;
+        return {
+          status: 'synced' as const,
+          run: remoteSevenDayWorkflow({
+            revision: step,
+            currentStep: Math.min(step, 4),
+            approval: step >= 4 ? { status: 'pending', requestedAt: '2026-08-11T00:04:00.000Z', decidedAt: null } : null,
+            contentGenerationState: null,
+          }),
+          duplicate: false,
+        };
+      }),
+    };
+    const context = setup({ workspaceGateway: gateway });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.createGoal({ goal: 'Build a backend-owned seven day campaign' });
+
+    expect(result.ok).toBe(true);
+    const snapshot = await context.service.getSnapshot();
+    expect(snapshot.runs).toHaveLength(1);
   });
 
   it('recovers the same remote workflow after a resume network failure and app restart', async () => {
@@ -4184,6 +4333,46 @@ describe('CustomerMarketingService backend workspace sync', () => {
       },
     });
     expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns onboarding after a background media probe stalls', async () => {
+    vi.useFakeTimers();
+    try {
+      const workspace = remoteWorkspace({ role: 'owner' });
+      const gateway: CustomerMarketingWorkspaceGateway = {
+        ...memberGatewayMethods(),
+        getCurrent: vi.fn(async () => ({ status: 'synced', workspace })),
+        ensureWorkspace: vi.fn(async () => ({ status: 'synced', workspace })),
+        reserveQuota: vi.fn(async () => ({ status: 'local', quota: null })),
+      };
+      const mediaRuntime = mediaRuntimeFixture();
+      vi.mocked(mediaRuntime.getToolchain).mockImplementation(() => new Promise(() => undefined));
+      const context = setup({ workspaceGateway: gateway, mediaRuntime });
+
+      const initialSnapshot = context.service.getInitialSnapshot(0);
+      await vi.runOnlyPendingTimersAsync();
+      await initialSnapshot;
+
+      let settled = false;
+      const save = context.service.saveOnboarding(onboarding()).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(settled).toBe(true);
+      await expect(save).resolves.toMatchObject({
+        ok: true,
+        snapshot: {
+          workspace: { syncStatus: 'synced', profileSyncStatus: 'synced' },
+          capabilityCatalog: { status: 'synced' },
+          media: { toolchain: { previewAvailable: false } },
+        },
+      });
+      expect(mediaRuntime.getToolchain).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses backend workspace identity, membership, plan, and quota when available', async () => {

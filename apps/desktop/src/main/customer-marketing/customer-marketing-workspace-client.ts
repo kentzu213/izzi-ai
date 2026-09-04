@@ -165,6 +165,17 @@ export interface RemoteMarketingWorkflowArtifact {
   };
 }
 
+/**
+ * Whether the seven daily bodies have actually been authored by a model yet.
+ *
+ * The backend owns every transition; this is read-only state for rendering. It is
+ * not the same thing as `status`: a run reaches `awaiting_customer_approval` only
+ * once this is `complete`, so this is what separates "still being written" from
+ * "waiting on the customer".
+ */
+export type RemoteSevenDayGenerationState =
+  | 'pending' | 'reserved' | 'generating' | 'complete' | 'failed';
+
 export interface RemoteMarketingWorkflowRun {
   id: string;
   workspaceId: string;
@@ -176,6 +187,13 @@ export interface RemoteMarketingWorkflowRun {
   startsOn: string;
   planSnapshot: 'free' | 'starter' | 'pro' | 'max' | 'ultra';
   currentStep: number;
+  /**
+   * `null` means the server did not report it - an older backend, not a run that
+   * happens to be pending. Callers must keep the two apart: defaulting an absent
+   * value to 'pending' would invite a client to offer "generate" on a run that is
+   * already complete.
+   */
+  contentGenerationState: RemoteSevenDayGenerationState | null;
   steps: RemoteMarketingWorkflowStep[];
   artifacts: RemoteMarketingWorkflowArtifact[];
   approval: { status: 'pending' | 'approved' | 'rejected'; requestedAt: string; decidedAt: string | null } | null;
@@ -450,6 +468,16 @@ const WORKFLOW_STEP_STATUSES = new Set<RemoteMarketingWorkflowStep['status']>([
 const WORKFLOW_STATUSES = new Set<RemoteMarketingWorkflowRun['status']>([
   'queued', 'running', 'awaiting_customer_approval', 'approved', 'rejected', 'failed',
 ]);
+const GENERATION_STATES = new Set<RemoteSevenDayGenerationState>([
+  'pending', 'reserved', 'generating', 'complete', 'failed',
+]);
+// Advertised on seven-day workflow requests so the backend includes
+// contentGenerationState. A backend that predates the field ignores the header;
+// a backend that postdates it withholds the field unless we send this, which is
+// what lets an OLD client keep receiving the legacy key set. Must match the
+// backend token in marketingWorkflows.ts.
+const CLIENT_CAPABILITIES_HEADER = 'X-Izzi-Client-Capabilities';
+const SEVEN_DAY_GENERATION_CAPABILITY = 'seven-day-generation-state';
 const WORKFLOW_RESOURCE_KINDS = new Set<RemoteMarketingWorkflowArtifact['resource']['kind']>(['campaign', 'content']);
 const WORKFLOW_RESOURCE_STATUSES = new Set<RemoteMarketingWorkflowArtifact['resource']['status']>([
   'draft', 'in_review', 'approved', 'rejected', 'archived',
@@ -558,6 +586,30 @@ function exactRecord(raw: unknown, keys: readonly string[]): Record<string, unkn
   return ownKeys.length === keys.length
     && ownKeys.every((key) => keys.includes(key))
     && keys.every((key) => Object.hasOwn(record, key))
+    ? record
+    : null;
+}
+
+/**
+ * Like `exactRecord`, but tolerates a named set of keys the server may or may not
+ * send yet. Unknown keys are still rejected, so the strict posture that keeps
+ * unexpected fields out of the renderer is unchanged.
+ *
+ * This exists because `exactRecord` compares key *counts*: a purely additive
+ * server field turns every payload into `null`, which reads to the client as "no
+ * run" rather than "newer server". A field that is genuinely optional during a
+ * rollout has to be expressible without loosening the check for everything else.
+ */
+function exactRecordWithOptional(
+  raw: unknown,
+  required: readonly string[],
+  optional: readonly string[],
+): Record<string, unknown> | null {
+  const record = recordValue(raw);
+  if (!record) return null;
+  const ownKeys = Object.keys(record);
+  return ownKeys.every((key) => required.includes(key) || optional.includes(key))
+    && required.every((key) => Object.hasOwn(record, key))
     ? record
     : null;
 }
@@ -1113,10 +1165,10 @@ function parseMarketingListEnvelope(
 }
 
 function parseSevenDayWorkflowRun(value: unknown, expectedWorkspaceId: string): RemoteMarketingWorkflowRun | null {
-  const run = exactRecord(value, [
+  const run = exactRecordWithOptional(value, [
     'id', 'workspaceId', 'workflowKey', 'status', 'revision', 'objective', 'channels', 'startsOn',
     'planSnapshot', 'currentStep', 'steps', 'artifacts', 'approval', 'createdAt', 'updatedAt',
-  ]);
+  ], ['contentGenerationState']);
   if (!run || run.workspaceId !== expectedWorkspaceId
     || typeof run.id !== 'string' || !UUID_PATTERN.test(run.id)
     || run.workflowKey !== 'seven_day_content_v1'
@@ -1130,6 +1182,11 @@ function parseSevenDayWorkflowRun(value: unknown, expectedWorkspaceId: string): 
     || Number.isNaN(Date.parse(`${run.startsOn}T00:00:00Z`))
     || !MARKETING_PLANS.has(run.planSnapshot as CustomerMarketingPlan)
     || !Number.isInteger(run.currentStep) || Number(run.currentStep) < 0 || Number(run.currentStep) > 4
+    // Absent is allowed during rollout; present must be a state we understand. An
+    // unrecognised value is rejected rather than passed through, so a future
+    // server state is never rendered as if the client knew what it meant.
+    || (Object.hasOwn(run, 'contentGenerationState')
+      && !GENERATION_STATES.has(run.contentGenerationState as RemoteSevenDayGenerationState))
     || !Array.isArray(run.steps) || run.steps.length !== 5
     || !Array.isArray(run.artifacts) || run.artifacts.length > 8
     || (run.approval !== null && recordValue(run.approval) === null)
@@ -1204,6 +1261,10 @@ function parseSevenDayWorkflowRun(value: unknown, expectedWorkspaceId: string): 
     startsOn: run.startsOn as string,
     planSnapshot: run.planSnapshot as RemoteMarketingWorkflowRun['planSnapshot'],
     currentStep: run.currentStep as number,
+    // Explicitly null when the server did not send it, never a guessed 'pending'.
+    contentGenerationState: Object.hasOwn(run, 'contentGenerationState')
+      ? run.contentGenerationState as RemoteSevenDayGenerationState
+      : null,
     steps: steps as RemoteMarketingWorkflowStep[],
     artifacts: artifacts as RemoteMarketingWorkflowArtifact[],
     approval,
@@ -2365,7 +2426,10 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       `/api/marketing/workspaces/${input.workspaceId}/workflows/seven-day`,
       {
         method: 'POST',
-        headers: { 'Idempotency-Key': input.idempotencyKey },
+        headers: {
+          'Idempotency-Key': input.idempotencyKey,
+          [CLIENT_CAPABILITIES_HEADER]: SEVEN_DAY_GENERATION_CAPABILITY,
+        },
         body: JSON.stringify({ objective: input.objective, channels: input.channels, startsOn: input.startsOn }),
       },
     );
@@ -2376,7 +2440,9 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
   async getSevenDayWorkflow(workspaceId: string, runId: string): Promise<CustomerMarketingWorkflowState> {
     if (!this.enabled) return { status: 'local', run: null };
     if (!UUID_PATTERN.test(workspaceId) || !UUID_PATTERN.test(runId)) return { status: 'unavailable', run: null };
-    const result = await this.request(`/api/marketing/workspaces/${workspaceId}/workflows/${runId}`);
+    const result = await this.request(`/api/marketing/workspaces/${workspaceId}/workflows/${runId}`, {
+      headers: { [CLIENT_CAPABILITIES_HEADER]: SEVEN_DAY_GENERATION_CAPABILITY },
+    });
     if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
     return parseSevenDayWorkflowEnvelope(result.body, workspaceId, ['workspaceId', 'run']);
   }
@@ -2389,7 +2455,11 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     }
     const result = await this.request(
       `/api/marketing/workspaces/${input.workspaceId}/workflows/${input.runId}/resume`,
-      { method: 'POST', body: JSON.stringify({ expectedRevision: input.expectedRevision }) },
+      {
+        method: 'POST',
+        headers: { [CLIENT_CAPABILITIES_HEADER]: SEVEN_DAY_GENERATION_CAPABILITY },
+        body: JSON.stringify({ expectedRevision: input.expectedRevision }),
+      },
     );
     if (!result.ok) return { status: marketingFailureStatus(result.status), run: null };
     return parseSevenDayWorkflowEnvelope(result.body, input.workspaceId, ['workspaceId', 'run', 'duplicate']);
@@ -2406,6 +2476,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       `/api/marketing/workspaces/${input.workspaceId}/workflows/${input.runId}/review`,
       {
         method: 'POST',
+        headers: { [CLIENT_CAPABILITIES_HEADER]: SEVEN_DAY_GENERATION_CAPABILITY },
         body: JSON.stringify({ decision: input.decision, expectedRevision: input.expectedRevision }),
       },
     );

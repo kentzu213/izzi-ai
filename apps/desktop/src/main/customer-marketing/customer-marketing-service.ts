@@ -688,6 +688,11 @@ function remoteWorkflowFingerprint(objective: string, channels: CustomerChannel[
     .digest('hex');
 }
 
+function hasApprovalReadyGenerationState(run: RemoteMarketingWorkflowRun): boolean {
+  return typeof run.contentGenerationState !== 'string'
+    || run.contentGenerationState === 'complete';
+}
+
 function restoreRemoteWorkflowAttempt(value: unknown): CustomerRemoteWorkflowAttempt | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Partial<CustomerRemoteWorkflowAttempt>;
@@ -1511,7 +1516,14 @@ export class CustomerMarketingService {
       }
       run = state.run;
     }
-    if (run.currentStep !== 4 || run.status !== 'awaiting_customer_approval' || run.approval?.status !== 'pending') {
+    if (run.currentStep !== 4 || run.status !== 'awaiting_customer_approval' || run.approval?.status !== 'pending'
+      // The backend already refuses to reach approval with unauthored bodies. This
+      // repeats the refusal at the client boundary so shell copy can never be shown
+      // to the customer as work awaiting their decision. Only a reported state
+      // blocks: an absent one means the server does not carry the field, and the
+      // step and approval checks above still cover that case, so an older backend
+      // keeps working instead of every run reading as broken.
+      || !hasApprovalReadyGenerationState(run)) {
       return { error: 'Workflow IzziAPI trả về trạng thái không hợp lệ; chưa tạo dữ liệu local.' };
     }
     return { run, record };
@@ -1536,6 +1548,9 @@ export class CustomerMarketingService {
     if (current.status !== 'synced' || !current.run) {
       return 'Không thể xác nhận workflow IzziAPI; approval local chưa được xử lý.';
     }
+    if (decision === 'approved' && !hasApprovalReadyGenerationState(current.run)) {
+      return 'Nội dung 7 ngày chưa được tạo hoàn chỉnh; approval local chưa được xử lý.';
+    }
     if (current.run.status === expectedStatus) return null;
     if (current.run.status !== 'awaiting_customer_approval') {
       return 'Workflow IzziAPI không còn chờ phê duyệt; approval local chưa được xử lý.';
@@ -1547,10 +1562,12 @@ export class CustomerMarketingService {
         decision: decision === 'approved' ? 'approve' : 'reject',
         expectedRevision: current.run.revision,
       });
-      if (reviewed.status === 'synced' && reviewed.run?.status === expectedStatus) return null;
+      if (reviewed.status === 'synced' && reviewed.run?.status === expectedStatus
+        && (decision !== 'approved' || hasApprovalReadyGenerationState(reviewed.run))) return null;
       if (reviewed.status === 'conflict') {
         const latest = await gateway.getSevenDayWorkflow(workspaceId, runId);
-        if (latest.status === 'synced' && latest.run?.status === expectedStatus) return null;
+        if (latest.status === 'synced' && latest.run?.status === expectedStatus
+          && (decision !== 'approved' || hasApprovalReadyGenerationState(latest.run))) return null;
       }
     } catch {
       // Fail closed below without mutating the local durable approval.
@@ -5674,13 +5691,11 @@ export class CustomerMarketingService {
     };
   }
 
-  private async resolveMediaToolchain(timeoutMs?: number): Promise<CustomerMediaToolchain> {
+  private async resolveMediaToolchain(
+    timeoutMs = INITIAL_MEDIA_TOOLCHAIN_BUDGET_MS,
+  ): Promise<CustomerMediaToolchain> {
     if (!this.mediaRuntime) return unavailableMediaToolchain();
     const probe = this.getMediaToolchainProbe();
-    if (timeoutMs === undefined) {
-      return probe;
-    }
-
     const budgetMs = Math.min(Math.max(timeoutMs, 0), 1_000);
     return new Promise((resolve) => {
       let settled = false;

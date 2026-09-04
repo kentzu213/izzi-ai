@@ -1458,6 +1458,88 @@ describe('CustomerMarketingWorkspaceClient', () => {
     });
   });
 
+  it('advertises the seven-day generation-state capability on every workflow request', async () => {
+    // The backend withholds contentGenerationState unless the client advertises
+    // it. If this header is dropped, the new client silently degrades to the
+    // legacy guard, so the capability is asserted on all four verbs.
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun(), duplicate: false }),
+    );
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await client.startSevenDayWorkflow({
+      workspaceId: WORKSPACE_ID, objective: 'Teach developers to use IzziAPI safely',
+      channels: ['website', 'x'], startsOn: '2026-08-12', idempotencyKey: 'desktop-workflow-cap',
+    });
+    await client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID);
+    await client.resumeSevenDayWorkflow({ workspaceId: WORKSPACE_ID, runId: WORKFLOW_ID, expectedRevision: 3 });
+    await client.reviewSevenDayWorkflow({ workspaceId: WORKSPACE_ID, runId: WORKFLOW_ID, decision: 'approve', expectedRevision: 4 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    for (const call of fetchImpl.mock.calls) {
+      const headers = (call[1]?.headers ?? {}) as Record<string, string>;
+      expect(headers['X-Izzi-Client-Capabilities']).toBe('seven-day-generation-state');
+    }
+  });
+
+  it('reads the backend generation state and keeps an absent one distinguishable from pending', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      // Current backend: sends the field.
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        run: workflowRun({ contentGenerationState: 'generating' }),
+      }))
+      // Older backend: omits it. This used to make the whole run unparseable,
+      // because the run parser compared key counts, so the client saw "no run"
+      // instead of "older server".
+      .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun() }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'synced', run: { contentGenerationState: 'generating' } });
+    // null, never 'pending': offering "generate" on a finished run would be worse
+    // than telling the customer the state is unknown.
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'synced', run: { contentGenerationState: null } });
+  });
+
+  it('rejects explicit null, an unknown generation state, and unknown keys', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        run: workflowRun({ contentGenerationState: null }),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        run: workflowRun({ contentGenerationState: 'teleporting' }),
+      }))
+      // The optional field must not have loosened the strict posture: a key the
+      // client was never told about is still refused.
+      .mockResolvedValueOnce(jsonResponse({
+        workspaceId: WORKSPACE_ID,
+        run: workflowRun({ smuggledField: 'nope' }),
+      }));
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    // An unparseable payload surfaces as unavailable with no run, so a state the
+    // client cannot interpret is never rendered as if it were understood.
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'unavailable', run: null });
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'unavailable', run: null });
+    await expect(client.getSevenDayWorkflow(WORKSPACE_ID, WORKFLOW_ID))
+      .resolves.toMatchObject({ status: 'unavailable', run: null });
+  });
+
   it('starts, reads, resumes, and reviews the backend-owned seven-day workflow', async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ workspaceId: WORKSPACE_ID, run: workflowRun(), duplicate: false }, 201))
