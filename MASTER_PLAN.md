@@ -1,6 +1,6 @@
 # Izzi AI Marketing Room - Master Task List
 
-Status date: 2026-08-28 (Asia/Ho_Chi_Minh)
+Status date: 2026-09-04 (Asia/Ho_Chi_Minh)
 
 This file is the execution task list for the customer-facing Izzi AI Marketing Room. The older `CUSTOMER-AI-MARKETING-ROOM-PLAN.md` remains the historical product rubric; current delivery state, owners, dependencies, and evidence are maintained here.
 
@@ -31,7 +31,7 @@ Give an IzziAPI customer one low-cost, approval-gated marketing workspace that c
 - Marketing Channels now has the Auto Post master control, Facebook Test Page, YouTube Private, Telegram Sandbox, role guards, clear retry states, and redacted OAuth boundaries.
 - Beta.53 UX correction: the first-run bridge state no longer calls `listAccounts()` before Auto Post is connected; the Home view links directly to the connection center; OAuth feedback and the reload action are visible above the fold; the provider vault heading is distinct.
 - Current evidence: Claude technical audit/gate `izzi-ai-marketing-channel-ux-20260821`, connection contract `15/15`, room contract `16/16`, renderer typecheck, lint, and build pass. GitHub CI and Release Desktop passed; public release `v1.14.0-beta.53`, commit `ba57eac`, installer SHA-256 `4bf2b11d88d5913c1791ed5c884389a7f6858ac44c85c5ed0a56f777ece27d1c`, installed FileVersion `1.14.0-beta.53` at `F:\IzziAI\Izzi\Izzi AI.exe`, and packaged smoke opened `AI Marketing → Kênh → Trung tâm kết nối`. Full local suite `1576/1577` is blocked only by the local `better-sqlite3` Node ABI mismatch (`140` binary vs `137` runtime), unrelated to this renderer change; GitHub Desktop CI passed its full test job.
-- Current installed baseline is `v1.14.0-beta.64` at desktop merge commit `315c105b047ed816c1bd91e1bdc386cc09b712c4`; the retained Windows profile and authenticated session survived the installation.
+- Current installed baseline is `v1.14.0-beta.67` at desktop merge commit `7db596054627d4390e4477cc2102989b639edc29`; the Windows registry and installed executable both report `1.14.0-beta.67`, and the launched application is responsive at `F:\IzziAI\Izzi\Izzi AI.exe`.
 
 ## Ordered Backlog
 
@@ -85,6 +85,14 @@ Progress checkpoint:
 Acceptance: complete. Local and packaged staging create a model-backed draft, record bounded cost/provenance, preserve retry idempotency, stop at pending approval, and never perform an external action.
 
 Dependencies: complete. MKT-02 integration authority and IzziAPI model health were verified before release.
+
+Follow-up integration closure:
+
+- Backend PR [#29](https://github.com/kentzu213/izzi-backend/pull/29) merged at `85507592d2311746449ad82a5d930d3f89831b60`. Quota v3 receipts now return the server-derived billing owner used by generation without accepting billing identity from the client.
+- Desktop PR [#26](https://github.com/kentzu213/izzi-ai/pull/26) merged at `7db596054627d4390e4477cc2102989b639edc29`. Native Provider Vault checks now use the selected runtime profile authority; HTTP loopback remains allowed only for the explicit local staging profile.
+- Public prerelease `v1.14.0-beta.67` contains 12 verified assets. Windows installer SHA-256 is `1cea41ddcede4af0ddb41d3471dff35cfa00fdd8faf8961b210ef24b44e9984c`.
+- Final packaged staging generated seven distinct drafts with one synthetic provider call, charged once, linked all 10 quota events to the server-derived billing owner, persisted connector health across restart, recorded zero runtime errors, and performed zero external actions.
+- Backend production is not updated by this closure. The backend repository workflow is verification-only, and the production readiness probe currently reports missing deploy authentication plus missing `psql`, `pg_dump`, and `pg_restore` tooling. MKT-05 remains the next deployment gate.
 
 ### MKT-04 - End-to-end safety gate suite [done]
 
