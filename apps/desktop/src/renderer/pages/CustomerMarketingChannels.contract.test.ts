@@ -166,6 +166,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
   it('wires Provider Vault authority to the native IzziAPI workspace client in main', () => {
     expect(mainSource).toContain("import { NativeMarketingIntegrationAuthorityGateway }");
     expect(mainSource).toContain('new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient())');
+    expect(mainSource).toContain('allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging');
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:listIntegrationCredentials')");
     expect(preloadSource).not.toMatch(/listIntegrationCredentials:\s*\([^)]*workspaceId/);
   });

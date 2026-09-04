@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.69
+
+Restore Provider Vault authority checks in the packaged staging runtime.
+
+- Allow the reviewed Customer Marketing staging profile to route the native Marketing
+  client through its validated loopback recorder, matching the workspace client.
+- Keep loopback blocked for normal production/default launches and add a wiring contract
+  that prevents integration credential checks from silently stopping before the request.
+
 ## 1.14.0-beta.68
 
 Separate AI Director conversations from backend-owned seven-day generation.
