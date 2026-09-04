@@ -1,14 +1,18 @@
 import path from 'node:path';
 
 export const CUSTOMER_MARKETING_STAGING_PROFILE_ID = 'customer-marketing-staging' as const;
+export const CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID = 'customer-marketing-local-staging' as const;
 
 const STAGING_API_ORIGIN = 'https://marketing-staging.izziapi.com';
 const STAGING_SUPABASE_REF = 'bogwhtnknhquxhktormu';
 const STAGING_SUPABASE_ORIGIN = `https://${STAGING_SUPABASE_REF}.supabase.co`;
 const STAGING_USER_DATA_DIRECTORY = 'IzziAI-Customer-Marketing-Staging';
+const LOCAL_STAGING_USER_DATA_DIRECTORY = 'IzziAI-Customer-Marketing-Local-Staging';
 
 export interface DesktopRuntimeProfile {
-  id: 'default' | typeof CUSTOMER_MARKETING_STAGING_PROFILE_ID;
+  id: 'default'
+    | typeof CUSTOMER_MARKETING_STAGING_PROFILE_ID
+    | typeof CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID;
   customerMarketingStaging: boolean;
   marketingApiBaseUrl: string | null;
   userDataPath: string | null;
@@ -29,6 +33,28 @@ function normalizeOrigin(value: string | undefined): string {
   try {
     const url = new URL(value);
     return url.pathname === '/' && !url.search && !url.hash ? url.origin : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeLoopbackOrigin(value: string | undefined): string {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    const port = Number(url.port);
+    return url.protocol === 'http:'
+      && url.hostname === '127.0.0.1'
+      && !url.username
+      && !url.password
+      && url.pathname === '/'
+      && !url.search
+      && !url.hash
+      && Number.isInteger(port)
+      && port >= 1_024
+      && port <= 65_535
+      ? url.origin
+      : '';
   } catch {
     return '';
   }
@@ -97,13 +123,17 @@ export function resolveDesktopRuntimeProfile(
       googleOAuthEnabled: true,
     };
   }
-  if (requested !== CUSTOMER_MARKETING_STAGING_PROFILE_ID) {
+  if (
+    requested !== CUSTOMER_MARKETING_STAGING_PROFILE_ID
+    && requested !== CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID
+  ) {
     throw new Error('Desktop runtime profile is not reviewed.');
   }
 
   const apiOrigin = normalizeOrigin(env.OPENCLAW_API_URL);
   const marketingOrigin = normalizeOrigin(env.STARIZZI_CUSTOMER_MARKETING_API_URL);
   const supabaseOrigin = normalizeOrigin(env.OPENCLAW_SUPABASE_URL);
+  const webOrigin = normalizeOrigin(env.OPENCLAW_WEB_URL);
   const claims = decodeJwtClaims(env.OPENCLAW_SUPABASE_ANON_KEY);
   const argumentUserDataPath = readUserDataArgument(argv);
   const nativeUserDataPath = normalizeUserDataPath(nativeSwitches.userDataDir);
@@ -117,6 +147,44 @@ export function resolveDesktopRuntimeProfile(
   const userDataPath = nativeUserDataPath ?? argumentUserDataPath;
   const recorderPortValue = nativeSwitches.marketingRecorderPort?.trim() || null;
   const recorderPort = recorderPortValue ? Number(recorderPortValue) : null;
+
+  if (requested === CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID) {
+    const localOrigin = normalizeLoopbackOrigin(env.OPENCLAW_API_URL);
+    if (!localOrigin || apiOrigin !== localOrigin) {
+      throw new Error('Customer Marketing local staging profile API origin is invalid.');
+    }
+    if (marketingOrigin !== localOrigin) {
+      throw new Error('Customer Marketing local staging profile Marketing API origin is invalid.');
+    }
+    if (supabaseOrigin !== localOrigin) {
+      throw new Error('Customer Marketing local staging profile Supabase origin is invalid.');
+    }
+    if (webOrigin !== localOrigin) {
+      throw new Error('Customer Marketing local staging profile web origin is invalid.');
+    }
+    if (env.STARIZZI_CUSTOMER_MARKETING_API_ENABLED !== 'true') {
+      throw new Error('Customer Marketing local staging profile bridge flag is invalid.');
+    }
+    if (claims?.role !== 'anon') {
+      throw new Error('Customer Marketing local staging profile requires an anon client.');
+    }
+    if (!userDataPath || path.basename(userDataPath) !== LOCAL_STAGING_USER_DATA_DIRECTORY) {
+      throw new Error('Customer Marketing local staging profile requires isolated userData.');
+    }
+    if (recorderPortValue) {
+      throw new Error('Customer Marketing local staging profile does not accept a recorder port.');
+    }
+    return {
+      id: CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+      customerMarketingStaging: true,
+      marketingApiBaseUrl: localOrigin,
+      userDataPath,
+      singleInstanceLock: false,
+      registerProtocol: false,
+      updaterEnabled: false,
+      googleOAuthEnabled: false,
+    };
+  }
 
   if (apiOrigin !== STAGING_API_ORIGIN) {
     throw new Error('Customer Marketing staging profile API origin is invalid.');

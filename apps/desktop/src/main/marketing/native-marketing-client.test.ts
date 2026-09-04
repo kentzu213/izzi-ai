@@ -71,6 +71,13 @@ describe('resolveNativeMarketingBaseUrl', () => {
     }
   });
 
+  it('accepts loopback only when the explicit local staging option is enabled', () => {
+    expect(resolveNativeMarketingBaseUrl('http://127.0.0.1:43123', true))
+      .toBe('http://127.0.0.1:43123');
+    expect(resolveNativeMarketingBaseUrl('http://localhost:43123', true)).toBeNull();
+    expect(resolveNativeMarketingBaseUrl('http://127.0.0.1:80', true)).toBeNull();
+  });
+
   it('rejects http, unreviewed hosts, credentials, and path/query/fragment URLs', () => {
     expect(resolveNativeMarketingBaseUrl('http://api.izziapi.com')).toBeNull();
     expect(resolveNativeMarketingBaseUrl('https://evil.example.com')).toBeNull();
@@ -235,6 +242,22 @@ describe('NativeMarketingClient', () => {
     expect(client.getBaseUrl()).toBeNull();
     await expect(client.listWorkspaces()).resolves.toEqual({ ok: false, error: 'configuration-required' });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('uses the local staging loopback authority only with explicit opt-in', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ workspaces: [workspaceEnvelope()] }));
+    const client = new NativeMarketingClient(tokenProvider(), {
+      baseUrl: 'http://127.0.0.1:43123',
+      allowLoopback: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(client.isConfigured()).toBe(true);
+    await expect(client.listWorkspaces()).resolves.toMatchObject({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:43123/api/marketing/workspaces',
+      expect.anything(),
+    );
   });
 
   it('fails closed without calling fetch when there is no session token', async () => {

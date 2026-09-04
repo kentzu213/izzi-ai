@@ -1,7 +1,10 @@
 // MUST be first: loads .env into process.env before any module reads its
 // env-derived constants (auth/sync/graph base URLs, Izzi key). Side-effecting.
 import { IZZI_WEB_BASE } from './config/public-config';
-import { resolveDesktopRuntimeProfile } from './config/desktop-runtime-profile';
+import {
+  CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
+  resolveDesktopRuntimeProfile,
+} from './config/desktop-runtime-profile';
 import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
 import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
 import * as path from 'path';
@@ -202,7 +205,12 @@ const pendingNativeMarketingOAuth = new Map<string, {
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
     nativeMarketingClient = new NativeMarketingClient(authManager, {
-      baseUrl: process.env.IZZI_NATIVE_MARKETING_API_URL,
+      // Runtime profiles are the reviewed source of truth. This keeps the
+      // local staging profile's loopback authority aligned with the customer
+      // workspace client instead of silently falling back to production.
+      baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+        ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
+      allowLoopback: DESKTOP_RUNTIME_PROFILE.id === CUSTOMER_MARKETING_LOCAL_STAGING_PROFILE_ID,
     });
   }
   return nativeMarketingClient;
