@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.66
+
+Harden the seven-day Marketing Room workflow and keep optional media probes bounded.
+
+- Advertise and parse the backend-owned seven-day content generation state while
+  retaining strict payload validation and compatibility with older servers that omit it.
+- Refuse to create or approve local workflow state when IzziAPI reports that the seven
+  daily bodies are not fully generated, including review responses and conflict recovery.
+- Bound every optional HyperFrames/F5 toolchain snapshot probe so a stalled media runtime
+  cannot leave onboarding or later Marketing Room mutations pending indefinitely.
+- Upgrade the pinned `fast-uri` override to `3.1.6` to address current high-severity URI
+  normalization advisories in the transitive Electron settings dependency chain.
+
 ## 1.14.0-beta.65
 
 Open the real Customer Marketing backend and make model turns work again.
