@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService, type BudgetStore } from './budget-service';
 
 function createStore(): BudgetStore & { settings: Map<string, string>; rows: Map<string, object> } {
@@ -16,6 +16,10 @@ function createStore(): BudgetStore & { settings: Map<string, string>; rows: Map
 }
 
 describe('BudgetService', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('persists limits and computes rolling status from local entries', () => {
     const store = createStore();
     const service = new BudgetService(store);
@@ -32,6 +36,8 @@ describe('BudgetService', () => {
   });
 
   it('purges only entries older than the requested retention window', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-21T00:00:00.000Z'));
     const store = createStore();
     const service = new BudgetService(store);
     service.recordUsage({ model: 'old', costUSD: 1, timestamp: '2026-07-01T00:00:00.000Z' });
