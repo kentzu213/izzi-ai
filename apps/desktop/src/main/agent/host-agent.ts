@@ -133,6 +133,8 @@ export interface HostAgentTurnOptions {
   executeExtra?: (name: string, args: Record<string, unknown>) => Promise<string | undefined>;
   /** Risk for an extra tool; return undefined to fall back to the host-tool classifier. */
   classifyExtraRisk?: (name: string) => ToolRisk | undefined;
+  /** Appended to the system prompt (e.g. the active documentary channel profile). */
+  extraSystemPrompt?: string;
   /** Called whenever the model publishes/updates its task plan (→ live Tasks board). */
   onPlan?: (steps: PlanStep[]) => void;
   /** Abort signal — when aborted, the turn stops after the current step (Stop button). */
@@ -288,9 +290,10 @@ export async function runHostAgentTurn(opts: HostAgentTurnOptions): Promise<{ re
   const supportsTools = !isOfficialIzziApiUrl(url) || modelSupportsTools(model);
   const tools = [...HOST_TOOLS, UPDATE_PLAN_TOOL, ...(opts.extraTools && opts.extraTools.length ? opts.extraTools : [])];
 
-  const systemContent = workingDir
+  const baseSystemContent = workingDir
     ? `${SYSTEM_PROMPT}\n\nYour working directory is: ${workingDir}. Use it as the default location for commands and as the base for relative file paths.${buildEnvNote()}`
     : `${SYSTEM_PROMPT}${buildEnvNote()}`;
+  const systemContent = opts.extraSystemPrompt ? `${baseSystemContent}\n\n${opts.extraSystemPrompt}` : baseSystemContent;
 
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: systemContent },

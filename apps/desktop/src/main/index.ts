@@ -57,6 +57,15 @@ import {
   type AutopostAccountSummary,
 } from './autopost/autopost-client';
 import { AUTOPOST_TOOLS, classifyAutopostRisk, executeAutopostTool, isAutopostTool } from './autopost/autopost-tools';
+import {
+  DOCUMENTARY_TOOLS,
+  buildDocumentaryProfilePrompt,
+  classifyDocumentaryRisk,
+  executeDocumentaryTool,
+  findDocumentaryProject,
+  guardDocumentaryHostTool,
+  isDocumentaryTool,
+} from './documentary/documentary-workspace';
 import type { LoadedExtension } from './extensions/extension-loader';
 import { IntegrationsService } from './integrations/integrations-service';
 import { OnboardingService } from './onboarding/onboarding-service';
@@ -1635,6 +1644,12 @@ function setupIPC() {
         // REST (JWT from the izzi session). Drafting is safe; scheduling is risk-gated.
         const autopostOn = dbManager.getSetting('autopost_enabled') === '1' || isSocialAutoPosterActive();
         const autopostClient = autopostOn ? new AutopostClient(autopostAuth) : null;
+        // Documentary channel mode: active when the working dir sits inside a
+        // registered channel project. Adds read-only doc_* tools, the channel
+        // profile prompt, and blocks host-tool access to secret files (.env…).
+        const workingDir = permStore.getWorkingDir();
+        const docProject = findDocumentaryProject(workingDir);
+        const extraTools = [...(docProject ? DOCUMENTARY_TOOLS : []), ...(autopostClient ? AUTOPOST_TOOLS : [])];
         const controller = new AbortController();
         const control = { controller, queue: [] as string[] };
         if (turnId) activeAgentTurns.set(turnId, control);
@@ -1645,18 +1660,33 @@ function setupIPC() {
           history,
           images,
           mode: permMode,
-          workingDir: permStore.getWorkingDir(),
+          workingDir,
           turnId,
           signal: controller.signal,
           pollInjection: () => control.queue.shift(),
           redact: (t) => secrets.redact(t),
-          extraTools: autopostClient ? AUTOPOST_TOOLS : undefined,
-          executeExtra: autopostClient
-            ? async (name, args) => (isAutopostTool(name) ? executeAutopostTool(autopostClient, name, args) : undefined)
-            : undefined,
-          classifyExtraRisk: autopostClient
-            ? (name) => (isAutopostTool(name) ? classifyAutopostRisk(name) : undefined)
-            : undefined,
+          extraTools: extraTools.length ? extraTools : undefined,
+          executeExtra:
+            docProject || autopostClient
+              ? async (name, args) => {
+                  if (docProject) {
+                    const blocked = guardDocumentaryHostTool(name, args);
+                    if (blocked) return blocked;
+                    if (isDocumentaryTool(name)) return executeDocumentaryTool(docProject, name, args);
+                  }
+                  if (autopostClient && isAutopostTool(name)) return executeAutopostTool(autopostClient, name, args);
+                  return undefined;
+                }
+              : undefined,
+          classifyExtraRisk:
+            docProject || autopostClient
+              ? (name) => {
+                  if (docProject && isDocumentaryTool(name)) return classifyDocumentaryRisk(name);
+                  if (autopostClient && isAutopostTool(name)) return classifyAutopostRisk(name);
+                  return undefined;
+                }
+              : undefined,
+          extraSystemPrompt: docProject ? await buildDocumentaryProfilePrompt(docProject) : undefined,
           // The agent's live plan → real tasks on the Replay board (Todo/In-Progress/
           // Done). Written to the shared agent_tasks table + pushed live via the
           // 'agent:stream' task_upsert channel the board already listens on.
