@@ -6,7 +6,8 @@
  *   - a channel profile appended to its system prompt (authority docs + outlines),
  *   - three read-only, root-contained tools: doc_list / doc_read / doc_search,
  *   - a guard that enforces read-only on the host tools: write_file and run_command
- *     are refused, read_file / list_dir are refused for secret files (.env, keys…).
+ *     are refused, read_file / list_dir are confined to the project root (no
+ *     absolute/traversal/junction escapes) and refused for secret files (.env, keys…).
  *
  * The Python pipelines stay where they are; this module never writes to the
  * project. Every executor returns a string ('error: …' on failure) and never throws.
@@ -276,18 +277,43 @@ export async function executeDocumentaryTool(
 /**
  * Enforce Phase 1 read-only on the host tools while documentary mode is active.
  * write_file and run_command are always refused (a shell can reach any file, so
- * pattern-matching commands is not a safe boundary); read_file / list_dir are
- * refused for secret paths. Returns an 'error: …' string to short-circuit the
- * call, or undefined to let the host tool run normally.
+ * pattern-matching commands is not a safe boundary). read_file / list_dir are
+ * confined to the project root: the path is resolved the way the host tool does
+ * (relative to workingDir, absolute as-is), then refused if it — or its realpath,
+ * so junctions/symlinks count — leaves the root or names a secret file.
+ * Returns an 'error: …' string to short-circuit the call, or undefined to let
+ * the host tool run normally.
  */
-export function guardDocumentaryHostTool(name: string, args: Record<string, unknown>): string | undefined {
+export async function guardDocumentaryHostTool(
+  project: DocumentaryProject,
+  workingDir: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
   if (name === 'write_file' || name === 'run_command') {
     return `error: documentary mode is read-only (Phase 1) — ${name} is disabled; use doc_list / doc_read / doc_search`;
   }
-  if (name === 'read_file' || name === 'list_dir') {
-    const p = typeof args?.path === 'string' ? args.path : '';
-    return p && isSecretPath(p) ? 'error: refusing to access a secret file in documentary mode' : undefined;
+  if (name !== 'read_file' && name !== 'list_dir') return undefined;
+  const p = typeof args?.path === 'string' ? args.path : '';
+  if (!p) return undefined; // the host tool reports "missing path"
+  const outsideErr = 'error: documentary mode only allows paths inside the project root';
+  // Drive-relative "C:x" resolves against that drive's cwd, not the working dir.
+  if (/^[a-zA-Z]:(?![\\/])/.test(p)) return outsideErr;
+  const abs = path.isAbsolute(p) ? path.resolve(p) : path.resolve(workingDir || project.root, p);
+  const lexicalRoot = path.resolve(project.root);
+  const realRoot = realOrResolved(project.root);
+  const base = isInside(lexicalRoot, abs) ? lexicalRoot : isInside(realRoot, abs) ? realRoot : null;
+  if (!base) return outsideErr;
+  const secretErr = 'error: refusing to access a secret file in documentary mode';
+  if (isSecretPath(path.relative(base, abs))) return secretErr;
+  let real: string;
+  try {
+    real = await fs.promises.realpath(abs);
+  } catch {
+    return `error: not found: ${p}`;
   }
+  if (!isInside(realRoot, real)) return outsideErr;
+  if (isSecretPath(path.relative(realRoot, real))) return secretErr;
   return undefined;
 }
 

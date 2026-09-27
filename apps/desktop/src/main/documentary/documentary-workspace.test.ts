@@ -32,6 +32,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(root, 'episodes', 'S01E01', 'script.md'), 'line one\nWang Huning appears here\nline three\n');
   fs.writeFileSync(path.join(root, '.env'), 'OPENAI_API_KEY=sk-should-never-leak\n');
   fs.writeFileSync(path.join(root, '.env.local'), 'TOKEN=also-secret\n');
+  fs.writeFileSync(path.join(root, 'prod.env'), 'TOKEN=also-secret\n');
   fs.writeFileSync(path.join(outside, 'private.txt'), 'outside secret');
   try {
     fs.symlinkSync(outside, path.join(root, 'escape-link'), 'junction');
@@ -138,23 +139,67 @@ describe('documentary-workspace: tools', () => {
 });
 
 describe('documentary-workspace: host tool guard', () => {
-  it('enforces Phase 1 read-only: refuses every host write_file and run_command', () => {
-    expect(guardDocumentaryHostTool('write_file', { path: 'notes.md', content: 'x' })).toMatch(/^error:.*read-only/);
-    expect(guardDocumentaryHostTool('run_command', { command: 'python tools/validate.py --episode S01E01' })).toMatch(/^error:.*read-only/);
-    expect(guardDocumentaryHostTool('run_command', { command: 'dir' })).toMatch(/^error:/);
+  const guard = (name: string, args: Record<string, unknown>, workingDir = root) =>
+    guardDocumentaryHostTool(project, workingDir, name, args);
+  const OUTSIDE = /^error:.*inside the project root/;
+
+  it('enforces Phase 1 read-only: refuses every host write_file and run_command', async () => {
+    expect(await guard('write_file', { path: 'notes.md', content: 'x' })).toMatch(/^error:.*read-only/);
+    expect(await guard('run_command', { command: 'python tools/validate.py --episode S01E01' })).toMatch(/^error:.*read-only/);
+    expect(await guard('run_command', { command: 'dir' })).toMatch(/^error:/);
   });
 
-  it('blocks host reads and listings of secret files', () => {
-    expect(guardDocumentaryHostTool('read_file', { path: '.env' })).toMatch(/^error:/);
-    expect(guardDocumentaryHostTool('read_file', { path: path.join(root, '.env.local') })).toMatch(/^error:/);
-    expect(guardDocumentaryHostTool('read_file', { path: 'deploy/.envrc' })).toMatch(/^error:/);
-    expect(guardDocumentaryHostTool('list_dir', { path: '.git' })).toMatch(/^error:/);
+  it('blocks host reads and listings of secret files', async () => {
+    expect(await guard('read_file', { path: '.env' })).toMatch(/^error:.*secret/);
+    expect(await guard('read_file', { path: path.join(root, '.env.local') })).toMatch(/^error:.*secret/);
+    expect(await guard('read_file', { path: 'deploy/.envrc' })).toMatch(/^error:.*secret/);
+    expect(await guard('list_dir', { path: '.git' })).toMatch(/^error:.*secret/);
+    expect(await guard('read_file', { path: '../../.env' }, path.join(root, 'episodes', 'S01E01'))).toMatch(/^error:.*secret/);
+    // Windows name variants that open the same file: caught by the realpath re-check or refused as not found.
+    for (const variant of ['PROD.ENV', 'prod.env::$DATA', 'prod.env ', 'prod.env.']) {
+      const out = await guard('read_file', { path: variant });
+      expect(out).toMatch(/^error:/);
+      expect(out).not.toContain('also-secret');
+    }
   });
 
-  it('lets ordinary host reads and non-host tools through (returns undefined)', () => {
-    expect(guardDocumentaryHostTool('read_file', { path: 'CHANNEL_BIBLE.md' })).toBeUndefined();
-    expect(guardDocumentaryHostTool('list_dir', { path: '.' })).toBeUndefined();
-    expect(guardDocumentaryHostTool('doc_read', { path: '.env' })).toBeUndefined();
+  it('refuses absolute paths outside the project root', async () => {
+    expect(await guard('read_file', { path: path.join(outside, 'private.txt') })).toMatch(OUTSIDE);
+    expect(await guard('list_dir', { path: outside })).toMatch(OUTSIDE);
+    expect(await guard('list_dir', { path: path.dirname(root) })).toMatch(OUTSIDE);
+    expect(await guard('read_file', { path: `${root}-sibling${path.sep}x.md` })).toMatch(OUTSIDE);
+  });
+
+  it('refuses traversal out of the root, from the root or an episode folder', async () => {
+    expect(await guard('read_file', { path: '../Outside/private.txt' })).toMatch(OUTSIDE);
+    expect(await guard('list_dir', { path: '..' })).toMatch(OUTSIDE);
+    expect(await guard('read_file', { path: '../../../Outside/private.txt' }, path.join(root, 'episodes', 'S01E01'))).toMatch(OUTSIDE);
+    expect(await guard('read_file', { path: 'episodes/../../Outside/private.txt' })).toMatch(OUTSIDE);
+  });
+
+  it('refuses drive-relative paths', async () => {
+    expect(await guard('read_file', { path: 'C:private.txt' })).toMatch(OUTSIDE);
+  });
+
+  it('refuses junction / symlink escapes', async () => {
+    if (!fs.existsSync(path.join(root, 'escape-link'))) return; // junction unsupported on this host
+    expect(await guard('read_file', { path: 'escape-link/private.txt' })).toMatch(OUTSIDE);
+    expect(await guard('list_dir', { path: 'escape-link' })).toMatch(OUTSIDE);
+    expect(await guard('read_file', { path: path.join(root, 'escape-link', 'private.txt') })).toMatch(OUTSIDE);
+  });
+
+  it('reports missing paths inside the root without passing them to the host tool', async () => {
+    expect(await guard('read_file', { path: 'episodes/S01E99/script.md' })).toMatch(/^error: not found/);
+  });
+
+  it('lets ordinary in-root host reads and non-host tools through (returns undefined)', async () => {
+    expect(await guard('read_file', { path: 'BIBLE.md' })).toBeUndefined();
+    expect(await guard('list_dir', { path: '.' })).toBeUndefined();
+    expect(await guard('read_file', { path: path.join(root, 'episodes', 'S01E01', 'script.md') })).toBeUndefined();
+    expect(await guard('read_file', { path: 'script.md' }, path.join(root, 'episodes', 'S01E01'))).toBeUndefined();
+    expect(await guard('list_dir', { path: '..' }, path.join(root, 'episodes'))).toBeUndefined();
+    expect(await guard('read_file', {})).toBeUndefined(); // host tool reports "missing path"
+    expect(await guard('doc_read', { path: '.env' })).toBeUndefined();
   });
 });
 

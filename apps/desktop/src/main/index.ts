@@ -1646,7 +1646,8 @@ function setupIPC() {
         const autopostClient = autopostOn ? new AutopostClient(autopostAuth) : null;
         // Documentary channel mode: active when the working dir sits inside a
         // registered channel project. Adds read-only doc_* tools, the channel
-        // profile prompt, and blocks host-tool access to secret files (.env…).
+        // profile prompt, confines host reads to the project root and blocks
+        // secret files (.env…).
         const workingDir = permStore.getWorkingDir();
         const docProject = findDocumentaryProject(workingDir);
         const extraTools = [...(docProject ? DOCUMENTARY_TOOLS : []), ...(autopostClient ? AUTOPOST_TOOLS : [])];
@@ -1670,7 +1671,7 @@ function setupIPC() {
             docProject || autopostClient
               ? async (name, args) => {
                   if (docProject) {
-                    const blocked = guardDocumentaryHostTool(name, args);
+                    const blocked = await guardDocumentaryHostTool(docProject, workingDir, name, args);
                     if (blocked) return blocked;
                     if (isDocumentaryTool(name)) return executeDocumentaryTool(docProject, name, args);
                   }

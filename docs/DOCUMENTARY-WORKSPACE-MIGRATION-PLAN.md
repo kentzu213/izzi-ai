@@ -23,7 +23,7 @@ Module: `apps/desktop/src/main/documentary/documentary-workspace.ts`
   - `doc_read` — read a text file, 5 MB cap.
   - `doc_search` — literal search with file:line hits; capped by file count, entry count, file size and match count.
 - **Secret guard:** the `doc_*` tools refuse secret files: `.env*`, `*.env`, private keys, credential/token files and anything under `.git`.
-- **Read-only is enforced in code** (`guardDocumentaryHostTool`), not just stated in the prompt. While documentary mode is active, the host `write_file` and `run_command` are always refused, in every permission mode including `agent-full`. Host `read_file` and `list_dir` are refused for secret paths.
+- **Read-only is enforced in code** (`guardDocumentaryHostTool`), not just stated in the prompt. While documentary mode is active, the host `write_file` and `run_command` are always refused, in every permission mode including `agent-full`. Host `read_file` and `list_dir` are confined to the project root: the path is resolved the way the host tool resolves it, then refused if it leaves the root either lexically (absolute path, `..` traversal, drive-relative `C:x`) or after realpath (junctions, symlinks). Secret paths are refused on both the lexical and the realpath form.
 - **Channel profile prompt:** appended to the host agent system prompt through the new `extraSystemPrompt` option on `runHostAgentTurn`. It contains:
   - the channel name and root;
   - a Phase 1 read-only note;
@@ -32,7 +32,8 @@ Module: `apps/desktop/src/main/documentary/documentary-workspace.ts`
 
 ### Known limitations
 
-- The guards only apply while documentary mode is active, meaning the working dir is inside a registered channel root. Host `read_file` with an absolute path outside the root is not confined; it only gets the secret-name check.
+- The guards only apply while documentary mode is active, meaning the working dir is inside a registered channel root.
+- The host-read guard checks the path, then the host tool reads it. A symlink swapped in between the two steps could escape the root (a TOCTOU race). This is theoretical in Phase 1 because nothing in documentary mode can write to the project.
 - In `agent` mode, the approval prompt runs before the guard. A `write_file` or `run_command` call is shown for approval first and then refused anyway.
 - Secret detection is name-based. A secret stored under an ordinary name (for example `notes.txt`) is not detected.
 - The project roots are absolute paths on this workstation, so they will not activate anywhere else.
@@ -54,7 +55,7 @@ Module: `apps/desktop/src/main/documentary/documentary-workspace.ts`
 ## Verification (Phase 1)
 
 - Unit tests:
-  - `documentary-workspace.test.ts` (15);
+  - `documentary-workspace.test.ts` (20, including host-read escapes: absolute, traversal, drive-relative, junction, Windows name variants);
   - `host-agent.extra-system-prompt.test.ts` (2).
 - Smoke test against the real Trump project:
   - the profile prompt builds;
