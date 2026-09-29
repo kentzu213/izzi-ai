@@ -234,6 +234,35 @@ describe('ContextNavigator workspace groups', () => {
     expect(html).toContain('Izzi · xin chào bạn');
   });
 
+  it('expands the active project into its conversations, the apps row and inline add actions', () => {
+    seed(
+      [project('p1', 'Chiến dịch A', { sessionIds: ['s1'] })],
+      [session('s1', 'kế hoạch tuần'), session('s2', 'ngoài dự án')],
+      'p1',
+    );
+
+    const html = renderNavigator(true);
+
+    expect(html).toContain('aria-expanded="true" aria-controls="v2-nav-project-p1"');
+    expect(html).toContain('<span class="v2-navigator__child-name">Izzi · kế hoạch tuần</span>');
+    expect(html).not.toContain('<span class="v2-navigator__child-name">Izzi · ngoài dự án</span>');
+    expect(html).toContain('<span class="v2-navigator__child-name">Ứng dụng</span>');
+    expect(html).toContain('+ Hội thoại');
+    expect(html).toContain('+ Ứng dụng');
+    expect(html).toMatch(/class="v2-navigator__status v2-navigator__status--(running|attention|idle)"/);
+  });
+
+  it('keeps a non-active project collapsed', () => {
+    seed([project('p1', 'Chiến dịch A', { sessionIds: ['s1'] })], [session('s1', 'kế hoạch tuần')]);
+
+    const html = renderNavigator(true);
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-label="Mở rộng Chiến dịch A"');
+    expect(html).not.toContain('v2-navigator__children');
+    expect(html).not.toContain('+ Hội thoại');
+  });
+
   it('hides the workspace groups without a surface handler', () => {
     seed([project('p1', 'Chiến dịch A')], [session('s1', 'xin chào')]);
 
