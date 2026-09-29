@@ -251,6 +251,13 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM user_data WHERE id = ?').run(id);
   }
 
+  getUserDataType(id: string): string | null {
+    const row = this.db
+      .prepare<[string], Pick<UserDataRow, 'type'>>('SELECT type FROM user_data WHERE id = ?')
+      .get(id);
+    return row?.type ?? null;
+  }
+
   getDirtyData(): any[] {
     return this.db
       .prepare<[], UserDataRow>(

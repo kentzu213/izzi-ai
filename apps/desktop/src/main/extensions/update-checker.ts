@@ -11,8 +11,9 @@
  */
 import * as http from "http";
 import * as https from "https";
+import { resolveMarketplaceUrl } from "./marketplace-url";
 
-const MARKETPLACE_API = process.env.MARKETPLACE_API_URL || "http://localhost:8788";
+const MARKETPLACE_API = resolveMarketplaceUrl();
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export interface UpdateInfo {

@@ -6,9 +6,12 @@
 // fixed→absolute) and render the view inside that scope container.
 import "../styles/graph-view-scoped.css";
 
+import { useEffect, useState } from "react";
 import { MyGraphView, type GraphApi } from "@kentzu213/graph-view";
 import * as bridge from "../lib/aibase-api";
 import { LiveProfilePanel } from "../components/LiveProfilePanel";
+import { MyGraphWorkspaceV2 } from "../components/v2/MyGraphWorkspaceV2";
+import { createOpenWebGuard, openMyGraphWebSafely } from "../lib/open-my-graph-web";
 
 /**
  * Desktop "Knowledge Universe" page — a thin host around the shared
@@ -42,7 +45,38 @@ function navigate(path: string): void {
   ).electronAPI?.shell?.openExternal?.(url);
 }
 
-export default function MyGraphPage() {
+const OPEN_WEB_ERROR =
+  "Không mở được trình duyệt. Hãy thử lại hoặc mở izziapi.com/aibase/my-graph.";
+
+export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
+  const [openWebError, setOpenWebError] = useState<string | undefined>();
+  const [openWebGuard] = useState(createOpenWebGuard);
+
+  useEffect(() => {
+    openWebGuard.setMounted(true);
+    return () => openWebGuard.setMounted(false);
+  }, [openWebGuard]);
+
+  // Reuses the existing `graph:openMyGraphWeb` IPC; the web URL stays in main.
+  // The helper logs a failure and resolves false, so there is no floating rejection (ledger #23).
+  // Only the latest click on a mounted page may update the error.
+  async function openMyGraphWeb(): Promise<void> {
+    const isCurrent = openWebGuard.begin();
+    const ok = await openMyGraphWebSafely(window.electronAPI?.graph?.openMyGraphWeb);
+    if (isCurrent()) setOpenWebError(ok ? undefined : OPEN_WEB_ERROR);
+  }
+
+  if (v2) {
+    return (
+      <MyGraphWorkspaceV2
+        graph={<MyGraphView api={api} navigate={navigate} detached={false} />}
+        aside={<LiveProfilePanel />}
+        onOpenWeb={() => void openMyGraphWeb()}
+        openWebError={openWebError}
+      />
+    );
+  }
+
   // `.graphview-scope` both (a) confines the scoped graph.css to this subtree and
   // (b) is the positioning context: formerly-`fixed` toolbars/panels are now
   // `absolute`, so they anchor to this box (inside <main>) instead of the viewport

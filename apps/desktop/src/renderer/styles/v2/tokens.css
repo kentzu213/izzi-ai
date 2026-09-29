@@ -1,0 +1,120 @@
+/*
+ * Izzi AI V2 — design tokens (M1 token layer).
+ *
+ * Source: izzi-ai-redesign-handoff-v1 spec/02-visual-system.md and
+ * spec/design-tokens.json.
+ *
+ * Isolation rule (spec/05): every selector here is scoped to `.izzi-v2`, and
+ * every custom property uses the `--v2-` prefix so it never shadows a legacy
+ * token (`--font-family`, `--bg-*`, ...) for descendants of a v2 subtree.
+ * Nothing is declared on :root, html or body.
+ *
+ * Theme: dark is the default; opt into light with `data-theme="light"` on the
+ * same `.izzi-v2` element. The theme is a global setting chosen by the user,
+ * never switched per tab (spec/02 "Theme strategy").
+ */
+
+.izzi-v2 {
+  color-scheme: dark;
+
+  /* Surfaces — dark */
+  --v2-bg-canvas: #17181c;
+  --v2-bg-deep: #101115;
+  --v2-bg-panel: #1d1e23;
+  --v2-bg-panel-hover: #24252b;
+
+  /* Borders — dark */
+  --v2-border-default: rgba(255, 255, 255, 0.08);
+  --v2-border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text — dark */
+  --v2-text-primary: #f4f2f7;
+  --v2-text-secondary: #aaa7b2;
+  --v2-text-muted: #777480;
+
+  /* Elevation — dark */
+  --v2-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+
+  /* Brand (theme-independent) */
+  --v2-brand-primary: #7c4dff;
+  --v2-brand-primary-hover: #6b3fea;
+  --v2-brand-soft: #eee8ff;
+  --v2-brand-pink: #e776f3;
+  --v2-brand-gradient: linear-gradient(90deg, #7c4dff, #e776f3);
+
+  /* Semantic (theme-independent) */
+  --v2-success: #2bb673;
+  --v2-warning: #eaa23a;
+  --v2-danger: #e55363;
+  --v2-info: #4d8dff;
+
+  /* Typography */
+  --v2-font-family: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --v2-font-weight-regular: 400;
+  --v2-font-weight-medium: 450;
+  --v2-font-weight-semibold: 600;
+  --v2-font-weight-bold: 650;
+
+  --v2-text-hero-size: 32px;
+  --v2-text-hero-line: 38px;
+  --v2-text-page-size: 24px;
+  --v2-text-page-line: 30px;
+  --v2-text-section-size: 18px;
+  --v2-text-section-line: 24px;
+  --v2-text-body-strong-size: 15px;
+  --v2-text-body-strong-line: 22px;
+  --v2-text-body-size: 14px;
+  --v2-text-body-line: 20px;
+  --v2-text-meta-size: 12px;
+  --v2-text-meta-line: 16px;
+  --v2-text-label-size: 11px;
+  --v2-text-label-line: 14px;
+
+  /* Spacing — 4px base */
+  --v2-space-1: 4px;
+  --v2-space-2: 8px;
+  --v2-space-3: 12px;
+  --v2-space-4: 16px;
+  --v2-space-5: 20px;
+  --v2-space-6: 24px;
+  --v2-space-8: 32px;
+  --v2-space-10: 40px;
+  --v2-space-12: 48px;
+
+  /* Radius */
+  --v2-radius-control: 8px;
+  --v2-radius-card: 12px;
+  --v2-radius-panel: 16px;
+  --v2-radius-pill: 999px;
+
+  /* Layout */
+  --v2-layout-rail: 60px;
+  --v2-layout-navigator: 236px;
+  --v2-layout-inspector: 344px;
+  --v2-layout-titlebar: 42px;
+  --v2-layout-content-max: 1440px;
+}
+
+.izzi-v2[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surfaces — light */
+  --v2-bg-canvas: #f6f6f9;
+  --v2-bg-panel: #ffffff;
+  --v2-bg-subtle: #f1f0f5;
+  /* spec/02 defines no light deep/panelHover; unset so dark values never leak */
+  --v2-bg-deep: initial;
+  --v2-bg-panel-hover: initial;
+
+  /* Borders — light */
+  --v2-border-default: #e7e5ec;
+  --v2-border-strong: #d8d4e1;
+
+  /* Text — light */
+  --v2-text-primary: #1e1c24;
+  --v2-text-secondary: #6f6a79;
+  --v2-text-muted: #9993a3;
+
+  /* Elevation — light */
+  --v2-shadow: 0 8px 24px rgba(31, 24, 45, 0.06);
+}

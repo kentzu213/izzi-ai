@@ -24,10 +24,18 @@ import {
   LOCAL_COCKPIT_REASONING_EFFORT,
 } from '../../shared/local-cockpit';
 
+// Every call carries the owner the renderer believes is current; main re-checks
+// it against its trusted user and fails closed on mismatch.
 interface GatewayPersistApi {
-  list?: () => Promise<unknown[]>;
-  save?: (session: unknown) => Promise<unknown>;
-  delete?: (id: string) => Promise<unknown>;
+  list?: (ownerId: string) => Promise<unknown[]>;
+  save?: (ownerId: string, session: unknown) => Promise<unknown>;
+  delete?: (ownerId: string, id: string) => Promise<unknown>;
+}
+
+const PERSIST_OWNER_MAX = 200;
+
+function normalizePersistOwner(userId: unknown): string | null {
+  return typeof userId === 'string' && userId.length > 0 && userId.length <= PERSIST_OWNER_MAX ? userId : null;
 }
 
 /** Access the main-process gateway persistence bridge (absent in browser dev). */
@@ -71,6 +79,8 @@ interface AgentGatewayState {
 
   /** True once chat history has been restored from disk (guards a double-load). */
   hydrated: boolean;
+  /** Account whose chat history is loaded/persisted; null = signed out (RAM only). */
+  persistOwnerId: string | null;
 
   /** Models discovered live from the enabled custom connection (codex-lb /v1/models). */
   availableModels: string[];
@@ -84,6 +94,11 @@ interface AgentGatewayState {
 
   /** Restore persisted chat sessions from the main-process store (once). */
   hydrateFromDisk: () => Promise<void>;
+  /**
+   * Bind chat history to the signed-in account. A change clears this account's
+   * in-memory sessions (never deleting anything on disk) and rehydrates the new one.
+   */
+  setGatewayIdentity: (userId: unknown) => void;
 
   /** Apply a live turn event (content/reasoning/step) to its assistant message. */
   applyStreamEvent: (event: AgentTurnEvent) => void;
@@ -126,6 +141,11 @@ interface AgentGatewayState {
   getAgentById: (agentId: string) => ExternalAgent | undefined;
 }
 
+// Bumped on every account change. Async work captures it before awaiting and
+// drops its result when it moved, so A -> logout -> A cannot accept a stale
+// hydrate or chat continuation that an owner-only check would let through.
+let identityGeneration = 0;
+
 export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
   agents: TOP_AGENTS.map((agent) => ({ ...agent })),
   sessions: [],
@@ -137,19 +157,28 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
   errorMessage: null,
   reconfiguringSessionId: null,
   hydrated: false,
+  persistOwnerId: null,
   availableModels: [],
   availableModelsState: 'idle',
   availableModelsLabel: LOCAL_COCKPIT_LABEL,
 
   hydrateFromDisk: async () => {
     if (get().hydrated) return;
+    // Signed out: nothing to restore; setGatewayIdentity hydrates on sign-in.
+    const owner = get().persistOwnerId;
+    if (!owner) return;
     const api = gatewayPersistApi();
     if (!api?.list) {
       set({ hydrated: true });
       return;
     }
+    const gen = identityGeneration;
+    const current = () => gen === identityGeneration && get().persistOwnerId === owner;
     try {
-      const raw = await api.list();
+      const raw = await api.list(owner);
+      // The identity changed while listing (even back to the same account):
+      // this result belongs to a previous sign-in.
+      if (!current()) return;
       const restored = sanitizeStoredSessions(raw);
       // Don't clobber sessions the user already opened this launch.
       if (restored.length > 0 && get().sessions.length === 0) {
@@ -158,8 +187,40 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         set({ hydrated: true });
       }
     } catch {
-      set({ hydrated: true });
+      if (current()) set({ hydrated: true });
     }
+  },
+
+  setGatewayIdentity: (userId) => {
+    const owner = normalizePersistOwner(userId);
+    if (owner === get().persistOwnerId) return;
+    identityGeneration += 1;
+    // Stop the previous account's in-flight turn (best effort, existing API);
+    // its continuation is also dropped by the generation check in send.
+    const oldTurnId = get().currentTurnId;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const providerApi = typeof window === 'undefined' ? undefined : (window as any).electronAPI?.customProvider;
+    if (oldTurnId && providerApi?.abort) {
+      Promise.resolve()
+        .then(() => providerApi.abort(oldTurnId))
+        .catch(() => {
+          /* best-effort — the stale continuation is dropped regardless */
+        });
+    }
+    // Drop the previous account's chats from memory only; its rows stay on disk.
+    set({
+      isSending: false,
+      currentTurnId: null,
+      sessions: [],
+      activeSessionId: null,
+      composerDraft: '',
+      composerImages: [],
+      errorMessage: null,
+      reconfiguringSessionId: null,
+      hydrated: false,
+      persistOwnerId: owner,
+    });
+    if (owner) void get().hydrateFromDisk();
   },
 
   updateAgentStatus: (agentId, status, version) => {
@@ -209,6 +270,12 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
   },
 
   applyStreamEvent: (event) => {
+    // Only the live turn may stream. setGatewayIdentity clears currentTurnId in
+    // the same step that bumps the generation, so a match here is a turn of the
+    // current identity; a late event from a previous sign-in (even the same
+    // account, after hydrate restored that message) is dropped.
+    const { isSending, currentTurnId } = get();
+    if (!isSending || !currentTurnId || event.turnId !== currentTurnId) return;
     set((state) => ({
       sessions: state.sessions.map((s) => {
         if (!s.messages.some((m) => m.id === event.turnId)) return s;
@@ -270,7 +337,9 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
 
   closeAgentChat: (sessionId) => {
     // Drop the persisted copy too, so a closed tab doesn't come back on restart.
-    void gatewayPersistApi()?.delete?.(sessionId);
+    const owner = get().persistOwnerId;
+    // Best-effort: an IPC failure must not surface as an unhandled rejection.
+    if (owner) gatewayPersistApi()?.delete?.(owner, sessionId).catch(() => undefined);
     set((state) => {
       const nextSessions = state.sessions.filter((s) => s.id !== sessionId);
       const nextActiveId =
@@ -391,6 +460,12 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       createdAt,
     };
 
+    // Every await below is followed by this check before any side effect or
+    // set: an account change resets turn state, so the old turn must not touch
+    // the new session list, isSending/currentTurnId, or send its payload.
+    const gen = identityGeneration;
+    const stale = () => gen !== identityGeneration;
+
     // Optimistic update
     set((state) => ({
       isSending: true,
@@ -430,6 +505,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
             agentName: agent.displayName,
             images: imgs,
           });
+          if (stale()) return false;
           const reply = r?.reply
             ? r.reply
             : r?.error === 'no-key'
@@ -486,12 +562,15 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         } catch {
           /* no bridge / not configured — fall through to the container path */
         }
+        // The account changed while reading config: never send the old payload.
+        if (stale()) return false;
         if (connEnabled) {
           const history = session.messages
             .filter((m) => m.state === 'done' && m.content)
             .slice(-8)
             .map((m) => ({ role: m.role, content: m.content }));
           const r = await customApi.chat({ message: content, history, turnId: assistantMsgId, images: imgs });
+          if (stale()) return false;
           if (r?.reply) {
             set((state) => ({
               isSending: false,
@@ -629,11 +708,13 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         };
         try {
           const st = await dockerAgentApi.status?.(dockerMeta);
+          if (stale()) return false;
           if (st && st.running === false) {
             patchAssistant({
               content: `🚀 Đang khởi động ${agent.displayName}… (lần đầu có thể mất ~30–60s)`,
             });
             const started = await dockerAgentApi.start?.(dockerMeta);
+            if (stale()) return false;
             if (!started?.ok) {
               const why = started?.error ? `\n\n**Chi tiết:** ${started.error}` : '';
               patchAssistant({
@@ -655,11 +736,13 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
                     healthEndpoint: agent.healthEndpoint,
                     timeoutMs: 4000,
                   });
+                  if (stale()) return false;
                   if (h?.ok) break;
                 } catch {
                   /* keep polling */
                 }
                 await new Promise((res) => setTimeout(res, 2000));
+                if (stale()) return false;
               }
             }
             patchAssistant({ content: '' }); // clear the note so the reply stream fills the bubble
@@ -668,6 +751,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
           // status/start bridge unavailable (e.g. Docker CLI missing) — fall through;
           // the chat call below surfaces the concrete error.
         }
+        if (stale()) return false;
 
         const r = await dockerAgentApi.chat(
           {
@@ -681,6 +765,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
           },
           content,
         );
+        if (stale()) return false;
 
         if (r.ok && r.reply) {
           set((state) => ({
@@ -753,12 +838,14 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
         }),
         signal: AbortSignal.timeout(60000),
       });
+      if (stale()) return false;
 
       if (!response.ok) {
         throw new Error(`Agent returned ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
+      if (stale()) return false;
       const reply = data.reply || data.message || data.content || data.answer || 'No response from agent.';
 
       set((state) => ({
@@ -778,6 +865,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       return true;
     } catch (error) {
       void error; // External agent unreachable is expected; message handled below.
+      if (stale()) return false;
 
       // Fallback: this is an external, self-hosted agent. Be honest — Izzi did not
       // install/run it; the user must start it themselves at the expected port.
@@ -1000,12 +1088,17 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       return false;
     }
 
+    // An account change resets reconfiguringSessionId; a stale result must not
+    // write back into the new account's state.
+    const gen = identityGeneration;
+    const stale = () => gen !== identityGeneration;
     set({ reconfiguringSessionId: session.id, errorMessage: null });
     try {
       const r = await dockerApi.setReasoningEffort(
         { id: agent.id, defaultPort: agent.defaultPort },
         effort,
       );
+      if (stale()) return false;
       if (!r?.ok) {
         set({ reconfiguringSessionId: null, errorMessage: r?.error ?? 'Không đổi được mức reasoning.' });
         return false;
@@ -1024,10 +1117,12 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
           } catch {
             /* keep polling */
           }
+          if (stale()) return false;
           await new Promise((res) => setTimeout(res, 3000));
         }
       }
 
+      if (stale()) return false;
       set((state) => ({
         reconfiguringSessionId: null,
         sessions: state.sessions.map((s) =>
@@ -1036,6 +1131,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
       }));
       return true;
     } catch {
+      if (stale()) return false;
       set({ reconfiguringSessionId: null, errorMessage: 'Không đổi được mức reasoning.' });
       return false;
     }
@@ -1064,18 +1160,32 @@ if (typeof window !== 'undefined') {
     useAgentGatewayStore.getState().applyStreamEvent(evt);
   });
 
-  // Restore chat history once on load (survives app restart)...
+  // Restore chat history once on load (survives app restart); a no-op until
+  // setGatewayIdentity binds the signed-in account...
   void useAgentGatewayStore.getState().hydrateFromDisk();
 
   // ...and persist sessions (debounced) whenever they change, so history is durable.
+  // A pending save is bound to the owner that scheduled it and dropped on an
+  // account change, so one account's chats are never written under another.
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   useAgentGatewayStore.subscribe((state, prev) => {
+    if (state.persistOwnerId !== prev.persistOwnerId) {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = undefined;
+      return;
+    }
     if (state.sessions === prev.sessions) return;
+    const owner = state.persistOwnerId;
     if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = undefined;
+    if (!owner) return;
     persistTimer = setTimeout(() => {
+      const current = useAgentGatewayStore.getState();
+      if (current.persistOwnerId !== owner) return;
       const api = gatewayPersistApi();
       if (!api?.save) return;
-      for (const s of capForPersist(useAgentGatewayStore.getState().sessions)) void api.save(s);
+      // Best-effort: the next change retries, so a failed save is dropped rather than left unhandled.
+      for (const s of capForPersist(current.sessions)) api.save(owner, s).catch(() => undefined);
     }, 700);
   });
 }

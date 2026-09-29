@@ -66,6 +66,7 @@ import { UpdaterService } from './updater/updater-service';
 import { SetupWizardService } from './setup/setup-wizard-service';
 import { BudgetService } from './budget/budget-service';
 import { registerBudgetIpc } from './budget/budget-ipc';
+import { registerGatewaySessionIpc } from './gateway/gateway-session-ipc';
 import { registerAgentIpcHandlers, shutdownAgents } from './agents';
 import { DockerAgentService, type DockerAgentPayload } from './agents/docker-agent-service';
 import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
@@ -513,19 +514,12 @@ function setupIPC() {
   // surfaces — my-graph (knowledge) + Replay tasks (daily work board).
   const sessionRecorder = new SessionRecorder(new AgentSessionCapturer(graphClient), dbManager);
 
-  // Gateway chat history persistence (survives restart). Stored as `user_data`
-  // rows (type 'gateway_session'); no secrets are ever included (the Izzi key
+  // Gateway chat history persistence (survives restart), scoped to the signed-in
+  // account resolved here in main. No secrets are ever included (the Izzi key
   // lives only in main and never reaches the renderer/session objects).
-  ipcMain.handle('gatewaySessions:list', async () => dbManager.getUserData('gateway_session'));
-  ipcMain.handle('gatewaySessions:save', async (_e, session: { id?: unknown }) => {
-    if (session && typeof session.id === 'string' && session.id.length > 0) {
-      dbManager.cacheUserData(session.id, 'gateway_session', session as object);
-    }
-    return { ok: true };
-  });
-  ipcMain.handle('gatewaySessions:delete', async (_e, id: string) => {
-    if (typeof id === 'string' && id.length > 0) dbManager.deleteUserData(id);
-    return { ok: true };
+  registerGatewaySessionIpc({
+    store: dbManager,
+    currentUserId: () => authManager.getCurrentUser()?.id ?? null,
   });
 
   // Open the user's personal graph on the web (same second-brain data) in the browser.

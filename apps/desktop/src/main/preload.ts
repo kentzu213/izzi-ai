@@ -627,13 +627,15 @@ const electronAPI = {
   },
 
   // Gateway chat-history persistence (main SQLite `user_data`). Survives restart.
-  // Sessions carry no secrets (the Izzi key never leaves main).
+  // Sessions carry no secrets (the Izzi key never leaves main). `ownerId` is the
+  // renderer's view of the current user; main checks it against its own trusted
+  // user and fails closed (`[]` / `{ ok: false }`) on null or mismatch.
   gatewaySessions: {
-    list: (): Promise<unknown[]> => ipcRenderer.invoke('gatewaySessions:list'),
-    save: (session: unknown): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('gatewaySessions:save', session),
-    delete: (id: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('gatewaySessions:delete', id),
+    list: (ownerId: string): Promise<unknown[]> => ipcRenderer.invoke('gatewaySessions:list', ownerId),
+    save: (ownerId: string, session: unknown): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('gatewaySessions:save', ownerId, session),
+    delete: (ownerId: string, id: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('gatewaySessions:delete', ownerId, id),
   },
 
   marketing: {

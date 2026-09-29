@@ -28,6 +28,10 @@ import { useGraphWorkspaceStore } from '../store/graphWorkspace';
 import { nodeTypeMeta, nodeViewType, isSeedNode, universeTypeOf } from '../types/graph-workspace';
 import type { GraphNode, GraphLink } from '../../shared/graph-types';
 import { NodeWorkspacePanel } from '../components/NodeWorkspacePanel';
+import { createOpenWebGuard, openMyGraphWebSafely } from '../lib/open-my-graph-web';
+
+const OPEN_WEB_ERROR =
+  'Không mở được trình duyệt. Hãy thử lại hoặc mở izziapi.com/aibase/my-graph.';
 
 type RfNode = Node<{ node: GraphNode }, 'workspace'>;
 type GraphView = 'graph' | 'list';
@@ -96,6 +100,20 @@ export function GraphWorkspacePage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Same guard as KnowledgeUniverse: drop a result that lands after unmount or a newer click.
+  const [openWebError, setOpenWebError] = useState<string | undefined>();
+  const [openWebGuard] = useState(createOpenWebGuard);
+  useEffect(() => {
+    openWebGuard.setMounted(true);
+    return () => openWebGuard.setMounted(false);
+  }, [openWebGuard]);
+
+  async function openMyGraphWeb(): Promise<void> {
+    const isCurrent = openWebGuard.begin();
+    const ok = await openMyGraphWebSafely(window.electronAPI?.graph?.openMyGraphWeb);
+    if (isCurrent()) setOpenWebError(ok ? undefined : OPEN_WEB_ERROR);
+  }
 
   // Sync store -> React Flow: append new nodes/edges, refresh node data, drop removed.
   useEffect(() => {
@@ -198,12 +216,17 @@ export function GraphWorkspacePage() {
             <button
               type="button"
               className="gw-toolbar__btn gw-toolbar__btn--ghost"
-              onClick={() => void window.electronAPI?.graph?.openMyGraphWeb?.()}
+              onClick={() => void openMyGraphWeb()}
               title="Mở graph cá nhân của bạn trên izziapi.com (cùng dữ liệu)"
             >
               <span aria-hidden="true">🔗</span>
               Mở trên web
             </button>
+            {openWebError && (
+              <span className="gw-toolbar__hint gw-toolbar__hint--error" role="alert">
+                {openWebError}
+              </span>
+            )}
             {universeStatus === 'error' && (
               <span className="gw-toolbar__hint gw-toolbar__hint--error">
                 Không nạp được vũ trụ tri thức (kiểm tra mạng).

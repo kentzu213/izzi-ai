@@ -9,7 +9,13 @@ import { AppLogoMark, ChatIcon, OverviewIcon } from './components/AppIcons';
 import { LoginPage } from './pages/Login';
 import { ChatPage } from './pages/Chat';
 import { useAgentWorkspaceStore } from './store/agentWorkspace';
+import { useAgentGatewayStore } from './store/agentGateway';
+import { applyV2Identity } from './components/v2/identity';
 import { vi } from './i18n/vi';
+import { isUiShellV2Enabled } from './uiShellV2';
+
+// Izzi AI V2 shell (M2) stays out of the entry bundle while the flag is OFF.
+const AppShellV2 = lazy(() => import('./components/v2/AppShellV2').then((module) => ({ default: module.AppShellV2 })));
 
 const TasksPage = lazy(() => import('./pages/Tasks').then((module) => ({ default: module.TasksPage })));
 const MemoryPage = lazy(() => import('./pages/Memory').then((module) => ({ default: module.MemoryPage })));
@@ -85,6 +91,7 @@ export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState<Page>('chat');
+  const [isShellV2] = useState(() => isUiShellV2Enabled());
   const [isLoading, setIsLoading] = useState(true);
   const [extensionUpdateCount, setExtensionUpdateCount] = useState(0);
 
@@ -102,6 +109,20 @@ export function App() {
   useEffect(() => {
     void checkAuth();
   }, []);
+
+  // V2 project metadata is per account; logout (no id) drops it from memory and
+  // cancels any Home handoff started under the previous account.
+  const currentUserId: unknown = currentUser?.id;
+  useEffect(() => {
+    if (!isShellV2) return;
+    applyV2Identity(currentUserId);
+  }, [isShellV2, currentUserId]);
+
+  // Gateway chat history is scoped to the signed-in account in main; bind it
+  // here so logout/switch drops the previous account's chats from memory.
+  useEffect(() => {
+    useAgentGatewayStore.getState().setGatewayIdentity(currentUserId);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -379,7 +400,7 @@ export function App() {
           />
         );
       case 'knowledge':
-        return <KnowledgeUniversePage />;
+        return <KnowledgeUniversePage v2={isShellV2} />;
       case 'connections':
         return <ModelConnectionsPage />;
       case 'autopost':
@@ -387,9 +408,9 @@ export function App() {
       case 'marketing':
         return <MarketingRoomPage />;
       case 'customer-marketing':
-        return <CustomerMarketingRoomPage />;
+        return <CustomerMarketingRoomPage v2={isShellV2} />;
       case 'affiliate':
-        return <AffiliatePage />;
+        return <AffiliatePage v2={isShellV2} />;
       default:
         return <ChatPage />;
     }
@@ -417,6 +438,41 @@ export function App() {
           onLogin={handleLogin}
           onGoogleLogin={handleGoogleLogin}
           onSignup={handleSignup}
+        />
+      </>
+    );
+  }
+
+  if (isShellV2) {
+    return (
+      <>
+        <TitleBar />
+        <Suspense fallback={null}>
+          <AppShellV2
+            currentPage={currentPage}
+            onNavigate={setCurrentPage}
+            user={currentUser}
+            initialSurface="home"
+            extensionUpdateCount={extensionUpdateCount}
+          >
+            <UpdateBanner
+              updaterState={updaterState}
+              onCheck={() => void checkForUpdates()}
+              onDownload={() => void downloadUpdate()}
+              onRestart={() => void restartToUpdate()}
+            />
+            <ErrorBoundary fallbackTitle="Loi hien thi trang">
+              <Suspense fallback={<PageLoadingFallback />}>
+                {renderPage()}
+              </Suspense>
+            </ErrorBoundary>
+          </AppShellV2>
+        </Suspense>
+        <OnboardingWizard user={currentUser} />
+        <UpdateNotification
+          updaterState={updaterState}
+          onDownload={() => void downloadUpdate()}
+          onRestart={() => void restartToUpdate()}
         />
       </>
     );
@@ -456,7 +512,7 @@ export function App() {
             onClick={() => setCurrentPage('customer-marketing')}
           >
             <OverviewIcon className="app-mobile-nav__icon" />
-            <span>AI Marketing</span>
+            <span>Agent Marketing</span>
           </button>
         </nav>
         <main className="main-content" role="main" aria-label="Noi dung chinh">

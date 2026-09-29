@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { apiClient } from '../lib/api-client';
+import { apiClient, MARKETPLACE_API, marketplaceErrorMessage } from '../lib/api-client';
 
 interface UploadState {
   file: File | null;
@@ -131,9 +131,10 @@ export function DeveloperUploadPage({ onBack }: { onBack: () => void }) {
 
     setUpload(prev => ({ ...prev, status: 'uploading', progress: 10 }));
 
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
     try {
       // Simulate progress (real progress would use XMLHttpRequest)
-      const progressTimer = setInterval(() => {
+      progressTimer = setInterval(() => {
         setUpload(prev => {
           if (prev.progress >= 90) {
             clearInterval(progressTimer);
@@ -147,16 +148,18 @@ export function DeveloperUploadPage({ onBack }: { onBack: () => void }) {
       formData.append('file', upload.file);
       formData.append('version', form.version);
 
-      const res = await fetch(`http://localhost:8788/api/extensions/${extensionId}/upload`, {
+      const res = await fetch(`${MARKETPLACE_API}/api/extensions/${extensionId}/upload`, {
         method: 'POST',
+        // Same bearer token as apiClient; no Content-Type, so the browser sets the multipart boundary.
+        headers: apiClient.authHeaders(),
         body: formData,
       });
 
       clearInterval(progressTimer);
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error?.message || `Upload failed: HTTP ${res.status}`);
+        // Ledger #11: never surface the backend error text.
+        throw new Error(marketplaceErrorMessage(res.status));
       }
 
       const data = await res.json();
@@ -174,6 +177,9 @@ export function DeveloperUploadPage({ onBack }: { onBack: () => void }) {
         progress: 0,
         error: err instanceof Error ? err.message : 'Upload thất bại',
       }));
+    } finally {
+      // A rejected fetch or res.json() skips the clear above; stop the progress timer on every path.
+      clearInterval(progressTimer);
     }
   }
 

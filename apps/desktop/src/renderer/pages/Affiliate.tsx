@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { AffiliateWorkspaceV2 } from '../components/v2/AffiliateWorkspaceV2';
 
 /**
  * AffiliatePage — desktop port of the izziapi.com `/dashboard/affiliate` surface.
@@ -29,7 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
   completed: 'Hoàn tất',
 };
 
-export function AffiliatePage() {
+export function AffiliatePage({ v2 = false }: { v2?: boolean } = {}) {
   const api = typeof window !== 'undefined' ? window.electronAPI?.affiliate : undefined;
 
   const [loading, setLoading] = useState(true);
@@ -53,15 +54,20 @@ export function AffiliatePage() {
       return;
     }
     setLoading(true);
-    const [s, c, w] = await Promise.all([
-      api.stats(),
-      api.commissions(),
-      api.withdrawals(),
-    ]);
-    setStats(s);
-    setCommissions(c);
-    setWithdrawals(w);
-    setLoading(false);
+    try {
+      const [s, c, w] = await Promise.all([
+        api.stats(),
+        api.commissions(),
+        api.withdrawals(),
+      ]);
+      setStats(s);
+      setCommissions(c);
+      setWithdrawals(w);
+    } catch {
+      setNotice({ kind: 'err', text: 'Không tải được dữ liệu affiliate' });
+    } finally {
+      setLoading(false);
+    }
   }, [api]);
 
   useEffect(() => {
@@ -92,36 +98,52 @@ export function AffiliatePage() {
     }
     setSubmitting(true);
     setNotice(null);
-    const res =
-      wMethod === 'credit_convert'
-        ? await api.convertCredit(amount)
-        : await api.withdraw({
-            amount,
-            method: 'bank_transfer',
-            bankInfo: { bank: wBankName, accountNo: wAccountNo, accountName: wAccountName },
-          });
-    setSubmitting(false);
-    if (res.success) {
-      setNotice({
-        kind: 'ok',
-        text:
-          wMethod === 'credit_convert'
-            ? `Đã đổi thành ${fmtVnd(res.creditsAdded ?? amount)} credit!`
-            : 'Yêu cầu rút tiền đã gửi!',
-      });
-      setWAmount('');
-      setWBankName('');
-      setWAccountNo('');
-      setWAccountName('');
-      void loadAll();
-    } else {
-      setNotice({ kind: 'err', text: res.error });
+    try {
+      const res =
+        wMethod === 'credit_convert'
+          ? await api.convertCredit(amount)
+          : await api.withdraw({
+              amount,
+              method: 'bank_transfer',
+              bankInfo: { bank: wBankName, accountNo: wAccountNo, accountName: wAccountName },
+            });
+      if (res.success) {
+        setNotice({
+          kind: 'ok',
+          text:
+            wMethod === 'credit_convert'
+              ? `Đã đổi thành ${fmtVnd(res.creditsAdded ?? amount)} credit!`
+              : 'Yêu cầu rút tiền đã gửi!',
+        });
+        setWAmount('');
+        setWBankName('');
+        setWAccountNo('');
+        setWAccountName('');
+        void loadAll();
+      } else {
+        setNotice({ kind: 'err', text: res.error });
+      }
+    } catch {
+      setNotice({ kind: 'err', text: 'Yêu cầu thất bại' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const openWeb = () => {
     void api?.openWeb();
   };
+
+  if (v2) {
+    return (
+      <AffiliateWorkspaceV2 loading={loading} stats={stats} commissions={commissions} withdrawals={withdrawals}
+        notice={notice} copied={copied} submitting={submitting} amount={wAmount} method={wMethod}
+        bankName={wBankName} accountNo={wAccountNo} accountName={wAccountName}
+        onCopy={() => void copyLink()} onOpenWeb={openWeb} onSubmit={() => void submitWithdraw()}
+        onMethodChange={setWMethod} onAmountChange={setWAmount} onBankNameChange={setWBankName}
+        onAccountNoChange={setWAccountNo} onAccountNameChange={setWAccountName} />
+    );
+  }
 
   if (loading) {
     return (

@@ -39,7 +39,7 @@ const WORKSPACE_ITEMS = [
 ];
 
 const CUSTOMER_ITEMS = [
-  { id: 'customer-marketing', icon: OverviewIcon, label: 'AI Marketing', badge: 'Customer', prominent: true },
+  { id: 'customer-marketing', icon: OverviewIcon, label: 'Agent Marketing', badge: 'Customer', prominent: true },
 ];
 
 const EXPLORE_ITEMS = [

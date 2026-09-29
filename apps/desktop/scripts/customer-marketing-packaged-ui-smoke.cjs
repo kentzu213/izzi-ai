@@ -88,8 +88,8 @@ async function exerciseMarketingRoom(window) {
       const marketingButton = await waitFor(
         () => buttons().find((button) =>
           Array.from(button.querySelectorAll('span')).some(
-            (label) => label.textContent?.trim() === 'AI Marketing',
-          ) || button.textContent?.trim() === 'AI Marketing'
+            (label) => label.textContent?.trim() === 'Agent Marketing',
+          ) || button.textContent?.trim() === 'Agent Marketing'
         ),
         'marketing-navigation-missing',
       );

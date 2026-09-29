@@ -8,6 +8,7 @@
  */
 
 import { ipcMain, shell } from 'electron';
+import { shortError } from './affiliate-client';
 import type { AffiliateClient, WithdrawInput } from './affiliate-client';
 
 export function registerAffiliateIpc(client: AffiliateClient): void {
@@ -17,9 +18,16 @@ export function registerAffiliateIpc(client: AffiliateClient): void {
   ipcMain.handle('affiliate:withdraw', (_e, input: WithdrawInput) => client.withdraw(input));
   ipcMain.handle('affiliate:convertCredit', (_e, amount: number) => client.convertCredit(amount));
 
+  // Ledger #25: a rejected openExternal must not reach the renderer (it calls this fire-and-forget)
+  // and the log keeps only the error class, never the message.
   ipcMain.handle('affiliate:openWeb', async () => {
     const url = client.affiliateWebUrl();
-    await shell.openExternal(url);
-    return { ok: true, url };
+    try {
+      await shell.openExternal(url);
+      return { ok: true, url };
+    } catch (err) {
+      console.warn(`[AffiliateIpc] openWeb: ${shortError(err)}`);
+      return { ok: false };
+    }
   });
 }

@@ -1,0 +1,126 @@
+/*
+ * Dev-only demo styles for izzi-v2-tokens.html. Scoped under `.izzi-v2` like
+ * the token layer; every color, size and radius is a var(--v2-*) reference.
+ */
+
+.izzi-v2.v2-demo-page {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 100vh;
+}
+
+.izzi-v2.v2-demo {
+  padding: var(--v2-space-8);
+  background: var(--v2-bg-canvas);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+.izzi-v2 .v2-demo__header {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-3);
+  margin-bottom: var(--v2-space-6);
+}
+
+.izzi-v2 .v2-demo__title {
+  margin: 0;
+  font-size: var(--v2-text-page-size);
+  line-height: var(--v2-text-page-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-demo__badge {
+  padding: var(--v2-space-1) var(--v2-space-3);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-brand-primary);
+  color: var(--v2-brand-soft);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  text-transform: uppercase;
+}
+
+.izzi-v2 .v2-demo__section {
+  margin-bottom: var(--v2-space-6);
+  padding: var(--v2-space-5);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+  background: var(--v2-bg-panel);
+  box-shadow: var(--v2-shadow);
+}
+
+.izzi-v2 .v2-demo__heading {
+  margin: 0 0 var(--v2-space-3);
+  font-size: var(--v2-text-section-size);
+  line-height: var(--v2-text-section-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-demo__swatches {
+  display: grid;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-demo__swatch,
+.izzi-v2 .v2-demo__row {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-3);
+  min-height: var(--v2-space-8);
+}
+
+.izzi-v2 .v2-demo__chip {
+  flex: none;
+  width: var(--v2-space-8);
+  height: var(--v2-space-8);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-demo__name {
+  flex: 1;
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-demo__value {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-demo__gradient {
+  height: var(--v2-space-10);
+  border-radius: var(--v2-radius-card);
+  background: var(--v2-brand-gradient);
+}
+
+.izzi-v2 .v2-demo__type {
+  margin: 0 0 var(--v2-space-2);
+}
+
+.izzi-v2 .v2-demo__bar {
+  flex: none;
+  height: var(--v2-space-3);
+  background: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-demo__radii {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-demo__radius {
+  padding: var(--v2-space-4) var(--v2-space-5);
+  border: 1px solid var(--v2-border-strong);
+  background: var(--v2-bg-canvas);
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-meta-size);
+}
