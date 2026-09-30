@@ -3275,6 +3275,7 @@ function CustomerRoom({
             ) : (
               <div className="v2-empty"><p>{ANALYTICS_GATE_COPY[analyticsGate.state]}</p></div>
             )}
+            channels={<CustomerMarketingChannels role={snapshot.workspace.role} />}
             inspector={<ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
             artifacts={snapshot.media.artifacts}
             externalActionsAllowed={snapshot.externalActionsAllowed}

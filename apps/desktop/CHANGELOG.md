@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.72
+
+Fix the update check and restore the Agent Marketing channels tab.
+
+- A release tag that has no update manifest yet (a release still publishing, or
+  an unpublished tag) now reads as "up to date" instead of a connection error.
+- Update errors are described in plain Vietnamese; unknown errors are no longer
+  mislabelled as a server-connection failure.
+- Settings shows the update status, last check time and a "Kiểm tra cập nhật"
+  button that disables while a check runs.
+- Agent Marketing in the V2 shell has the "Kênh" (channels) tab again; beta.71
+  was withheld because its packaged smoke could not find it.
+
 ## 1.14.0-beta.71
 
 Turn the V2 shell on by default.

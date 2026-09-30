@@ -42,6 +42,30 @@ class MissingConfigUpdaterAdapter extends FakeUpdaterAdapter {
   }
 }
 
+class RejectingUpdaterAdapter extends FakeUpdaterAdapter {
+  constructor(private readonly failure: Error) {
+    super();
+  }
+
+  async checkForUpdates(): Promise<void> {
+    this.checkForUpdatesCalls += 1;
+    this.emit('checking-for-update');
+    this.emit('error', this.failure);
+    throw this.failure;
+  }
+}
+
+function installedService(adapter: FakeUpdaterAdapter): UpdaterService {
+  return new UpdaterService({
+    adapter,
+    appVersion: '1.14.0-beta.70',
+    packaged: true,
+    mockMode: false,
+    directoryPackage: false,
+    updateConfigAvailable: true,
+  });
+}
+
 describe('UpdaterService', () => {
   it('does not bind, check, download or install when the runtime profile disables updates', async () => {
     const adapter = new FakeUpdaterAdapter();
@@ -157,6 +181,41 @@ describe('UpdaterService', () => {
       error: 'Desktop update configuration is unavailable.',
     });
     expect(service.getState().error).not.toContain('F:\\');
+  });
+
+  it('reports up to date when the newest release tag has no update manifest yet', async () => {
+    const missingManifest = Object.assign(
+      new Error('Cannot find latest.yml in the latest release artifacts (https://github.com/kentzu213/izzi-ai/releases/download/v1.14.0-beta.71/latest.yml): HttpError: 404'),
+      { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' },
+    );
+    const adapter = new RejectingUpdaterAdapter(missingManifest);
+    const service = installedService(adapter);
+
+    await service.check();
+
+    const state = service.getState();
+    expect(adapter.checkForUpdatesCalls).toBe(1);
+    expect(state).toMatchObject({ state: 'idle', version: '1.14.0-beta.70' });
+    expect(state.error).toBeUndefined();
+    expect(state.checkedAt).toEqual(expect.any(String));
+  });
+
+  it('recognises a missing channel manifest by message when the error has no code', async () => {
+    const adapter = new RejectingUpdaterAdapter(new Error('Cannot find beta.yml in the latest release artifacts: HttpError: 404'));
+    const service = installedService(adapter);
+
+    await service.check();
+
+    expect(service.getState().state).toBe('idle');
+  });
+
+  it('keeps a real network failure as an error', async () => {
+    const adapter = new RejectingUpdaterAdapter(new Error('net::ERR_INTERNET_DISCONNECTED'));
+    const service = installedService(adapter);
+
+    await service.check();
+
+    expect(service.getState()).toMatchObject({ state: 'error', error: 'net::ERR_INTERNET_DISCONNECTED' });
   });
 
   it('tracks updater adapter state transitions', async () => {

@@ -60,6 +60,21 @@ function updaterErrorMessage(error: unknown): string {
   return message;
 }
 
+const NO_PUBLISHED_UPDATE_CODES = new Set([
+  'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+  'ERR_UPDATER_NO_PUBLISHED_VERSIONS',
+  'ERR_UPDATER_LATEST_VERSION_NOT_FOUND',
+]);
+
+// The newest release tag has no update manifest yet (a release still being published, or a tag
+// without assets). Nothing newer is installable, so this is "up to date", not a failure.
+export function isNoPublishedUpdateError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && NO_PUBLISHED_UPDATE_CODES.has(code)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /Cannot find (?:latest|beta|alpha)[\w-]*\.yml/i.test(message) || /No published versions/i.test(message);
+}
+
 function bumpPatch(version: string): string {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) {
@@ -156,6 +171,10 @@ export class UpdaterService extends EventEmitter {
     try {
       await this.adapter.checkForUpdates();
     } catch (err: unknown) {
+      if (isNoPublishedUpdateError(err)) {
+        this.setState({ state: 'idle', version: this.appVersion, checkedAt: new Date().toISOString() });
+        return;
+      }
       this.setState({
         state: 'error',
         version: this.appVersion,
@@ -258,6 +277,10 @@ export class UpdaterService extends EventEmitter {
     });
 
     this.adapter.on('error', (error: Error) => {
+      if (isNoPublishedUpdateError(error)) {
+        this.setState({ state: 'idle', version: this.appVersion, checkedAt: new Date().toISOString() });
+        return;
+      }
       this.setState({
         state: 'error',
         version: this.appVersion,

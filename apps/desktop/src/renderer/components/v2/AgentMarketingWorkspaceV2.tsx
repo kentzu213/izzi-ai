@@ -17,6 +17,7 @@ export const AGENT_MARKETING_TABS = [
   { id: 'plan', label: 'Kế hoạch' },
   { id: 'content', label: 'Nội dung' },
   { id: 'analytics', label: 'Phân tích' },
+  { id: 'channels', label: 'Kênh' },
   { id: 'files', label: 'Tệp' },
 ] as const;
 
@@ -120,6 +121,7 @@ export interface AgentMarketingWorkspaceV2Props {
   plan: ReactNode;
   content: ReactNode;
   analytics: ReactNode;
+  channels: ReactNode;
   inspector: ReactNode;
   artifacts: readonly CustomerMediaArtifact[];
   externalActionsAllowed: boolean;
@@ -132,6 +134,7 @@ export function AgentMarketingWorkspaceV2({
   plan,
   content,
   analytics,
+  channels,
   inspector,
   artifacts,
   externalActionsAllowed,
@@ -162,6 +165,7 @@ export function AgentMarketingWorkspaceV2({
     plan,
     content,
     analytics,
+    channels,
     files: <AgentMarketingFilesList artifacts={artifacts} />,
   };
 
