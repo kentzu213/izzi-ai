@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAgentGatewayStore } from '../../store/agentGateway';
 import { useProjectWorkspaceStore, type ProjectMeta } from '../../store/projectWorkspace';
@@ -220,5 +222,21 @@ describe('Project Chat composer clear ticket (M3-B1 audit)', () => {
     }
     expect(useAgentGatewayStore.getState().composerDraft).toBe('ban-nhap-B');
     expect(useAgentGatewayStore.getState().composerImages).toEqual(['img-B']);
+  });
+});
+
+describe('ProjectChatPanel model picker', () => {
+  const source = readFileSync(fileURLToPath(new URL('./ProjectChatPanel.tsx', import.meta.url)), 'utf8');
+
+  it('lets the user pick the model for the open project conversation', () => {
+    expect(source).toContain('<ModelSelector');
+    expect(source).toContain('modelGroupsFor(');
+    expect(source).toContain('setActiveModel(model, provider)');
+    expect(source).toContain('refreshAvailableModels()');
+  });
+
+  it('surfaces model connection errors as an alert', () => {
+    expect(source).toContain('role="alert"');
+    expect(source).toContain('{errorMessage}');
   });
 });

@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAgentGatewayStore } from '../../store/agentGateway';
 import { projectForSession, useProjectWorkspaceStore } from '../../store/projectWorkspace';
+import type { AIProvider } from '../../types/agent-registry';
 import { ChatComposer } from '../ChatComposer';
 import { ChatMessageList } from '../ChatMessageList';
+import { ModelSelector } from '../ModelSelector';
 import { createProjectSession, type ProjectSessionResult } from './composerHandoff';
+import { modelGroupsFor } from './modelGroups';
 import type { V2Surface } from './navModel';
 import { composerTicket, liveTurnSessionId, shouldClearComposer } from './ProjectChatPanel';
 import { sessionLabel } from './sessionLabel';
@@ -78,6 +81,11 @@ export function ConversationSurface({ onSelectSurface, isNavigatorOpen, onToggle
   const setComposerImages = useAgentGatewayStore((state) => state.setComposerImages);
   const projects = useProjectWorkspaceStore((state) => state.projects);
   const selectProject = useProjectWorkspaceStore((state) => state.selectProject);
+  const availableModels = useAgentGatewayStore((state) => state.availableModels);
+  const availableModelsLabel = useAgentGatewayStore((state) => state.availableModelsLabel);
+  const refreshAvailableModels = useAgentGatewayStore((state) => state.refreshAvailableModels);
+  const setActiveModel = useAgentGatewayStore((state) => state.setActiveModel);
+  const errorMessage = useAgentGatewayStore((state) => state.errorMessage);
   const [agentId, setAgentId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -87,6 +95,15 @@ export function ConversationSurface({ onSelectSurface, isNavigatorOpen, onToggle
   const live = liveTurnSessionId(sessions, currentTurnId);
   const isBusyElsewhere = isSending && live !== null && live !== activeSessionId;
   const canInterrupt = conversationInterrupt(useAgentGatewayStore.getState()) === 'ok';
+  const runtime = agents.find((agent) => agent.id === active?.agentId)?.runtime;
+  const modelGroups = useMemo(
+    () => modelGroupsFor(runtime, availableModels, availableModelsLabel),
+    [runtime, availableModels, availableModelsLabel],
+  );
+
+  useEffect(() => {
+    void refreshAvailableModels();
+  }, [refreshAvailableModels]);
 
   const createConversation = () => {
     if (!projectId) {
@@ -140,6 +157,14 @@ export function ConversationSurface({ onSelectSurface, isNavigatorOpen, onToggle
     void gw.injectGateway(text);
   };
 
+  const handleModelChange = (model: string, provider: AIProvider) => {
+    if (useAgentGatewayStore.getState().isSending) {
+      setNotice(CREATE_NOTICE.busy);
+      return;
+    }
+    void setActiveModel(model, provider);
+  };
+
   return (
     <section className="v2-surface v2-conversation v2-project-chat" aria-labelledby="v2-conversation-title">
       <header className="v2-conversation__head">
@@ -185,10 +210,18 @@ export function ConversationSurface({ onSelectSurface, isNavigatorOpen, onToggle
           {BUSY_ELSEWHERE}
         </p>
       ) : null}
+      {errorMessage ? (
+        <p className="v2-surface__status" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
 
       {active ? (
         <div className="v2-project-chat__thread v2-conversation__thread">
           <ChatMessageList messages={active.messages as unknown as React.ComponentProps<typeof ChatMessageList>['messages']} />
+          <div className="v2-project-chat__model">
+            <ModelSelector currentModel={active.model} currentProvider={active.provider} onSelect={handleModelChange} groups={modelGroups} />
+          </div>
           <ChatComposer
             value={composerDraft}
             images={composerImages}
