@@ -1582,20 +1582,20 @@
 
 .izzi-v2 .v2-project-chat .model-selector__label,
 .izzi-v2 .v2-project-chat .model-selector__group-name {
-  color: var(--v2-text-secondary);
+  color: var(--v2-text-secondary) !important;
 }
 
 .izzi-v2 .v2-project-chat .model-selector__group-desc,
 .izzi-v2 .v2-project-chat .model-selector__chevron {
-  color: var(--v2-text-muted);
+  color: var(--v2-text-muted) !important;
 }
 
 .izzi-v2 .v2-project-chat .model-selector__option {
-  color: var(--v2-text-primary);
+  color: var(--v2-text-primary) !important;
 }
 
 .izzi-v2 .v2-project-chat .model-selector__option:hover {
-  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
 }
 
 .izzi-v2 .v2-project-chat .model-selector__option--active {
@@ -1606,7 +1606,7 @@
 }
 
 .izzi-v2 .v2-project-chat .model-selector__option-check {
-  color: var(--v2-brand-primary);
+  color: var(--v2-brand-primary) !important;
 }
 
 /*

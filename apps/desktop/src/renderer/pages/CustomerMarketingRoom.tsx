@@ -919,7 +919,7 @@ function OnboardingRoom({ snapshot, form, setForm, busy, error, onComplete, v2 =
 }
 
 interface DirectorComposerProps {
-  onSubmit: (goal: string) => Promise<void>;
+  onSubmit: (goal: string) => Promise<boolean | void>;
   busy: boolean;
   compact?: boolean;
 }
@@ -943,7 +943,9 @@ export function DirectorComposer({ onSubmit, busy, compact = false }: DirectorCo
       return;
     }
     setLocalError('');
-    await onSubmit(value);
+    const ok = await onSubmit(value);
+    // Clear only after a confirmed success, and only if the user has not typed a new goal meanwhile.
+    if (ok !== false) setGoal((current) => (current.trim() === value ? '' : current));
   };
 
   const quickPrompts = [
@@ -1653,7 +1655,7 @@ function HomeView({
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
-  onDirector: (goal: string) => Promise<void>;
+  onDirector: (goal: string) => Promise<boolean | void>;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
   onOpen: (view: ViewId) => void;
   busy: boolean;
@@ -1729,7 +1731,7 @@ function DirectorView({
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
-  onDirector: (goal: string) => Promise<void>;
+  onDirector: (goal: string) => Promise<boolean | void>;
   busy: boolean;
 }) {
   const latestWithReply = snapshot.runs.find((run) => run.directorReply);
@@ -3150,6 +3152,7 @@ function CustomerRoom({
       if (v2) setV2Tab('conversation');
       else selectView('director');
     }
+    return Boolean(result?.ok);
   };
 
   const review = async (approvalId: string, decision: 'approved' | 'rejected') => {

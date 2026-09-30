@@ -57,7 +57,7 @@ interface CapabilityWorkbenchProps {
   form: CustomerOnboardingInput;
   onBack: () => void;
   onOpen: (view: CapabilityWorkbenchOpenView) => void;
-  onDirector: (goal: string) => Promise<void>;
+  onDirector: (goal: string) => Promise<boolean | void>;
 }
 
 const BRIDGE_LABELS: Record<CustomerMarketingBridgeStatus, string> = {
@@ -888,7 +888,7 @@ function AnalyticsCopilotView({
   onDirector,
 }: {
   onBack: () => void;
-  onDirector: (goal: string) => Promise<void>;
+  onDirector: (goal: string) => Promise<boolean | void>;
 }) {
   const initialRange = useMemo(() => currentMonthAnalyticsRange(), []);
   const [range, setRange] = useState<AnalyticsDateRange>(initialRange);

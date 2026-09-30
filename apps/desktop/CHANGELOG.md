@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.76
+
+Agent Marketing fixes and a more readable V2 model picker.
+
+- Agent Marketing: the Director goal box clears after a plan is created, and
+  keeps the text when the request fails.
+- Agent Marketing: a failed channel health check shows its real reason instead
+  of a generic rejection.
+- The V2 project chat model picker stays readable in the dark theme.
+
 ## 1.14.0-beta.75
 
 Pick a model in V2 chat and read connection errors clearly.

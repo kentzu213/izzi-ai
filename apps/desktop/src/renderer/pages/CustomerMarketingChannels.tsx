@@ -367,7 +367,7 @@ export function CustomerMarketingChannels({ role }: { role: CustomerRole }) {
           setNativeAccounts([]);
           setNativeProviderRoutes(null);
           setNativeError(nativeMarketingErrorLabel(
-            health.ok ? providerRoutes.error : health.error,
+            !health.ok ? health.error : !providerRoutes.ok ? providerRoutes.error : 'request-rejected',
           ));
           return;
         }
