@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { DesktopUpdaterState } from '../../main/updater/types';
+import { RESTART_INSTALL_HINT } from './UpdateBanner';
 
 const DISMISSED_KEY = 'openclaw_dismissed_update_version';
 
@@ -111,6 +112,7 @@ export function UpdateNotification({ updaterState, onDownload, onRestart }: Upda
               ? 'Bản cập nhật đã tải xong. Khởi động lại để sử dụng phiên bản mới nhất.'
               : 'Cập nhật ngay để trải nghiệm các tính năng mới và cải tiến hiệu năng.'}
           </p>
+          {isDownloaded && <p className="update-notification__hint">{RESTART_INSTALL_HINT}</p>}
         </div>
 
         <div className="update-notification__actions">
