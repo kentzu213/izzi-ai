@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AgentStatusBadge } from '../components/AgentStatusBadge';
+import { describeUpdateError, describeUpdaterStatus } from '../components/UpdateBanner';
 import { useAgentWorkspaceStore } from '../store/agentWorkspace';
 import type {
   AgentRuntimeState,
@@ -232,14 +233,15 @@ function UpdatesSection({
   onRestart: () => void;
 }) {
   const [isUpdaterErrorExpanded, setExpanded] = useState(false);
+  const isChecking = updaterState.state === 'checking';
 
   return (
     <div className="card glass-card">
       <div className="card__header">
-        <h3 className="card__title">Desktop updates</h3>
+        <h3 className="card__title">Cập nhật ứng dụng</h3>
         <div className="action-row">
-          <button className="btn btn--ghost btn--sm" onClick={onCheck}>
-            Kiểm tra
+          <button className="btn btn--ghost btn--sm" onClick={onCheck} disabled={isChecking}>
+            {isChecking ? 'Đang kiểm tra…' : 'Kiểm tra cập nhật'}
           </button>
           {updaterState.state === 'available' && (
             <button className="btn btn--primary btn--sm" onClick={onDownload}>
@@ -254,17 +256,19 @@ function UpdatesSection({
         </div>
       </div>
       <div className="settings-group">
-        <SettingRow label="State" value={updaterState.state} />
-        <SettingRow label="Current version" value={updaterState.version || 'N/A'} />
-        <SettingRow label="Available version" value={updaterState.availableVersion || 'Không có'} />
-        <SettingRow
-          label="Progress"
-          value={typeof updaterState.progress === 'number' ? `${updaterState.progress}%` : 'N/A'}
-        />
+        <SettingRow label="Trạng thái" value={describeUpdaterStatus(updaterState)} />
+        <SettingRow label="Phiên bản hiện tại" value={updaterState.version || 'N/A'} />
+        <SettingRow label="Phiên bản mới" value={updaterState.availableVersion || 'Không có'} />
+        {typeof updaterState.progress === 'number' && (
+          <SettingRow label="Tiến độ tải" value={`${updaterState.progress}%`} />
+        )}
+        {updaterState.checkedAt && (
+          <SettingRow label="Kiểm tra lần cuối" value={new Date(updaterState.checkedAt).toLocaleString('vi-VN')} />
+        )}
         {updaterState.error && (
           <>
             <div className="settings-item">
-              <div className="settings-item__label">Updater error</div>
+              <div className="settings-item__label">Lỗi cập nhật</div>
               <button className="btn btn--ghost btn--sm" onClick={() => setExpanded((value) => !value)}>
                 {isUpdaterErrorExpanded ? 'Thu gọn' : 'Xem chi tiết'}
               </button>
@@ -273,7 +277,7 @@ function UpdatesSection({
               <pre className="settings-error__detail">{updaterState.error}</pre>
             ) : (
               <div className="settings-item__description settings-error__summary">
-                {summarizeError(updaterState.error)}
+                {describeUpdateError(updaterState.error)}
               </div>
             )}
           </>
