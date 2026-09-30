@@ -324,6 +324,23 @@ describe('v2 Project Chat reset over the reused legacy chat (M3-B1 audit)', () =
   });
 });
 
+describe('v2 native select options', () => {
+  // Dark audit: the native popup painted light option text on the default white list.
+  const OPTION_SELECTORS = [
+    '.izzi-v2 .v2-field__select option',
+    '.izzi-v2 .v2-header__project-select option',
+    '.izzi-v2 .v2-project-row__select option',
+    '.izzi-v2 .v2-project-chat__select option',
+    '.izzi-v2 .v2-project-chat .chat-composer__perm-select option',
+  ];
+
+  it.each(OPTION_SELECTORS)('paints %s on the panel token with primary text', (selector) => {
+    const declarations = new Map(rules.filter((rule) => rule.selector === selector).flatMap((rule) => [...rule.declarations]));
+    expect(declarations.get('background-color')).toBe('var(--v2-bg-panel)');
+    expect(declarations.get('color')).toBe('var(--v2-text-primary)');
+  });
+});
+
 describe('v2 Project Chat detail controls (M3-B1 audit follow-up)', () => {
   // Light audit m3-chat-details-audit/1790555452591: steps, copy, composer
   // buttons, attachment menu and footer rendered legacy cream/dark values.

@@ -1541,6 +1541,16 @@
   box-shadow: none !important;
 }
 
+/* Native select popups: without this the dark theme painted light option text on a white list. */
+.izzi-v2 .v2-field__select option,
+.izzi-v2 .v2-header__project-select option,
+.izzi-v2 .v2-project-row__select option,
+.izzi-v2 .v2-project-chat__select option,
+.izzi-v2 .v2-project-chat .chat-composer__perm-select option {
+  background-color: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+}
+
 /*
  * M3-B1 audit follow-up: steps, copy, composer buttons, attachment menu and
  * footer controls rendered legacy cream/dark values in the light theme.

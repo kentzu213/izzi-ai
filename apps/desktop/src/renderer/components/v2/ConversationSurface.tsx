@@ -141,7 +141,7 @@ export function ConversationSurface({ onSelectSurface, isNavigatorOpen, onToggle
   };
 
   return (
-    <section className="v2-surface v2-conversation" aria-labelledby="v2-conversation-title">
+    <section className="v2-surface v2-conversation v2-project-chat" aria-labelledby="v2-conversation-title">
       <header className="v2-conversation__head">
         <div className="v2-conversation__heading">
           <p className="v2-conversation__crumb">{project ? project.name : 'Cuộc trò chuyện chưa thuộc dự án'}</p>
