@@ -4,14 +4,40 @@
  * In Electron mode, IPC is preferred via window.electronAPI
  */
 
-const MARKETPLACE_API = 'http://localhost:8788';
+import { DEFAULT_MARKETPLACE_URL, normalizeMarketplaceUrl } from '../../shared/marketplace-url';
+
+// Ledger #11: same default and normalisation as the main resolver. The renderer cannot read
+// main's env overrides (OPENCLAW_MARKETPLACE_URL) without a new IPC/preload channel.
+export const MARKETPLACE_API = normalizeMarketplaceUrl(DEFAULT_MARKETPLACE_URL);
+// Owner decision pending: the official base (OPENCLAW_API_URL in main/config/public-config.ts) is
+// main-only (fs + process.env), and the four methods below have no renderer callers, so it stays as is.
 const IZZI_API = 'http://localhost:8787';
+
+/**
+ * Ledger #11: the backend `error` text can carry HTML, stack traces or echoed input, so the
+ * renderer only ever shows fixed text picked by HTTP status (same pattern as affiliate #25).
+ */
+export function marketplaceErrorMessage(status: number): string {
+  if (status === 401 || status === 403) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  if (status === 429) return 'Bạn thao tác quá nhanh. Vui lòng đợi một lát rồi thử lại.';
+  if (status === 400 || status === 409 || status === 422) return 'Yêu cầu bị từ chối. Kiểm tra thông tin rồi thử lại.';
+  if (status === 404) return 'Không tìm thấy dữ liệu.';
+  return 'Yêu cầu thất bại';
+}
 
 class StorizziApiClient {
   private accessToken: string | null = null;
 
   setAccessToken(token: string | null) {
     this.accessToken = token;
+  }
+
+  /**
+   * The Authorization header from the same token the private `fetch` uses, without
+   * Content-Type, so a multipart upload can send it too. Empty when no token is set.
+   */
+  authHeaders(): Record<string, string> {
+    return this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {};
   }
 
   private async fetch(baseUrl: string, path: string, options: RequestInit = {}) {
@@ -27,8 +53,7 @@ class StorizziApiClient {
     const res = await fetch(`${baseUrl}${path}`, { ...options, headers });
 
     if (!res.ok) {
-      const error = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(error.error || `HTTP ${res.status}`);
+      throw new Error(marketplaceErrorMessage(res.status));
     }
 
     return res.json();

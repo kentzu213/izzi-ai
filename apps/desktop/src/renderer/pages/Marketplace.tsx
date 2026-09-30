@@ -340,7 +340,7 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
         <div>
           <h1 className="page-header__title">🏪 Marketplace</h1>
           <p className="page-header__subtitle">
-            Khám phá và cài đặt tiện ích mở rộng cho Izzi AI
+            Kho ứng dụng của Izzi AI: tìm, cài đặt và đăng ứng dụng của bạn
           </p>
         </div>
         <div className="marketplace-header__actions">
@@ -348,13 +348,13 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
             className="btn btn--ghost btn--sm"
             onClick={() => setShowDevDash(true)}
           >
-            👨‍💻 Dashboard
+            📊 Ứng dụng của tôi
           </button>
           <button
             className="btn btn--accent"
             onClick={() => setShowDevUpload(true)}
           >
-            🚀 Đăng tải tiện ích
+            🚀 Đăng ứng dụng
           </button>
         </div>
       </div>
@@ -395,8 +395,8 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
           id="marketplace-search"
           className="search-bar__input"
           type="text"
-          placeholder="Tìm kiếm tiện ích... (VD: SEO, chatbot, email)"
-          aria-label="Tìm kiếm tiện ích mở rộng"
+          placeholder="Tìm ứng dụng... (VD: SEO, chatbot, email)"
+          aria-label="Tìm ứng dụng trên Market"
           aria-expanded={showSuggestions}
           aria-autocomplete="list"
           autoComplete="off"
@@ -500,7 +500,7 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
           {/* Extension Grid */}
           <div className="section-header">
             <h2 className="section-header__title">
-              {activeCategory === 'Tất cả' ? 'Tất cả tiện ích' : activeCategory}
+              {activeCategory === 'Tất cả' ? 'Tất cả ứng dụng' : activeCategory}
             </h2>
             <span className="marketplace-result-count">
               {filteredExtensions.length} kết quả
@@ -538,7 +538,7 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
                     <div className="ext-card__actions">
                       {ext.price ? (
                         <span className="ext-card__price ext-card__price--paid">
-                          ${ext.price.monthly}/mo
+                          ${ext.price.monthly}/tháng
                         </span>
                       ) : (
                         <span className="ext-card__price ext-card__price--free">Miễn phí</span>
@@ -601,7 +601,7 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
           {filteredExtensions.length === 0 && !isLoading && (
             <div className="empty-state">
               <div className="empty-state__icon">🔍</div>
-              <h3 className="empty-state__title">Không tìm thấy tiện ích</h3>
+              <h3 className="empty-state__title">Không tìm thấy ứng dụng</h3>
               <p className="empty-state__description">
                 Thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục khác
               </p>
@@ -609,6 +609,24 @@ export function MarketplacePage({ onNavigateToChat }: { onNavigateToChat?: () =>
           )}
         </>
       )}
+
+      {/* Seller entry — reuses the existing developer upload and dashboard */}
+      <section className="marketplace-sell" aria-labelledby="marketplace-sell-title">
+        <div className="marketplace-sell__copy">
+          <h2 id="marketplace-sell-title" className="marketplace-sell__title">Có ứng dụng muốn chia sẻ?</h2>
+          <p className="marketplace-sell__text">
+            Đăng ứng dụng lên Market để người dùng Izzi AI tìm và cài đặt. Theo dõi lượt cài trong mục Ứng dụng của tôi.
+          </p>
+        </div>
+        <div className="marketplace-sell__actions">
+          <button className="btn btn--ghost btn--sm" onClick={() => setShowDevDash(true)}>
+            Ứng dụng của tôi
+          </button>
+          <button className="btn btn--accent btn--sm" onClick={() => setShowDevUpload(true)}>
+            Đăng ứng dụng
+          </button>
+        </div>
+      </section>
 
       {/* Install Toast Notification */}
       {installToast && (

@@ -1,0 +1,430 @@
+/*
+ * V2 legacy page skin.
+ *
+ * Pages that still render their pre-V2 markup inside the V2 shell (Marketplace, Extensions, Costs,
+ * Settings, Schedules, Memory, Status, ...) read the legacy `--color-*`, `--izzi-*`, `--glass-*`,
+ * `--radius-*`, `--shadow-*`, `--font-*` and `--gradient-*` variables from index.css. Remapping them
+ * here, on the shell root, re-skins those pages from V2 tokens without touching their markup or logic.
+ * The remap follows the shell theme because it sits on the same element as `data-theme`.
+ *
+ * index.css also paints a cyan glass layer with `!important` (cards, buttons, inputs, gradient titles).
+ * The second half neutralises that layer inside the legacy workspace only: surfaces
+ * (`.v2-workspace--surface`) and pages already built on V2 classes are excluded, and the shell chrome
+ * sits outside `main.v2-workspace`, so nothing already on V2 changes.
+ */
+
+.izzi-v2.v2-shell {
+  --color-bg-primary: var(--v2-bg-canvas);
+  --color-bg-secondary: var(--v2-bg-panel);
+  --color-bg-tertiary: var(--v2-bg-subtle, var(--v2-bg-panel-hover));
+  --color-bg-elevated: var(--v2-bg-panel);
+  --color-bg-hover: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  --color-code-block-bg: var(--v2-bg-panel);
+  --color-border: var(--v2-border-default);
+  --color-border-hover: var(--v2-border-strong);
+  --color-border-accent: color-mix(in srgb, var(--v2-brand-primary) 45%, transparent);
+  --color-accent-cyan: var(--v2-brand-primary);
+  --color-accent-primary: var(--v2-brand-primary);
+  --color-accent-purple: var(--v2-brand-primary);
+  --color-accent-violet: var(--v2-brand-primary);
+  --color-accent-secondary: var(--v2-brand-pink);
+  --color-accent-purple-soft: var(--v2-brand-pink);
+  --color-accent-emerald: var(--v2-success);
+  --color-accent-gradient: var(--v2-brand-gradient);
+  --color-accent-gradient-hover: var(--v2-brand-gradient);
+  --color-accent-glow: color-mix(in srgb, var(--v2-brand-primary) 16%, transparent);
+  --color-glow-violet: color-mix(in srgb, var(--v2-brand-primary) 16%, transparent);
+  --color-text-primary: var(--v2-text-primary);
+  --color-text-secondary: var(--v2-text-secondary);
+  --color-text-tertiary: var(--v2-text-muted);
+  --color-text-accent: var(--v2-brand-primary);
+  --color-text-fineprint: var(--v2-text-muted);
+  --color-text-fineprint-dim: var(--v2-text-muted);
+  --color-toast-text: var(--v2-text-primary);
+  --color-success: var(--v2-success);
+  --color-success-bg: color-mix(in srgb, var(--v2-success) 12%, transparent);
+  --color-success-border-soft: color-mix(in srgb, var(--v2-success) 28%, transparent);
+  --color-error: var(--v2-danger);
+  --color-error-bg: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  --color-error-border-soft: color-mix(in srgb, var(--v2-danger) 28%, transparent);
+  --color-warning: var(--v2-warning);
+  --color-warning-bg: color-mix(in srgb, var(--v2-warning) 12%, transparent);
+  --color-info: var(--v2-info);
+  --color-info-bg: color-mix(in srgb, var(--v2-info) 12%, transparent);
+  --gradient-toast-error: var(--v2-danger);
+  --gradient-toast-info: var(--v2-info);
+  --gradient-toast-success: var(--v2-success);
+  --izzi-bg: var(--v2-bg-canvas);
+  --izzi-bg-deep: var(--v2-bg-canvas);
+  --izzi-bg-elevated: var(--v2-bg-panel);
+  --izzi-bg-panel: var(--v2-bg-panel);
+  --izzi-bg-panel-strong: var(--v2-bg-panel);
+  --izzi-bg-toolbar: var(--v2-bg-panel);
+  --izzi-panel: var(--v2-bg-panel);
+  --izzi-panel-strong: var(--v2-bg-panel);
+  --izzi-line: var(--v2-border-default);
+  --izzi-line-strong: var(--v2-border-strong);
+  --izzi-cyan: var(--v2-brand-primary);
+  --izzi-cyan-rgb: 124, 77, 255;
+  --izzi-violet: var(--v2-brand-primary);
+  --izzi-blue: var(--v2-brand-primary);
+  --izzi-green: var(--v2-success);
+  --izzi-red: var(--v2-danger);
+  --izzi-gold: var(--v2-warning);
+  --izzi-warm: var(--v2-warning);
+  --izzi-paper: var(--v2-text-primary);
+  --izzi-ink: var(--v2-bg-canvas);
+  --izzi-muted: var(--v2-text-secondary);
+  --izzi-dim: var(--v2-text-muted);
+  --izzi-faint: var(--v2-text-muted);
+  --izzi-shadow-glow: 0 0 0 transparent;
+  --izzi-shadow-panel: var(--v2-shadow);
+  --izzi-radius-xs: var(--v2-radius-control);
+  --izzi-radius-sm: var(--v2-radius-control);
+  --izzi-radius-md: var(--v2-radius-card);
+  --izzi-radius-lg: var(--v2-radius-panel);
+  --izzi-radius-xl: var(--v2-radius-panel);
+  --glass-bg: var(--v2-bg-panel);
+  --glass-border: 1px solid var(--v2-border-default);
+  --glass-blur: none;
+  --glass-blur-amount: 0px;
+  --glass-shadow: var(--v2-shadow);
+  --glass-specular: 0 0 0 transparent;
+  --radius-sm: var(--v2-radius-control);
+  --radius-md: var(--v2-radius-card);
+  --radius-lg: var(--v2-radius-panel);
+  --radius-xl: var(--v2-radius-panel);
+  --radius-glass-sm: var(--v2-radius-card);
+  --radius-glass-md: var(--v2-radius-card);
+  --radius-glass-lg: var(--v2-radius-panel);
+  --shadow-sm: var(--v2-shadow);
+  --shadow-md: var(--v2-shadow);
+  --shadow-lg: var(--v2-shadow);
+  --shadow-toast: var(--v2-shadow);
+  --shadow-glow: 0 0 0 transparent;
+  --font-family: var(--v2-font-family);
+  --font-display: var(--v2-font-family);
+  /* izzi-optimized.css loads last and paints text, borders and accents from its own palette with !important. */
+  --izzo-bg: var(--v2-bg-canvas);
+  --izzo-ink: var(--v2-text-primary);
+  --izzo-ink-strong: var(--v2-text-primary);
+  --izzo-muted: var(--v2-text-secondary);
+  --izzo-faint: var(--v2-text-muted);
+  --izzo-cyan: var(--v2-brand-primary);
+  --izzo-cyan-soft: var(--v2-brand-primary);
+  --izzo-violet: var(--v2-brand-primary);
+  --izzo-amber: var(--v2-warning);
+  --izzo-gold: var(--v2-warning);
+  --izzo-blue: var(--v2-info);
+  --izzo-green: var(--v2-success);
+  --izzo-line: var(--v2-border-default);
+  --izzo-line-2: var(--v2-border-strong);
+  --izzo-surface: var(--v2-bg-panel);
+  --izzo-surface-2: var(--v2-bg-panel);
+  --izzo-cream: var(--v2-brand-primary);
+}
+
+/* Cards: flat V2 panels instead of blurred cyan glass. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.glass-card, .glass-panel, .glass-surface, .card, .stat-card, .task-card, .memory-card, .status-overview__card, .setup-card, .integration-card, .onboarding-runner-card, .chat-session-card, .chat-empty-state, .chat-message-list, .chat-composer, .agent-picker, .agent-setup, .model-selector__dropdown, .gw-tabbar, .gw-empty__agent-btn, .gw-panel, .gw-node, .knowledge-page__node, .installed-agent-card, .agent-hub__top-card, .quick-action-card, .cost-dash__advice-box, .status-log__item, .diagnostic-card, .task-column, .ext-card):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-panel) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-card) !important;
+  box-shadow: var(--v2-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.card, .stat-card, .task-card, .memory-card, .quick-action-card, .agent-hub__top-card, .installed-agent-card, .gw-empty__agent-btn, .knowledge-page__node, .ext-card):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):hover {
+  background: var(--v2-bg-panel) !important;
+  border-color: var(--v2-border-strong) !important;
+  box-shadow: var(--v2-shadow) !important;
+  transform: none !important;
+}
+
+/* Primary actions: solid brand violet, no cyan gradient, glow or lift. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.btn--primary, .btn--accent, .cost-dash__save-btn, .aw-business__cta, .knowledge-page__cta, .gw-panel__btn--accent, .gw-toolbar__btn, .agent-hub__top-card-btn--setup, .agent-setup__install-btn, .aibase-primary-action, .affiliate__copybtn, .affiliate__submit, .agent-card__install-btn, .agent-modal__install-btn, .agent-store__featured-cta, .setup-wizard__btn--install, .izzi-setup__cta):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-brand-primary) !important;
+  color: #ffffff !important;
+  border: 1px solid var(--v2-brand-primary) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  text-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.btn--primary, .btn--accent, .cost-dash__save-btn, .aw-business__cta, .knowledge-page__cta, .gw-panel__btn--accent, .gw-toolbar__btn, .agent-hub__top-card-btn--setup, .agent-setup__install-btn, .aibase-primary-action, .affiliate__copybtn, .affiliate__submit, .agent-card__install-btn, .agent-modal__install-btn, .agent-store__featured-cta, .setup-wizard__btn--install, .izzi-setup__cta):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):hover {
+  background: var(--v2-brand-primary-hover) !important;
+  border-color: var(--v2-brand-primary-hover) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Secondary actions: quiet panel buttons. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.btn--ghost, .btn--secondary, .btn--oauth, .agent-setup__nav-btn, .installed-agent-card__btn, .knowledge-embed__btn, .cost-dash__edit-btn, .cost-dash__cancel-btn, .model-selector__trigger, .gw-tab, .gw-tabbar__add, .agent-picker__close, .gw-panel__action, .aibase-secondary-action, .ext-card__loop-btn):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-panel) !important;
+  color: var(--v2-text-secondary) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.btn--ghost, .btn--secondary, .btn--oauth, .agent-setup__nav-btn, .installed-agent-card__btn, .knowledge-embed__btn, .cost-dash__edit-btn, .cost-dash__cancel-btn, .model-selector__trigger, .gw-tab, .gw-tabbar__add, .agent-picker__close, .gw-panel__action, .aibase-secondary-action, .ext-card__loop-btn):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  color: var(--v2-text-primary) !important;
+  border-color: var(--v2-border-strong) !important;
+}
+
+/* Fields: V2 control surface with a violet focus ring. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), textarea, select, .input, .chat-composer__input, .agent-setup__key-input, .search-bar__input):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-panel) !important;
+  color: var(--v2-text-primary) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(input, textarea, .input, .chat-composer__input, .agent-setup__key-input, .search-bar__input):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *))::placeholder {
+  color: var(--v2-text-muted) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), textarea, select, .input, .chat-composer__input, .agent-setup__key-input, .search-bar__input):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):focus {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-brand-primary) 18%, transparent) !important;
+  outline: none !important;
+}
+
+/* Filter and sort pills. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.filter-pill, .sort-pill):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-panel) !important;
+  color: var(--v2-text-secondary) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-pill) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.filter-pill, .sort-pill):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  color: var(--v2-text-primary) !important;
+  border-color: var(--v2-border-strong) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.filter-pill--active, .sort-pill--active):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)),
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.filter-pill--active, .sort-pill--active):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)):hover {
+  background: color-mix(in srgb, var(--v2-brand-primary) 14%, transparent) !important;
+  color: var(--v2-brand-primary) !important;
+  border-color: var(--v2-brand-primary) !important;
+}
+
+/* Page titles and stat values: plain V2 text instead of cyan gradient clip. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.page-header__title, .chat-page__title, .agent-store__title, .affiliate__title, .cost-dash__title, .agent-hub__top-title, .izzi-setup__hero-title, .cost-dash__stat-value, .stat-card__value):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--v2-text-primary) !important;
+  text-shadow: none !important;
+}
+
+/* Marketplace details. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.ext-detail__stars, .review-star-btn--active, .review-card__stars, .search-suggestion__rating) {
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.search-suggestions) {
+  background: var(--v2-bg-panel) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-card) !important;
+  box-shadow: var(--v2-shadow) !important;
+  backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.marketplace-toast) {
+  color: #ffffff !important;
+  border-radius: var(--v2-radius-card) !important;
+  box-shadow: var(--v2-shadow) !important;
+  backdrop-filter: none !important;
+}
+
+/* index.css paints body with a fixed ink backdrop and leaves .main-content transparent, so
+   light theme showed dark behind dark text. Paint the legacy workspace from the theme. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) {
+  background: var(--v2-bg-canvas) !important;
+}
+
+/* Leftover cyan accents: badges, icons, eyebrows and active toggles take the brand violet. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.page-header__eyebrow, .cost-dash__subtitle, .izzi-setup__hero-gradient):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--v2-text-secondary) !important;
+  text-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-agent__icon, .agent-hub__top-card-icon, .izzi-setup__hero-badge, .ext-card__category):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: color-mix(in srgb, var(--v2-brand-primary) 14%, transparent) !important;
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  border-color: color-mix(in srgb, var(--v2-brand-primary) 30%, transparent) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.izzi-setup__sys-item--ok):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  border-color: color-mix(in srgb, var(--v2-success) 40%, transparent) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.memory-scope-toggle__button--active):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-brand-primary) !important;
+  color: #ffffff !important;
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.mr-btn--primary, .toolbar-btn.primary, .toolbar-btn.synth):not(:where([class*="v2-"], .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-brand-primary) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: currentColor !important;
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.mr-btn--primary, .toolbar-btn.primary, .toolbar-btn.synth):not(:where([class*="v2-"], .v2-affiliate *, .v2-mygraph *)):hover {
+  background: var(--v2-brand-primary-hover) !important;
+}
+
+/* Muted empty states and plan labels read below AA on the V2 canvas; lift them to secondary. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.task-column__empty, .aw-business__plan, .gauge-label, .mr-connect-state__mark):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* izzi-optimized.css paints the chat loop icons and the store title chip cyan with !important. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-loop__icon, .agent-store__title-icon):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: rgba(124, 77, 255, 0.14) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-loop:hover .aw-loop__icon, .aw-loop--active .aw-loop__icon):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: rgba(124, 77, 255, 0.22) !important;
+  border-color: rgba(124, 77, 255, 0.45) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-loop--active):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: rgba(124, 77, 255, 0.1) !important;
+  box-shadow: inset 2px 0 0 0 var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.agent-store__title-icon-svg):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.izzi-setup__mode-glow):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: radial-gradient(circle, rgba(124, 77, 255, 0.16), transparent 70%) !important;
+}
+
+/* index.css hard-codes the chat rail panels to a dark rgba(5,8,12,.58) with !important. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-business, .aw-context, .aw-loops, .aw-rail, .agent-workspace__rail):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-panel) !important;
+  border-color: var(--v2-border-default) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-context__item, .agent-setup__meta, .agent-setup__install-summary, .gw-toolbar__hint, .agent-hub__top-card-tag, .setup-wizard__help-box, .setup-wizard__privacy-section, .aw-business__gauge, .progress-bar, .cost-dash__bar):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-bg-subtle) !important;
+  border-color: var(--v2-border-default) !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.aw-business__gauge-fill, .progress-bar__fill, .cost-dash__bar-fill):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: var(--v2-brand-primary) !important;
+}
+
+/* The remaining hard-coded cyan chips, tags and the "finish setup" card move to the brand tint. */
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.chat-page__title-icon, .btn--glass-dashboard, .chat-empty-state__setup, .izzi-setup__mode-tag, .izzi-setup__mode-icon, .toolbar-btn.detach-toggle):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  background: rgba(124, 77, 255, 0.12) !important;
+  border-color: rgba(124, 77, 255, 0.35) !important;
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace:not(.v2-workspace--surface) :where(.mr-connect-state__mark):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  box-shadow: none !important;
+}
+
+/* The kicker's cyan dot shows both in the room and on legacy pages, so it is scoped to the shell only. */
+.izzi-v2 :where(.mr-kicker) {
+  color: var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 :where(.mr-kicker > span) {
+  background: var(--v2-brand-primary) !important;
+  box-shadow: 0 0 0 4px rgba(124, 77, 255, 0.14) !important;
+}
+
+/* Light only: cream text meant for the dark canvas turns into primary text. */
+.izzi-v2.v2-shell[data-theme='light'] .v2-workspace:not(.v2-workspace--surface) :where(.chat-empty-state__setup-title, .status-overview__value, .status-overview__value strong, .status-detail-list__item strong, .schedules__kicker, .empty-state__icon, kbd):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* Light only: muted labels land below AA on the white panel; lift them to secondary. */
+.izzi-v2.v2-shell[data-theme='light'] .v2-workspace:not(.v2-workspace--surface) :where(.aw-business__vnd, .aw-business__gauge-label, .aw-context__empty-hint, .aw-loops__title, .memory-section__empty, .marketplace-api-status__label, .search-bar__icon, .sort-controls__label, .marketplace-result-count, .model-conn__hint, .ext-detail__tab, .agent-hub__top-card-status--not-installed, .agent-status-badge span, .status-detail-list__item span):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* Light only: semantic greens and ambers are too pale on white; darken the text, keep the hue. */
+.izzi-v2.v2-shell[data-theme='light'] .v2-workspace:not(.v2-workspace--surface) :where(.agent-hub__top-card-status--running, .ext-card__price--free, .izzi-setup__sys-item--ok):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: color-mix(in srgb, var(--v2-success) 62%, #000) !important;
+}
+
+.izzi-v2.v2-shell[data-theme='light'] .v2-workspace:not(.v2-workspace--surface) :where(.ext-card__rating):not(:where([class*="v2-"], .v2-agent-marketing-room *, .v2-affiliate *, .v2-mygraph *)) {
+  color: color-mix(in srgb, var(--v2-warning) 58%, #000) !important;
+}
+
+/* The graph toolbar keeps its layout inside .v2-mygraph; only its cyan/green accents move to the brand. */
+.izzi-v2 .v2-mygraph .graphview-scope :where(.toolbar-btn.primary, .toolbar-btn.synth, .import-tab.active) {
+  background: var(--v2-brand-primary) !important;
+  color: #ffffff !important;
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-mygraph .graphview-scope :where(.toolbar-btn.active, .toolbar-btn.detach-toggle, .btn-teal) {
+  background: rgba(124, 77, 255, 0.14) !important;
+  background-image: none !important;
+  color: var(--v2-brand-primary) !important;
+  border-color: rgba(124, 77, 255, 0.45) !important;
+  box-shadow: none !important;
+}
+
+/* Light only: the graph canvas stays dark, so the legacy h3/p globals (var(--izzo-ink/muted) !important)
+   need light ink inside it instead of the light-theme remap above. */
+.izzi-v2.v2-shell[data-theme='light'] .v2-mygraph .graphview-scope {
+  --izzo-ink: #f6f2e8;
+  --izzo-ink-strong: #f6f2e8;
+  --izzo-muted: rgba(246, 242, 232, 0.7);
+  --izzo-faint: rgba(246, 242, 232, 0.58);
+}
+
+/* The chat body is a height-capped flex column: let it scroll instead of squeezing the empty state
+   under the session card and the composer. Layout only, both themes. */
+.izzi-v2 .v2-workspace :where(.chat-page__body) {
+  overflow-y: auto !important;
+}
+
+.izzi-v2 .v2-workspace :where(.chat-page__body > .chat-session-card, .chat-page__body > .chat-empty-state) {
+  flex-shrink: 0 !important;
+}
+
+.izzi-v2 .v2-workspace :where(.chat-page__body > .chat-empty-state) {
+  justify-content: flex-start !important;
+}

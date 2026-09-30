@@ -5365,6 +5365,43 @@ body {
   color: var(--color-text-tertiary);
 }
 
+/* Seller entry band: reuses the existing developer upload + dashboard. */
+.marketplace-sell {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-elevated);
+}
+
+.marketplace-sell__copy {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.marketplace-sell__title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.marketplace-sell__text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.marketplace-sell__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .ext-card__header--clickable {
   cursor: pointer;
 }

@@ -2,9 +2,10 @@ import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { DatabaseManager } from '../db/database';
+import { resolveMarketplaceUrl } from './marketplace-url';
 
-// Marketplace API URL (local dev)
-const MARKETPLACE_API = process.env.OPENCLAW_MARKETPLACE_URL || 'http://localhost:8788';
+// Marketplace API URL (local dev default; see marketplace-url.ts)
+const MARKETPLACE_API = resolveMarketplaceUrl();
 
 export interface ExtensionManifest {
   name: string;

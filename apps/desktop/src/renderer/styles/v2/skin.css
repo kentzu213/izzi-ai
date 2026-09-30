@@ -1,0 +1,1531 @@
+/*
+ * Izzi AI V2 — visual skin matching the approved Claude Design prototype
+ * (izzi-ai-redesign-handoff-v1: labeled rail, project column, top search
+ * pill, centered Home hero). Loaded after shell.css and only overrides it;
+ * every rule is scoped under `.izzi-v2`, so the legacy UI is untouched.
+ * tokens.css keeps the M0 widths (tested); the labeled layout widens them here.
+ */
+
+.izzi-v2.v2-shell {
+  --v2-layout-rail: 200px;
+  --v2-layout-navigator: 244px;
+}
+
+/* ---- Global rail (labeled) ------------------------------------------------ */
+
+.izzi-v2 .v2-rail {
+  align-items: stretch;
+  gap: 2px;
+  padding: 12px 10px;
+  overflow-y: auto;
+}
+
+.izzi-v2 .v2-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 12px;
+}
+
+.izzi-v2 .v2-rail__brand .v2-rail__logo {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 0;
+}
+
+.izzi-v2 .v2-rail__brand-name {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: var(--v2-font-weight-semibold);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-rail__section,
+.izzi-v2 .v2-rail__footer {
+  align-items: stretch;
+  gap: 2px;
+}
+
+.izzi-v2 .v2-rail__footer {
+  padding-top: 10px;
+}
+
+.izzi-v2 .v2-rail__item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-rail__item .v2-rail__icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+/* Mix with transparent: --v2-bg-deep is unset in light theme, which voided the fill. */
+.izzi-v2 .v2-rail__item.is-active {
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--v2-brand-primary) 28%, transparent);
+  color: var(--v2-brand-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-rail__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Labels are visible, so the hover tooltip would only repeat them. */
+.izzi-v2 .v2-rail__tooltip {
+  display: none;
+}
+
+.izzi-v2 .v2-rail__count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.izzi-v2 .v2-rail__tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-muted);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.izzi-v2 .v2-rail__kbd,
+.izzi-v2 .v2-header__kbd {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 5px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 12px;
+  box-shadow: none;
+}
+
+.izzi-v2 .v2-rail__section-title {
+  padding: 12px 10px 4px;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: var(--v2-font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.izzi-v2 .v2-rail__divider {
+  width: auto;
+  margin: 8px 10px 0;
+}
+
+.izzi-v2 .v2-rail__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 10px 6px 2px;
+  border-top: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-rail__user .v2-rail__avatar {
+  flex-shrink: 0;
+}
+
+.izzi-v2 .v2-rail__user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-rail__user-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: var(--v2-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-rail__user-plan {
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---- Project column ------------------------------------------------------- */
+
+.izzi-v2 .v2-navigator__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.izzi-v2 .v2-navigator__add,
+.izzi-v2 .v2-navigator__more {
+  flex-shrink: 0;
+  border-radius: var(--v2-radius-control);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-navigator__add {
+  padding: 4px 6px;
+  color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-navigator__more {
+  margin-top: 2px;
+  padding: 6px 8px;
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-navigator__add:hover,
+.izzi-v2 .v2-navigator__more:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-navigator__more:hover {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__recent {
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.izzi-v2 .v2-navigator__hint {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.izzi-v2 .v2-navigator__unassigned {
+  display: block;
+  padding: 4px 8px;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  text-align: left;
+}
+
+.izzi-v2 .v2-navigator__unassigned:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__group-head .v2-navigator__add {
+  padding: 3px 10px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+}
+
+/* ---- Navigator entries (project / chat rows) ------------------------------ */
+
+.izzi-v2 .v2-navigator__entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-navigator__entry:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-navigator__entry:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-navigator__tile {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--v2-brand-primary) 16%, transparent);
+  color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-navigator__tile svg {
+  width: 16px;
+  height: 16px;
+}
+
+.izzi-v2 .v2-navigator__tile--chat {
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-navigator__entry-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-navigator__entry-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-navigator__entry-meta {
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/* ---- Project tree: chevron, status dot, children ------------------------- */
+
+.izzi-v2 .v2-navigator__tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.izzi-v2 .v2-navigator__tree-row .v2-navigator__entry {
+  flex: 1;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-navigator__chevron {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v2-radius-control);
+  background: transparent;
+  color: var(--v2-text-muted);
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-navigator__chevron svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 150ms ease;
+}
+
+.izzi-v2 .v2-navigator__chevron[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.izzi-v2 .v2-navigator__chevron:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__chevron:focus-visible,
+.izzi-v2 .v2-navigator__child:focus-visible,
+.izzi-v2 .v2-navigator__child-add:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-navigator__status {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-navigator__status--running {
+  background: var(--v2-success);
+}
+
+.izzi-v2 .v2-navigator__status--attention {
+  background: var(--v2-warning);
+}
+
+.izzi-v2 .v2-navigator__status--idle {
+  opacity: 0.5;
+}
+
+.izzi-v2 .v2-navigator__children {
+  margin: 2px 0 6px 31px;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--v2-border-default);
+  list-style: none;
+}
+
+.izzi-v2 .v2-navigator__child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--v2-radius-control);
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-navigator__child svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-navigator__child:hover,
+.izzi-v2 .v2-navigator__child[aria-current='true'] {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__child-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-navigator__child-meta {
+  flex: none;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+}
+
+.izzi-v2 .v2-navigator__child-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 0 4px;
+}
+
+.izzi-v2 .v2-navigator__child-add {
+  padding: 3px 8px;
+  border: 1px dashed var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  background: transparent;
+  color: var(--v2-brand-primary);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-navigator__child-add:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-navigator__all-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--v2-radius-control);
+  background: none;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-navigator__all-toggle:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__all-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 150ms ease;
+}
+
+.izzi-v2 .v2-navigator__all-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+/* ---- Top bar ---------------------------------------------------------------- */
+
+.izzi-v2 .v2-header__breadcrumb {
+  flex: 0 1 auto;
+}
+
+/* ---- Home hero ------------------------------------------------------------ */
+
+.izzi-v2 .v2-workspace--surface {
+  background:
+    radial-gradient(800px 420px at 72% 0%, rgba(124, 77, 255, 0.13), transparent 60%),
+    var(--v2-bg-canvas) !important;
+}
+
+.izzi-v2[data-theme='light'] .v2-workspace--surface {
+  background:
+    radial-gradient(800px 420px at 72% 0%, rgba(124, 77, 255, 0.08), transparent 60%),
+    var(--v2-bg-canvas) !important;
+}
+
+.izzi-v2 .v2-home {
+  max-width: 1080px;
+}
+
+.izzi-v2 .v2-home__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  text-align: center;
+}
+
+.izzi-v2 .v2-home .v2-home__header {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+}
+
+/* Font sizes live on the spans; the title only stacks them. */
+.izzi-v2 .v2-home .v2-home__header .v2-home__title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  font-size: inherit;
+}
+
+.izzi-v2 .v2-home .v2-home__welcome {
+  color: var(--v2-text-primary);
+  font-size: 34px;
+  line-height: 42px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* Title forces color + text-fill with !important; the gradient must clear both. */
+.izzi-v2 .v2-home .v2-home__brand {
+  background: linear-gradient(90deg, #a78bfa, #7c4dff, #c084fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  font-size: 56px !important;
+  line-height: 64px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+}
+
+.izzi-v2 .v2-home__subtitle {
+  margin: 10px 0 28px;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.izzi-v2 .v2-home .v2-home__composer {
+  gap: 10px;
+  width: min(760px, 100%);
+  padding: 14px 14px 10px;
+  border: 1px solid color-mix(in srgb, var(--v2-brand-primary) 55%, transparent);
+  border-radius: 16px;
+  background: var(--v2-bg-panel);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--v2-brand-primary) 35%, transparent),
+    0 0 40px rgba(124, 77, 255, 0.22);
+  text-align: left;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-home .v2-home__prompt {
+  min-height: 64px;
+  padding: 0 2px;
+  resize: none;
+}
+
+.izzi-v2 .v2-home .v2-home__controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* shell.css re-asserts select chrome with !important at (0,3,0); match it. */
+.izzi-v2 .v2-workspace--surface .v2-home .v2-home__pill {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 170px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 2px 26px 2px 12px !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-pill) !important;
+  background: var(--v2-bg-subtle) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
+}
+
+/* The pill's border !important would otherwise mask shell's :focus border. */
+.izzi-v2 .v2-workspace--surface .v2-home .v2-home__pill:focus {
+  border-color: var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 .v2-home .v2-home__send {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--v2-brand-primary);
+  color: #fff;
+  cursor: pointer;
+  appearance: none;
+}
+
+.izzi-v2 .v2-home .v2-home__send svg {
+  width: 18px;
+  height: 18px;
+}
+
+.izzi-v2 .v2-home .v2-home__send:hover:not(:disabled) {
+  background: var(--v2-brand-primary-hover);
+}
+
+.izzi-v2 .v2-home .v2-home__send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.izzi-v2 .v2-home .v2-home__send:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-home .v2-home__quick {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  width: min(760px, 100%);
+  margin: 14px auto 0;
+}
+
+.izzi-v2 .v2-home .v2-home__quick .v2-chip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: 12px;
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+  text-align: left;
+  white-space: normal;
+}
+
+.izzi-v2 .v2-home .v2-home__quick .v2-chip:hover {
+  border-color: var(--v2-brand-primary);
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-home__quick-icon {
+  --v2-tone: #7c4dff;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--v2-tone) 24%, transparent);
+  color: var(--v2-tone);
+}
+
+.izzi-v2 .v2-home__quick-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.izzi-v2 .v2-home__quick-icon--violet {
+  --v2-tone: #7c4dff;
+}
+
+.izzi-v2 .v2-home__quick-icon--blue {
+  --v2-tone: #3b82f6;
+}
+
+.izzi-v2 .v2-home__quick-icon--green {
+  --v2-tone: #10b981;
+}
+
+.izzi-v2 .v2-home__quick-icon--amber {
+  --v2-tone: #f59e0b;
+}
+
+.izzi-v2 .v2-home__quick-label {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: var(--v2-font-weight-medium);
+  line-height: 17px;
+}
+
+/* ---- Home: featured projects ---------------------------------------------- */
+
+.izzi-v2 .v2-home .v2-home__featured {
+  width: min(1000px, 100%);
+  margin: 32px auto 0;
+}
+
+.izzi-v2 .v2-home__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.izzi-v2 .v2-home__see-all {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--v2-brand-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-home__see-all:hover {
+  text-decoration: underline;
+}
+
+.izzi-v2 .v2-home__projects {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Tile + name share row 1; desc (optional) row 2; meta pinned to row 3 so cards align. */
+.izzi-v2 .v2-home__project {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 116px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: 12px;
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+}
+
+.izzi-v2 .v2-home__project:hover {
+  border-color: var(--v2-brand-primary);
+  background: var(--v2-bg-panel-hover, var(--v2-bg-panel));
+}
+
+.izzi-v2 .v2-home__project:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-home__project-tile {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--v2-brand-primary) 16%, transparent);
+  color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-home__project-tile svg {
+  width: 18px;
+  height: 18px;
+}
+
+.izzi-v2 .v2-home__project-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: var(--v2-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-home__project-desc {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-home__project-meta {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  padding-top: 10px;
+  border-top: 1px solid var(--v2-border-default);
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.izzi-v2 .v2-home__empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  border: 1px dashed var(--v2-border-strong);
+  border-radius: 12px;
+  color: var(--v2-text-secondary);
+  text-align: center;
+}
+
+.izzi-v2 .v2-home__hero .v2-surface__status {
+  margin-top: 12px;
+}
+
+/* ---- Home toolbar: new conversation + collapse the navigator ------------- */
+
+.izzi-v2 .v2-home__toolbar {
+  display: flex;
+  align-self: stretch;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.izzi-v2 .v2-home__collapse[aria-pressed='true'],
+.izzi-v2 .v2-conversation__collapse[aria-pressed='true'] {
+  border-color: var(--v2-brand-primary);
+  color: var(--v2-brand-primary);
+}
+
+/* ---- Home project accordion: expanded card spans the whole row ---------- */
+
+.izzi-v2 .v2-home__project-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-home__project-item.is-expanded {
+  grid-column: 1 / -1;
+}
+
+.izzi-v2 .v2-home__project-item.is-expanded .v2-home__project {
+  min-height: 0;
+  border-color: var(--v2-brand-primary);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.izzi-v2 .v2-home__project-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.izzi-v2 .v2-home__project-chevron {
+  display: inline-block;
+  transition: transform var(--v2-duration-fast, 150ms) ease;
+}
+
+.izzi-v2 .v2-home__project-item.is-expanded .v2-home__project-chevron {
+  transform: rotate(180deg);
+}
+
+.izzi-v2 .v2-home__project-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--v2-brand-primary);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: var(--v2-bg-panel);
+  text-align: left;
+}
+
+.izzi-v2 .v2-home__panel-label {
+  margin: 4px 0 0;
+  color: var(--v2-text-muted) !important;
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.izzi-v2 .v2-home__panel-empty {
+  margin: 0;
+  color: var(--v2-text-muted) !important;
+  font-size: 12px;
+}
+
+.izzi-v2 .v2-home__panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-home__panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-home__panel-row:hover {
+  border-color: var(--v2-border-default);
+  background: var(--v2-bg-panel-hover, var(--v2-bg-panel));
+}
+
+.izzi-v2 .v2-home__panel-row:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 1px;
+}
+
+.izzi-v2 .v2-home__panel-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-home__panel-time {
+  flex-shrink: 0;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.izzi-v2 .v2-home__panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.izzi-v2 .v2-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--v2-border-strong);
+  border-radius: 999px;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* ---- Conversation inside Home ------------------------------------------- */
+
+.izzi-v2 .v2-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Navigator collapsed: hand the freed space to the conversation. */
+.izzi-v2.v2-shell:not(:has(.v2-navigator)) .v2-conversation {
+  max-width: 1280px;
+}
+
+.izzi-v2 .v2-conversation__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-conversation__heading {
+  min-width: 0;
+}
+
+.izzi-v2 .v2-conversation__heading .v2-surface__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-conversation__crumb {
+  margin: 0 0 4px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.izzi-v2 .v2-conversation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.izzi-v2 .v2-conversation__thread {
+  flex: 1;
+  min-height: 420px;
+  border-radius: 12px;
+}
+
+/* ---- Compact (≤1023px): icon rail + drawer, as before -------------------- */
+
+@media (max-width: 1023px) {
+  .izzi-v2.v2-shell {
+    --v2-layout-rail: 60px;
+  }
+
+  .izzi-v2 .v2-rail {
+    align-items: center;
+    padding: 12px 0;
+    overflow: visible;
+  }
+
+  .izzi-v2 .v2-rail__brand {
+    padding: 0 0 8px;
+  }
+
+  .izzi-v2 .v2-rail__section,
+  .izzi-v2 .v2-rail__footer {
+    align-items: center;
+  }
+
+  .izzi-v2 .v2-rail__item {
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+
+  .izzi-v2 .v2-rail__brand-name,
+  .izzi-v2 .v2-rail__label,
+  .izzi-v2 .v2-rail__section-title,
+  .izzi-v2 .v2-rail__count,
+  .izzi-v2 .v2-rail__tag,
+  .izzi-v2 .v2-rail__kbd,
+  .izzi-v2 .v2-rail__user-text {
+    display: none;
+  }
+
+  .izzi-v2 .v2-rail__tooltip {
+    display: block;
+  }
+
+  .izzi-v2 .v2-rail__divider {
+    width: 24px;
+    margin: 6px 0;
+  }
+
+  .izzi-v2 .v2-rail__user {
+    justify-content: center;
+    padding: 8px 0 0;
+    border-top: 0;
+  }
+
+  .izzi-v2 .v2-home .v2-home__composer,
+  .izzi-v2 .v2-home .v2-home__quick,
+  .izzi-v2 .v2-home .v2-home__featured {
+    width: 100%;
+  }
+
+  .izzi-v2 .v2-home .v2-home__quick,
+  .izzi-v2 .v2-home__projects {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .izzi-v2 .v2-home .v2-home__controls {
+    flex-wrap: wrap;
+  }
+
+  .izzi-v2 .v2-home .v2-home__welcome {
+    font-size: 26px;
+    line-height: 34px;
+  }
+
+  /* Base brand size is !important (beats the title), so the override must be too. */
+  .izzi-v2 .v2-home .v2-home__brand {
+    font-size: 44px !important;
+    line-height: 52px !important;
+  }
+}
+
+/* Project tiles: a stable colour per project (projectTone.ts). Kept last so they beat the base tile rules. */
+.izzi-v2 .v2-tile--tone-0 { background: color-mix(in srgb, #8b5cf6 18%, transparent); color: #a78bfa; }
+.izzi-v2 .v2-tile--tone-1 { background: color-mix(in srgb, #3b82f6 18%, transparent); color: #60a5fa; }
+.izzi-v2 .v2-tile--tone-2 { background: color-mix(in srgb, #10b981 18%, transparent); color: #34d399; }
+.izzi-v2 .v2-tile--tone-3 { background: color-mix(in srgb, #f59e0b 18%, transparent); color: #fbbf24; }
+.izzi-v2 .v2-tile--tone-4 { background: color-mix(in srgb, #ec4899 18%, transparent); color: #f472b6; }
+.izzi-v2 .v2-tile--tone-5 { background: color-mix(in srgb, #14b8a6 18%, transparent); color: #2dd4bf; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-0 { background: color-mix(in srgb, #8b5cf6 14%, transparent); color: #6d28d9; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-1 { background: color-mix(in srgb, #3b82f6 14%, transparent); color: #1d4ed8; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-2 { background: color-mix(in srgb, #10b981 14%, transparent); color: #047857; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-3 { background: color-mix(in srgb, #f59e0b 16%, transparent); color: #b45309; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-4 { background: color-mix(in srgb, #ec4899 14%, transparent); color: #be185d; }
+.izzi-v2[data-theme='light'] .v2-tile--tone-5 { background: color-mix(in srgb, #14b8a6 14%, transparent); color: #0f766e; }
+
+.izzi-v2 .v2-pin {
+  display: inline-block;
+  margin-left: 0.35em;
+  color: #f59e0b;
+  font-size: 0.85em;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.izzi-v2[data-theme='light'] .v2-pin {
+  color: #b45309;
+}
+
+.izzi-v2 .v2-navigator__entry--recent .v2-navigator__tile {
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-navigator__entry--recent .v2-navigator__entry-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Home drops the breadcrumb, so push the header toggles to the right edge. */
+.izzi-v2 .v2-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* The legacy global `p { color: var(--izzo-muted) !important }` would keep
+   these dark-theme grey in light mode; pin them back to the V2 tokens. */
+.izzi-v2 .v2-home__subtitle {
+  color: var(--v2-text-secondary) !important;
+}
+
+.izzi-v2 .v2-navigator__hint {
+  color: var(--v2-text-muted) !important;
+}
+
+/* ── Agent Marketing: re-skin the legacy cmr views onto V2 tokens (visual only) ──
+   Loading/error states render .cmr-page--state without the room class, so cover both. */
+.izzi-v2 :is(.v2-agent-marketing-room, .cmr-page--state) {
+  --cmr-bg: var(--v2-bg-canvas);
+  --cmr-surface: var(--v2-bg-panel);
+  --cmr-surface-soft: var(--v2-bg-panel-hover);
+  --cmr-surface-raised: var(--v2-bg-panel-hover);
+  --cmr-border: var(--v2-border-default);
+  --cmr-border-strong: var(--v2-border-strong);
+  --cmr-text: var(--v2-text-primary);
+  --cmr-muted: var(--v2-text-secondary);
+  --cmr-dim: var(--v2-text-muted);
+  --cmr-cyan: var(--v2-brand-primary);
+  --cmr-cyan-soft: color-mix(in srgb, #7c4dff 14%, transparent);
+  --cmr-gold: var(--v2-warning);
+  --cmr-green: var(--v2-success);
+  --cmr-red: var(--v2-danger);
+  --cmr-radius: var(--v2-radius-card);
+  --v2-am-well: var(--v2-bg-deep);
+  --v2-am-accent-line: color-mix(in srgb, #7c4dff 42%, transparent);
+  --v2-am-accent-text: #b9a2ff;
+  --v2-am-mark-line: var(--v2-text-muted);
+}
+
+/* Legacy .main-content is `background: transparent !important`, so its padding framed the room in the dark app bg. */
+.izzi-v2 .v2-workspace:has(> .cmr-page) {
+  background: var(--v2-bg-canvas) !important;
+}
+
+/* Light theme leaves bg-deep / bg-panel-hover unset, so give explicit surfaces. */
+.izzi-v2[data-theme='light'] :is(.v2-agent-marketing-room, .cmr-page--state) {
+  --cmr-surface-soft: #f7f6fa;
+  --cmr-surface-raised: #f7f6fa;
+  --cmr-cyan-soft: color-mix(in srgb, #7c4dff 10%, transparent);
+  --v2-am-well: #f1f0f5;
+  --v2-am-accent-line: color-mix(in srgb, #7c4dff 34%, transparent);
+  --v2-am-accent-text: #5b2fd6;
+  --v2-am-mark-line: var(--v2-text-secondary);
+}
+
+/* Wells: inputs, segmented tracks, pickers (were hardcoded near-black). */
+.izzi-v2 .v2-agent-marketing-room :is(
+  .cmr-nav,
+  .cmr-director-input textarea,
+  .cmr-director-result__body,
+  .cmr-context-receipt,
+  .cmr-source-picker > label,
+  .cmr-field input,
+  .cmr-field textarea,
+  .cmr-option,
+  .cmr-mode-card,
+  .cmr-channel-targets,
+  .cmr-channel-search,
+  .cmr-channel-workflow-select select,
+  .cmr-workbench .cmr-field select,
+  .cmr-pagespeed-strategy > div
+) {
+  background: var(--v2-am-well);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-nav {
+  scrollbar-color: var(--cmr-border-strong) var(--v2-am-well);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-nav::-webkit-scrollbar-track {
+  background: var(--v2-am-well);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-director-composer {
+  border-color: var(--v2-am-accent-line);
+  border-radius: var(--v2-radius-panel);
+  background: var(--v2-bg-panel);
+  box-shadow: var(--v2-shadow);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-director-input textarea {
+  border-radius: var(--v2-radius-card);
+}
+
+/* Buttons: violet primary pill, quiet secondary. */
+.izzi-v2 :is(.v2-agent-marketing-room, .cmr-page--state) .cmr-button {
+  border-radius: var(--v2-radius-pill);
+  font-weight: 600;
+}
+
+.izzi-v2 :is(.v2-agent-marketing-room, .cmr-page--state) .cmr-button:hover:not(:disabled) {
+  background: var(--cmr-surface-raised);
+  border-color: var(--v2-border-strong);
+}
+
+.izzi-v2 :is(.v2-agent-marketing-room, .cmr-page--state) .cmr-button--primary {
+  border-color: var(--v2-brand-primary);
+  color: #fff;
+  background: var(--v2-brand-primary);
+}
+
+.izzi-v2 :is(.v2-agent-marketing-room, .cmr-page--state) .cmr-button--primary:hover:not(:disabled) {
+  border-color: var(--v2-brand-primary-hover);
+  background: var(--v2-brand-primary-hover);
+}
+
+/* Text that sat on cyan fills now sits on violet. */
+.izzi-v2 .v2-agent-marketing-room :is(
+  .cmr-step.is-current .cmr-step__number,
+  .cmr-step.is-done .cmr-step__number,
+  .cmr-option__mark,
+  .cmr-pagespeed-strategy button.is-active
+) {
+  color: #fff;
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-mode-card.is-selected .cmr-mode-card__mark {
+  background: var(--v2-bg-panel);
+}
+
+/* Former teal outlines and glows. */
+.izzi-v2 .v2-agent-marketing-room :is(
+  .cmr-prompt-chip:hover,
+  .cmr-filter:hover,
+  .cmr-filter.is-active,
+  .cmr-run-step--in_progress .cmr-run-step__marker,
+  .cmr-source-picker > label:has(input:checked),
+  .cmr-step.is-current,
+  .cmr-option.is-checked,
+  .cmr-mode-card.is-selected,
+  .cmr-channel-source.is-selected
+) {
+  border-color: var(--v2-am-accent-line);
+}
+
+.izzi-v2 .v2-agent-marketing-room :is(.cmr-telegram-setup input, .cmr-invite-field input, .cmr-invite-field select):focus-visible {
+  box-shadow: 0 0 0 3px var(--cmr-cyan-soft);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-member-you {
+  border-color: var(--v2-am-accent-line);
+  color: var(--v2-am-accent-text);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-agent-mark {
+  border-color: var(--v2-am-accent-line);
+  color: var(--v2-am-accent-text);
+}
+
+@media (max-width: 760px) {
+  .izzi-v2 .v2-agent-marketing-room .cmr-channel-actions {
+    background: color-mix(in srgb, var(--v2-bg-panel) 98%, transparent);
+  }
+}
+
+/* V2 project tabs: the active tab reads as a violet-tinted pill. */
+.izzi-v2 .v2-agent-marketing .v2-project-tabs .v2-tab.is-active {
+  background: var(--cmr-cyan-soft);
+  color: var(--v2-am-accent-text);
+  box-shadow: inset 0 0 0 1px var(--v2-am-accent-line);
+}
+
+.izzi-v2 .v2-agent-marketing .v2-project-panel {
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+  background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-agent-marketing__inspector {
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+  background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-agent-marketing__guard {
+  color: var(--v2-text-secondary) !important;
+}
+
+/* Alerts use V2 status colours. */
+.izzi-v2 .v2-agent-marketing-room .cmr-alert--error {
+  border-color: color-mix(in srgb, var(--v2-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--v2-danger) 10%, transparent);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-alert--success {
+  border-color: color-mix(in srgb, var(--v2-success) 40%, transparent);
+  background: color-mix(in srgb, var(--v2-success) 10%, transparent);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-agent-marketing-room .cmr-alert :is(p, span) {
+  color: var(--v2-text-secondary) !important;
+}
+
+/* Agent Marketing onboarding wizard: wizard-only chrome on top of the room re-skin (visual only) */
+.izzi-v2 .v2-agent-marketing-onboarding {
+  --cmr-muted: var(--v2-text-secondary);
+  scrollbar-gutter: stable;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-eyebrow {
+  color: var(--v2-am-accent-text);
+}
+
+/* Legacy globals `h1, h2, h3 { color: var(--izzo-ink) !important }` and `p { color: var(--izzo-muted) !important }`
+   are fixed near-white with no light override; pin them to the V2 tokens. */
+.izzi-v2 .v2-agent-marketing-onboarding :is(h1, h2, h3) {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding p {
+  color: var(--v2-text-secondary) !important;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-onboarding-progress {
+  padding: 10px 14px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+  background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-onboarding-progress strong {
+  color: var(--v2-am-accent-text);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-onboarding-progress span {
+  color: var(--v2-text-secondary);
+  font-size: 11px;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-step {
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary);
+  gap: 4px;
+  padding-inline: 5px;
+}
+
+/* :not(.is-current) keeps the legacy violet tint on the current step. */
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-step:not(.is-current) {
+  background: var(--v2-bg-panel);
+}
+
+/* Only pills the wizard lets you click (earlier or completed steps) get the hover affordance. */
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-step:not(.is-current):is(.is-done, :has(~ .is-current)):hover {
+  background: color-mix(in srgb, var(--v2-brand-primary) 10%, var(--v2-bg-panel));
+  border-color: var(--v2-am-accent-line);
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-step.is-current {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-step__label {
+  font-size: var(--v2-text-label-size);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-onboarding-panel {
+  border-radius: var(--v2-radius-panel);
+  box-shadow: var(--v2-shadow);
+}
+
+/* Legacy hardcoded #f3ca8b is invisible on the light theme. */
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-safety-note strong {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-option__copy strong, .cmr-mode-card strong, .cmr-field__label b) {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-option__copy small, .cmr-mode-card small) {
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-option:not(.is-checked) .cmr-option__mark, .cmr-mode-card:not(.is-selected) .cmr-mode-card__mark) {
+  border: 1.5px solid var(--v2-am-mark-line);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-choice-grid--channels .cmr-option {
+  align-items: center;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-mode-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-field__hint, .cmr-muted, .cmr-onboarding-actions > span) {
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-onboarding-actions {
+  border-top: 1px solid var(--v2-border-default);
+  padding-top: 16px;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding .cmr-alert--error {
+  margin-top: 12px;
+  border: 1px solid color-mix(in srgb, var(--v2-danger) 50%, transparent);
+  color: var(--v2-text-primary);
+}
+
+/* Legacy `input, textarea, select` force a dark background, border, colour, placeholder and a teal focus ring
+   with !important (styles/index.css); re-assert the V2 tokens on the wizard's visible fields. The checkbox and radio
+   inside .cmr-option / .cmr-mode-card are visually hidden (opacity 0) and are left alone. */
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-field, .cmr-color-field) :is(input, textarea) {
+  background: var(--v2-am-well) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-field, .cmr-color-field) :is(input, textarea)::placeholder {
+  color: var(--v2-text-secondary) !important;
+  opacity: 1;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-field, .cmr-color-field) :is(input, textarea):focus {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+/* `*:focus-visible` is a teal !important outline; use the V2 violet like the shell controls. */
+.izzi-v2 .v2-agent-marketing-onboarding button:focus-visible,
+.izzi-v2 .v2-agent-marketing-onboarding :is(.cmr-field, .cmr-color-field) :is(input, textarea):focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+/* Agent Marketing wizard: keep the last field off the actions divider when the step fills the card. */
+.izzi-v2 .v2-agent-marketing-onboarding :has(+ .cmr-onboarding-actions) { margin-bottom: var(--v2-space-3); }
+
+/* The V2 rail+navigator (296px) narrow the wizard, so hide pill labels earlier than the legacy 1180px rule. */
+@media (max-width: 1400px) {
+  .izzi-v2 .v2-agent-marketing-onboarding .cmr-step__label { display: none; }
+  .izzi-v2 .v2-agent-marketing-onboarding .cmr-step { justify-content: center; }
+}

@@ -16,8 +16,9 @@ import * as path from "path";
 import * as crypto from "crypto";
 import * as https from "https";
 import * as http from "http";
+import { resolveMarketplaceUrl } from "./marketplace-url";
 
-const MARKETPLACE_API = process.env.MARKETPLACE_API_URL || "http://localhost:8788";
+const MARKETPLACE_API = resolveMarketplaceUrl();
 
 export interface MarketplaceExtensionInfo {
   id: string;

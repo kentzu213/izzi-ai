@@ -1,0 +1,1738 @@
+/*
+ * Izzi AI V2 — M2 shell chrome (spec/03).
+ *
+ * Every selector is scoped under `.izzi-v2` (enforced by tokens.test.ts).
+ * Only the new chrome (rail, navigator, header, inspector) is styled here; the
+ * workspace keeps the legacy `.main-content` rules so legacy pages render
+ * unchanged inside the shell. Media queries live in
+ * components/v2/shell-responsive.css because the token test parser reads
+ * flat rules only.
+ *
+ * `!important` is used only where legacy global rules already use it:
+ * inputs and *:focus-visible (styles/index.css) and bare h1–h3 color,
+ * text-fill, weight, tracking, line-height and case (styles/izzi-optimized.css).
+ * The Home/Projects surfaces also override the legacy `.main-content`
+ * transparent backdrop and the input background, border, color and focus
+ * ring, scoped to `.v2-workspace--surface` so legacy pages are untouched.
+ */
+
+.izzi-v2.v2-shell {
+  position: relative;
+  display: flex;
+  height: calc(100% - var(--v2-layout-titlebar));
+  overflow: hidden;
+}
+
+.izzi-v2 .v2-rail,
+.izzi-v2 .v2-navigator,
+.izzi-v2 .v2-header,
+.izzi-v2 .v2-inspector {
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+  color: var(--v2-text-primary);
+}
+
+/*
+ * :where() keeps the reset at (0,1,1) so component classes such as
+ * `.izzi-v2 .v2-navigator__item` (0,2,0) still win for padding and color.
+ */
+.izzi-v2 :where(.v2-rail) button,
+.izzi-v2 :where(.v2-navigator) button,
+.izzi-v2 :where(.v2-header) button,
+.izzi-v2 :where(.v2-inspector) button {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.izzi-v2 :where(.v2-rail) button:focus-visible,
+.izzi-v2 :where(.v2-navigator) button:focus-visible,
+.izzi-v2 :where(.v2-header) button:focus-visible,
+.izzi-v2 :where(.v2-inspector) button:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+/* ---- GlobalRail ---------------------------------------------------------- */
+
+.izzi-v2 .v2-rail {
+  display: flex;
+  flex: 0 0 var(--v2-layout-rail);
+  flex-direction: column;
+  align-items: center;
+  gap: var(--v2-space-2);
+  width: var(--v2-layout-rail);
+  padding: var(--v2-space-3) 0;
+  background: var(--v2-bg-deep, var(--v2-bg-panel));
+  border-right: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-rail__logo {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-rail__logo-mark {
+  width: 28px;
+  height: 28px;
+}
+
+.izzi-v2 .v2-rail__section,
+.izzi-v2 .v2-rail__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-rail__footer {
+  margin-top: auto;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-rail__divider {
+  width: 24px;
+  height: 1px;
+  margin: var(--v2-space-1) 0;
+  background: var(--v2-border-default);
+}
+
+.izzi-v2 .v2-rail__item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.izzi-v2 .v2-rail__item:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-rail__item.is-active {
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-rail__item.is-placeholder {
+  color: var(--v2-text-muted);
+  cursor: not-allowed;
+}
+
+.izzi-v2 .v2-rail__item.is-placeholder:hover {
+  background: none;
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-rail__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.izzi-v2 .v2-rail__tooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + var(--v2-space-2));
+  z-index: 20;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-panel);
+  box-shadow: var(--v2-shadow);
+  color: var(--v2-text-primary);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+}
+
+.izzi-v2 .v2-rail__item:hover .v2-rail__tooltip,
+.izzi-v2 .v2-rail__item:focus-visible .v2-rail__tooltip {
+  opacity: 1;
+}
+
+.izzi-v2 .v2-rail__avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-brand-gradient);
+  color: #ffffff;
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+/* ---- ContextNavigator ---------------------------------------------------- */
+
+.izzi-v2 .v2-navigator {
+  display: flex;
+  flex: 0 0 var(--v2-layout-navigator);
+  flex-direction: column;
+  width: var(--v2-layout-navigator);
+  min-height: 0;
+  background: var(--v2-bg-panel);
+  border-right: 1px solid var(--v2-border-default);
+}
+
+/* spec/04, 960–1023px: the navigator overlays the workspace instead of pushing it. */
+.izzi-v2 .v2-navigator.v2-navigator--drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--v2-layout-rail);
+  z-index: 40;
+  box-shadow: var(--v2-shadow);
+}
+
+.izzi-v2 .v2-drawer-scrim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--v2-layout-rail);
+  z-index: 35;
+  background: transparent;
+}
+
+.izzi-v2 .v2-navigator__search {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-3);
+  border-bottom: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-navigator__close {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-navigator__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.izzi-v2 .v2-navigator__close:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--v2-space-3) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  background: var(--v2-bg-canvas) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  font: inherit;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-navigator__input::placeholder {
+  color: var(--v2-text-muted) !important;
+}
+
+.izzi-v2 .v2-navigator__input:focus,
+.izzi-v2 .v2-navigator__input:focus-visible {
+  border-color: var(--v2-brand-primary) !important;
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-navigator__groups {
+  flex: 1;
+  min-height: 0;
+  padding: var(--v2-space-2) var(--v2-space-2) var(--v2-space-4);
+  overflow-y: auto;
+}
+
+.izzi-v2 .v2-navigator__group + .v2-navigator__group {
+  margin-top: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-navigator__group-title {
+  margin: 0;
+  padding: var(--v2-space-2) var(--v2-space-2) var(--v2-space-1);
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line) !important;
+  font-weight: var(--v2-font-weight-semibold) !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+.izzi-v2 .v2-navigator__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-navigator__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+  width: 100%;
+  min-height: 32px;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+  text-align: left;
+}
+
+.izzi-v2 .v2-navigator__item:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__item.is-active {
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  color: var(--v2-text-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+/* Project and recent-session links (M3-A): one line, ellipsised. */
+.izzi-v2 .v2-navigator__recent {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-navigator__recent:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-navigator__recent[aria-current='true'] {
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  color: var(--v2-text-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-navigator__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-navigator__note {
+  flex-shrink: 0;
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  font-weight: var(--v2-font-weight-regular);
+}
+
+.izzi-v2 .v2-navigator__badge {
+  flex-shrink: 0;
+  padding: 0 var(--v2-space-2);
+  border-radius: var(--v2-radius-pill);
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  color: var(--v2-text-primary);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+/* The global `p { color: … !important }` would otherwise win in both themes. */
+.izzi-v2 .v2-navigator__empty {
+  margin: 0;
+  padding: var(--v2-space-4) var(--v2-space-2);
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+/* ---- Stage: ProjectHeader + legacy workspace ----------------------------- */
+
+.izzi-v2 .v2-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-workspace {
+  flex: 1;
+  min-height: 0;
+}
+
+.izzi-v2 .v2-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--v2-space-3);
+  min-height: 52px;
+  padding: 0 var(--v2-space-4);
+  background: var(--v2-bg-canvas);
+  border-bottom: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-header__toggle {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-header__toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.izzi-v2 .v2-header__toggle:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-header__toggle[aria-pressed='true'] {
+  color: var(--v2-brand-primary);
+}
+
+/* Extension updates while the navigator (and its badge) is hidden. */
+.izzi-v2 .v2-header__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-header__breadcrumb {
+  flex: 1;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-header__breadcrumb ol {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-header__breadcrumb li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-header__breadcrumb li + li::before {
+  content: '/';
+  padding: 0 var(--v2-space-2);
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-header__breadcrumb li[aria-current='page'] {
+  color: var(--v2-text-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-header__status {
+  flex-shrink: 0;
+  padding: 2px var(--v2-space-2);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+.izzi-v2 .v2-header__project {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.izzi-v2 .v2-header__project-select {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px var(--v2-space-2);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  text-overflow: ellipsis;
+}
+
+/* ---- Inspector ----------------------------------------------------------- */
+
+.izzi-v2 .v2-inspector {
+  display: flex;
+  flex: 0 0 var(--v2-layout-inspector);
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  width: var(--v2-layout-inspector);
+  min-height: 0;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border-left: 1px solid var(--v2-border-default);
+  overflow-y: auto;
+}
+
+.izzi-v2 .v2-inspector__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-inspector__title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-section-size);
+  line-height: var(--v2-text-section-line) !important;
+  font-weight: var(--v2-font-weight-semibold) !important;
+  letter-spacing: normal !important;
+}
+
+.izzi-v2 .v2-inspector__close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-inspector__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.izzi-v2 .v2-inspector__close:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-inspector__meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--v2-space-2) var(--v2-space-4);
+  margin: 0;
+}
+
+.izzi-v2 .v2-inspector__meta dt {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-inspector__meta dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-inspector__meta code {
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-inspector__note {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+/* ---- Home / Projects surfaces (M3-A) -------------------------------------- */
+
+.izzi-v2 .v2-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.izzi-v2 .v2-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-6);
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--v2-space-8) var(--v2-space-6);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-surface__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-surface__title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-page-size);
+  line-height: var(--v2-text-page-line) !important;
+  font-weight: var(--v2-font-weight-semibold) !important;
+  letter-spacing: normal !important;
+}
+
+.izzi-v2 .v2-surface__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-surface__section-title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-section-size);
+  line-height: var(--v2-text-section-line) !important;
+  font-weight: var(--v2-font-weight-semibold) !important;
+  letter-spacing: normal !important;
+}
+
+.izzi-v2 .v2-surface__status {
+  min-height: var(--v2-text-meta-line);
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-surface__status:empty {
+  display: none;
+}
+
+/* Workspace controls live outside the region reset, so each sets its own box. */
+.izzi-v2 .v2-workspace .v2-button,
+.izzi-v2 .v2-workspace .v2-chip,
+.izzi-v2 .v2-workspace .v2-tab,
+.izzi-v2 .v2-workspace .v2-project-card,
+.izzi-v2 .v2-workspace .v2-project-row__select,
+.izzi-v2 .v2-workspace .v2-session-item {
+  appearance: none;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-workspace .v2-button:focus-visible,
+.izzi-v2 .v2-workspace .v2-chip:focus-visible,
+.izzi-v2 .v2-workspace .v2-tab:focus-visible,
+.izzi-v2 .v2-workspace .v2-project-card:focus-visible,
+.izzi-v2 .v2-workspace .v2-project-row__select:focus-visible,
+.izzi-v2 .v2-workspace .v2-session-item:focus-visible,
+.izzi-v2 .v2-workspace .v2-home__prompt:focus-visible,
+.izzi-v2 .v2-workspace .v2-field__select:focus-visible,
+.izzi-v2 .v2-workspace .v2-field__input:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-workspace .v2-button:disabled,
+.izzi-v2 .v2-workspace .v2-chip:disabled,
+.izzi-v2 .v2-workspace .v2-tab:disabled,
+.izzi-v2 .v2-workspace .v2-project-row__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.izzi-v2 .v2-home__composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  padding: var(--v2-space-5);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+}
+
+.izzi-v2 .v2-home__prompt {
+  width: 100%;
+  min-height: 112px;
+  padding: var(--v2-space-2);
+  background: transparent;
+  border: 0;
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+  resize: vertical;
+}
+
+.izzi-v2 .v2-home__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-home__controls .v2-button--primary {
+  margin-left: auto;
+}
+
+.izzi-v2 .v2-home__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 160px;
+}
+
+.izzi-v2 .v2-field__label {
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+.izzi-v2 .v2-field__select,
+.izzi-v2 .v2-field__input {
+  min-height: 36px;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  background: var(--v2-bg-deep);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+/*
+ * Legacy `.main-content` is `background: transparent !important`, which lets
+ * the dark body show through a light surface. The modifier is set only while
+ * Home/Projects is open, so legacy pages keep their own backdrop.
+ */
+.izzi-v2 .v2-workspace--surface {
+  background: var(--v2-bg-canvas) !important;
+  color: var(--v2-text-primary);
+}
+
+/*
+ * Legacy `input, textarea, select` force a dark background, border, radius,
+ * color and focus ring with `!important`. Re-assert the V2 tokens on the V2
+ * controls only; light resets --v2-bg-deep, hence the panel fallback.
+ */
+.izzi-v2 .v2-workspace--surface .v2-field__select,
+.izzi-v2 .v2-workspace--surface .v2-field__input {
+  background: var(--v2-bg-deep, var(--v2-bg-panel)) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-header__project-select {
+  background: var(--v2-bg-panel) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-home__prompt {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-home__prompt::placeholder,
+.izzi-v2 .v2-workspace--surface .v2-field__input::placeholder {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-field__select:focus,
+.izzi-v2 .v2-workspace--surface .v2-field__input:focus,
+.izzi-v2 .v2-header__project-select:focus {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-home__prompt:focus {
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-workspace--surface .v2-home__prompt:focus-visible,
+.izzi-v2 .v2-workspace--surface .v2-field__select:focus-visible,
+.izzi-v2 .v2-workspace--surface .v2-field__input:focus-visible,
+.izzi-v2 .v2-header__project-select:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-button {
+  min-height: 36px;
+  padding: var(--v2-space-1) var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary);
+  font-weight: var(--v2-font-weight-semibold);
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-button:hover:not(:disabled) {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-button--primary {
+  background: var(--v2-brand-primary);
+  border-color: var(--v2-brand-primary);
+  color: #fff;
+}
+
+.izzi-v2 .v2-button--primary:hover:not(:disabled) {
+  background: var(--v2-brand-primary-hover);
+}
+
+.izzi-v2 .v2-button--ghost {
+  min-height: 28px;
+  padding: 2px var(--v2-space-2);
+  background: transparent;
+  border-color: transparent;
+  color: var(--v2-text-secondary);
+  font-weight: var(--v2-font-weight-regular);
+}
+
+.izzi-v2 .v2-button--ghost:hover:not(:disabled) {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-chip {
+  padding: var(--v2-space-1) var(--v2-space-4);
+  background: transparent;
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+.izzi-v2 .v2-chip:hover {
+  border-color: var(--v2-brand-primary);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--v2-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  width: 100%;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-primary);
+  text-align: left;
+}
+
+.izzi-v2 .v2-project-card:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-project-card__name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--v2-text-body-strong-size);
+  line-height: var(--v2-text-body-strong-line);
+  font-weight: var(--v2-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-project-card__meta {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-session-list,
+.izzi-v2 .v2-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-session-row,
+.izzi-v2 .v2-project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-2);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-project-row {
+  padding: var(--v2-space-1);
+  border: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-project-row.is-active {
+  border-color: var(--v2-brand-primary);
+  background: color-mix(in srgb, var(--v2-brand-primary) 10%, transparent);
+}
+
+.izzi-v2 .v2-session-item,
+.izzi-v2 .v2-project-row__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--v2-space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-project-row__select {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-session-item:hover,
+.izzi-v2 .v2-project-row__select:hover:not(:disabled) {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-projects__create {
+  display: flex;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-projects__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-tabs {
+  display: inline-flex;
+  gap: var(--v2-space-1);
+  padding: 2px;
+  background: var(--v2-bg-deep);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+}
+
+.izzi-v2 .v2-tab {
+  padding: var(--v2-space-1) var(--v2-space-4);
+  background: transparent;
+  border: 0;
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+.izzi-v2 .v2-tab.is-active {
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: var(--v2-space-4);
+  border: 1px dashed var(--v2-border-strong);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+/* Legacy izzi-optimized.css `p { color: var(--izzo-muted) !important }` beats inheritance. */
+.izzi-v2 .v2-empty p {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* Project workspace (M3-B1): tab row, panels, turn/message feeds and scoped chat. */
+.izzi-v2 .v2-project-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-1);
+  padding: 2px;
+  background: var(--v2-bg-deep);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.izzi-v2 .v2-project-panel,
+.izzi-v2 .v2-project-overview,
+.izzi-v2 .v2-project-runs,
+.izzi-v2 .v2-project-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  min-width: 0;
+}
+
+/* Agent Marketing V2 (M4): tab frame plus a guard/approvals inspector column.
+ * .cmr-page stays on the room only as the --cmr-* token host for the reused legacy views;
+ * the frame itself takes V2 surface, text and focus tokens. The selector does not name
+ * .cmr-page: (0,2,0) already outranks the legacy .cmr-page (0,1,0). */
+.izzi-v2 .v2-agent-marketing-room {
+  background: var(--v2-bg-canvas);
+  color: var(--v2-text-primary);
+}
+
+/* Panels stay mounted once opened; the flex display above must not defeat [hidden]. */
+.izzi-v2 .v2-agent-marketing .v2-project-panel[hidden] {
+  display: none;
+}
+
+.izzi-v2 .v2-agent-marketing .v2-tab:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-agent-marketing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: var(--v2-space-4);
+  align-items: start;
+  margin-top: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-agent-marketing__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-agent-marketing__inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  min-width: 0;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-agent-marketing__guard {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-agent-marketing__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-agent-marketing__files li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  padding: var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-agent-marketing__files span {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+@media (max-width: 960px) {
+  .izzi-v2 .v2-agent-marketing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* M6 — Affiliate workspace. Layout only; every value comes from the page over IPC. */
+.izzi-v2 .v2-affiliate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-affiliate__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-affiliate__kicker,
+.izzi-v2 .v2-affiliate__label {
+  margin: 0;
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-affiliate__lead,
+.izzi-v2 .v2-affiliate__meta {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-affiliate__notice {
+  margin: 0;
+  padding: var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-affiliate__notice--ok {
+  color: var(--v2-success) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__notice--err {
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  min-width: 0;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-affiliate__link-row,
+.izzi-v2 .v2-affiliate__methods {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-affiliate__link {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--v2-space-2) var(--v2-space-3);
+  overflow-wrap: anywhere;
+  background: var(--v2-bg-deep);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--v2-space-3);
+  margin: 0;
+}
+
+.izzi-v2 .v2-affiliate__tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  padding: var(--v2-space-3);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-affiliate__tile dt {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-affiliate__tile dd {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-affiliate__tile--highlight {
+  border-color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-affiliate__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-affiliate__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-affiliate__row {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-3);
+  padding: var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__row-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-affiliate__row-main span {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-affiliate__amount {
+  color: var(--v2-success) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__badge {
+  padding: var(--v2-space-1) var(--v2-space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-affiliate__badge--pending,
+.izzi-v2 .v2-affiliate__badge--processing {
+  color: var(--v2-warning) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__badge--available,
+.izzi-v2 .v2-affiliate__badge--paid,
+.izzi-v2 .v2-affiliate__badge--completed {
+  color: var(--v2-success) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-affiliate__badge--rejected {
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+@media (max-width: 720px) {
+  .izzi-v2 .v2-affiliate__tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .izzi-v2 .v2-affiliate__row {
+    flex-wrap: wrap;
+  }
+}
+
+/* M7 — MyGraph frame. The graph keeps its own token island; no selector here targets it. */
+.izzi-v2 .v2-mygraph {
+  box-sizing: border-box;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  gap: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-mygraph__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-mygraph__kicker {
+  margin: 0;
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-mygraph__lead {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-mygraph__error {
+  margin: 0;
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-mygraph__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-mygraph__canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.izzi-v2 .v2-project-feed,
+.izzi-v2 .v2-project-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-project-feed__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 0;
+  padding: var(--v2-space-3) var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-project-feed__meta,
+.izzi-v2 .v2-project-steps {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-project-steps {
+  gap: var(--v2-space-1);
+  padding-left: var(--v2-space-4);
+  list-style: decimal;
+}
+
+.izzi-v2 .v2-project-chat__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-project-chat__agent {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.izzi-v2 .v2-project-chat__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  min-height: 320px;
+  min-width: 0;
+  padding: var(--v2-space-3);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+/*
+ * M3-B1 audit: the reused legacy chat (glass surfaces, cyan bubbles, global
+ * textarea/select !important) uses the V2 tokens inside Project Chat only.
+ * Legacy Chat and the V2-OFF shell keep their own styles.
+ */
+.izzi-v2 .v2-project-chat .chat-message-list,
+.izzi-v2 .v2-project-chat .chat-composer {
+  background: var(--v2-bg-canvas) !important;
+  border-color: var(--v2-border-default) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__bubble,
+.izzi-v2 .v2-project-chat .chat-message__bubble--assistant,
+.izzi-v2 .v2-project-chat .chat-message__bubble--system {
+  background: var(--v2-bg-panel) !important;
+  border-color: var(--v2-border-default) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__bubble--user {
+  background: var(--v2-bg-deep, var(--v2-bg-panel)) !important;
+  border-color: var(--v2-border-default) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__content {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__meta,
+.izzi-v2 .v2-project-chat .chat-message__author,
+.izzi-v2 .v2-project-chat .chat-message__state {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__state {
+  background: var(--v2-bg-panel) !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__input,
+.izzi-v2 .v2-project-chat .chat-composer__perm-select,
+.izzi-v2 .v2-project-chat .v2-project-chat__select {
+  background: var(--v2-bg-deep, var(--v2-bg-panel)) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__input::placeholder {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__input:focus,
+.izzi-v2 .v2-project-chat .chat-composer__perm-select:focus,
+.izzi-v2 .v2-project-chat .v2-project-chat__select:focus {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__input:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__perm-select:focus-visible,
+.izzi-v2 .v2-project-chat .v2-project-chat__select:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer:focus-within {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * M3-B1 audit follow-up: steps, copy, composer buttons, attachment menu and
+ * footer controls rendered legacy cream/dark values in the light theme.
+ * Light unsets --v2-bg-panel-hover, so hover falls back to --v2-bg-subtle.
+ */
+.izzi-v2 .v2-project-chat .chat-step__label {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-step--running .chat-step__label,
+.izzi-v2 .v2-project-chat .chat-step__detail,
+.izzi-v2 .v2-project-chat .chat-step__glyph {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-step--running .chat-step__glyph {
+  color: var(--v2-info) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-step--done .chat-step__glyph {
+  color: var(--v2-success) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-step--error .chat-step__glyph {
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__copy {
+  background: transparent !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-message__copy:hover,
+.izzi-v2 .v2-project-chat .chat-message__copy:focus-visible {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__add,
+.izzi-v2 .v2-project-chat .chat-composer__inject {
+  background: var(--v2-bg-panel) !important;
+  background-image: none !important;
+  border: 1px solid var(--v2-border-default) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__inject {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__add:hover:not(:disabled),
+.izzi-v2 .v2-project-chat .chat-composer__inject:hover:not(:disabled) {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  border-color: var(--v2-border-strong) !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__submit {
+  background: var(--v2-brand-primary) !important;
+  background-image: none !important;
+  border: 1px solid var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  color: var(--v2-brand-soft) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__submit:hover:not(:disabled) {
+  background: var(--v2-brand-primary-hover) !important;
+  border-color: var(--v2-brand-primary-hover) !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__stop {
+  background: var(--v2-bg-panel) !important;
+  background-image: none !important;
+  border: 1px solid var(--v2-danger) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__stop:hover:not(:disabled) {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__add:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__submit:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__stop:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__inject:focus-visible,
+.izzi-v2 .v2-project-chat .chat-message__copy:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__menu-item:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__wd-btn:focus-visible,
+.izzi-v2 .v2-project-chat .chat-composer__wd-clear:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__add:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__submit:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__stop:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__inject:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__menu-item:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__wd-btn:disabled,
+.izzi-v2 .v2-project-chat .chat-composer__wd-clear:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu {
+  background: var(--v2-bg-panel) !important;
+  background-image: none !important;
+  border: 1px solid var(--v2-border-default) !important;
+  box-shadow: var(--v2-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-section + .chat-composer__menu-section {
+  border-color: var(--v2-border-default) !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-label,
+.izzi-v2 .v2-project-chat .chat-composer__menu-hint {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-item {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-item:hover:not(:disabled),
+.izzi-v2 .v2-project-chat .chat-composer__menu-item:focus-visible {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-item-label {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__menu-item-desc,
+.izzi-v2 .v2-project-chat .chat-composer__menu-icon {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__footer,
+.izzi-v2 .v2-project-chat .chat-composer__perm,
+.izzi-v2 .v2-project-chat .chat-composer__perm-icon,
+.izzi-v2 .v2-project-chat .chat-composer__wd {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__perm-warn {
+  color: var(--v2-warning) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__wd-btn,
+.izzi-v2 .v2-project-chat .chat-composer__wd-clear {
+  background: transparent !important;
+  border-color: var(--v2-border-default) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-project-chat .chat-composer__wd-btn:hover:not(:disabled),
+.izzi-v2 .v2-project-chat .chat-composer__wd-clear:hover:not(:disabled) {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}

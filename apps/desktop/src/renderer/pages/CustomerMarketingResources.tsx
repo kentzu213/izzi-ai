@@ -105,7 +105,7 @@ const KIND_COPY: Record<CustomerMarketingResourceKind, {
   knowledge: {
     eyebrow: 'Business knowledge',
     title: 'Tri thức',
-    description: 'Lưu nguồn, nội dung và ngữ cảnh doanh nghiệp cho phòng Marketing AI.',
+    description: 'Lưu nguồn, nội dung và ngữ cảnh doanh nghiệp cho phòng Agent Marketing.',
     create: 'Thêm tri thức',
     empty: 'Chưa có tri thức trong workspace này.',
   },

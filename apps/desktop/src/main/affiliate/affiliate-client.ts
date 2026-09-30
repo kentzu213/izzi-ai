@@ -57,6 +57,10 @@ export type MutationResult =
 /** Minimum withdrawal, matching the web dashboard (500,000 VND). */
 export const MIN_WITHDRAW_VND = 500000;
 
+const WITHDRAW_METHODS: ReadonlySet<unknown> = new Set(['bank_transfer', 'credit_convert']);
+const ACCOUNT_NO_PATTERN = /^\d{6,20}$/;
+const MAX_BANK_TEXT = 100;
+
 // ── Helpers (no prototype-chain reads; token-free diagnostics) ─────────────
 
 function ownValue(raw: unknown, key: string): unknown {
@@ -80,9 +84,46 @@ function str(raw: unknown, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
-function shortError(err: unknown): string {
-  if (err instanceof Error) return (err.message || err.name || 'error').slice(0, 200);
-  return 'error';
+/**
+ * Check bank transfer details before they leave the app.
+ * Returns a user-facing error, or null when the trimmed fields are well-formed.
+ */
+export function bankInfoError(info: unknown): string | null {
+  const bank = str(info, 'bank').trim();
+  const accountNo = str(info, 'accountNo').trim();
+  const accountName = str(info, 'accountName').trim();
+  if (!bank || !accountNo || !accountName) return 'Vui lòng nhập đủ thông tin ngân hàng';
+  if (!ACCOUNT_NO_PATTERN.test(accountNo)) return 'Số tài khoản chỉ gồm 6–20 chữ số';
+  if (bank.length > MAX_BANK_TEXT || accountName.length > MAX_BANK_TEXT) {
+    return 'Tên ngân hàng hoặc chủ tài khoản quá dài';
+  }
+  return null;
+}
+
+interface PostResult {
+  status: number;
+  raw: unknown;
+}
+
+const GENERIC_MUTATION_ERROR = 'Yêu cầu thất bại';
+const REJECTED_STATUSES: ReadonlySet<number> = new Set([400, 409, 422]);
+
+/** Fixed, user-facing text for a failed write. Chosen by HTTP status only, never by backend text. */
+export function mutationErrorMessage(status: number): string {
+  if (status === 401 || status === 403) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  if (status === 429) return 'Bạn thao tác quá nhanh. Vui lòng đợi một lát rồi thử lại.';
+  if (REJECTED_STATUSES.has(status)) {
+    return 'Yêu cầu bị từ chối. Kiểm tra số tiền, số dư khả dụng và thông tin nhận tiền rồi thử lại.';
+  }
+  return GENERIC_MUTATION_ERROR;
+}
+
+/**
+ * Log only the error class (ledger #25). `message` can carry backend text: `res.json()` on an
+ * HTML error page throws a SyntaxError that quotes the body, and network errors quote hosts.
+ */
+export function shortError(err: unknown): string {
+  return err instanceof Error ? (err.name || 'Error').slice(0, 50) : 'error';
 }
 
 export class AffiliateClient {
@@ -168,17 +209,31 @@ export class AffiliateClient {
 
   /** POST /api/affiliate/withdraw. Enforces the min amount before calling. */
   async withdraw(input: WithdrawInput): Promise<MutationResult> {
-    if (!Number.isFinite(input.amount) || input.amount < MIN_WITHDRAW_VND) {
+    // The IPC payload is only a compile-time cast; read it through own-property guards.
+    const amount = ownValue(input, 'amount');
+    const method = ownValue(input, 'method');
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < MIN_WITHDRAW_VND) {
       return { success: false, error: `Tối thiểu ${MIN_WITHDRAW_VND.toLocaleString('vi-VN')} VND` };
+    }
+    if (!WITHDRAW_METHODS.has(method)) return { success: false, error: 'Phương thức không hợp lệ' };
+    const bankInfo = ownValue(input, 'bankInfo');
+    if (method === 'bank_transfer') {
+      const bankError = bankInfoError(bankInfo);
+      if (bankError) return { success: false, error: bankError };
     }
     const token = await this.auth.getAccessToken();
     if (token == null) return { success: false, error: 'Chưa đăng nhập' };
 
     try {
-      const body: Record<string, unknown> = { amount: input.amount, method: input.method };
-      if (input.method === 'bank_transfer' && input.bankInfo) body.bankInfo = input.bankInfo;
-      const raw = await this.post(token, '/api/affiliate/withdraw', body);
-      return this.toMutationResult(raw);
+      const body: Record<string, unknown> = { amount, method };
+      if (method === 'bank_transfer') {
+        body.bankInfo = {
+          bank: str(bankInfo, 'bank').trim(),
+          accountNo: str(bankInfo, 'accountNo').trim(),
+          accountName: str(bankInfo, 'accountName').trim(),
+        };
+      }
+      return this.toMutationResult(await this.post(token, '/api/affiliate/withdraw', body));
     } catch (err) {
       this.logFailure('affiliate.withdraw', undefined, shortError(err));
       return { success: false, error: 'Yêu cầu thất bại' };
@@ -194,10 +249,10 @@ export class AffiliateClient {
     if (token == null) return { success: false, error: 'Chưa đăng nhập' };
 
     try {
-      const raw = await this.post(token, '/api/affiliate/convert-credit', { amount });
-      const result = this.toMutationResult(raw);
+      const response = await this.post(token, '/api/affiliate/convert-credit', { amount });
+      const result = this.toMutationResult(response);
       if (result.success) {
-        const added = ownValue(raw, 'creditsAdded');
+        const added = ownValue(response.raw, 'creditsAdded');
         if (typeof added === 'number') result.creditsAdded = added;
       }
       return result;
@@ -224,29 +279,31 @@ export class AffiliateClient {
     return res.json();
   }
 
-  private async post(token: string, path: string, body: unknown): Promise<unknown> {
+  private async post(token: string, path: string, body: unknown): Promise<PostResult> {
     const res = await fetch(`${IZZI_API_BASE}${path}`, {
       method: 'POST',
       headers: this.authHeaders(token),
       body: JSON.stringify(body),
     });
-    // For writes we still read the body: the backend returns {success:false,error} with a 4xx.
+    // For writes we still read the body: the backend returns {success:true, ...} on success.
     let raw: unknown = null;
     try {
       raw = await res.json();
     } catch {
       raw = null;
     }
-    if (!res.ok && ownValue(raw, 'error') === undefined) {
-      this.logFailure(`POST ${path}`, res.status);
-    }
-    return raw;
+    // Log only op + status. The backend error text is never logged: it may echo amounts or bank info.
+    if (!res.ok) this.logFailure(`POST ${path}`, res.status);
+    return { status: res.status, raw };
   }
 
-  private toMutationResult(raw: unknown): MutationResult {
+  /**
+   * The backend `error` text is never passed to the renderer (ledger #25): it can carry stack
+   * traces, HTML or internal detail. The UI gets a fixed message chosen by HTTP status only.
+   */
+  private toMutationResult({ status, raw }: PostResult): MutationResult {
     if (ownValue(raw, 'success') === true) return { success: true };
-    const err = ownValue(raw, 'error');
-    return { success: false, error: typeof err === 'string' && err ? err : 'Yêu cầu thất bại' };
+    return { success: false, error: mutationErrorMessage(status) };
   }
 
   /** Build request headers. The token lives only here, never crosses IPC. */

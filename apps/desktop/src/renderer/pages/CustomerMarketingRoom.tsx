@@ -46,7 +46,7 @@ import type {
 } from '../../shared/customer-marketing-types';
 import { CustomerMarketingResources } from './CustomerMarketingResources';
 import { CustomerMarketingChannels } from './CustomerMarketingChannels';
-import { CustomerMarketingCapabilityWorkbench } from './CustomerMarketingCapabilityWorkbenches';
+import { CustomerMarketingCapabilityWorkbench, type CapabilityWorkbenchOpenView } from './CustomerMarketingCapabilityWorkbenches';
 import {
   customerPlanMeetsMinimum,
   resolveCustomerCapabilitySurface,
@@ -55,6 +55,15 @@ import {
   type CustomerCapabilitySurfaceState,
   type CustomerCapabilityWorkbenchId,
 } from './customer-capability-actions';
+import { consumeMarketingPrefill } from '../components/v2/marketingPrefill';
+import {
+  AgentMarketingWorkspaceV2,
+  ANALYTICS_GATE_COPY,
+  DEFAULT_AGENT_MARKETING_TAB,
+  resolveAgentMarketingOpenTab,
+  resolveAnalyticsTabGate,
+  type AgentMarketingTab,
+} from '../components/v2/AgentMarketingWorkspaceV2';
 import '../styles/customer-marketing-room.css';
 
 type ViewId =
@@ -605,9 +614,10 @@ interface OnboardingProps {
   busy: boolean;
   error?: string;
   onComplete: (input: CustomerOnboardingInput) => Promise<void>;
+  v2?: boolean;
 }
 
-function OnboardingRoom({ snapshot, form, setForm, busy, error, onComplete }: OnboardingProps) {
+function OnboardingRoom({ snapshot, form, setForm, busy, error, onComplete, v2 = false }: OnboardingProps) {
   const [step, setStep] = useState(1);
   const [localError, setLocalError] = useState('');
 
@@ -706,12 +716,12 @@ function OnboardingRoom({ snapshot, form, setForm, busy, error, onComplete }: On
   const currentError = localError || error;
 
   return (
-    <div className="cmr-page cmr-page--onboarding">
+    <div className={`cmr-page cmr-page--onboarding${v2 ? ' v2-agent-marketing-room v2-agent-marketing-onboarding' : ''}`}>
       <div className="cmr-onboarding-shell">
         <header className="cmr-onboarding-header">
           <div>
-            <span className="cmr-eyebrow">Customer workspace / AI Marketing</span>
-            <h1>Thiết lập phòng Marketing AI</h1>
+            <span className="cmr-eyebrow">Customer workspace / Agent Marketing</span>
+            <h1>Thiết lập phòng Agent Marketing</h1>
             <p>
               Cho AI biết doanh nghiệp, thương hiệu và ưu tiên của bạn. Sau đó bạn có thể giao mục tiêu bằng một câu lệnh.
             </p>
@@ -914,9 +924,16 @@ interface DirectorComposerProps {
   compact?: boolean;
 }
 
-function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerProps) {
+export function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerProps) {
   const [goal, setGoal] = useState('');
   const [localError, setLocalError] = useState('');
+
+  // V2 Home's Agent Marketing route only types its text in, once; the user
+  // still submits. Without a pending offer (legacy, flag OFF) nothing changes.
+  useEffect(() => {
+    const prefill = consumeMarketingPrefill();
+    if (prefill !== null) setGoal(prefill);
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -940,8 +957,8 @@ function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerP
       <div className="cmr-director-composer__topline">
         <span className="cmr-agent-mark"><SparkIcon className="cmr-icon" /></span>
         <div>
-          <span className="cmr-eyebrow">AI Marketing Director</span>
-          <strong>Giao việc cho phòng Marketing AI</strong>
+          <span className="cmr-eyebrow">Agent Marketing Director</span>
+          <strong>Giao việc cho phòng Agent Marketing</strong>
         </div>
         <span className="cmr-live-state"><span /> Sẵn sàng</span>
       </div>
@@ -950,7 +967,7 @@ function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerP
         <textarea
           value={goal}
           onChange={(event) => setGoal(event.target.value)}
-          placeholder="Hôm nay bạn muốn phòng Marketing AI làm gì?"
+          placeholder="Hôm nay bạn muốn phòng Agent Marketing làm gì?"
           rows={compact ? 3 : 4}
         />
       </label>
@@ -1013,9 +1030,9 @@ function WorkspaceHeader({
   return (
     <header className="cmr-header">
       <div className="cmr-header__copy">
-        <span className="cmr-eyebrow">Customer workspace / AI Marketing</span>
+        <span className="cmr-eyebrow">Customer workspace / Agent Marketing</span>
         <h1>{snapshot.workspace.name}</h1>
-        <p>Phòng Marketing AI của bạn tập trung vào mục tiêu, workflow và quyết định cần duyệt.</p>
+        <p>Phòng Agent Marketing của bạn tập trung vào mục tiêu, workflow và quyết định cần duyệt.</p>
       </div>
       <div className="cmr-header__meta">
         <WorkspaceBridgeStatus snapshot={snapshot} />
@@ -1666,7 +1683,7 @@ function HomeView({
                 <TrendUpIcon className="cmr-empty__icon" />
                 <span className="cmr-eyebrow">Bước tiếp theo</span>
                 <h2>Đưa mục tiêu đầu tiên vào workflow</h2>
-                <p>AI Marketing Director sẽ biến mục tiêu kinh doanh thành kế hoạch, bước thực hiện và approval gate.</p>
+                <p>Agent Marketing Director sẽ biến mục tiêu kinh doanh thành kế hoạch, bước thực hiện và approval gate.</p>
                 <button type="button" className="cmr-button cmr-button--primary" onClick={() => onOpen('director')}>Mở AI Director <SparkIcon className="cmr-button__icon" /></button>
               </div>
             </section>
@@ -1719,7 +1736,7 @@ function DirectorView({
     <div className="cmr-view-stack">
       <div className="cmr-view-intro">
         <span className="cmr-eyebrow">Điều phối mục tiêu</span>
-        <h2>AI Marketing Director</h2>
+        <h2>Agent Marketing Director</h2>
         <p>Một nơi để giao mục tiêu, nhận kế hoạch và theo dõi điểm cần bạn duyệt.</p>
       </div>
       <DirectorComposer onSubmit={onDirector} busy={busy} />
@@ -1747,7 +1764,7 @@ function GoalsView({ snapshot, onOpenDirector }: { snapshot: CustomerMarketingSn
         <button type="button" className="cmr-button cmr-button--primary" onClick={onOpenDirector}>Giao mục tiêu mới <SparkIcon className="cmr-button__icon" /></button>
       </div>
       {snapshot.runs.length === 0 ? (
-        <section className="cmr-panel cmr-empty-panel"><div className="cmr-empty"><TrendUpIcon className="cmr-empty__icon" /><h2>Chưa có mục tiêu</h2><p>Giao mục tiêu đầu tiên cho AI Marketing Director.</p></div></section>
+        <section className="cmr-panel cmr-empty-panel"><div className="cmr-empty"><TrendUpIcon className="cmr-empty__icon" /><h2>Chưa có mục tiêu</h2><p>Giao mục tiêu đầu tiên cho Agent Marketing Director.</p></div></section>
       ) : (
         <div className="cmr-goal-list">
           {snapshot.runs.map((run) => (
@@ -3090,6 +3107,7 @@ function CustomerRoom({
   busy,
   error,
   notice,
+  v2 = false,
 }: {
   snapshot: CustomerMarketingSnapshot;
   view: ViewId;
@@ -3103,8 +3121,10 @@ function CustomerRoom({
   busy: boolean;
   error: string;
   notice: string;
+  v2?: boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [v2Tab, setV2Tab] = useState<AgentMarketingTab>(DEFAULT_AGENT_MARKETING_TAB);
   const [activeCapability, setActiveCapability] =
     useState<CustomerCapabilityWorkbenchId | null>(null);
   const videoStudioAvailable = customerPlanMeetsMinimum(snapshot.workspace.plan, 'pro')
@@ -3123,7 +3143,10 @@ function CustomerRoom({
   const director = async (goal: string) => {
     const input: CustomerDirectorInput = { goal, channels: form.channels, automationMode: form.automationMode };
     const result = await onMutation((api) => api.askDirector(input), 'Đã tạo kế hoạch đề xuất.');
-    if (result?.ok) selectView('director');
+    if (result?.ok) {
+      if (v2) setV2Tab('conversation');
+      else selectView('director');
+    }
   };
 
   const review = async (approvalId: string, decision: 'approved' | 'rejected') => {
@@ -3174,13 +3197,18 @@ function CustomerRoom({
     selectView(action.view);
   }, [selectView, setView, videoStudioAvailable]);
 
+  const workspacePlan = snapshot.workspace.plan;
+  const workspaceRole = snapshot.workspace.role;
   useEffect(() => {
     if (!activeCapability) return;
     const capability = snapshot.capabilities.find(
       (item) => item.id === activeCapability,
     );
     const action = capability
-      ? resolveCustomerCapabilitySurface(capability, snapshot.workspace).action
+      ? resolveCustomerCapabilitySurface(capability, {
+        plan: workspacePlan,
+        role: workspaceRole,
+      }).action
       : null;
     if (
       action?.view !== 'capability' ||
@@ -3191,8 +3219,8 @@ function CustomerRoom({
   }, [
     activeCapability,
     snapshot.capabilities,
-    snapshot.workspace.plan,
-    snapshot.workspace.role,
+    workspacePlan,
+    workspaceRole,
   ]);
 
   useEffect(() => {
@@ -3209,6 +3237,53 @@ function CustomerRoom({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeCapability, activeView]);
+
+  if (v2) {
+    const analyticsGate = resolveAnalyticsTabGate(snapshot.capabilities, snapshot.workspace);
+    const toConversation = () => setV2Tab('conversation');
+    const openFromWorkbench = (view: CapabilityWorkbenchOpenView) => {
+      const next = resolveAgentMarketingOpenTab(view);
+      if (next) setV2Tab(next);
+    };
+    return (
+      <div className="cmr-page v2-agent-marketing-room">
+        <div className="cmr-page__inner" inert={settingsOpen || undefined} aria-hidden={settingsOpen || undefined}>
+          <WorkspaceHeader
+            snapshot={snapshot}
+            onRefresh={onRefresh}
+            onOpenSettings={() => setSettingsOpen(true)}
+            settingsOpen={settingsOpen}
+            busy={busy}
+          />
+          {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
+          {notice && <div className="cmr-alert cmr-alert--success" role="status">{notice}</div>}
+          <AgentMarketingWorkspaceV2
+            tab={v2Tab}
+            onTabChange={setV2Tab}
+            conversation={<DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
+            plan={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
+            content={<CustomerMarketingResources kind="content" role={snapshot.workspace.role} />}
+            analytics={analyticsGate.ready ? (
+              <CustomerMarketingCapabilityWorkbench
+                id="analytics-copilot"
+                snapshot={snapshot}
+                form={form}
+                onBack={toConversation}
+                onOpen={openFromWorkbench}
+                onDirector={director}
+              />
+            ) : (
+              <div className="v2-empty"><p>{ANALYTICS_GATE_COPY[analyticsGate.state]}</p></div>
+            )}
+            inspector={<ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
+            artifacts={snapshot.media.artifacts}
+            externalActionsAllowed={snapshot.externalActionsAllowed}
+          />
+        </div>
+        <WorkspaceSettingsDrawer open={settingsOpen} snapshot={snapshot} onClose={closeSettings} />
+      </div>
+    );
+  }
 
   return (
     <div className="cmr-page">
@@ -3286,7 +3361,7 @@ function CustomerRoom({
   );
 }
 
-export function CustomerMarketingRoomPage() {
+export function CustomerMarketingRoomPage({ v2 = false }: { v2?: boolean } = {}) {
   const [snapshot, setSnapshot] = useState<CustomerMarketingSnapshot | null>(null);
   const [form, setForm] = useState<CustomerOnboardingInput>(emptyOnboarding);
   const [view, setView] = useState<ViewId>('home');
@@ -3306,7 +3381,7 @@ export function CustomerMarketingRoomPage() {
     const requestId = ++snapshotRequestRef.current;
     const api = getCustomerApi();
     if (!api) {
-      setError('Customer AI Marketing Room cần chạy trong Izzi AI Desktop để kết nối workspace thật.');
+      setError('Customer Agent Marketing Room cần chạy trong Izzi AI Desktop để kết nối workspace thật.');
       setLoading(false);
       return;
     }
@@ -3461,7 +3536,7 @@ export function CustomerMarketingRoomPage() {
   }
 
   if (!snapshot.onboarding?.completed) {
-    return <OnboardingRoom snapshot={snapshot} form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} />;
+    return <OnboardingRoom snapshot={snapshot} form={form} setForm={setForm} busy={busy} error={error} onComplete={saveOnboarding} v2={v2} />;
   }
 
   return (
@@ -3478,6 +3553,7 @@ export function CustomerMarketingRoomPage() {
       busy={busy}
       error={error}
       notice={notice}
+      v2={v2}
     />
   );
 }
