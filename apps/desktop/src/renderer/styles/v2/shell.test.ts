@@ -324,6 +324,67 @@ describe('v2 Project Chat reset over the reused legacy chat (M3-B1 audit)', () =
   });
 });
 
+describe('v2 native select options', () => {
+  // Dark audit: the native popup painted light option text on the default white list.
+  const OPTION_SELECTORS = [
+    '.izzi-v2 .v2-field__select option',
+    '.izzi-v2 .v2-header__project-select option',
+    '.izzi-v2 .v2-project-row__select option',
+    '.izzi-v2 .v2-project-chat__select option',
+    '.izzi-v2 .v2-project-chat .chat-composer__perm-select option',
+  ];
+
+  it.each(OPTION_SELECTORS)('paints %s on the panel token with primary text', (selector) => {
+    const declarations = new Map(rules.filter((rule) => rule.selector === selector).flatMap((rule) => [...rule.declarations]));
+    expect(declarations.get('background-color')).toBe('var(--v2-bg-panel)');
+    expect(declarations.get('color')).toBe('var(--v2-text-primary)');
+  });
+});
+
+describe('v2 conversation model selector', () => {
+  // Beta.74 audit: legacy.css skips surface workspaces and index.css paints the
+  // picker with unscoped !important glass, so V2 chats need their own override.
+  const MS = '.izzi-v2 .v2-project-chat .model-selector';
+  const declarationsFor = (selector: string) =>
+    new Map(rules.filter((rule) => rule.selector === selector).flatMap((rule) => [...rule.declarations]));
+
+  it('paints the trigger and its hover on panel tokens', () => {
+    const trigger = declarationsFor(`${MS}__trigger`);
+    expect(trigger.get('border')).toBe('1px solid var(--v2-border-strong) !important');
+    expect(trigger.get('background')).toBe('var(--v2-bg-panel) !important');
+    expect(trigger.get('color')).toBe('var(--v2-text-secondary) !important');
+
+    const hover = declarationsFor(`${MS}__trigger:hover`);
+    expect(hover.get('border-color')).toBe('var(--v2-border-strong) !important');
+    expect(hover.get('background')).toBe('var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important');
+    expect(hover.get('color')).toBe('var(--v2-text-primary) !important');
+  });
+
+  it('opens an opaque dropdown instead of the legacy glass panel', () => {
+    const dropdown = declarationsFor(`${MS}__dropdown`);
+    expect(dropdown.get('background')).toBe('var(--v2-bg-panel) !important');
+    expect(dropdown.get('border')).toBe('1px solid var(--v2-border-strong) !important');
+    expect(dropdown.get('border-radius')).toBe('var(--v2-radius-card) !important');
+    expect(dropdown.get('box-shadow')).toBe('var(--v2-shadow) !important');
+    expect(dropdown.get('backdrop-filter')).toBe('none !important');
+    expect(dropdown.get('-webkit-backdrop-filter')).toBe('none !important');
+  });
+
+  it('marks the active option with the brand color', () => {
+    const active = declarationsFor(`${MS}__option--active`);
+    expect(active.get('background')).toBe('var(--v2-bg-subtle) !important');
+    expect(active.get('border-color')).toBe('var(--v2-border-strong) !important');
+    expect(active.get('color')).toBe('var(--v2-brand-primary) !important');
+    expect(active.get('box-shadow')).toBe('none !important');
+  });
+
+  it('colors the picker with V2 tokens only', () => {
+    const values = rules.filter((rule) => rule.selector.startsWith(MS)).flatMap((rule) => [...rule.declarations.values()]);
+    expect(values.length).toBeGreaterThan(0);
+    expect(values.filter((value) => value.includes('#'))).toEqual([]);
+  });
+});
+
 describe('v2 Project Chat detail controls (M3-B1 audit follow-up)', () => {
   // Light audit m3-chat-details-audit/1790555452591: steps, copy, composer
   // buttons, attachment menu and footer rendered legacy cream/dark values.

@@ -16,6 +16,7 @@ import { TOP_AGENTS } from '../types/agent-registry';
 import { connectionActionForProvider, deriveEndpointLabel } from '../types/model-catalog';
 import type { AgentTurnEvent } from '../../shared/agent-turn-events';
 import { sanitizeStoredSessions, capForPersist, pickActiveId } from './gatewayPersist';
+import { agentReplyErrorMessage, customEndpointErrorMessage } from './agentGateway-errors';
 import { requiresCustomProviderRoute, shouldUseIzziApiRoute } from './agentGateway-routing';
 import {
   LOCAL_COCKPIT_BASE_URL,
@@ -619,13 +620,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
             }));
             return true;
           }
-          const connMsg =
-            err === 'not-configured' || err === 'disabled'
-              ? '⚠️ Chưa cấu hình kết nối model. Mở tab "Kết nối Model" để nối codex-lb / 9router rồi thử lại.'
-              : /econnrefused|econnreset|\bconnect\b|fetch|time|unreachable|network|endpoint/i.test(err)
-                ? `⚠️ Không kết nối được endpoint model.\n\n**Lỗi:** ${err}\n\n` +
-                  'Kiểm tra codex-lb / 9router đang chạy đúng cổng, hoặc chỉnh lại trong tab "Kết nối Model".'
-                : `⚠️ Model chưa trả lời được.\n\n**Lỗi:** ${err}`;
+          const connMsg = customEndpointErrorMessage(err, get().availableModelsLabel);
           set((state) => ({
             isSending: false,
             sessions: state.sessions.map((s) =>
@@ -793,20 +788,7 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
 
         // Honest error from the agent/provider (no fallback simulation).
         const rawErr = String(r.error ?? 'không rõ');
-        const isConnErr = /econnrefused|econnreset|\bconnect\b|fetch failed|socket hang up|network|timed? ?out/i.test(rawErr);
-        // Empty reply = the container ran but has no model behind it (upstream not
-        // configured). The real fix is wiring a model in the "Kết nối Model" tab.
-        const isEmptyReply = /rỗng|empty|chưa cấu hình model|provider/i.test(rawErr);
-        const errReply = isConnErr
-          ? `⚠️ ${agent.displayName} chưa kết nối được (agent chưa chạy hoặc đang khởi động).\n\n**Lỗi:** ${rawErr}\n\n` +
-            'Thử gửi lại sau vài giây (agent có thể đang khởi động), hoặc mở Agent Hub → chạy lại agent. ' +
-            'Đảm bảo Docker đang chạy.'
-          : isEmptyReply
-            ? `⚠️ ${agent.displayName} trả về phản hồi rỗng (chưa có model phía sau).\n\n**Lỗi:** ${rawErr}\n\n` +
-              'Cách khắc phục nhanh: mở tab **"Kết nối Model"** ở thanh bên → nối **codex-lb** (hoặc 9router) → **Lưu & Bật**, ' +
-              'rồi chat lại. Khi đã bật, mọi agent sẽ chat qua model đó.'
-            : `⚠️ ${agent.displayName} chưa trả lời được.\n\n**Lỗi:** ${rawErr}\n\n` +
-              'Thử mở tab "Kết nối Model" để nối codex-lb / 9router, hoặc cấu hình model provider rồi thử lại.';
+        const errReply = agentReplyErrorMessage(agent.displayName, rawErr);
 
         set((state) => ({
           isSending: false,

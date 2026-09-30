@@ -1541,6 +1541,74 @@
   box-shadow: none !important;
 }
 
+/* Native select popups: without this the dark theme painted light option text on a white list. */
+.izzi-v2 .v2-field__select option,
+.izzi-v2 .v2-header__project-select option,
+.izzi-v2 .v2-project-row__select option,
+.izzi-v2 .v2-project-chat__select option,
+.izzi-v2 .v2-project-chat .chat-composer__perm-select option {
+  background-color: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+}
+
+/* Model picker inside V2 conversations: legacy.css skips surfaces and index.css
+   paints unscoped !important glass colors, so the painted properties need !important. */
+.izzi-v2 .v2-project-chat__model {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.izzi-v2 .v2-project-chat .model-selector__trigger {
+  border: 1px solid var(--v2-border-strong) !important;
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-panel) !important;
+  color: var(--v2-text-secondary) !important;
+}
+
+.izzi-v2 .v2-project-chat .model-selector__trigger:hover {
+  border-color: var(--v2-border-strong) !important;
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle)) !important;
+  color: var(--v2-text-primary) !important;
+}
+
+.izzi-v2 .v2-project-chat .model-selector__dropdown {
+  border: 1px solid var(--v2-border-strong) !important;
+  border-radius: var(--v2-radius-card) !important;
+  background: var(--v2-bg-panel) !important;
+  box-shadow: var(--v2-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.izzi-v2 .v2-project-chat .model-selector__label,
+.izzi-v2 .v2-project-chat .model-selector__group-name {
+  color: var(--v2-text-secondary);
+}
+
+.izzi-v2 .v2-project-chat .model-selector__group-desc,
+.izzi-v2 .v2-project-chat .model-selector__chevron {
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2 .v2-project-chat .model-selector__option {
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-project-chat .model-selector__option:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-project-chat .model-selector__option--active {
+  border-color: var(--v2-border-strong) !important;
+  background: var(--v2-bg-subtle) !important;
+  color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-project-chat .model-selector__option-check {
+  color: var(--v2-brand-primary);
+}
+
 /*
  * M3-B1 audit follow-up: steps, copy, composer buttons, attachment menu and
  * footer controls rendered legacy cream/dark values in the light theme.

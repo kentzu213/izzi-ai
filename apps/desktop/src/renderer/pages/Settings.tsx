@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AgentStatusBadge } from '../components/AgentStatusBadge';
-import { describeUpdateError, describeUpdaterStatus } from '../components/UpdateBanner';
+import { RESTART_INSTALL_HINT, describeUpdateError, describeUpdaterStatus } from '../components/UpdateBanner';
 import { useAgentWorkspaceStore } from '../store/agentWorkspace';
 import type {
   AgentRuntimeState,
@@ -257,6 +257,9 @@ function UpdatesSection({
       </div>
       <div className="settings-group">
         <SettingRow label="Trạng thái" value={describeUpdaterStatus(updaterState)} />
+        {updaterState.state === 'downloaded' && (
+          <div className="settings-item__description settings-update__hint">{RESTART_INSTALL_HINT}</div>
+        )}
         <SettingRow label="Phiên bản hiện tại" value={updaterState.version || 'N/A'} />
         <SettingRow label="Phiên bản mới" value={updaterState.availableVersion || 'Không có'} />
         {typeof updaterState.progress === 'number' && (

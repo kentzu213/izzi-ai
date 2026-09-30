@@ -1096,6 +1096,10 @@ a:hover { color: var(--color-accent-primary); }
   color: var(--color-error);
 }
 
+.settings-update__hint {
+  color: var(--color-warning);
+}
+
 .settings-error__detail {
   max-height: 200px;
   overflow: auto;
@@ -3906,6 +3910,11 @@ body {
   font-size: 13px;
 }
 
+.update-banner__hint {
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
 .update-banner__actions {
   display: flex;
   gap: 8px;
@@ -4145,6 +4154,13 @@ body {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   line-height: 1.6;
+}
+
+.update-notification__hint {
+  margin-top: 8px;
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+  line-height: 1.5;
 }
 
 .update-notification__actions {

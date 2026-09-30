@@ -3,6 +3,9 @@ import type { DesktopUpdaterState } from '../../main/updater/types';
 
 const ERROR_PREVIEW_LENGTH = 120;
 
+// quitAndInstall runs the installer silently for several minutes with no window.
+export const RESTART_INSTALL_HINT = 'App sẽ tự đóng, cài đặt và mở lại sau vài phút — đừng mở lại thủ công.';
+
 // Raw updater errors carry URLs and stack text; map the known classes to plain Vietnamese.
 export function describeUpdateError(error: string): string {
   if (/update configuration is unavailable/i.test(error)) {
@@ -75,6 +78,7 @@ export function UpdateBanner({
       <div className="update-banner__copy">
         <strong>Desktop update</strong>
         <span>{message}</span>
+        {updaterState.state === 'downloaded' && <small className="update-banner__hint">{RESTART_INSTALL_HINT}</small>}
       </div>
 
       <div className="update-banner__actions">

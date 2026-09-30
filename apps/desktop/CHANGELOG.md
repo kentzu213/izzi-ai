@@ -1,4 +1,15 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.75
+
+Pick a model in V2 chat and read connection errors clearly.
+
+- The V2 conversation and project chat composers now have a model picker,
+  grouped by provider.
+- When an agent or custom endpoint cannot connect, the chat shows a plain,
+  readable message with the underlying error instead of raw markdown.
+- V2 composer dropdowns are readable in the dark theme.
+- The silent update now warns that the app will reopen by itself.
+
 ## 1.14.0-beta.74
 
 Keep the Agent Marketing blocker visible after a refresh.

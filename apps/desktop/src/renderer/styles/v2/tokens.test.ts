@@ -105,6 +105,7 @@ describe('v2 token values match spec/02', () => {
       '--v2-bg-deep': '#101115',
       '--v2-bg-panel': '#1d1e23',
       '--v2-bg-panel-hover': '#24252b',
+      '--v2-bg-subtle': '#24252b',
       '--v2-border-default': 'rgba(255, 255, 255, 0.08)',
       '--v2-border-strong': 'rgba(255, 255, 255, 0.14)',
       '--v2-text-primary': '#f4f2f7',
