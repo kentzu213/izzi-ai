@@ -1747,6 +1747,7 @@ function DirectorView({
             <div><span className="cmr-eyebrow">Kết quả mới nhất</span><h2>Kế hoạch đề xuất</h2></div>
             <StatusPill value={latestWithReply.status} />
           </div>
+          {latestWithReply.status === 'blocked' && latestWithReply.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{latestWithReply.blockedReason}</div>}
           <div className="cmr-director-result__body">{latestWithReply.directorReply}</div>
           <div className="cmr-result-footnote"><ReviewIcon className="cmr-icon" /><span>Đây là đề xuất để bạn xem xét. Workflow vẫn chờ approval trước hành động bên ngoài.</span></div>
         </section>

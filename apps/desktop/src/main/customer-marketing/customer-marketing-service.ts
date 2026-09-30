@@ -5356,6 +5356,12 @@ export class CustomerMarketingService {
       const progress = workflow.status === 'completed'
         ? 100
         : Math.round((completedJobs / Math.max(1, workflow.jobs.length)) * 100);
+      // A director, quota or context failure blocks the run while the durable
+      // workflow still waits on the local strategy; keep that blocker visible
+      // until the customer's review moves the workflow on.
+      const keepsRunBlocker = workflow.status === 'awaiting_approval'
+        && existing?.status === 'blocked'
+        && Boolean(existing.blockedReason);
       const stage = workflow.status === 'completed'
         ? 'completed'
         : workflow.status === 'blocked'
@@ -5366,8 +5372,8 @@ export class CustomerMarketingService {
       return {
         id: workflow.id,
         goal,
-        status,
-        stage,
+        status: keepsRunBlocker ? 'blocked' : status,
+        stage: keepsRunBlocker ? existing.stage : stage,
         progress,
         steps: workflow.jobs.map(presentStep),
         ...(workflow.productContextRef
@@ -5376,7 +5382,7 @@ export class CustomerMarketingService {
         directorReply: evidence.directorReply
           || existing?.directorReply
           || `Kế hoạch cục bộ cho mục tiêu: ${goal}`,
-        ...(status === 'blocked' && existing?.blockedReason
+        ...((status === 'blocked' || keepsRunBlocker) && existing?.blockedReason
           ? { blockedReason: existing.blockedReason }
           : {}),
         createdAt: workflow.createdAt,

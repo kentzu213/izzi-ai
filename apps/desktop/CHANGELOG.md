@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.74
+
+Keep the Agent Marketing blocker visible after a refresh.
+
+- A workflow blocked by the AI Director (gateway error, no credit, expired key)
+  no longer flips back to "waiting for approval" when the room reloads; the
+  status and reason stay until you review the strategy.
+- The "Kế hoạch đề xuất" card now shows why the plan is blocked, instead of
+  only a banner that disappears.
+
 ## 1.14.0-beta.73
 
 Say why an Agent Marketing workflow is blocked.

@@ -76,6 +76,12 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).not.toContain("monthlyQuota.toLocaleString('vi-VN')} tháng");
   });
 
+  it('keeps the director blocker on the latest plan card instead of only a transient banner', () => {
+    expect(roomSource).toContain(
+      "{latestWithReply.status === 'blocked' && latestWithReply.blockedReason && <div className=\"cmr-alert cmr-alert--error\" role=\"alert\">{latestWithReply.blockedReason}</div>}",
+    );
+  });
+
   it('shows an operator-readable Marketing bridge diagnosis', () => {
     expect(roomSource).toContain("tunnel_unavailable: 'Tunnel staging mất kết nối'");
     expect(roomSource).toContain("auth_required: 'Cần đăng nhập môi trường Marketing'");
