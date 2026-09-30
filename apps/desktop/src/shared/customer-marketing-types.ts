@@ -241,6 +241,8 @@ export interface CustomerRun {
   steps: CustomerRunStep[];
   productContextRef?: CustomerProductMarketingContextRef;
   directorReply?: string;
+  /** Plain-language reason shown while the run is blocked. */
+  blockedReason?: string;
   createdAt: string;
   updatedAt: string;
 }
