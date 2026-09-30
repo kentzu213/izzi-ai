@@ -16,5 +16,7 @@ describe('modelGroupsFor', () => {
 
   it('keeps Izzi selectable when the local endpoint reports no models', () => {
     expect(modelGroupsFor(undefined, []).map((group) => group.id)).toEqual(['izzi']);
+    expect(modelGroupsFor('local', [], undefined).map((group) => group.id)).toEqual(['izzi']);
+    expect(modelGroupsFor('local', ['  ', ''], 'codex-lb (local)').map((group) => group.id)).toEqual(['izzi']);
   });
 });
