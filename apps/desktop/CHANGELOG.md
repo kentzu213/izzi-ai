@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.73
+
+Say why an Agent Marketing workflow is blocked.
+
+- When the AI Director cannot answer, the workflow and goal cards now show the
+  reason in plain Vietnamese (expired sign-in or key, no credit, rate limit,
+  gateway error, rejected request, empty reply) instead of only
+  "director unavailable".
+- The reason is kept with the workflow, so it survives a refresh.
+
 ## 1.14.0-beta.72
 
 Fix the update check and restore the Agent Marketing channels tab.
