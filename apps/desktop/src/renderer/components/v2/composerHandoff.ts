@@ -1,5 +1,6 @@
 import type { useAgentGatewayStore } from '../../store/agentGateway';
 import { deriveRecentSessions, SESSION_IDS_MAX, type ProjectWorkspaceStore } from '../../store/projectWorkspace';
+import type { AIProvider } from '../../types/agent-registry';
 
 type GatewayState = ReturnType<typeof useAgentGatewayStore.getState>;
 
@@ -14,6 +15,7 @@ export type HandoffGateway = Pick<
   | 'switchSession'
   | 'newGatewaySession'
   | 'setComposerDraft'
+  | 'applySessionModel'
 >;
 
 export type HandoffProjects = Pick<ProjectWorkspaceStore, 'projects' | 'assignSession' | 'focusSession'>;
@@ -22,10 +24,15 @@ export interface HandoffRequest {
   text: string;
   projectId?: string | null;
   agentId?: string;
+  /** Model picked on Home; applied to the resolved session only at hand-off time. */
+  model?: string;
+  provider?: AIProvider;
 }
 
 export type HandoffResult =
   | { status: 'handed-off'; sessionId: string }
+  /** The session was resolved but the requested model could not be applied; the draft stays on Home. */
+  | { status: 'model-failed'; message?: string }
   | {
       status:
         | 'empty'
@@ -128,6 +135,9 @@ export function cancelPendingHandoff(): void {
  * persisted sessions first, never reuses a session bound to another project,
  * never overwrites a different unsent draft and never sends. The chosen
  * session's owner becomes the active project (none for a loose session).
+ * When a model was picked on Home it is applied to exactly the resolved
+ * session (through the store's connection gate) and verified before the draft
+ * moves; a failed or cancelled application leaves the Home draft in place.
  */
 export function createComposerHandoff(deps: HandoffDeps): (request: HandoffRequest) => Promise<HandoffResult> {
   const projectUsable = (projectId: string) => {
@@ -135,7 +145,7 @@ export function createComposerHandoff(deps: HandoffDeps): (request: HandoffReque
     return Boolean(project && !project.archived);
   };
 
-  return async ({ text, projectId, agentId }) => {
+  return async ({ text, projectId, agentId, model, provider }) => {
     if (coordinator.pending !== null) return { status: 'in-flight' };
     if (!text.trim()) return { status: 'empty' };
     if (projectId && !projectUsable(projectId)) return { status: 'project-missing' };
@@ -155,6 +165,15 @@ export function createComposerHandoff(deps: HandoffDeps): (request: HandoffReque
         ? resolveProjectSession(deps, projectId, agentId)
         : resolveUnassignedSession(deps, agentId);
       if (!('sessionId' in resolved)) return resolved;
+
+      if (model && provider) {
+        const applied = await deps.gateway().applySessionModel(resolved.sessionId, model, provider);
+        // A supersede during the (possibly slow) connection probe must not move the draft.
+        if (coordinator.generation !== ticket) return { status: 'cancelled' };
+        if (!applied.ok) return { status: 'model-failed', message: applied.message };
+        const target = deps.gateway().sessions.find((session) => session.id === resolved.sessionId);
+        if (!target || target.model !== model || target.provider !== provider) return { status: 'model-failed' };
+      }
 
       deps.gateway().setComposerDraft(text);
       deps.projects().focusSession(resolved.sessionId);

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DirectorComposer } from '../../pages/CustomerMarketingRoom';
+import { useAgentGatewayStore } from '../../store/agentGateway';
 import { useProjectWorkspaceStore } from '../../store/projectWorkspace';
+import type { AIProvider } from '../../types/agent-registry';
+import { ModelSelector } from '../ModelSelector';
 import { cancelPendingHandoff } from './composerHandoff';
 import { HomeSurface } from './HomeSurface';
 import { applyV2Identity } from './identity';
@@ -210,6 +213,11 @@ function openHome(owner = { draft: '' }) {
     choose: (value: 'chat' | 'marketing') => fire(find(view.tree, byType('select')), 'onChange', { target: { value } }),
     chip: () => fire(find(view.tree, byClass('v2-chip')), 'onClick'),
     submit: () => fire(find(view.tree, byType('form')), 'onSubmit', { preventDefault: noop }),
+    modelGroups: () => findAll(view.tree, byClass('v2-home__model')),
+    // ModelSelector is a child component, so its element is reachable but never rendered here.
+    picker: () => find(view.tree, (el) => el.type === ModelSelector),
+    pickModel: (model: string, provider: AIProvider) =>
+      (find(view.tree, (el) => el.type === ModelSelector).props.onSelect as (m: string, p: AIProvider) => void)(model, provider),
     unmount: view.unmount,
   };
 }
@@ -368,5 +376,37 @@ describe('Home → Agent Marketing → Director (runtime)', () => {
 
     expect(director.goal()).toBe('');
     expect(director.onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('Home chat model picker (runtime)', () => {
+  it('shows the grouped picker for Chat only; Agent Marketing neither renders nor consumes it', () => {
+    const home = openHome({ draft: TEXT });
+    expect(home.modelGroups()).toHaveLength(1);
+    expect(home.picker().props.groups).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'izzi' })]));
+
+    home.pickModel('grok-4.5-high', 'izzi');
+    home.choose('marketing');
+    expect(home.modelGroups()).toHaveLength(0);
+
+    home.submit();
+    expect(home.onNavigate).toHaveBeenCalledWith('customer-marketing');
+    home.unmount();
+    expect(openDirector().goal()).toBe(TEXT);
+  });
+
+  it('keeps the picked model local until submit and never mutates a session through the picker', () => {
+    const before = useAgentGatewayStore.getState().sessions;
+    const home = openHome({ draft: '' });
+    expect(home.picker().props.currentModel).toBe('izzi-smart');
+
+    home.pickModel('grok-4.5-high', 'izzi');
+
+    expect(home.picker().props.currentModel).toBe('grok-4.5-high');
+    expect(home.picker().props.currentProvider).toBe('izzi');
+    expect(useAgentGatewayStore.getState().sessions).toBe(before);
+    expect(useAgentGatewayStore.getState().composerDraft).toBe('');
+    expect(home.onDraftChange).not.toHaveBeenCalled();
+    expect(home.onNavigate).not.toHaveBeenCalled();
   });
 });

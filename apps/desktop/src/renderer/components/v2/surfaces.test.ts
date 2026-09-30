@@ -170,8 +170,40 @@ describe('HomeSurface', () => {
     expect(html).toMatch(/<button type="submit"[^>]*aria-label="Mở trong Chat"/);
   });
 
+  it('offers the grouped model picker in Chat mode without touching any session', () => {
+    seed([], [session('s-live', 'hi')]);
+    useAgentGatewayStore.setState({ activeSessionId: 's-live' });
+    const before = useAgentGatewayStore.getState().sessions;
+    const html = renderToStaticMarkup(
+      createElement(HomeSurface, {
+        draft: '',
+        onDraftChange: noop,
+        onNavigate: noop,
+        onSelectSurface: noop,
+        isNavigatorOpen: true,
+        onToggleNavigator: noop,
+      }),
+    );
+
+    // Same picker component as the conversation composer, after the project pill.
+    expect(html).toMatch(/aria-label="Dự án"[\s\S]*class="v2-home__model" role="group" aria-label="Model"[\s\S]*class="model-selector/);
+    expect(html).toContain('model-selector__trigger');
+    expect(html).toContain('Izzi Smart');
+    expect(useAgentGatewayStore.getState().sessions).toBe(before);
+  });
+
   it('has a user-facing message for every non-success handoff status', () => {
-    const statuses = ['empty', 'project-missing', 'project-full', 'busy', 'draft-occupied', 'no-session', 'error', 'in-flight'] as const;
+    const statuses = [
+      'empty',
+      'project-missing',
+      'project-full',
+      'busy',
+      'draft-occupied',
+      'no-session',
+      'error',
+      'in-flight',
+      'model-failed',
+    ] as const;
 
     for (const status of statuses) {
       expect(HANDOFF_MESSAGES[status].trim().length).toBeGreaterThan(0);
