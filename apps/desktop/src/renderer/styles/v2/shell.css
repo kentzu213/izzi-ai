@@ -1136,6 +1136,25 @@
   font-size: var(--v2-text-meta-size);
 }
 
+/* Around 1280px the inspector column shrinks before collapsing at 960px.
+   The legacy room panels' min-width/overflow-wrap guard for this breakpoint
+   lives in customer-marketing-room.css (legacy selectors are not allowed here). */
+@media (max-width: 1280px) {
+  .izzi-v2 .v2-agent-marketing {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+    gap: var(--v2-space-3);
+  }
+
+  .izzi-v2 .v2-agent-marketing__inspector {
+    padding: var(--v2-space-3);
+  }
+
+  .izzi-v2 .v2-agent-marketing-room {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
 @media (max-width: 960px) {
   .izzi-v2 .v2-agent-marketing {
     grid-template-columns: minmax(0, 1fr);

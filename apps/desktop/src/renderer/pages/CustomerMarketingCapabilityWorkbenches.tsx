@@ -61,35 +61,72 @@ interface CapabilityWorkbenchProps {
 }
 
 const BRIDGE_LABELS: Record<CustomerMarketingBridgeStatus, string> = {
-  synced: 'Verified workspace data',
-  local: 'Local mode only',
-  forbidden: 'Permission required',
-  not_found: 'Workspace not found',
-  conflict: 'Refresh required',
-  quota_exceeded: 'Workspace quota exceeded',
-  unavailable: 'Bridge unavailable',
+  synced: 'Dữ liệu workspace đã xác thực',
+  local: 'Chỉ chế độ local',
+  forbidden: 'Cần quyền truy cập',
+  not_found: 'Không tìm thấy workspace',
+  conflict: 'Cần tải lại',
+  quota_exceeded: 'Workspace đã hết quota',
+  unavailable: 'Bridge chưa sẵn sàng',
 };
 const CREATIVE_CHANNELS: CustomerChannel[] = [
   'facebook', 'tiktok', 'youtube', 'website', 'telegram', 'x', 'seo',
 ];
+const CHANNEL_LABELS: Record<CustomerChannel, string> = {
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  youtube: 'YouTube',
+  website: 'Website',
+  email: 'Email',
+  crm: 'CRM',
+  ads: 'Quảng cáo',
+  telegram: 'Telegram',
+  x: 'X (Twitter)',
+  seo: 'SEO',
+};
+function channelLabel(channel: string): string {
+  return (CHANNEL_LABELS as Record<string, string>)[channel] ?? channel;
+}
 const CREATIVE_FORMATS = [
   'Short video', 'Social post', 'Carousel', 'Landing page', 'Email sequence',
 ] as const;
+const CREATIVE_FORMAT_LABELS: Record<(typeof CREATIVE_FORMATS)[number], string> = {
+  'Short video': 'Video ngắn',
+  'Social post': 'Bài đăng mạng xã hội',
+  Carousel: 'Carousel',
+  'Landing page': 'Landing page',
+  'Email sequence': 'Chuỗi email',
+};
 const ANALYTICS_KIND_KEYS = ['campaign', 'content', 'asset', 'knowledge'] as const;
 const ANALYTICS_STATUS_KEYS = ['draft', 'inReview', 'approved', 'rejected', 'archived'] as const;
 const ANALYTICS_KIND_LABELS = {
-  campaign: 'Campaigns',
-  content: 'Content',
-  asset: 'Assets',
-  knowledge: 'Knowledge',
+  campaign: 'Chiến dịch',
+  content: 'Nội dung',
+  asset: 'Tài sản',
+  knowledge: 'Kiến thức',
 } as const;
 const ANALYTICS_STATUS_LABELS = {
-  draft: 'Draft',
-  inReview: 'In review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  archived: 'Archived',
+  draft: 'Nháp',
+  inReview: 'Đang duyệt',
+  approved: 'Đã duyệt',
+  rejected: 'Bị từ chối',
+  archived: 'Đã lưu trữ',
 } as const;
+/** Vietnamese labels for raw status tokens shown in workbench pills (defect F). */
+const PILL_LABELS: Record<string, string> = {
+  synced: 'Đã đồng bộ', local: 'Local', forbidden: 'Không có quyền', not_found: 'Không tìm thấy',
+  conflict: 'Xung đột', quota_exceeded: 'Hết quota', unavailable: 'Chưa sẵn sàng',
+  approved: 'Đã duyệt', ready: 'Sẵn sàng', pass: 'Đạt', available: 'Khả dụng', good: 'Tốt',
+  blocked: 'Bị chặn', rejected: 'Bị từ chối', error: 'Lỗi', poor: 'Kém', pending: 'Đang chờ',
+  warning: 'Cảnh báo', draft: 'Nháp', in_review: 'Đang duyệt', inReview: 'Đang duyệt',
+  'needs-improvement': 'Cần cải thiện', archived: 'Đã lưu trữ', scheduled: 'Đã lên lịch',
+  published: 'Đã đăng', active: 'Đang hoạt động', expired: 'Đã hết hạn', registered: 'Đã đăng ký',
+  processing: 'Đang xử lý',
+};
+function pillLabel(value: string): string {
+  return PILL_LABELS[value] ?? value.replace(/[_-]+/g, ' ');
+}
 
 function customerApi(): ElectronCustomerMarketingApi | null {
   return window.electronAPI?.customerMarketing ?? null;
@@ -104,13 +141,13 @@ function roleCanReview(role: CustomerRole): boolean {
   return role === 'owner' || role === 'manager' || role === 'reviewer';
 }
 function formatCount(value: number): string {
-  return new Intl.NumberFormat('en-US').format(value);
+  return new Intl.NumberFormat('vi-VN').format(value);
 }
 function formatDate(value: string | null | undefined, includeTime = false): string {
-  if (!value) return 'Not recorded';
+  if (!value) return 'Chưa ghi nhận';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not recorded';
-  return new Intl.DateTimeFormat('en-GB', {
+  if (Number.isNaN(date.getTime())) return 'Chưa ghi nhận';
+  return new Intl.DateTimeFormat('vi-VN', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -130,7 +167,7 @@ function WorkbenchPill({ value, label }: { value: string; label?: string }) {
   return (
     <span className={`cmr-pill cmr-pill--${statusTone(value)}`}>
       <span className="cmr-pill__dot" />
-      {label ?? value.replace(/[_-]+/g, ' ')}
+      {label ?? pillLabel(value)}
     </span>
   );
 }
@@ -213,7 +250,7 @@ function WorkbenchHeader({
       <div className="cmr-workbench-header__actions">
         <Icon className="cmr-workbench-header__icon" />
         <button type="button" className="cmr-text-button" onClick={onBack}>
-          Back to Apps
+          Quay lại Apps
         </button>
       </div>
     </div>
@@ -278,7 +315,7 @@ function PageSpeedMetricCell({
     <div className={`cmr-pagespeed-metric cmr-pagespeed-metric--${metric.rating}`}>
       <span>{label}</span>
       <strong>{metric.display}</strong>
-      <small>{metric.rating.replace('-', ' ')}</small>
+      <small>{pillLabel(metric.rating)}</small>
     </div>
   );
 }
@@ -286,7 +323,7 @@ function PageSpeedMetricCell({
 export function PageSpeedReportView({ report }: { report: CustomerMarketingPageSpeedReport }) {
   return (
     <>
-      <section className="cmr-panel cmr-workbench-panel cmr-pagespeed-result" aria-label="PageSpeed lab result">
+      <section className="cmr-panel cmr-workbench-panel cmr-pagespeed-result" aria-label="Kết quả PageSpeed trong lab">
         <div className="cmr-section-heading">
           <div>
             <span className="cmr-eyebrow">Lab / Lighthouse</span>
@@ -323,7 +360,7 @@ export function PageSpeedReportView({ report }: { report: CustomerMarketingPageS
         </div>
       </section>
 
-      <section className="cmr-panel cmr-workbench-panel" aria-label="Chrome user experience result">
+      <section className="cmr-panel cmr-workbench-panel" aria-label="Kết quả trải nghiệm người dùng Chrome">
         <div className="cmr-section-heading">
           <div>
             <span className="cmr-eyebrow">Field / CrUX</span>
@@ -332,7 +369,7 @@ export function PageSpeedReportView({ report }: { report: CustomerMarketingPageS
           {report.field && (
             <div className="cmr-pagespeed-field-status">
               <WorkbenchPill value={report.field.overall} />
-              <span>{report.field.scope === 'origin' ? 'Origin scope' : 'URL scope'}</span>
+              <span>{report.field.scope === 'origin' ? 'Phạm vi origin' : 'Phạm vi URL'}</span>
             </div>
           )}
         </div>
@@ -441,7 +478,7 @@ function SeoPageSpeedView({
   return (
     <div className="cmr-view-stack cmr-workbench">
       <WorkbenchHeader
-        eyebrow="SEO Workspace / Read-only audit"
+        eyebrow="SEO Workspace / Kiểm tra chỉ đọc"
         title="Google PageSpeed"
         description="Đo Lighthouse lab data và Core Web Vitals thực tế mà không thay đổi website hay tạo hành động bên ngoài."
         icon={TrendUpIcon}
@@ -450,10 +487,10 @@ function SeoPageSpeedView({
       <form className="cmr-panel cmr-workbench-panel cmr-pagespeed-form" onSubmit={measure}>
         <div className="cmr-section-heading">
           <div>
-            <span className="cmr-eyebrow">01 / Audit target</span>
+            <span className="cmr-eyebrow">01 / Mục tiêu kiểm tra</span>
             <h3>Trang cần kiểm tra</h3>
           </div>
-          <WorkbenchPill value="available" label="Read only" />
+          <WorkbenchPill value="available" label="Chỉ đọc" />
         </div>
         <div className="cmr-pagespeed-controls">
           <WorkbenchField
@@ -583,7 +620,7 @@ function CreativeStudioView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Creative Studio requires Izzi AI Desktop.');
+      setError('Creative Studio cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -623,7 +660,7 @@ function CreativeStudioView({
     const api = customerApi();
     if (!api || !canEdit) return;
     if (!brief.title.trim() || !brief.concept.trim()) {
-      setError('A brief title and concept are required.');
+      setError('Cần nhập tiêu đề và ý tưởng cốt lõi cho brief.');
       return;
     }
     setBusy(true);
@@ -650,8 +687,8 @@ function CreativeStudioView({
         return;
       }
       setNotice(result.duplicate
-        ? 'The brief already exists; no duplicate was created.'
-        : 'Saved as a content draft. Scheduling and publishing remain separate.');
+        ? 'Brief này đã tồn tại; không tạo bản trùng.'
+        : 'Đã lưu thành nội dung nháp. Lên lịch và đăng bài vẫn là bước riêng.');
       setBrief(initialCreativeBrief(form));
     } catch (reason) {
       setStatus('unavailable');
@@ -664,24 +701,24 @@ function CreativeStudioView({
   return (
     <div className="cmr-view-stack cmr-workbench">
       <WorkbenchHeader
-        eyebrow="Creative production"
+        eyebrow="Sản xuất sáng tạo"
         title="Creative Studio"
-        description="Turn a user-authored idea into a content brief and connect it to registered workspace assets."
+        description="Biến ý tưởng do bạn viết thành brief nội dung và liên kết với tài sản đã đăng ký trong workspace."
         icon={DesignIcon}
         onBack={onBack}
       />
       <div className="cmr-workbench-status">
         <span>
           <span className="cmr-workbench-status__dot" />
-          {loading ? 'Loading registered assets...' : bridgeMessage(status)}
+          {loading ? 'Đang tải tài sản đã đăng ký...' : bridgeMessage(status)}
         </span>
         <button
           type="button"
           className="cmr-icon-button"
           onClick={() => void loadAssets()}
           disabled={loading || busy}
-          title="Refresh assets"
-          aria-label="Refresh assets"
+          title="Tải lại tài sản"
+          aria-label="Tải lại tài sản"
         >
           <RefreshIcon className="cmr-icon" />
         </button>
@@ -691,59 +728,61 @@ function CreativeStudioView({
       <div className="cmr-workbench-grid cmr-workbench-grid--creative">
         <section className="cmr-panel cmr-workbench-panel">
           <div className="cmr-section-heading">
-            <div><span className="cmr-eyebrow">01 / Brief</span><h3>Create a content brief</h3></div>
+            <div><span className="cmr-eyebrow">01 / Brief</span><h3>Tạo brief nội dung</h3></div>
             <WorkbenchPill
               value={canEdit ? 'ready' : 'blocked'}
-              label={canEdit ? 'Draft access' : 'View only'}
+              label={canEdit ? 'Được tạo nháp' : 'Chỉ xem'}
             />
           </div>
           <form className="cmr-workbench-form" onSubmit={createBrief} aria-busy={busy}>
             <WorkbenchField
-              label="Brief title"
+              label="Tiêu đề brief"
               value={brief.title}
               onChange={(value) => updateBrief('title', value)}
-              placeholder="IzziAPI 30-second explainer"
+              placeholder="Video giải thích IzziAPI 30 giây"
               disabled={!canEdit || busy}
             />
             <WorkbenchField
-              label="Core concept"
+              label="Ý tưởng cốt lõi"
               value={brief.concept}
               onChange={(value) => updateBrief('concept', value)}
-              placeholder="Describe the hook and the audience promise."
+              placeholder="Mô tả điểm thu hút và lời hứa dành cho khán giả."
               multiline
               disabled={!canEdit || busy}
             />
             <div className="cmr-workbench-form__row">
               <WorkbenchField
-                label="Audience"
+                label="Khán giả"
                 value={brief.audience}
                 onChange={(value) => updateBrief('audience', value)}
-                placeholder={form.audience.segments || 'Use Audience Center'}
+                placeholder={form.audience.segments || 'Dùng Audience Center'}
                 disabled={!canEdit || busy}
               />
               <label className="cmr-field">
-                <span className="cmr-field__label">Primary channel</span>
+                <span className="cmr-field__label">Kênh chính</span>
                 <select
                   value={brief.channel}
                   onChange={(event) => updateBrief('channel', event.currentTarget.value)}
                   disabled={!canEdit || busy}
                 >
                   {Array.from(new Set([...form.channels, ...CREATIVE_CHANNELS])).map(
-                    (channel) => <option key={channel} value={channel}>{channel}</option>,
+                    (channel) => (
+                      <option key={channel} value={channel}>{channelLabel(channel)}</option>
+                    ),
                   )}
                 </select>
               </label>
             </div>
             <div className="cmr-workbench-form__row">
               <label className="cmr-field">
-                <span className="cmr-field__label">Format</span>
+                <span className="cmr-field__label">Định dạng</span>
                 <select
                   value={brief.format}
                   onChange={(event) => updateBrief('format', event.currentTarget.value)}
                   disabled={!canEdit || busy}
                 >
                   {CREATIVE_FORMATS.map((format) => (
-                    <option key={format} value={format}>{format}</option>
+                    <option key={format} value={format}>{CREATIVE_FORMAT_LABELS[format]}</option>
                   ))}
                 </select>
               </label>
@@ -751,40 +790,40 @@ function CreativeStudioView({
                 label="CTA"
                 value={brief.cta}
                 onChange={(value) => updateBrief('cta', value)}
-                placeholder="Watch the free demo"
+                placeholder="Xem demo miễn phí"
                 disabled={!canEdit || busy}
               />
             </div>
             <div className="cmr-workbench-form__footer">
-              <span className="cmr-muted">Stored as a workspace content draft.</span>
+              <span className="cmr-muted">Được lưu thành nội dung nháp trong workspace.</span>
               <button
                 type="submit"
                 className="cmr-button cmr-button--primary"
                 disabled={!canEdit || busy}
               >
-                {busy ? 'Saving...' : 'Save brief'} <ContentIcon className="cmr-button__icon" />
+                {busy ? 'Đang lưu...' : 'Lưu brief'} <ContentIcon className="cmr-button__icon" />
               </button>
             </div>
           </form>
-          {!canEdit && <p className="cmr-permission-note">The current role cannot create drafts.</p>}
+          {!canEdit && <p className="cmr-permission-note">Vai trò hiện tại không thể tạo nháp.</p>}
         </section>
         <section className="cmr-panel cmr-workbench-panel">
           <div className="cmr-section-heading">
-            <div><span className="cmr-eyebrow">02 / Registry</span><h3>Registered assets</h3></div>
+            <div><span className="cmr-eyebrow">02 / Kho tài sản</span><h3>Tài sản đã đăng ký</h3></div>
             <strong className="cmr-workbench-count">{assets.length}</strong>
           </div>
           <p className="cmr-workbench-note">
-            This is persisted metadata. No AI-generated file is implied.
+            Đây là metadata đã lưu. Không ngụ ý có file do AI tạo.
           </p>
           {loading ? (
-            <div className="cmr-workbench-skeleton" role="status" aria-label="Loading assets">
+            <div className="cmr-workbench-skeleton" role="status" aria-label="Đang tải tài sản">
               <span /><span /><span />
             </div>
           ) : assets.length === 0 ? (
             <WorkbenchEmpty
               icon={DesignIcon}
-              title="No registered assets"
-              description="Register an asset before handing it to a creative workflow."
+              title="Chưa có tài sản đã đăng ký"
+              description="Đăng ký tài sản trước khi đưa vào quy trình sáng tạo."
             />
           ) : (
             <div className="cmr-workbench-list">
@@ -804,7 +843,7 @@ function CreativeStudioView({
             className="cmr-button cmr-button--quiet cmr-workbench-link"
             onClick={() => onOpen('assets')}
           >
-            Open all assets <DesignIcon className="cmr-button__icon" />
+            Mở toàn bộ tài sản <DesignIcon className="cmr-button__icon" />
           </button>
         </section>
       </div>
@@ -876,11 +915,11 @@ export function buildAnalyticsInsights(
 function errorForAnalytics(result: CustomerMarketingAnalyticsResult): string {
   if (result.error) return result.error;
   if (result.status === 'local') {
-    return 'Connect and sync IzziAPI to load a verified report.';
+    return 'Kết nối và đồng bộ IzziAPI để tải báo cáo đã xác thực.';
   }
-  if (result.status === 'forbidden') return 'The current role cannot view analytics.';
-  if (result.status === 'not_found') return 'Analytics are not available for this workspace.';
-  return 'The analytics report could not be loaded.';
+  if (result.status === 'forbidden') return 'Vai trò hiện tại không được xem analytics.';
+  if (result.status === 'not_found') return 'Workspace này chưa có analytics.';
+  return 'Không thể tải báo cáo analytics.';
 }
 
 function AnalyticsCopilotView({
@@ -905,7 +944,7 @@ function AnalyticsCopilotView({
     if (!window) {
       setReport(null);
       setStatus('unavailable');
-      setError('Choose valid dates within a 366-day window.');
+      setError('Chọn ngày hợp lệ trong khoảng tối đa 366 ngày.');
       setLoading(false);
       return;
     }
@@ -913,7 +952,7 @@ function AnalyticsCopilotView({
     if (!api) {
       setReport(null);
       setStatus('unavailable');
-      setError('Analytics Copilot requires Izzi AI Desktop.');
+      setError('Analytics Copilot cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -933,7 +972,7 @@ function AnalyticsCopilotView({
       if (request !== requestId.current) return;
       setStatus('unavailable');
       setReport(null);
-      setError(reason instanceof Error ? reason.message : 'Analytics request failed.');
+      setError(reason instanceof Error ? reason.message : 'Yêu cầu analytics thất bại.');
     } finally {
       if (request === requestId.current) setLoading(false);
     }
@@ -954,7 +993,7 @@ function AnalyticsCopilotView({
   const sendInsightToDirector = async () => {
     if (!report || !confirmInsight) return;
     await onDirector(
-      `Review verified marketing data from ${formatDate(report.window.from)} to ${formatDate(report.window.to)}. ${insights.join(' ')}`,
+      `Rà soát dữ liệu marketing đã xác thực từ ${formatDate(report.window.from)} đến ${formatDate(report.window.to)}. ${insights.join(' ')}`,
     );
     setConfirmInsight(false);
   };
@@ -962,75 +1001,75 @@ function AnalyticsCopilotView({
   return (
     <div className="cmr-view-stack cmr-workbench">
       <WorkbenchHeader
-        eyebrow="Decision support"
+        eyebrow="Hỗ trợ ra quyết định"
         title="Analytics Copilot"
-        description="Read persisted inventory, activity, schedule, and direct campaign attribution without inventing performance metrics."
+        description="Đọc kho tài nguyên, hoạt động, lịch và phân bổ chiến dịch trực tiếp đã lưu, không bịa số liệu hiệu suất."
         icon={TrendUpIcon}
         onBack={onBack}
       />
       <section className="cmr-panel cmr-workbench-panel" aria-busy={loading}>
         <div className="cmr-section-heading">
-          <div><span className="cmr-eyebrow">Report window</span><h3>Verified workspace report</h3></div>
+          <div><span className="cmr-eyebrow">Khoảng báo cáo</span><h3>Báo cáo workspace đã xác thực</h3></div>
           <WorkbenchPill
             value={loading ? 'pending' : status}
-            label={loading ? 'Loading' : bridgeMessage(status)}
+            label={loading ? 'Đang tải' : bridgeMessage(status)}
           />
         </div>
         <form className="cmr-workbench-controls" onSubmit={submitRange}>
           <WorkbenchField
-            label="From"
+            label="Từ ngày"
             value={range.fromDate}
             onChange={(value) => setRange((current) => ({ ...current, fromDate: value }))}
             type="date"
             disabled={loading}
           />
           <WorkbenchField
-            label="To"
+            label="Đến ngày"
             value={range.toDate}
             onChange={(value) => setRange((current) => ({ ...current, toDate: value }))}
             type="date"
             disabled={loading}
           />
           <button type="submit" className="cmr-button cmr-button--primary" disabled={loading}>
-            {loading ? 'Loading...' : 'Load report'} <RefreshIcon className="cmr-button__icon" />
+            {loading ? 'Đang tải...' : 'Tải báo cáo'} <RefreshIcon className="cmr-button__icon" />
           </button>
         </form>
         {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
         {report && (
           <p className="cmr-workbench-note">
-            Updated {formatDate(report.generatedAt, true)} / UTC / {report.window.activityBasis}
+            Cập nhật {formatDate(report.generatedAt, true)} / UTC / {report.window.activityBasis}
           </p>
         )}
       </section>
       {loading && !report && (
-        <div className="cmr-workbench-skeleton cmr-workbench-skeleton--large" role="status" aria-label="Loading report">
+        <div className="cmr-workbench-skeleton cmr-workbench-skeleton--large" role="status" aria-label="Đang tải báo cáo">
           <span /><span /><span /><span />
         </div>
       )}
       {report && (
         <>
-          <div className="cmr-metrics cmr-workbench-metrics" aria-label="Verified analytics">
+          <div className="cmr-metrics cmr-workbench-metrics" aria-label="Analytics đã xác thực">
             <div className="cmr-metric">
-              <span>Total resources</span><strong>{formatCount(report.inventory.total)}</strong>
-              <small>{report.inventory.campaigns} campaigns / {report.inventory.content} content</small>
+              <span>Tổng tài nguyên</span><strong>{formatCount(report.inventory.total)}</strong>
+              <small>{report.inventory.campaigns} chiến dịch / {report.inventory.content} nội dung</small>
             </div>
             <div className="cmr-metric cmr-metric--positive">
-              <span>Updated in window</span><strong>{formatCount(report.activity.updatedInWindow)}</strong>
-              <small>resource updated at</small>
+              <span>Cập nhật trong kỳ</span><strong>{formatCount(report.activity.updatedInWindow)}</strong>
+              <small>theo thời điểm cập nhật tài nguyên</small>
             </div>
             <div className="cmr-metric cmr-metric--warning">
-              <span>Scheduled content</span><strong>{formatCount(report.schedule.contentScheduledInWindow)}</strong>
-              <small>content scheduled at</small>
+              <span>Nội dung đã lên lịch</span><strong>{formatCount(report.schedule.contentScheduledInWindow)}</strong>
+              <small>theo thời điểm lên lịch nội dung</small>
             </div>
             <div className="cmr-metric cmr-metric--positive">
-              <span>Campaign linked</span><strong>{formatCount(report.attribution.attributedContent)}</strong>
-              <small>{report.attribution.unattributedContent} unlinked</small>
+              <span>Gắn với chiến dịch</span><strong>{formatCount(report.attribution.attributedContent)}</strong>
+              <small>{report.attribution.unattributedContent} chưa gắn</small>
             </div>
           </div>
           <div className="cmr-workbench-grid cmr-workbench-grid--analytics">
             <section className="cmr-panel cmr-workbench-panel">
               <div className="cmr-section-heading">
-                <div><span className="cmr-eyebrow">Activity</span><h3>By resource kind</h3></div>
+                <div><span className="cmr-eyebrow">Hoạt động</span><h3>Theo loại tài nguyên</h3></div>
               </div>
               <div className="cmr-workbench-breakdown">
                 {ANALYTICS_KIND_KEYS.map((key) => (
@@ -1050,19 +1089,19 @@ function AnalyticsCopilotView({
             </section>
             <section className="cmr-panel cmr-workbench-panel">
               <div className="cmr-section-heading">
-                <div><span className="cmr-eyebrow">Schedule</span><h3>By channel</h3></div>
+                <div><span className="cmr-eyebrow">Lịch</span><h3>Theo kênh</h3></div>
               </div>
               {report.schedule.byChannel.length === 0 ? (
                 <WorkbenchEmpty
                   icon={PlanningIcon}
-                  title="Nothing scheduled"
-                  description="There is no scheduled content in this window."
+                  title="Chưa có lịch"
+                  description="Không có nội dung nào được lên lịch trong kỳ này."
                 />
               ) : (
                 <div className="cmr-workbench-breakdown">
                   {report.schedule.byChannel.map((item) => (
                     <div key={item.channel}>
-                      <span>{item.channel}</span><strong>{formatCount(item.count)}</strong>
+                      <span>{channelLabel(item.channel)}</span><strong>{formatCount(item.count)}</strong>
                     </div>
                   ))}
                 </div>
@@ -1071,7 +1110,7 @@ function AnalyticsCopilotView({
           </div>
           <section className="cmr-panel cmr-workbench-panel">
             <div className="cmr-section-heading">
-              <div><span className="cmr-eyebrow">Copilot readout</span><h3>Evidence-based next checks</h3></div>
+              <div><span className="cmr-eyebrow">Copilot tổng hợp</span><h3>Điểm cần kiểm tra tiếp theo dựa trên dữ liệu</h3></div>
               <SparkIcon className="cmr-icon" />
             </div>
             <ul className="cmr-workbench-insights">
@@ -1084,14 +1123,14 @@ function AnalyticsCopilotView({
                 onClick={() => setConfirmInsight(true)}
                 disabled={loading}
               >
-                Send summary to AI Director <SparkIcon className="cmr-button__icon" />
+                Gửi tóm tắt cho AI Director <SparkIcon className="cmr-button__icon" />
               </button>
             ) : (
-              <div className="cmr-confirm-strip" role="dialog" aria-label="Confirm analytics handoff">
-                <span>Send this verified summary to AI Director for a local plan?</span>
+              <div className="cmr-confirm-strip" role="dialog" aria-label="Xác nhận gửi analytics">
+                <span>Gửi tóm tắt đã xác thực này cho AI Director để lập kế hoạch cục bộ?</span>
                 <div className="cmr-inline-actions">
-                  <button type="button" className="cmr-button cmr-button--quiet" onClick={() => setConfirmInsight(false)}>Cancel</button>
-                  <button type="button" className="cmr-button cmr-button--primary" onClick={() => void sendInsightToDirector()}>Confirm</button>
+                  <button type="button" className="cmr-button cmr-button--quiet" onClick={() => setConfirmInsight(false)}>Hủy</button>
+                  <button type="button" className="cmr-button cmr-button--primary" onClick={() => void sendInsightToDirector()}>Xác nhận</button>
                 </div>
               </div>
             )}
@@ -1099,9 +1138,9 @@ function AnalyticsCopilotView({
           <section className="cmr-panel cmr-workbench-availability" role="status">
             <StatusIcon className="cmr-icon" />
             <div>
-              <strong>External performance data is unavailable</strong>
+              <strong>Chưa có dữ liệu hiệu suất từ bên ngoài</strong>
               <span>{report.dataAvailability.performanceMetrics.reason}</span>
-              <small>No impressions, reach, clicks, conversions, or revenue are invented.</small>
+              <small>Không bịa số impression, reach, click, chuyển đổi hay doanh thu.</small>
             </div>
           </section>
         </>
@@ -1139,20 +1178,20 @@ export function scanBrandContent(
   if (avoidMatches.length > 0) {
     findings.push({
       level: 'block',
-      message: `Avoided term(s) found: ${avoidMatches.join(', ')}.`,
+      message: `Phát hiện từ cần tránh: ${avoidMatches.join(', ')}.`,
     });
   }
   if (!brand.tone.trim()) {
-    findings.push({ level: 'warning', message: 'Brand Center has no tone of voice.' });
+    findings.push({ level: 'warning', message: 'Brand Center chưa có giọng điệu thương hiệu.' });
   }
   if (brand.wordsToUse.length > 0 && useMatches.length === 0) {
     findings.push({
       level: 'warning',
-      message: 'No recommended brand term was found in this content.',
+      message: 'Nội dung này chưa dùng từ khóa thương hiệu nào được khuyến nghị.',
     });
   }
   if (findings.length === 0) {
-    findings.push({ level: 'pass', message: 'No configured brand rule was violated.' });
+    findings.push({ level: 'pass', message: 'Không vi phạm quy tắc thương hiệu nào đã cấu hình.' });
   }
   return {
     resourceId: resource.id,
@@ -1201,7 +1240,7 @@ function BrandGuardianView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Brand Guardian requires Izzi AI Desktop.');
+      setError('Brand Guardian cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -1263,7 +1302,7 @@ function BrandGuardianView({
           ? (result.resource as CustomerMarketingContentResource)
           : item,
       ));
-      setNotice('Submitted the clean revision to the human review queue.');
+      setNotice('Đã gửi bản sạch vào hàng đợi duyệt của người.');
     } catch (reason) {
       setStatus('unavailable');
       setError(reason instanceof Error ? reason.message : bridgeMessage('unavailable'));
@@ -1275,24 +1314,24 @@ function BrandGuardianView({
   return (
     <div className="cmr-view-stack cmr-workbench">
       <WorkbenchHeader
-        eyebrow="Brand safety"
+        eyebrow="An toàn thương hiệu"
         title="Brand Guardian"
-        description="Scan persisted content against Brand Center rules. The scan is evidence; a human still owns approval."
+        description="Quét nội dung đã lưu theo quy tắc Brand Center. Kết quả quét là bằng chứng; con người vẫn là người phê duyệt."
         icon={StatusIcon}
         onBack={onBack}
       />
       <div className="cmr-workbench-status">
         <span>
           <span className="cmr-workbench-status__dot" />
-          {loading ? 'Scanning content...' : bridgeMessage(status)}
+          {loading ? 'Đang quét nội dung...' : bridgeMessage(status)}
         </span>
         <button
           type="button"
           className="cmr-icon-button"
           onClick={() => void load()}
           disabled={loading || busyId !== null}
-          title="Scan again"
-          aria-label="Scan again"
+          title="Quét lại"
+          aria-label="Quét lại"
         >
           <RefreshIcon className="cmr-icon" />
         </button>
@@ -1300,67 +1339,67 @@ function BrandGuardianView({
       {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
       {notice && <div className="cmr-alert cmr-alert--success" role="status">{notice}</div>}
       <div className="cmr-metrics cmr-workbench-metrics">
-        <div className="cmr-metric"><span>Scanned</span><strong>{formatCount(scans.length)}</strong><small>Persisted content</small></div>
-        <div className="cmr-metric cmr-metric--positive"><span>Passing</span><strong>{formatCount(scans.filter((scan) => scan.level === 'pass').length)}</strong><small>No configured violation</small></div>
-        <div className="cmr-metric cmr-metric--warning"><span>Review</span><strong>{formatCount(warningCount)}</strong><small>Needs attention</small></div>
-        <div className="cmr-metric cmr-metric--negative"><span>Blocked</span><strong>{formatCount(blockedCount)}</strong><small>Avoided term found</small></div>
+        <div className="cmr-metric"><span>Đã quét</span><strong>{formatCount(scans.length)}</strong><small>Nội dung đã lưu</small></div>
+        <div className="cmr-metric cmr-metric--positive"><span>Đạt</span><strong>{formatCount(scans.filter((scan) => scan.level === 'pass').length)}</strong><small>Không vi phạm quy tắc</small></div>
+        <div className="cmr-metric cmr-metric--warning"><span>Cần xem</span><strong>{formatCount(warningCount)}</strong><small>Cần chú ý</small></div>
+        <div className="cmr-metric cmr-metric--negative"><span>Bị chặn</span><strong>{formatCount(blockedCount)}</strong><small>Có từ cần tránh</small></div>
       </div>
       <div className="cmr-workbench-grid cmr-workbench-grid--guardian">
         <section className="cmr-panel cmr-workbench-panel">
           <div className="cmr-section-heading">
-            <div><span className="cmr-eyebrow">Rules</span><h3>Current Brand Center</h3></div>
+            <div><span className="cmr-eyebrow">Quy tắc</span><h3>Brand Center hiện tại</h3></div>
             <span className="cmr-color-preview" style={{ background: form.brand.primaryColor }} />
           </div>
           <dl className="cmr-workbench-definition-list">
-            <div><dt>Tone</dt><dd>{form.brand.tone || 'Not configured'}</dd></div>
-            <div><dt>Guideline</dt><dd>{form.brand.guidelines || 'Not configured'}</dd></div>
-            <div><dt>Use</dt><dd>{form.brand.wordsToUse.join(', ') || 'None listed'}</dd></div>
-            <div><dt>Avoid</dt><dd>{form.brand.wordsToAvoid.join(', ') || 'None listed'}</dd></div>
+            <div><dt>Giọng điệu</dt><dd>{form.brand.tone || 'Chưa cấu hình'}</dd></div>
+            <div><dt>Hướng dẫn</dt><dd>{form.brand.guidelines || 'Chưa cấu hình'}</dd></div>
+            <div><dt>Nên dùng</dt><dd>{form.brand.wordsToUse.join(', ') || 'Chưa liệt kê'}</dd></div>
+            <div><dt>Cần tránh</dt><dd>{form.brand.wordsToAvoid.join(', ') || 'Chưa liệt kê'}</dd></div>
           </dl>
           <button
             type="button"
             className="cmr-button cmr-button--quiet cmr-workbench-link"
             onClick={() => onOpen('brand')}
           >
-            Edit Brand Center <PlanningIcon className="cmr-button__icon" />
+            Sửa Brand Center <PlanningIcon className="cmr-button__icon" />
           </button>
         </section>
         <section className="cmr-panel cmr-workbench-panel">
           <div className="cmr-section-heading">
-            <div><span className="cmr-eyebrow">Review queue</span><h3>Human decision point</h3></div>
+            <div><span className="cmr-eyebrow">Hàng đợi duyệt</span><h3>Điểm quyết định của con người</h3></div>
             <WorkbenchPill
               value={pendingBrandReviews > 0 ? 'pending' : 'ready'}
-              label={pendingBrandReviews > 0 ? `${pendingBrandReviews} pending` : 'No pending approval'}
+              label={pendingBrandReviews > 0 ? `${pendingBrandReviews} đang chờ` : 'Không có phê duyệt chờ'}
             />
           </div>
           <p className="cmr-workbench-note">
-            A scan never approves or publishes content. Use the approval inbox.
+            Quét không bao giờ tự phê duyệt hay đăng nội dung. Hãy dùng hộp thư phê duyệt.
           </p>
           <button
             type="button"
             className="cmr-button cmr-button--primary"
             onClick={() => onOpen('approvals')}
           >
-            Open approval inbox <ReviewIcon className="cmr-button__icon" />
+            Mở hộp thư phê duyệt <ReviewIcon className="cmr-button__icon" />
           </button>
           {!roleCanReview(role) && (
-            <p className="cmr-permission-note">The current role can view evidence but cannot decide.</p>
+            <p className="cmr-permission-note">Vai trò hiện tại chỉ xem được bằng chứng, không được quyết định.</p>
           )}
         </section>
       </div>
       <section className="cmr-panel cmr-workbench-panel">
         <div className="cmr-section-heading">
-          <div><span className="cmr-eyebrow">Evidence</span><h3>Content checks</h3></div>
+          <div><span className="cmr-eyebrow">Bằng chứng</span><h3>Kiểm tra nội dung</h3></div>
         </div>
         {loading ? (
-          <div className="cmr-workbench-skeleton" role="status" aria-label="Scanning content">
+          <div className="cmr-workbench-skeleton" role="status" aria-label="Đang quét nội dung">
             <span /><span /><span />
           </div>
         ) : resources.length === 0 ? (
           <WorkbenchEmpty
             icon={ContentIcon}
-            title="No content to scan"
-            description="Create a content draft first, then run Brand Guardian."
+            title="Chưa có nội dung để quét"
+            description="Tạo nội dung nháp trước, rồi chạy Brand Guardian."
           />
         ) : (
           <div className="cmr-guardian-list">
@@ -1379,10 +1418,10 @@ function BrandGuardianView({
                       <strong>{resource.title}</strong>
                       <WorkbenchPill
                         value={scan.level}
-                        label={scan.level === 'pass' ? 'Pass' : scan.level === 'warning' ? 'Review' : 'Blocked'}
+                        label={scan.level === 'pass' ? 'Đạt' : scan.level === 'warning' ? 'Cần xem' : 'Bị chặn'}
                       />
                     </div>
-                    <span>{resource.channel} / {resource.status} / revision {resource.revision}</span>
+                    <span>{channelLabel(resource.channel)} / {pillLabel(resource.status)} / bản sửa {resource.revision}</span>
                     <ul>
                       {scan.findings.map((finding) => (
                         <li
@@ -1401,7 +1440,7 @@ function BrandGuardianView({
                       disabled={busyId !== null}
                       onClick={() => void submitForReview(resource)}
                     >
-                      {busyId === resource.id ? 'Submitting...' : 'Submit for review'} <ReviewIcon className="cmr-button__icon" />
+                      {busyId === resource.id ? 'Đang gửi...' : 'Gửi duyệt'} <ReviewIcon className="cmr-button__icon" />
                     </button>
                   )}
                 </article>
@@ -1426,9 +1465,9 @@ const TARGETS: Array<{
 const ALLOWED_WORKFLOW_OPERATIONS = ['read', 'draft', 'validate'] as const;
 type AllowedWorkflowOperation = (typeof ALLOWED_WORKFLOW_OPERATIONS)[number];
 function operationLabel(operation: AllowedWorkflowOperation): string {
-  if (operation === 'read') return 'Read persisted source';
-  if (operation === 'draft') return 'Prepare a draft';
-  return 'Validate locally';
+  if (operation === 'read') return 'Đọc nguồn đã lưu';
+  if (operation === 'draft') return 'Chuẩn bị bản nháp';
+  return 'Kiểm tra cục bộ';
 }
 
 function AutomationBuilderView({
@@ -1459,7 +1498,7 @@ function AutomationBuilderView({
     const api = customerApi();
     if (!api) {
       setStatus('unavailable');
-      setError('Automation Builder requires Izzi AI Desktop.');
+      setError('Automation Builder cần chạy trong Izzi AI Desktop.');
       setLoading(false);
       return;
     }
@@ -1532,7 +1571,7 @@ function AutomationBuilderView({
         workflow,
         ...current.filter((item) => item.workflowId !== workflow.workflowId),
       ]);
-      setNotice('Prepared a local dry-run. No external action was performed.');
+      setNotice('Đã chuẩn bị dry-run cục bộ. Không thực hiện hành động bên ngoài nào.');
     } catch (reason) {
       setStatus('unavailable');
       setError(reason instanceof Error ? reason.message : bridgeMessage('unavailable'));
@@ -1557,7 +1596,7 @@ function AutomationBuilderView({
         approvalId: workflow.approvalId,
         manifestDigest: workflow.manifestDigest,
         decision,
-        note: 'Reviewed in Automation Builder; external actions remain disabled.',
+        note: 'Đã duyệt trong Automation Builder; hành động bên ngoài vẫn bị khóa.',
       });
       setStatus(result.status);
       if (!result.ok || !result.workflow) {
@@ -1569,8 +1608,8 @@ function AutomationBuilderView({
         item.workflowId === reviewed.workflowId ? reviewed : item,
       ));
       setNotice(decision === 'approved'
-        ? 'Dry-run approved locally; nothing was published or sent.'
-        : 'Dry-run rejected locally.');
+        ? 'Đã duyệt dry-run cục bộ; chưa đăng hay gửi gì.'
+        : 'Đã từ chối dry-run cục bộ.');
     } catch (reason) {
       setStatus('unavailable');
       setError(reason instanceof Error ? reason.message : bridgeMessage('unavailable'));
@@ -1582,24 +1621,24 @@ function AutomationBuilderView({
   return (
     <div className="cmr-view-stack cmr-workbench">
       <WorkbenchHeader
-        eyebrow="Guardrailed workflows"
+        eyebrow="Quy trình có rào chắn"
         title="Automation Builder"
-        description="Prepare and review a bounded local dry-run. Publish, send, bulk, spend, contact, and integration writes are unavailable."
+        description="Chuẩn bị và duyệt một dry-run cục bộ có giới hạn. Không cho phép đăng, gửi, hàng loạt, chi tiêu, ghi liên hệ hay ghi tích hợp."
         icon={SettingsIcon}
         onBack={onBack}
       />
       <div className="cmr-workbench-status">
         <span>
           <span className="cmr-workbench-status__dot" />
-          {loading ? 'Loading workflow sources...' : bridgeMessage(status)}
+          {loading ? 'Đang tải nguồn quy trình...' : bridgeMessage(status)}
         </span>
         <button
           type="button"
           className="cmr-icon-button"
           onClick={() => void load(target)}
           disabled={loading || busy}
-          title="Refresh workflow sources"
-          aria-label="Refresh workflow sources"
+          title="Tải lại nguồn quy trình"
+          aria-label="Tải lại nguồn quy trình"
         >
           <RefreshIcon className="cmr-icon" />
         </button>
@@ -1608,15 +1647,15 @@ function AutomationBuilderView({
       {notice && <div className="cmr-alert cmr-alert--success" role="status">{notice}</div>}
       <section className="cmr-panel cmr-workbench-panel">
         <div className="cmr-section-heading">
-          <div><span className="cmr-eyebrow">01 / Builder</span><h3>Prepare a local dry-run</h3></div>
+          <div><span className="cmr-eyebrow">01 / Builder</span><h3>Chuẩn bị dry-run cục bộ</h3></div>
           <WorkbenchPill
             value={canReview ? 'ready' : 'blocked'}
-            label={canReview ? 'Review access' : 'View only'}
+            label={canReview ? 'Được duyệt' : 'Chỉ xem'}
           />
         </div>
         <div className="cmr-workbench-controls">
           <label className="cmr-field">
-            <span className="cmr-field__label">Target</span>
+            <span className="cmr-field__label">Mục tiêu</span>
             <select
               value={target}
               onChange={(event) =>
@@ -1629,16 +1668,16 @@ function AutomationBuilderView({
             </select>
           </label>
           <label className="cmr-field">
-            <span className="cmr-field__label">Persisted source</span>
+            <span className="cmr-field__label">Nguồn đã lưu</span>
             <select
               value={selectedSourceId}
               onChange={(event) => setSelectedSourceId(event.currentTarget.value)}
               disabled={loading || busy || sources.length === 0}
             >
-              {sources.length === 0 && <option value="">No approved source</option>}
+              {sources.length === 0 && <option value="">Chưa có nguồn đã duyệt</option>}
               {sources.map((source) => (
                 <option key={source.id} value={source.id}>
-                  {source.title} / rev {source.revision}
+                  {source.title} / bản sửa {source.revision}
                 </option>
               ))}
             </select>
@@ -1647,7 +1686,7 @@ function AutomationBuilderView({
         <div
           className="cmr-workbench-operation-grid"
           role="group"
-          aria-label="Allowed dry-run operations"
+          aria-label="Thao tác dry-run được phép"
         >
           {ALLOWED_WORKFLOW_OPERATIONS.map((operation) => (
             <label className="cmr-workbench-check" key={operation}>
@@ -1662,7 +1701,7 @@ function AutomationBuilderView({
           ))}
         </div>
         <div className="cmr-workbench-denylist" role="status">
-          <strong>Locked by policy</strong>
+          <strong>Bị khóa theo chính sách</strong>
           <span>publish / send / bulk / spend / integration.write / contacts.write</span>
         </div>
         <button
@@ -1671,19 +1710,19 @@ function AutomationBuilderView({
           onClick={() => void prepare()}
           disabled={busy || loading || !selectedSource || operations.length === 0}
         >
-          {busy ? 'Preparing...' : 'Prepare dry-run'} <SettingsIcon className="cmr-button__icon" />
+          {busy ? 'Đang chuẩn bị...' : 'Chuẩn bị dry-run'} <SettingsIcon className="cmr-button__icon" />
         </button>
       </section>
       <section className="cmr-panel cmr-workbench-panel">
         <div className="cmr-section-heading">
-          <div><span className="cmr-eyebrow">02 / Review</span><h3>Workflow manifests</h3></div>
+          <div><span className="cmr-eyebrow">02 / Duyệt</span><h3>Manifest quy trình</h3></div>
           <strong className="cmr-workbench-count">{workflows.length}</strong>
         </div>
         {workflows.length === 0 ? (
           <WorkbenchEmpty
             icon={PlanningIcon}
-            title="No local workflow yet"
-            description="Prepare a dry-run from a persisted source."
+            title="Chưa có quy trình cục bộ"
+            description="Chuẩn bị dry-run từ một nguồn đã lưu."
           />
         ) : (
           <div className="cmr-automation-list">
@@ -1697,16 +1736,16 @@ function AutomationBuilderView({
                   </div>
                   <span>
                     {workflow.manifest.kind} / {formatDate(workflow.manifest.createdAt, true)}
-                    {' / '}policy {workflow.manifest.grant.policyRevision}
+                    {' / '}chính sách {workflow.manifest.grant.policyRevision}
                   </span>
                   <ul className="cmr-automation-details">
                     {workflow.manifest.dryRun.steps.map((step) => <li key={step}>{step}</li>)}
                   </ul>
                   <div className="cmr-automation-limits">
-                    <span>Items: {workflow.manifest.grant.limits.maxItems}</span>
-                    <span>Recipients: {workflow.manifest.grant.limits.maxRecipients}</span>
-                    <span>Spend: {workflow.manifest.grant.limits.maxSpendVnd} VND</span>
-                    <span>External action: no</span>
+                    <span>Số mục: {workflow.manifest.grant.limits.maxItems}</span>
+                    <span>Người nhận: {workflow.manifest.grant.limits.maxRecipients}</span>
+                    <span>Chi tiêu: {workflow.manifest.grant.limits.maxSpendVnd} VND</span>
+                    <span>Hành động bên ngoài: không</span>
                   </div>
                   {workflow.manifest.dryRun.warnings.map((warning) => (
                     <p className="cmr-permission-note" key={warning}>{warning}</p>
@@ -1720,7 +1759,7 @@ function AutomationBuilderView({
                       disabled={busy || !canReview}
                       onClick={() => void review(workflow, 'rejected')}
                     >
-                      Reject
+                      Từ chối
                     </button>
                     <button
                       type="button"
@@ -1728,7 +1767,7 @@ function AutomationBuilderView({
                       disabled={busy || !canReview}
                       onClick={() => void review(workflow, 'approved')}
                     >
-                      Approve dry-run
+                      Duyệt dry-run
                     </button>
                   </div>
                 )}
@@ -1738,7 +1777,7 @@ function AutomationBuilderView({
         )}
         {hasPendingWorkflow && !canReview && (
           <p className="cmr-permission-note">
-            A reviewer role is required to decide pending manifests.
+            Cần vai trò reviewer để quyết định các manifest đang chờ.
           </p>
         )}
       </section>

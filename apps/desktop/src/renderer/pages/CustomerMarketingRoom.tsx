@@ -491,6 +491,59 @@ function statusLabel(value: string): string {
     checking: 'Đang kiểm tra',
     preview_ready: 'Preview sẵn sàng',
     failed: 'Kiểm tra lỗi',
+    // Run stages
+    awaiting_strategy_approval: 'Chờ duyệt chiến lược',
+    ready_for_next_step: 'Sẵn sàng bước tiếp theo',
+    rejected_by_customer: 'Khách hàng từ chối',
+    superseded_by_new_goal: 'Đã thay bằng mục tiêu mới',
+    workflow_blocked: 'Workflow bị chặn',
+    workflow_running: 'Workflow đang chạy',
+    director_failed: 'AI Director gặp lỗi',
+    quota_exceeded: 'Vượt hạn mức',
+    // Job / workflow states
+    scheduled: 'Đã lên lịch',
+    retrying: 'Đang thử lại',
+    cancelled: 'Đã huỷ',
+    canceled: 'Đã huỷ',
+    draft: 'Bản nháp',
+    active: 'Đang hoạt động',
+    paused: 'Tạm dừng',
+    archived: 'Đã lưu trữ',
+    published: 'Đã đăng',
+    error: 'Lỗi',
+    success: 'Thành công',
+    done: 'Hoàn tất',
+    todo: 'Chưa làm',
+  };
+  return labels[value] ?? humanize(value);
+}
+
+/** Human-readable label for a run stage token (e.g. `awaiting_strategy_approval`). */
+function stageLabel(value: string): string {
+  return statusLabel(value);
+}
+
+/** Human-readable label for a workflow artifact kind (e.g. `brief`, `strategy`). */
+function artifactKindLabel(value: string): string {
+  const labels: Record<string, string> = {
+    brief: 'Bản brief',
+    strategy: 'Chiến lược',
+    content: 'Nội dung',
+    content_plan: 'Kế hoạch nội dung',
+    brand_review: 'Kiểm tra brand',
+    approval: 'Gói duyệt',
+    approval_packet: 'Gói duyệt',
+    project_manifest: 'Manifest dự án',
+    check_report: 'Báo cáo kiểm tra',
+    check_receipt: 'Biên nhận kiểm tra',
+    snapshot: 'Ảnh chụp',
+    voice_preview: 'Preview giọng nói',
+    video_preview: 'Preview video',
+    image: 'Hình ảnh',
+    video: 'Video',
+    audio: 'Âm thanh',
+    document: 'Tài liệu',
+    report: 'Báo cáo',
   };
   return labels[value] ?? humanize(value);
 }
@@ -922,11 +975,27 @@ interface DirectorComposerProps {
   onSubmit: (goal: string) => Promise<boolean | void>;
   busy: boolean;
   compact?: boolean;
+  channels?: CustomerChannel[];
+  onChannelsChange?: (channels: CustomerChannel[]) => void;
 }
 
-export function DirectorComposer({ onSubmit, busy, compact = false }: DirectorComposerProps) {
+export function DirectorComposer({
+  onSubmit,
+  busy,
+  compact = false,
+  channels,
+  onChannelsChange,
+}: DirectorComposerProps) {
   const [goal, setGoal] = useState('');
   const [localError, setLocalError] = useState('');
+  const selectedChannels = channels ?? [];
+  const showChannelPicker = Boolean(onChannelsChange);
+  const toggleChannel = (channel: CustomerChannel) => {
+    if (!onChannelsChange) return;
+    onChannelsChange(selectedChannels.includes(channel)
+      ? selectedChannels.filter((item) => item !== channel)
+      : [...selectedChannels, channel]);
+  };
 
   // V2 Home's Agent Marketing route only types its text in, once; the user
   // still submits. Without a pending offer (legacy, flag OFF) nothing changes.
@@ -942,10 +1011,14 @@ export function DirectorComposer({ onSubmit, busy, compact = false }: DirectorCo
       setLocalError('Viết mục tiêu cụ thể hơn để AI lập workflow.');
       return;
     }
+    if (showChannelPicker && selectedChannels.length === 0) {
+      setLocalError('Chọn ít nhất một kênh cho brief này.');
+      return;
+    }
     setLocalError('');
     const ok = await onSubmit(value);
     // Clear only after a confirmed success, and only if the user has not typed a new goal meanwhile.
-    if (ok !== false) setGoal((current) => (current.trim() === value ? '' : current));
+    if (ok === true) setGoal((current) => (current.trim() === value ? '' : current));
   };
 
   const quickPrompts = [
@@ -980,6 +1053,28 @@ export function DirectorComposer({ onSubmit, busy, compact = false }: DirectorCo
           </button>
         ))}
       </div>
+      {showChannelPicker && (
+        <fieldset className="cmr-director-channels">
+          <legend className="cmr-muted">Kênh cho brief này</legend>
+          <div className="cmr-director-channels__list">
+            {CHANNEL_OPTIONS.map((option) => {
+              const checked = selectedChannels.includes(option.value);
+              return (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={`cmr-filter cmr-director-channels__chip${checked ? ' is-active' : ''}`}
+                  aria-pressed={checked}
+                  disabled={busy}
+                  onClick={() => toggleChannel(option.value)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
       {localError && <span className="cmr-inline-error">{localError}</span>}
       <div className="cmr-director-composer__footer">
         <span className="cmr-muted">AI sẽ lập kế hoạch và tạo điểm phê duyệt trước hành động bên ngoài.</span>
@@ -1577,7 +1672,7 @@ function WorkflowCard({ run, onOpenGoals }: { run: CustomerRun; onOpenGoals: () 
       </div>
       <div className="cmr-workflow-meta">
         <StatusPill value={run.status} />
-        <span>{run.stage.replace(/_/g, ' ')}</span>
+        <span>{stageLabel(run.stage)}</span>
         <span>Cập nhật {formatDate(run.updatedAt, true)}</span>
       </div>
       {run.status === 'blocked' && run.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{run.blockedReason}</div>}
@@ -1653,12 +1748,16 @@ function HomeView({
   onReview,
   onOpen,
   busy,
+  directorChannels,
+  onDirectorChannelsChange,
 }: {
   snapshot: CustomerMarketingSnapshot;
   onDirector: (goal: string) => Promise<boolean | void>;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
   onOpen: (view: ViewId) => void;
   busy: boolean;
+  directorChannels?: CustomerChannel[];
+  onDirectorChannelsChange?: (channels: CustomerChannel[]) => void;
 }) {
   const activeRun = snapshot.runs[0];
   const pendingCount = snapshot.approvals.filter((approval) => approval.status === 'pending').length;
@@ -1677,7 +1776,12 @@ function HomeView({
 
       <div className="cmr-home-grid">
         <div className="cmr-home-main">
-          <DirectorComposer onSubmit={onDirector} busy={busy} />
+          <DirectorComposer
+            onSubmit={onDirector}
+            busy={busy}
+            channels={directorChannels}
+            onChannelsChange={onDirectorChannelsChange}
+          />
           {activeRun ? (
             <WorkflowCard run={activeRun} onOpenGoals={() => onOpen('goals')} />
           ) : (
@@ -1729,10 +1833,14 @@ function DirectorView({
   snapshot,
   onDirector,
   busy,
+  directorChannels,
+  onDirectorChannelsChange,
 }: {
   snapshot: CustomerMarketingSnapshot;
   onDirector: (goal: string) => Promise<boolean | void>;
   busy: boolean;
+  directorChannels?: CustomerChannel[];
+  onDirectorChannelsChange?: (channels: CustomerChannel[]) => void;
 }) {
   const latestWithReply = snapshot.runs.find((run) => run.directorReply);
   return (
@@ -1742,7 +1850,12 @@ function DirectorView({
         <h2>Agent Marketing Director</h2>
         <p>Một nơi để giao mục tiêu, nhận kế hoạch và theo dõi điểm cần bạn duyệt.</p>
       </div>
-      <DirectorComposer onSubmit={onDirector} busy={busy} />
+      <DirectorComposer
+        onSubmit={onDirector}
+        busy={busy}
+        channels={directorChannels}
+        onChannelsChange={onDirectorChannelsChange}
+      />
       {latestWithReply?.directorReply ? (
         <section className="cmr-panel cmr-director-result">
           <div className="cmr-section-heading">
@@ -1777,7 +1890,7 @@ function GoalsView({ snapshot, onOpenDirector }: { snapshot: CustomerMarketingSn
                 <div><span className="cmr-eyebrow">{formatDate(run.createdAt)}</span><h3>{run.goal}</h3></div>
                 <StatusPill value={run.status} />
               </div>
-              <div className="cmr-goal-card__meta"><span>{run.stage.replace(/_/g, ' ')}</span><span>{run.progress}% hoàn thành</span><span>Cập nhật {formatDate(run.updatedAt, true)}</span></div>
+              <div className="cmr-goal-card__meta"><span>{stageLabel(run.stage)}</span><span>{run.progress}% hoàn thành</span><span>Cập nhật {formatDate(run.updatedAt, true)}</span></div>
               {run.status === 'blocked' && run.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{run.blockedReason}</div>}
               <ProgressBar value={run.progress} />
               <ol className="cmr-run-steps cmr-run-steps--dense">
@@ -2004,7 +2117,7 @@ function VideoStudioView({
                 {jobArtifacts.length > 0 && (
                   <div className="cmr-media-artifacts">
                     <span className="cmr-eyebrow">Artifacts</span>
-                    {jobArtifacts.slice(0, 6).map((artifact) => <div key={artifact.id}><strong>{artifact.name}</strong><span>{artifact.kind.replace(/_/g, ' ')}{artifact.sha256 ? ` · ${artifact.sha256.slice(0, 12)}` : ''}</span></div>)}
+                    {jobArtifacts.slice(0, 6).map((artifact) => <div key={artifact.id}><strong>{artifact.name}</strong><span>{artifactKindLabel(artifact.kind)}{artifact.sha256 ? ` · ${artifact.sha256.slice(0, 12)}` : ''}</span></div>)}
                   </div>
                 )}
                 <div className="cmr-inline-actions cmr-media-job__actions">
@@ -3132,6 +3245,8 @@ function CustomerRoom({
   const [v2Tab, setV2Tab] = useState<AgentMarketingTab>(DEFAULT_AGENT_MARKETING_TAB);
   const [activeCapability, setActiveCapability] =
     useState<CustomerCapabilityWorkbenchId | null>(null);
+  // B: channels chosen for the next brief. Seeded from onboarding, editable per brief.
+  const [directorChannels, setDirectorChannels] = useState<CustomerChannel[]>(() => form.channels);
   const videoStudioAvailable = customerPlanMeetsMinimum(snapshot.workspace.plan, 'pro')
     || snapshot.media.jobs.some((job) => Boolean(job.videoPreview));
   const activeView = view === 'video' && !videoStudioAvailable ? 'home' : view;
@@ -3145,8 +3260,9 @@ function CustomerRoom({
     setView(activeView);
   }, [activeView, setView, view]);
 
-  const director = async (goal: string) => {
-    const input: CustomerDirectorInput = { goal, channels: form.channels, automationMode: form.automationMode };
+  const director = async (goal: string): Promise<boolean> => {
+    const channels = directorChannels.length > 0 ? directorChannels : form.channels;
+    const input: CustomerDirectorInput = { goal, channels, automationMode: form.automationMode };
     const result = await onMutation((api) => api.askDirector(input), 'Đã tạo kế hoạch đề xuất.');
     if (result?.ok) {
       if (v2) setV2Tab('conversation');
@@ -3266,7 +3382,15 @@ function CustomerRoom({
           <AgentMarketingWorkspaceV2
             tab={v2Tab}
             onTabChange={setV2Tab}
-            conversation={<DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
+            conversation={(
+              <DirectorView
+                snapshot={snapshot}
+                onDirector={director}
+                busy={busy}
+                directorChannels={directorChannels}
+                onDirectorChannelsChange={setDirectorChannels}
+              />
+            )}
             plan={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
             content={<CustomerMarketingResources kind="content" role={snapshot.workspace.role} />}
             analytics={analyticsGate.ready ? (
@@ -3316,13 +3440,31 @@ function CustomerRoom({
           role="tabpanel"
           aria-labelledby={`cmr-tab-${activeView}`}
         >
-          {activeView === 'home' && <HomeView snapshot={snapshot} onDirector={director} onReview={review} onOpen={selectView} busy={busy} />}
+          {activeView === 'home' && (
+            <HomeView
+              snapshot={snapshot}
+              onDirector={director}
+              onReview={review}
+              onOpen={selectView}
+              busy={busy}
+              directorChannels={directorChannels}
+              onDirectorChannelsChange={setDirectorChannels}
+            />
+          )}
           {activeView === 'campaigns' && <CustomerMarketingResources kind="campaign" role={snapshot.workspace.role} />}
           {activeView === 'content' && <CustomerMarketingResources kind="content" role={snapshot.workspace.role} />}
           {activeView === 'channels' && <CustomerMarketingChannels role={snapshot.workspace.role} />}
           {activeView === 'assets' && <CustomerMarketingResources kind="asset" role={snapshot.workspace.role} />}
           {activeView === 'knowledge' && <CustomerMarketingResources kind="knowledge" role={snapshot.workspace.role} />}
-          {activeView === 'director' && <DirectorView snapshot={snapshot} onDirector={director} busy={busy} />}
+          {activeView === 'director' && (
+            <DirectorView
+              snapshot={snapshot}
+              onDirector={director}
+              busy={busy}
+              directorChannels={directorChannels}
+              onDirectorChannelsChange={setDirectorChannels}
+            />
+          )}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
           {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
           {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onVideoPreview={previewVideo} onOpenVideoPreview={openVideo} onReview={review} busy={busy} />}

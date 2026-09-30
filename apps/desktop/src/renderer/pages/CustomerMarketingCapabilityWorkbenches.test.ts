@@ -146,10 +146,10 @@ function analyticsReport(
 describe('Customer Marketing capability workbench helpers', () => {
   it.each([
     ['seo-workspace', 'Google PageSpeed'],
-    ['creative-studio', 'Create a content brief'],
-    ['analytics-copilot', 'Verified workspace report'],
-    ['brand-guardian', 'Current Brand Center'],
-    ['automation-builder', 'Prepare a local dry-run'],
+    ['creative-studio', 'Tạo brief nội dung'],
+    ['analytics-copilot', 'Báo cáo workspace đã xác thực'],
+    ['brand-guardian', 'Brand Center hiện tại'],
+    ['automation-builder', 'Chuẩn bị dry-run cục bộ'],
   ] as const)('renders %s as a real workbench surface', (id, marker) => {
     const html = renderToStaticMarkup(createElement(
       CustomerMarketingCapabilityWorkbench,

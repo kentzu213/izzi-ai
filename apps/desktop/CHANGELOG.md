@@ -1,4 +1,15 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.77
+
+Finish the Agent Marketing workflow and interface fixes.
+
+- Starting a new goal safely supersedes an older pending strategy approval
+  instead of stacking duplicate approval requests.
+- Each brief can choose its own channels; explicit choices now take priority
+  over channel names inferred from the brief text.
+- Agent Marketing remains usable around 1280px without panel overflow.
+- Workbench copy and status labels are now consistently readable Vietnamese.
+
 ## 1.14.0-beta.76
 
 Agent Marketing fixes and a more readable V2 model picker.

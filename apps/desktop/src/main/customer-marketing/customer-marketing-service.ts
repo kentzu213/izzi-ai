@@ -326,8 +326,60 @@ const CHANNELS: CustomerChannel[] = [
   'facebook', 'tiktok', 'instagram', 'youtube', 'website', 'email',
   'crm', 'ads', 'telegram', 'x', 'seo',
 ];
+const BRIEF_CHANNEL_PATTERNS: Array<[CustomerChannel, RegExp]> = [
+  ['facebook', /\bfacebook\b|\bfb\b|\bfanpage\b/i],
+  ['tiktok', /\btik ?tok\b/i],
+  ['instagram', /\binstagram\b|\binsta\b/i],
+  ['youtube', /\byoutube\b/i],
+  ['website', /\bwebsite\b|\bweb ?site\b|\bweb\b|\blanding ?page\b/i],
+  ['email', /\be-?mail\b/i],
+  ['crm', /\bcrm\b/i],
+  ['ads', /\bads\b/i],
+  ['telegram', /\btelegram\b/i],
+  ['x', /\btwitter\b|\bx\.com\b/i],
+  ['seo', /\bseo\b/i],
+];
+
+/** Channels explicitly named in a brief, in CHANNELS order; empty when none are named. */
+export function detectBriefChannels(goal: string): CustomerChannel[] {
+  return BRIEF_CHANNEL_PATTERNS
+    .filter(([, pattern]) => pattern.test(goal))
+    .map(([channel]) => channel);
+}
+
+/** Requested per-brief channels restricted to the known whitelist, de-duplicated, in request order. */
+export function sanitizeRequestedChannels(requested: unknown): CustomerChannel[] {
+  if (!Array.isArray(requested)) return [];
+  const seen = new Set<CustomerChannel>();
+  for (const channel of requested) {
+    if (typeof channel === 'string' && CHANNELS.includes(channel as CustomerChannel)) {
+      seen.add(channel as CustomerChannel);
+    }
+  }
+  return [...seen];
+}
+
+/**
+ * Single effective-channel decision shared by createGoal and askDirector so the
+ * Director prompt/draft can never diverge from the persisted workflow.
+ * Precedence: explicit valid requested channels > channels named in the brief
+ * text > onboarding profile channels.
+ */
+export function resolveEffectiveChannels(
+  requested: unknown,
+  goal: string,
+  profileChannels: readonly CustomerChannel[] | undefined,
+): CustomerChannel[] {
+  const requestedChannels = sanitizeRequestedChannels(requested);
+  if (requestedChannels.length > 0) return requestedChannels;
+  const briefChannels = detectBriefChannels(goal);
+  if (briefChannels.length > 0) return briefChannels;
+  return sanitizeRequestedChannels(profileChannels);
+}
 const AUTOMATION_MODES: CustomerAutomationMode[] = ['copilot', 'semi_autonomous', 'guardrailed_autonomous'];
 const LOCAL_WORKFLOW_WORKER_ID = 'customer-marketing-local-orchestrator';
+/** Audit-note prefix written when a pending strategy approval is replaced by a newer goal. */
+const SUPERSEDED_APPROVAL_NOTE_PREFIX = 'Đã thay thế bởi mục tiêu mới:';
 const CUSTOMER_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REMOTE_WORKFLOW_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1_000;
 const ASSIGNABLE_MEMBER_ROLES: CustomerAssignableRole[] = ['manager', 'editor', 'reviewer', 'viewer'];
@@ -2143,7 +2195,7 @@ export class CustomerMarketingService {
   ): Promise<CustomerMarketingAnalyticsResult> {
     const window = parseMarketingAnalyticsWindow(input);
     if (!window) {
-      return { ok: false, status: 'unavailable', report: null, error: 'Khoang analytics khong hop le.' };
+      return { ok: false, status: 'unavailable', report: null, error: 'Khoảng thời gian analytics không hợp lệ.' };
     }
     const authority = await this.resolveMarketingResourceAuthority();
     if (authority.status !== 'synced') {
@@ -4176,10 +4228,9 @@ export class CustomerMarketingService {
       };
     }
     const productContextRef = customerProductMarketingContextRef(productMarketingContext);
-    const requestedChannels = Array.isArray(input?.channels)
-      ? input.channels.filter((channel): channel is CustomerChannel => CHANNELS.includes(channel))
-      : [];
-    const channels = requestedChannels.length > 0 ? requestedChannels : profile.channels;
+    // Explicit valid per-brief channels win; brief-text detection is only a
+    // fallback; the onboarding profile channels are the final fallback.
+    const channels = resolveEffectiveChannels(input?.channels, goal, profile.channels);
     const automationMode = AUTOMATION_MODES.includes(input?.automationMode as CustomerAutomationMode)
       ? input.automationMode as CustomerAutomationMode
       : profile.automationMode;
@@ -4204,8 +4255,21 @@ export class CustomerMarketingService {
     const store = this.workflowStore(record);
     let approvalEvidence: { digest: string; requestedAt: string };
 
+    // Only one strategy approval may be pending per workspace. Any older
+    // pending strategy approval is durably superseded (rejected with an audit
+    // note) before the new workflow is written; if that cannot be proven in
+    // the durable store the new goal is refused instead of stacking approvals.
     try {
       store.recoverStaleJobs();
+      record = this.supersedePendingStrategyApprovals(record, store, now, goal);
+    } catch {
+      return {
+        ok: false,
+        error: 'Không thể thay thế approval chiến lược đang chờ duyệt; chưa tạo workflow mới.',
+      };
+    }
+
+    try {
       store.createWorkflow({
         id: runId,
         productContextRef,
@@ -4303,6 +4367,80 @@ export class CustomerMarketingService {
     return { ok: true, snapshot: await this.snapshot(identity, next, false, workspaceState) };
   }
 
+  /**
+   * Supersedes every still-pending strategy approval so a new goal never
+   * stacks a second pending strategy gate on top of an older one.
+   *
+   * Fail-closed semantics are preserved: approvals that exist in the durable
+   * workflow store are rejected through `store.reviewApproval` with the
+   * digest they were requested with, which keeps the digest/artifact checks
+   * and blocks the durable workflow. If the durable store refuses the review
+   * (digest drift, job no longer awaiting review, ...) the error propagates
+   * and the caller must refuse the new goal. Approvals with no durable
+   * counterpart are only marked rejected in the tenant record; they can never
+   * be approved anyway because `reviewApproval` requires the durable record.
+   */
+  private supersedePendingStrategyApprovals(
+    record: CustomerTenantRecord,
+    store: CustomerMarketingWorkflowStore,
+    now: string,
+    replacementGoal: string,
+  ): CustomerTenantRecord {
+    const pending = record.approvals.filter(
+      (approval) => approval.kind === 'strategy' && approval.status === 'pending',
+    );
+    if (pending.length === 0) return record;
+
+    const note = `${SUPERSEDED_APPROVAL_NOTE_PREFIX} ${cleanText(replacementGoal, 160)}`;
+    const supersededIds = new Set<string>();
+    for (const approval of pending) {
+      const durable = store.getApproval(approval.id);
+      if (durable) {
+        if (durable.workflowId !== approval.runId) {
+          throw new WorkflowStoreConflictError(
+            `Approval '${approval.id}' is bound to a different workflow.`,
+          );
+        }
+        if (durable.status === 'pending') {
+          store.reviewApproval(approval.runId, approval.id, {
+            decision: 'rejected',
+            digest: durable.digest,
+            note,
+          });
+        }
+      }
+      supersededIds.add(approval.id);
+    }
+
+    const supersededRunIds = new Set(
+      pending.filter((approval) => supersededIds.has(approval.id)).map((approval) => approval.runId),
+    );
+    return {
+      ...record,
+      approvals: record.approvals.map((approval) => supersededIds.has(approval.id)
+        ? {
+          ...approval,
+          status: 'rejected' as const,
+          reviewedAt: now,
+          reviewedBy: 'Hệ thống (thay thế bởi mục tiêu mới)',
+        }
+        : approval),
+      runs: record.runs.map((run) => supersededRunIds.has(run.id) && run.status === 'awaiting_approval'
+        ? {
+          ...run,
+          status: 'blocked' as const,
+          stage: 'superseded_by_new_goal',
+          blockedReason: note,
+          steps: run.steps.map((step) => step.requiresApproval && step.status !== 'done'
+            ? { ...step, status: 'blocked' as const }
+            : step),
+          updatedAt: now,
+        }
+        : run),
+      updatedAt: now,
+    };
+  }
+
   async askDirector(input: CustomerDirectorInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
     // An AI Director turn and a server-owned seven-day workflow are distinct
@@ -4397,7 +4535,9 @@ export class CustomerMarketingService {
       return { ok: false, error, snapshot: await this.snapshot(identity, next) };
     }
     const profile = record.onboarding;
-    const channels = input.channels?.length ? input.channels : profile?.channels || [];
+    // Same sanitized decision createGoal just persisted for this run: run.goal is
+    // the cleaned brief, so prompt/draft/workflow all see identical channels.
+    const channels = resolveEffectiveChannels(input.channels, run.goal, profile?.channels);
     const knowledgeSkill = selectCustomerMarketingKnowledgeSkill(
       this.knowledgeSkills(),
       created.snapshot.capabilities,
@@ -5340,8 +5480,12 @@ export class CustomerMarketingService {
       const evidence = evidenceForWorkflow(workflow.id, durableApproval);
       const goal = evidence.goal || existing?.goal;
       if (!goal) return null;
-      const rejected = snapshot.approvals.some((approval) => (
+      const rejectedApprovals = snapshot.approvals.filter((approval) => (
         approval.workflowId === workflow.id && approval.status === 'rejected'
+      ));
+      const rejected = rejectedApprovals.length > 0;
+      const superseded = rejected && rejectedApprovals.every((approval) => (
+        typeof approval.note === 'string' && approval.note.startsWith(SUPERSEDED_APPROVAL_NOTE_PREFIX)
       ));
       const status: CustomerRun['status'] = workflow.status === 'completed'
         ? 'completed'
@@ -5365,7 +5509,9 @@ export class CustomerMarketingService {
       const stage = workflow.status === 'completed'
         ? 'completed'
         : workflow.status === 'blocked'
-          ? rejected ? 'rejected_by_customer' : 'workflow_blocked'
+          ? superseded
+            ? 'superseded_by_new_goal'
+            : rejected ? 'rejected_by_customer' : 'workflow_blocked'
           : workflow.status === 'awaiting_approval'
             ? 'awaiting_strategy_approval'
             : 'workflow_running';
