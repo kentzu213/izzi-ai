@@ -18,19 +18,19 @@ const throwingStorage: Pick<Storage, 'getItem'> = {
 };
 
 describe('uiShellV2 flag', () => {
-  it('is OFF by default', () => {
-    expect(isUiShellV2Enabled(storageWith({}))).toBe(false);
-    expect(isUiShellV2Enabled(undefined)).toBe(false);
+  it('is ON by default', () => {
+    expect(isUiShellV2Enabled(storageWith({}))).toBe(true);
+    expect(isUiShellV2Enabled(undefined)).toBe(true);
   });
 
-  it('is ON only for the exact value 1', () => {
-    expect(isUiShellV2Enabled(storageWith({ [UI_SHELL_V2_KEY]: '1' }))).toBe(true);
-    expect(isUiShellV2Enabled(storageWith({ [UI_SHELL_V2_KEY]: 'true' }))).toBe(false);
+  it('is OFF only for the exact opt-out value 0', () => {
     expect(isUiShellV2Enabled(storageWith({ [UI_SHELL_V2_KEY]: '0' }))).toBe(false);
+    expect(isUiShellV2Enabled(storageWith({ [UI_SHELL_V2_KEY]: '1' }))).toBe(true);
+    expect(isUiShellV2Enabled(storageWith({ [UI_SHELL_V2_KEY]: 'false' }))).toBe(true);
   });
 
-  it('stays OFF when storage throws', () => {
-    expect(isUiShellV2Enabled(throwingStorage)).toBe(false);
+  it('stays ON when storage throws', () => {
+    expect(isUiShellV2Enabled(throwingStorage)).toBe(true);
   });
 });
 
@@ -71,7 +71,7 @@ describe('uiShellV2 default window.localStorage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('falls back to OFF/dark when the localStorage getter itself throws', () => {
+  it('falls back to ON/dark when the localStorage getter itself throws', () => {
     const blockedWindow = {};
     Object.defineProperty(blockedWindow, 'localStorage', {
       get() {
@@ -80,16 +80,16 @@ describe('uiShellV2 default window.localStorage', () => {
     });
     vi.stubGlobal('window', blockedWindow);
 
-    expect(isUiShellV2Enabled()).toBe(false);
+    expect(isUiShellV2Enabled()).toBe(true);
     expect(getUiShellV2Theme()).toBe('dark');
   });
 
   it('reads the flag and theme from a working window.localStorage', () => {
     vi.stubGlobal('window', {
-      localStorage: storageWith({ [UI_SHELL_V2_KEY]: '1', [UI_SHELL_V2_THEME_KEY]: 'light' }),
+      localStorage: storageWith({ [UI_SHELL_V2_KEY]: '0', [UI_SHELL_V2_THEME_KEY]: 'light' }),
     });
 
-    expect(isUiShellV2Enabled()).toBe(true);
+    expect(isUiShellV2Enabled()).toBe(false);
     expect(getUiShellV2Theme()).toBe('light');
   });
 });

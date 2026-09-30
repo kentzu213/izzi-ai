@@ -11,7 +11,7 @@ import { ProjectHeader } from './ProjectHeader';
 import { ProjectsSurface } from './ProjectsSurface';
 
 /*
- * M3-A surface rendering. Flag OFF (legacy App untouched) is covered by
+ * M3-A surface rendering. The flag default and its legacy opt-out are covered by
  * uiShellV2.test.ts; here the V2 shell itself must keep legacy children
  * mounted until a surface is explicitly opened.
  */
