@@ -1578,6 +1578,7 @@ function WorkflowCard({ run, onOpenGoals }: { run: CustomerRun; onOpenGoals: () 
         <span>{run.stage.replace(/_/g, ' ')}</span>
         <span>Cập nhật {formatDate(run.updatedAt, true)}</span>
       </div>
+      {run.status === 'blocked' && run.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{run.blockedReason}</div>}
       <ProgressBar value={run.progress} />
       <div className="cmr-workflow-progress-label"><span>Tiến độ workflow</span><strong>{run.progress}%</strong></div>
       <ol className="cmr-run-steps">
@@ -1774,6 +1775,7 @@ function GoalsView({ snapshot, onOpenDirector }: { snapshot: CustomerMarketingSn
                 <StatusPill value={run.status} />
               </div>
               <div className="cmr-goal-card__meta"><span>{run.stage.replace(/_/g, ' ')}</span><span>{run.progress}% hoàn thành</span><span>Cập nhật {formatDate(run.updatedAt, true)}</span></div>
+              {run.status === 'blocked' && run.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{run.blockedReason}</div>}
               <ProgressBar value={run.progress} />
               <ol className="cmr-run-steps cmr-run-steps--dense">
                 {run.steps.map((step) => <li className={`cmr-run-step cmr-run-step--${step.status}`} key={step.id}><span className="cmr-run-step__marker">{step.status === 'done' ? '✓' : ''}</span><span className="cmr-run-step__copy"><strong>{step.label}</strong><small>{step.owner}</small></span><span className="cmr-run-step__status">{statusLabel(step.status)}</span></li>)}

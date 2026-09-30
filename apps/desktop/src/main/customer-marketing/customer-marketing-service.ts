@@ -4557,8 +4557,11 @@ export class CustomerMarketingService {
       }
     }
     const directorSucceeded = Boolean(approvalReply) && !workflowPersistenceError;
+    const publicError = workflowPersistenceError
+      || (director.error ? this.publicDirectorError(director.error) : undefined);
     const updatedRun: CustomerRun = {
       ...run,
+      blockedReason: directorSucceeded ? undefined : publicError,
       status: directorSucceeded ? 'awaiting_approval' : 'blocked',
       stage: directorSucceeded
         ? 'awaiting_strategy_approval'
@@ -4595,8 +4598,7 @@ export class CustomerMarketingService {
       ok: directorSucceeded,
       reply: directorSucceeded ? approvalReply : undefined,
       snapshot: await this.snapshot(identity, next),
-      error: workflowPersistenceError
-        || (director.error ? this.publicDirectorError(director.error) : undefined),
+      error: publicError,
     };
   }
 
@@ -5374,6 +5376,9 @@ export class CustomerMarketingService {
         directorReply: evidence.directorReply
           || existing?.directorReply
           || `Kế hoạch cục bộ cho mục tiêu: ${goal}`,
+        ...(status === 'blocked' && existing?.blockedReason
+          ? { blockedReason: existing.blockedReason }
+          : {}),
         createdAt: workflow.createdAt,
         updatedAt: workflow.updatedAt,
       };
@@ -6145,6 +6150,13 @@ export class CustomerMarketingService {
   private publicDirectorError(error: string): string {
     if (error === 'no-key') return 'Chưa có Izzi API key cho tài khoản hiện tại. Kết nối model trước khi gọi AI Director.';
     if (error === 'network') return 'AI Director tạm thời không kết nối được. Workflow đã được giữ lại để thử lại.';
+    if (error === 'empty-response') return 'Model của AI Director trả về câu trả lời rỗng. Workflow đã được giữ lại, hãy thử lại.';
+    const status = Number(/^http (\d{3})\b/.exec(error)?.[1]);
+    if (status === 401 || status === 403) return 'Phiên đăng nhập hoặc Izzi API key không còn hợp lệ. Đăng nhập lại rồi thử lại AI Director.';
+    if (status === 402) return 'Tài khoản Izzi đã hết credit cho AI Director. Nạp thêm credit rồi thử lại.';
+    if (status === 429) return 'IzziAPI đang giới hạn tần suất gọi. Đợi một lát rồi thử lại AI Director.';
+    if (status >= 500) return `IzziAPI gateway đang lỗi (mã ${status}). Workflow đã được giữ lại, hãy thử lại sau.`;
+    if (status >= 400) return `IzziAPI từ chối yêu cầu của AI Director (mã ${status}). Workflow vẫn giữ ở trạng thái chờ xử lý.`;
     return 'AI Director chưa sẵn sàng; workflow vẫn giữ ở trạng thái chờ xử lý.';
   }
 }

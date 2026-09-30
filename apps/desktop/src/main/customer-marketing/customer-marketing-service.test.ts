@@ -2549,6 +2549,12 @@ describe('CustomerMarketingService AI Director', () => {
   it.each([
     ['no-key', 'Izzi API key'],
     ['network', 'tạm thời'],
+    ['empty-response', 'rỗng'],
+    ['http 401', 'Đăng nhập lại'],
+    ['http 402: insufficient_credits', 'hết credit'],
+    ['http 429', 'giới hạn tần suất'],
+    ['http 503: upstream unavailable', 'mã 503'],
+    ['http 400: invalid_request_error: unknown model', 'mã 400'],
   ])('keeps the workflow when the director reports %s', async (directorError, publicMessage) => {
     const director = vi.fn(async () => ({ reply: '', error: directorError }));
     const context = setupDirector(director);
@@ -2562,6 +2568,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.error).toContain(publicMessage);
     expect(result.snapshot?.runs[0].status).toBe('blocked');
     expect(result.snapshot?.runs[0].stage).toBe('director_unavailable');
+    expect(result.snapshot?.runs[0].blockedReason).toBe(result.error);
     expect(result.snapshot?.approvals[0].status).toBe('pending');
     expect(result.snapshot?.workspace.usedCredits).toBe(12.5);
   });
