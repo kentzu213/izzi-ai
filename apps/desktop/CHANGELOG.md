@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.78
+
+Carry the Home Chat model choice into the V2 conversation session.
+
+- Home Chat now offers the grouped model picker used by the conversation view.
+- The selected model and provider are applied to the exact new or reused session
+  before the Home draft moves into the conversation.
+- Failed custom-model connection checks keep the Home draft available for retry.
+- Agent Marketing remains isolated from the Chat-only model picker.
+
 ## 1.14.0-beta.77
 
 Finish the Agent Marketing workflow and interface fixes.
