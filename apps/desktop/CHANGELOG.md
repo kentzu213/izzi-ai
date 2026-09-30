@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.71
+
+Turn the V2 shell on by default.
+
+- Installed apps now open in the V2 design (Home, Projects, Marketplace, Agent
+  Marketing) without a DevTools flag; beta.70 shipped it behind an opt-in flag.
+- The legacy shell stays reachable with `localStorage.setItem('uiShellV2', '0')`.
+
 ## 1.14.0-beta.70
 
 Sync the V2 shell surfaces to the new design.
