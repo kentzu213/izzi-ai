@@ -52,6 +52,77 @@ function probeFailureNotice(message?: string): string {
   return `Kết nối model thất bại: ${detail}. Kết nối chưa được bật.`;
 }
 
+type ModelConnectionResult = { ok: boolean; message?: string };
+
+/**
+ * Shared connection step for picking a model (setActiveModel / applySessionModel).
+ * Runs the custom-provider probe gate for 'custom' models and turns the custom
+ * connection off for Izzi-hosted ones. Never touches any session: callers
+ * update the session only when this reports ok. Failures are surfaced on
+ * `errorMessage` and returned so a caller can show them in place.
+ */
+async function connectModelForProvider(
+  model: string,
+  provider: AIProvider,
+  setError: (message: string | null) => void,
+): Promise<ModelConnectionResult> {
+  const fail = (message?: string): ModelConnectionResult => {
+    const notice = probeFailureNotice(message);
+    setError(notice);
+    return { ok: false, message: notice };
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api = typeof window === 'undefined' ? undefined : (window as any).electronAPI?.customProvider;
+  const action = connectionActionForProvider(provider);
+  if (action === 'enable-custom') {
+    // Picking a custom model must never enable or reroute a broken endpoint:
+    // point the connection at the model, prove it answers with the stored key,
+    // and only then enable it. A failed probe restores the previous config and
+    // leaves both the enabled flag and the session untouched.
+    if (!api?.getConfig || !api?.saveConfig || !api?.testConnection || !api?.setEnabled) {
+      return fail('thiếu cầu nối app để kiểm tra kết nối');
+    }
+    let previous: { baseUrl: string; authType: string; selectedModel?: string } | null = null;
+    try {
+      // The connection may already be enabled from an earlier config: turn it
+      // off before the new model is saved so nothing routes through an
+      // unproven endpoint while the probe runs.
+      await api.setEnabled(false);
+      const c = await api.getConfig();
+      previous = c?.config ?? null;
+      await api.saveConfig({
+        baseUrl: previous?.baseUrl || LOCAL_COCKPIT_BASE_URL,
+        authType: previous?.authType || 'bearer',
+        selectedModel: model,
+      });
+      const probe = await api.testConnection();
+      if (!probe?.ok) {
+        if (previous) await api.saveConfig(previous);
+        return fail(probe?.message);
+      }
+      await api.setEnabled(true);
+      setError(null);
+    } catch (err) {
+      try {
+        if (previous) await api.saveConfig(previous);
+      } catch {
+        /* best-effort restore — the probe already failed closed */
+      }
+      return fail(err instanceof Error ? err.message : undefined);
+    }
+  } else if (action === 'disable-custom' && api?.setEnabled) {
+    // An Izzi-hosted model was picked (SmartRouter, Grok, or Sol): turn the
+    // custom connection off. sendGatewayMessage then uses the authenticated
+    // main-process Izzi bridge for both native and generic agents.
+    try {
+      await api.setEnabled(false);
+    } catch {
+      /* best-effort: still reflect the pick on the session */
+    }
+  }
+  return { ok: true };
+}
+
 function createLocalId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -127,6 +198,17 @@ interface AgentGatewayState {
    * izzi regardless (handled by sendGatewayMessage).
    */
   setActiveModel: (model: string, provider: AIProvider) => Promise<void>;
+  /**
+   * Same connection handling as setActiveModel, but for one explicit session
+   * (the Home composer hand-off targets a session that may not be active).
+   * The session is updated only after the connection step succeeded; a failed
+   * probe leaves it untouched and reports a user-facing message.
+   */
+  applySessionModel: (
+    sessionId: string,
+    model: string,
+    provider: AIProvider,
+  ) => Promise<{ ok: boolean; message?: string }>;
   /**
    * Enable the custom connection and reroute sessions to it — but only after an
    * authenticated probe succeeds. A failed probe changes nothing and reports why.
@@ -938,65 +1020,27 @@ export const useAgentGatewayStore = create<AgentGatewayState>((set, get) => ({
 
   setActiveModel: async (model, provider) => {
     const session = get().activeSession();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).electronAPI?.customProvider;
-    const action = connectionActionForProvider(provider);
-    if (action === 'enable-custom') {
-      // Picking a custom model must never enable or reroute a broken endpoint:
-      // point the connection at the model, prove it answers with the stored key,
-      // and only then enable it. A failed probe restores the previous config and
-      // leaves both the enabled flag and the session untouched.
-      if (!api?.getConfig || !api?.saveConfig || !api?.testConnection || !api?.setEnabled) {
-        set({ errorMessage: probeFailureNotice('thiếu cầu nối app để kiểm tra kết nối') });
-        return;
-      }
-      let previous: { baseUrl: string; authType: string; selectedModel?: string } | null = null;
-      try {
-        // The connection may already be enabled from an earlier config: turn it
-        // off before the new model is saved so nothing routes through an
-        // unproven endpoint while the probe runs.
-        await api.setEnabled(false);
-        const c = await api.getConfig();
-        previous = c?.config ?? null;
-        await api.saveConfig({
-          baseUrl: previous?.baseUrl || LOCAL_COCKPIT_BASE_URL,
-          authType: previous?.authType || 'bearer',
-          selectedModel: model,
-        });
-        const probe = await api.testConnection();
-        if (!probe?.ok) {
-          if (previous) await api.saveConfig(previous);
-          set({ errorMessage: probeFailureNotice(probe?.message) });
-          return;
-        }
-        await api.setEnabled(true);
-        set({ errorMessage: null });
-      } catch (err) {
-        try {
-          if (previous) await api.saveConfig(previous);
-        } catch {
-          /* best-effort restore — the probe already failed closed */
-        }
-        set({ errorMessage: probeFailureNotice(err instanceof Error ? err.message : undefined) });
-        return;
-      }
-    } else if (action === 'disable-custom' && api?.setEnabled) {
-      // An Izzi-hosted model was picked (SmartRouter, Grok, or Sol): turn the
-      // custom connection off. sendGatewayMessage then uses the authenticated
-      // main-process Izzi bridge for both native and generic agents.
-      try {
-        await api.setEnabled(false);
-      } catch {
-        /* best-effort: still reflect the pick on the session below */
-      }
+    const connected = await connectModelForProvider(model, provider, (errorMessage) =>
+      set({ errorMessage }),
+    );
+    if (!connected.ok) return;
+    if (session) get().setSessionModel(session.id, model, provider);
+  },
+
+  applySessionModel: async (sessionId, model, provider) => {
+    if (!get().sessions.some((s) => s.id === sessionId)) {
+      return { ok: false, message: 'Phiên chat không còn tồn tại.' };
     }
-    if (session) {
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === session.id ? { ...s, model, provider } : s,
-        ),
-      }));
+    const connected = await connectModelForProvider(model, provider, (errorMessage) =>
+      set({ errorMessage }),
+    );
+    if (!connected.ok) return connected;
+    // The session may have been removed while the probe ran; never resurrect it.
+    if (!get().sessions.some((s) => s.id === sessionId)) {
+      return { ok: false, message: 'Phiên chat không còn tồn tại.' };
     }
+    get().setSessionModel(sessionId, model, provider);
+    return { ok: true };
   },
 
   enableCustomRouting: async (model) => {

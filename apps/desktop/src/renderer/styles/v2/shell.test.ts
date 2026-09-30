@@ -383,6 +383,27 @@ describe('v2 conversation model selector', () => {
     expect(values.length).toBeGreaterThan(0);
     expect(values.filter((value) => value.includes('#'))).toEqual([]);
   });
+
+  // Beta.78: the Home Chat composer renders the same picker; every override
+  // must apply there with identical declarations so both pickers match.
+  const HOME = '.izzi-v2 .v2-home .model-selector';
+
+  it('re-skins the Home composer picker with the same rules', () => {
+    const chatRules = rules.filter((rule) => rule.selector.startsWith(MS));
+    expect(chatRules.length).toBeGreaterThan(0);
+    for (const rule of chatRules) {
+      const twin = rule.selector.replace(MS, HOME);
+      expect(Object.fromEntries(declarationsFor(twin))).toEqual(Object.fromEntries(rule.declarations));
+    }
+    const homeValues = rules.filter((rule) => rule.selector.startsWith(HOME)).flatMap((rule) => [...rule.declarations.values()]);
+    expect(homeValues.filter((value) => value.includes('#'))).toEqual([]);
+  });
+
+  it('lays the Home model group out inline with the other composer pills', () => {
+    const group = declarationsFor('.izzi-v2 .v2-home__model');
+    expect(group.get('display')).toBe('flex');
+    expect(group.get('position')).toBe('relative');
+  });
 });
 
 describe('v2 Project Chat detail controls (M3-B1 audit follow-up)', () => {

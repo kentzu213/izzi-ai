@@ -38,6 +38,12 @@ function readyGateway() {
     setComposerDraft: vi.fn((value: string) => {
       state.composerDraft = value;
     }),
+    applySessionModel: vi.fn(async (sessionId, model, provider) => {
+      state.sessions = state.sessions.map((item) =>
+        item.id === sessionId ? { ...item, model, provider } : item,
+      );
+      return { ok: true };
+    }),
   };
   return state;
 }

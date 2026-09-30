@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentGatewayStore } from '../../store/agentGateway';
 import { filterProjects, useProjectWorkspaceStore } from '../../store/projectWorkspace';
+import type { AIProvider } from '../../types/agent-registry';
+import { ModelSelector } from '../ModelSelector';
 import { cancelPendingHandoff, createComposerHandoff, type HandoffResult } from './composerHandoff';
 import { startConversation } from './ConversationSurface';
 import { cancelMarketingPrefill, offerMarketingPrefill } from './marketingPrefill';
+import { modelGroupsFor } from './modelGroups';
 import type { V2PageId, V2Surface } from './navModel';
 import { projectSessions } from './projectWorkspaceData';
 import { projectTone } from './projectTone';
@@ -24,8 +27,16 @@ import { formatRelativeTime, lastActivity, sessionLabel } from './sessionLabel';
  * customer-marketing page. Nothing is submitted there; the draft is kept
  * until the textarea takes the text, and editing it drops the offer.
  *
+ * In Chat mode a model can be picked from the same grouped catalogue as the
+ * conversation composer. The pick is local state only: no session changes
+ * until submit, when the handoff applies it to the exact resolved session.
+ *
  * Below the hero only real projects are listed; no metrics are invented.
  */
+
+type ModelChoice = { model: string; provider: AIProvider };
+
+const DEFAULT_MODEL_CHOICE: ModelChoice = { model: 'izzi-smart', provider: 'izzi' };
 
 export const HOME_PROJECT_LIMIT = 6;
 
@@ -39,6 +50,7 @@ export const HANDOFF_MESSAGES: Record<Exclude<HandoffResult['status'], 'handed-o
   'no-session': 'Không tạo được phiên chat cho agent đã chọn.',
   error: 'Không tải được các phiên đã lưu. Nội dung vẫn được giữ, hãy thử lại.',
   'in-flight': 'Đang chuyển nội dung sang Chat.',
+  'model-failed': 'Không áp dụng được model đã chọn. Nội dung vẫn được giữ, hãy chọn model khác hoặc thử lại.',
 };
 
 // Prefill only: picking one never sends anything. `tone` picks the icon tile colour.
@@ -78,6 +90,10 @@ export function HomeSurface({
   const sessions = useAgentGatewayStore((state) => state.sessions);
   const isSending = useAgentGatewayStore((state) => state.isSending);
   const switchSession = useAgentGatewayStore((state) => state.switchSession);
+  const activeSessionId = useAgentGatewayStore((state) => state.activeSessionId);
+  const availableModels = useAgentGatewayStore((state) => state.availableModels);
+  const availableModelsLabel = useAgentGatewayStore((state) => state.availableModelsLabel);
+  const refreshAvailableModels = useAgentGatewayStore((state) => state.refreshAvailableModels);
   const projects = useProjectWorkspaceStore((state) => state.projects);
   const activeProjectId = useProjectWorkspaceStore((state) => state.activeProjectId);
   const selectProject = useProjectWorkspaceStore((state) => state.selectProject);
@@ -102,6 +118,32 @@ export function HomeSurface({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // The model pick lives here until submit; null means "leave the session's model alone".
+  const [modelChoice, setModelChoice] = useState<ModelChoice | null>(null);
+
+  // Same live catalogue as the conversation composer (izzi + discovered local models).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    void refreshAvailableModels();
+  }, [refreshAvailableModels]);
+
+  const activeSession = sessions.find((session) => session.id === activeSessionId);
+  const runtime = agents.find((agent) => agent.id === (agentId || activeSession?.agentId))?.runtime;
+  const modelGroups = useMemo(
+    () => modelGroupsFor(runtime, availableModels, availableModelsLabel),
+    [runtime, availableModels, availableModelsLabel],
+  );
+  const inCatalogue = (choice: ModelChoice | null | undefined): choice is ModelChoice =>
+    Boolean(
+      choice &&
+        modelGroups.some((group) => group.id === choice.provider && group.models.some((item) => item.id === choice.model)),
+    );
+  // A pick that the (agent-dependent) catalogue no longer offers is dropped rather than applied blindly.
+  const effectiveChoice = inCatalogue(modelChoice) ? modelChoice : null;
+  const shownChoice: ModelChoice =
+    effectiveChoice ??
+    (inCatalogue(activeSession) ? { model: activeSession.model, provider: activeSession.provider } : null) ??
+    (modelGroups[0]?.models[0] ? { model: modelGroups[0].models[0].id, provider: modelGroups[0].id } : DEFAULT_MODEL_CHOICE);
 
   const handoff = useMemo(
     () =>
@@ -122,7 +164,13 @@ export function HomeSurface({
     cancelMarketingPrefill();
     setIsSubmitting(true);
     setMessage(null);
-    const result = await handoff({ text: draft, projectId: projectId || null, agentId: agentId || undefined });
+    const result = await handoff({
+      text: draft,
+      projectId: projectId || null,
+      agentId: agentId || undefined,
+      model: effectiveChoice?.model,
+      provider: effectiveChoice?.provider,
+    });
     // Superseded: supersede() already reset the form, and a newer submit may be pending.
     if (!mounted.current || result.status === 'cancelled') return;
     setIsSubmitting(false);
@@ -132,7 +180,8 @@ export function HomeSurface({
       onSelectSurface('conversation');
       return;
     }
-    setMessage(HANDOFF_MESSAGES[result.status]);
+    // The store's probe notice names the actual failure; otherwise fall back to the generic text.
+    setMessage(result.status === 'model-failed' && result.message ? result.message : HANDOFF_MESSAGES[result.status]);
   };
 
   // Any other user intent supersedes a pending handoff.
@@ -175,6 +224,13 @@ export function HomeSurface({
   const changeProject = (id: string) => {
     supersede();
     setProjectId(id);
+  };
+
+  // Local only: no session is touched until the handoff applies it to the resolved one.
+  const changeModel = (model: string, provider: AIProvider) => {
+    supersede();
+    setMessage(null);
+    setModelChoice({ model, provider });
   };
 
   const openProject = (id: string) => {
@@ -275,6 +331,14 @@ export function HomeSurface({
                     </option>
                   ))}
                 </select>
+                <div className="v2-home__model" role="group" aria-label="Model">
+                  <ModelSelector
+                    currentModel={shownChoice.model}
+                    currentProvider={shownChoice.provider}
+                    onSelect={changeModel}
+                    groups={modelGroups}
+                  />
+                </div>
               </>
             )}
             <button

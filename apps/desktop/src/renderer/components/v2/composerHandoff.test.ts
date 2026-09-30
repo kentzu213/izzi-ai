@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentChatSession } from '../../types/agent-registry';
+import type { AgentChatSession, AIProvider } from '../../types/agent-registry';
 import {
   createProjectWorkspaceStore,
   SESSION_IDS_MAX,
@@ -33,10 +33,13 @@ interface FakeGatewayOptions {
   isSending?: boolean;
   composerDraft?: string;
   agents?: string[];
+  /** Overrides the model application (the real store runs a connection probe for custom providers). */
+  applyModel?: (sessionId: string, model: string, provider: AIProvider) => Promise<{ ok: boolean; message?: string }>;
 }
 
 // Mirrors the real store's contract: hydrate restores persisted sessions only
-// when nothing was created first; newGatewaySession appends and activates.
+// when nothing was created first; newGatewaySession appends and activates;
+// applySessionModel updates exactly the addressed session on success.
 function fakeGateway(options: FakeGatewayOptions = {}) {
   let counter = 0;
   const state: HandoffGateway = {
@@ -64,6 +67,11 @@ function fakeGateway(options: FakeGatewayOptions = {}) {
     }),
     setComposerDraft: vi.fn((value: string) => {
       state.composerDraft = value;
+    }),
+    applySessionModel: vi.fn(async (sessionId: string, model: string, provider: AIProvider) => {
+      if (options.applyModel) return options.applyModel(sessionId, model, provider);
+      state.sessions = state.sessions.map((s) => (s.id === sessionId ? { ...s, model, provider } : s));
+      return { ok: true };
     }),
   };
   return state;
@@ -471,6 +479,141 @@ describe('composer hand-off', () => {
     expect(gw.newGatewaySession).not.toHaveBeenCalled();
     expect(gw.setComposerDraft).not.toHaveBeenCalled();
     expect(projects.getState().projects[0].sessionIds).toHaveLength(SESSION_IDS_MAX);
+  });
+});
+
+describe('composer hand-off model choice', () => {
+  const modelOf = (gw: HandoffGateway, id: string) => {
+    const target = gw.sessions.find((s) => s.id === id);
+    return target ? { model: target.model, provider: target.provider } : null;
+  };
+
+  it('leaves session models alone when no model was picked on Home', async () => {
+    const gw = fakeGateway({ live: [session('s-free', 'izzi', '2026-09-01T00:00:00.000Z')], activeSessionId: 's-free' });
+    const projects = projectsWith();
+
+    const result = await createComposerHandoff({ gateway: () => gw, projects: () => projects.getState() })({ text: 'x' });
+
+    expect(result).toEqual({ status: 'handed-off', sessionId: 's-free' });
+    expect(gw.applySessionModel).not.toHaveBeenCalled();
+    expect(modelOf(gw, 's-free')).toEqual({ model: 'izzi-smart', provider: 'izzi' });
+  });
+
+  it('applies the picked model to the newly created session before moving the draft', async () => {
+    const gw = fakeGateway();
+    const projects = projectsWith();
+    const a = projects.getState().createProject('A')!;
+
+    const result = await createComposerHandoff({ gateway: () => gw, projects: () => projects.getState() })({
+      text: 'với model tuỳ chỉnh',
+      projectId: a,
+      model: 'gpt-5.6-terra',
+      provider: 'custom',
+    });
+
+    expect(result).toEqual({ status: 'handed-off', sessionId: 'gw-new-1' });
+    expect(gw.applySessionModel).toHaveBeenCalledTimes(1);
+    expect(gw.applySessionModel).toHaveBeenCalledWith('gw-new-1', 'gpt-5.6-terra', 'custom');
+    expect(modelOf(gw, 'gw-new-1')).toEqual({ model: 'gpt-5.6-terra', provider: 'custom' });
+    expect(gw.composerDraft).toBe('với model tuỳ chỉnh');
+    expect(projects.getState().projects[0].sessionIds).toEqual(['gw-new-1']);
+  });
+
+  it('applies the picked model to the reused project session, not to the previously active one', async () => {
+    const gw = fakeGateway({
+      live: [
+        session('s-a2', 'izzi', '2026-09-01T00:00:00.000Z', '2026-09-05T00:00:00.000Z'),
+        session('s-other', 'izzi', '2026-09-06T00:00:00.000Z'),
+      ],
+      activeSessionId: 's-other',
+    });
+    const projects = projectsWith();
+    const a = projects.getState().createProject('A')!;
+    projects.getState().assignSession(a, 's-a2');
+
+    const result = await createComposerHandoff({ gateway: () => gw, projects: () => projects.getState() })({
+      text: 'tiếp tục',
+      projectId: a,
+      model: 'izzi-fast',
+      provider: 'izzi',
+    });
+
+    expect(result).toEqual({ status: 'handed-off', sessionId: 's-a2' });
+    expect(gw.applySessionModel).toHaveBeenCalledWith('s-a2', 'izzi-fast', 'izzi');
+    expect(modelOf(gw, 's-a2')).toEqual({ model: 'izzi-fast', provider: 'izzi' });
+    expect(modelOf(gw, 's-other')).toEqual({ model: 'izzi-smart', provider: 'izzi' });
+    expect(gw.newGatewaySession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Home draft and reports the probe notice when the model cannot be applied', async () => {
+    const message = 'Kết nối model thất bại: 401 Unauthorized. Kết nối chưa được bật.';
+    const gw = fakeGateway({
+      live: [session('s-free', 'izzi', '2026-09-01T00:00:00.000Z')],
+      activeSessionId: 's-free',
+      applyModel: async () => ({ ok: false, message }),
+    });
+    const projects = projectsWith();
+    const b = projects.getState().createProject('B')!;
+    projects.getState().selectProject(b);
+
+    const result = await createComposerHandoff({ gateway: () => gw, projects: () => projects.getState() })({
+      text: 'giữ lại',
+      model: 'gpt-5.6-terra',
+      provider: 'custom',
+    });
+
+    expect(result).toEqual({ status: 'model-failed', message });
+    expect(gw.setComposerDraft).not.toHaveBeenCalled();
+    expect(gw.composerDraft).toBe('');
+    expect(modelOf(gw, 's-free')).toEqual({ model: 'izzi-smart', provider: 'izzi' });
+    // focusSession never ran: the active project is untouched.
+    expect(projects.getState().activeProjectId).toBe(b);
+  });
+
+  it('treats an apply that reports ok without updating the session as a failure', async () => {
+    const gw = fakeGateway({
+      live: [session('s-free', 'izzi', '2026-09-01T00:00:00.000Z')],
+      activeSessionId: 's-free',
+      applyModel: async () => ({ ok: true }),
+    });
+    const projects = projectsWith();
+
+    const result = await createComposerHandoff({ gateway: () => gw, projects: () => projects.getState() })({
+      text: 'x',
+      model: 'izzi-fast',
+      provider: 'izzi',
+    });
+
+    expect(result).toEqual({ status: 'model-failed' });
+    expect(gw.setComposerDraft).not.toHaveBeenCalled();
+  });
+
+  it('never moves the draft when the handoff is cancelled while the model is being applied', async () => {
+    let release: () => void = () => undefined;
+    const gw = fakeGateway({
+      live: [session('s-free', 'izzi', '2026-09-01T00:00:00.000Z')],
+      activeSessionId: 's-free',
+      applyModel: (sessionId, model, provider) =>
+        new Promise((resolve) => {
+          release = () => {
+            gw.sessions = gw.sessions.map((s) => (s.id === sessionId ? { ...s, model, provider } : s));
+            resolve({ ok: true });
+          };
+        }),
+    });
+    const projects = projectsWith();
+    const deps = { gateway: () => gw, projects: () => projects.getState() };
+
+    const stale = createComposerHandoff(deps)({ text: 'cũ', model: 'gpt-5.6-terra', provider: 'custom' });
+    await vi.waitFor(() => expect(gw.applySessionModel).toHaveBeenCalledTimes(1));
+    // The user picked another model (or edited the draft) while the probe was pending.
+    cancelPendingHandoff();
+    release();
+
+    expect((await stale).status).toBe('cancelled');
+    expect(gw.setComposerDraft).not.toHaveBeenCalled();
+    expect(gw.composerDraft).toBe('');
+    expect(projects.getState().activeProjectId).toBeNull();
   });
 });
 
