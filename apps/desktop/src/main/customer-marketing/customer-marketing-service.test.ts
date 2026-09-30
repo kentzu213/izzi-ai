@@ -2571,6 +2571,13 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].blockedReason).toBe(result.error);
     expect(result.snapshot?.approvals[0].status).toBe('pending');
     expect(result.snapshot?.workspace.usedCredits).toBe(12.5);
+
+    const reloaded = await context.service.getSnapshot();
+    expect(reloaded.runs[0]).toMatchObject({
+      status: 'blocked',
+      stage: 'director_unavailable',
+      blockedReason: result.error,
+    });
   });
 
   it('reserves authoritative workspace credit before invoking the director', async () => {
