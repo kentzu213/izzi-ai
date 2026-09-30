@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BudgetService, type BudgetStore } from './budget-service';
 
 function createStore(): BudgetStore & { settings: Map<string, string>; rows: Map<string, object> } {
@@ -31,7 +31,12 @@ describe('BudgetService', () => {
     expect(status.modelBreakdown['gpt-5.6-sol']).toEqual({ count: 2, costUSD: 1.25 });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('purges only entries older than the requested retention window', () => {
+    vi.useFakeTimers({ now: Date.parse('2026-08-21T00:00:00.000Z') });
     const store = createStore();
     const service = new BudgetService(store);
     service.recordUsage({ model: 'old', costUSD: 1, timestamp: '2026-07-01T00:00:00.000Z' });
