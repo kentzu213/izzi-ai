@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.70
+
+Sync the V2 shell surfaces to the new design.
+
+- Restyle Home, Projects, Marketplace, Agent Marketing and the remaining V2 tabs
+  with the shared V2 tokens; structure, state and navigation are unchanged.
+- Show recent projects on Home as an expandable tree: a status dot, up to five
+  conversations, an apps row that opens the Marketplace, and inline
+  "+ Hội thoại" / "+ Ứng dụng" actions.
+
 ## 1.14.0-beta.69
 
 Restore Provider Vault authority checks in the packaged staging runtime.
