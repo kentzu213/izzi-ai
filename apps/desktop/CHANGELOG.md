@@ -1,4 +1,16 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.79
+
+Fix Google sign-in hanging and bring the Login screen onto the V2 design.
+
+- Google sign-in no longer stays stuck on a blank popup or "Đang xử lý...":
+  load failures, a crashed page and a 3-minute timeout now end the attempt
+  with a clear Vietnamese error.
+- The sign-in popup presents as a regular Chrome browser so Google does not
+  reject it as an embedded browser.
+- Tokens delivered by an in-page callback are now picked up.
+- The Login screen uses the V2 look and theme, with Vietnamese copy.
+
 ## 1.14.0-beta.78
 
 Carry the Home Chat model choice into the V2 conversation session.
