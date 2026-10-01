@@ -1,0 +1,256 @@
+/*
+ * Izzi AI V2 — login screen.
+ *
+ * The login page renders before the V2 shell mounts, so it carries its own
+ * `.izzi-v2` scope. Every rule is a `.izzi-v2.login-page` compound selector so
+ * it outranks the legacy `.login-*` rules in styles/index.css without
+ * `!important`, and only `--v2-*` tokens are used.
+ */
+
+.izzi-v2.login-page {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v2-space-12);
+  height: 100%;
+  padding: var(--v2-space-10);
+  background: var(--v2-bg-canvas);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-family);
+  overflow: auto;
+}
+
+.izzi-v2.login-page::before,
+.izzi-v2.login-page::after {
+  content: none;
+  display: none;
+}
+
+/* Hero panel */
+.izzi-v2.login-page .login-hero-panel,
+.izzi-v2.login-page .login-card {
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-panel);
+  box-shadow: var(--v2-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.izzi-v2.login-page .login-hero-panel {
+  width: min(480px, 100%);
+  padding: var(--v2-space-8);
+}
+
+.izzi-v2.login-page .login-hero-panel__kicker {
+  display: inline-block;
+  background: var(--v2-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+  font-weight: var(--v2-font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.izzi-v2.login-page .login-hero-panel h2 {
+  max-width: none;
+  margin: var(--v2-space-3) 0 0;
+  color: var(--v2-text-primary);
+  font-size: var(--v2-text-hero-size);
+  line-height: var(--v2-text-hero-line);
+  font-weight: var(--v2-font-weight-bold);
+  letter-spacing: 0;
+}
+
+.izzi-v2.login-page .login-hero-panel p {
+  margin: var(--v2-space-4) 0 0;
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+.izzi-v2.login-page .login-hero-panel__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-2);
+  margin-top: var(--v2-space-6);
+}
+
+.izzi-v2.login-page .login-hero-panel__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-1) var(--v2-space-3);
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2.login-page .login-hero-panel__step span {
+  color: var(--v2-brand-pink);
+  font-family: var(--v2-font-family);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+/* Login card */
+.izzi-v2.login-page .login-card {
+  width: min(420px, 100%);
+  max-width: none;
+  padding: var(--v2-space-8);
+}
+
+.izzi-v2.login-page .login-card__logo {
+  margin-bottom: var(--v2-space-6);
+  text-align: center;
+}
+
+.izzi-v2.login-page .login-card__logo-icon {
+  background: var(--v2-brand-gradient);
+  border: none;
+  border-radius: var(--v2-radius-card);
+  box-shadow: none;
+}
+
+.izzi-v2.login-page .login-card__logo h1 {
+  color: var(--v2-text-primary);
+  font-size: var(--v2-text-page-size);
+  line-height: var(--v2-text-page-line);
+  font-weight: var(--v2-font-weight-bold);
+  letter-spacing: 0;
+}
+
+.izzi-v2.login-page .login-card__logo p {
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+.izzi-v2.login-page .input-group__label {
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-medium);
+}
+
+.izzi-v2.login-page .input {
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-family);
+}
+
+.izzi-v2.login-page .input::placeholder {
+  color: var(--v2-text-muted);
+}
+
+.izzi-v2.login-page .input:focus {
+  border-color: var(--v2-brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-brand-primary) 24%, transparent);
+  outline: none;
+}
+
+.izzi-v2.login-page .btn {
+  border-radius: var(--v2-radius-control);
+  font-family: var(--v2-font-family);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2.login-page .btn--primary {
+  background: var(--v2-brand-primary);
+  border: 1px solid var(--v2-brand-primary);
+  box-shadow: none;
+  color: #ffffff;
+}
+
+.izzi-v2.login-page .btn--primary:hover:not(:disabled) {
+  background: var(--v2-brand-primary-hover);
+  border-color: var(--v2-brand-primary-hover);
+}
+
+.izzi-v2.login-page .btn--oauth {
+  width: 100%;
+  background: var(--v2-bg-subtle);
+  border: 1px solid var(--v2-border-strong);
+  box-shadow: none;
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2.login-page .btn--oauth:hover:not(:disabled) {
+  background: var(--v2-bg-panel);
+  border-color: var(--v2-brand-primary);
+}
+
+.izzi-v2.login-page .btn:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2.login-page .login-card__error {
+  background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-danger) 32%, transparent);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-danger);
+}
+
+.izzi-v2.login-page .login-card__success-banner {
+  background: color-mix(in srgb, var(--v2-success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-success) 32%, transparent);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-success);
+}
+
+.izzi-v2.login-page .login-card__divider {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2.login-page .login-card__divider::before,
+.izzi-v2.login-page .login-card__divider::after {
+  background: var(--v2-border-default);
+}
+
+.izzi-v2.login-page .login-card__footer {
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-text-body-size);
+}
+
+.izzi-v2.login-page .login-card__footer a {
+  color: var(--v2-brand-primary);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2.login-page .login-card__fineprint,
+.izzi-v2.login-page .login-card__fineprint-dim {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+@media (max-width: 980px) {
+  .izzi-v2.login-page {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--v2-space-6);
+    padding: var(--v2-space-6);
+  }
+
+  .izzi-v2.login-page .login-hero-panel,
+  .izzi-v2.login-page .login-card {
+    width: min(100%, 560px);
+    margin-inline: auto;
+  }
+
+  .izzi-v2.login-page .login-hero-panel h2 {
+    font-size: var(--v2-text-page-size);
+    line-height: var(--v2-text-page-line);
+  }
+}

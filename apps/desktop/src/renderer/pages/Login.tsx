@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { AppLogoMark } from '../components/AppIcons';
+import { getUiShellV2Theme } from '../uiShellV2';
+import '../styles/v2/tokens.css';
+import '../styles/v2/login.css';
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => Promise<string | null>;
@@ -15,6 +18,7 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [theme] = useState(() => getUiShellV2Theme());
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,14 +78,20 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
 
     setIsLoading(true);
     setError(null);
-    setSuccessMessage('Đang mở trình duyệt để đăng nhập Google...');
+    setSuccessMessage('Đang mở cửa sổ đăng nhập Google...');
 
-    const err = await onGoogleLogin();
-    if (err) {
-      setError(err);
+    try {
+      const err = await onGoogleLogin();
+      if (err) {
+        setError(err);
+        setSuccessMessage(null);
+      }
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Đăng nhập Google thất bại, vui lòng thử lại');
       setSuccessMessage(null);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
   function toggleMode() {
@@ -91,16 +101,19 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
   }
 
   return (
-    <div className="login-page">
-      <section className="login-hero-panel" aria-label="Izzi AI Memory Universe overview">
-        <div className="login-hero-panel__kicker">Izzi AI Memory Universe</div>
-        <h2>Remember how your agents work.</h2>
+    <div
+      className="izzi-v2 login-page login-page--v2"
+      data-theme={theme === 'light' ? 'light' : undefined}
+    >
+      <section className="login-hero-panel" aria-label="Giới thiệu Izzi AI">
+        <div className="login-hero-panel__kicker">Izzi AI</div>
+        <h2>Làm việc cùng agent, nhớ mọi quy trình</h2>
         <p>
-          Store task loops, prompts, click paths and reviewed workflows. When similar work returns,
-          OpenClaw can recall the route instead of asking for every step again.
+          Lưu lại vòng lặp công việc, prompt, thao tác và quy trình đã duyệt. Khi việc tương tự quay
+          lại, Izzi gợi lại đúng cách làm thay vì hỏi lại từng bước.
         </p>
-        <div className="login-hero-panel__steps" aria-label="Memory workflow">
-          {['Capture', 'Structure', 'Recall', 'Replay'].map((step, index) => (
+        <div className="login-hero-panel__steps" aria-label="Quy trình ghi nhớ">
+          {['Ghi lại', 'Sắp xếp', 'Gợi lại', 'Chạy lại'].map((step, index) => (
             <div className="login-hero-panel__step" key={step}>
               <span>{String(index + 1).padStart(2, '0')}</span>
               {step}
@@ -122,7 +135,7 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
           </p>
         </div>
 
-        {error && <div className="login-card__error">Error · {error}</div>}
+        {error && <div className="login-card__error">Lỗi · {error}</div>}
         {successMessage && (
           <div className="login-card__success login-card__success-banner">
             {successMessage}

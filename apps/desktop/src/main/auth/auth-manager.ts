@@ -11,6 +11,12 @@ import { safeStorage, shell, BrowserWindow } from 'electron';
 import { DatabaseManager } from '../db/database';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 import { IZZI_API_BASE, IZZI_WEB_BASE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/public-config';
+import {
+  OAUTH_POPUP_TIMEOUT_ERROR,
+  OAUTH_POPUP_TIMEOUT_MS,
+  chromeLikeUserAgent,
+  oauthLoadFailureMessage,
+} from './oauth-popup-guards';
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
@@ -331,12 +337,34 @@ export class AuthManager {
       });
 
       let resolved = false;
+      const timeout = setTimeout(() => {
+        finish({ success: false, error: OAUTH_POPUP_TIMEOUT_ERROR });
+      }, OAUTH_POPUP_TIMEOUT_MS);
       const finish = (result: { success: boolean; user?: User; error?: string }) => {
         if (resolved) return;
         resolved = true;
+        clearTimeout(timeout);
         try { popup.close(); } catch { /* already closed */ }
         resolve(result);
       };
+
+      // Google blocks sign-in from embedded browsers it can identify by UA.
+      popup.webContents.setUserAgent(chromeLikeUserAgent(popup.webContents.getUserAgent()));
+
+      // Keep any OAuth-initiated popup inside this window instead of a blank child.
+      popup.webContents.setWindowOpenHandler(({ url }) => {
+        popup.loadURL(url).catch(() => { /* reported via did-fail-load */ });
+        return { action: 'deny' };
+      });
+
+      popup.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
+        const message = oauthLoadFailureMessage(errorCode, errorDescription, isMainFrame);
+        if (message) finish({ success: false, error: message });
+      });
+
+      popup.webContents.on('render-process-gone', () => {
+        finish({ success: false, error: 'Trang đăng nhập Google bị dừng đột ngột, vui lòng thử lại' });
+      });
 
       // Intercept navigation to detect the callback URL with tokens
       popup.webContents.on('will-redirect', async (_event, url) => {
@@ -352,11 +380,18 @@ export class AuthManager {
         await this.tryExtractOAuthTokens(url, finish);
       });
 
+      // The web callback may move tokens into the hash without a full navigation.
+      popup.webContents.on('did-navigate-in-page', async (_event, url) => {
+        await this.tryExtractOAuthTokens(url, finish);
+      });
+
       popup.on('closed', () => {
         finish({ success: false, error: 'Cửa sổ đăng nhập đã bị đóng' });
       });
 
-      popup.loadURL(authUrl);
+      popup.loadURL(authUrl).catch(() => {
+        // did-fail-load carries the reason; this only guards the unhandled rejection.
+      });
     });
   }
 
