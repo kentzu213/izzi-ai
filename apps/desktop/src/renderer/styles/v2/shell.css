@@ -1195,6 +1195,7 @@
 }
 
 .izzi-v2 .v2-campaign-board__scroll {
+  position: relative;
   overflow-x: auto;
   background: var(--v2-bg-panel);
   border: 1px solid var(--v2-border-default);
@@ -1518,6 +1519,172 @@
   -webkit-text-fill-color: currentColor !important;
   font: inherit;
   resize: vertical;
+}
+
+/* Campaign board wires: dashed numbered arrows from the focus cell to the steps it links with. */
+.izzi-v2 .v2-campaign-board__cell.is-current {
+  box-shadow: inset 3px 0 0 var(--v2-warning);
+}
+
+.izzi-v2 .v2-campaign-board__current {
+  color: var(--v2-warning) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-campaign-board__wires {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.izzi-v2 .v2-campaign-board__wire {
+  --v2-wire-color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-campaign-board__wire.is-data {
+  --v2-wire-color: var(--v2-info);
+}
+
+.izzi-v2 .v2-campaign-board__wire.is-loop {
+  --v2-wire-color: var(--v2-success);
+}
+
+.izzi-v2 .v2-campaign-board__wire-line {
+  fill: none;
+  stroke: var(--v2-wire-color);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.izzi-v2 .v2-campaign-board__wire-badge {
+  fill: var(--v2-bg-panel);
+  stroke: var(--v2-wire-color);
+  stroke-width: 2;
+}
+
+.izzi-v2 .v2-campaign-board__wire-number {
+  fill: var(--v2-wire-color);
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-campaign-board__wire-arrow path {
+  fill: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-campaign-board__wire-arrow.is-data path {
+  fill: var(--v2-info);
+}
+
+.izzi-v2 .v2-campaign-board__wire-arrow.is-loop path {
+  fill: var(--v2-success);
+}
+
+.izzi-v2 .v2-campaign-board__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-1) var(--v2-space-3);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-campaign-board__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-campaign-board__legend-item::before {
+  content: "";
+  width: 20px;
+  border-top: 2px dashed var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-campaign-board__legend-item.is-data::before {
+  border-top-color: var(--v2-info);
+}
+
+.izzi-v2 .v2-campaign-board__legend-item.is-loop::before {
+  border-top-color: var(--v2-success);
+}
+
+.izzi-v2 .v2-campaign-board__links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-campaign-board__links-title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-campaign-board__link-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-campaign-board__link {
+  --v2-wire-color: var(--v2-brand-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-2);
+  width: 100%;
+  padding: var(--v2-space-1) 0;
+  background: none;
+  border: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font: inherit;
+  font-size: var(--v2-text-meta-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-campaign-board__link.is-data {
+  --v2-wire-color: var(--v2-info);
+}
+
+.izzi-v2 .v2-campaign-board__link.is-loop {
+  --v2-wire-color: var(--v2-success);
+}
+
+.izzi-v2 .v2-campaign-board__link:hover .v2-campaign-board__link-place {
+  text-decoration: underline;
+}
+
+.izzi-v2 .v2-campaign-board__link-number {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--v2-wire-color);
+  border-radius: 50%;
+  color: var(--v2-wire-color) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-campaign-board__link-kind {
+  flex: none;
+  color: var(--v2-wire-color) !important;
+  -webkit-text-fill-color: currentColor !important;
 }
 
 /* M6 — Affiliate workspace. Layout only; every value comes from the page over IPC. */
