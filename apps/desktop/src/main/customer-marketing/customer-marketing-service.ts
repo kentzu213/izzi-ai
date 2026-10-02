@@ -216,10 +216,14 @@ import {
 import {
   CAMPAIGN_PHASES,
   CAMPAIGN_TAGS,
+  addCampaignChannel as addChannelToCampaignMap,
   attachRunToCampaignMap,
+  markCampaignCellDone,
   normalizeCampaignMap,
   parseCampaignCellSuggestions,
   visibleCampaignChannels,
+  type CampaignAddChannelInput,
+  type CampaignCellDoneInput,
   type CampaignCellSuggestion,
   type CampaignChannel,
   type CampaignMap,
@@ -4565,7 +4569,7 @@ export class CustomerMarketingService {
       [run.goal, ...channels].join(' '),
     );
     const modelDraftEnabled = this.modelDraftExecutionEnabled;
-    const campaignChannels = visibleCampaignChannels(channels, []);
+    const campaignChannels = visibleCampaignChannels(channels, [], record.campaignMap?.extraChannels ?? []);
     const prompt = [
       ...productMarketingContextPrompt(productMarketingContext),
       'Mục tiêu của khách hàng: ' + run.goal,
@@ -4780,6 +4784,56 @@ export class CustomerMarketingService {
       snapshot: await this.snapshot(identity, next),
       error: publicError,
     };
+  }
+
+  // Offline and marketplace work happens outside the app, so the customer
+  // records it here with a short proof; agent channels only finish via runs.
+  async markCampaignCell(input: CampaignCellDoneInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    if (!record.onboarding?.completed) {
+      return { ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' };
+    }
+    const updatedAt = new Date().toISOString();
+    const campaignMap = markCampaignCellDone(
+      record.campaignMap,
+      visibleCampaignChannels(record.onboarding.channels, [], record.campaignMap?.extraChannels ?? []),
+      input.cellId,
+      input.evidence,
+      updatedAt,
+    );
+    if (!campaignMap) {
+      return { ok: false, error: 'Chỉ đánh dấu được việc offline hoặc sàn TMĐT, kèm bằng chứng 3–500 ký tự.' };
+    }
+    const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
+    this.writeRecord(identity, next);
+    return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  async addCampaignChannel(input: CampaignAddChannelInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    if (!record.onboarding?.completed) {
+      return { ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' };
+    }
+    const extraChannels = record.campaignMap?.extraChannels ?? [];
+    const visible = visibleCampaignChannels(record.onboarding.channels, record.campaignMap?.cells ?? [], extraChannels);
+    if (visible.some((channel) => channel === input.channel)) {
+      return { ok: false, error: 'Kênh này đã có trên bảng kế hoạch.' };
+    }
+    const updatedAt = new Date().toISOString();
+    const campaignMap = addChannelToCampaignMap(
+      record.campaignMap,
+      visibleCampaignChannels(record.onboarding.channels, [], extraChannels),
+      input.channel,
+      updatedAt,
+    );
+    if (!campaignMap) {
+      return { ok: false, error: 'Kênh không hợp lệ.' };
+    }
+    const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
+    this.writeRecord(identity, next);
+    return { ok: true, snapshot: await this.snapshot(identity, next) };
   }
 
   async importMediaProject(sourcePath: string): Promise<CustomerMutationResult> {

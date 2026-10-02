@@ -105,6 +105,7 @@ import type {
   CustomerWorkspaceInvitationResult,
   CustomerVoiceStudioRepairResult,
 } from '../shared/customer-marketing-types';
+import type { CampaignAddChannelInput, CampaignCellDoneInput } from '../shared/customer-marketing-campaign-map';
 import type {
   CustomerMarketingCredentialListResult,
   CustomerMarketingCredentialRevokeInput,
@@ -768,6 +769,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:createGoal', input),
     askDirector: (input: CustomerDirectorInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:askDirector', input),
+    markCampaignCell: (input: CampaignCellDoneInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:markCampaignCell', input),
+    addCampaignChannel: (input: CampaignAddChannelInput): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:addCampaignChannel', input),
     selectMediaProject: (): Promise<CustomerMediaProjectSelectionResult> =>
       ipcRenderer.invoke('customerMarketing:selectMediaProject'),
     repairVoiceStudio: (): Promise<CustomerVoiceStudioRepairResult> =>

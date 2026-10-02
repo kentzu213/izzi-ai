@@ -65,6 +65,7 @@ import {
   type AgentMarketingTab,
 } from '../components/v2/AgentMarketingWorkspaceV2';
 import { CampaignPlanV2 } from '../components/v2/CampaignBoardV2';
+import type { CampaignChannel } from '../../shared/customer-marketing-campaign-map';
 import '../styles/customer-marketing-room.css';
 
 type ViewId =
@@ -3300,6 +3301,14 @@ function CustomerRoom({
     await onMutation((api) => api.repairVoiceStudio());
   };
 
+  const markCampaignCell = async (cellId: string, evidence: string) => {
+    await onMutation((api) => api.markCampaignCell({ cellId, evidence }), 'Đã ghi nhận việc đã làm.');
+  };
+
+  const addCampaignChannel = async (channel: CampaignChannel) => {
+    await onMutation((api) => api.addCampaignChannel({ channel }), 'Đã thêm kênh vào kế hoạch.');
+  };
+
   const pendingCount = snapshot.approvals.filter((approval) => approval.status === 'pending').length;
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const pendingCapabilityViewRef = useRef<ViewId | null>(null);
@@ -3397,6 +3406,10 @@ function CustomerRoom({
                 onboardingChannels={snapshot.onboarding?.channels ?? []}
                 runs={snapshot.runs}
                 cells={snapshot.campaignMap?.cells}
+                extraChannels={snapshot.campaignMap?.extraChannels}
+                nextActions={snapshot.nextActions}
+                onMarkCellDone={(cellId, evidence) => { void markCampaignCell(cellId, evidence); }}
+                onAddChannel={(channel) => { void addCampaignChannel(channel); }}
                 sessions={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
               />
             )}

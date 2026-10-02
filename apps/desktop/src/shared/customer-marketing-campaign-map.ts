@@ -1,7 +1,8 @@
 import type { CustomerChannel, CustomerRun } from './customer-marketing-types';
 
 // Campaign board: 6 customer-journey phases × framework channels. Each cell is one unit of
-// work; its status is derived from the sessions (runs) attached to it, never set by hand.
+// work; its status is derived from the sessions (runs) attached to it. The only hand-set status
+// is "done" with written evidence, on channels the agent can only plan (events, OOH, KOL, e-commerce).
 
 export const CAMPAIGN_PHASES = [
   'p0_foundation',
@@ -196,18 +197,31 @@ export function campaignChannelsForCustomerChannels(channels: CustomerChannel[])
   return inFrameworkOrder(channels.flatMap((channel) => FRAMEWORK_CHANNELS_BY_CUSTOMER_CHANNEL[channel] ?? []));
 }
 
+// Channels the agent can only plan, never execute: the customer marks their cells done by hand.
+const MANUAL_CAMPAIGN_CHANNELS: CampaignChannel[] = ['kol_koc_pr', 'events', 'outdoor_ads', 'building_frames', 'ecommerce'];
+
+export function isManualCampaignChannel(channel: CampaignChannel): boolean {
+  return MANUAL_CAMPAIGN_CHANNELS.includes(channel);
+}
+
 function hasManualEvidence(cell: CampaignCell): boolean {
   return Boolean(cell.manualCompletion?.evidence.trim());
 }
 
-// A row the customer did not pick at onboarding still shows once work exists on it.
-export function visibleCampaignChannels(onboardingChannels: CustomerChannel[], cells: CampaignCell[]): CampaignChannel[] {
+// A row the customer did not pick at onboarding still shows once work exists on it, or once the
+// customer added it from the board.
+export function visibleCampaignChannels(
+  onboardingChannels: CustomerChannel[],
+  cells: CampaignCell[],
+  extraChannels: CampaignChannel[] = [],
+): CampaignChannel[] {
   const worked = cells
     .filter((cell) => cell.runIds.length > 0 || hasManualEvidence(cell))
     .map((cell) => cell.channel);
   return inFrameworkOrder([
     ...campaignChannelsForCustomerChannels(onboardingChannels),
     ...worked,
+    ...extraChannels,
     ...ALWAYS_VISIBLE_CHANNELS,
   ]);
 }
@@ -295,14 +309,104 @@ export function resolveCampaignBoard(
   onboardingChannels: CustomerChannel[],
   runs: CustomerRun[],
   now: string = new Date().toISOString(),
+  extraChannels: CampaignChannel[] = [],
 ): CampaignBoard {
-  const channels = visibleCampaignChannels(onboardingChannels, storedCells ?? []);
+  const channels = visibleCampaignChannels(onboardingChannels, storedCells ?? [], extraChannels);
   const cells = storedCells ?? campaignTemplateCells(channels, now);
   return { channels, cells, progress: summarizeCampaignPhases(cells, runs, channels) };
 }
 
+export type CampaignLinkKind = 'previous' | 'next' | 'data' | 'loop';
+
+const phaseIndex = (phase: CampaignPhase) => CAMPAIGN_PHASES.indexOf(phase);
+const LOOP_TARGET_PHASES: CampaignPhase[] = ['p0_foundation', 'p1_awareness'];
+const LAST_PHASE: CampaignPhase = 'p5_post_purchase';
+
+function nearestPhaseCells(cells: CampaignCell[], from: number, step: 1 | -1): CampaignCell[] {
+  for (let index = from + step; index >= 0 && index < CAMPAIGN_PHASES.length; index += step) {
+    const found = cells.filter((cell) => phaseIndex(cell.phase) === index);
+    if (found.length > 0) return found;
+  }
+  return [];
+}
+
+// What a selected cell feeds and is fed by: the same channel one phase either side, measurement in
+// the same phase, and the post-purchase loop back to the start of the journey.
+export function linkedCampaignCells(selected: CampaignCell, cells: CampaignCell[]): Map<string, CampaignLinkKind> {
+  const links = new Map<string, CampaignLinkKind>();
+  const others = cells.filter((cell) => cell.id !== selected.id);
+  const sameChannel = others.filter((cell) => cell.channel === selected.channel);
+  const from = phaseIndex(selected.phase);
+
+  for (const cell of nearestPhaseCells(sameChannel, from, -1)) links.set(cell.id, 'previous');
+  for (const cell of nearestPhaseCells(sameChannel, from, 1)) links.set(cell.id, 'next');
+
+  const measuresSelected = selected.channel === 'data_measurement';
+  for (const cell of others) {
+    if (cell.phase !== selected.phase) continue;
+    if (measuresSelected || cell.channel === 'data_measurement') links.set(cell.id, 'data');
+  }
+
+  if (selected.phase === LAST_PHASE) {
+    for (const cell of others) {
+      const restartsJourney = cell.channel === selected.channel && LOOP_TARGET_PHASES.includes(cell.phase);
+      const feedsFoundation = cell.channel === 'data_measurement' && cell.phase === 'p0_foundation';
+      if (restartsJourney || feedsFoundation) links.set(cell.id, 'loop');
+    }
+  } else if (LOOP_TARGET_PHASES.includes(selected.phase)) {
+    for (const cell of sameChannel) if (cell.phase === LAST_PHASE) links.set(cell.id, 'loop');
+  }
+  return links;
+}
+
+function visibleCellsInBoardOrder(cells: CampaignCell[], visibleChannels: CampaignChannel[]): CampaignCell[] {
+  const visible = new Set(visibleChannels);
+  const channelIndex = (channel: CampaignChannel) => CAMPAIGN_CHANNELS.indexOf(channel);
+  return cells
+    .filter((cell) => visible.has(cell.channel))
+    .sort((a, b) => phaseIndex(a.phase) - phaseIndex(b.phase) || channelIndex(a.channel) - channelIndex(b.channel));
+}
+
+// The board's own "do this next": the earliest-phase cell nobody has started, or that got stuck.
+export function nextCampaignCell(
+  cells: CampaignCell[],
+  runs: CustomerRun[],
+  visibleChannels: CampaignChannel[],
+): CampaignCell | undefined {
+  return visibleCellsInBoardOrder(cells, visibleChannels).find((cell) => {
+    const { status } = deriveCampaignCellStatus(cell, runs);
+    return status === 'todo' || status === 'blocked';
+  });
+}
+
+const PAID_WARNING_PHASES: CampaignPhase[] = ['p1_awareness', 'p2_consideration', 'p3_comparison', 'p4_purchase'];
+
+// Paid cells already started while the foundation is unfinished: money spent before the landing
+// page, tracking or inbox can catch it. Empty when the foundation is done.
+export function campaignFoundationWarning(
+  cells: CampaignCell[],
+  runs: CustomerRun[],
+  visibleChannels: CampaignChannel[],
+): CampaignCell[] {
+  const ordered = visibleCellsInBoardOrder(cells, visibleChannels);
+  const statusOf = (cell: CampaignCell) => deriveCampaignCellStatus(cell, runs).status;
+  const foundationOpen = ordered.some((cell) => cell.phase === 'p0_foundation' && statusOf(cell) !== 'done');
+  if (!foundationOpen) return [];
+  return ordered.filter(
+    (cell) => PAID_WARNING_PHASES.includes(cell.phase) && cell.tags.includes('paid') && statusOf(cell) !== 'todo',
+  );
+}
+
+// Sessions from before the board existed (or whose plan did not parse) belong to no cell.
+export function unclassifiedCampaignRuns(cells: CampaignCell[], runs: CustomerRun[]): CustomerRun[] {
+  const classified = new Set(cells.flatMap((cell) => cell.runIds));
+  return runs.filter((run) => !classified.has(run.id));
+}
+
 export interface CampaignMap {
   cells: CampaignCell[];
+  // Channels the customer added from the board on top of the onboarding choice.
+  extraChannels?: CampaignChannel[];
   updatedAt: string;
 }
 
@@ -386,7 +490,14 @@ export function normalizeCampaignMap(value: unknown): CampaignMap | undefined {
   const cells = value.cells
     .map(normalizeCampaignCell)
     .filter((cell): cell is CampaignCell => cell !== null);
-  return { cells, updatedAt: value.updatedAt };
+  const extraChannels = Array.isArray(value.extraChannels)
+    ? inFrameworkOrder(value.extraChannels.filter(isCampaignChannel))
+    : [];
+  return { cells, ...(extraChannels.length > 0 ? { extraChannels } : {}), updatedAt: value.updatedAt };
+}
+
+function withMapExtras(map: CampaignMap | undefined): Pick<CampaignMap, 'extraChannels'> {
+  return map?.extraChannels?.length ? { extraChannels: [...map.extraChannels] } : {};
 }
 
 function sameWork(cell: CampaignCellSuggestion, suggestion: CampaignCellSuggestion): boolean {
@@ -413,5 +524,62 @@ export function attachRunToCampaignMap(
     if (match.runIds.includes(runId)) return;
     cells = cells.map((cell) => (cell === match ? { ...cell, runIds: [...cell.runIds, runId], updatedAt: now } : cell));
   });
-  return { cells, updatedAt: now };
+  return { cells, ...withMapExtras(map), updatedAt: now };
+}
+
+const MIN_EVIDENCE_LENGTH = 3;
+const MAX_EVIDENCE_LENGTH = 500;
+
+export function parseCampaignEvidence(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const evidence = value.trim();
+  return evidence.length >= MIN_EVIDENCE_LENGTH && evidence.length <= MAX_EVIDENCE_LENGTH ? evidence : null;
+}
+
+// Work no session can do (a booth, a billboard) is marked done by hand, and only with evidence.
+// Returns null when the cell does not exist, is not on a manual channel, or the evidence is missing.
+export function markCampaignCellDone(
+  map: CampaignMap | undefined,
+  seedChannels: CampaignChannel[],
+  cellId: unknown,
+  evidence: unknown,
+  now: string,
+): CampaignMap | null {
+  const proof = parseCampaignEvidence(evidence);
+  const cells = map ? map.cells : campaignTemplateCells(seedChannels, now);
+  const target = cells.find((cell) => cell.id === cellId);
+  if (!proof || !target || !isManualCampaignChannel(target.channel)) return null;
+  return {
+    cells: cells.map((cell) =>
+      cell.id === cellId ? { ...cell, manualCompletion: { completedAt: now, evidence: proof }, updatedAt: now } : cell,
+    ),
+    ...withMapExtras(map),
+    updatedAt: now,
+  };
+}
+
+export interface CampaignCellDoneInput {
+  cellId: string;
+  evidence: string;
+}
+
+export interface CampaignAddChannelInput {
+  channel: CampaignChannel;
+}
+
+// Adds a channel row the customer skipped at onboarding, seeded with its template work.
+export function addCampaignChannel(
+  map: CampaignMap | undefined,
+  seedChannels: CampaignChannel[],
+  channel: unknown,
+  now: string,
+): CampaignMap | null {
+  if (!isCampaignChannel(channel)) return null;
+  const cells = map ? map.cells : campaignTemplateCells(seedChannels, now);
+  const seeded = cells.some((cell) => cell.channel === channel) ? [] : campaignTemplateCells([channel], now);
+  return {
+    cells: [...cells, ...seeded],
+    extraChannels: inFrameworkOrder([...(map?.extraChannels ?? []), channel]),
+    updatedAt: now,
+  };
 }

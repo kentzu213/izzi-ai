@@ -52,6 +52,7 @@ import type {
   CustomerWorkspaceInvitationResult,
   CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
+import type { CampaignAddChannelInput, CampaignCellDoneInput } from '../../shared/customer-marketing-campaign-map';
 import type {
   CustomerMarketingCredentialListResult,
   CustomerMarketingCredentialRevokeInput,
@@ -280,6 +281,8 @@ declare global {
     saveOnboarding: (input: CustomerOnboardingInput) => Promise<CustomerMutationResult>;
     createGoal: (input: CustomerGoalInput) => Promise<CustomerMutationResult>;
     askDirector: (input: CustomerDirectorInput) => Promise<CustomerMutationResult>;
+    markCampaignCell: (input: CampaignCellDoneInput) => Promise<CustomerMutationResult>;
+    addCampaignChannel: (input: CampaignAddChannelInput) => Promise<CustomerMutationResult>;
     selectMediaProject: () => Promise<CustomerMediaProjectSelectionResult>;
     repairVoiceStudio: () => Promise<CustomerVoiceStudioRepairResult>;
     runMediaPreview: (input: CustomerMediaPreviewInput) => Promise<CustomerMutationResult>;

@@ -7843,3 +7843,45 @@ describe('CustomerMarketingService CMR-407 resource decision history', () => {
       .resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
   });
 });
+
+describe('CustomerMarketingService campaign board actions', () => {
+  it('refuses board changes before onboarding is finished', async () => {
+    const { service } = setup();
+
+    const marked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const added = await service.addCampaignChannel({ channel: 'ecommerce' });
+
+    expect(marked).toMatchObject({ ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' });
+    expect(added.ok).toBe(false);
+  });
+
+  it('adds a marketplace channel and records the owner evidence that survives a reload', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+
+    const added = await service.addCampaignChannel({ channel: 'ecommerce' });
+    const marked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: ' shopee.vn/serum ' });
+
+    expect(added.ok).toBe(true);
+    expect(added.snapshot?.campaignMap?.extraChannels).toContain('ecommerce');
+    expect(marked.ok).toBe(true);
+    const stored = (await service.getSnapshot()).campaignMap?.cells.find((c) => c.id === 'tpl:p4_purchase:ecommerce');
+    expect(stored?.manualCompletion?.evidence).toBe('shopee.vn/serum');
+  });
+
+  it('keeps agent-run cells, missing evidence and duplicate channels out of manual control', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+
+    const agentCell = await service.markCampaignCell({ cellId: 'tpl:p0_foundation:facebook_fanpage', evidence: 'đã đăng bài' });
+    const hiddenCell = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const duplicate = await service.addCampaignChannel({ channel: 'facebook_fanpage' });
+    const unknown = await service.addCampaignChannel({ channel: 'myspace' as never });
+
+    expect(agentCell.ok).toBe(false);
+    expect(hiddenCell.ok).toBe(false);
+    expect(duplicate).toMatchObject({ ok: false, error: 'Kênh này đã có trên bảng kế hoạch.' });
+    expect(unknown).toMatchObject({ ok: false, error: 'Kênh không hợp lệ.' });
+    expect((await service.getSnapshot()).campaignMap?.extraChannels ?? []).toEqual([]);
+  });
+});
