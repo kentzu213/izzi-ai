@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.84
+
+Agent Marketing: channel names stay visible when the campaign board scrolls sideways.
+
+- The channel column and the corner cell are pinned on the left, so wide boards
+  no longer lose track of which row is which.
+
 ## 1.14.0-beta.83
 
 Agent Marketing: a clearer message when AI Director's model provider fails.

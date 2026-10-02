@@ -1230,6 +1230,26 @@
   width: 140px;
 }
 
+/* Keep the channel names in view while the phase columns scroll sideways. */
+.izzi-v2 .v2-campaign-board__corner,
+.izzi-v2 .v2-campaign-board__table tbody th[scope="row"] {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--v2-bg-panel);
+  box-shadow: inset -1px 0 0 var(--v2-border-default);
+}
+
+.izzi-v2 .v2-campaign-board__corner,
+.izzi-v2 .v2-campaign-board__table tbody .v2-campaign-board__unclassified th[scope="row"] {
+  background: var(--v2-bg-subtle);
+}
+
+.izzi-v2 .v2-campaign-board__group {
+  position: sticky;
+  left: var(--v2-space-2);
+}
+
 .izzi-v2 .v2-campaign-board__phase,
 .izzi-v2 .v2-campaign-board__channel {
   color: var(--v2-text-primary) !important;

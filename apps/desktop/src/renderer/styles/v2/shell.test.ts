@@ -93,6 +93,17 @@ describe('v2 shell drawer and update indicator styles', () => {
     expect(rules.some((rule) => rule.selector === '.izzi-v2 .v2-drawer-scrim')).toBe(true);
   });
 
+  it('keeps campaign board channel names in view on horizontal scroll', () => {
+    const rowHeader = rules.find(
+      (rule) => rule.selector === '.izzi-v2 .v2-campaign-board__table tbody th[scope="row"]' && rule.declarations.has('position'),
+    );
+    expect(rowHeader?.declarations.get('position')).toBe('sticky');
+    expect(rowHeader?.declarations.get('left')).toBe('0');
+    expect(rowHeader?.declarations.get('background')).toMatch(/^var\(--v2-/);
+    const corner = rules.find((rule) => rule.selector === '.izzi-v2 .v2-campaign-board__corner' && rule.declarations.has('position'));
+    expect(corner?.declarations.get('position')).toBe('sticky');
+  });
+
   it('styles the extension badge and the header dot', () => {
     expect(rules.some((rule) => rule.selector === '.izzi-v2 .v2-navigator__badge')).toBe(true);
     expect(rules.some((rule) => rule.selector === '.izzi-v2 .v2-header__dot')).toBe(true);
