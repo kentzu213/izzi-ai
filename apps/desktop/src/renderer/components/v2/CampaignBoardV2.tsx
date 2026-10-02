@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { CustomerChannel, CustomerRun } from '../../../shared/customer-marketing-types';
 import {
   CAMPAIGN_CHANNELS,
@@ -93,7 +93,6 @@ export function CampaignBoardV2({
     : current
       ? campaignWires(current, sequenceLinks(linkedCampaignCells(current, visibleCells)), visibleCells)
       : [];
-  const scrollRef = useRef<HTMLDivElement>(null);
   const done = CAMPAIGN_PHASES.reduce((sum, phase) => sum + progress[phase].done, 0);
   const total = CAMPAIGN_PHASES.reduce((sum, phase) => sum + progress[phase].total, 0);
 
@@ -121,7 +120,7 @@ export function CampaignBoardV2({
       <FoundationWarning cells={campaignFoundationWarning(visibleCells, runs, channels)} />
       <SaleSeasonBanner sales={upcomingSaleSeasons(today ?? new Date())} />
       <WireLegend wires={wires} hasSelection={selected !== undefined} />
-      <div className="v2-campaign-board__scroll" ref={scrollRef}>
+      <div className="v2-campaign-board__scroll">
         <table className="v2-campaign-board__table">
           <PhaseHeader progress={progress} />
           <tbody>
@@ -139,7 +138,7 @@ export function CampaignBoardV2({
             <UnclassifiedRow runs={unclassifiedCampaignRuns(cells, runs)} />
           </tbody>
         </table>
-        <CampaignWireLayer wires={wires} containerRef={scrollRef} />
+        <CampaignWireLayer wires={wires} />
       </div>
       {selected ? (
         <CampaignCellDetail
@@ -219,19 +218,16 @@ function measureCells(container: HTMLElement, ids: string[]): WireLayout {
   return { width: table?.offsetWidth ?? 0, height: table?.offsetHeight ?? 0, boxes };
 }
 
-function CampaignWireLayer({
-  wires,
-  containerRef,
-}: {
-  wires: CampaignWire[];
-  containerRef: RefObject<HTMLDivElement | null>;
-}) {
+function CampaignWireLayer({ wires }: { wires: CampaignWire[] }) {
   const markerPrefix = `wire${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [layout, setLayout] = useState<WireLayout>(EMPTY_WIRE_LAYOUT);
+  const svgRef = useRef<SVGSVGElement>(null);
   const cellIds = [...new Set(wires.flatMap((wire) => [wire.from, wire.to]))].join('\n');
 
   useLayoutEffect(() => {
-    const container = containerRef.current;
+    // Find the scroll container through the layer's own svg: React runs this effect before it
+    // attaches a ref on the parent, so a ref passed down from the board is still null on mount.
+    const container = svgRef.current?.parentElement;
     if (!container || cellIds === '') return;
     const ids = cellIds.split('\n');
     const measure = () => setLayout(measureCells(container, ids));
@@ -241,11 +237,12 @@ function CampaignWireLayer({
     const table = container.querySelector('table');
     if (table) observer.observe(table);
     return () => observer.disconnect();
-  }, [cellIds, containerRef]);
+  }, [cellIds]);
 
   if (wires.length === 0) return null;
   return (
     <svg
+      ref={svgRef}
       className="v2-campaign-board__wires"
       width={layout.width}
       height={layout.height}
