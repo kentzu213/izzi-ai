@@ -11,6 +11,7 @@ import {
   normalizeCampaignMap,
   parseCampaignEvidence,
   unclassifiedCampaignRuns,
+  upcomingSaleSeasons,
   type CampaignCell,
   type CampaignMap,
 } from './customer-marketing-campaign-map';
@@ -187,5 +188,26 @@ describe('extra channels survive storage and later sessions', () => {
     ], 'run-1', now);
     expect(attached.extraChannels).toEqual(['tiktok', 'zalo']);
     expect(normalizeCampaignMap({ cells: [], updatedAt: now })).not.toHaveProperty('extraChannels');
+  });
+});
+
+describe('upcomingSaleSeasons', () => {
+  it('lists double-day sales within the lookahead window, soonest first, with phases to push', () => {
+    expect(upcomingSaleSeasons(new Date(2026, 9, 2, 23, 30))).toEqual([
+      { label: '10.10', date: '2026-10-10', daysLeft: 8, focus: ['p4_purchase'] },
+      { label: '11.11', date: '2026-11-11', daysLeft: 40, focus: ['p2_consideration', 'p3_comparison'] },
+      { label: '12.12', date: '2026-12-12', daysLeft: 71, focus: ['p0_foundation', 'p1_awareness'] },
+    ]);
+  });
+
+  it('keeps the sale on its own day and drops it the day after', () => {
+    expect(upcomingSaleSeasons(new Date(2026, 10, 11))[0]).toMatchObject({ label: '11.11', daysLeft: 0 });
+    expect(upcomingSaleSeasons(new Date(2026, 10, 12)).map((s) => s.label)).toEqual(['12.12']);
+  });
+
+  it('rolls over to next year and stays quiet outside the season', () => {
+    expect(upcomingSaleSeasons(new Date(2026, 11, 20))).toEqual([]);
+    expect(upcomingSaleSeasons(new Date(2027, 6, 1)).map((s) => s.date)).toEqual(['2027-09-09']);
+    expect(upcomingSaleSeasons(new Date(2026, 3, 1))).toEqual([]);
   });
 });

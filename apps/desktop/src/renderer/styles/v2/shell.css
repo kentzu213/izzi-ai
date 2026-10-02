@@ -1331,7 +1331,8 @@
 }
 
 .izzi-v2 .v2-campaign-board__next,
-.izzi-v2 .v2-campaign-board__warning {
+.izzi-v2 .v2-campaign-board__warning,
+.izzi-v2 .v2-campaign-board__sale {
   margin: 0;
   padding: var(--v2-space-2) var(--v2-space-3);
   border-radius: var(--v2-radius-card);
@@ -1349,6 +1350,18 @@
   background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--v2-danger) 40%, transparent);
   color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-campaign-board__sales {
+  display: grid;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-campaign-board__sale {
+  background: color-mix(in srgb, var(--v2-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-warning) 40%, transparent);
+  color: var(--v2-text-primary) !important;
   -webkit-text-fill-color: currentColor !important;
 }
 

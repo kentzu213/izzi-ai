@@ -583,3 +583,43 @@ export function addCampaignChannel(
     updatedAt: now,
   };
 }
+
+// Vietnamese marketplace double-day sales; each needs about two months of build-up, so the board
+// flags them inside that window and names the phases worth pushing for the time left.
+const SALE_DAYS = [
+  { label: '9.9', month: 9, day: 9 },
+  { label: '10.10', month: 10, day: 10 },
+  { label: '11.11', month: 11, day: 11 },
+  { label: '12.12', month: 12, day: 12 },
+] as const;
+export const SALE_LOOKAHEAD_DAYS = 75;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface UpcomingSale {
+  label: string;
+  date: string;
+  daysLeft: number;
+  focus: CampaignPhase[];
+}
+
+function saleFocus(daysLeft: number): CampaignPhase[] {
+  if (daysLeft >= 45) return ['p0_foundation', 'p1_awareness'];
+  if (daysLeft >= 15) return ['p2_consideration', 'p3_comparison'];
+  return ['p4_purchase'];
+}
+
+export function upcomingSaleSeasons(today: Date): UpcomingSale[] {
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const year = today.getFullYear();
+  return [year, year + 1]
+    .flatMap((y) => SALE_DAYS.map((sale) => ({ sale, at: Date.UTC(y, sale.month - 1, sale.day) })))
+    .map(({ sale, at }) => ({ sale, at, daysLeft: Math.round((at - start) / DAY_MS) }))
+    .filter(({ daysLeft }) => daysLeft >= 0 && daysLeft <= SALE_LOOKAHEAD_DAYS)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .map(({ sale, at, daysLeft }) => ({
+      label: sale.label,
+      date: new Date(at).toISOString().slice(0, 10),
+      daysLeft,
+      focus: saleFocus(daysLeft),
+    }));
+}

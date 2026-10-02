@@ -14,6 +14,7 @@ import {
   parseCampaignEvidence,
   resolveCampaignBoard,
   unclassifiedCampaignRuns,
+  upcomingSaleSeasons,
   type CampaignBoard,
   type CampaignCell,
   type CampaignCellStatus,
@@ -21,6 +22,7 @@ import {
   type CampaignChannelGroup,
   type CampaignLinkKind,
   type CampaignPhase,
+  type UpcomingSale,
 } from '../../../shared/customer-marketing-campaign-map';
 
 const STATUS_LABELS: Record<CampaignCellStatus, string> = {
@@ -48,6 +50,7 @@ export interface CampaignBoardV2Props extends CampaignBoard {
   initialSelectedCellId?: string;
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
+  today?: Date;
 }
 
 export function CampaignBoardV2({
@@ -59,6 +62,7 @@ export function CampaignBoardV2({
   initialSelectedCellId,
   onMarkCellDone,
   onAddChannel,
+  today,
 }: CampaignBoardV2Props) {
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedCellId);
   const [collapsed, setCollapsed] = useState<ReadonlySet<CampaignChannelGroup>>(new Set());
@@ -89,6 +93,7 @@ export function CampaignBoardV2({
       </div>
       <NextWorkBanner next={nextCampaignCell(visibleCells, runs, channels)} nextActions={nextActions} />
       <FoundationWarning cells={campaignFoundationWarning(visibleCells, runs, channels)} />
+      <SaleSeasonBanner sales={upcomingSaleSeasons(today ?? new Date())} />
       <div className="v2-campaign-board__scroll">
         <table className="v2-campaign-board__table">
           <PhaseHeader progress={progress} />
@@ -183,6 +188,20 @@ function FoundationWarning({ cells }: { cells: CampaignCell[] }) {
       Pha Nền móng chưa xong nhưng quảng cáo trả phí đã chạy: {cells.map(cellPlace).join('; ')}. Hoàn tất nền móng
       trước để không đốt ngân sách vào trang chưa sẵn sàng.
     </p>
+  );
+}
+
+function SaleSeasonBanner({ sales }: { sales: UpcomingSale[] }) {
+  if (sales.length === 0) return null;
+  return (
+    <div className="v2-campaign-board__sales">
+      {sales.map((sale) => (
+        <p key={sale.date} className="v2-campaign-board__sale">
+          <strong>{sale.label} {sale.daysLeft === 0 ? 'là hôm nay' : `còn ${sale.daysLeft} ngày`}</strong> — nên đẩy{' '}
+          {sale.focus.map((phase) => CAMPAIGN_PHASE_INFO[phase].label).join(', ')}.
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -398,6 +417,7 @@ export interface CampaignPlanV2Props {
   nextActions?: string[];
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
+  today?: Date;
   sessions: ReactNode;
 }
 
@@ -410,6 +430,7 @@ export function CampaignPlanV2({
   nextActions,
   onMarkCellDone,
   onAddChannel,
+  today,
   sessions,
 }: CampaignPlanV2Props) {
   const [view, setView] = useState<CampaignPlanView>('board');
@@ -438,6 +459,7 @@ export function CampaignPlanV2({
           nextActions={nextActions}
           onMarkCellDone={onMarkCellDone}
           onAddChannel={onAddChannel}
+          today={today}
         />
       </div>
       <div hidden={view !== 'sessions'}>{sessions}</div>

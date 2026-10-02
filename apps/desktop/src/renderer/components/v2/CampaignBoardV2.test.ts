@@ -239,6 +239,14 @@ describe('CampaignBoardV2 project-manager view', () => {
     expect(html).not.toContain('<option value="tiktok">');
   });
 
+  it('reminds which phases to push before an upcoming sale and stays quiet off-season', () => {
+    const html = renderWith([cell({ id: 'a' })], [], { today: new Date(2026, 9, 2) });
+    expect(html).toContain('11.11 còn 40 ngày');
+    expect(html).toContain('Quan tâm, So sánh');
+
+    expect(renderWith([cell({ id: 'a' })], [], { today: new Date(2026, 3, 1) })).not.toContain('v2-campaign-board__sale');
+  });
+
   it('groups channel rows under collapsible group headers', () => {
     const html = renderWith([cell({ id: 'a' })], []);
 
