@@ -37,3 +37,53 @@ export function oauthLoadFailureMessage(
   const detail = errorDescription || `mã lỗi ${errorCode}`;
   return `Không tải được trang đăng nhập Google (${detail})`;
 }
+
+export type OAuthCallbackOutcome =
+  | { kind: 'tokens'; accessToken: string; refreshToken: string }
+  | { kind: 'error'; message: string };
+
+const OAUTH_CALLBACK_PATH = '/auth/callback';
+
+function parseUrl(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+/** True when `host` is `allowed` itself or one of its subdomains. */
+function hostMatches(host: string, allowed: string): boolean {
+  return host === allowed || host.endsWith(`.${allowed}`);
+}
+
+/**
+ * Read the OAuth result from a popup URL. Only the izzi web callback (the apex
+ * host or its www alias) is trusted — tokens appearing on any other page are
+ * ignored. Returns null while the popup is still on its way to the callback.
+ */
+export function readOAuthCallback(url: string, webBase: string): OAuthCallbackOutcome | null {
+  const parsed = parseUrl(url);
+  const base = parseUrl(webBase);
+  if (!parsed || !base || parsed.protocol !== base.protocol) return null;
+  if (parsed.host !== base.host && parsed.host !== `www.${base.host}`) return null;
+  if (parsed.pathname.replace(/\/+$/, '') !== OAUTH_CALLBACK_PATH) return null;
+
+  const hash = new URLSearchParams(parsed.hash.slice(1));
+  const read = (key: string) => hash.get(key) || parsed.searchParams.get(key);
+
+  const error = read('error_description') || read('error');
+  if (error) return { kind: 'error', message: `Google từ chối đăng nhập (${error})` };
+
+  const accessToken = read('access_token');
+  const refreshToken = read('refresh_token');
+  if (!accessToken || !refreshToken) return null;
+  return { kind: 'tokens', accessToken, refreshToken };
+}
+
+/** Popup-in-popup navigations are allowed only over https to the OAuth hosts. */
+export function isAllowedOAuthPopupUrl(url: string, allowedHosts: string[]): boolean {
+  const parsed = parseUrl(url);
+  if (!parsed || parsed.protocol !== 'https:') return false;
+  return allowedHosts.some((allowed) => hostMatches(parsed.hostname, allowed));
+}
