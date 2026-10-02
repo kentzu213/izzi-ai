@@ -3410,6 +3410,7 @@ function CustomerRoom({
                 nextActions={snapshot.nextActions}
                 onMarkCellDone={(cellId, evidence) => { void markCampaignCell(cellId, evidence); }}
                 onAddChannel={(channel) => { void addCampaignChannel(channel); }}
+                busy={busy}
                 sessions={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
               />
             )}

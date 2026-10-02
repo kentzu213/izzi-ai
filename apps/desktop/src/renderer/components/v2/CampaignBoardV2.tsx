@@ -51,6 +51,8 @@ export interface CampaignBoardV2Props extends CampaignBoard {
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
   today?: Date;
+  /** The room is saving; lock inputs so a mark-done is not sent twice. */
+  busy?: boolean;
 }
 
 export function CampaignBoardV2({
@@ -63,6 +65,7 @@ export function CampaignBoardV2({
   onMarkCellDone,
   onAddChannel,
   today,
+  busy = false,
 }: CampaignBoardV2Props) {
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedCellId);
   const [collapsed, setCollapsed] = useState<ReadonlySet<CampaignChannelGroup>>(new Set());
@@ -114,7 +117,7 @@ export function CampaignBoardV2({
         </table>
       </div>
       {selected ? (
-        <CampaignCellDetail key={selected.id} cell={selected} runs={runs} onMarkCellDone={onMarkCellDone} />
+        <CampaignCellDetail key={selected.id} cell={selected} runs={runs} onMarkCellDone={onMarkCellDone} busy={busy} />
       ) : null}
     </section>
   );
@@ -355,10 +358,12 @@ function CampaignCellDetail({
   cell,
   runs,
   onMarkCellDone,
+  busy,
 }: {
   cell: CampaignCell;
   runs: CustomerRun[];
   onMarkCellDone?: (cellId: string, evidence: string) => void;
+  busy: boolean;
 }) {
   const state = deriveCampaignCellStatus(cell, runs);
   const cellRuns = runs.filter((item) => cell.runIds.includes(item.id));
@@ -380,13 +385,13 @@ function CampaignCellDetail({
         </p>
       ) : null}
       {isManual && state.status !== 'done' && onMarkCellDone ? (
-        <EvidenceForm onSubmit={(evidence) => onMarkCellDone(cell.id, evidence)} />
+        <EvidenceForm busy={busy} onSubmit={(evidence) => onMarkCellDone(cell.id, evidence)} />
       ) : null}
     </aside>
   );
 }
 
-function EvidenceForm({ onSubmit }: { onSubmit: (evidence: string) => void }) {
+function EvidenceForm({ busy, onSubmit }: { busy: boolean; onSubmit: (evidence: string) => void }) {
   const [draft, setDraft] = useState('');
   const evidence = parseCampaignEvidence(draft);
 
@@ -398,9 +403,16 @@ function EvidenceForm({ onSubmit }: { onSubmit: (evidence: string) => void }) {
         placeholder="Ví dụ: link bài đăng, ảnh gian hàng, số hợp đồng biển quảng cáo…"
         maxLength={500}
         value={draft}
+        disabled={busy}
         onChange={(event) => setDraft(event.target.value)}
       />
-      <button type="button" className="v2-button" disabled={!evidence} onClick={() => evidence && onSubmit(evidence)}>
+      <p className="v2-campaign-board__hint">Tối thiểu 3 ký tự, tối đa 500.</p>
+      <button
+        type="button"
+        className="v2-button"
+        disabled={busy || !evidence}
+        onClick={() => evidence && onSubmit(evidence)}
+      >
         Đã làm
       </button>
     </div>
@@ -418,6 +430,7 @@ export interface CampaignPlanV2Props {
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
   today?: Date;
+  busy?: boolean;
   sessions: ReactNode;
 }
 
@@ -431,6 +444,7 @@ export function CampaignPlanV2({
   onMarkCellDone,
   onAddChannel,
   today,
+  busy,
   sessions,
 }: CampaignPlanV2Props) {
   const [view, setView] = useState<CampaignPlanView>('board');
@@ -460,6 +474,7 @@ export function CampaignPlanV2({
           onMarkCellDone={onMarkCellDone}
           onAddChannel={onAddChannel}
           today={today}
+          busy={busy}
         />
       </div>
       <div hidden={view !== 'sessions'}>{sessions}</div>

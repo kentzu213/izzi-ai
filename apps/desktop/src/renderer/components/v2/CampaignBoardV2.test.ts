@@ -212,6 +212,18 @@ describe('CampaignBoardV2 project-manager view', () => {
     expect(html).toContain('Agent chỉ lập kế hoạch cho kênh này');
     expect(html).toContain('aria-label="Bằng chứng đã làm"');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Đã làm<\/button>/);
+    expect(html).toContain('Tối thiểu 3 ký tự');
+  });
+
+  it('locks the evidence form while the room is saving', () => {
+    const ecommerce = cell({ id: 'ecom', channel: 'ecommerce', phase: 'p4_purchase', tactic: 'Mở gian hàng' });
+    const html = renderWith([ecommerce], [], {
+      initialSelectedCellId: 'ecom',
+      onMarkCellDone: () => undefined,
+      busy: true,
+    }, ['tiktok'], ['ecommerce']);
+
+    expect(html).toMatch(/<textarea[^>]*aria-label="Bằng chứng đã làm"[^>]*disabled=""/);
   });
 
   it('offers no evidence form on agent channels or once proof exists', () => {
