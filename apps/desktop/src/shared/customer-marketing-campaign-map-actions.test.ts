@@ -5,6 +5,7 @@ import {
   archiveCompletedCampaignRuns,
   attachRunToCampaignMap,
   campaignFoundationWarning,
+  currentCampaignCell,
   deriveCampaignCellStatus,
   fallbackCampaignSuggestions,
   isManualCampaignChannel,
@@ -89,6 +90,29 @@ describe('nextCampaignCell', () => {
     expect(nextCampaignCell(cells, runs, ['tiktok'])?.id).toBe('p2');
     expect(nextCampaignCell(cells, runs, ['tiktok', 'zalo'])?.id).toBe('zalo0');
     expect(nextCampaignCell([cells[0]], runs, ['tiktok'])).toBeUndefined();
+  });
+});
+
+describe('currentCampaignCell', () => {
+  it('returns the earliest running or waiting cell before any unfinished one', () => {
+    const cells = [
+      cell({ id: 'p0', phase: 'p0_foundation' }),
+      cell({ id: 'p1', runIds: ['wait'] }),
+      cell({ id: 'p2', phase: 'p2_consideration', runIds: ['busy'] }),
+      cell({ id: 'zalo0', channel: 'zalo', phase: 'p0_foundation', runIds: ['busy'] }),
+    ];
+    const runs = [run('wait', 'awaiting_approval'), run('busy', 'in_progress')];
+
+    expect(currentCampaignCell(cells, runs, ['tiktok'])?.id).toBe('p1');
+    expect(currentCampaignCell(cells, runs, ['tiktok', 'zalo'])?.id).toBe('zalo0');
+  });
+
+  it('falls back to the next unfinished cell, or nothing when all are done', () => {
+    const cells = [cell({ id: 'p0', phase: 'p0_foundation', runIds: ['done'] }), cell({ id: 'p1' })];
+    const runs = [run('done', 'completed')];
+
+    expect(currentCampaignCell(cells, runs, ['tiktok'])?.id).toBe('p1');
+    expect(currentCampaignCell([cells[0]], runs, ['tiktok'])).toBeUndefined();
   });
 });
 

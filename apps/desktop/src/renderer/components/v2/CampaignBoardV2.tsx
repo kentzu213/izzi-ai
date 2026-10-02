@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { CustomerChannel, CustomerRun } from '../../../shared/customer-marketing-types';
 import {
   CAMPAIGN_CHANNELS,
@@ -7,6 +7,7 @@ import {
   CAMPAIGN_PHASES,
   CAMPAIGN_PHASE_INFO,
   campaignFoundationWarning,
+  currentCampaignCell,
   deriveCampaignCellStatus,
   isManualCampaignChannel,
   linkedCampaignCells,
@@ -24,6 +25,13 @@ import {
   type CampaignPhase,
   type UpcomingSale,
 } from '../../../shared/customer-marketing-campaign-map';
+import {
+  CAMPAIGN_LINK_KINDS,
+  campaignWires,
+  wirePath,
+  type CampaignWire,
+  type WireBox,
+} from './campaign-board-wires';
 
 const STATUS_LABELS: Record<CampaignCellStatus, string> = {
   todo: 'Chưa làm',
@@ -40,6 +48,13 @@ const RUN_STATUS_LABELS: Record<CustomerRun['status'], string> = {
   ready: 'Sẵn sàng',
   completed: 'Hoàn tất',
   blocked: 'Bị chặn',
+};
+
+const LINK_LABELS: Record<CampaignLinkKind, string> = {
+  previous: 'Bước trước',
+  next: 'Bước sau',
+  data: 'Đo lường',
+  loop: 'Vòng lặp',
 };
 
 const PHASE_COLUMNS = CAMPAIGN_PHASES.length + 1;
@@ -72,6 +87,13 @@ export function CampaignBoardV2({
   const visibleCells = cells.filter((item) => channels.includes(item.channel));
   const selected = visibleCells.find((item) => item.id === selectedId);
   const links = selected ? linkedCampaignCells(selected, visibleCells) : new Map<string, CampaignLinkKind>();
+  const current = currentCampaignCell(visibleCells, runs, channels);
+  const wires = selected
+    ? campaignWires(selected, links, visibleCells)
+    : current
+      ? campaignWires(current, sequenceLinks(linkedCampaignCells(current, visibleCells)), visibleCells)
+      : [];
+  const scrollRef = useRef<HTMLDivElement>(null);
   const done = CAMPAIGN_PHASES.reduce((sum, phase) => sum + progress[phase].done, 0);
   const total = CAMPAIGN_PHASES.reduce((sum, phase) => sum + progress[phase].total, 0);
 
@@ -84,6 +106,7 @@ export function CampaignBoardV2({
   const cellView: CellView = {
     runs,
     selectedId: selected?.id,
+    currentId: current?.id,
     links,
     onSelect: (id) => setSelectedId(id === selected?.id ? undefined : id),
   };
@@ -97,7 +120,8 @@ export function CampaignBoardV2({
       <NextWorkBanner next={nextCampaignCell(visibleCells, runs, channels)} nextActions={nextActions} />
       <FoundationWarning cells={campaignFoundationWarning(visibleCells, runs, channels)} />
       <SaleSeasonBanner sales={upcomingSaleSeasons(today ?? new Date())} />
-      <div className="v2-campaign-board__scroll">
+      <WireLegend wires={wires} hasSelection={selected !== undefined} />
+      <div className="v2-campaign-board__scroll" ref={scrollRef}>
         <table className="v2-campaign-board__table">
           <PhaseHeader progress={progress} />
           <tbody>
@@ -115,9 +139,19 @@ export function CampaignBoardV2({
             <UnclassifiedRow runs={unclassifiedCampaignRuns(cells, runs)} />
           </tbody>
         </table>
+        <CampaignWireLayer wires={wires} containerRef={scrollRef} />
       </div>
       {selected ? (
-        <CampaignCellDetail key={selected.id} cell={selected} runs={runs} onMarkCellDone={onMarkCellDone} busy={busy} />
+        <CampaignCellDetail
+          key={selected.id}
+          cell={selected}
+          runs={runs}
+          wires={wires}
+          cells={visibleCells}
+          onSelect={cellView.onSelect}
+          onMarkCellDone={onMarkCellDone}
+          busy={busy}
+        />
       ) : null}
     </section>
   );
@@ -132,6 +166,126 @@ function channelGroups(channels: CampaignChannel[]): { group: CampaignChannelGro
     else groups.push({ group, members: [channel] });
   }
   return groups;
+}
+
+// With nothing selected the wires only trace the journey through the current step.
+function sequenceLinks(links: Map<string, CampaignLinkKind>): Map<string, CampaignLinkKind> {
+  return new Map([...links].filter(([, kind]) => kind === 'previous' || kind === 'next'));
+}
+
+function WireLegend({ wires, hasSelection }: { wires: CampaignWire[]; hasSelection: boolean }) {
+  if (wires.length === 0) return null;
+  const kinds = CAMPAIGN_LINK_KINDS.filter((kind) => wires.some((wire) => wire.kind === kind));
+  return (
+    <div className="v2-campaign-board__legend">
+      <span>
+        {hasSelection
+          ? 'Các bước liên kết với ô đang chọn:'
+          : 'Dây nối chỉ bước đang chạy. Bấm một ô để xem các bước liên kết.'}
+      </span>
+      {kinds.map((kind) => (
+        <span key={kind} className={`v2-campaign-board__legend-item is-${kind}`}>
+          {LINK_LABELS[kind]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+interface WireLayout {
+  width: number;
+  height: number;
+  boxes: Map<string, WireBox>;
+}
+
+const EMPTY_WIRE_LAYOUT: WireLayout = { width: 0, height: 0, boxes: new Map() };
+
+// Box of each cell relative to the scroll content, so the overlay scrolls with the table.
+function measureCells(container: HTMLElement, ids: string[]): WireLayout {
+  const table = container.querySelector('table');
+  const origin = container.getBoundingClientRect();
+  const boxes = new Map<string, WireBox>();
+  for (const id of ids) {
+    const cell = container.querySelector(`[data-cell-id="${CSS.escape(id)}"]`)?.closest('li');
+    if (!cell) continue;
+    const rect = cell.getBoundingClientRect();
+    boxes.set(id, {
+      left: rect.left - origin.left + container.scrollLeft - container.clientLeft,
+      top: rect.top - origin.top + container.scrollTop - container.clientTop,
+      width: rect.width,
+      height: rect.height,
+    });
+  }
+  return { width: table?.offsetWidth ?? 0, height: table?.offsetHeight ?? 0, boxes };
+}
+
+function CampaignWireLayer({
+  wires,
+  containerRef,
+}: {
+  wires: CampaignWire[];
+  containerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const markerPrefix = `wire${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const [layout, setLayout] = useState<WireLayout>(EMPTY_WIRE_LAYOUT);
+  const cellIds = [...new Set(wires.flatMap((wire) => [wire.from, wire.to]))].join('\n');
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container || cellIds === '') return;
+    const ids = cellIds.split('\n');
+    const measure = () => setLayout(measureCells(container, ids));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    const table = container.querySelector('table');
+    if (table) observer.observe(table);
+    return () => observer.disconnect();
+  }, [cellIds, containerRef]);
+
+  if (wires.length === 0) return null;
+  return (
+    <svg
+      className="v2-campaign-board__wires"
+      width={layout.width}
+      height={layout.height}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        {CAMPAIGN_LINK_KINDS.map((kind) => (
+          <marker
+            key={kind}
+            id={`${markerPrefix}-${kind}`}
+            className={`v2-campaign-board__wire-arrow is-${kind}`}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+        ))}
+      </defs>
+      {wires.map((wire) => {
+        const from = layout.boxes.get(wire.from);
+        const to = layout.boxes.get(wire.to);
+        if (!from || !to) return null;
+        const path = wirePath(from, to);
+        return (
+          <g key={wire.cellId} className={`v2-campaign-board__wire is-${wire.kind}`}>
+            <path className="v2-campaign-board__wire-line" d={path.d} markerEnd={`url(#${markerPrefix}-${wire.kind})`} />
+            <circle className="v2-campaign-board__wire-badge" cx={path.labelX} cy={path.labelY} r={9} />
+            <text className="v2-campaign-board__wire-number" x={path.labelX} y={path.labelY} textAnchor="middle" dominantBaseline="central">
+              {wire.order}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 function phasePercent({ done, total }: { done: number; total: number }): number {
@@ -242,6 +396,7 @@ function AddChannelPicker({
 interface CellView {
   runs: CustomerRun[];
   selectedId?: string;
+  currentId?: string;
   links: Map<string, CampaignLinkKind>;
   onSelect: (cellId: string) => void;
 }
@@ -295,6 +450,7 @@ function cellsAt(cells: CampaignCell[], channel: CampaignChannel, phase: Campaig
 function cellClassName(status: CampaignCellStatus, id: string, view: CellView): string {
   const classes = ['v2-campaign-board__cell', `is-${status}`];
   const link = view.links.get(id);
+  if (id === view.currentId) classes.push('is-current');
   if (id === view.selectedId) classes.push('is-selected');
   else if (link) classes.push('is-linked', `is-linked-${link}`);
   else if (view.selectedId) classes.push('is-dimmed');
@@ -313,11 +469,13 @@ function CampaignCellList({ cells, view }: { cells: CampaignCell[]; view: CellVi
             <button
               type="button"
               className="v2-campaign-board__cell-button"
+              data-cell-id={item.id}
               aria-pressed={item.id === view.selectedId}
               onClick={() => view.onSelect(item.id)}
             >
               <span className={`v2-campaign-board__status is-${state.status}`}>{STATUS_LABELS[state.status]}</span>
               <span className="v2-campaign-board__tactic">{item.tactic}</span>
+              {item.id === view.currentId ? <span className="v2-campaign-board__current">▶ Đang ở bước này</span> : null}
               {state.reason ? <span className="v2-campaign-board__reason">{state.reason}</span> : null}
             </button>
           </li>
@@ -357,11 +515,17 @@ function UnclassifiedRow({ runs }: { runs: CustomerRun[] }) {
 function CampaignCellDetail({
   cell,
   runs,
+  wires,
+  cells,
+  onSelect,
   onMarkCellDone,
   busy,
 }: {
   cell: CampaignCell;
   runs: CustomerRun[];
+  wires: CampaignWire[];
+  cells: CampaignCell[];
+  onSelect: (cellId: string) => void;
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   busy: boolean;
 }) {
@@ -376,6 +540,7 @@ function CampaignCellDetail({
         {cellPlace(cell)} · {STATUS_LABELS[state.status]}
       </p>
       {cellRuns.length > 0 ? <RunList runs={cellRuns} /> : null}
+      <LinkedCellList wires={wires} cells={cells} onSelect={onSelect} />
       {cell.manualCompletion ? (
         <p className="v2-campaign-board__evidence">Bằng chứng: {cell.manualCompletion.evidence}</p>
       ) : null}
@@ -388,6 +553,42 @@ function CampaignCellDetail({
         <EvidenceForm busy={busy} onSubmit={(evidence) => onMarkCellDone(cell.id, evidence)} />
       ) : null}
     </aside>
+  );
+}
+
+function LinkedCellList({
+  wires,
+  cells,
+  onSelect,
+}: {
+  wires: CampaignWire[];
+  cells: CampaignCell[];
+  onSelect: (cellId: string) => void;
+}) {
+  const byId = new Map(cells.map((item) => [item.id, item]));
+  const linked = wires.flatMap((wire) => {
+    const item = byId.get(wire.cellId);
+    return item ? [{ wire, item }] : [];
+  });
+  if (linked.length === 0) return null;
+
+  return (
+    <div className="v2-campaign-board__links">
+      <p className="v2-campaign-board__links-title">Liên kết trong hệ thống</p>
+      <ol className="v2-campaign-board__link-list">
+        {linked.map(({ wire, item }) => (
+          <li key={wire.cellId}>
+            <button type="button" className={`v2-campaign-board__link is-${wire.kind}`} onClick={() => onSelect(item.id)}>
+              <span className="v2-campaign-board__link-number">{wire.order}</span>
+              <span className="v2-campaign-board__link-kind">{LINK_LABELS[wire.kind]}</span>
+              <span className="v2-campaign-board__link-place">
+                {cellPlace(item)} — {item.tactic}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

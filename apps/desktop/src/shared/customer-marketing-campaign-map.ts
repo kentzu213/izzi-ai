@@ -382,6 +382,20 @@ export function nextCampaignCell(
   });
 }
 
+// Where the campaign is right now: the earliest cell an agent is running or waiting on approval,
+// else the next cell to start.
+export function currentCampaignCell(
+  cells: CampaignCell[],
+  runs: CustomerRun[],
+  visibleChannels: CampaignChannel[],
+): CampaignCell | undefined {
+  const active = visibleCellsInBoardOrder(cells, visibleChannels).find((cell) => {
+    const { status } = deriveCampaignCellStatus(cell, runs);
+    return status === 'in_progress' || status === 'awaiting_approval';
+  });
+  return active ?? nextCampaignCell(cells, runs, visibleChannels);
+}
+
 const PAID_WARNING_PHASES: CampaignPhase[] = ['p1_awareness', 'p2_consideration', 'p3_comparison', 'p4_purchase'];
 
 // Paid cells already started while the foundation is unfinished: money spent before the landing

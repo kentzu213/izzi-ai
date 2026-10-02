@@ -267,6 +267,59 @@ describe('CampaignBoardV2 project-manager view', () => {
   });
 });
 
+describe('CampaignBoardV2 wires', () => {
+  const linkedCells = [
+    cell({ id: 'p0', phase: 'p0_foundation', tactic: 'Hồ sơ kênh', runIds: ['run-1'] }),
+    cell({ id: 'sel', tactic: 'Video ngắn', runIds: ['run-2'] }),
+    cell({ id: 'p2', phase: 'p2_consideration', tactic: 'Livestream' }),
+    cell({ id: 'p5', phase: 'p5_post_purchase', tactic: 'Video cảm ơn' }),
+    cell({ id: 'dm1', channel: 'data_measurement', tactic: 'Đo lượt xem' }),
+  ];
+  const linkedRuns = [run('run-1', 'completed'), run('run-2', 'awaiting_approval')];
+
+  it('marks the running cell as the current step and explains the wires', () => {
+    const html = renderWith(linkedCells, linkedRuns);
+
+    expect(cellClass(html, 'Video ngắn')).toContain('is-current');
+    expect(cellClass(html, 'Livestream')).not.toContain('is-current');
+    expect(html.match(/▶ Đang ở bước này/g)).toHaveLength(1);
+    expect(html).toContain('Dây nối chỉ bước đang chạy. Bấm một ô để xem các bước liên kết.');
+    expect(html).toContain('v2-campaign-board__legend-item is-previous');
+    expect(html).toContain('v2-campaign-board__legend-item is-next');
+    expect(html).not.toContain('v2-campaign-board__legend-item is-loop');
+  });
+
+  it('falls back to the next unfinished cell when nothing is running', () => {
+    const html = renderWith(
+      [cell({ id: 'a', phase: 'p0_foundation', tactic: 'Hồ sơ kênh', runIds: ['run-1'] }), cell({ id: 'b' })],
+      [run('run-1', 'completed')],
+    );
+
+    expect(cellClass(html, 'Video ngắn')).toContain('is-current');
+    expect(cellClass(html, 'Hồ sơ kênh')).not.toContain('is-current');
+  });
+
+  it('lists every linked step of the selected cell in numbered order', () => {
+    const html = renderWith(linkedCells, linkedRuns, { initialSelectedCellId: 'sel' });
+
+    expect(html).toContain('Các bước liên kết với ô đang chọn:');
+    expect(html).toContain('Liên kết trong hệ thống');
+    const links = [...html.matchAll(/class="v2-campaign-board__link is-(\w+)"[^>]*>.*?link-number">(\d+)<.*?link-place">([^<]*)</g)];
+    expect(links.map((match) => [match[1], match[2]])).toEqual([
+      ['previous', '1'],
+      ['next', '2'],
+      ['data', '3'],
+      ['loop', '4'],
+    ]);
+    expect(links[0][3]).toContain('Hồ sơ kênh');
+    expect(links[3][3]).toContain('Video cảm ơn');
+  });
+
+  it('shows no legend when the board has no cells', () => {
+    expect(renderWith([], [])).not.toContain('v2-campaign-board__legend');
+  });
+});
+
 describe('CampaignPlanV2', () => {
   it('opens on the board and keeps the session list mounted but hidden', () => {
     const html = renderToStaticMarkup(createElement(CampaignPlanV2, {
