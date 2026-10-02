@@ -2635,6 +2635,7 @@ describe('CustomerMarketingService AI Director', () => {
     ['network', 'tạm thời'],
     ['empty-response', 'rỗng'],
     ['http 401', 'Đăng nhập lại'],
+    ['http 401: upstream_error: Upstream error: 401', 'nhà cung cấp model'],
     ['http 402: insufficient_credits', 'hết credit'],
     ['http 429', 'giới hạn tần suất'],
     ['http 503: upstream unavailable', 'mã 503'],

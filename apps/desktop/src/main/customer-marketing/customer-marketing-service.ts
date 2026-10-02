@@ -6442,6 +6442,7 @@ export class CustomerMarketingService {
     if (error === 'network') return 'AI Director tạm thời không kết nối được. Workflow đã được giữ lại để thử lại.';
     if (error === 'empty-response') return 'Model của AI Director trả về câu trả lời rỗng. Workflow đã được giữ lại, hãy thử lại.';
     const status = Number(/^http (\d{3})\b/.exec(error)?.[1]);
+    if (/^http \d{3}: upstream_error\b/.test(error)) return `IzziAPI chưa gọi được nhà cung cấp model của AI Director (mã ${status}). Không cần đăng nhập lại; workflow đã được giữ lại, hãy thử lại sau.`;
     if (status === 401 || status === 403) return 'Phiên đăng nhập hoặc Izzi API key không còn hợp lệ. Đăng nhập lại rồi thử lại AI Director.';
     if (status === 402) return 'Tài khoản Izzi đã hết credit cho AI Director. Nạp thêm credit rồi thử lại.';
     if (status === 429) return 'IzziAPI đang giới hạn tần suất gọi. Đợi một lát rồi thử lại AI Director.';

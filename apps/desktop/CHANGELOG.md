@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.83
+
+Agent Marketing: a clearer message when AI Director's model provider fails.
+
+- When IzziAPI reports an `upstream_error`, the blocked workflow now says the
+  model provider is unreachable instead of asking you to log in again.
+
 ## 1.14.0-beta.82
 
 Agent Marketing: the campaign board wires now appear as soon as the board opens.
