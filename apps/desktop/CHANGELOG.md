@@ -1,4 +1,15 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.81
+
+Agent Marketing: connector wires on the campaign board.
+
+- Dashed, numbered wires point at the step the campaign is running or waiting
+  for approval, marked "▶ Đang ở bước này"; with nothing running they point at
+  the next unfinished step.
+- Clicking a cell draws its links to the previous and next steps, its
+  measurement and the post-purchase loop, so the steps read as one system.
+- The cell detail lists the same numbered links; click one to jump to it.
+
 ## 1.14.0-beta.80
 
 Agent Marketing: the "Kế hoạch" tab is now a campaign board.
