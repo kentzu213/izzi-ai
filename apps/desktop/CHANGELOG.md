@@ -1,4 +1,21 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.80
+
+Agent Marketing: the "Kế hoạch" tab is now a campaign board.
+
+- Six phases by the channels chosen at onboarding; each cell shows whether its
+  work is not started, running, waiting for approval, blocked or done, with
+  phase progress.
+- Director plans and approved sessions fill the board automatically; sessions
+  that match no cell are listed under "Chưa phân loại".
+- Manual channels can be marked done with a short text note as evidence;
+  channels added after onboarding get their own row.
+- Reminders show which phases to push before double-day sales.
+- Reviewer and viewer roles can view the board but not change it; a damaged
+  board is kept as-is instead of being overwritten.
+- The Google sign-in popup only accepts the izzi callback and only opens
+  Google, Supabase and izzi pages.
+
 ## 1.14.0-beta.79
 
 Fix Google sign-in hanging and bring the Login screen onto the V2 design.
