@@ -2365,6 +2365,90 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.approvals[0].status).toBe('pending');
   });
 
+  it('links each planned campaign cell to the director run and its approval', async () => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply({
+        schemaVersion: 2,
+        cells: [
+          { phase: 'p2_consideration', channel: 'facebook_fanpage', tactic: 'Bài so sánh trước/sau', tags: ['organic'] },
+          { phase: 'p1_awareness', channel: 'seo', tactic: 'Bài pillar về workflow AI', tags: ['owned', 'organic'] },
+        ],
+      }),
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Plan the first awareness and consideration work for seven days',
+      channels: ['facebook', 'seo'],
+    });
+
+    expect(result.ok).toBe(true);
+    const runId = result.snapshot!.runs[0].id;
+    expect(result.snapshot?.approvals[0].runId).toBe(runId);
+    const cells = result.snapshot?.campaignMap?.cells ?? [];
+    const linked = cells.filter((cell) => cell.runIds.includes(runId));
+    expect(linked.map((cell) => `${cell.phase}:${cell.channel}`).sort()).toEqual([
+      'p1_awareness:seo',
+      'p2_consideration:facebook_fanpage',
+    ]);
+    expect(linked.find((cell) => cell.channel === 'facebook_fanpage')?.id).toBe('tpl:p2_consideration:facebook_fanpage');
+    expect(cells.map((cell) => cell.id)).toContain('tpl:p0_foundation:facebook_fanpage');
+    expect(cells.some((cell) => cell.channel === 'tiktok')).toBe(false);
+    expect(director.mock.calls[0][0].systemPrompt).toContain('"schemaVersion":2');
+
+    const reread = await context.service.getSnapshot();
+    expect(reread.campaignMap?.cells).toEqual(cells);
+  });
+
+  it.each([
+    ['an unknown phase', { phase: 'p9_viral', channel: 'facebook_fanpage', tactic: 'Bài viral', tags: ['organic'] }],
+    ['a channel outside onboarding', { phase: 'p1_awareness', channel: 'tiktok', tactic: 'Video ngắn', tags: ['organic'] }],
+  ])('keeps the valid campaign cells when director output adds %s', async (_label, badCell) => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply({
+        schemaVersion: 2,
+        cells: [
+          { phase: 'p1_awareness', channel: 'seo', tactic: 'Bài pillar về workflow AI', tags: ['owned'] },
+          badCell,
+        ],
+      }),
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Plan the first awareness work for the next seven days',
+      channels: ['facebook', 'seo'],
+    });
+
+    expect(result.ok).toBe(true);
+    const runId = result.snapshot!.runs[0].id;
+    const cells = result.snapshot?.campaignMap?.cells ?? [];
+    expect(cells.filter((cell) => cell.runIds.includes(runId)).map((cell) => `${cell.phase}:${cell.channel}`)).toEqual([
+      'p1_awareness:seo',
+    ]);
+    expect(cells.some((cell) => cell.channel === 'tiktok' || (cell.phase as string) === 'p9_viral')).toBe(false);
+  });
+
+  it('links a schema v1 draft to the next open cell of its channel', async () => {
+    const director = vi.fn(async () => ({ reply: modelDraftReply(), execution: modelExecution() }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one evidence-led Facebook draft for the next seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(true);
+    const runId = result.snapshot!.runs[0].id;
+    const linked = result.snapshot?.campaignMap?.cells.filter((cell) => cell.runIds.includes(runId)) ?? [];
+    expect(linked.map((cell) => cell.id)).toEqual(['tpl:p0_foundation:facebook_fanpage']);
+  });
+
   it('blocks a model draft when served-model or token provenance is missing', async () => {
     const director = vi.fn(async () => ({
       reply: modelDraftReply(),
@@ -7764,5 +7848,149 @@ describe('CustomerMarketingService CMR-407 resource decision history', () => {
     });
     await expect(context.service.listMarketingResourceAudit(request))
       .resolves.toMatchObject({ ok: false, status: 'unavailable', receipts: [] });
+  });
+});
+
+describe('CustomerMarketingService campaign board actions', () => {
+  function storedRecord(db: MemorySettings) {
+    const raw = Array.from(db.values.entries()).find(([key]) => key.startsWith('customer_marketing:v1:'))?.[1];
+    return JSON.parse(raw ?? '{}') as {
+      onboarding: { channels: string[] };
+      runs: Array<Record<string, unknown>>;
+      campaignMap: { cells: Array<{ id: string; runIds: string[] }> };
+    };
+  }
+
+  it('refuses board changes before onboarding is finished', async () => {
+    const { service } = setup();
+
+    const marked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const added = await service.addCampaignChannel({ channel: 'ecommerce' });
+
+    expect(marked).toMatchObject({ ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' });
+    expect(added.ok).toBe(false);
+  });
+
+  it('adds a marketplace channel and records the owner evidence that survives a reload', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+
+    const added = await service.addCampaignChannel({ channel: 'ecommerce' });
+    const marked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: ' shopee.vn/serum ' });
+
+    expect(added.ok).toBe(true);
+    expect(added.snapshot?.campaignMap?.extraChannels).toContain('ecommerce');
+    expect(marked.ok).toBe(true);
+    const stored = (await service.getSnapshot()).campaignMap?.cells.find((c) => c.id === 'tpl:p4_purchase:ecommerce');
+    expect(stored?.manualCompletion?.evidence).toBe('shopee.vn/serum');
+  });
+
+  it('keeps agent-run cells, missing evidence and duplicate channels out of manual control', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+
+    const agentCell = await service.markCampaignCell({ cellId: 'tpl:p0_foundation:facebook_fanpage', evidence: 'đã đăng bài' });
+    const hiddenCell = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const duplicate = await service.addCampaignChannel({ channel: 'facebook_fanpage' });
+    const unknown = await service.addCampaignChannel({ channel: 'myspace' as never });
+
+    expect(agentCell.ok).toBe(false);
+    expect(hiddenCell.ok).toBe(false);
+    expect(duplicate).toMatchObject({ ok: false, error: 'Kênh này đã có trên bảng kế hoạch.' });
+    expect(unknown).toMatchObject({ ok: false, error: 'Kênh không hợp lệ.' });
+    expect((await service.getSnapshot()).campaignMap?.extraChannels ?? []).toEqual([]);
+  });
+
+  it.each(['reviewer', 'viewer'] as const)('refuses board changes from a %s', async (role) => {
+    const { service, db } = setup();
+    await completeOnboarding(service);
+    db.updateOnlyRecord({ role });
+
+    const marked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const added = await service.addCampaignChannel({ channel: 'ecommerce' });
+
+    expect(marked).toMatchObject({ ok: false, error: 'Vai trò hiện tại không có quyền cập nhật kế hoạch.' });
+    expect(added).toMatchObject({ ok: false, error: 'Vai trò hiện tại không có quyền cập nhật kế hoạch.' });
+    expect(storedRecord(db).campaignMap).toBeUndefined();
+  });
+
+  it('explains why a manual mark was refused', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+    await service.addCampaignChannel({ channel: 'ecommerce' });
+
+    const short = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: ' ok ' });
+    const missing = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:myspace', evidence: 'shopee.vn/serum' });
+    const agentCell = await service.markCampaignCell({ cellId: 'tpl:p0_foundation:facebook_fanpage', evidence: 'đã đăng bài' });
+
+    expect(short).toMatchObject({ ok: false, error: 'Bằng chứng cần 3–500 ký tự.' });
+    expect(missing).toMatchObject({ ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' });
+    expect(agentCell).toMatchObject({
+      ok: false,
+      error: 'Việc trên kênh này hoàn thành qua phiên chạy của agent, không đánh dấu tay.',
+    });
+  });
+
+  it('adds a channel picked at onboarding after the board was first saved', async () => {
+    const { service, db } = setup();
+    await completeOnboarding(service);
+    await service.addCampaignChannel({ channel: 'ecommerce' });
+    const { onboarding: profile } = storedRecord(db);
+    db.updateOnlyRecord({ onboarding: { ...profile, channels: [...profile.channels, 'tiktok'] } });
+
+    const added = await service.addCampaignChannel({ channel: 'tiktok' });
+
+    expect(added.ok).toBe(true);
+    expect(added.snapshot?.campaignMap?.cells.some((cell) => cell.channel === 'tiktok')).toBe(true);
+  });
+
+  it('keeps a corrupt saved board untouched and refuses to write over it', async () => {
+    const director = vi.fn(async () => ({ reply: modelDraftReply(), execution: modelExecution() }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+    const corrupt = { version: 'broken', cells: 'nope' };
+    context.db.updateOnlyRecord({ campaignMap: corrupt });
+
+    const snapshot = await context.service.getSnapshot();
+    const marked = await context.service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+    const added = await context.service.addCampaignChannel({ channel: 'ecommerce' });
+    const asked = await context.service.askDirector({
+      goal: 'Create one evidence-led Facebook draft for the next seven days',
+      channels: ['facebook'],
+    });
+
+    expect(snapshot.onboarding?.completed).toBe(true);
+    expect(snapshot.campaignMap).toBeUndefined();
+    expect(marked).toMatchObject({ ok: false, error: 'Bảng kế hoạch đang lỗi dữ liệu nên chưa thể cập nhật.' });
+    expect(added).toMatchObject({ ok: false, error: 'Bảng kế hoạch đang lỗi dữ liệu nên chưa thể cập nhật.' });
+    expect(asked.ok).toBe(true);
+    expect(asked.snapshot?.campaignMap).toBeUndefined();
+    expect(storedRecord(context.db).campaignMap).toEqual(corrupt);
+  });
+
+  it('marks a cell done when storage drops the completed session it points to', async () => {
+    const { service, db } = setup();
+    await completeOnboarding(service);
+    await service.addCampaignChannel({ channel: 'ecommerce' });
+    const first = await service.createGoal({ goal: 'Generate qualified leads this month' });
+    expect(first.ok).toBe(true);
+    const stored = storedRecord(db);
+    const [template] = stored.runs;
+    const cellId = stored.campaignMap.cells[0].id;
+    const fillers = Array.from({ length: 19 }, (_, index) => ({ ...template, id: `run-fill-${index}` }));
+    db.updateOnlyRecord({
+      runs: [...fillers, { ...template, id: 'run-old', status: 'completed' }],
+      campaignMap: {
+        ...stored.campaignMap,
+        cells: stored.campaignMap.cells.map((cell) => (cell.id === cellId ? { ...cell, runIds: ['run-old'] } : cell)),
+      },
+    });
+
+    const result = await service.createGoal({ goal: 'Generate more qualified leads next month' });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs.map((run) => run.id)).not.toContain('run-old');
+    const cell = result.snapshot?.campaignMap?.cells.find((candidate) => candidate.id === cellId);
+    expect(cell?.archivedCompletedAt).toEqual(expect.any(String));
   });
 });

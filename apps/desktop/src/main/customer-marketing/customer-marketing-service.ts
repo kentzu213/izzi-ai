@@ -213,6 +213,27 @@ import {
   selectCustomerMarketingKnowledgeSkill,
   type CustomerMarketingKnowledgeSkill,
 } from './customer-marketing-knowledge-skills';
+import {
+  CAMPAIGN_PHASES,
+  CAMPAIGN_TAGS,
+  addCampaignChannel as addChannelToCampaignMap,
+  archiveCompletedCampaignRuns,
+  attachRunToCampaignMap,
+  campaignChannelsForCustomerChannels,
+  campaignTemplateCells,
+  fallbackCampaignSuggestions,
+  isManualCampaignChannel,
+  markCampaignCellDone,
+  normalizeCampaignMap,
+  parseCampaignCellSuggestions,
+  parseCampaignEvidence,
+  visibleCampaignChannels,
+  type CampaignAddChannelInput,
+  type CampaignCellDoneInput,
+  type CampaignCellSuggestion,
+  type CampaignChannel,
+  type CampaignMap,
+} from '../../shared/customer-marketing-campaign-map';
 
 export interface CustomerIdentity {
   id: string;
@@ -264,6 +285,9 @@ interface CustomerTenantRecord {
   mediaArtifacts: CustomerMediaArtifact[];
   remoteWorkflowAttempt: CustomerRemoteWorkflowAttempt | null;
   usedCredits: number;
+  campaignMap?: CampaignMap;
+  // A stored map that no longer parses: kept verbatim so a write never erases it.
+  invalidCampaignMap?: unknown;
   updatedAt: string;
 }
 
@@ -1235,10 +1259,12 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
     && keys.every((key, index) => key === [...expected].sort()[index]);
 }
 
+// Schema v2 adds campaign board cells; v1 drafts stay accepted and plan no cells.
 function parseCustomerMarketingModelDraft(
   value: string,
   allowedChannels: readonly CustomerChannel[],
-): CustomerMarketingModelDraft | null {
+  allowedCampaignChannels: CampaignChannel[],
+): { draft: CustomerMarketingModelDraft; cells: CampaignCellSuggestion[] } | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value) as unknown;
@@ -1247,7 +1273,11 @@ function parseCustomerMarketingModelDraft(
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const root = parsed as Record<string, unknown>;
-  if (!hasExactKeys(root, ['schemaVersion', 'strategySummary', 'contentDraft', 'approvalNote'])) {
+  const { cells: rawCells, ...draftRoot } = root;
+  const isV2 = root.schemaVersion === 2;
+  const cells = isV2 ? parseCampaignCellSuggestions(rawCells, allowedCampaignChannels) : [];
+  if (!cells) return null;
+  if (!hasExactKeys(isV2 ? draftRoot : root, ['schemaVersion', 'strategySummary', 'contentDraft', 'approvalNote'])) {
     return null;
   }
   if (!root.contentDraft || typeof root.contentDraft !== 'object' || Array.isArray(root.contentDraft)) {
@@ -1263,7 +1293,7 @@ function parseCustomerMarketingModelDraft(
   const callToAction = boundedModelText(contentDraft.callToAction, 2, 500);
   const approvalNote = boundedModelText(root.approvalNote, 8, 1_000);
   if (
-    root.schemaVersion !== 1
+    (root.schemaVersion !== 1 && !isV2)
     || typeof channel !== 'string'
     || !CHANNELS.includes(channel as CustomerChannel)
     || !allowedChannels.includes(channel as CustomerChannel)
@@ -1275,16 +1305,19 @@ function parseCustomerMarketingModelDraft(
     || !approvalNote
   ) return null;
   return {
-    schemaVersion: 1,
-    strategySummary,
-    contentDraft: {
-      channel: channel as CustomerChannel,
-      locale,
-      title,
-      body,
-      callToAction,
+    draft: {
+      schemaVersion: 1,
+      strategySummary,
+      contentDraft: {
+        channel: channel as CustomerChannel,
+        locale,
+        title,
+        body,
+        callToAction,
+      },
+      approvalNote,
     },
-    approvalNote,
+    cells,
   };
 }
 
@@ -4356,11 +4389,16 @@ export class CustomerMarketingService {
       status: 'pending',
       requestedAt: approvalEvidence.requestedAt,
     };
+    const allRuns = [run, ...record.runs];
     const next = {
       ...record,
-      runs: [run, ...record.runs].slice(0, 20),
+      runs: allRuns.slice(0, 20),
       approvals: [approval, ...record.approvals].slice(0, 40),
       remoteWorkflowAttempt: remoteWorkflow ? null : record.remoteWorkflowAttempt,
+      // A pruned completed run must not turn its cells back to "todo".
+      ...(record.campaignMap
+        ? { campaignMap: archiveCompletedCampaignRuns(record.campaignMap, allRuns.slice(20), now) }
+        : {}),
       updatedAt: now,
     };
     this.writeRecord(identity, next);
@@ -4544,6 +4582,7 @@ export class CustomerMarketingService {
       [run.goal, ...channels].join(' '),
     );
     const modelDraftEnabled = this.modelDraftExecutionEnabled;
+    const campaignChannels = visibleCampaignChannels(channels, [], record.campaignMap?.extraChannels ?? []);
     const prompt = [
       ...productMarketingContextPrompt(productMarketingContext),
       'Mục tiêu của khách hàng: ' + run.goal,
@@ -4571,8 +4610,12 @@ export class CustomerMarketingService {
         'Fail-closed: không được tự ý publish, chi tiền, gửi email hàng loạt, xóa dữ liệu hoặc đổi integration.',
         ...(modelDraftEnabled
           ? [
-              'Trả về JSON thuần theo đúng schema: {"schemaVersion":1,"strategySummary":"...","contentDraft":{"channel":"...","locale":"vi|en","title":"...","body":"...","callToAction":"..."},"approvalNote":"..."}.',
+              'Trả về JSON thuần theo đúng schema: {"schemaVersion":2,"strategySummary":"...","contentDraft":{"channel":"...","locale":"vi|en","title":"...","body":"...","callToAction":"..."},"approvalNote":"...","cells":[{"phase":"...","channel":"...","tactic":"...","tags":["..."]}]}.',
               'Chỉ tạo đúng một contentDraft. channel phải thuộc danh sách kênh ưu tiên. Không thêm markdown, code fence, URL bí mật hay chỉ dẫn hành động bên ngoài.',
+              'cells là 1-12 đầu việc trên bảng kế hoạch chiến dịch mà kế hoạch này sẽ thực hiện. phase thuộc: ' + CAMPAIGN_PHASES.join(', ')
+                + '. channel thuộc: ' + campaignChannels.join(', ')
+                + '. tags gồm ít nhất một giá trị thuộc: ' + CAMPAIGN_TAGS.join(', ')
+                + '. tactic là một câu ngắn (tối đa 160 ký tự) mô tả việc cần làm.',
             ]
           : [
               'Tách chiến lược thành các bước, nêu agent role phù hợp, dependency, credit estimate và approval gate.',
@@ -4613,8 +4656,11 @@ export class CustomerMarketingService {
     let workflowFailureStage = 'workflow_persistence_error';
     let approvalReply = director.reply;
     let modelDraftEvidence: CustomerMarketingModelDraftEvidence | undefined;
+    let campaignCells: CampaignCellSuggestion[] = [];
     if (modelDraftEnabled && director.reply) {
-      const modelDraft = parseCustomerMarketingModelDraft(director.reply, channels);
+      const parsedDraft = parseCustomerMarketingModelDraft(director.reply, channels, campaignChannels);
+      const modelDraft = parsedDraft?.draft;
+      campaignCells = parsedDraft?.cells ?? [];
       if (!modelDraft) {
         workflowFailureStage = 'model_output_invalid';
         workflowPersistenceError = 'AI Marketing Director chưa trả về content draft đúng cấu trúc; workflow đã được chặn an toàn.';
@@ -4697,6 +4743,17 @@ export class CustomerMarketingService {
       }
     }
     const directorSucceeded = Boolean(approvalReply) && !workflowPersistenceError;
+    const campaignSeed = visibleCampaignChannels(latest.onboarding?.channels ?? [], []);
+    // A draft without planned cells still lands on the board: the next open cell of each run channel.
+    const linkedCells = campaignCells.length > 0
+      ? campaignCells
+      : fallbackCampaignSuggestions(
+        latest.campaignMap,
+        campaignSeed,
+        campaignChannelsForCustomerChannels(channels),
+        latest.runs,
+        updatedAt,
+      );
     const publicError = workflowPersistenceError
       || (director.error ? this.publicDirectorError(director.error) : undefined);
     const updatedRun: CustomerRun = {
@@ -4731,6 +4788,17 @@ export class CustomerMarketingService {
         : approvalReply
           ? latest.usedCredits + 1
           : latest.usedCredits,
+      ...(directorSucceeded && linkedCells.length > 0 && latest.invalidCampaignMap === undefined
+        ? {
+          campaignMap: attachRunToCampaignMap(
+            latest.campaignMap,
+            campaignSeed,
+            linkedCells,
+            run.id,
+            updatedAt,
+          ),
+        }
+        : {}),
       updatedAt,
     };
     this.writeRecord(identity, next);
@@ -4740,6 +4808,63 @@ export class CustomerMarketingService {
       snapshot: await this.snapshot(identity, next),
       error: publicError,
     };
+  }
+
+  // Offline and marketplace work happens outside the app, so the customer
+  // records it here with a short proof; agent channels only finish via runs.
+  async markCampaignCell(input: CampaignCellDoneInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    const blocked = this.campaignMapWriteBlocker(record);
+    if (blocked) return { ok: false, error: blocked };
+    const updatedAt = new Date().toISOString();
+    const seed = visibleCampaignChannels(record.onboarding!.channels, [], record.campaignMap?.extraChannels ?? []);
+    if (!parseCampaignEvidence(input.evidence)) {
+      return { ok: false, error: 'Bằng chứng cần 3–500 ký tự.' };
+    }
+    const target = (record.campaignMap?.cells ?? campaignTemplateCells(seed, updatedAt))
+      .find((cell) => cell.id === input.cellId);
+    if (!target) {
+      return { ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' };
+    }
+    if (!isManualCampaignChannel(target.channel)) {
+      return { ok: false, error: 'Việc trên kênh này hoàn thành qua phiên chạy của agent, không đánh dấu tay.' };
+    }
+    const campaignMap = markCampaignCellDone(record.campaignMap, seed, input.cellId, input.evidence, updatedAt);
+    if (!campaignMap) {
+      return { ok: false, error: 'Không thể đánh dấu việc này.' };
+    }
+    const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
+    this.writeRecord(identity, next);
+    return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  async addCampaignChannel(input: CampaignAddChannelInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    const blocked = this.campaignMapWriteBlocker(record);
+    if (blocked) return { ok: false, error: blocked };
+    const updatedAt = new Date().toISOString();
+    const seed = visibleCampaignChannels(record.onboarding!.channels, [], record.campaignMap?.extraChannels ?? []);
+    // A row can be visible with no cells yet (worked on, or always shown); only a row with cells is "already there".
+    const cells = record.campaignMap?.cells ?? campaignTemplateCells(seed, updatedAt);
+    if (cells.some((cell) => cell.channel === input.channel)) {
+      return { ok: false, error: 'Kênh này đã có trên bảng kế hoạch.' };
+    }
+    const campaignMap = addChannelToCampaignMap(record.campaignMap, seed, input.channel, updatedAt);
+    if (!campaignMap) {
+      return { ok: false, error: 'Kênh không hợp lệ.' };
+    }
+    const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
+    this.writeRecord(identity, next);
+    return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  private campaignMapWriteBlocker(record: CustomerTenantRecord): string | null {
+    if (!record.onboarding?.completed) return 'Hoàn thành onboarding trước khi cập nhật kế hoạch.';
+    if (!MARKETING_AUTHOR_ROLES.has(record.role)) return 'Vai trò hiện tại không có quyền cập nhật kế hoạch.';
+    if (record.invalidCampaignMap !== undefined) return 'Bảng kế hoạch đang lỗi dữ liệu nên chưa thể cập nhật.';
+    return null;
   }
 
   async importMediaProject(sourcePath: string): Promise<CustomerMutationResult> {
@@ -5600,11 +5725,16 @@ export class CustomerMarketingService {
     if (!changed) return record;
     recoveredRuns.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     recoveredApprovals.sort((left, right) => right.requestedAt.localeCompare(left.requestedAt));
+    const updatedAt = new Date().toISOString();
+    const allRuns = [...recoveredRuns, ...runs];
     return {
       ...record,
-      runs: [...recoveredRuns, ...runs].slice(0, 20),
+      runs: allRuns.slice(0, 20),
       approvals: [...recoveredApprovals, ...approvals].slice(0, 60),
-      updatedAt: new Date().toISOString(),
+      ...(record.campaignMap
+        ? { campaignMap: archiveCompletedCampaignRuns(record.campaignMap, allRuns.slice(20), updatedAt) }
+        : {}),
+      updatedAt,
     };
   }
 
@@ -5650,6 +5780,7 @@ export class CustomerMarketingService {
     }
     try {
       const parsed = JSON.parse(raw) as Partial<CustomerTenantRecord>;
+      const campaignMap = normalizeCampaignMap(parsed.campaignMap);
       return {
         version: 1,
         workspaceId: typeof parsed.workspaceId === 'string' ? parsed.workspaceId : 'customer-' + tenantHash(identity.id).slice(0, 12),
@@ -5671,6 +5802,8 @@ export class CustomerMarketingService {
         mediaArtifacts: Array.isArray(parsed.mediaArtifacts) ? parsed.mediaArtifacts as CustomerMediaArtifact[] : [],
         remoteWorkflowAttempt: restoreRemoteWorkflowAttempt(parsed.remoteWorkflowAttempt),
         usedCredits: typeof parsed.usedCredits === 'number' && Number.isFinite(parsed.usedCredits) ? parsed.usedCredits : 0,
+        ...(campaignMap ? { campaignMap } : {}),
+        ...(!campaignMap && parsed.campaignMap != null ? { invalidCampaignMap: parsed.campaignMap } : {}),
         updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       };
     } catch {
@@ -5680,7 +5813,11 @@ export class CustomerMarketingService {
   }
 
   private writeRecord(identity: CustomerIdentity, record: CustomerTenantRecord): void {
-    this.db.setSetting(this.recordKey(identity), JSON.stringify(record));
+    const { invalidCampaignMap, ...stored } = record;
+    const persisted = invalidCampaignMap !== undefined && !stored.campaignMap
+      ? { ...stored, campaignMap: invalidCampaignMap }
+      : stored;
+    this.db.setSetting(this.recordKey(identity), JSON.stringify(persisted));
   }
 
   private async snapshot(
@@ -5844,6 +5981,7 @@ export class CustomerMarketingService {
       capabilities,
       runs: record.runs,
       approvals: record.approvals,
+      ...(record.campaignMap ? { campaignMap: record.campaignMap } : {}),
       media: {
         toolchain,
         jobs: mediaJobs,

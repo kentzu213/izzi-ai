@@ -15,8 +15,22 @@ import {
   OAUTH_POPUP_TIMEOUT_ERROR,
   OAUTH_POPUP_TIMEOUT_MS,
   chromeLikeUserAgent,
+  isAllowedOAuthPopupUrl,
   oauthLoadFailureMessage,
+  readOAuthCallback,
 } from './oauth-popup-guards';
+
+/** Hosts an OAuth-initiated child window may load inside the popup. */
+const OAUTH_POPUP_HOSTS = [
+  'google.com',
+  ...[SUPABASE_URL, IZZI_WEB_BASE].flatMap((base) => {
+    try {
+      return [new URL(base).hostname];
+    } catch {
+      return [];
+    }
+  }),
+];
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
@@ -333,6 +347,7 @@ export class AuthManager {
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
+          partition: 'persist:oauth-google',
         },
       });
 
@@ -353,7 +368,9 @@ export class AuthManager {
 
       // Keep any OAuth-initiated popup inside this window instead of a blank child.
       popup.webContents.setWindowOpenHandler(({ url }) => {
-        popup.loadURL(url).catch(() => { /* reported via did-fail-load */ });
+        if (isAllowedOAuthPopupUrl(url, OAUTH_POPUP_HOSTS)) {
+          popup.loadURL(url).catch(() => { /* reported via did-fail-load */ });
+        }
         return { action: 'deny' };
       });
 
@@ -396,44 +413,25 @@ export class AuthManager {
   }
 
   /**
-   * Try to extract OAuth tokens from a URL (hash fragment or query params)
+   * Finish the popup once it reaches the izzi callback URL with tokens or an error.
+   * Tokens on any other page are ignored.
    */
   private async tryExtractOAuthTokens(
     url: string,
     finish: (result: { success: boolean; user?: User; error?: string }) => void,
   ) {
-    try {
-      const parsed = new URL(url);
-
-      // Supabase puts tokens in the hash fragment: #access_token=...&refresh_token=...
-      let accessToken: string | null = null;
-      let refreshToken: string | null = null;
-
-      // Check hash fragment first (most common for Supabase OAuth)
-      if (parsed.hash && parsed.hash.length > 1) {
-        const hashParams = new URLSearchParams(parsed.hash.substring(1));
-        accessToken = hashParams.get('access_token');
-        refreshToken = hashParams.get('refresh_token');
-      }
-
-      // Fallback: check query params
-      if (!accessToken) {
-        accessToken = parsed.searchParams.get('access_token');
-        refreshToken = parsed.searchParams.get('refresh_token');
-      }
-
-      if (accessToken && refreshToken) {
-        console.log('[Auth] Got OAuth tokens from URL');
-        const result = await this.setSessionFromTokens(accessToken, refreshToken);
-        finish(result);
-      }
-      // If no tokens were found, let navigation continue (user is still in OAuth flow).
-      // Do NOT call exchangeCodeForSession here: this popup flow intentionally uses
-      // implicit tokens, and exchanging a stray PKCE code without a verifier produces
-      // "both auth code and code verifier should be non-empty".
-    } catch {
-      // URL parse errors are expected for non-callback URLs — ignore them
+    const outcome = readOAuthCallback(url, IZZI_WEB_BASE);
+    // No outcome yet: let navigation continue (user is still in the OAuth flow).
+    // Do NOT call exchangeCodeForSession here: this popup flow intentionally uses
+    // implicit tokens, and exchanging a stray PKCE code without a verifier produces
+    // "both auth code and code verifier should be non-empty".
+    if (!outcome) return;
+    if (outcome.kind === 'error') {
+      finish({ success: false, error: outcome.message });
+      return;
     }
+    console.log('[Auth] Got OAuth tokens from the callback URL');
+    finish(await this.setSessionFromTokens(outcome.accessToken, outcome.refreshToken));
   }
 
   /**

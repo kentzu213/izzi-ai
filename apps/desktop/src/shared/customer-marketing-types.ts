@@ -3,6 +3,7 @@ import type {
   CustomerProductMarketingContextSaveInput,
   CustomerProductMarketingContextV1,
 } from './customer-marketing-product-context';
+import type { CampaignMap } from './customer-marketing-campaign-map';
 
 export type {
   CustomerProductMarketingContextRef,
@@ -383,6 +384,7 @@ export interface CustomerMarketingSnapshot {
   capabilities: CustomerCapability[];
   runs: CustomerRun[];
   approvals: CustomerApproval[];
+  campaignMap?: CampaignMap;
   media: CustomerMediaWorkspace;
   nextActions: string[];
   externalActionsAllowed: boolean;

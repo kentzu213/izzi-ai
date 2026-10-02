@@ -4,8 +4,12 @@ import { describe, expect, it } from 'vitest';
 import {
   OAUTH_POPUP_TIMEOUT_MS,
   chromeLikeUserAgent,
+  isAllowedOAuthPopupUrl,
   oauthLoadFailureMessage,
+  readOAuthCallback,
 } from './oauth-popup-guards';
+
+const WEB_BASE = 'https://izziapi.com';
 
 describe('chromeLikeUserAgent', () => {
   it('strips the Electron and app product tokens so Google sees a plain Chrome UA', () => {
@@ -55,6 +59,65 @@ describe('oauthLoadFailureMessage', () => {
   });
 });
 
+describe('readOAuthCallback', () => {
+  it('accepts tokens from the hash of the izzi callback URL', () => {
+    const url = `${WEB_BASE}/auth/callback#access_token=a1&refresh_token=r1&token_type=bearer`;
+
+    expect(readOAuthCallback(url, WEB_BASE)).toEqual({ kind: 'tokens', accessToken: 'a1', refreshToken: 'r1' });
+  });
+
+  it('accepts tokens from the query and from the www host with a trailing slash', () => {
+    const url = 'https://www.izziapi.com/auth/callback/?access_token=a2&refresh_token=r2';
+
+    expect(readOAuthCallback(url, WEB_BASE)).toEqual({ kind: 'tokens', accessToken: 'a2', refreshToken: 'r2' });
+  });
+
+  it('ignores tokens on a foreign origin, another path or plain http', () => {
+    const tokens = '#access_token=a&refresh_token=r';
+
+    expect(readOAuthCallback(`https://evil.example/auth/callback${tokens}`, WEB_BASE)).toBeNull();
+    expect(readOAuthCallback(`https://izziapi.com.evil.example/auth/callback${tokens}`, WEB_BASE)).toBeNull();
+    expect(readOAuthCallback(`${WEB_BASE}/other${tokens}`, WEB_BASE)).toBeNull();
+    expect(readOAuthCallback(`http://izziapi.com/auth/callback${tokens}`, WEB_BASE)).toBeNull();
+  });
+
+  it('returns null on the callback URL while tokens are still missing', () => {
+    expect(readOAuthCallback(`${WEB_BASE}/auth/callback#access_token=only`, WEB_BASE)).toBeNull();
+    expect(readOAuthCallback('not a url', WEB_BASE)).toBeNull();
+  });
+
+  it('turns an OAuth error on the callback into a terminal error', () => {
+    const url = `${WEB_BASE}/auth/callback?error=access_denied&error_description=User+cancelled`;
+
+    expect(readOAuthCallback(url, WEB_BASE)).toEqual({
+      kind: 'error',
+      message: 'Google từ chối đăng nhập (User cancelled)',
+    });
+    expect(readOAuthCallback(`${WEB_BASE}/auth/callback#error=server_error`, WEB_BASE)).toEqual({
+      kind: 'error',
+      message: 'Google từ chối đăng nhập (server_error)',
+    });
+  });
+});
+
+describe('isAllowedOAuthPopupUrl', () => {
+  const hosts = ['google.com', 'qdtfaebdgyyujygxnvqi.supabase.co', 'izziapi.com'];
+
+  it('allows https URLs on an allowed host or its subdomain', () => {
+    expect(isAllowedOAuthPopupUrl('https://accounts.google.com/o/oauth2/v2/auth', hosts)).toBe(true);
+    expect(isAllowedOAuthPopupUrl('https://qdtfaebdgyyujygxnvqi.supabase.co/auth/v1/callback', hosts)).toBe(true);
+    expect(isAllowedOAuthPopupUrl('https://izziapi.com/auth/callback', hosts)).toBe(true);
+  });
+
+  it('denies http, unknown hosts, look-alike hosts and non-URLs', () => {
+    expect(isAllowedOAuthPopupUrl('http://accounts.google.com/', hosts)).toBe(false);
+    expect(isAllowedOAuthPopupUrl('https://evil.example/', hosts)).toBe(false);
+    expect(isAllowedOAuthPopupUrl('https://notgoogle.com/', hosts)).toBe(false);
+    expect(isAllowedOAuthPopupUrl('javascript:alert(1)', hosts)).toBe(false);
+    expect(isAllowedOAuthPopupUrl('garbage', hosts)).toBe(false);
+  });
+});
+
 describe('AuthManager OAuth popup wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'auth-manager.ts'), 'utf8');
 
@@ -71,5 +134,11 @@ describe('AuthManager OAuth popup wiring', () => {
     expect(source).toMatch(/setUserAgent\(chromeLikeUserAgent\(/);
     expect(source).toMatch(/setWindowOpenHandler/);
     expect(source).toMatch(/'did-navigate-in-page'/);
+  });
+
+  it('only trusts the izzi callback URL and allow-listed popup hosts', () => {
+    expect(source).toMatch(/readOAuthCallback\(url, IZZI_WEB_BASE\)/);
+    expect(source).toMatch(/isAllowedOAuthPopupUrl\(url, OAUTH_POPUP_HOSTS\)/);
+    expect(source).toMatch(/partition: 'persist:oauth-google'/);
   });
 });
