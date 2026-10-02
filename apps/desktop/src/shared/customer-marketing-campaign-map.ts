@@ -98,7 +98,8 @@ export const CAMPAIGN_CHANNEL_INFO: Record<CampaignChannel, { label: string; gro
   x: { label: 'X', group: 'other' },
 };
 
-export type CampaignTag = 'paid' | 'owned' | 'earned' | 'organic' | 'data';
+export const CAMPAIGN_TAGS = ['paid', 'owned', 'earned', 'organic', 'data'] as const;
+export type CampaignTag = (typeof CAMPAIGN_TAGS)[number];
 
 // Onboarding channels stay on the CustomerChannel enum (the remote seven-day API depends on it);
 // the board only maps them onto framework rows.
@@ -298,4 +299,119 @@ export function resolveCampaignBoard(
   const channels = visibleCampaignChannels(onboardingChannels, storedCells ?? []);
   const cells = storedCells ?? campaignTemplateCells(channels, now);
   return { channels, cells, progress: summarizeCampaignPhases(cells, runs, channels) };
+}
+
+export interface CampaignMap {
+  cells: CampaignCell[];
+  updatedAt: string;
+}
+
+const MAX_SUGGESTIONS_PER_RUN = 12;
+const MIN_TACTIC_LENGTH = 3;
+const MAX_TACTIC_LENGTH = 160;
+const SUGGESTION_KEYS = ['channel', 'phase', 'tactic', 'tags'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCampaignPhase(value: unknown): value is CampaignPhase {
+  return (CAMPAIGN_PHASES as readonly unknown[]).includes(value);
+}
+
+function isCampaignChannel(value: unknown): value is CampaignChannel {
+  return (CAMPAIGN_CHANNELS as readonly unknown[]).includes(value);
+}
+
+function parseTags(value: unknown): CampaignTag[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  if (!value.every((tag) => (CAMPAIGN_TAGS as readonly unknown[]).includes(tag))) return null;
+  return new Set(value).size === value.length ? (value as CampaignTag[]) : null;
+}
+
+function parseTactic(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const tactic = value.trim();
+  return tactic.length >= MIN_TACTIC_LENGTH && tactic.length <= MAX_TACTIC_LENGTH ? tactic : null;
+}
+
+// Fail-closed: one cell outside the framework or the allowed channels rejects the whole list,
+// so a confused model can never write partial junk onto the board.
+export function parseCampaignCellSuggestions(
+  value: unknown,
+  allowedChannels: CampaignChannel[],
+): CampaignCellSuggestion[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_SUGGESTIONS_PER_RUN) return null;
+  const allowed = new Set(allowedChannels);
+  const suggestions: CampaignCellSuggestion[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || Object.keys(item).sort().join() !== SUGGESTION_KEYS.join()) return null;
+    if (!isCampaignPhase(item.phase) || !isCampaignChannel(item.channel) || !allowed.has(item.channel)) return null;
+    const tactic = parseTactic(item.tactic);
+    const tags = parseTags(item.tags);
+    if (!tactic || !tags) return null;
+    suggestions.push({ phase: item.phase, channel: item.channel, tactic, tags: [...tags] });
+  }
+  return suggestions;
+}
+
+function normalizeManualCompletion(value: unknown): CampaignCell['manualCompletion'] | undefined {
+  if (!isRecord(value) || typeof value.completedAt !== 'string' || typeof value.evidence !== 'string') return undefined;
+  return { completedAt: value.completedAt, evidence: value.evidence };
+}
+
+function normalizeCampaignCell(value: unknown): CampaignCell | null {
+  if (!isRecord(value)) return null;
+  const { id, phase, channel, tactic, runIds, updatedAt } = value;
+  const tags = parseTags(value.tags);
+  if (typeof id !== 'string' || !id || !isCampaignPhase(phase) || !isCampaignChannel(channel)) return null;
+  if (typeof tactic !== 'string' || !tactic.trim() || !tags || typeof updatedAt !== 'string') return null;
+  if (!Array.isArray(runIds) || !runIds.every((runId) => typeof runId === 'string')) return null;
+  const manualCompletion = normalizeManualCompletion(value.manualCompletion);
+  return {
+    id,
+    phase,
+    channel,
+    tactic,
+    tags: [...tags],
+    runIds: [...runIds],
+    ...(manualCompletion ? { manualCompletion } : {}),
+    updatedAt,
+  };
+}
+
+// Stored maps come from disk: drop what no longer parses instead of failing the whole record.
+export function normalizeCampaignMap(value: unknown): CampaignMap | undefined {
+  if (!isRecord(value) || !Array.isArray(value.cells) || typeof value.updatedAt !== 'string') return undefined;
+  const cells = value.cells
+    .map(normalizeCampaignCell)
+    .filter((cell): cell is CampaignCell => cell !== null);
+  return { cells, updatedAt: value.updatedAt };
+}
+
+function sameWork(cell: CampaignCellSuggestion, suggestion: CampaignCellSuggestion): boolean {
+  const key = (tactic: string) => tactic.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+  return cell.phase === suggestion.phase && cell.channel === suggestion.channel && key(cell.tactic) === key(suggestion.tactic);
+}
+
+// Links a director session to the cells it planned. The first session seeds the template so the
+// board keeps its starter work; a suggestion matching an existing cell reuses it.
+export function attachRunToCampaignMap(
+  map: CampaignMap | undefined,
+  seedChannels: CampaignChannel[],
+  suggestions: CampaignCellSuggestion[],
+  runId: string,
+  now: string,
+): CampaignMap {
+  let cells = map ? map.cells : campaignTemplateCells(seedChannels, now);
+  suggestions.forEach((suggestion, index) => {
+    const match = cells.find((cell) => sameWork(cell, suggestion));
+    if (!match) {
+      cells = [...cells, { ...suggestion, tags: [...suggestion.tags], id: `run:${runId}:${index}`, runIds: [runId], updatedAt: now }];
+      return;
+    }
+    if (match.runIds.includes(runId)) return;
+    cells = cells.map((cell) => (cell === match ? { ...cell, runIds: [...cell.runIds, runId], updatedAt: now } : cell));
+  });
+  return { cells, updatedAt: now };
 }

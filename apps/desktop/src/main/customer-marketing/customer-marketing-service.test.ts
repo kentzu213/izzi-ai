@@ -2365,6 +2365,83 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.approvals[0].status).toBe('pending');
   });
 
+  it('links each planned campaign cell to the director run and its approval', async () => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply({
+        schemaVersion: 2,
+        cells: [
+          { phase: 'p2_consideration', channel: 'facebook_fanpage', tactic: 'Bài so sánh trước/sau', tags: ['organic'] },
+          { phase: 'p1_awareness', channel: 'seo', tactic: 'Bài pillar về workflow AI', tags: ['owned', 'organic'] },
+        ],
+      }),
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Plan the first awareness and consideration work for seven days',
+      channels: ['facebook', 'seo'],
+    });
+
+    expect(result.ok).toBe(true);
+    const runId = result.snapshot!.runs[0].id;
+    expect(result.snapshot?.approvals[0].runId).toBe(runId);
+    const cells = result.snapshot?.campaignMap?.cells ?? [];
+    expect(cells.filter((cell) => cell.runIds.includes(runId))).toEqual([
+      expect.objectContaining({ phase: 'p2_consideration', channel: 'facebook_fanpage', tactic: 'Bài so sánh trước/sau' }),
+      expect.objectContaining({ phase: 'p1_awareness', channel: 'seo', tactic: 'Bài pillar về workflow AI' }),
+    ]);
+    expect(cells.map((cell) => cell.id)).toContain('tpl:p0_foundation:facebook_fanpage');
+    expect(cells.some((cell) => cell.channel === 'tiktok')).toBe(false);
+    expect(director.mock.calls[0][0].systemPrompt).toContain('"schemaVersion":2');
+
+    const reread = await context.service.getSnapshot();
+    expect(reread.campaignMap?.cells).toEqual(cells);
+  });
+
+  it.each([
+    ['an unknown phase', { phase: 'p9_viral', channel: 'facebook_fanpage', tactic: 'Bài viral', tags: ['organic'] }],
+    ['a channel outside onboarding', { phase: 'p1_awareness', channel: 'tiktok', tactic: 'Video ngắn', tags: ['organic'] }],
+  ])('blocks director output with %s and saves no campaign cells', async (_label, badCell) => {
+    const director = vi.fn(async () => ({
+      reply: modelDraftReply({
+        schemaVersion: 2,
+        cells: [
+          { phase: 'p1_awareness', channel: 'seo', tactic: 'Bài pillar về workflow AI', tags: ['owned'] },
+          badCell,
+        ],
+      }),
+      execution: modelExecution(),
+    }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Plan the first awareness work for the next seven days',
+      channels: ['facebook', 'seo'],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.snapshot?.runs[0]).toMatchObject({ status: 'blocked', stage: 'model_output_invalid' });
+    expect(result.snapshot?.campaignMap).toBeUndefined();
+    expect((await context.service.getSnapshot()).campaignMap).toBeUndefined();
+  });
+
+  it('keeps accepting a schema v1 draft without touching the campaign map', async () => {
+    const director = vi.fn(async () => ({ reply: modelDraftReply(), execution: modelExecution() }));
+    const context = setupDirector(director, { modelDraftExecutionEnabled: true });
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create one evidence-led Facebook draft for the next seven days',
+      channels: ['facebook'],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.campaignMap).toBeUndefined();
+  });
+
   it('blocks a model draft when served-model or token provenance is missing', async () => {
     const director = vi.fn(async () => ({
       reply: modelDraftReply(),

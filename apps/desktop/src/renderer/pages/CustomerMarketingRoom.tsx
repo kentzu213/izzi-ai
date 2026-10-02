@@ -3396,6 +3396,7 @@ function CustomerRoom({
               <CampaignPlanV2
                 onboardingChannels={snapshot.onboarding?.channels ?? []}
                 runs={snapshot.runs}
+                cells={snapshot.campaignMap?.cells}
                 sessions={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
               />
             )}

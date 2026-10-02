@@ -4,9 +4,12 @@ import {
   CAMPAIGN_CHANNELS,
   CAMPAIGN_PHASES,
   CAMPAIGN_TEMPLATE,
+  attachRunToCampaignMap,
   campaignChannelsForCustomerChannels,
   campaignTemplateCells,
   deriveCampaignCellStatus,
+  normalizeCampaignMap,
+  parseCampaignCellSuggestions,
   resolveCampaignBoard,
   summarizeCampaignPhases,
   visibleCampaignChannels,
@@ -225,5 +228,112 @@ describe('resolveCampaignBoard', () => {
 
     expect(board.cells).toBe(stored);
     expect(board.progress.p1_awareness).toEqual({ done: 1, total: 1 });
+  });
+});
+
+describe('parseCampaignCellSuggestions', () => {
+  const allowed = campaignChannelsForCustomerChannels(['facebook']);
+  const valid = { phase: 'p1_awareness', channel: 'facebook_fanpage', tactic: '  Bài viết kể chuyện  ', tags: ['organic'] };
+
+  it('accepts cells on allowed phases and channels, trimming the tactic', () => {
+    expect(parseCampaignCellSuggestions([valid], allowed)).toEqual([
+      { phase: 'p1_awareness', channel: 'facebook_fanpage', tactic: 'Bài viết kể chuyện', tags: ['organic'] },
+    ]);
+  });
+
+  it.each([
+    ['unknown phase', { ...valid, phase: 'p9_viral' }],
+    ['channel outside the allowed list', { ...valid, channel: 'tiktok' }],
+    ['unknown channel', { ...valid, channel: 'myspace' }],
+    ['blank tactic', { ...valid, tactic: '  ' }],
+    ['overlong tactic', { ...valid, tactic: 'x'.repeat(161) }],
+    ['no tags', { ...valid, tags: [] }],
+    ['unknown tag', { ...valid, tags: ['viral'] }],
+    ['duplicate tags', { ...valid, tags: ['paid', 'paid'] }],
+    ['extra key', { ...valid, runIds: ['run-1'] }],
+  ])('rejects the whole list when one cell has %s', (_label, bad) => {
+    expect(parseCampaignCellSuggestions([valid, bad], allowed)).toBeNull();
+  });
+
+  it('rejects a non-array, an empty list and more than twelve cells', () => {
+    expect(parseCampaignCellSuggestions('cells', allowed)).toBeNull();
+    expect(parseCampaignCellSuggestions([], allowed)).toBeNull();
+    expect(parseCampaignCellSuggestions(Array.from({ length: 13 }, () => valid), allowed)).toBeNull();
+  });
+});
+
+describe('normalizeCampaignMap', () => {
+  const updatedAt = '2026-10-01T00:00:00.000Z';
+
+  it('returns undefined when nothing usable is stored', () => {
+    expect(normalizeCampaignMap(undefined)).toBeUndefined();
+    expect(normalizeCampaignMap('corrupt')).toBeUndefined();
+    expect(normalizeCampaignMap({ cells: 'x', updatedAt })).toBeUndefined();
+  });
+
+  it('keeps valid cells and drops malformed ones', () => {
+    const good = cell({ runIds: ['run-1'], manualCompletion: { completedAt: updatedAt, evidence: 'Link bài đăng' } });
+    const map = normalizeCampaignMap({
+      updatedAt,
+      cells: [good, { ...good, id: 'bad-phase', phase: 'p9' }, { ...good, id: 'bad-runs', runIds: [1] }, null],
+    });
+
+    expect(map).toEqual({ updatedAt, cells: [good] });
+  });
+
+  it('drops a malformed manual completion but keeps the cell', () => {
+    const map = normalizeCampaignMap({ updatedAt, cells: [{ ...cell(), manualCompletion: { evidence: 42 } }] });
+
+    expect(map?.cells[0]).toEqual(cell());
+  });
+});
+
+describe('attachRunToCampaignMap', () => {
+  const now = '2026-10-02T00:00:00.000Z';
+
+  it('seeds the template for the onboarding channels on first use', () => {
+    const map = attachRunToCampaignMap(
+      undefined,
+      ['tiktok'],
+      [{ phase: 'p1_awareness', channel: 'tiktok', tactic: 'Video mới', tags: ['organic'] }],
+      'run-1',
+      now,
+    );
+
+    expect(map.updatedAt).toBe(now);
+    expect(map.cells.some((item) => item.id === 'tpl:p1_awareness:tiktok')).toBe(true);
+    expect(map.cells.find((item) => item.tactic === 'Video mới')).toMatchObject({
+      id: 'run:run-1:0',
+      runIds: ['run-1'],
+      updatedAt: now,
+    });
+  });
+
+  it('attaches the run to an existing cell with the same phase, channel and tactic', () => {
+    const existing = { updatedAt: '2026-10-01T00:00:00.000Z', cells: [cell({ id: 'a', runIds: ['run-0'] })] };
+    const map = attachRunToCampaignMap(
+      existing,
+      ['tiktok'],
+      [{ phase: 'p1_awareness', channel: 'tiktok', tactic: ' video NGẮN giới thiệu ', tags: ['organic'] }],
+      'run-1',
+      now,
+    );
+
+    expect(map.cells).toHaveLength(1);
+    expect(map.cells[0]).toMatchObject({ id: 'a', runIds: ['run-0', 'run-1'], updatedAt: now });
+    expect(existing.cells[0].runIds).toEqual(['run-0']);
+  });
+
+  it('never lists the same run twice on one cell', () => {
+    const existing = { updatedAt: now, cells: [cell({ id: 'a', runIds: ['run-1'] })] };
+    const map = attachRunToCampaignMap(
+      existing,
+      ['tiktok'],
+      [{ phase: 'p1_awareness', channel: 'tiktok', tactic: 'Video ngắn giới thiệu', tags: ['organic'] }],
+      'run-1',
+      now,
+    );
+
+    expect(map.cells[0].runIds).toEqual(['run-1']);
   });
 });
