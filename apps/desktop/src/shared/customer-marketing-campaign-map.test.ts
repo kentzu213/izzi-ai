@@ -5,7 +5,9 @@ import {
   CAMPAIGN_PHASES,
   CAMPAIGN_TEMPLATE,
   campaignChannelsForCustomerChannels,
+  campaignTemplateCells,
   deriveCampaignCellStatus,
+  resolveCampaignBoard,
   summarizeCampaignPhases,
   visibleCampaignChannels,
   type CampaignCell,
@@ -58,6 +60,11 @@ describe('campaign framework taxonomy', () => {
       expect(suggestion.tactic.trim()).not.toBe('');
       expect(suggestion.tags.length).toBeGreaterThan(0);
     }
+  });
+
+  it('suggests each phase and channel pair at most once', () => {
+    const pairs = CAMPAIGN_TEMPLATE.map((suggestion) => `${suggestion.phase}:${suggestion.channel}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
   });
 
   it('gives every channel at least one suggested tactic', () => {
@@ -183,5 +190,40 @@ describe('summarizeCampaignPhases', () => {
     expect(summary.p0_foundation).toEqual({ done: 1, total: 2 });
     expect(summary.p1_awareness).toEqual({ done: 0, total: 1 });
     expect(summary.p5_post_purchase).toEqual({ done: 0, total: 0 });
+  });
+});
+
+describe('campaignTemplateCells', () => {
+  it('turns template suggestions for the given channels into empty cells', () => {
+    const cells = campaignTemplateCells(['tiktok'], '2026-10-02T00:00:00.000Z');
+
+    expect(cells.map((item) => item.id)).toEqual(['tpl:p1_awareness:tiktok', 'tpl:p4_purchase:tiktok']);
+    expect(cells.every((item) => item.channel === 'tiktok')).toBe(true);
+    expect(cells[0]).toMatchObject({ runIds: [], updatedAt: '2026-10-02T00:00:00.000Z' });
+  });
+});
+
+describe('resolveCampaignBoard', () => {
+  it('falls back to the template for the onboarding channels when nothing is stored', () => {
+    const board = resolveCampaignBoard(undefined, ['tiktok'], [], '2026-10-02T00:00:00.000Z');
+
+    expect(board.channels).toEqual(['tiktok', 'data_measurement']);
+    expect(board.cells.map((item) => item.id)).toEqual([
+      'tpl:p0_foundation:data_measurement',
+      'tpl:p1_awareness:tiktok',
+      'tpl:p4_purchase:tiktok',
+      'tpl:p4_purchase:data_measurement',
+      'tpl:p5_post_purchase:data_measurement',
+    ]);
+    expect(board.progress.p1_awareness).toEqual({ done: 0, total: 1 });
+  });
+
+  it('uses stored cells and counts their progress', () => {
+    const stored = [cell({ runIds: ['run-1'] })];
+
+    const board = resolveCampaignBoard(stored, ['tiktok'], [run('run-1', 'completed')]);
+
+    expect(board.cells).toBe(stored);
+    expect(board.progress.p1_awareness).toEqual({ done: 1, total: 1 });
   });
 });

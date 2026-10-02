@@ -270,3 +270,32 @@ export function summarizeCampaignPhases(
   }
   return progress;
 }
+
+export function campaignTemplateCells(channels: CampaignChannel[], now: string): CampaignCell[] {
+  const wanted = new Set(channels);
+  return CAMPAIGN_TEMPLATE.filter((suggestion) => wanted.has(suggestion.channel)).map((suggestion) => ({
+    ...suggestion,
+    tags: [...suggestion.tags],
+    id: `tpl:${suggestion.phase}:${suggestion.channel}`,
+    runIds: [],
+    updatedAt: now,
+  }));
+}
+
+export interface CampaignBoard {
+  channels: CampaignChannel[];
+  cells: CampaignCell[];
+  progress: CampaignPhaseProgress;
+}
+
+// Until the director stores a campaign map, the board shows the template for the chosen channels.
+export function resolveCampaignBoard(
+  storedCells: CampaignCell[] | undefined,
+  onboardingChannels: CustomerChannel[],
+  runs: CustomerRun[],
+  now: string = new Date().toISOString(),
+): CampaignBoard {
+  const channels = visibleCampaignChannels(onboardingChannels, storedCells ?? []);
+  const cells = storedCells ?? campaignTemplateCells(channels, now);
+  return { channels, cells, progress: summarizeCampaignPhases(cells, runs, channels) };
+}

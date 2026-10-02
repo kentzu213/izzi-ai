@@ -64,6 +64,7 @@ import {
   resolveAnalyticsTabGate,
   type AgentMarketingTab,
 } from '../components/v2/AgentMarketingWorkspaceV2';
+import { CampaignPlanV2 } from '../components/v2/CampaignBoardV2';
 import '../styles/customer-marketing-room.css';
 
 type ViewId =
@@ -3391,7 +3392,13 @@ function CustomerRoom({
                 onDirectorChannelsChange={setDirectorChannels}
               />
             )}
-            plan={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
+            plan={(
+              <CampaignPlanV2
+                onboardingChannels={snapshot.onboarding?.channels ?? []}
+                runs={snapshot.runs}
+                sessions={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
+              />
+            )}
             content={<CustomerMarketingResources kind="content" role={snapshot.workspace.role} />}
             analytics={analyticsGate.ready ? (
               <CustomerMarketingCapabilityWorkbench
