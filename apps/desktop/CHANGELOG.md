@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.82
+
+Agent Marketing: the campaign board wires now appear as soon as the board opens.
+
+- Fixes beta.81, where the wire to the step the campaign is running only
+  showed up after a cell was clicked.
+
 ## 1.14.0-beta.81
 
 Agent Marketing: connector wires on the campaign board.
