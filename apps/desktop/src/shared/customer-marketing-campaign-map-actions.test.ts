@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { CustomerRun, CustomerRunStatus } from './customer-marketing-types';
 import {
   addCampaignChannel,
+  archiveCompletedCampaignRuns,
   attachRunToCampaignMap,
   campaignFoundationWarning,
+  deriveCampaignCellStatus,
+  fallbackCampaignSuggestions,
   isManualCampaignChannel,
   linkedCampaignCells,
   markCampaignCellDone,
@@ -112,6 +115,61 @@ describe('unclassifiedCampaignRuns', () => {
     const runs = [run('linked', 'completed'), run('old-30-09', 'blocked')];
     expect(unclassifiedCampaignRuns([cell({ runIds: ['linked'] })], runs).map((r) => r.id)).toEqual(['old-30-09']);
   });
+
+  it('leaves out sessions replaced by a newer goal', () => {
+    const runs = [run('old', 'blocked', { stage: 'superseded_by_new_goal' }), run('open', 'blocked')];
+    expect(unclassifiedCampaignRuns([], runs).map((r) => r.id)).toEqual(['open']);
+  });
+});
+
+describe('archiveCompletedCampaignRuns', () => {
+  const map: CampaignMap = {
+    cells: [cell({ id: 'a', runIds: ['old'] }), cell({ id: 'b', channel: 'zalo', runIds: ['stuck'] })],
+    updatedAt: '2026-10-01T00:00:00.000Z',
+  };
+
+  it('keeps a cell done after its completed session is pruned from storage', () => {
+    const next = archiveCompletedCampaignRuns(map, [run('old', 'completed'), run('stuck', 'blocked')], now);
+    const [a, b] = next!.cells;
+
+    expect(a).toMatchObject({ archivedCompletedAt: now, runIds: ['old'] });
+    expect(deriveCampaignCellStatus(a, [])).toEqual({ status: 'done' });
+    expect(b).not.toHaveProperty('archivedCompletedAt');
+    expect(deriveCampaignCellStatus(b, [])).toEqual({ status: 'todo' });
+  });
+
+  it('returns the same map when no completed session is dropped', () => {
+    expect(archiveCompletedCampaignRuns(map, [run('stuck', 'blocked')], now)).toBe(map);
+    expect(archiveCompletedCampaignRuns(undefined, [run('old', 'completed')], now)).toBeUndefined();
+  });
+
+  it('survives storage', () => {
+    const next = archiveCompletedCampaignRuns(map, [run('old', 'completed')], now);
+    expect(normalizeCampaignMap(next)?.cells[0].archivedCompletedAt).toBe(now);
+  });
+});
+
+describe('fallbackCampaignSuggestions', () => {
+  it('suggests the next open template cell for each channel the session ran on', () => {
+    const suggestions = fallbackCampaignSuggestions(undefined, ['tiktok'], ['tiktok'], [], now);
+
+    expect(suggestions).toEqual([
+      { phase: 'p1_awareness', channel: 'tiktok', tactic: 'Chuỗi video ngắn nói đúng vấn đề khách đang gặp', tags: ['organic'] },
+    ]);
+    const attached = attachRunToCampaignMap(undefined, ['tiktok'], suggestions, 'run-1', now);
+    expect(attached.cells.find((c) => c.id === 'tpl:p1_awareness:tiktok')?.runIds).toEqual(['run-1']);
+    expect(attached.cells.some((c) => c.id.startsWith('run:'))).toBe(false);
+  });
+
+  it('skips a channel whose cells are all done or under way', () => {
+    const map: CampaignMap = {
+      cells: [cell({ id: 'a', runIds: ['busy'] }), cell({ id: 'b', phase: 'p2_consideration', runIds: ['done'] })],
+      updatedAt: now,
+    };
+    const runs = [run('busy', 'in_progress'), run('done', 'completed')];
+
+    expect(fallbackCampaignSuggestions(map, ['tiktok'], ['tiktok'], runs, now)).toEqual([]);
+  });
 });
 
 describe('parseCampaignEvidence', () => {
@@ -139,6 +197,14 @@ describe('markCampaignCellDone', () => {
     expect(next?.extraChannels).toEqual(['ecommerce']);
     expect(next?.updatedAt).toBe(now);
     expect(map.cells[1].manualCompletion).toBeUndefined();
+  });
+
+  it('keeps the first evidence when the cell is marked again', () => {
+    const first = markCampaignCellDone(map, ['tiktok'], 'ecom', 'shopee.vn/serum', now);
+    const again = markCampaignCellDone(first!, ['tiktok'], 'ecom', 'bằng chứng khác', '2026-10-03T00:00:00.000Z');
+
+    expect(again).toBe(first);
+    expect(again?.cells.find((c) => c.id === 'ecom')?.manualCompletion).toEqual({ completedAt: now, evidence: 'shopee.vn/serum' });
   });
 
   it('refuses agent channels, unknown cells and missing evidence', () => {

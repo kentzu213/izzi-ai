@@ -217,10 +217,16 @@ import {
   CAMPAIGN_PHASES,
   CAMPAIGN_TAGS,
   addCampaignChannel as addChannelToCampaignMap,
+  archiveCompletedCampaignRuns,
   attachRunToCampaignMap,
+  campaignChannelsForCustomerChannels,
+  campaignTemplateCells,
+  fallbackCampaignSuggestions,
+  isManualCampaignChannel,
   markCampaignCellDone,
   normalizeCampaignMap,
   parseCampaignCellSuggestions,
+  parseCampaignEvidence,
   visibleCampaignChannels,
   type CampaignAddChannelInput,
   type CampaignCellDoneInput,
@@ -280,6 +286,8 @@ interface CustomerTenantRecord {
   remoteWorkflowAttempt: CustomerRemoteWorkflowAttempt | null;
   usedCredits: number;
   campaignMap?: CampaignMap;
+  // A stored map that no longer parses: kept verbatim so a write never erases it.
+  invalidCampaignMap?: unknown;
   updatedAt: string;
 }
 
@@ -4381,11 +4389,16 @@ export class CustomerMarketingService {
       status: 'pending',
       requestedAt: approvalEvidence.requestedAt,
     };
+    const allRuns = [run, ...record.runs];
     const next = {
       ...record,
-      runs: [run, ...record.runs].slice(0, 20),
+      runs: allRuns.slice(0, 20),
       approvals: [approval, ...record.approvals].slice(0, 40),
       remoteWorkflowAttempt: remoteWorkflow ? null : record.remoteWorkflowAttempt,
+      // A pruned completed run must not turn its cells back to "todo".
+      ...(record.campaignMap
+        ? { campaignMap: archiveCompletedCampaignRuns(record.campaignMap, allRuns.slice(20), now) }
+        : {}),
       updatedAt: now,
     };
     this.writeRecord(identity, next);
@@ -4730,6 +4743,17 @@ export class CustomerMarketingService {
       }
     }
     const directorSucceeded = Boolean(approvalReply) && !workflowPersistenceError;
+    const campaignSeed = visibleCampaignChannels(latest.onboarding?.channels ?? [], []);
+    // A draft without planned cells still lands on the board: the next open cell of each run channel.
+    const linkedCells = campaignCells.length > 0
+      ? campaignCells
+      : fallbackCampaignSuggestions(
+        latest.campaignMap,
+        campaignSeed,
+        campaignChannelsForCustomerChannels(channels),
+        latest.runs,
+        updatedAt,
+      );
     const publicError = workflowPersistenceError
       || (director.error ? this.publicDirectorError(director.error) : undefined);
     const updatedRun: CustomerRun = {
@@ -4764,12 +4788,12 @@ export class CustomerMarketingService {
         : approvalReply
           ? latest.usedCredits + 1
           : latest.usedCredits,
-      ...(directorSucceeded && campaignCells.length > 0
+      ...(directorSucceeded && linkedCells.length > 0 && latest.invalidCampaignMap === undefined
         ? {
           campaignMap: attachRunToCampaignMap(
             latest.campaignMap,
-            visibleCampaignChannels(latest.onboarding?.channels ?? [], []),
-            campaignCells,
+            campaignSeed,
+            linkedCells,
             run.id,
             updatedAt,
           ),
@@ -4791,19 +4815,24 @@ export class CustomerMarketingService {
   async markCampaignCell(input: CampaignCellDoneInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
     const record = this.readRecord(identity);
-    if (!record.onboarding?.completed) {
-      return { ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' };
-    }
+    const blocked = this.campaignMapWriteBlocker(record);
+    if (blocked) return { ok: false, error: blocked };
     const updatedAt = new Date().toISOString();
-    const campaignMap = markCampaignCellDone(
-      record.campaignMap,
-      visibleCampaignChannels(record.onboarding.channels, [], record.campaignMap?.extraChannels ?? []),
-      input.cellId,
-      input.evidence,
-      updatedAt,
-    );
+    const seed = visibleCampaignChannels(record.onboarding!.channels, [], record.campaignMap?.extraChannels ?? []);
+    if (!parseCampaignEvidence(input.evidence)) {
+      return { ok: false, error: 'Bằng chứng cần 3–500 ký tự.' };
+    }
+    const target = (record.campaignMap?.cells ?? campaignTemplateCells(seed, updatedAt))
+      .find((cell) => cell.id === input.cellId);
+    if (!target) {
+      return { ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' };
+    }
+    if (!isManualCampaignChannel(target.channel)) {
+      return { ok: false, error: 'Việc trên kênh này hoàn thành qua phiên chạy của agent, không đánh dấu tay.' };
+    }
+    const campaignMap = markCampaignCellDone(record.campaignMap, seed, input.cellId, input.evidence, updatedAt);
     if (!campaignMap) {
-      return { ok: false, error: 'Chỉ đánh dấu được việc offline hoặc sàn TMĐT, kèm bằng chứng 3–500 ký tự.' };
+      return { ok: false, error: 'Không thể đánh dấu việc này.' };
     }
     const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
     this.writeRecord(identity, next);
@@ -4813,27 +4842,29 @@ export class CustomerMarketingService {
   async addCampaignChannel(input: CampaignAddChannelInput): Promise<CustomerMutationResult> {
     const identity = this.requireIdentity();
     const record = this.readRecord(identity);
-    if (!record.onboarding?.completed) {
-      return { ok: false, error: 'Hoàn thành onboarding trước khi cập nhật kế hoạch.' };
-    }
-    const extraChannels = record.campaignMap?.extraChannels ?? [];
-    const visible = visibleCampaignChannels(record.onboarding.channels, record.campaignMap?.cells ?? [], extraChannels);
-    if (visible.some((channel) => channel === input.channel)) {
+    const blocked = this.campaignMapWriteBlocker(record);
+    if (blocked) return { ok: false, error: blocked };
+    const updatedAt = new Date().toISOString();
+    const seed = visibleCampaignChannels(record.onboarding!.channels, [], record.campaignMap?.extraChannels ?? []);
+    // A row can be visible with no cells yet (worked on, or always shown); only a row with cells is "already there".
+    const cells = record.campaignMap?.cells ?? campaignTemplateCells(seed, updatedAt);
+    if (cells.some((cell) => cell.channel === input.channel)) {
       return { ok: false, error: 'Kênh này đã có trên bảng kế hoạch.' };
     }
-    const updatedAt = new Date().toISOString();
-    const campaignMap = addChannelToCampaignMap(
-      record.campaignMap,
-      visibleCampaignChannels(record.onboarding.channels, [], extraChannels),
-      input.channel,
-      updatedAt,
-    );
+    const campaignMap = addChannelToCampaignMap(record.campaignMap, seed, input.channel, updatedAt);
     if (!campaignMap) {
       return { ok: false, error: 'Kênh không hợp lệ.' };
     }
     const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
     this.writeRecord(identity, next);
     return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  private campaignMapWriteBlocker(record: CustomerTenantRecord): string | null {
+    if (!record.onboarding?.completed) return 'Hoàn thành onboarding trước khi cập nhật kế hoạch.';
+    if (!MARKETING_AUTHOR_ROLES.has(record.role)) return 'Vai trò hiện tại không có quyền cập nhật kế hoạch.';
+    if (record.invalidCampaignMap !== undefined) return 'Bảng kế hoạch đang lỗi dữ liệu nên chưa thể cập nhật.';
+    return null;
   }
 
   async importMediaProject(sourcePath: string): Promise<CustomerMutationResult> {
@@ -5694,11 +5725,16 @@ export class CustomerMarketingService {
     if (!changed) return record;
     recoveredRuns.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     recoveredApprovals.sort((left, right) => right.requestedAt.localeCompare(left.requestedAt));
+    const updatedAt = new Date().toISOString();
+    const allRuns = [...recoveredRuns, ...runs];
     return {
       ...record,
-      runs: [...recoveredRuns, ...runs].slice(0, 20),
+      runs: allRuns.slice(0, 20),
       approvals: [...recoveredApprovals, ...approvals].slice(0, 60),
-      updatedAt: new Date().toISOString(),
+      ...(record.campaignMap
+        ? { campaignMap: archiveCompletedCampaignRuns(record.campaignMap, allRuns.slice(20), updatedAt) }
+        : {}),
+      updatedAt,
     };
   }
 
@@ -5767,6 +5803,7 @@ export class CustomerMarketingService {
         remoteWorkflowAttempt: restoreRemoteWorkflowAttempt(parsed.remoteWorkflowAttempt),
         usedCredits: typeof parsed.usedCredits === 'number' && Number.isFinite(parsed.usedCredits) ? parsed.usedCredits : 0,
         ...(campaignMap ? { campaignMap } : {}),
+        ...(!campaignMap && parsed.campaignMap != null ? { invalidCampaignMap: parsed.campaignMap } : {}),
         updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       };
     } catch {
@@ -5776,7 +5813,11 @@ export class CustomerMarketingService {
   }
 
   private writeRecord(identity: CustomerIdentity, record: CustomerTenantRecord): void {
-    this.db.setSetting(this.recordKey(identity), JSON.stringify(record));
+    const { invalidCampaignMap, ...stored } = record;
+    const persisted = invalidCampaignMap !== undefined && !stored.campaignMap
+      ? { ...stored, campaignMap: invalidCampaignMap }
+      : stored;
+    this.db.setSetting(this.recordKey(identity), JSON.stringify(persisted));
   }
 
   private async snapshot(

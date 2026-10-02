@@ -4,6 +4,7 @@ import {
   CAMPAIGN_CHANNELS,
   CAMPAIGN_PHASES,
   CAMPAIGN_TEMPLATE,
+  MAX_CAMPAIGN_CELLS,
   attachRunToCampaignMap,
   campaignChannelsForCustomerChannels,
   campaignTemplateCells,
@@ -251,8 +252,14 @@ describe('parseCampaignCellSuggestions', () => {
     ['unknown tag', { ...valid, tags: ['viral'] }],
     ['duplicate tags', { ...valid, tags: ['paid', 'paid'] }],
     ['extra key', { ...valid, runIds: ['run-1'] }],
-  ])('rejects the whole list when one cell has %s', (_label, bad) => {
-    expect(parseCampaignCellSuggestions([valid, bad], allowed)).toBeNull();
+  ])('drops a cell with %s and keeps the valid ones', (_label, bad) => {
+    expect(parseCampaignCellSuggestions([valid, bad], allowed)).toEqual([
+      { phase: 'p1_awareness', channel: 'facebook_fanpage', tactic: 'Bài viết kể chuyện', tags: ['organic'] },
+    ]);
+  });
+
+  it('rejects a list where no cell is valid', () => {
+    expect(parseCampaignCellSuggestions([{ ...valid, phase: 'p9_viral' }, { ...valid, channel: 'tiktok' }], allowed)).toBeNull();
   });
 
   it('rejects a non-array, an empty list and more than twelve cells', () => {
@@ -301,12 +308,41 @@ describe('attachRunToCampaignMap', () => {
     );
 
     expect(map.updatedAt).toBe(now);
-    expect(map.cells.some((item) => item.id === 'tpl:p1_awareness:tiktok')).toBe(true);
-    expect(map.cells.find((item) => item.tactic === 'Video mới')).toMatchObject({
-      id: 'run:run-1:0',
+    expect(map.cells.find((item) => item.id === 'tpl:p1_awareness:tiktok')).toMatchObject({
       runIds: ['run-1'],
       updatedAt: now,
     });
+    expect(map.cells.some((item) => item.id.startsWith('run:'))).toBe(false);
+  });
+
+  it('adds a new cell when the same phase and channel already has work', () => {
+    const existing = { updatedAt: '2026-10-01T00:00:00.000Z', cells: [cell({ id: 'a', runIds: ['run-0'] })] };
+    const map = attachRunToCampaignMap(
+      existing,
+      ['tiktok'],
+      [{ phase: 'p1_awareness', channel: 'tiktok', tactic: 'Livestream', tags: ['organic'] }],
+      'run-1',
+      now,
+    );
+
+    expect(map.cells.map((item) => [item.id, item.runIds])).toEqual([
+      ['a', ['run-0']],
+      ['run:run-1:0', ['run-1']],
+    ]);
+  });
+
+  it('does not claim a manually completed cell', () => {
+    const done = cell({ id: 'tpl:p1_awareness:tiktok', manualCompletion: { completedAt: now, evidence: 'Đã đăng' } });
+    const map = attachRunToCampaignMap(
+      { updatedAt: now, cells: [done] },
+      ['tiktok'],
+      [{ phase: 'p1_awareness', channel: 'tiktok', tactic: 'Livestream', tags: ['organic'] }],
+      'run-1',
+      now,
+    );
+
+    expect(map.cells[0].runIds).toEqual([]);
+    expect(map.cells[1]).toMatchObject({ id: 'run:run-1:0', runIds: ['run-1'] });
   });
 
   it('attaches the run to an existing cell with the same phase, channel and tactic', () => {
@@ -335,5 +371,27 @@ describe('attachRunToCampaignMap', () => {
     );
 
     expect(map.cells[0].runIds).toEqual(['run-1']);
+  });
+
+  it('stops adding cells at the cap but still links the run to existing work', () => {
+    const full = {
+      updatedAt: now,
+      cells: Array.from({ length: MAX_CAMPAIGN_CELLS }, (_, index) =>
+        cell({ id: `c${index}`, tactic: `Việc số ${index}` }),
+      ),
+    };
+    const map = attachRunToCampaignMap(
+      full,
+      ['tiktok'],
+      [
+        { phase: 'p1_awareness', channel: 'tiktok', tactic: 'Việc hoàn toàn mới', tags: ['organic'] },
+        { phase: 'p1_awareness', channel: 'tiktok', tactic: 'Việc số 7', tags: ['organic'] },
+      ],
+      'run-1',
+      now,
+    );
+
+    expect(map.cells).toHaveLength(MAX_CAMPAIGN_CELLS);
+    expect(map.cells[7].runIds).toEqual(['run-1']);
   });
 });

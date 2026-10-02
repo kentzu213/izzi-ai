@@ -132,6 +132,8 @@ export interface CampaignCell extends CampaignCellSuggestion {
   id: string;
   runIds: string[];
   manualCompletion?: { completedAt: string; evidence: string };
+  // Set when a completed session of this cell was pruned from storage, so the cell stays done.
+  archivedCompletedAt?: string;
   updatedAt: string;
 }
 
@@ -241,8 +243,8 @@ const ACTIVE_RUN_STATUS: Partial<Record<CustomerRun['status'], CampaignCellStatu
   awaiting_approval: 'awaiting_approval',
 };
 
-// Precedence: manual evidence > active session > completed session > blocked session > todo.
-// Run ids pruned from storage are ignored, so such a cell falls back to todo.
+// Precedence: manual evidence > active session > completed session (kept or archived) >
+// blocked session > todo. Other run ids pruned from storage are ignored.
 export function deriveCampaignCellStatus(cell: CampaignCell, runs: CustomerRun[]): CampaignCellState {
   if (hasManualEvidence(cell)) return { status: 'done' };
 
@@ -256,6 +258,7 @@ export function deriveCampaignCellStatus(cell: CampaignCell, runs: CustomerRun[]
 
   const completed = latestRun(cellRuns.filter((run) => run.status === 'completed'));
   if (completed) return { status: 'done', runId: completed.id };
+  if (cell.archivedCompletedAt) return { status: 'done' };
 
   const latest = latestRun(cellRuns);
   if (latest?.status === 'blocked' && latest.stage !== 'superseded_by_new_goal') {
@@ -398,9 +401,10 @@ export function campaignFoundationWarning(
 }
 
 // Sessions from before the board existed (or whose plan did not parse) belong to no cell.
+// Sessions replaced by a newer goal are history, not open work.
 export function unclassifiedCampaignRuns(cells: CampaignCell[], runs: CustomerRun[]): CustomerRun[] {
   const classified = new Set(cells.flatMap((cell) => cell.runIds));
-  return runs.filter((run) => !classified.has(run.id));
+  return runs.filter((run) => !classified.has(run.id) && run.stage !== 'superseded_by_new_goal');
 }
 
 export interface CampaignMap {
@@ -411,6 +415,8 @@ export interface CampaignMap {
 }
 
 const MAX_SUGGESTIONS_PER_RUN = 12;
+// Bounds the stored map: past this, sessions still link to existing cells but add no new ones.
+export const MAX_CAMPAIGN_CELLS = 200;
 const MIN_TACTIC_LENGTH = 3;
 const MAX_TACTIC_LENGTH = 160;
 const SUGGESTION_KEYS = ['channel', 'phase', 'tactic', 'tags'];
@@ -439,8 +445,8 @@ function parseTactic(value: unknown): string | null {
   return tactic.length >= MIN_TACTIC_LENGTH && tactic.length <= MAX_TACTIC_LENGTH ? tactic : null;
 }
 
-// Fail-closed: one cell outside the framework or the allowed channels rejects the whole list,
-// so a confused model can never write partial junk onto the board.
+// Each cell is checked on its own: one outside the framework or the allowed channels is dropped
+// and the valid ones are kept. A list with no valid cell (or a malformed list) returns null.
 export function parseCampaignCellSuggestions(
   value: unknown,
   allowedChannels: CampaignChannel[],
@@ -449,14 +455,14 @@ export function parseCampaignCellSuggestions(
   const allowed = new Set(allowedChannels);
   const suggestions: CampaignCellSuggestion[] = [];
   for (const item of value) {
-    if (!isRecord(item) || Object.keys(item).sort().join() !== SUGGESTION_KEYS.join()) return null;
-    if (!isCampaignPhase(item.phase) || !isCampaignChannel(item.channel) || !allowed.has(item.channel)) return null;
+    if (!isRecord(item) || Object.keys(item).sort().join() !== SUGGESTION_KEYS.join()) continue;
+    if (!isCampaignPhase(item.phase) || !isCampaignChannel(item.channel) || !allowed.has(item.channel)) continue;
     const tactic = parseTactic(item.tactic);
     const tags = parseTags(item.tags);
-    if (!tactic || !tags) return null;
+    if (!tactic || !tags) continue;
     suggestions.push({ phase: item.phase, channel: item.channel, tactic, tags: [...tags] });
   }
-  return suggestions;
+  return suggestions.length > 0 ? suggestions : null;
 }
 
 function normalizeManualCompletion(value: unknown): CampaignCell['manualCompletion'] | undefined {
@@ -472,6 +478,7 @@ function normalizeCampaignCell(value: unknown): CampaignCell | null {
   if (typeof tactic !== 'string' || !tactic.trim() || !tags || typeof updatedAt !== 'string') return null;
   if (!Array.isArray(runIds) || !runIds.every((runId) => typeof runId === 'string')) return null;
   const manualCompletion = normalizeManualCompletion(value.manualCompletion);
+  const { archivedCompletedAt } = value;
   return {
     id,
     phase,
@@ -480,6 +487,7 @@ function normalizeCampaignCell(value: unknown): CampaignCell | null {
     tags: [...tags],
     runIds: [...runIds],
     ...(manualCompletion ? { manualCompletion } : {}),
+    ...(typeof archivedCompletedAt === 'string' ? { archivedCompletedAt } : {}),
     updatedAt,
   };
 }
@@ -505,8 +513,22 @@ function sameWork(cell: CampaignCellSuggestion, suggestion: CampaignCellSuggesti
   return cell.phase === suggestion.phase && cell.channel === suggestion.channel && key(cell.tactic) === key(suggestion.tactic);
 }
 
+// An untouched template cell in the same phase and channel: a session's own wording of that work
+// takes the starter cell over instead of adding a near-duplicate beside it.
+function claimableTemplateCell(cells: CampaignCell[], suggestion: CampaignCellSuggestion): CampaignCell | undefined {
+  return cells.find(
+    (cell) =>
+      cell.id.startsWith('tpl:') &&
+      cell.phase === suggestion.phase &&
+      cell.channel === suggestion.channel &&
+      cell.runIds.length === 0 &&
+      !hasManualEvidence(cell),
+  );
+}
+
 // Links a director session to the cells it planned. The first session seeds the template so the
-// board keeps its starter work; a suggestion matching an existing cell reuses it.
+// board keeps its starter work; a suggestion matching an existing cell reuses it, otherwise it
+// claims the untouched starter cell of its phase and channel, otherwise it becomes a new cell.
 export function attachRunToCampaignMap(
   map: CampaignMap | undefined,
   seedChannels: CampaignChannel[],
@@ -518,7 +540,12 @@ export function attachRunToCampaignMap(
   suggestions.forEach((suggestion, index) => {
     const match = cells.find((cell) => sameWork(cell, suggestion));
     if (!match) {
-      cells = [...cells, { ...suggestion, tags: [...suggestion.tags], id: `run:${runId}:${index}`, runIds: [runId], updatedAt: now }];
+      const claim = claimableTemplateCell(cells, suggestion);
+      if (claim) {
+        cells = cells.map((cell) => (cell === claim ? { ...cell, runIds: [runId], updatedAt: now } : cell));
+      } else if (cells.length < MAX_CAMPAIGN_CELLS) {
+        cells = [...cells, { ...suggestion, tags: [...suggestion.tags], id: `run:${runId}:${index}`, runIds: [runId], updatedAt: now }];
+      }
       return;
     }
     if (match.runIds.includes(runId)) return;
@@ -549,6 +576,8 @@ export function markCampaignCellDone(
   const cells = map ? map.cells : campaignTemplateCells(seedChannels, now);
   const target = cells.find((cell) => cell.id === cellId);
   if (!proof || !target || !isManualCampaignChannel(target.channel)) return null;
+  // Marking a done cell again keeps the first evidence.
+  if (map && hasManualEvidence(target)) return map;
   return {
     cells: cells.map((cell) =>
       cell.id === cellId ? { ...cell, manualCompletion: { completedAt: now, evidence: proof }, updatedAt: now } : cell,
@@ -556,6 +585,40 @@ export function markCampaignCellDone(
     ...withMapExtras(map),
     updatedAt: now,
   };
+}
+
+// Storage keeps only the latest sessions. Before completed ones are dropped, their cells record
+// it so the board does not fall back to "todo" for work that was done.
+export function archiveCompletedCampaignRuns(
+  map: CampaignMap | undefined,
+  droppedRuns: CustomerRun[],
+  now: string,
+): CampaignMap | undefined {
+  if (!map) return map;
+  const done = new Set(droppedRuns.filter((run) => run.status === 'completed').map((run) => run.id));
+  let changed = false;
+  const cells = map.cells.map((cell) => {
+    if (cell.archivedCompletedAt || !cell.runIds.some((id) => done.has(id))) return cell;
+    changed = true;
+    return { ...cell, archivedCompletedAt: now, updatedAt: now };
+  });
+  return changed ? { ...map, cells, updatedAt: now } : map;
+}
+
+// When the director's plan names no usable cell, the session still lands on the board: the next
+// open starter cell of each channel it ran on.
+export function fallbackCampaignSuggestions(
+  map: CampaignMap | undefined,
+  seedChannels: CampaignChannel[],
+  runChannels: CampaignChannel[],
+  runs: CustomerRun[],
+  now: string,
+): CampaignCellSuggestion[] {
+  const cells = map ? map.cells : campaignTemplateCells(seedChannels, now);
+  return runChannels
+    .map((channel) => nextCampaignCell(cells, runs, [channel]))
+    .filter((cell): cell is CampaignCell => cell !== undefined && deriveCampaignCellStatus(cell, runs).status === 'todo')
+    .map(({ phase, channel, tactic, tags }) => ({ phase, channel, tactic, tags: [...tags] }));
 }
 
 export interface CampaignCellDoneInput {
