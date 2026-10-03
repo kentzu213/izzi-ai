@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.87
+
+Agent Marketing: the Nội dung and Tài nguyên lists stay readable next to the Director panel.
+
+- When the side panels leave the room narrow, the item list and its details stack
+  instead of squeezing the details into a column one word wide.
+
 ## 1.14.0-beta.86
 
 Agent Marketing: AI Director plans are readable and written in Vietnamese.
