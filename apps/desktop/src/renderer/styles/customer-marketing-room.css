@@ -2712,7 +2712,9 @@
   background: rgba(255, 107, 114, 0.06);
 }
 
+/* The Director rail and side panels can leave this view far narrower than the window. */
 .cmr-channel-view {
+  container: cmr-channel / inline-size;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -3454,7 +3456,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@container cmr-channel (max-width: 900px) {
   .cmr-credential-row {
     grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1.6fr) auto;
   }
@@ -3469,7 +3471,7 @@
   }
 }
 
-@media (max-width: 620px) {
+@container cmr-channel (max-width: 620px) {
   .cmr-credential-panel__heading {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -3949,11 +3951,11 @@
   line-height: 1.45;
 }
 
-@media (max-width: 900px) {
+@container cmr-channel (max-width: 900px) {
   .cmr-connect-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@media (max-width: 620px) {
+@container cmr-channel (max-width: 620px) {
   .cmr-connect-center__heading {
     align-items: stretch;
     flex-direction: column;
