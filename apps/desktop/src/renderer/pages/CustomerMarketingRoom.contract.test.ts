@@ -76,6 +76,13 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).not.toContain("monthlyQuota.toLocaleString('vi-VN')} tháng");
   });
 
+  it('renders director replies and approval summaries without raw markdown markers', () => {
+    expect(roomSource).toContain('<DirectorReplyText className="cmr-director-result__body" reply={latestWithReply.directorReply} />');
+    expect(roomSource).toContain('<DirectorReplyText className="cmr-approval-card__summary" reply={approval.summary} />');
+    expect(roomSource).not.toContain('{latestWithReply.directorReply}</div>');
+    expect(roomSource).not.toContain('<p>{approval.summary}</p>');
+  });
+
   it('keeps the director blocker on the latest plan card instead of only a transient banner', () => {
     expect(roomSource).toContain(
       "{latestWithReply.status === 'blocked' && latestWithReply.blockedReason && <div className=\"cmr-alert cmr-alert--error\" role=\"alert\">{latestWithReply.blockedReason}</div>}",

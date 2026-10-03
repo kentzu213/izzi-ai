@@ -1109,6 +1109,59 @@
   white-space: pre-wrap;
 }
 
+.cmr-reply {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cmr-approval-card__summary {
+  margin-top: 11px;
+  color: var(--cmr-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cmr-reply .cmr-reply__text,
+.cmr-reply .cmr-reply__item,
+.cmr-reply .cmr-reply__rule {
+  margin: 6px 0 0;
+}
+
+.cmr-reply .cmr-reply__heading {
+  margin: 14px 0 0;
+  color: var(--cmr-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cmr-reply > :first-child {
+  margin-top: 0;
+}
+
+.cmr-reply strong {
+  color: var(--cmr-text);
+}
+
+.cmr-reply__item {
+  display: flex;
+  gap: 8px;
+}
+
+.cmr-reply__item--depth-1 { padding-left: 16px; }
+.cmr-reply__item--depth-2 { padding-left: 32px; }
+.cmr-reply__item--depth-3 { padding-left: 48px; }
+
+.cmr-reply__marker {
+  flex: none;
+  min-width: 14px;
+  color: var(--cmr-cyan);
+}
+
+.cmr-reply__rule {
+  border: 0;
+  border-top: 1px solid var(--cmr-border);
+}
+
 .cmr-result-footnote {
   display: flex;
   align-items: center;

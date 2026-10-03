@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.86
+
+Agent Marketing: AI Director plans are readable and written in Vietnamese.
+
+- The plan card and approval cards show headings, bold text, lists and dividers
+  instead of raw `###` and `**` markers.
+- AI Director now writes section labels in Vietnamese, states costs in credits,
+  and lays out time-bound goals week by week with a measurable KPI for each week.
+
 ## 1.14.0-beta.85
 
 Agent Marketing: AI Director still writes the plan when its default model is slow or failing.

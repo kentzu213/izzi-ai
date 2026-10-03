@@ -4624,7 +4624,8 @@ export class CustomerMarketingService {
                 + '. tactic là một câu ngắn (tối đa 160 ký tự) mô tả việc cần làm.',
             ]
           : [
-              'Tách chiến lược thành các bước, nêu agent role phù hợp, dependency, credit estimate và approval gate.',
+              'Viết toàn bộ bằng tiếng Việt, kể cả tên mục và nhãn. Tách chiến lược thành các bước; mỗi bước ghi vai trò agent, phụ thuộc, chi phí ước tính (đơn vị credit, không dùng giờ) và điểm cần duyệt.',
+              'Nếu mục tiêu có khung thời gian, lập lịch theo từng tuần; mỗi tuần có việc chính và KPI đo được.',
               'Trả về kế hoạch ngắn gọn, có thứ tự và một mục "Cần khách hàng duyệt".',
             ]),
       ].join('\n');

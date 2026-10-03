@@ -2204,6 +2204,10 @@ describe('CustomerMarketingService AI Director', () => {
       agentId: 'customer-marketing-director',
       model: 'izzi/auto',
     }));
+    expect(director.mock.calls[0][0].systemPrompt).toContain('tiếng Việt');
+    expect(director.mock.calls[0][0].systemPrompt).toContain('theo từng tuần');
+    expect(director.mock.calls[0][0].systemPrompt).toContain('KPI');
+    expect(director.mock.calls[0][0].systemPrompt).toContain('đơn vị credit');
     expect(director.mock.calls[0][0].message).toContain('Product context revision: 1');
     expect(director.mock.calls[0][0].message).toContain(
       result.snapshot?.productMarketingContext?.sha256,
