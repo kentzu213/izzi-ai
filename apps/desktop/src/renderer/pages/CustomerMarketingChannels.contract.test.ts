@@ -37,10 +37,10 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(stylesSource).toMatch(/\.cmr-credential-row__actions \{[\s\S]*?display: flex;/);
     expect(stylesSource).toContain('.cmr-credential-row--expired');
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-row[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-row[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
     );
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-health[\s\S]*?min-height: 44px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-credential-health[\s\S]*?min-height: 44px;/,
     );
   });
 
@@ -60,7 +60,7 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
 
   it('keeps the setup form responsive without nested cards', () => {
     expect(stylesSource).toMatch(/\.cmr-telegram-setup \{[\s\S]*?grid-template-columns:/);
-    expect(stylesSource).toMatch(/@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-setup/);
+    expect(stylesSource).toMatch(/@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-setup/);
     expect(pageSource).not.toContain('cmr-telegram-card');
   });
 
@@ -79,10 +79,10 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
 
   it('keeps the Telegram candidate action touch-safe on mobile', () => {
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate > \.cmr-button[\s\S]*?min-height: 44px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate > \.cmr-button[\s\S]*?min-height: 44px;/,
     );
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate__preview > div,[\s\S]*?\.cmr-telegram-candidate__permission[\s\S]*?font-size: 11px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-candidate__preview > div,[\s\S]*?\.cmr-telegram-candidate__permission[\s\S]*?font-size: 11px;/,
     );
   });
 
@@ -152,10 +152,10 @@ describe('CustomerMarketingChannels Telegram sandbox setup contract', () => {
     expect(pageSource).not.toMatch(/sendTelegramCanary\(\{[^}]*\b(token|chatId|text|reviewer|confirmed|idempotencyKey)\b/);
     expect(stylesSource).toMatch(/\.cmr-telegram-send-action > \.cmr-button[\s\S]*?width: 100%;/);
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-send-action > \.cmr-button[\s\S]*?min-height: 44px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-send-action > \.cmr-button[\s\S]*?min-height: 44px;/,
     );
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-approval-action > \.cmr-button[\s\S]*?min-height: 44px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-telegram-approval-action > \.cmr-button[\s\S]*?min-height: 44px;/,
     );
     expect(pageSource).toMatch(/cmr-telegram-send-action[\s\S]{0,500}cmr-button cmr-button--danger/);
     expect(pageSource).toMatch(/cmr-telegram-rollback-action[\s\S]{0,500}cmr-button cmr-button--quiet/);
@@ -221,7 +221,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).not.toContain('provider.routeIds');
     expect(stylesSource).toMatch(/\.cmr-provider-routes \{[\s\S]*?grid-template-columns:/);
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-provider-routes[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-provider-routes[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
     );
   });
 
@@ -252,7 +252,7 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).not.toContain('backendUrl');
     expect(stylesSource).toMatch(/\.cmr-connect-master \{[\s\S]*?border-left: 2px solid/);
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-master[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-master[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
     );
   });
 
@@ -266,14 +266,23 @@ describe('CustomerMarketingChannels connection center contract', () => {
     expect(pageSource).toContain("const CHANNEL_CONNECT_ROLES: CustomerRole[] = ['owner', 'manager']");
   });
 
+  it('sizes channel rows to the channel view so the Director rail cannot clip them', () => {
+    expect(stylesSource).toMatch(/\.cmr-channel-view \{\s*container: cmr-channel \/ inline-size;/);
+    expect(stylesSource).toMatch(/@container cmr-channel \(max-width: 900px\) \{\s*\.cmr-credential-row \{/);
+    expect(stylesSource).toMatch(/@container cmr-channel \(max-width: 900px\) \{\s*\.cmr-connect-grid \{/);
+    const mediaBlocks = [...stylesSource.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((match) => match[1]);
+    for (const selector of ['.cmr-credential-row {', '.cmr-provider-routes {', '.cmr-connect-grid {', '.cmr-connect-master {']) {
+      expect(mediaBlocks.filter((block) => block.includes(selector))).toEqual([]);
+    }
+  });
   it('keeps the connection center responsive and touch safe', () => {
     expect(stylesSource).toMatch(/\.cmr-connect-grid \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
     expect(stylesSource).toMatch(/\.cmr-connect-card \{[\s\S]*?border-left: 2px solid/);
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-grid[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
     );
     expect(stylesSource).toMatch(
-      /@media \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-center \.cmr-icon-button[\s\S]*?min-height: 44px;/,
+      /@container cmr-channel \(max-width: 620px\) \{[\s\S]*?\.cmr-connect-center \.cmr-icon-button[\s\S]*?min-height: 44px;/,
     );
   });
 

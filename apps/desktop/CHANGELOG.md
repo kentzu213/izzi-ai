@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.88
+
+Agent Marketing: the Kênh tab stays readable next to the Director panel.
+
+- Channel rows stack when the room is narrow, so their check and revoke buttons stay visible.
+- The workflow-scope row no longer cuts off its third column.
+
 ## 1.14.0-beta.87
 
 Agent Marketing: the Nội dung and Tài nguyên lists stay readable next to the Director panel.
