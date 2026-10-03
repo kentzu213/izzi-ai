@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.89
+
+Agent Marketing: AI Director plans no longer fail with a 502 or 402 error.
+
+- AI Director now asks for a reply sized to a plan, so the model gateway accepts the request
+  instead of rejecting it for reserving too many tokens.
+
 ## 1.14.0-beta.88
 
 Agent Marketing: the Kênh tab stays readable next to the Director panel.
