@@ -65,6 +65,7 @@ import {
   type AgentMarketingTab,
 } from '../components/v2/AgentMarketingWorkspaceV2';
 import { CampaignPlanV2 } from '../components/v2/CampaignBoardV2';
+import { DirectorReplyText, directorReplyPlainText } from './customer-marketing-director-reply';
 import type { CampaignChannel } from '../../shared/customer-marketing-campaign-map';
 import '../styles/customer-marketing-room.css';
 
@@ -1728,7 +1729,7 @@ function ApprovalPreview({
             <div className="cmr-approval-row" key={approval.id}>
               <div className="cmr-approval-row__copy">
                 <div className="cmr-approval-row__title"><ReviewIcon className="cmr-icon" /><strong>{approval.title}</strong></div>
-                <span>{approval.summary}</span>
+                <span>{directorReplyPlainText(approval.summary)}</span>
                 <small>{formatDate(approval.requestedAt, true)} · Rủi ro {approval.risk}</small>
               </div>
               <div className="cmr-inline-actions">
@@ -1865,7 +1866,7 @@ function DirectorView({
             <StatusPill value={latestWithReply.status} />
           </div>
           {latestWithReply.status === 'blocked' && latestWithReply.blockedReason && <div className="cmr-alert cmr-alert--error" role="alert">{latestWithReply.blockedReason}</div>}
-          <div className="cmr-director-result__body">{latestWithReply.directorReply}</div>
+          <DirectorReplyText className="cmr-director-result__body" reply={latestWithReply.directorReply} />
           <div className="cmr-result-footnote"><ReviewIcon className="cmr-icon" /><span>Đây là đề xuất để bạn xem xét. Workflow vẫn chờ approval trước hành động bên ngoài.</span></div>
         </section>
       ) : (
@@ -1927,7 +1928,7 @@ function ApprovalsView({
           {snapshot.approvals.map((approval) => (
             <section className="cmr-panel cmr-approval-card" key={approval.id}>
               <div className="cmr-approval-card__top"><div><span className="cmr-eyebrow">Yêu cầu {formatDate(approval.requestedAt, true)}</span><h3>{approval.title}</h3></div><StatusPill value={approval.status} /></div>
-              <p>{approval.summary}</p>
+              <DirectorReplyText className="cmr-approval-card__summary" reply={approval.summary} />
               <div className="cmr-approval-card__meta"><span className={`cmr-risk cmr-risk--${approval.risk}`}>Rủi ro: {approvalRiskLabel(approval.risk)}</span><span>Thuộc workspace hiện tại</span>{approval.reviewedAt && <span>Đã xử lý {formatDate(approval.reviewedAt, true)}</span>}</div>
               {approval.status === 'pending' && <div className="cmr-inline-actions"><button type="button" className="cmr-button cmr-button--quiet" disabled={busy || !canReview} onClick={() => void onReview(approval.id, 'rejected')}>Từ chối</button><button type="button" className="cmr-button cmr-button--primary" disabled={busy || !canReview} onClick={() => void onReview(approval.id, 'approved')}>{approvalActionLabel(approval.kind)}</button></div>}
             </section>
