@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.85
+
+Agent Marketing: AI Director still writes the plan when its default model is slow or failing.
+
+- When the default `izzi/auto` route times out or its provider fails, AI Director
+  retries once on `gpt-4o-mini` instead of falling back to the local template.
+
 ## 1.14.0-beta.84
 
 Agent Marketing: channel names stay visible when the campaign board scrolls sideways.
