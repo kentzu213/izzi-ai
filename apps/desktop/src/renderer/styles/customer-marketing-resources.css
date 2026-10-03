@@ -3,6 +3,7 @@
 }
 
 .cmrr-main {
+  container: cmrr-main / inline-size;
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -1163,6 +1164,24 @@
 .cmrr-import-footer > .cmr-button,
 .cmrr-import-footer > div {
   flex: 0 0 auto;
+}
+
+/* The Director rail and side panels can leave the room far narrower than the window. */
+@container cmrr-main (max-width: 860px) {
+  .cmrr-workspace,
+  .cmrr-workspace--calendar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cmrr-list-pane {
+    max-height: 380px;
+    border-right: 0;
+    border-bottom: 1px solid var(--cmr-border);
+  }
+
+  .cmrr-detail-pane {
+    min-height: 420px;
+  }
 }
 
 @media (max-width: 980px) {

@@ -88,6 +88,12 @@ describe('CustomerMarketingResources CMR-407 decision history contract', () => {
     }
   });
 
+  it('stacks the list and detail panes by the room width, not the window width', () => {
+    // The Director rail and side panels can leave ~430px at a 1280px window, so a viewport media query never fires.
+    expect(stylesSource).toMatch(/\.cmrr-main \{[^}]*container: cmrr-main \/ inline-size;/);
+    expect(stylesSource).toMatch(/@container cmrr-main \(max-width: 860px\) \{\s*\.cmrr-workspace,\s*\.cmrr-workspace--calendar \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  });
+
   it('integrates private video selection and upload without exposing a local path to the renderer', () => {
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:selectMarketingAssetVideo')");
     expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:uploadMarketingAssetVideo', input)");
