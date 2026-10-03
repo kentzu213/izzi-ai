@@ -412,6 +412,7 @@ const CUSTOMER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_MARKETING_MODEL_DRAFT_CREDIT_CEILING = 1;
 const CUSTOMER_MARKETING_MODEL_DRAFT_FEATURE_GATE = 'customer-marketing-staging';
 const CUSTOMER_MARKETING_MODEL_DRAFT_MODEL = 'gpt-5.6-sol';
+const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
@@ -1425,6 +1426,11 @@ function addDirectorRevisionToEvidence(
     guardrails: { externalActionsAllowed: false },
   });
   return { passed, content };
+}
+
+function isTransientDirectorError(error?: string): boolean {
+  if (!error) return false;
+  return error === 'network' || /^http 5\d\d\b/.test(error) || /^http \d{3}: upstream_error\b/.test(error);
 }
 
 function directorReplyFromEvidence(content: string): string | undefined {
@@ -4641,6 +4647,15 @@ export class CustomerMarketingService {
       }
     } catch {
       director = { reply: '', error: 'network' };
+    }
+    // izzi/auto rides the gateway's izzi-smart route; when that route times out or its
+    // provider fails, one retry on a fast fixed model keeps the plan AI-written.
+    if (!modelDraftEnabled && !director.reply && isTransientDirectorError(director.error)) {
+      const fallback = await this.runDirector({
+        ...directorPayload,
+        model: CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL,
+      }).catch(() => null);
+      if (fallback?.reply) director = fallback;
     }
 
     const updatedAt = new Date().toISOString();

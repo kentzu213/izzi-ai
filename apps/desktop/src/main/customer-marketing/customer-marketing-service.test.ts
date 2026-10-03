@@ -2665,6 +2665,63 @@ describe('CustomerMarketingService AI Director', () => {
     });
   });
 
+  it.each([
+    'network',
+    'http 502',
+    'http 401: upstream_error: Upstream error: 401',
+  ])('writes the plan on the fallback model when izzi/auto reports %s', async (directorError) => {
+    const director = vi.fn()
+      .mockResolvedValueOnce({ reply: '', error: directorError })
+      .mockResolvedValueOnce({ reply: 'A fallback-written marketing plan.' });
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Build a measurable content plan for seven days',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0].status).toBe('awaiting_approval');
+    expect(result.snapshot?.runs[0].directorReply).toContain('fallback-written');
+    expect(director).toHaveBeenCalledTimes(2);
+    expect(director.mock.calls[0][0]).toMatchObject({ model: 'izzi/auto' });
+    expect(director.mock.calls[1][0]).toMatchObject({ model: 'gpt-4o-mini' });
+  });
+
+  it('keeps the original director error when the fallback model also fails', async () => {
+    const director = vi.fn()
+      .mockResolvedValueOnce({ reply: '', error: 'http 502' })
+      .mockResolvedValueOnce({ reply: '', error: 'http 402: upstream_error: Upstream error: 402' });
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Build a measurable content plan for seven days',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('mã 502');
+    expect(result.snapshot?.runs[0].stage).toBe('director_unavailable');
+    expect(director).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    'http 401',
+    'http 402: insufficient_credits',
+    'http 429',
+    'http 400: invalid_request_error: unknown model',
+  ])('does not retry on the fallback model for %s', async (directorError) => {
+    const director = vi.fn(async () => ({ reply: '', error: directorError }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    await context.service.askDirector({
+      goal: 'Build a measurable content plan for seven days',
+    });
+
+    expect(director).toHaveBeenCalledTimes(1);
+  });
+
   it('reserves authoritative workspace credit before invoking the director', async () => {
     const workspace = remoteWorkspace();
     const reserveQuota = vi.fn(async () => {
