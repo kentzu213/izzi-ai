@@ -2688,8 +2688,8 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].status).toBe('awaiting_approval');
     expect(result.snapshot?.runs[0].directorReply).toContain('fallback-written');
     expect(director).toHaveBeenCalledTimes(2);
-    expect(director.mock.calls[0][0]).toMatchObject({ model: 'izzi/auto' });
-    expect(director.mock.calls[1][0]).toMatchObject({ model: 'gpt-4o-mini' });
+    expect(director.mock.calls[0][0]).toMatchObject({ model: 'izzi/auto', maxTokens: 1500 });
+    expect(director.mock.calls[1][0]).toMatchObject({ model: 'gpt-4o-mini', maxTokens: 1500 });
   });
 
   it('keeps the original director error when the fallback model also fails', async () => {

@@ -413,6 +413,9 @@ const CUSTOMER_MARKETING_MODEL_DRAFT_CREDIT_CEILING = 1;
 const CUSTOMER_MARKETING_MODEL_DRAFT_FEATURE_GATE = 'customer-marketing-staging';
 const CUSTOMER_MARKETING_MODEL_DRAFT_MODEL = 'gpt-5.6-sol';
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
+// The default 4096-token reservation gets a 402 from the gpt-4o-mini route (>=2000 fails);
+// 1500 still fits a complete Vietnamese plan.
+const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 1500;
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
@@ -4636,6 +4639,7 @@ export class CustomerMarketingService {
       enableTools: false,
       agentId: 'customer-marketing-director',
       agentName: 'AI Marketing Director',
+      ...(modelDraftEnabled ? {} : { maxTokens: CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS }),
     };
     const directorOptions: IzziAgentChatRequestOptions | undefined = modelDraftEnabled
       ? { idempotencyKey: `marketing-draft:${run.id}` }
