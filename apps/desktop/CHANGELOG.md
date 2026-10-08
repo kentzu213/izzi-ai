@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.94
+
+Agent Marketing: AI Director plans with FAQ questions about the product are no longer blocked by Brand Guardian.
+
+- Questions and outline topics such as "IzziAPI có hỗ trợ format OpenAI không?" no longer count as unsupported product claims.
+- Questions that slip in a superlative or guarantee ("tốt nhất", "hàng đầu", "fastest") are still blocked.
+
 ## 1.14.0-beta.93
 
 Agent Marketing: AI Director plans for IzziAPI are no longer blocked by Brand Guardian.
