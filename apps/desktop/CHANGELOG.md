@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.93
+
+Agent Marketing: AI Director plans for IzziAPI are no longer blocked by Brand Guardian.
+
+- Brand Guardian now blocks real secret values (keys, tokens, passwords) instead of any mention of "API key".
+- When Brand Guardian blocks a plan, the error now says which check failed.
+
 ## 1.14.0-beta.92
 
 Agent Marketing: richer AI Director plans finish instead of stopping mid-sentence.
