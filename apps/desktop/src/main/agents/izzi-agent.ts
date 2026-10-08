@@ -144,6 +144,114 @@ export function rendererSafeIzziAgentChatResult(
 const ROLES = new Set(['system', 'user', 'assistant']);
 const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
 const HIGH_REASONING_MODEL = 'gpt-5.6-sol';
+/**
+ * The gateway answers stream=true on fixed-price routes with a 400, and SmartRouter
+ * may pick one after the request is sent, so these stay non-streamed. Every other
+ * model streams: the gateway 502s long non-streamed replies before they finish.
+ */
+const NON_STREAMING_MODELS = new Set([
+  'izzi-smart',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'grok-4.5-high',
+  'gcli/grok-4.5-high',
+]);
+
+function shouldStreamModel(model: string): boolean {
+  return !NON_STREAMING_MODELS.has(model) && !model.startsWith('izzi-smart:');
+}
+
+type ChatToolCall = { id: string; type?: string; function?: { name?: string; arguments?: string } };
+type ChatCompletion = {
+  model?: unknown;
+  usage?: unknown;
+  choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; tool_calls?: ChatToolCall[] } }>;
+};
+type ChatCompletionChunk = {
+  model?: unknown;
+  usage?: unknown;
+  error?: unknown;
+  choices?: Array<{
+    finish_reason?: unknown;
+    delta?: {
+      content?: unknown;
+      tool_calls?: Array<{ index?: unknown; id?: unknown; function?: { name?: unknown; arguments?: unknown } }>;
+    };
+  }>;
+};
+
+/** Read a chat completion, folding an SSE stream into the non-streamed response shape. */
+async function readChatCompletion(res: Response): Promise<ChatCompletion> {
+  const contentType = res.headers?.get?.('content-type') ?? '';
+  const reader = contentType.includes('text/event-stream') ? res.body?.getReader() : undefined;
+  if (!reader) return (await res.json()) as ChatCompletion;
+
+  const decoder = new TextDecoder();
+  const toolCalls: ChatToolCall[] = [];
+  let content = '';
+  let model: unknown;
+  let usage: unknown;
+  let finishReason: unknown;
+  let buffer = '';
+  let done = false;
+
+  const applyLine = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return;
+    const data = trimmed.slice(5).trim();
+    if (data === '[DONE]') { done = true; return; }
+    if (!data) return;
+    const chunk = JSON.parse(data) as ChatCompletionChunk;
+    if (chunk.error) throw new Error('stream-error');
+    if (typeof chunk.model === 'string') model = chunk.model;
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    if (typeof choice.delta?.content === 'string') content += choice.delta.content;
+    for (const part of choice.delta?.tool_calls ?? []) {
+      const index = typeof part.index === 'number' ? part.index : toolCalls.length;
+      const call = toolCalls[index] ?? { id: '', function: { name: '', arguments: '' } };
+      toolCalls[index] = {
+        id: typeof part.id === 'string' && part.id ? part.id : call.id,
+        type: 'function',
+        function: {
+          name: (call.function?.name ?? '') + (typeof part.function?.name === 'string' ? part.function.name : ''),
+          arguments: (call.function?.arguments ?? '')
+            + (typeof part.function?.arguments === 'string' ? part.function.arguments : ''),
+        },
+      };
+    }
+  };
+
+  try {
+    while (!done) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        applyLine(line);
+        if (done) break;
+      }
+    }
+    if (!done) applyLine(buffer + decoder.decode());
+  } finally {
+    reader.releaseLock();
+  }
+
+  const calls = toolCalls.filter(Boolean);
+  return {
+    model,
+    usage,
+    choices: [{
+      finish_reason: finishReason,
+      message: { content, ...(calls.length > 0 ? { tool_calls: calls } : {}) },
+    }],
+  };
+}
 
 function nonNegativeInteger(value: unknown): number | null {
   return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : null;
@@ -283,14 +391,17 @@ export class IzziAgent {
     const toolIndex = payload.enableTools && this.toolHost ? buildExtensionTools(this.toolHost) : null;
     const tools = toolIndex && toolIndex.tools.length > 0 && modelSupportsTools(model) ? toolIndex.tools : null;
 
+    const streaming = shouldStreamModel(model);
+
     try {
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const body: Record<string, unknown> = {
           model,
           messages: reqMessages,
-          stream: false,
+          stream: streaming,
           max_tokens: maxTokens,
         };
+        if (streaming) body.stream_options = { include_usage: true };
         if (model === HIGH_REASONING_MODEL) body.reasoning_effort = 'high';
         if (tools) {
           body.tools = tools;
@@ -306,11 +417,7 @@ export class IzziAgent {
           body: JSON.stringify(body),
         });
         if (!res.ok) return { reply: '', error: await readIzziAgentHttpError(res) };
-        const data = (await res.json()) as {
-          model?: unknown;
-          usage?: unknown;
-          choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; tool_calls?: Array<{ id: string; function?: { name?: string; arguments?: string } }> } }>;
-        };
+        const data = await readChatCompletion(res);
         const truncated = data?.choices?.[0]?.finish_reason === 'length';
         const msg = data?.choices?.[0]?.message;
         const toolCalls = msg?.tool_calls;

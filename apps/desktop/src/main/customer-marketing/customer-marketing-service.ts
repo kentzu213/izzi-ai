@@ -412,6 +412,8 @@ const CUSTOMER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_MARKETING_MODEL_DRAFT_CREDIT_CEILING = 1;
 const CUSTOMER_MARKETING_MODEL_DRAFT_FEATURE_GATE = 'customer-marketing-staging';
 const CUSTOMER_MARKETING_MODEL_DRAFT_MODEL = 'gpt-5.6-sol';
+// Streamed by IzziAgent; fixed-price and izzi-smart routes cannot stream and 502 on long plans.
+const CUSTOMER_MARKETING_DIRECTOR_MODEL = 'gpt-6.1-sol';
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
 // The default 4096-token reservation gets a 402 from the gpt-4o-mini route (>=2000 fails);
 // 1500 still fits a complete Vietnamese plan.
@@ -4635,7 +4637,7 @@ export class CustomerMarketingService {
     const directorPayload: IzziAgentChatPayload = {
       systemPrompt,
       message: prompt,
-      model: modelDraftEnabled ? CUSTOMER_MARKETING_MODEL_DRAFT_MODEL : 'izzi/auto',
+      model: modelDraftEnabled ? CUSTOMER_MARKETING_MODEL_DRAFT_MODEL : CUSTOMER_MARKETING_DIRECTOR_MODEL,
       enableTools: false,
       agentId: 'customer-marketing-director',
       agentName: 'AI Marketing Director',
@@ -4653,7 +4655,7 @@ export class CustomerMarketingService {
     } catch {
       director = { reply: '', error: 'network' };
     }
-    // izzi/auto rides the gateway's izzi-smart route; when that route times out or its
+    // The Director route rides one codex-lb account; when it is out of quota or its
     // provider fails, one retry on a fast fixed model keeps the plan AI-written.
     if (!modelDraftEnabled && !director.reply && isTransientDirectorError(director.error)) {
       const fallback = await this.runDirector({

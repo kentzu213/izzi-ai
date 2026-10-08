@@ -32,7 +32,126 @@ function mockFetchSequence(responses: any[]) {
   });
 }
 
+function sseResponse(events: unknown[]) {
+  const text = events.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('');
+  const bytes = new TextEncoder().encode(text);
+  // Split mid-event so the reader must buffer partial lines.
+  const cut = Math.floor(bytes.length / 2);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes.slice(0, cut));
+      controller.enqueue(bytes.slice(cut));
+      controller.close();
+    },
+  });
+  return { ok: true, headers: { get: () => 'text/event-stream; charset=utf-8' }, body } as any;
+}
+
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+
+describe('IzziAgent streaming', () => {
+  it.each(['gpt-6.1-sol', 'gpt-4o-mini'])('streams %s with usage reporting', async (model) => {
+    const fetchMock = vi.fn(async () => sseResponse([
+      { model, choices: [{ delta: { content: 'xin ' } }] },
+      { model, choices: [{ delta: { content: 'chào' }, finish_reason: 'stop' }] },
+      { model, choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } },
+      '[DONE]',
+    ]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new IzziAgent(auth, toolHost).chat({ systemPrompt: 's', message: 'hi', model });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      model,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    expect(result.reply).toBe('xin chào');
+    expect(result.truncated).toBeUndefined();
+    expect(result.execution).toEqual({
+      requestedModel: model,
+      servedModel: model,
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedTokens: 0 },
+    });
+  });
+
+  it.each(['izzi/auto', 'izzi-smart:online', 'gpt-5.6-sol', 'gpt-5.6-terra', 'grok-4.5-high'])(
+    'keeps %s non-streamed because the gateway refuses to stream it',
+    async (model) => {
+      const fetchMock = mockFetchSequence([{ choices: [{ message: { content: 'ok' } }] }]);
+      vi.stubGlobal('fetch', fetchMock);
+
+      await new IzziAgent(auth, toolHost).chat({ systemPrompt: 's', message: 'hi', model });
+
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.stream).toBe(false);
+      expect(body.stream_options).toBeUndefined();
+    },
+  );
+
+  it('flags a streamed reply that hit the token limit as truncated', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+      { model: 'gpt-6.1-sol', choices: [{ delta: { content: 'một nửa' }, finish_reason: 'length' }] },
+      '[DONE]',
+    ])));
+
+    const result = await new IzziAgent(auth, toolHost).chat({ systemPrompt: 's', message: 'hi', model: 'gpt-6.1-sol' });
+
+    expect(result).toMatchObject({ reply: 'một nửa', truncated: true });
+  });
+
+  it('merges streamed tool-call fragments by index before running the tool', async () => {
+    let call = 0;
+    const fetchMock = vi.fn(async () => {
+      call++;
+      if (call === 1) {
+        return sseResponse([
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'social-auto-poster__postNow', arguments: '{"te' } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'xt":"hi"}' } }] }, finish_reason: 'tool_calls' }] },
+          '[DONE]',
+        ]);
+      }
+      return sseResponse([{ choices: [{ delta: { content: 'Đã đăng' }, finish_reason: 'stop' }] }, '[DONE]']);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new IzziAgent(auth, toolHost).chat({
+      systemPrompt: 's', message: 'đăng bài', model: 'gpt-6.1-sol', enableTools: true,
+    });
+
+    expect(result.reply).toBe('Đã đăng');
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const assistantTurn = second.messages.find((m: any) => m.role === 'assistant');
+    expect(assistantTurn.tool_calls[0]).toMatchObject({
+      id: 'call_1',
+      function: { name: 'social-auto-poster__postNow', arguments: '{"text":"hi"}' },
+    });
+    expect(second.messages.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'call_1' });
+  });
+
+  it('reads a JSON body when the gateway answers a stream request without SSE', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ choices: [{ message: { content: 'json ok' } }] }),
+    }) as any));
+
+    const result = await new IzziAgent(auth, toolHost).chat({ systemPrompt: 's', message: 'hi', model: 'gpt-6.1-sol' });
+
+    expect(result.reply).toBe('json ok');
+  });
+
+  it('reports a mid-stream upstream error as a transient network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+      { choices: [{ delta: { content: 'đang' } }] },
+      { error: { message: 'upstream reset' } },
+    ])));
+
+    const result = await new IzziAgent(auth, toolHost).chat({ systemPrompt: 's', message: 'hi', model: 'gpt-6.1-sol' });
+
+    expect(result).toEqual({ reply: '', error: 'network' });
+  });
+});
 
 describe('IzziAgent tool-calling', () => {
   it('single-turn (tools disabled): no tools in request, returns content', async () => {
