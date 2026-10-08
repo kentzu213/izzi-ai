@@ -1,4 +1,10 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.92
+
+Agent Marketing: richer AI Director plans finish instead of stopping mid-sentence.
+
+- AI Director now has twice the room to write a plan; the fast fallback model keeps its safe limit.
+
 ## 1.14.0-beta.91
 
 Agent Marketing: AI Director plans no longer fail with a 502 error.
