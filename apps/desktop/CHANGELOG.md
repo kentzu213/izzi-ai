@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.90
+
+Settings: create and track Izzi API keys without leaving the app.
+
+- A new API & Usage tab shows your balance, plan, spend by day and by model, and recent requests.
+- Create an Izzi key in one step: the key is shown once and the app starts using it right away.
+- Revoke keys from the same list; the key the app uses for chat is labelled so it is not revoked by accident.
+- Custom Provider can create a fresh Izzi key in place and now offers gpt-6.1-sol.
+
 ## 1.14.0-beta.89
 
 Agent Marketing: AI Director plans no longer fail with a 502 or 402 error.

@@ -4,6 +4,7 @@ import { DatabaseManager } from '../db/database';
 // Verified against codex-lb /v1/models — GPT-5.6 (Sol/Terra/Luna) are the new flagships.
 export const ALLOWED_MODELS = [
   'izzi-smart',
+  'gpt-6.1-sol',
   'grok-4.5-high',
   'gcli/grok-4.5-high',
   'gpt-5.6-sol',

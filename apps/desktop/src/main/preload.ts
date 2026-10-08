@@ -54,6 +54,12 @@ import type {
   MutationResult,
 } from './affiliate/affiliate-client';
 import type {
+  CreateKeyResult,
+  IzziOverview,
+  IzziUsagePage,
+  RevokeKeyResult,
+} from './izzi-account/izzi-account-client';
+import type {
   MarketingPathSelectionResult,
   MarketingWorkspaceSnapshot,
 } from '../shared/marketing-types';
@@ -799,6 +805,19 @@ const electronAPI = {
       ipcRenderer.invoke('affiliate:convertCredit', amount),
     openWeb: (): Promise<{ ok: boolean; url?: string }> =>
       ipcRenderer.invoke('affiliate:openWeb'),
+  },
+
+  // Settings → API & Usage. Only DTOs cross; the session token and stored key stay in main.
+  izziAccount: {
+    overview: (): Promise<IzziOverview> => ipcRenderer.invoke('izziAccount:overview'),
+    recentUsage: (offset: number): Promise<IzziUsagePage> =>
+      ipcRenderer.invoke('izziAccount:recentUsage', offset),
+    createKey: (name: string): Promise<CreateKeyResult> =>
+      ipcRenderer.invoke('izziAccount:createKey', name),
+    revokeKey: (id: string): Promise<RevokeKeyResult> =>
+      ipcRenderer.invoke('izziAccount:revokeKey', id),
+    openDashboard: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('izziAccount:openDashboard'),
+    openTopUp: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('izziAccount:openTopUp'),
   },
 
   // Scheduled Sessions (spec: scheduled-sessions). The renderer picks a playbook by id plus a time;
