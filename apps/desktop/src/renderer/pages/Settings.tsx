@@ -8,6 +8,8 @@ import type {
   IntegrationConnection,
 } from '../../main/agent/types';
 import type { DesktopUpdaterState } from '../../main/updater/types';
+import { ApiUsageSection } from './settings/ApiUsageSection';
+import { CreateIzziKeyFlow } from './settings/CreateIzziKeyFlow';
 
 interface SettingsPageProps {
   user: any;
@@ -19,6 +21,7 @@ interface SettingsPageProps {
 
 type SettingsSectionId =
   | 'account'
+  | 'apiUsage'
   | 'runner'
   | 'customProvider'
   | 'updates'
@@ -33,6 +36,7 @@ interface SectionMeta {
 
 const SECTIONS: SectionMeta[] = [
   { id: 'account', label: 'Tài khoản' },
+  { id: 'apiUsage', label: 'API & Usage' },
   { id: 'runner', label: 'Runner & Plan' },
   { id: 'customProvider', label: 'Custom Provider' },
   { id: 'updates', label: 'Cập nhật' },
@@ -104,6 +108,7 @@ export function SettingsPage({
           />
         )}
         {activeSection === 'runner' && <RunnerPlanSection runtimeState={runtimeState} user={user} />}
+        {activeSection === 'apiUsage' && <ApiUsageSection />}
         {activeSection === 'customProvider' && <CustomProviderSection />}
         {activeSection === 'updates' && (
           <UpdatesSection
@@ -402,7 +407,18 @@ function DangerZoneSection({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-const ALLOWED_MODELS_UI = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex'] as const;
+const ALLOWED_MODELS_UI = [
+  'izzi-smart',
+  'gpt-6.1-sol',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-mini',
+  'grok-4.5-high',
+  'gcli/grok-4.5-high',
+] as const;
 
 interface CustomProviderConfigView {
   baseUrl: string;
@@ -421,6 +437,7 @@ function CustomProviderSection() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [creatingKey, setCreatingKey] = useState(false);
 
   async function loadConfig() {
     if (!window.electronAPI?.customProvider) return;
@@ -621,7 +638,25 @@ function CustomProviderSection() {
         <button className="btn btn--secondary" disabled={busy} onClick={() => void handleTest()}>
           Test connection
         </button>
+        <button className="btn btn--ghost" disabled={busy} onClick={() => setCreatingKey(true)}>
+          Tạo key Izzi mới & dùng ngay
+        </button>
       </div>
+
+      <CreateIzziKeyFlow
+        open={creatingKey}
+        onClose={() => setCreatingKey(false)}
+        onCreated={(savedLocally) => {
+          setError(null);
+          setApiKey('');
+          setInfo(
+            savedLocally
+              ? 'Đã tạo key Izzi mới và bật Custom Provider.'
+              : 'Đã tạo key Izzi mới nhưng chưa lưu được vào app — dán key vừa sao chép vào ô API key rồi bấm Lưu.',
+          );
+          void loadConfig();
+        }}
+      />
 
       {info && <div className="settings-item__description">{info}</div>}
       {error && <div className="settings-item__description settings-error__summary">{summarizeError(error)}</div>}

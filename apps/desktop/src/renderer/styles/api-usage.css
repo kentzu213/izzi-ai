@@ -1,0 +1,142 @@
+/* Settings → API & Usage. Tokens only — no colour literals. */
+
+.api-usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.api-usage__notice {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.api-usage__notice--ok {
+  background: var(--color-success-bg);
+}
+
+.api-usage__notice--err {
+  background: var(--color-error-bg);
+}
+
+.api-usage__chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  height: 140px;
+  padding-top: var(--space-md);
+}
+
+.api-usage__bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: var(--space-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+.api-usage__bar {
+  width: 100%;
+  max-width: 36px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-accent-primary);
+}
+
+.api-usage__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.api-usage__table th,
+.api-usage__table td {
+  padding: var(--space-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.api-usage__table th {
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.api-usage__table td.api-usage__num,
+.api-usage__table th.api-usage__num {
+  text-align: right;
+}
+
+.api-usage__mono {
+  font-family: var(--font-mono);
+}
+
+.api-usage__empty {
+  padding: var(--space-md) 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.api-usage__badge {
+  display: inline-block;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+}
+
+.api-usage__badge--ok {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.api-usage__badge--err {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.api-usage__badge--accent {
+  background: var(--color-accent-primary);
+  color: var(--color-text-primary);
+}
+
+.api-usage__modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.api-usage__modal {
+  width: min(520px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.api-usage__key-reveal {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  word-break: break-all;
+  user-select: all;
+}

@@ -31,6 +31,8 @@ import { registerScheduleIpc } from './scheduler/schedule-ipc';
 import { GraphAgent } from './graph/graph-agent';
 import { AffiliateClient } from './affiliate/affiliate-client';
 import { registerAffiliateIpc } from './affiliate/affiliate-ipc';
+import { IzziAccountClient } from './izzi-account/izzi-account-client';
+import { registerIzziAccountIpc } from './izzi-account/izzi-account-ipc';
 import { ExtensionManager } from './extensions/manager';
 import { ExtensionLoader } from './extensions/extension-loader';
 import { PERMISSION_DEFINITIONS } from './extensions/permissions';
@@ -536,6 +538,11 @@ function setupIPC() {
   // ── Affiliate (shared backend /api/affiliate/*; token stays in main) ──
   const affiliateClient = new AffiliateClient(authManager);
   registerAffiliateIpc(affiliateClient);
+
+  // ── Izzi account (Settings → API & Usage: keys, balance, usage; token stays in main) ──
+  registerIzziAccountIpc(
+    new IzziAccountClient(authManager, new SecretStore(dbManager), new ProviderSettingsStore(dbManager)),
+  );
 
   // ── Izzi-native persona agents (Socrates, Orchestrator) — Agent Hub; key in main ──
   // Lazy tool-host adapter: resolves extensionLoader at call-time (it's initialized later

@@ -204,6 +204,68 @@ declare global {
     openWeb: () => Promise<{ ok: boolean; url?: string }>;
   }
 
+  /** Izzi account DTOs — mirror the main-process IzziAccountClient (Settings → API & Usage). */
+  type IzziOverviewFailure = 'not-signed-in' | 'unauthorized' | 'forbidden' | 'network';
+  interface IzziApiKey {
+    id: string;
+    name: string;
+    prefix: string;
+    status: string;
+    lastUsedAt: string | null;
+    createdAt: string;
+  }
+  interface IzziUsageStats {
+    totalCost: number;
+    totalRequests: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    daily: Array<{ day: string; cost: number }>;
+    byModel: Array<{ model: string; cost: number; requests: number }>;
+  }
+  interface IzziOverview {
+    ok: boolean;
+    reason?: IzziOverviewFailure;
+    balance: number | null;
+    plan: string | null;
+    stats: IzziUsageStats | null;
+    keys: IzziApiKey[] | null;
+    inUseKeyId: string | null;
+    managedKeyId: string | null;
+  }
+  interface IzziUsageRow {
+    id: string;
+    createdAt: string;
+    model: string;
+    keyName: string;
+    inputTokens: number;
+    outputTokens: number;
+    cost: number;
+    durationMs: number;
+    statusCode: number;
+  }
+  interface IzziUsagePage {
+    ok: boolean;
+    reason?: IzziOverviewFailure;
+    rows: IzziUsageRow[];
+    hasMore: boolean;
+  }
+  type IzziCreateKeyResult =
+    | { success: true; key: string; id: string; name: string; savedLocally: boolean }
+    | { success: false; error: string };
+  type IzziRevokeKeyResult =
+    | { success: true; wasInUse: boolean; wasManaged: boolean }
+    | { success: false; error: string };
+
+  /** Renderer-facing Izzi account IPC surface — mirrors the preload `izziAccount` namespace. */
+  interface ElectronIzziAccountApi {
+    overview: () => Promise<IzziOverview>;
+    recentUsage: (offset: number) => Promise<IzziUsagePage>;
+    createKey: (name: string) => Promise<IzziCreateKeyResult>;
+    revokeKey: (id: string) => Promise<IzziRevokeKeyResult>;
+    openDashboard: () => Promise<{ ok: boolean }>;
+    openTopUp: () => Promise<{ ok: boolean }>;
+  }
+
   interface ElectronMarketingApi {
     getSnapshot: () => Promise<MarketingWorkspaceSnapshot>;
     selectWorkspace: () => Promise<MarketingPathSelectionResult>;
@@ -552,6 +614,7 @@ declare global {
     graphAgent?: ElectronGraphAgentApi;
     izziAgent?: ElectronIzziAgentApi;
     affiliate?: ElectronAffiliateApi;
+    izziAccount?: ElectronIzziAccountApi;
     marketing?: ElectronMarketingApi;
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;

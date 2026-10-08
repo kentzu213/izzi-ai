@@ -707,6 +707,25 @@ export class AuthManager {
     }
   }
 
+  /** The desktop chat key if one is already minted for the signed-in user; never mints. */
+  peekDesktopApiKey(): string | null {
+    const userId = this.session?.user?.id;
+    if (!userId) return null;
+    if (this.desktopKeyCache?.userId === userId) return this.desktopKeyCache.key;
+    const stored = this.loadDesktopKey();
+    return stored && stored.userId === userId && stored.key ? stored.key : null;
+  }
+
+  /** Drop the desktop chat key (e.g. after it was revoked) so the next chat mints a fresh one. */
+  forgetDesktopApiKey(): void {
+    this.desktopKeyCache = null;
+    try {
+      this.db.deleteSetting('izzi_desktop_key');
+    } catch (err) {
+      console.error('[Auth] Failed to forget desktop key:', err instanceof Error ? err.message : 'unknown');
+    }
+  }
+
   /** Load the persisted desktop key ({ userId, key }), decrypted. */
   private loadDesktopKey(): { userId: string; key: string } | null {
     try {
