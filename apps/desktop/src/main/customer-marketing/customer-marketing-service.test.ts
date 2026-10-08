@@ -2202,7 +2202,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(director.mock.calls[0][0]).toEqual(expect.objectContaining({
       enableTools: false,
       agentId: 'customer-marketing-director',
-      model: 'izzi/auto',
+      model: 'gpt-6.1-sol',
     }));
     expect(director.mock.calls[0][0].systemPrompt).toContain('tiếng Việt');
     expect(director.mock.calls[0][0].systemPrompt).toContain('theo từng tuần');
@@ -2673,7 +2673,7 @@ describe('CustomerMarketingService AI Director', () => {
     'network',
     'http 502',
     'http 401: upstream_error: Upstream error: 401',
-  ])('writes the plan on the fallback model when izzi/auto reports %s', async (directorError) => {
+  ])('writes the plan on the fallback model when gpt-6.1-sol reports %s', async (directorError) => {
     const director = vi.fn()
       .mockResolvedValueOnce({ reply: '', error: directorError })
       .mockResolvedValueOnce({ reply: 'A fallback-written marketing plan.' });
@@ -2688,7 +2688,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].status).toBe('awaiting_approval');
     expect(result.snapshot?.runs[0].directorReply).toContain('fallback-written');
     expect(director).toHaveBeenCalledTimes(2);
-    expect(director.mock.calls[0][0]).toMatchObject({ model: 'izzi/auto', maxTokens: 1500 });
+    expect(director.mock.calls[0][0]).toMatchObject({ model: 'gpt-6.1-sol', maxTokens: 1500 });
     expect(director.mock.calls[1][0]).toMatchObject({ model: 'gpt-4o-mini', maxTokens: 1500 });
   });
 
