@@ -2632,6 +2632,42 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.error).not.toContain('giá trị bí mật');
   });
 
+  it('accepts FAQ questions and outline topics that name the product without a proof id', async () => {
+    const director = vi.fn(async () => ({
+      reply: [
+        'Bài 1: IzziAPI là gì theo định vị “một key cho nhiều model”',
+        'FAQ: IzziAPI có hỗ trợ format OpenAI không?',
+        'Trả lời: dùng proof-api-catalog cho danh mục model.',
+        'Does IzziAPI support streaming responses?',
+      ].join('\n'),
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a developer FAQ plan for next month',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0].stage).toBe('awaiting_strategy_approval');
+  });
+
+  it('still blocks a rhetorical question that carries a superlative product claim', async () => {
+    const director = vi.fn(async () => ({
+      reply: 'Tại sao IzziAPI là lựa chọn tốt nhất cho developer Việt Nam?',
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('claim sản phẩm chưa trích proof');
+    expect(result.snapshot?.runs[0].stage).toBe('brand_review_blocked');
+  });
+
   it('reconstructs a missing tenant mirror from durable workflow evidence after restart', async () => {
     const identity: CustomerIdentity = {
       id: 'tenant-orphan-recovery',
