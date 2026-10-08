@@ -1,4 +1,11 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.91
+
+Agent Marketing: AI Director plans no longer fail with a 502 error.
+
+- Izzi chat replies now stream from the model gateway, so long plans finish instead of timing out.
+- AI Director now plans with gpt-6.1-sol and still falls back to a fast model if it is busy.
+
 ## 1.14.0-beta.90
 
 Settings: create and track Izzi API keys without leaving the app.
