@@ -2688,7 +2688,7 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].status).toBe('awaiting_approval');
     expect(result.snapshot?.runs[0].directorReply).toContain('fallback-written');
     expect(director).toHaveBeenCalledTimes(2);
-    expect(director.mock.calls[0][0]).toMatchObject({ model: 'gpt-6.1-sol', maxTokens: 1500 });
+    expect(director.mock.calls[0][0]).toMatchObject({ model: 'gpt-6.1-sol', maxTokens: 3000 });
     expect(director.mock.calls[1][0]).toMatchObject({ model: 'gpt-4o-mini', maxTokens: 1500 });
   });
 
