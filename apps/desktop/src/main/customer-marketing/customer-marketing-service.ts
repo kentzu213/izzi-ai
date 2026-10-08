@@ -1189,6 +1189,18 @@ function buildLocalMarketingPlan(
 const PRODUCT_CLAIM_CUE_PATTERN =
   /\b(?:is|are|offers?|provides?|supports?|includes?|has|helps?|reduces?|increases?|guarantees?|delivers?|fastest|best|leading|number\s*one)\b|(?:^|[\s,:;()[\]{}])(?:là|có|cung cấp|hỗ trợ|bao gồm|giúp|giảm|tăng|cam kết|đảm bảo|nhanh nhất|tốt nhất|hàng đầu)(?=$|[\s,:;()[\]{}])/iu;
 
+const PRODUCT_CLAIM_STRONG_CUE_PATTERN =
+  /\b(?:fastest|best|leading|number\s*one|guarantees?)\b|nhanh nhất|tốt nhất|hàng đầu|cam kết|đảm bảo/iu;
+
+const PRODUCT_QUESTION_PATTERN =
+  /(?:^|\s)(?:là gì|như thế nào|ra sao|vì sao|tại sao)(?=$|[\s,:;()[\]{}“”"])|\skhông$/u;
+
+// A question or outline topic about the product is not a claim, unless it smuggles in a superlative.
+function isProductQuestion(normalizedSegment: string, terminator: string): boolean {
+  if (PRODUCT_CLAIM_STRONG_CUE_PATTERN.test(normalizedSegment)) return false;
+  return /[?？]/u.test(terminator) || PRODUCT_QUESTION_PATTERN.test(normalizedSegment);
+}
+
 function normalizedClaimText(value: string): string {
   return value
     .normalize('NFC')
@@ -1209,19 +1221,20 @@ function unsupportedProductClaims(
   const approvedClaimIds = productContext.product.proofClaims
     .map((claim) => normalizedClaimText(claim.id));
 
-  return reply
-    .split(/[\r\n.!?。！？]+/u)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .filter((segment) => {
+  return Array.from(reply.matchAll(/([^\r\n.!?。！？]+)([\r\n.!?。！？]*)/gu))
+    .map(([, segment, terminator]) => ({ segment: segment.trim(), terminator }))
+    .filter(({ segment }) => Boolean(segment))
+    .filter(({ segment, terminator }) => {
       const normalized = normalizedClaimText(segment);
       const namesProduct = productSubjects.some((subject) => normalized.includes(subject));
       const isClaim = PRODUCT_CLAIM_CUE_PATTERN.test(normalized);
       const hasApprovedReference = approvedClaimIds.some(
         (claimId) => normalized.includes(claimId),
       );
-      return namesProduct && isClaim && !hasApprovedReference;
+      return namesProduct && isClaim && !hasApprovedReference
+        && !isProductQuestion(normalized, terminator);
     })
+    .map(({ segment }) => segment)
     .slice(0, 20);
 }
 
