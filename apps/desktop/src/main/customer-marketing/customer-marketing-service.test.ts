@@ -2208,6 +2208,8 @@ describe('CustomerMarketingService AI Director', () => {
     expect(director.mock.calls[0][0].systemPrompt).toContain('theo từng tuần');
     expect(director.mock.calls[0][0].systemPrompt).toContain('KPI');
     expect(director.mock.calls[0][0].systemPrompt).toContain('đơn vị credit');
+    expect(director.mock.calls[0][0].systemPrompt).toContain('ID proof claim không phải internal ID');
+    expect(director.mock.calls[0][0].systemPrompt).toContain('ngoặc vuông');
     expect(director.mock.calls[0][0].message).toContain('Product context revision: 1');
     expect(director.mock.calls[0][0].message).toContain(
       result.snapshot?.productMarketingContext?.sha256,
@@ -2655,6 +2657,44 @@ describe('CustomerMarketingService AI Director', () => {
   it('still blocks a rhetorical question that carries a superlative product claim', async () => {
     const director = vi.fn(async () => ({
       reply: 'Tại sao IzziAPI là lựa chọn tốt nhất cho developer Việt Nam?',
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('claim sản phẩm chưa trích proof');
+    expect(result.snapshot?.runs[0].stage).toBe('brand_review_blocked');
+  });
+
+  it('accepts a bracketed proof id placed right after the sentence it cites', async () => {
+    const director = vi.fn(async () => ({
+      reply: [
+        'IzziAPI cung cấp catalog API cho nhiều workflow AI. [proof-api-catalog]',
+        'Tuần 1: IzziAPI có danh mục model để developer chọn nhanh! [proof-api-catalog] Tuần 2 đo KPI.',
+      ].join('\n'),
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0].stage).toBe('awaiting_strategy_approval');
+  });
+
+  it('still blocks a claim whose bracketed id is unapproved or on the next line', async () => {
+    const director = vi.fn(async () => ({
+      reply: [
+        'IzziAPI cung cấp catalog API cho nhiều workflow AI. [proof-fake-claim]',
+        'IzziAPI giúp giảm chi phí cho developer.',
+        '[proof-api-catalog]',
+      ].join('\n'),
     }));
     const context = setupDirector(director);
     await completeOnboarding(context.service);

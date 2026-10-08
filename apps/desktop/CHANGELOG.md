@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.95
+
+Agent Marketing: AI Director plans that cite proof right after a sentence are no longer blocked by Brand Guardian.
+
+- A proof ID in square brackets right after the full stop, such as "… tương thích OpenAI. [openai-compatible-endpoint]", now counts for that sentence.
+- AI Director is told to put the proof ID in square brackets in the same sentence or table row as the claim.
+- Claims with an unapproved ID, or with the ID on a separate line, are still blocked.
+
 ## 1.14.0-beta.94
 
 Agent Marketing: AI Director plans with FAQ questions about the product are no longer blocked by Brand Guardian.
