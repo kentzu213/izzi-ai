@@ -415,9 +415,10 @@ const CUSTOMER_MARKETING_MODEL_DRAFT_MODEL = 'gpt-5.6-sol';
 // Streamed by IzziAgent; fixed-price and izzi-smart routes cannot stream and 502 on long plans.
 const CUSTOMER_MARKETING_DIRECTOR_MODEL = 'gpt-6.1-sol';
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
-// The default 4096-token reservation gets a 402 from the gpt-4o-mini route (>=2000 fails);
-// 1500 still fits a complete Vietnamese plan.
-const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 1500;
+// gpt-6.1-sol streams, so a richer plan has room to finish instead of stopping mid-sentence.
+const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 3000;
+// The gpt-4o-mini route answers 402 at >=2000 reserved tokens; 1500 still fits a complete plan.
+const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MAX_TOKENS = 1500;
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
@@ -4661,6 +4662,7 @@ export class CustomerMarketingService {
       const fallback = await this.runDirector({
         ...directorPayload,
         model: CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL,
+        maxTokens: CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MAX_TOKENS,
       }).catch(() => null);
       if (fallback?.reply) director = fallback;
     }
