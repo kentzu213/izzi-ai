@@ -2580,6 +2580,58 @@ describe('CustomerMarketingService AI Director', () => {
     expect(durableArtifact?.sha256).toBe(result.snapshot?.approvals[0].evidenceDigest);
   });
 
+  it('accepts a director revision whose CTA asks the customer to create their first API key', async () => {
+    const director = vi.fn(async () => ({
+      reply: [
+        'Use proof-api-catalog: IzziAPI provides an API catalog for multiple AI workflows.',
+        'CTA: đăng ký và tạo API key đầu tiên trong dashboard.',
+      ].join('\n'),
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a developer signup plan for next month',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0].stage).toBe('awaiting_strategy_approval');
+  });
+
+  it('blocks a director revision that leaks a secret value and names the failed check', async () => {
+    const leakedKey = `sk-test${'x'.repeat(24)}`;
+    const director = vi.fn(async () => ({
+      reply: `Use proof-api-catalog: IzziAPI provides an API catalog. Paste api_key=${leakedKey} into the demo.`,
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a developer signup plan for next month',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Brand Guardian');
+    expect(result.error).toContain('giá trị bí mật');
+    expect(result.snapshot?.runs[0].stage).toBe('brand_review_blocked');
+    expect(JSON.stringify(result.snapshot)).not.toContain(leakedKey);
+  });
+
+  it('names the unsupported product claim check when Brand Guardian blocks it', async () => {
+    const director = vi.fn(async () => ({
+      reply: 'IzziAPI is the fastest API platform in Vietnam.',
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.error).toContain('claim sản phẩm chưa trích proof');
+    expect(result.error).not.toContain('giá trị bí mật');
+  });
+
   it('reconstructs a missing tenant mirror from durable workflow evidence after restart', async () => {
     const identity: CustomerIdentity = {
       id: 'tenant-orphan-recovery',

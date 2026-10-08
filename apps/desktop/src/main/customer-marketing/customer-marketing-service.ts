@@ -1368,13 +1368,23 @@ function formatCustomerMarketingModelDraft(draft: CustomerMarketingModelDraft): 
   ].join('\n');
 }
 
+const BRAND_GUARDIAN_CHECK_LABELS = {
+  words_to_avoid: 'từ cần tránh',
+  prohibited_claims: 'claim bị cấm',
+  proof_claim_references: 'claim sản phẩm chưa trích proof',
+  unsafe_external_instruction: 'lệnh hành động ngoài không an toàn',
+  secret_reference: 'giá trị bí mật',
+} as const;
+
+type BrandGuardianCheck = keyof typeof BRAND_GUARDIAN_CHECK_LABELS;
+
 function addDirectorRevisionToEvidence(
   baseContent: string,
   directorReply: string,
   profile: CustomerOnboardingProfile,
   productContext: CustomerProductMarketingContextV1,
   modelExecution?: CustomerMarketingModelDraftEvidence,
-): { passed: boolean; content: string } {
+): { passed: boolean; content: string; failedChecks: BrandGuardianCheck[] } {
   let baseEvidence: unknown;
   try {
     baseEvidence = JSON.parse(baseContent) as unknown;
@@ -1396,12 +1406,21 @@ function addDirectorRevisionToEvidence(
   const unsafeInstructionDetected = [
     /\b(?:publish|post|send|spend|delete|connect|disconnect)\b.{0,48}\b(?:now|immediately|automatically|without approval)\b/i,
     /\b(?:bypass|skip)\b.{0,24}\bapproval\b/i,
-    /\b(?:api key|password|bearer token|credential)\b/i,
   ].some((pattern) => pattern.test(normalizedReply));
-  const passed = blockedWords.length === 0
-    && prohibitedClaimIds.length === 0
-    && unsupportedClaims.length === 0
-    && !unsafeInstructionDetected;
+  // Only secret values block; a CTA such as "tạo API key đầu tiên" is product copy.
+  const secretValueDetected = [
+    /\bsk-[A-Za-z0-9_-]{16,}/,
+    /\bBearer\s+[A-Za-z0-9._~+/-]{16,}/i,
+    /\b(?:api[_ -]?key|password|token|secret|credential)\s*[:=]\s*\S{8,}/i,
+  ].some((pattern) => pattern.test(normalizedReply));
+  const failedChecks: BrandGuardianCheck[] = [
+    ...(blockedWords.length > 0 ? ['words_to_avoid' as const] : []),
+    ...(prohibitedClaimIds.length > 0 ? ['prohibited_claims' as const] : []),
+    ...(unsupportedClaims.length > 0 ? ['proof_claim_references' as const] : []),
+    ...(unsafeInstructionDetected ? ['unsafe_external_instruction' as const] : []),
+    ...(secretValueDetected ? ['secret_reference' as const] : []),
+  ];
+  const passed = failedChecks.length === 0;
   const content = JSON.stringify({
     schemaVersion: 1,
     type: 'customer_marketing_strategy',
@@ -1428,10 +1447,12 @@ function addDirectorRevisionToEvidence(
       prohibitedClaimIds,
       blockedWords,
       unsafeInstructionDetected,
+      secretValueDetected,
+      failedChecks,
     },
     guardrails: { externalActionsAllowed: false },
   });
-  return { passed, content };
+  return { passed, content, failedChecks };
 }
 
 function isTransientDirectorError(error?: string): boolean {
@@ -4726,6 +4747,7 @@ export class CustomerMarketingService {
       }
     }
     if (approvalReply && !workflowPersistenceError) {
+      let brandGuardianFailedChecks: BrandGuardianCheck[] = [];
       try {
         if (!strategyApproval?.evidenceDigest) {
           throw new Error('Strategy approval evidence is missing.');
@@ -4746,6 +4768,7 @@ export class CustomerMarketingService {
           modelDraftEvidence,
         );
         if (!guardedRevision.passed) {
+          brandGuardianFailedChecks = guardedRevision.failedChecks;
           workflowFailureStage = 'brand_review_blocked';
           throw new Error('brand-guardian-blocked');
         }
@@ -4762,7 +4785,9 @@ export class CustomerMarketingService {
         revisedRequestedAt = revised.approval.requestedAt;
       } catch (error) {
         workflowPersistenceError = error instanceof Error && error.message === 'brand-guardian-blocked'
-          ? 'Brand Guardian đã chặn kết quả AI Director vì không đạt brand hoặc safety policy.'
+          ? `Brand Guardian đã chặn kết quả AI Director vì không đạt brand hoặc safety policy: ${
+            brandGuardianFailedChecks.map((check) => BRAND_GUARDIAN_CHECK_LABELS[check]).join(', ')
+          }.`
           : 'Không thể gắn kết quả AI Director với bằng chứng approval. Workflow đã được chặn an toàn.';
       }
     }
