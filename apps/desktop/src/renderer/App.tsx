@@ -216,7 +216,7 @@ export function App() {
       setIsAuthenticated(false);
       setCurrentPage('chat');
     });
-  }, [isAuthenticated]);
+  }, [isAuthenticated, resetWorkspace]);
 
   async function checkAuth() {
     try {

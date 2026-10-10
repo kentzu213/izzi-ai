@@ -231,6 +231,14 @@ function sendNativeMarketingOAuthStatus(result: NativeMarketingOAuthCallbackResu
  * JWT (last resort; /v1 does not accept it). So a logged-in user needs no manual
  * key entry, and the credential izzi actually accepts is used first.
  */
+/** Drops invitation state that belongs to the account that just signed out. */
+function clearSignedOutCustomerMarketingState(): void {
+  // Optional call: a session can expire inside initServices(), before setupIPC() creates the service.
+  customerMarketingService?.clearPendingWorkspaceInvitationCopy();
+  customerMarketingInvitationCoordinator?.clearPending();
+  bufferedCustomerMarketingInvitationStatus = null;
+}
+
 async function resolveIzziCredential(auth: AuthManager): Promise<string | null> {
   const envKey = process.env.OPENAI_API_KEY;
   if (typeof envKey === 'string' && envKey.trim().length > 0) return envKey.trim();
@@ -479,9 +487,7 @@ function setupIPC() {
     return result;
   });
   ipcMain.handle('auth:logout', async () => {
-    customerMarketingService.clearPendingWorkspaceInvitationCopy();
-    customerMarketingInvitationCoordinator?.clearPending();
-    bufferedCustomerMarketingInvitationStatus = null;
+    clearSignedOutCustomerMarketingState();
     return authManager.logout();
   });
   ipcMain.handle('auth:getUser', async () => {
@@ -1881,6 +1887,7 @@ async function initServices() {
   authManager = new AuthManager(dbManager, {
     googleOAuthEnabled: DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled,
     onSessionExpired: () => {
+      clearSignedOutCustomerMarketingState();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('auth:sessionExpired');
       }

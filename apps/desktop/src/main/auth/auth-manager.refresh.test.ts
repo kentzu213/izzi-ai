@@ -104,12 +104,33 @@ describe('AuthManager token refresh', () => {
     const db = createDb(nearExpirySession());
     const manager = new AuthManager(db as never, { onSessionExpired });
 
-    expect(await manager.getAccessToken()).toBeNull();
+    expect(await manager.getAccessToken()).toBe('old-access');
 
     expect(manager.isAuthenticated()).toBe(true);
     expect(db.settings.has('auth_session')).toBe(true);
     expect(db.settings.get('izzi_desktop_key')).toBe('cached-key');
     expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it('returns no token after a transient refresh failure once the current token has expired', async () => {
+    supabaseMock.refreshSession.mockResolvedValue(rejected(new AuthRetryableFetchError('fetch failed', 0)));
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() - 1_000 }) as never);
+
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(manager.isAuthenticated()).toBe(true);
+  });
+
+  it('persists the rotated tokens before the profile request finishes', async () => {
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})));
+    const db = createDb(nearExpirySession());
+    const manager = new AuthManager(db as never);
+
+    void manager.getAccessToken();
+    await vi.waitFor(() => expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('new-refresh'));
+
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').user).toEqual(USER);
   });
 
   it('keeps the session when Supabase is rate limiting refreshes', async () => {

@@ -649,17 +649,21 @@ export class AuthManager {
         return false;
       }
 
-      // Refresh profile data
-      const profile = await this.fetchProfile(data.session.access_token);
-      if (this.session?.refreshToken !== refreshToken) return false;
-      const user = profile || this.session.user;
-
-      this.saveSession({
+      // Persist the rotated tokens first: the old refresh token is already spent, so losing
+      // these (profile request hangs, app quits) would sign the user out on the next launch.
+      const rotated: StoredSession = {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
         expiresAt: (data.session.expires_at || 0) * 1000,
-        user,
-      });
+        user: this.session.user,
+      };
+      this.saveSession(rotated);
+
+      // Refresh profile data
+      const profile = await this.fetchProfile(rotated.accessToken);
+      if (profile && this.session === rotated) {
+        this.saveSession({ ...rotated, user: profile });
+      }
 
       return true;
     } catch {
@@ -674,10 +678,11 @@ export class AuthManager {
     // Refresh 5 minutes before expiry
     if (this.session.expiresAt - Date.now() < 5 * 60 * 1000) {
       const refreshed = await this.refreshAccessToken();
-      if (!refreshed) return null;
+      // A transient failure keeps the session; the current token still works until it expires.
+      if (!refreshed && (!this.session || this.session.expiresAt <= Date.now())) return null;
     }
 
-    return this.session.accessToken;
+    return this.session?.accessToken ?? null;
   }
 
   isAuthenticated(): boolean {
