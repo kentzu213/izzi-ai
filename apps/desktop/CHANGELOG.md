@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.96
+
+Sign-in: the app no longer logs you out on its own after a while.
+
+- The app now renews your sign-in in one place, so one renewal can no longer invalidate the next.
+- A network drop or a temporary Supabase error keeps you signed in; the app retries on the next request.
+- If your sign-in really has expired, the app takes you to the login screen instead of failing with "Cần đăng nhập".
+
 ## 1.14.0-beta.95
 
 Agent Marketing: AI Director plans that cite proof right after a sentence are no longer blocked by Brand Guardian.
