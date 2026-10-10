@@ -6,7 +6,7 @@
  * - Token storage via electron safeStorage
  */
 
-import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, Session, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { safeStorage, shell, BrowserWindow } from 'electron';
 import { DatabaseManager } from '../db/database';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
@@ -31,6 +31,16 @@ const OAUTH_POPUP_HOSTS = [
     }
   }),
 ];
+
+/**
+ * True only when Supabase answered and refused the refresh token (revoked, already used,
+ * session gone). Network failures, 5xx and rate limits keep the session for a later retry.
+ */
+function isRefreshTokenRejected(error: unknown): boolean {
+  if (!error || isAuthRetryableFetchError(error)) return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+}
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
@@ -82,12 +92,16 @@ export class AuthManager {
   private supabase: SupabaseClient | null = null;
   private db: DatabaseManager;
   private googleOAuthEnabled: boolean;
+  private onSessionExpired: () => void;
+  /** In-flight refresh shared by concurrent callers: Supabase rotates the refresh token on every use. */
+  private refreshInFlight: Promise<boolean> | null = null;
   /** Minted izzi- key for this desktop (bound to a user id), cached in memory. Never logged. */
   private desktopKeyCache: { userId: string; key: string } | null = null;
 
-  constructor(db: DatabaseManager, options: { googleOAuthEnabled?: boolean } = {}) {
+  constructor(db: DatabaseManager, options: { googleOAuthEnabled?: boolean; onSessionExpired?: () => void } = {}) {
     this.db = db;
     this.googleOAuthEnabled = options.googleOAuthEnabled ?? true;
+    this.onSessionExpired = options.onSessionExpired ?? (() => {});
     this.initSupabase();
     this.loadSession();
   }
@@ -96,7 +110,9 @@ export class AuthManager {
     if (SUPABASE_URL && SUPABASE_ANON_KEY) {
       this.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
-          autoRefreshToken: true,
+          // AuthManager is the single refresh owner. A background ticker would rotate the
+          // refresh token behind our stored copy, and the next manual refresh then fails.
+          autoRefreshToken: false,
           persistSession: false, // We handle persistence ourselves via safeStorage
           flowType: 'implicit', // Electron popup reads access/refresh tokens from the redirect hash.
         },
@@ -603,30 +619,51 @@ export class AuthManager {
     console.log('[Auth] Logged out');
   }
 
-  async refreshAccessToken(): Promise<boolean> {
-    if (!this.session?.refreshToken || !this.supabase) return false;
+  refreshAccessToken(): Promise<boolean> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refreshAccessTokenOnce().finally(() => {
+        this.refreshInFlight = null;
+      });
+    }
+    return this.refreshInFlight;
+  }
+
+  private async refreshAccessTokenOnce(): Promise<boolean> {
+    const refreshToken = this.session?.refreshToken;
+    if (!refreshToken || !this.supabase) return false;
 
     try {
       const { data, error } = await this.supabase.auth.refreshSession({
-        refresh_token: this.session.refreshToken,
+        refresh_token: refreshToken,
       });
+
+      // Logged out or signed in again while the request was in flight.
+      if (this.session?.refreshToken !== refreshToken) return false;
 
       if (error || !data.session) {
         console.error('[Auth] Token refresh failed:', error?.message);
-        this.clearSession();
+        if (isRefreshTokenRejected(error)) {
+          this.clearSession();
+          this.onSessionExpired();
+        }
         return false;
       }
 
-      // Refresh profile data
-      const profile = await this.fetchProfile(data.session.access_token);
-      const user = profile || this.session.user;
-
-      this.saveSession({
+      // Persist the rotated tokens first: the old refresh token is already spent, so losing
+      // these (profile request hangs, app quits) would sign the user out on the next launch.
+      const rotated: StoredSession = {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
         expiresAt: (data.session.expires_at || 0) * 1000,
-        user,
-      });
+        user: this.session.user,
+      };
+      this.saveSession(rotated);
+
+      // Refresh profile data
+      const profile = await this.fetchProfile(rotated.accessToken);
+      if (profile && this.session === rotated) {
+        this.saveSession({ ...rotated, user: profile });
+      }
 
       return true;
     } catch {
@@ -641,10 +678,11 @@ export class AuthManager {
     // Refresh 5 minutes before expiry
     if (this.session.expiresAt - Date.now() < 5 * 60 * 1000) {
       const refreshed = await this.refreshAccessToken();
-      if (!refreshed) return null;
+      // A transient failure keeps the session; the current token still works until it expires.
+      if (!refreshed && (!this.session || this.session.expiresAt <= Date.now())) return null;
     }
 
-    return this.session.accessToken;
+    return this.session?.accessToken ?? null;
   }
 
   isAuthenticated(): boolean {

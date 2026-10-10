@@ -169,6 +169,11 @@ const electronAPI = {
       ipcRenderer.on('auth:profileRefreshed', handler);
       return () => { ipcRenderer.removeListener('auth:profileRefreshed', handler); };
     },
+    onSessionExpired: (listener: () => void) => {
+      const handler = () => listener();
+      ipcRenderer.on('auth:sessionExpired', handler);
+      return () => { ipcRenderer.removeListener('auth:sessionExpired', handler); };
+    },
   },
 
   sync: {
