@@ -1880,6 +1880,11 @@ async function initServices() {
 
   authManager = new AuthManager(dbManager, {
     googleOAuthEnabled: DESKTOP_RUNTIME_PROFILE.googleOAuthEnabled,
+    onSessionExpired: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:sessionExpired');
+      }
+    },
   });
 
   // Localhost LLM proxy for Docker agents (Hermes) — routes their upstream LLM

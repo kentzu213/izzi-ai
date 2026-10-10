@@ -205,6 +205,19 @@ export function App() {
     return unsubscribe;
   }, [isAuthenticated]);
 
+  // Main signed out because Supabase rejected the refresh token: show the login screen.
+  useEffect(() => {
+    if (!isAuthenticated || !window.electronAPI?.auth?.onSessionExpired) {
+      return undefined;
+    }
+    return window.electronAPI.auth.onSessionExpired(() => {
+      resetWorkspace();
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setCurrentPage('chat');
+    });
+  }, [isAuthenticated]);
+
   async function checkAuth() {
     try {
       if (window.electronAPI) {
