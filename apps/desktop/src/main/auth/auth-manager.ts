@@ -7,30 +7,11 @@
  */
 
 import { createClient, SupabaseClient, Session, isAuthRetryableFetchError } from '@supabase/supabase-js';
-import { safeStorage, shell, BrowserWindow } from 'electron';
+import { safeStorage, shell } from 'electron';
 import { DatabaseManager } from '../db/database';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
-import { IZZI_API_BASE, IZZI_WEB_BASE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/public-config';
-import {
-  OAUTH_POPUP_TIMEOUT_ERROR,
-  OAUTH_POPUP_TIMEOUT_MS,
-  chromeLikeUserAgent,
-  isAllowedOAuthPopupUrl,
-  oauthLoadFailureMessage,
-  readOAuthCallback,
-} from './oauth-popup-guards';
-
-/** Hosts an OAuth-initiated child window may load inside the popup. */
-const OAUTH_POPUP_HOSTS = [
-  'google.com',
-  ...[SUPABASE_URL, IZZI_WEB_BASE].flatMap((base) => {
-    try {
-      return [new URL(base).hostname];
-    } catch {
-      return [];
-    }
-  }),
-];
+import { IZZI_API_BASE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/public-config';
+import { startLoopbackReceiver, type LoopbackReceiver } from './oauth-loopback';
 
 /**
  * True only when Supabase answered and refused the refresh token (revoked, already used,
@@ -97,6 +78,8 @@ export class AuthManager {
   private refreshInFlight: Promise<boolean> | null = null;
   /** Minted izzi- key for this desktop (bound to a user id), cached in memory. Never logged. */
   private desktopKeyCache: { userId: string; key: string } | null = null;
+  /** Pending system-browser Google login; a new attempt cancels the previous one. */
+  private googleLoginReceiver: LoopbackReceiver | null = null;
 
   constructor(db: DatabaseManager, options: { googleOAuthEnabled?: boolean; onSessionExpired?: () => void } = {}) {
     this.db = db;
@@ -114,7 +97,7 @@ export class AuthManager {
           // refresh token behind our stored copy, and the next manual refresh then fails.
           autoRefreshToken: false,
           persistSession: false, // We handle persistence ourselves via safeStorage
-          flowType: 'implicit', // Electron popup reads access/refresh tokens from the redirect hash.
+          flowType: 'implicit', // Signup confirmation links carry tokens in the hash; Google login uses its own PKCE client.
         },
       });
       console.log('[Auth] Supabase client initialized');
@@ -308,8 +291,10 @@ export class AuthManager {
   }
 
   /**
-   * Login with Google OAuth via Supabase
-   * Opens system browser for OAuth flow
+   * Login with Google in the system browser (RFC 8252).
+   * Google refuses embedded Electron windows, so the OAuth page opens in the user's browser
+   * and redirects to a one-shot 127.0.0.1 receiver. A dedicated PKCE client holds the verifier
+   * in memory; the code is exchanged here and the session handed to the main client.
    */
   async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
     if (!this.googleOAuthEnabled) {
@@ -319,135 +304,38 @@ export class AuthManager {
       return { success: false, error: 'Supabase not configured' };
     }
 
+    this.googleLoginReceiver?.close();
+    let receiver: LoopbackReceiver | null = null;
     try {
-      // Use the web app as the final redirect target. Supabase's callback
-      // endpoint is an internal hop; pointing redirectTo back at it can produce
-      // a PKCE code without the verifier stored in this Electron process.
-      const redirectUrl = `${IZZI_WEB_BASE}/auth/callback`;
+      receiver = await startLoopbackReceiver();
+      this.googleLoginReceiver = receiver;
 
-      const { data, error } = await this.supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-        },
+      const oauthClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false, flowType: 'pkce' },
       });
+      const { data, error } = await oauthClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: receiver.redirectUrl, skipBrowserRedirect: true },
+      });
+      if (error) return { success: false, error: error.message };
+      if (!data.url) return { success: false, error: 'No OAuth URL returned' };
 
-      if (error) {
-        return { success: false, error: error.message };
+      await shell.openExternal(data.url);
+      const outcome = await receiver.result;
+      if (outcome.kind === 'error') return { success: false, error: outcome.message };
+
+      const exchanged = await oauthClient.auth.exchangeCodeForSession(outcome.code);
+      if (exchanged.error || !exchanged.data.session) {
+        return { success: false, error: exchanged.error?.message || 'Không đổi được mã đăng nhập Google' };
       }
-
-      if (!data.url) {
-        return { success: false, error: 'No OAuth URL returned' };
-      }
-
-      // Open OAuth in a BrowserWindow popup (much more reliable than custom protocol)
-      return await this.openOAuthPopup(data.url);
+      const { access_token, refresh_token } = exchanged.data.session;
+      return await this.setSessionFromTokens(access_token, refresh_token);
     } catch (err: any) {
       return { success: false, error: err.message };
+    } finally {
+      receiver?.close();
+      if (this.googleLoginReceiver === receiver) this.googleLoginReceiver = null;
     }
-  }
-
-  /**
-   * Open OAuth flow in a BrowserWindow and intercept the callback
-   * This is the standard Electron approach — much more reliable than custom:// protocols
-   */
-  private openOAuthPopup(authUrl: string): Promise<{ success: boolean; user?: User; error?: string }> {
-    return new Promise((resolve) => {
-      const popup = new BrowserWindow({
-        width: 500,
-        height: 700,
-        show: true,
-        autoHideMenuBar: true,
-        title: 'Đăng nhập với Google',
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          partition: 'persist:oauth-google',
-        },
-      });
-
-      let resolved = false;
-      const timeout = setTimeout(() => {
-        finish({ success: false, error: OAUTH_POPUP_TIMEOUT_ERROR });
-      }, OAUTH_POPUP_TIMEOUT_MS);
-      const finish = (result: { success: boolean; user?: User; error?: string }) => {
-        if (resolved) return;
-        resolved = true;
-        clearTimeout(timeout);
-        try { popup.close(); } catch { /* already closed */ }
-        resolve(result);
-      };
-
-      // Google blocks sign-in from embedded browsers it can identify by UA.
-      popup.webContents.setUserAgent(chromeLikeUserAgent(popup.webContents.getUserAgent()));
-
-      // Keep any OAuth-initiated popup inside this window instead of a blank child.
-      popup.webContents.setWindowOpenHandler(({ url }) => {
-        if (isAllowedOAuthPopupUrl(url, OAUTH_POPUP_HOSTS)) {
-          popup.loadURL(url).catch(() => { /* reported via did-fail-load */ });
-        }
-        return { action: 'deny' };
-      });
-
-      popup.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
-        const message = oauthLoadFailureMessage(errorCode, errorDescription, isMainFrame);
-        if (message) finish({ success: false, error: message });
-      });
-
-      popup.webContents.on('render-process-gone', () => {
-        finish({ success: false, error: 'Trang đăng nhập Google bị dừng đột ngột, vui lòng thử lại' });
-      });
-
-      // Intercept navigation to detect the callback URL with tokens
-      popup.webContents.on('will-redirect', async (_event, url) => {
-        await this.tryExtractOAuthTokens(url, finish);
-      });
-
-      popup.webContents.on('will-navigate', async (_event, url) => {
-        await this.tryExtractOAuthTokens(url, finish);
-      });
-
-      // Also handle page title changes (some OAuth flows land on a page with tokens in the URL)
-      popup.webContents.on('did-navigate', async (_event, url) => {
-        await this.tryExtractOAuthTokens(url, finish);
-      });
-
-      // The web callback may move tokens into the hash without a full navigation.
-      popup.webContents.on('did-navigate-in-page', async (_event, url) => {
-        await this.tryExtractOAuthTokens(url, finish);
-      });
-
-      popup.on('closed', () => {
-        finish({ success: false, error: 'Cửa sổ đăng nhập đã bị đóng' });
-      });
-
-      popup.loadURL(authUrl).catch(() => {
-        // did-fail-load carries the reason; this only guards the unhandled rejection.
-      });
-    });
-  }
-
-  /**
-   * Finish the popup once it reaches the izzi callback URL with tokens or an error.
-   * Tokens on any other page are ignored.
-   */
-  private async tryExtractOAuthTokens(
-    url: string,
-    finish: (result: { success: boolean; user?: User; error?: string }) => void,
-  ) {
-    const outcome = readOAuthCallback(url, IZZI_WEB_BASE);
-    // No outcome yet: let navigation continue (user is still in the OAuth flow).
-    // Do NOT call exchangeCodeForSession here: this popup flow intentionally uses
-    // implicit tokens, and exchanging a stray PKCE code without a verifier produces
-    // "both auth code and code verifier should be non-empty".
-    if (!outcome) return;
-    if (outcome.kind === 'error') {
-      finish({ success: false, error: outcome.message });
-      return;
-    }
-    console.log('[Auth] Got OAuth tokens from the callback URL');
-    finish(await this.setSessionFromTokens(outcome.accessToken, outcome.refreshToken));
   }
 
   /**

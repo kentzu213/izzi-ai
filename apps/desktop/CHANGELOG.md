@@ -1,4 +1,12 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.97
+
+Sign-in: Google login works again.
+
+- "Đăng nhập với Google" now opens your usual browser instead of a window inside the app, which Google blocked with "This browser or app may not be secure".
+- After you choose your account, the browser tab says you can close it, and Izzi AI comes back to the front signed in.
+- If you do not finish within 3 minutes, or click the button again, the earlier attempt stops and the login form is usable again.
+
 ## 1.14.0-beta.96
 
 Sign-in: the app no longer logs you out on its own after a while.

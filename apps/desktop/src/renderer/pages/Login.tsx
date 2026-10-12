@@ -78,7 +78,7 @@ export function LoginPage({ onLogin, onGoogleLogin, onSignup }: LoginPageProps) 
 
     setIsLoading(true);
     setError(null);
-    setSuccessMessage('Đang mở cửa sổ đăng nhập Google...');
+    setSuccessMessage('Đang chờ bạn đăng nhập Google trong trình duyệt...');
 
     try {
       const err = await onGoogleLogin();

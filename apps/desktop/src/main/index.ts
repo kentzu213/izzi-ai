@@ -478,6 +478,11 @@ function setupIPC() {
   });
   ipcMain.handle('auth:loginWithGoogle', async () => {
     const result = await authManager.loginWithGoogle();
+    // Sign-in happened in the system browser; bring the app back in front.
+    if (result.success && mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
     if (result.success) await customerMarketingInvitationCoordinator?.flushPending();
     return result;
   });
