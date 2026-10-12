@@ -189,6 +189,19 @@ describe('pickDueJob', () => {
 
     expect(pickDueJob(jobs, now)).toBeNull();
   });
+
+  it('never picks a cancelled job', () => {
+    expect(pickDueJob([job({ id: 'cancelled', status: 'cancelled' })], now)).toBeNull();
+  });
+
+  it('runs a job with an unreadable due time first instead of leaving it stuck', () => {
+    const jobs = [
+      job({ id: 'early', dueAt: '2026-10-12T01:00:00.000Z' }),
+      job({ id: 'broken', dueAt: 'not-a-date' }),
+    ];
+
+    expect(pickDueJob(jobs, now)?.id).toBe('broken');
+  });
 });
 
 describe('MarketingScheduleStore', () => {

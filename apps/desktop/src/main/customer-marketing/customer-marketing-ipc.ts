@@ -187,6 +187,22 @@ function scheduledJobPayload(value: unknown): { jobId: string } {
   return { jobId: payload.jobId };
 }
 
+const DRAFT_ID_PATTERN = /^draft-[0-9a-f-]{36}$/;
+
+function draftPayload(value: unknown): { draftId: string } {
+  const payload = objectPayload<Record<string, unknown>>(value);
+  const keys = Object.keys(payload);
+  if (
+    keys.length !== 1
+    || keys[0] !== 'draftId'
+    || typeof payload.draftId !== 'string'
+    || !DRAFT_ID_PATTERN.test(payload.draftId)
+  ) {
+    throw new Error('Payload bản nháp không hợp lệ.');
+  }
+  return { draftId: payload.draftId };
+}
+
 export interface CustomerMarketingIpcOptions {
   consumeInvitationStatus?: () => CustomerWorkspaceInvitationAcceptanceResult | null;
 }
@@ -638,5 +654,13 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:runScheduledJobNow', async (event, payload: unknown): Promise<CustomerMutationResult> => {
     trusted(event);
     return service.runScheduledJobNow(scheduledJobPayload(payload).jobId);
+  });
+  ipcMain.handle('customerMarketing:cancelScheduledJob', async (event, payload: unknown): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.cancelScheduledJob(scheduledJobPayload(payload).jobId);
+  });
+  ipcMain.handle('customerMarketing:approveDraft', async (event, payload: unknown): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.approveDraft(draftPayload(payload).draftId);
   });
 }

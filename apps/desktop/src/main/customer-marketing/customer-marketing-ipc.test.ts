@@ -174,6 +174,8 @@ function serviceMock() {
     })),
     reviewApproval: vi.fn(),
     runScheduledJobNow: vi.fn(async () => ({ ok: true })),
+    cancelScheduledJob: vi.fn(async () => ({ ok: true })),
+    approveDraft: vi.fn(async () => ({ ok: true })),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
     createWorkspaceInvitation: vi.fn(async () => ({
@@ -620,6 +622,53 @@ describe('customer marketing media IPC', () => {
 
     await expect(handler!(event(), payload)).rejects.toThrow(/Payload (lịch chạy|customer marketing) không hợp lệ/);
     expect(service.runScheduledJobNow).not.toHaveBeenCalled();
+  });
+
+  it('passes only an exact scheduled job id to the cancel handler', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:cancelScheduledJob');
+    const jobId = 'job-123e4567-e89b-12d3-a456-426614174000';
+
+    await expect(handler!(event(), { jobId })).resolves.toEqual({ ok: true });
+    expect(service.cancelScheduledJob).toHaveBeenCalledWith(jobId);
+    await expect(handler!(event(), { jobId, force: true })).rejects.toThrow(/không hợp lệ/);
+    expect(service.cancelScheduledJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes only an exact draft id to the approve handler', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:approveDraft');
+    const draftId = 'draft-123e4567-e89b-12d3-a456-426614174000';
+
+    await expect(handler!(event(), { draftId })).resolves.toEqual({ ok: true });
+    expect(service.approveDraft).toHaveBeenCalledWith(draftId);
+  });
+
+  it.each([
+    'draft-123e4567-e89b-12d3-a456-426614174000',
+    { draftId: '' },
+    { draftId: 'job-123e4567-e89b-12d3-a456-426614174000' },
+    { draftId: 'draft-123e4567-e89b-12d3-a456-426614174000', status: 'ready_to_publish' },
+  ])('rejects malformed draft payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:approveDraft');
+
+    await expect(handler!(event(), payload)).rejects.toThrow(/Payload (bản nháp|customer marketing) không hợp lệ/);
+    expect(service.approveDraft).not.toHaveBeenCalled();
+  });
+
+  it('rejects an untrusted renderer before cancelling or approving', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const untrusted = event('https://evil.example/customer-marketing');
+
+    await expect(electronMocks.handlers.get('customerMarketing:cancelScheduledJob')!(untrusted, { jobId: 'job-123e4567-e89b-12d3-a456-426614174000' })).rejects.toThrow();
+    await expect(electronMocks.handlers.get('customerMarketing:approveDraft')!(untrusted, { draftId: 'draft-123e4567-e89b-12d3-a456-426614174000' })).rejects.toThrow();
+    expect(service.cancelScheduledJob).not.toHaveBeenCalled();
+    expect(service.approveDraft).not.toHaveBeenCalled();
   });
 });
 

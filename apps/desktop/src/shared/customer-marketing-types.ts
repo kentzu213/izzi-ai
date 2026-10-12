@@ -376,7 +376,13 @@ export type CustomerScheduledJobKind =
   | 'cro_review'
   | 'kpi_report';
 
-export type CustomerScheduledJobStatus = 'scheduled' | 'running' | 'draft_ready' | 'failed' | 'blocked_quota';
+export type CustomerScheduledJobStatus =
+  | 'scheduled'
+  | 'running'
+  | 'draft_ready'
+  | 'failed'
+  | 'blocked_quota'
+  | 'cancelled';
 
 /** A step of an approved strategy, run automatically on this machine when it is due. */
 export interface CustomerScheduledJob {
@@ -408,7 +414,9 @@ export interface CustomerMarketingDraft {
   title: string;
   body: string;
   guardian: { passed: boolean; failedChecks: string[] };
-  status: 'pending_review';
+  /** `ready_to_publish` means the customer approved it; they still copy and post it themselves. */
+  status: 'pending_review' | 'ready_to_publish';
+  approvedAt?: string;
   createdAt: string;
 }
 
