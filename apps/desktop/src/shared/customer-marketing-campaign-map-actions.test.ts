@@ -129,8 +129,16 @@ describe('campaignFoundationWarning', () => {
     const open = [run('p0-run', 'in_progress')];
     expect(campaignFoundationWarning([foundation, { ...paid, runIds: [] }], open, ['tiktok', 'meta_ads'])).toEqual([]);
     expect(campaignFoundationWarning([foundation, paid], [...open, run('ads-run', 'in_progress')], ['tiktok'])).toEqual([]);
+    const finished = { ...foundation, manualCompletion: { completedAt: now, evidence: 'Landing page đã chạy' } };
     const done = [run('p0-run', 'completed'), run('ads-run', 'in_progress')];
-    expect(campaignFoundationWarning([foundation, paid], done, ['tiktok', 'meta_ads'])).toEqual([]);
+    expect(campaignFoundationWarning([finished, paid], done, ['tiktok', 'meta_ads'])).toEqual([]);
+  });
+
+  it('keeps warning while the foundation is only planned, but not about a planned paid cell', () => {
+    const plannedFoundation = [run('p0-run', 'completed'), run('ads-run', 'in_progress')];
+    expect(campaignFoundationWarning([foundation, paid], plannedFoundation, ['tiktok', 'meta_ads']).map((c) => c.id)).toEqual(['ads']);
+    const plannedAds = [run('p0-run', 'in_progress'), run('ads-run', 'completed')];
+    expect(campaignFoundationWarning([foundation, paid], plannedAds, ['tiktok', 'meta_ads'])).toEqual([]);
   });
 });
 
@@ -152,12 +160,12 @@ describe('archiveCompletedCampaignRuns', () => {
     updatedAt: '2026-10-01T00:00:00.000Z',
   };
 
-  it('keeps a cell done after its completed session is pruned from storage', () => {
+  it('keeps a cell planned after its completed session is pruned from storage', () => {
     const next = archiveCompletedCampaignRuns(map, [run('old', 'completed'), run('stuck', 'blocked')], now);
     const [a, b] = next!.cells;
 
     expect(a).toMatchObject({ archivedCompletedAt: now, runIds: ['old'] });
-    expect(deriveCampaignCellStatus(a, [])).toEqual({ status: 'done' });
+    expect(deriveCampaignCellStatus(a, [])).toEqual({ status: 'planned' });
     expect(b).not.toHaveProperty('archivedCompletedAt');
     expect(deriveCampaignCellStatus(b, [])).toEqual({ status: 'todo' });
   });

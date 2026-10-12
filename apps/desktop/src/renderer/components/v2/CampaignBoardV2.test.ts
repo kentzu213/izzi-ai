@@ -3,13 +3,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { CustomerChannel, CustomerRun, CustomerRunStatus } from '../../../shared/customer-marketing-types';
+import type {
+  CustomerChannel,
+  CustomerMarketingDraft,
+  CustomerRun,
+  CustomerRunStatus,
+  CustomerScheduledJob,
+} from '../../../shared/customer-marketing-types';
 import {
   resolveCampaignBoard,
   type CampaignCell,
   type CampaignChannel,
 } from '../../../shared/customer-marketing-campaign-map';
 import { CampaignBoardV2, CampaignPlanV2, type CampaignBoardV2Props } from './CampaignBoardV2';
+import { ScheduleTimeline, stripProofTags } from './CampaignScheduleV2';
 
 function run(id: string, status: CustomerRunStatus, extra: Partial<CustomerRun> = {}): CustomerRun {
   return {
@@ -38,6 +45,9 @@ function cell(extra: Partial<CampaignCell>): CampaignCell {
   };
 }
 
+// A planning run that finished only plans the work; "done" needs proof or published drafts.
+const MANUAL_DONE = { completedAt: '2026-10-01T00:00:00.000Z', evidence: 'Đã đăng video' };
+
 function renderBoard(cells: CampaignCell[], runs: CustomerRun[]) {
   const board = resolveCampaignBoard(cells, ['tiktok'], runs);
   return renderToStaticMarkup(createElement(CampaignBoardV2, { ...board, runs }));
@@ -46,7 +56,7 @@ function renderBoard(cells: CampaignCell[], runs: CustomerRun[]) {
 describe('CampaignBoardV2', () => {
   it('shows six phase columns with their done/total counts', () => {
     const html = renderBoard(
-      [cell({ id: 'a', runIds: ['run-1'] }), cell({ id: 'b', phase: 'p4_purchase', tactic: 'Gắn giỏ hàng' })],
+      [cell({ id: 'a', runIds: ['run-1'], manualCompletion: MANUAL_DONE }), cell({ id: 'b', phase: 'p4_purchase', tactic: 'Gắn giỏ hàng' })],
       [run('run-1', 'completed')],
     );
 
@@ -108,7 +118,7 @@ function renderWith(
 describe('CampaignBoardV2 project-manager view', () => {
   it('shows a progress bar and percent for each phase', () => {
     const html = renderWith(
-      [cell({ id: 'a', runIds: ['run-1'] }), cell({ id: 'b', tactic: 'Livestream' })],
+      [cell({ id: 'a', runIds: ['run-1'], manualCompletion: MANUAL_DONE }), cell({ id: 'b', tactic: 'Livestream' })],
       [run('run-1', 'completed')],
     );
 
@@ -194,7 +204,7 @@ describe('CampaignBoardV2 project-manager view', () => {
     expect(html).toContain('Nhận biết · Quảng cáo Meta');
 
     const founded = renderWith(
-      [{ ...cells[0], runIds: ['run-p0'] }, cells[1]],
+      [{ ...cells[0], runIds: ['run-p0'], manualCompletion: MANUAL_DONE }, cells[1]],
       [...runs, run('run-p0', 'completed')],
       {},
       ['tiktok', 'ads'],
@@ -338,5 +348,124 @@ describe('CampaignPlanV2', () => {
     const source = readFileSync(fileURLToPath(new URL('./CampaignBoardV2.tsx', import.meta.url)), 'utf8');
 
     expect(source).not.toMatch(/window\.(izzi|electron|api)|ipcRenderer|invoke\(/);
+    const schedule = readFileSync(fileURLToPath(new URL('./CampaignScheduleV2.tsx', import.meta.url)), 'utf8');
+    expect(schedule).not.toMatch(/window\.(izzi|electron|api)|ipcRenderer|invoke\(/);
+  });
+});
+
+function job(extra: Partial<CustomerScheduledJob> = {}): CustomerScheduledJob {
+  return {
+    id: 'job-1',
+    runId: 'run-1',
+    approvalId: 'approval-1',
+    kind: 'social_post',
+    channel: 'facebook',
+    title: 'Bài mở màn',
+    brief: '',
+    dueAt: '2026-10-03T10:00:00.000Z',
+    status: 'scheduled',
+    attempts: 0,
+    creditsCharged: 0,
+    createdAt: '2026-10-02T00:00:00.000Z',
+    updatedAt: '2026-10-02T00:00:00.000Z',
+    ...extra,
+  };
+}
+
+function draft(extra: Partial<CustomerMarketingDraft> = {}): CustomerMarketingDraft {
+  return {
+    id: 'draft-1',
+    jobId: 'job-1',
+    runId: 'run-1',
+    kind: 'social_post',
+    channel: 'facebook',
+    title: 'Bài mở màn',
+    body: 'Nội dung',
+    guardian: { passed: true, failedChecks: [] },
+    status: 'pending_review',
+    createdAt: '2026-10-03T10:05:00.000Z',
+    ...extra,
+  };
+}
+
+const fanpage = cell({ id: 'fb', channel: 'facebook_fanpage', tactic: 'Bài kể chuyện', runIds: ['run-1'] });
+const planRuns = [run('run-1', 'completed')];
+
+function renderScheduled(
+  jobs: CustomerScheduledJob[],
+  drafts: CustomerMarketingDraft[],
+  props: Partial<CampaignBoardV2Props> = {},
+) {
+  const schedule = { jobs, drafts };
+  const board = resolveCampaignBoard([fanpage], ['facebook'], planRuns, undefined, [], schedule);
+  return renderToStaticMarkup(createElement(CampaignBoardV2, { ...board, runs: planRuns, schedule, ...props }));
+}
+
+describe('CampaignBoardV2 schedule', () => {
+  it('labels a cell whose planning session finished as planned, not done', () => {
+    const html = renderWith([cell({ id: 'a', runIds: ['run-1'] })], [run('run-1', 'completed')]);
+
+    expect(cellClass(html, 'Video ngắn')).toContain('is-planned');
+    expect(html).toContain('Đã lên kế hoạch');
+    expect(html).toContain('Đã xong 0/1 việc');
+  });
+
+  it('follows the linked job from waiting to draft review to done', () => {
+    const waiting = renderScheduled([job()], []);
+    expect(waiting).toContain('Đang chờ tới lịch');
+    expect(waiting).toContain('Đã xong 0/1 việc');
+
+    const review = renderScheduled([job({ status: 'draft_ready', draftId: 'draft-1' })], [draft()]);
+    expect(review).toContain('Bản nháp chờ bạn duyệt');
+
+    const ready = renderScheduled(
+      [job({ status: 'draft_ready', draftId: 'draft-1' })],
+      [draft({ status: 'ready_to_publish' })],
+    );
+    expect(cellClass(ready, 'Bài kể chuyện')).toContain('is-done');
+    expect(ready).toContain('Đã xong 1/1 việc');
+  });
+
+  it('shows the due time, job status and draft link in the cell detail', () => {
+    const html = renderScheduled([job({ status: 'draft_ready', draftId: 'draft-1' })], [draft()], {
+      initialSelectedCellId: 'fb',
+    });
+
+    expect(html).toContain('aria-label="Lịch chạy của việc này"');
+    expect(html).toContain('href="#cmr-job-job-1"');
+    expect(html).toContain('href="#cmr-draft-draft-1"');
+    expect(html).toContain('Bản nháp: Chờ bạn duyệt');
+    expect(html).toContain('2026-10-03T10:00:00.000Z');
+  });
+});
+
+describe('ScheduleTimeline', () => {
+  it('groups jobs by day and skips cancelled ones', () => {
+    const html = renderToStaticMarkup(createElement(ScheduleTimeline, {
+      schedule: {
+        jobs: [
+          job(),
+          job({ id: 'job-2', title: 'Bài thứ hai', dueAt: '2026-10-03T12:00:00.000Z' }),
+          job({ id: 'job-3', title: 'Bài ngày sau', dueAt: '2026-10-04T10:00:00.000Z' }),
+          job({ id: 'job-4', title: 'Bài đã huỷ', dueAt: '2026-10-05T10:00:00.000Z', status: 'cancelled' }),
+        ],
+        drafts: [],
+      },
+    }));
+
+    expect(html).toContain('aria-label="Mốc thời gian"');
+    expect(html.match(/class="v2-campaign-timeline__day"/g)).toHaveLength(2);
+    expect(html).toContain('Bài ngày sau');
+    expect(html).not.toContain('Bài đã huỷ');
+  });
+
+  it('renders nothing without jobs', () => {
+    expect(renderToStaticMarkup(createElement(ScheduleTimeline, { schedule: { jobs: [], drafts: [] } }))).toBe('');
+  });
+});
+
+describe('stripProofTags', () => {
+  it('removes proof markers but keeps footnotes and links', () => {
+    expect(stripProofTags('Serum tốt [proof-api-catalog]. Xem [1] [Link]')).toBe('Serum tốt. Xem [1] [Link]');
   });
 });

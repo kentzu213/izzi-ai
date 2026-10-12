@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.101
+
+Agent Marketing: the plan board follows the real schedule, step by step.
+
+- A step whose planning session has finished now shows "Đã lên kế hoạch", not "Đã xong".
+- Each step follows its scheduled jobs: "Đang chờ tới lịch", then "Đang tạo bài", then "Bản nháp chờ bạn duyệt".
+- A step shows "Đã xong" only when every job for it has a draft you approved as ready to post, or when you marked it done with proof.
+- Open a step to see when each job is due, the job status, and a link to its draft.
+- A "Mốc thời gian" strip groups the jobs by day, matching the Lịch chạy list. Cancelled jobs are not shown.
+- The paid-ads warning no longer counts paid steps that are only planned.
+- "Chép nội dung" no longer copies the internal [proof-…] markers.
+- Brand Guardian no longer flags an intro line that ends in ":" as an unfinished sentence.
+
 ## 1.14.0-beta.100
 
 Agent Marketing: you get a notice when a draft is ready, and you approve each draft.

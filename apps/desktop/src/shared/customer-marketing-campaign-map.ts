@@ -1,4 +1,10 @@
-import type { CustomerChannel, CustomerRun } from './customer-marketing-types';
+import type {
+  CustomerChannel,
+  CustomerMarketingDraft,
+  CustomerMarketingSchedule,
+  CustomerRun,
+  CustomerScheduledJob,
+} from './customer-marketing-types';
 
 // Campaign board: 6 customer-journey phases × framework channels. Each cell is one unit of
 // work; its status is derived from the sessions (runs) attached to it. The only hand-set status
@@ -132,12 +138,12 @@ export interface CampaignCell extends CampaignCellSuggestion {
   id: string;
   runIds: string[];
   manualCompletion?: { completedAt: string; evidence: string };
-  // Set when a completed session of this cell was pruned from storage, so the cell stays done.
+  // Set when a completed session of this cell was pruned from storage, so the cell stays planned.
   archivedCompletedAt?: string;
   updatedAt: string;
 }
 
-export type CampaignCellStatus = 'todo' | 'in_progress' | 'awaiting_approval' | 'done' | 'blocked';
+export type CampaignCellStatus = 'todo' | 'planned' | 'in_progress' | 'awaiting_approval' | 'done' | 'blocked';
 
 export interface CampaignCellState {
   status: CampaignCellStatus;
@@ -243,9 +249,92 @@ const ACTIVE_RUN_STATUS: Partial<Record<CustomerRun['status'], CampaignCellStatu
   awaiting_approval: 'awaiting_approval',
 };
 
-// Precedence: manual evidence > active session > completed session (kept or archived) >
+/** Scheduled work of one cell: its jobs and the drafts those jobs produced. */
+export interface CampaignCellSchedule {
+  jobs: CustomerScheduledJob[];
+  drafts: CustomerMarketingDraft[];
+}
+
+export interface CampaignScheduleLinks {
+  byCell: Map<string, CampaignCellSchedule>;
+  // Jobs whose session or channel has no cell on the board; they still show on the timeline.
+  unlinked: CustomerScheduledJob[];
+}
+
+const CELL_CHANNEL_BY_JOB_CHANNEL: Partial<Record<string, CampaignChannel>> = {
+  facebook: 'facebook_fanpage',
+  seo: 'seo',
+  website: 'website_email',
+  telegram: 'telegram',
+  internal: 'data_measurement',
+  tiktok: 'tiktok',
+  instagram: 'instagram',
+  x: 'x',
+  youtube: 'youtube',
+};
+
+function cellChannelForJob(channel: string): CampaignChannel | undefined {
+  return CELL_CHANNEL_BY_JOB_CHANNEL[channel] ?? CAMPAIGN_CHANNELS.find((known) => known === channel);
+}
+
+function draftForJob(job: CustomerScheduledJob, drafts: CustomerMarketingDraft[]): CustomerMarketingDraft | undefined {
+  return (job.draftId ? drafts.find((draft) => draft.id === job.draftId) : undefined)
+    ?? drafts.find((draft) => draft.jobId === job.id);
+}
+
+// A job belongs to a cell of the approving session on the matching channel. A CRO review fixes the
+// foundation; other work goes to the earliest cell past the foundation, else the foundation cell.
+export function linkScheduleToCells(cells: CampaignCell[], schedule?: CustomerMarketingSchedule): CampaignScheduleLinks {
+  const byCell = new Map<string, CampaignCellSchedule>();
+  const unlinked: CustomerScheduledJob[] = [];
+  if (!schedule) return { byCell, unlinked };
+
+  const ordered = [...cells].sort((a, b) => phaseIndex(a.phase) - phaseIndex(b.phase));
+  for (const job of schedule.jobs) {
+    const channel = cellChannelForJob(job.channel);
+    const candidates = ordered.filter((cell) => cell.channel === channel && cell.runIds.includes(job.runId));
+    const target = job.kind === 'cro_review'
+      ? candidates[0]
+      : candidates.find((cell) => cell.phase !== 'p0_foundation') ?? candidates[0];
+    if (!target) {
+      unlinked.push(job);
+      continue;
+    }
+    const draft = draftForJob(job, schedule.drafts);
+    const linked = byCell.get(target.id) ?? { jobs: [], drafts: [] };
+    byCell.set(target.id, {
+      jobs: [...linked.jobs, job],
+      drafts: draft ? [...linked.drafts, draft] : linked.drafts,
+    });
+  }
+  return { byCell, unlinked };
+}
+
+// Scheduled work outranks the finished planning session: a cell is done only when every live job
+// has a draft the customer marked ready to publish.
+function scheduledCellState(linked: CampaignCellSchedule | undefined): CampaignCellState | undefined {
+  const live = linked?.jobs.filter((job) => job.status !== 'cancelled') ?? [];
+  if (!linked || live.length === 0) return undefined;
+  const draftOf = (job: CustomerScheduledJob) => draftForJob(job, linked.drafts);
+
+  if (live.some((job) => job.status === 'running')) return { status: 'in_progress', reason: 'Đang tạo bài' };
+  if (live.some((job) => draftOf(job)?.status === 'pending_review')) {
+    return { status: 'awaiting_approval', reason: 'Bản nháp chờ bạn duyệt' };
+  }
+  const stuck = live.find((job) => job.status === 'failed' || job.status === 'blocked_quota');
+  if (stuck) return stuck.lastError ? { status: 'blocked', reason: stuck.lastError } : { status: 'blocked' };
+  if (live.some((job) => job.status === 'scheduled')) return { status: 'planned', reason: 'Đang chờ tới lịch' };
+  if (live.every((job) => draftOf(job)?.status === 'ready_to_publish')) return { status: 'done' };
+  return undefined;
+}
+
+// Precedence: manual evidence > active session > scheduled work > completed session (planned) >
 // blocked session > todo. Other run ids pruned from storage are ignored.
-export function deriveCampaignCellStatus(cell: CampaignCell, runs: CustomerRun[]): CampaignCellState {
+export function deriveCampaignCellStatus(
+  cell: CampaignCell,
+  runs: CustomerRun[],
+  linked?: CampaignCellSchedule,
+): CampaignCellState {
   if (hasManualEvidence(cell)) return { status: 'done' };
 
   const runsById = new Map(runs.map((run) => [run.id, run]));
@@ -256,9 +345,13 @@ export function deriveCampaignCellStatus(cell: CampaignCell, runs: CustomerRun[]
   const active = latestRun(cellRuns.filter((run) => ACTIVE_RUN_STATUS[run.status]));
   if (active) return { status: ACTIVE_RUN_STATUS[active.status]!, runId: active.id };
 
+  const scheduled = scheduledCellState(linked);
+  if (scheduled) return scheduled;
+
+  // A finished planning session is a plan, not finished work.
   const completed = latestRun(cellRuns.filter((run) => run.status === 'completed'));
-  if (completed) return { status: 'done', runId: completed.id };
-  if (cell.archivedCompletedAt) return { status: 'done' };
+  if (completed) return { status: 'planned', runId: completed.id };
+  if (cell.archivedCompletedAt) return { status: 'planned' };
 
   const latest = latestRun(cellRuns);
   if (latest?.status === 'blocked' && latest.stage !== 'superseded_by_new_goal') {
@@ -274,8 +367,10 @@ export function summarizeCampaignPhases(
   cells: CampaignCell[],
   runs: CustomerRun[],
   visibleChannels: CampaignChannel[],
+  schedule?: CustomerMarketingSchedule,
 ): CampaignPhaseProgress {
   const visible = new Set(visibleChannels);
+  const links = linkScheduleToCells(cells, schedule);
   const progress = Object.fromEntries(
     CAMPAIGN_PHASES.map((phase) => [phase, { done: 0, total: 0 }]),
   ) as CampaignPhaseProgress;
@@ -284,7 +379,7 @@ export function summarizeCampaignPhases(
     if (!visible.has(cell.channel)) continue;
     const phase = progress[cell.phase];
     phase.total += 1;
-    if (deriveCampaignCellStatus(cell, runs).status === 'done') phase.done += 1;
+    if (deriveCampaignCellStatus(cell, runs, links.byCell.get(cell.id)).status === 'done') phase.done += 1;
   }
   return progress;
 }
@@ -313,10 +408,11 @@ export function resolveCampaignBoard(
   runs: CustomerRun[],
   now: string = new Date().toISOString(),
   extraChannels: CampaignChannel[] = [],
+  schedule?: CustomerMarketingSchedule,
 ): CampaignBoard {
   const channels = visibleCampaignChannels(onboardingChannels, storedCells ?? [], extraChannels);
   const cells = storedCells ?? campaignTemplateCells(channels, now);
-  return { channels, cells, progress: summarizeCampaignPhases(cells, runs, channels) };
+  return { channels, cells, progress: summarizeCampaignPhases(cells, runs, channels, schedule) };
 }
 
 export type CampaignLinkKind = 'previous' | 'next' | 'data' | 'loop';
@@ -375,9 +471,11 @@ export function nextCampaignCell(
   cells: CampaignCell[],
   runs: CustomerRun[],
   visibleChannels: CampaignChannel[],
+  schedule?: CustomerMarketingSchedule,
 ): CampaignCell | undefined {
+  const links = linkScheduleToCells(cells, schedule);
   return visibleCellsInBoardOrder(cells, visibleChannels).find((cell) => {
-    const { status } = deriveCampaignCellStatus(cell, runs);
+    const { status } = deriveCampaignCellStatus(cell, runs, links.byCell.get(cell.id));
     return status === 'todo' || status === 'blocked';
   });
 }
@@ -388,30 +486,37 @@ export function currentCampaignCell(
   cells: CampaignCell[],
   runs: CustomerRun[],
   visibleChannels: CampaignChannel[],
+  schedule?: CustomerMarketingSchedule,
 ): CampaignCell | undefined {
+  const links = linkScheduleToCells(cells, schedule);
   const active = visibleCellsInBoardOrder(cells, visibleChannels).find((cell) => {
-    const { status } = deriveCampaignCellStatus(cell, runs);
+    const { status } = deriveCampaignCellStatus(cell, runs, links.byCell.get(cell.id));
     return status === 'in_progress' || status === 'awaiting_approval';
   });
-  return active ?? nextCampaignCell(cells, runs, visibleChannels);
+  return active ?? nextCampaignCell(cells, runs, visibleChannels, schedule);
 }
 
 const PAID_WARNING_PHASES: CampaignPhase[] = ['p1_awareness', 'p2_consideration', 'p3_comparison', 'p4_purchase'];
 
 // Paid cells already started while the foundation is unfinished: money spent before the landing
-// page, tracking or inbox can catch it. Empty when the foundation is done.
+// page, tracking or inbox can catch it. A cell that is only planned has spent nothing yet. Empty
+// when the foundation is done.
 export function campaignFoundationWarning(
   cells: CampaignCell[],
   runs: CustomerRun[],
   visibleChannels: CampaignChannel[],
+  schedule?: CustomerMarketingSchedule,
 ): CampaignCell[] {
   const ordered = visibleCellsInBoardOrder(cells, visibleChannels);
-  const statusOf = (cell: CampaignCell) => deriveCampaignCellStatus(cell, runs).status;
+  const links = linkScheduleToCells(cells, schedule);
+  const statusOf = (cell: CampaignCell) => deriveCampaignCellStatus(cell, runs, links.byCell.get(cell.id)).status;
   const foundationOpen = ordered.some((cell) => cell.phase === 'p0_foundation' && statusOf(cell) !== 'done');
   if (!foundationOpen) return [];
-  return ordered.filter(
-    (cell) => PAID_WARNING_PHASES.includes(cell.phase) && cell.tags.includes('paid') && statusOf(cell) !== 'todo',
-  );
+  return ordered.filter((cell) => {
+    if (!PAID_WARNING_PHASES.includes(cell.phase) || !cell.tags.includes('paid')) return false;
+    const status = statusOf(cell);
+    return status !== 'todo' && status !== 'planned';
+  });
 }
 
 // Sessions from before the board existed (or whose plan did not parse) belong to no cell.

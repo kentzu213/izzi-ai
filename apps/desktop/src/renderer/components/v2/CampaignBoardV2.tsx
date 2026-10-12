@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { CustomerChannel, CustomerRun } from '../../../shared/customer-marketing-types';
+import type { CustomerChannel, CustomerMarketingSchedule, CustomerRun } from '../../../shared/customer-marketing-types';
 import {
   CAMPAIGN_CHANNELS,
   CAMPAIGN_CHANNEL_GROUP_LABELS,
@@ -11,6 +11,7 @@ import {
   deriveCampaignCellStatus,
   isManualCampaignChannel,
   linkedCampaignCells,
+  linkScheduleToCells,
   nextCampaignCell,
   parseCampaignEvidence,
   resolveCampaignBoard,
@@ -18,6 +19,7 @@ import {
   upcomingSaleSeasons,
   type CampaignBoard,
   type CampaignCell,
+  type CampaignCellSchedule,
   type CampaignCellStatus,
   type CampaignChannel,
   type CampaignChannelGroup,
@@ -32,9 +34,11 @@ import {
   type CampaignWire,
   type WireBox,
 } from './campaign-board-wires';
+import { CellJobList, ScheduleTimeline } from './CampaignScheduleV2';
 
 const STATUS_LABELS: Record<CampaignCellStatus, string> = {
   todo: 'Chưa làm',
+  planned: 'Đã lên kế hoạch',
   in_progress: 'Đang làm',
   awaiting_approval: 'Chờ duyệt',
   done: 'Đã xong',
@@ -68,6 +72,8 @@ export interface CampaignBoardV2Props extends CampaignBoard {
   today?: Date;
   /** The room is saving; lock inputs so a mark-done is not sent twice. */
   busy?: boolean;
+  /** Jobs and drafts from approved plans; they drive cell status and the timeline. */
+  schedule?: CustomerMarketingSchedule;
 }
 
 export function CampaignBoardV2({
@@ -81,13 +87,15 @@ export function CampaignBoardV2({
   onAddChannel,
   today,
   busy = false,
+  schedule,
 }: CampaignBoardV2Props) {
   const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedCellId);
   const [collapsed, setCollapsed] = useState<ReadonlySet<CampaignChannelGroup>>(new Set());
   const visibleCells = cells.filter((item) => channels.includes(item.channel));
   const selected = visibleCells.find((item) => item.id === selectedId);
   const links = selected ? linkedCampaignCells(selected, visibleCells) : new Map<string, CampaignLinkKind>();
-  const current = currentCampaignCell(visibleCells, runs, channels);
+  const scheduleLinks = linkScheduleToCells(visibleCells, schedule);
+  const current = currentCampaignCell(visibleCells, runs, channels, schedule);
   const wires = selected
     ? campaignWires(selected, links, visibleCells)
     : current
@@ -107,6 +115,7 @@ export function CampaignBoardV2({
     selectedId: selected?.id,
     currentId: current?.id,
     links,
+    scheduleLinks: scheduleLinks.byCell,
     onSelect: (id) => setSelectedId(id === selected?.id ? undefined : id),
   };
 
@@ -116,9 +125,10 @@ export function CampaignBoardV2({
         <p className="v2-campaign-board__summary">Đã xong {done}/{total} việc</p>
         {onAddChannel ? <AddChannelPicker channels={channels} onAddChannel={onAddChannel} /> : null}
       </div>
-      <NextWorkBanner next={nextCampaignCell(visibleCells, runs, channels)} nextActions={nextActions} />
-      <FoundationWarning cells={campaignFoundationWarning(visibleCells, runs, channels)} />
+      <NextWorkBanner next={nextCampaignCell(visibleCells, runs, channels, schedule)} nextActions={nextActions} />
+      <FoundationWarning cells={campaignFoundationWarning(visibleCells, runs, channels, schedule)} />
       <SaleSeasonBanner sales={upcomingSaleSeasons(today ?? new Date())} />
+      <ScheduleTimeline schedule={schedule} />
       <WireLegend wires={wires} hasSelection={selected !== undefined} />
       <div className="v2-campaign-board__scroll">
         <table className="v2-campaign-board__table">
@@ -145,6 +155,7 @@ export function CampaignBoardV2({
           key={selected.id}
           cell={selected}
           runs={runs}
+          linked={scheduleLinks.byCell.get(selected.id)}
           wires={wires}
           cells={visibleCells}
           onSelect={cellView.onSelect}
@@ -395,6 +406,7 @@ interface CellView {
   selectedId?: string;
   currentId?: string;
   links: Map<string, CampaignLinkKind>;
+  scheduleLinks: Map<string, CampaignCellSchedule>;
   onSelect: (cellId: string) => void;
 }
 
@@ -460,7 +472,7 @@ function CampaignCellList({ cells, view }: { cells: CampaignCell[]; view: CellVi
   return (
     <ul className="v2-campaign-board__cells">
       {cells.map((item) => {
-        const state = deriveCampaignCellStatus(item, view.runs);
+        const state = deriveCampaignCellStatus(item, view.runs, view.scheduleLinks.get(item.id));
         return (
           <li key={item.id} className={cellClassName(state.status, item.id, view)}>
             <button
@@ -473,7 +485,7 @@ function CampaignCellList({ cells, view }: { cells: CampaignCell[]; view: CellVi
               <span className={`v2-campaign-board__status is-${state.status}`}>{STATUS_LABELS[state.status]}</span>
               <span className="v2-campaign-board__tactic">{item.tactic}</span>
               {item.id === view.currentId ? <span className="v2-campaign-board__current">▶ Đang ở bước này</span> : null}
-              {state.reason ? <span className="v2-campaign-board__reason">{state.reason}</span> : null}
+              {state.reason ? <span className={`v2-campaign-board__reason is-${state.status}`}>{state.reason}</span> : null}
             </button>
           </li>
         );
@@ -512,6 +524,7 @@ function UnclassifiedRow({ runs }: { runs: CustomerRun[] }) {
 function CampaignCellDetail({
   cell,
   runs,
+  linked,
   wires,
   cells,
   onSelect,
@@ -520,13 +533,14 @@ function CampaignCellDetail({
 }: {
   cell: CampaignCell;
   runs: CustomerRun[];
+  linked?: CampaignCellSchedule;
   wires: CampaignWire[];
   cells: CampaignCell[];
   onSelect: (cellId: string) => void;
   onMarkCellDone?: (cellId: string, evidence: string) => void;
   busy: boolean;
 }) {
-  const state = deriveCampaignCellStatus(cell, runs);
+  const state = deriveCampaignCellStatus(cell, runs, linked);
   const cellRuns = runs.filter((item) => cell.runIds.includes(item.id));
   const isManual = isManualCampaignChannel(cell.channel);
 
@@ -537,6 +551,7 @@ function CampaignCellDetail({
         {cellPlace(cell)} · {STATUS_LABELS[state.status]}
       </p>
       {cellRuns.length > 0 ? <RunList runs={cellRuns} /> : null}
+      {linked ? <CellJobList linked={linked} /> : null}
       <LinkedCellList wires={wires} cells={cells} onSelect={onSelect} />
       {cell.manualCompletion ? (
         <p className="v2-campaign-board__evidence">Bằng chứng: {cell.manualCompletion.evidence}</p>
@@ -629,6 +644,7 @@ export interface CampaignPlanV2Props {
   onAddChannel?: (channel: CampaignChannel) => void;
   today?: Date;
   busy?: boolean;
+  schedule?: CustomerMarketingSchedule;
   sessions: ReactNode;
 }
 
@@ -643,10 +659,11 @@ export function CampaignPlanV2({
   onAddChannel,
   today,
   busy,
+  schedule,
   sessions,
 }: CampaignPlanV2Props) {
   const [view, setView] = useState<CampaignPlanView>('board');
-  const board = resolveCampaignBoard(cells, onboardingChannels, runs, undefined, extraChannels);
+  const board = resolveCampaignBoard(cells, onboardingChannels, runs, undefined, extraChannels, schedule);
   const toggle = (target: CampaignPlanView, label: string) => (
     <button
       type="button"
@@ -673,6 +690,7 @@ export function CampaignPlanV2({
           onAddChannel={onAddChannel}
           today={today}
           busy={busy}
+          schedule={schedule}
         />
       </div>
       <div hidden={view !== 'sessions'}>{sessions}</div>
