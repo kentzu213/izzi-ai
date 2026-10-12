@@ -369,6 +369,54 @@ export interface CustomerMediaWorkspace {
   artifacts: CustomerMediaArtifact[];
 }
 
+export type CustomerScheduledJobKind =
+  | 'seo_article'
+  | 'social_post'
+  | 'community_post'
+  | 'cro_review'
+  | 'kpi_report';
+
+export type CustomerScheduledJobStatus = 'scheduled' | 'running' | 'draft_ready' | 'failed' | 'blocked_quota';
+
+/** A step of an approved strategy, run automatically on this machine when it is due. */
+export interface CustomerScheduledJob {
+  id: string;
+  runId: string;
+  approvalId: string;
+  kind: CustomerScheduledJobKind;
+  channel: string;
+  title: string;
+  brief: string;
+  dueAt: string;
+  status: CustomerScheduledJobStatus;
+  attempts: number;
+  nextAttemptAt?: string;
+  draftId?: string;
+  creditsCharged: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Content produced by a scheduled job. Never published automatically. */
+export interface CustomerMarketingDraft {
+  id: string;
+  jobId: string;
+  runId: string;
+  kind: CustomerScheduledJobKind;
+  channel: string;
+  title: string;
+  body: string;
+  guardian: { passed: boolean; failedChecks: string[] };
+  status: 'pending_review';
+  createdAt: string;
+}
+
+export interface CustomerMarketingSchedule {
+  jobs: CustomerScheduledJob[];
+  drafts: CustomerMarketingDraft[];
+}
+
 export interface CustomerMarketingSnapshot {
   workspace: CustomerWorkspaceSummary;
   onboarding: CustomerOnboardingProfile | null;
@@ -386,6 +434,7 @@ export interface CustomerMarketingSnapshot {
   approvals: CustomerApproval[];
   campaignMap?: CampaignMap;
   media: CustomerMediaWorkspace;
+  schedule?: CustomerMarketingSchedule;
   nextActions: string[];
   externalActionsAllowed: boolean;
   generatedAt: string;

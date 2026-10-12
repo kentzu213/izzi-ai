@@ -798,6 +798,15 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:openMediaVideoPreview', input),
     reviewApproval: (input: CustomerReviewInput): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:reviewApproval', input),
+    runScheduledJobNow: (input: { jobId: string }): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:runScheduledJobNow', input),
+    onChanged: (listener: () => void) => {
+      const handler = () => listener();
+      ipcRenderer.on('customerMarketing:changed', handler);
+      return () => {
+        ipcRenderer.removeListener('customerMarketing:changed', handler);
+      };
+    },
   },
 
   affiliate: {

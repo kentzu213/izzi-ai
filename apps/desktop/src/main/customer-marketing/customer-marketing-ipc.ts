@@ -171,6 +171,22 @@ function mediaVideoPreviewPayload(value: unknown): CustomerMediaVideoPreviewInpu
   return { jobId: payload.jobId };
 }
 
+const SCHEDULED_JOB_ID_PATTERN = /^job-[0-9a-f-]{36}$/;
+
+function scheduledJobPayload(value: unknown): { jobId: string } {
+  const payload = objectPayload<Record<string, unknown>>(value);
+  const keys = Object.keys(payload);
+  if (
+    keys.length !== 1
+    || keys[0] !== 'jobId'
+    || typeof payload.jobId !== 'string'
+    || !SCHEDULED_JOB_ID_PATTERN.test(payload.jobId)
+  ) {
+    throw new Error('Payload lịch chạy không hợp lệ.');
+  }
+  return { jobId: payload.jobId };
+}
+
 export interface CustomerMarketingIpcOptions {
   consumeInvitationStatus?: () => CustomerWorkspaceInvitationAcceptanceResult | null;
 }
@@ -618,5 +634,9 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:reviewApproval', async (event, payload: unknown): Promise<CustomerMutationResult> => {
     trusted(event);
     return service.reviewApproval(objectPayload<CustomerReviewInput>(payload));
+  });
+  ipcMain.handle('customerMarketing:runScheduledJobNow', async (event, payload: unknown): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.runScheduledJobNow(scheduledJobPayload(payload).jobId);
   });
 }

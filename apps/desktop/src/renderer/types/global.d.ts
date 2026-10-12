@@ -352,6 +352,8 @@ declare global {
     createMediaVideoPreview: (input: CustomerMediaVideoPreviewInput) => Promise<CustomerMutationResult>;
     openMediaVideoPreview: (input: CustomerMediaVideoPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
+    runScheduledJobNow: (input: { jobId: string }) => Promise<CustomerMutationResult>;
+    onChanged: (listener: () => void) => () => void;
   }
 
   type AutopostConnectPlatform = 'facebook' | 'youtube';

@@ -40,6 +40,7 @@ import type {
   CustomerProductMarketingContextV1,
   CustomerRole,
   CustomerRun,
+  CustomerScheduledJobStatus,
   CustomerWorkspaceMember,
   CustomerWorkspaceMembersResult,
   CustomerWorkspaceInvitationAcceptanceResult,
@@ -1907,19 +1908,116 @@ function GoalsView({ snapshot, onOpenDirector }: { snapshot: CustomerMarketingSn
   );
 }
 
+const SCHEDULED_JOB_STATUS: Readonly<Record<CustomerScheduledJobStatus, { label: string; tone: 'positive' | 'warning' | 'negative' | 'neutral' }>> = {
+  scheduled: { label: 'Đã lên lịch', tone: 'neutral' },
+  running: { label: 'Đang soạn', tone: 'warning' },
+  draft_ready: { label: 'Đã có bản nháp', tone: 'positive' },
+  failed: { label: 'Chạy lỗi', tone: 'negative' },
+  blocked_quota: { label: 'Hết hạn mức', tone: 'negative' },
+};
+
+const RUNNABLE_JOB_STATUSES: readonly CustomerScheduledJobStatus[] = ['scheduled', 'failed', 'blocked_quota'];
+
+function ScheduledWorkPanel({
+  snapshot,
+  onRunJob,
+  busy,
+}: {
+  snapshot: CustomerMarketingSnapshot;
+  onRunJob: (jobId: string) => Promise<void>;
+  busy: boolean;
+}) {
+  const [copiedDraftId, setCopiedDraftId] = useState('');
+  const jobs = snapshot.schedule?.jobs ?? [];
+  const drafts = snapshot.schedule?.drafts ?? [];
+  if (jobs.length === 0 && drafts.length === 0) return null;
+  const canRun = ['owner', 'manager', 'editor'].includes(snapshot.workspace.role);
+  const copyDraft = async (draftId: string, body: string) => {
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopiedDraftId(draftId);
+    } catch {
+      setCopiedDraftId('');
+    }
+  };
+  return (
+    <>
+      <section className="cmr-panel" aria-labelledby="cmr-schedule-title">
+        <span className="cmr-eyebrow">Tự chạy trên máy này khi đến hạn</span>
+        <h3 id="cmr-schedule-title">Lịch chạy</h3>
+        <p>Izzi AI kiểm tra lịch mỗi phút khi app đang mở. Mỗi bước chỉ tạo bản nháp; việc đăng bài luôn do bạn tự làm.</p>
+        <ul className="cmr-approval-full-list">
+          {jobs.map((job) => {
+            const status = SCHEDULED_JOB_STATUS[job.status];
+            return (
+              <li className="cmr-approval-card" key={job.id}>
+                <div className="cmr-approval-card__top">
+                  <div><span className="cmr-eyebrow">Hạn chạy {formatDate(job.dueAt, true)} · {job.channel}</span><strong>{job.title}</strong></div>
+                  <span className={`cmr-pill cmr-pill--${status.tone}`}><span className="cmr-pill__dot" />{status.label}</span>
+                </div>
+                <div className="cmr-approval-card__meta">
+                  <span>Lần chạy: {job.attempts}</span>
+                  {job.creditsCharged > 0 && <span>Đã trừ {job.creditsCharged} credit</span>}
+                  {job.nextAttemptAt && job.status === 'scheduled' && <span>Thử lại lúc {formatDate(job.nextAttemptAt, true)}</span>}
+                </div>
+                {job.lastError && job.status !== 'draft_ready' && <p className="cmr-alert cmr-alert--error">{job.lastError}</p>}
+                {RUNNABLE_JOB_STATUSES.includes(job.status) && (
+                  <div className="cmr-inline-actions">
+                    <button type="button" className="cmr-button cmr-button--quiet" disabled={busy || !canRun} onClick={() => void onRunJob(job.id)}>
+                      {job.status === 'scheduled' ? 'Chạy ngay' : 'Chạy lại'}
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      {drafts.length > 0 && (
+        <section className="cmr-panel" aria-labelledby="cmr-drafts-title">
+          <span className="cmr-eyebrow">Content Agent đã soạn</span>
+          <h3 id="cmr-drafts-title">Bản nháp chờ bạn xem</h3>
+          <ul className="cmr-approval-full-list">
+            {drafts.map((draft) => (
+              <li className="cmr-approval-card" key={draft.id}>
+                <div className="cmr-approval-card__top">
+                  <div><span className="cmr-eyebrow">{draft.channel} · {formatDate(draft.createdAt, true)}</span><strong>{draft.title}</strong></div>
+                  <span className={`cmr-pill cmr-pill--${draft.guardian.passed ? 'positive' : 'warning'}`}><span className="cmr-pill__dot" />{draft.guardian.passed ? 'Đạt kiểm tra brand' : 'Cần sửa trước khi đăng'}</span>
+                </div>
+                <DirectorReplyText className="cmr-approval-card__summary" reply={draft.body} />
+                {!draft.guardian.passed && draft.guardian.failedChecks.length > 0 && (
+                  <ul className="cmr-approval-card__meta">{draft.guardian.failedChecks.map((check) => <li key={check}>{check}</li>)}</ul>
+                )}
+                <div className="cmr-inline-actions">
+                  <button type="button" className="cmr-button cmr-button--quiet" onClick={() => void copyDraft(draft.id, draft.body)}>
+                    {copiedDraftId === draft.id ? 'Đã chép' : 'Chép nội dung'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
 function ApprovalsView({
   snapshot,
   onReview,
+  onRunJob,
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
   onReview: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
+  onRunJob: (jobId: string) => Promise<void>;
   busy: boolean;
 }) {
   const canReview = ['owner', 'manager', 'reviewer'].includes(snapshot.workspace.role);
   return (
     <div className="cmr-view-stack">
-      <div className="cmr-view-intro"><span className="cmr-eyebrow">Có người phê duyệt</span><h2>Điểm cần duyệt</h2><p>Quyết định của bạn chỉ thay đổi trạng thái workflow local; hệ thống không tự xuất bản hay chi tiêu.</p></div>
+      <div className="cmr-view-intro"><span className="cmr-eyebrow">Có người phê duyệt</span><h2>Điểm cần duyệt</h2><p>Duyệt chiến lược sẽ lên lịch cho Content Agent tự soạn bản nháp trên máy này khi đến hạn. Hệ thống không tự đăng bài; bạn xem bản nháp rồi tự đăng.</p></div>
+      <ScheduledWorkPanel snapshot={snapshot} onRunJob={onRunJob} busy={busy} />
       {!canReview && <div className="cmr-alert cmr-alert--info">Vai trò hiện tại là {snapshot.workspace.role}. Bạn có thể xem approval nhưng không có quyền quyết định.</div>}
       {snapshot.approvals.length === 0 ? (
         <section className="cmr-panel cmr-empty-panel"><div className="cmr-empty"><ReviewIcon className="cmr-empty__icon" /><h2>Inbox đang trống</h2><p>Các điểm cần duyệt sẽ xuất hiện tại đây khi workflow tạo ra.</p></div></section>
@@ -3278,6 +3376,10 @@ function CustomerRoom({
     await onMutation((api) => api.reviewApproval({ approvalId, decision }));
   };
 
+  const runJob = async (jobId: string) => {
+    await onMutation((api) => api.runScheduledJobNow({ jobId }));
+  };
+
   const saveBrand = async () => {
     await onMutation((api) => api.saveOnboarding(form));
   };
@@ -3429,7 +3531,7 @@ function CustomerRoom({
               <div className="v2-empty"><p>{ANALYTICS_GATE_COPY[analyticsGate.state]}</p></div>
             )}
             channels={<CustomerMarketingChannels role={snapshot.workspace.role} />}
-            inspector={<ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
+            inspector={<ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} busy={busy} />}
             artifacts={snapshot.media.artifacts}
             externalActionsAllowed={snapshot.externalActionsAllowed}
           />
@@ -3489,7 +3591,7 @@ function CustomerRoom({
             />
           )}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
-          {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} busy={busy} />}
+          {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} busy={busy} />}
           {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onVideoPreview={previewVideo} onOpenVideoPreview={openVideo} onReview={review} busy={busy} />}
           {activeView === 'team' && <TeamView capabilities={snapshot.capabilities} />}
           {activeView === 'apps' && (
@@ -3585,6 +3687,19 @@ export function CustomerMarketingRoomPage({ v2 = false }: { v2?: boolean } = {})
       snapshotRequestRef.current += 1;
     };
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    const api = getCustomerApi();
+    if (!api?.onChanged) return;
+    // The local scheduler finished a job in the background; pull the new drafts.
+    return api.onChanged(() => {
+      void api.getSnapshot()
+        .then((next) => applySnapshot(next))
+        .catch(() => {
+          // Keep the current snapshot; the next change or manual refresh retries.
+        });
+    });
+  }, [applySnapshot]);
 
   useEffect(() => {
     const api = getCustomerApi();

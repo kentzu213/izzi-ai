@@ -188,6 +188,18 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(mainSource).toContain('openLocalFile: (candidate) => shell.openPath(candidate)');
   });
 
+  it('shows the local schedule and drafts and refreshes when the scheduler changes them', () => {
+    expect(roomSource).toContain('function ScheduledWorkPanel');
+    expect(roomSource).toContain('api.runScheduledJobNow({ jobId })');
+    expect(roomSource).toContain('api.onChanged(');
+    expect(roomSource).toContain('Hệ thống không tự đăng bài');
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:runScheduledJobNow', input)");
+    expect(preloadSource).toContain("ipcRenderer.on('customerMarketing:changed', handler)");
+    expect(rendererTypesSource).toContain('runScheduledJobNow: (input: { jobId: string }) => Promise<CustomerMutationResult>;');
+    expect(rendererTypesSource).toContain('onChanged: (listener: () => void) => () => void;');
+    expect(mainSource).toContain("webContents.send('customerMarketing:changed')");
+  });
+
   it('surfaces imported SKILL.md knowledge as read-only metadata only', () => {
     expect(roomSource).toContain('SKILL.md · chỉ đọc');
     expect(roomSource).toContain("catalogStatus === 'synced'");

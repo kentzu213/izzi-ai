@@ -1,4 +1,17 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.98
+
+Agent Marketing: approving a strategy now sets up real work that runs on this computer.
+
+- When you approve a strategy, the app plans the content jobs and the date each one is due. Approving does not use credit.
+- When a job is due, the Content Agent writes the draft on this computer while the app is open, and each job uses 1 credit.
+- The "Điểm cần duyệt" screen lists the jobs and their status, shows each draft, and has a "Chạy ngay" button.
+- A step counts as done only when its draft exists. A job that fails is tried again after 5 minutes and then 15 minutes, then it is marked as failed.
+- If you run out of credit, the job stops and the Content Agent is not called.
+- A draft that takes longer than 5 minutes counts as a failed try. If the app cannot reach IzziAPI to check credit, the job waits 5 minutes and that wait does not count as a try.
+- Before each job runs, the app checks your role with IzziAPI. Only roles that can write content can run jobs.
+- Nothing is posted by itself. You read the draft and post it yourself.
+
 ## 1.14.0-beta.97
 
 Sign-in: Google login works again.
