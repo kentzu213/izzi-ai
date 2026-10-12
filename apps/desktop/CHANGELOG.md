@@ -1,4 +1,14 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.99
+
+Agent Marketing: the schedule keeps running after you close the window.
+
+- Closing the window now keeps Izzi AI running in the system tray, so due jobs still run. Click the tray icon to open the app again.
+- Izzi AI starts with your computer, in the tray and without opening a window. You can turn this off with "Khởi động cùng máy tính" in the tray menu.
+- When the computer wakes from sleep or you unlock it, the app checks the schedule right away and runs any jobs that came due.
+- To stop the schedule, choose "Thoát Izzi AI (dừng lịch chạy)" in the tray menu. Jobs do not run while the computer is off or asleep.
+- Nothing is posted by itself. Each job still only writes a draft for you to read.
+
 ## 1.14.0-beta.98
 
 Agent Marketing: approving a strategy now sets up real work that runs on this computer.

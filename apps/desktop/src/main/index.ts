@@ -5,7 +5,7 @@ import {
   resolveDesktopRuntimeProfile,
 } from './config/desktop-runtime-profile';
 import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard } from 'electron';
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard, Tray, Menu, powerMonitor } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'node:net';
@@ -94,6 +94,12 @@ import {
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
+import {
+  OPEN_AT_LOGIN_SETTING_KEY,
+  buildLoginItemSettings,
+  readOpenAtLogin,
+  shouldStartHidden,
+} from './background-mode';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { CustomerMarketingConnectorOperationStore } from './customer-marketing/customer-marketing-connector-operation-store';
 import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
@@ -172,6 +178,9 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow: BrowserWindow | null = null;
+// While the tray exists, closing the window only hides it so the marketing schedule keeps running.
+let tray: Tray | null = null;
+let isQuitting = false;
 let authManager: AuthManager;
 let dbManager: DatabaseManager;
 // Scheduled Sessions service. Module-scoped because both the headless `--run-session=<id>` launch
@@ -348,10 +357,11 @@ if (!nativeRuntimeSmoke && DESKTOP_RUNTIME_PROFILE.registerProtocol) {
   }
 }
 
-function createWindow() {
+function createWindow(options: { show?: boolean } = {}) {
   const appIcon = getAppIcon();
 
   mainWindow = new BrowserWindow({
+    show: options.show ?? true,
     width: 1280,
     height: 800,
     minWidth: 960,
@@ -385,9 +395,81 @@ function createWindow() {
   // Register Agent Bundle IPC handlers (Agent Marketplace)
   registerAgentIpcHandlers(mainWindow);
 
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !tray) return;
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// Staging profiles run beside production, so only the production profile owns the tray and login item.
+const BACKGROUND_MODE_ENABLED = !nativeRuntimeSmoke && DESKTOP_RUNTIME_PROFILE.id === 'default';
+
+function setOpenAtLogin(openAtLogin: boolean) {
+  dbManager.setSetting(OPEN_AT_LOGIN_SETTING_KEY, openAtLogin ? '1' : '0');
+  app.setLoginItemSettings(buildLoginItemSettings(openAtLogin, process.platform));
+}
+
+function applyLoginItem() {
+  if (!BACKGROUND_MODE_ENABLED || !app.isPackaged) return;
+  try {
+    const settings = buildLoginItemSettings(readOpenAtLogin(dbManager), process.platform);
+    // Re-writing an existing entry would undo a customer who disabled it in Task Manager.
+    if (app.getLoginItemSettings({ args: settings.args }).openAtLogin === settings.openAtLogin) return;
+    app.setLoginItemSettings(settings);
+  } catch (err) {
+    console.error('[BackgroundMode] Failed to register login item:', err);
+  }
+}
+
+function createTray() {
+  if (!BACKGROUND_MODE_ENABLED) return;
+  const icon = getAppIcon();
+  if (!icon) return;
+  try {
+    tray = new Tray(process.platform === 'darwin' ? icon.resize({ width: 16, height: 16 }) : icon);
+  } catch (err) {
+    console.error('[BackgroundMode] Failed to create tray icon:', err);
+    tray = null;
+    return;
+  }
+  // macOS installs an update by closing windows before before-quit fires; let that close through.
+  nativeAutoUpdater.on('before-quit-for-update', () => { isQuitting = true; });
+  tray.setToolTip(`${APP_NAME} — đang chạy lịch marketing`);
+  tray.on('click', showMainWindow);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: `Mở ${APP_NAME}`, click: showMainWindow },
+    ...(app.isPackaged
+      ? [{
+          label: 'Khởi động cùng máy tính',
+          type: 'checkbox' as const,
+          checked: readOpenAtLogin(dbManager),
+          click: (item: Electron.MenuItem) => setOpenAtLogin(item.checked),
+        }]
+      : []),
+    { type: 'separator' },
+    {
+      label: `Thoát ${APP_NAME} (dừng lịch chạy)`,
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]));
 }
 
 function findOpenClawCli(): Promise<string | null> {
@@ -834,6 +916,9 @@ function setupIPC() {
     (message, error) => console.warn('[CustomerMarketing]', message, error),
   );
   marketingScheduler.start();
+  // A sleeping or locked machine misses minute ticks; catch up as soon as it is back.
+  powerMonitor.on('resume', () => void marketingScheduler.tick());
+  powerMonitor.on('unlock-screen', () => void marketingScheduler.tick());
   app.on('before-quit', () => marketingScheduler.stop());
 
   // ── Extensions (basic) ──
@@ -2130,10 +2215,8 @@ if (!gotTheLock) {
     const url = commandLine.find(arg => arg.startsWith('openclaw://'));
     if (url) handleProtocolUrl(url);
 
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // The window may be hidden in the tray, so bring it back rather than only focusing it.
+    if (mainWindow) showMainWindow();
   });
 }
 
@@ -2163,7 +2246,13 @@ app.whenReady().then(async () => {
     return;
   }
 
-  createWindow();
+  createTray();
+  applyLoginItem();
+  const startHidden = tray !== null && shouldStartHidden(
+    process.argv,
+    process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin,
+  );
+  createWindow({ show: !startHidden });
   const initialUrl = process.argv.find((arg) => arg.startsWith('openclaw://'));
   if (initialUrl) queueProtocolUrl(initialUrl);
   const readyWindow = mainWindow;
@@ -2176,6 +2265,8 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+    } else {
+      showMainWindow();
     }
   });
 
@@ -2208,6 +2299,8 @@ app.on('window-all-closed', () => {
 
 // Graceful shutdown — stop all extension hosts
 app.on('before-quit', async () => {
+  // Let the window close for real instead of hiding to the tray.
+  isQuitting = true;
   // FIRST + synchronous: SIGKILL extension host children now. They run as the
   // Electron binary (fork + ELECTRON_RUN_AS_NODE); before-quit is NOT awaited by
   // Electron, so the async shutdownAll below can't finish before the process

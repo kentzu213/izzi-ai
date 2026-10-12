@@ -1945,7 +1945,7 @@ function ScheduledWorkPanel({
       <section className="cmr-panel" aria-labelledby="cmr-schedule-title">
         <span className="cmr-eyebrow">Tự chạy trên máy này khi đến hạn</span>
         <h3 id="cmr-schedule-title">Lịch chạy</h3>
-        <p>Izzi AI kiểm tra lịch mỗi phút khi app đang mở. Mỗi bước chỉ tạo bản nháp; việc đăng bài luôn do bạn tự làm.</p>
+        <p>Izzi AI kiểm tra lịch mỗi phút, kể cả khi bạn đóng cửa sổ: app vẫn chạy ở khay hệ thống, tự khởi động cùng máy tính và chạy bù khi máy thức dậy. Mỗi bước chỉ tạo bản nháp; việc đăng bài luôn do bạn tự làm.</p>
         <ul className="cmr-approval-full-list">
           {jobs.map((job) => {
             const status = SCHEDULED_JOB_STATUS[job.status];
