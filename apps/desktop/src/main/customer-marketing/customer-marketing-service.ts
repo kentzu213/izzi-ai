@@ -125,6 +125,7 @@ import type {
   CustomerMarketingSnapshot,
   CustomerMarketingDraft,
   CustomerScheduledJob,
+  CustomerScheduledJobStatus,
   CustomerProductMarketingContextMutationResult,
   CustomerProductMarketingContextRef,
   CustomerProductMarketingContextSaveInput,
@@ -435,6 +436,7 @@ const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 3000;
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MAX_TOKENS = 1500;
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
+const CANCELLABLE_JOB_STATUSES = new Set<CustomerScheduledJobStatus>(['scheduled', 'failed', 'blocked_quota']);
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
 const MARKETING_EXTERNAL_ACTION_ROLES = new Set<CustomerRole>(['owner', 'manager']);
 const PAGESPEED_WORKSPACE_COOLDOWN_MS = 5_000;
@@ -1573,6 +1575,7 @@ export class CustomerMarketingService {
   private readonly pageSpeedTargetNextRun = new Map<string, number>();
   private readonly pageSpeedWorkspaceNextRun = new Map<string, number>();
   private readonly recoveredScheduleKeys = new Set<string>();
+  private draftReadyListener: ((draft: CustomerMarketingDraft) => void) | null = null;
   private mediaToolchainInFlight: Promise<CustomerMediaToolchain> | null = null;
   private readonly productMarketingAuthorityKey = randomUUID();
 
@@ -5561,6 +5564,7 @@ export class CustomerMarketingService {
       }
     }
     let approvedScheduleItems: MarketingScheduleItem[] | null = null;
+    let reviewDurableApproval: (() => void) | null = null;
     if (approval.kind === 'strategy') {
       if (!approval.evidenceDigest) {
         return { ok: false, error: 'Approval chiến lược thiếu evidence digest; workflow đã được chặn.' };
@@ -5605,10 +5609,11 @@ export class CustomerMarketingService {
             error: 'Product Marketing Context binding của durable workflow không còn hợp lệ.',
           };
         }
-        store.reviewApproval(approval.runId, approval.id, {
-          decision: input.decision,
-          digest: approval.evidenceDigest,
-        });
+        const digest = approval.evidenceDigest;
+        // Applied with the record and schedule writes so a failed save leaves the approval pending.
+        reviewDurableApproval = () => {
+          store.reviewApproval(approval.runId, approval.id, { decision: input.decision, digest });
+        };
         if (input.decision === 'approved') {
           const evidence = durableApproval?.artifactId ? store.getArtifact(durableApproval.artifactId) : null;
           approvedScheduleItems = (evidence ? scheduleFromEvidence(evidence.content) : null)
@@ -5668,9 +5673,26 @@ export class CustomerMarketingService {
         : item),
       updatedAt: now,
     };
-    this.writeRecord(identity, next);
-    if (approvedScheduleItems) this.scheduleApprovedStrategy(identity, approval.runId, approval.id, approvedScheduleItems);
+    // The approval and its schedule are saved together, so a failed schedule write never leaves an approved plan with no jobs.
+    const durableError = this.db.withSettingsTransaction((): string | null => {
+      if (reviewDurableApproval) {
+        try {
+          reviewDurableApproval();
+        } catch {
+          return 'Bằng chứng chiến lược đã thay đổi hoặc workflow không còn chờ duyệt.';
+        }
+      }
+      this.writeRecord(identity, next);
+      if (approvedScheduleItems) this.scheduleApprovedStrategy(identity, approval.runId, approval.id, approvedScheduleItems);
+      return null;
+    });
+    if (durableError) return { ok: false, error: durableError };
     return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  /** Called with each draft the schedule produces, so the app can notify the customer while it sits in the tray. */
+  setDraftReadyListener(listener: ((draft: CustomerMarketingDraft) => void) | null): void {
+    this.draftReadyListener = listener;
   }
 
   private scheduleKey(identity: CustomerIdentity): string {
@@ -5746,7 +5768,8 @@ export class CustomerMarketingService {
       const latest = store.read();
       store.write({
         ...latest,
-        jobs: latest.jobs.map((item) => item.id === job.id
+        // Only a job still waiting is marked failed; one cancelled meanwhile keeps its status.
+        jobs: latest.jobs.map((item) => item.id === job.id && item.status === 'scheduled'
           ? {
             ...item,
             status: 'failed',
@@ -5778,7 +5801,62 @@ export class CustomerMarketingService {
     if (job.status === 'running' || job.status === 'draft_ready') {
       return { ok: false, error: 'Việc này đang chạy hoặc đã có bản nháp.' };
     }
+    if (job.status === 'cancelled') {
+      return { ok: false, error: 'Việc này đã bị huỷ.' };
+    }
     await this.executeScheduledJob(identity, store, job.id);
+    return { ok: true, snapshot: await this.snapshot(identity, this.readRecord(identity)) };
+  }
+
+  /** Stops a job that has not produced a draft yet; it will never run or use credit. */
+  async cancelScheduledJob(jobId: string): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = await this.refreshScheduleRole(identity);
+    if (!record) {
+      return { ok: false, error: 'Không xác nhận được vai trò với IzziAPI; thử lại sau.' };
+    }
+    if (!MARKETING_AUTHOR_ROLES.has(record.role)) {
+      return { ok: false, error: 'Vai trò hiện tại không được huỷ việc trong lịch.' };
+    }
+    const store = this.scheduleStore(identity);
+    const schedule = store.read();
+    const job = schedule.jobs.find((item) => item.id === jobId);
+    if (!job) return { ok: false, error: 'Không tìm thấy việc này trong lịch chạy.' };
+    if (!CANCELLABLE_JOB_STATUSES.has(job.status)) {
+      return { ok: false, error: 'Việc đang chạy, đã có bản nháp hoặc đã huỷ thì không huỷ được.' };
+    }
+    const updatedAt = new Date().toISOString();
+    store.write({
+      ...schedule,
+      jobs: schedule.jobs.map((item) => item.id === jobId
+        ? { ...item, status: 'cancelled', nextAttemptAt: undefined, updatedAt }
+        : item),
+    });
+    return { ok: true, snapshot: await this.snapshot(identity, this.readRecord(identity)) };
+  }
+
+  /** Marks a draft ready to publish. The customer still copies and posts it; nothing is published from here. */
+  async approveDraft(draftId: string): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = await this.refreshScheduleRole(identity);
+    if (!record) {
+      return { ok: false, error: 'Không xác nhận được vai trò với IzziAPI; thử lại sau.' };
+    }
+    if (!MARKETING_REVIEW_ROLES.has(record.role)) {
+      return { ok: false, error: 'Vai trò hiện tại không được duyệt bản nháp.' };
+    }
+    const store = this.scheduleStore(identity);
+    const schedule = store.read();
+    const draft = schedule.drafts.find((item) => item.id === draftId);
+    if (!draft) return { ok: false, error: 'Không tìm thấy bản nháp này.' };
+    if (draft.status !== 'pending_review') return { ok: false, error: 'Bản nháp này đã được duyệt.' };
+    const approvedAt = new Date().toISOString();
+    store.write({
+      ...schedule,
+      drafts: schedule.drafts.map((item) => item.id === draftId
+        ? { ...item, status: 'ready_to_publish', approvedAt }
+        : item),
+    });
     return { ok: true, snapshot: await this.snapshot(identity, this.readRecord(identity)) };
   }
 
@@ -5788,7 +5866,8 @@ export class CustomerMarketingService {
     jobId: string,
   ): Promise<void> {
     const job = store.read().jobs.find((item) => item.id === jobId);
-    if (!job) return;
+    // Re-checked here because the job may have been cancelled while the role was being confirmed.
+    if (!job || job.status === 'running' || job.status === 'draft_ready' || job.status === 'cancelled') return;
     const attempts = job.attempts + 1;
     const update = (patch: Partial<CustomerScheduledJob>, draft?: CustomerMarketingDraft) => {
       const latest = store.read();
@@ -5938,6 +6017,11 @@ export class CustomerMarketingService {
       createdAt: new Date().toISOString(),
     };
     update({ status: 'draft_ready', nextAttemptAt: undefined, lastError: undefined, draftId: draft.id }, draft);
+    try {
+      this.draftReadyListener?.(draft);
+    } catch {
+      // The notification is best effort; the draft is already saved.
+    }
   }
 
   private reconcileWorkflowRecord(record: CustomerTenantRecord): CustomerTenantRecord {

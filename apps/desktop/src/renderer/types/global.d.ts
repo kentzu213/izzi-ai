@@ -353,6 +353,8 @@ declare global {
     openMediaVideoPreview: (input: CustomerMediaVideoPreviewInput) => Promise<CustomerMutationResult>;
     reviewApproval: (input: CustomerReviewInput) => Promise<CustomerMutationResult>;
     runScheduledJobNow: (input: { jobId: string }) => Promise<CustomerMutationResult>;
+    cancelScheduledJob: (input: { jobId: string }) => Promise<CustomerMutationResult>;
+    approveDraft: (input: { draftId: string }) => Promise<CustomerMutationResult>;
     onChanged: (listener: () => void) => () => void;
   }
 

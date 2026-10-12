@@ -5,7 +5,7 @@ import {
   resolveDesktopRuntimeProfile,
 } from './config/desktop-runtime-profile';
 import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard, Tray, Menu, powerMonitor } from 'electron';
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard, Tray, Menu, powerMonitor, Notification } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'node:net';
@@ -915,6 +915,13 @@ function setupIPC() {
     },
     (message, error) => console.warn('[CustomerMarketing]', message, error),
   );
+  // The window is often hidden in the tray when a scheduled draft lands; tell the customer.
+  customerMarketingService.setDraftReadyListener((draft) => {
+    if (!Notification.isSupported()) return;
+    const notification = new Notification({ title: `${APP_NAME} đã soạn xong bản nháp`, body: draft.title });
+    notification.on('click', showMainWindow);
+    notification.show();
+  });
   marketingScheduler.start();
   // A sleeping or locked machine misses minute ticks; catch up as soon as it is back.
   powerMonitor.on('resume', () => void marketingScheduler.tick());

@@ -1876,7 +1876,7 @@ describe('CustomerMarketingService onboarding and workflow', () => {
         base.workspace.role = options.role;
         context.db.updateOnlyRecord({ role: options.role });
       }
-      return { ...context, reserveQuota, reviewed, workspace: base.workspace };
+      return { ...context, reserveQuota, reviewed, workspace: base.workspace, getCurrent: vi.mocked(base.gateway.getCurrent) };
     }
 
     function earliestJobId(jobs: readonly { id: string; dueAt: string }[]): string {
@@ -2053,6 +2053,127 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       const jobs = (await service.getSnapshot()).schedule!.jobs;
       expect(jobs.filter((job) => job.status === 'draft_ready')).toHaveLength(1);
       expect(jobs.some((job) => job.status === 'running')).toBe(false);
+    });
+
+    it('cancels a scheduled job so the schedule never runs or charges it', async () => {
+      const { service, reserveQuota, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+
+      const cancelled = await service.cancelScheduledJob(jobId);
+
+      expect(cancelled.ok).toBe(true);
+      expect(cancelled.snapshot!.schedule!.jobs.find((job) => job.id === jobId))
+        .toEqual(expect.objectContaining({ status: 'cancelled' }));
+      expect((await service.runScheduledJobNow(jobId)).ok).toBe(false);
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job.status).toBe('cancelled');
+      expect(reserveQuota).not.toHaveBeenCalledWith(expect.objectContaining({
+        idempotencyKey: `content-job:${jobId}`,
+      }));
+    });
+
+    it('does not cancel a job that already has a draft', async () => {
+      const { service, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      expect((await service.cancelScheduledJob(jobId)).ok).toBe(false);
+    });
+
+    it.each<CustomerRole>(['viewer', 'reviewer'])('does not let %s cancel a scheduled job', async (role) => {
+      const { service, reviewed } = await approvedPlan({ role });
+      const jobId = reviewed.snapshot!.schedule!.jobs[0].id;
+
+      expect((await service.cancelScheduledJob(jobId)).ok).toBe(false);
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job.status).toBe('scheduled');
+    });
+
+    it('does not run a job the customer cancelled while the role check was in flight', async () => {
+      const { service, director, getCurrent, workspace, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      getCurrent.mockImplementationOnce(async () => {
+        await service.cancelScheduledJob(jobId);
+        return { status: 'synced', workspace };
+      });
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'cancelled', attempts: 0 }));
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('tells the desktop shell when a draft is ready', async () => {
+      const { service } = await approvedPlan();
+      const listener = vi.fn();
+      service.setDraftReadyListener(listener);
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const draft = (await service.getSnapshot()).schedule!.drafts[0];
+      expect(listener).toHaveBeenCalledWith(draft);
+    });
+
+    it('keeps the draft when the notification fails', async () => {
+      const { service } = await approvedPlan();
+      service.setDraftReadyListener(() => { throw new Error('no notification center'); });
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const schedule = (await service.getSnapshot()).schedule!;
+      expect(schedule.drafts).toHaveLength(1);
+      expect(schedule.jobs.filter((job) => job.status === 'draft_ready')).toHaveLength(1);
+    });
+
+    it.each<CustomerRole>(['owner', 'manager', 'reviewer'])('lets %s mark a draft ready to publish', async (role) => {
+      const { service, workspace, db } = await approvedPlan();
+      await service.runDueScheduledJob(AFTER_PLAN());
+      const draftId = (await service.getSnapshot()).schedule!.drafts[0].id;
+      workspace.role = role;
+      db.updateOnlyRecord({ role });
+
+      const result = await service.approveDraft(draftId);
+
+      expect(result.ok).toBe(true);
+      expect(result.snapshot!.schedule!.drafts[0]).toEqual(expect.objectContaining({
+        id: draftId,
+        status: 'ready_to_publish',
+        approvedAt: expect.any(String),
+      }));
+      expect((await service.approveDraft(draftId)).ok).toBe(false);
+    });
+
+    it.each<CustomerRole>(['viewer', 'editor'])('does not let %s approve a draft', async (role) => {
+      const { service, workspace, db } = await approvedPlan();
+      await service.runDueScheduledJob(AFTER_PLAN());
+      const draftId = (await service.getSnapshot()).schedule!.drafts[0].id;
+      workspace.role = role;
+      db.updateOnlyRecord({ role });
+
+      expect((await service.approveDraft(draftId)).ok).toBe(false);
+      expect((await service.getSnapshot()).schedule!.drafts[0].status).toBe('pending_review');
+    });
+
+    it('keeps the strategy pending when its schedule cannot be saved so approval can be retried', async () => {
+      const context = setup({ workspaceGateway: marketingResourceGateway('owner').gateway });
+      await completeOnboarding(context.service);
+      const created = await context.service.createGoal({ goal: 'Prepare the monthly marketing plan' });
+      const approvalId = created.snapshot!.approvals[0].id;
+      const setSetting = context.db.setSetting.bind(context.db);
+      const failing = vi.spyOn(context.db, 'setSetting').mockImplementation((key: string, value: string) => {
+        if (key.startsWith('customer_marketing_schedule:v1:')) throw new Error('disk full');
+        setSetting(key, value);
+      });
+
+      await context.service.reviewApproval({ approvalId, decision: 'approved' }).catch(() => null);
+      expect((await context.service.getSnapshot()).approvals[0].status).toBe('pending');
+
+      failing.mockRestore();
+      const retried = await context.service.reviewApproval({ approvalId, decision: 'approved' });
+      expect(retried.ok).toBe(true);
+      expect(retried.snapshot!.schedule!.jobs.length).toBeGreaterThan(0);
     });
   });
 

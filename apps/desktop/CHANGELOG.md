@@ -1,4 +1,16 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.100
+
+Agent Marketing: you get a notice when a draft is ready, and you approve each draft.
+
+- When a scheduled job finishes a draft, Windows shows a notice, even when the app is in the tray. Click the notice to open the app.
+- Each draft now has a "Duyệt — sẵn sàng đăng" button. An approved draft shows "Sẵn sàng đăng" with the date you approved it. Owners, managers and reviewers can approve drafts.
+- Approving a draft does not post it. You copy the content with "Chép nội dung" and post it yourself.
+- A job that has not run yet, has failed, or stopped for lack of credit now has a "Huỷ" button. A cancelled job does not run and does not use credit. Owners, managers and editors can cancel jobs.
+- A job that is already writing cannot be cancelled. The app checks for a cancel again right before a job starts, so a job cancelled at the last moment does not run.
+- Approving a strategy and planning its jobs now happen together, so a crash cannot leave an approved strategy with no jobs.
+- A job with an unreadable due date now runs instead of waiting forever.
+
 ## 1.14.0-beta.99
 
 Agent Marketing: the schedule keeps running after you close the window.

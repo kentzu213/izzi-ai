@@ -161,13 +161,19 @@ export function nextRetryAt(attempts: number, now: Date): string | null {
   return new Date(now.getTime() + delay).toISOString();
 }
 
+/** An unreadable due time counts as overdue so the job runs instead of staying stuck forever. */
+function dueTime(job: CustomerScheduledJob): number {
+  const time = Date.parse(job.dueAt);
+  return Number.isNaN(time) ? -Infinity : time;
+}
+
 export function pickDueJob(jobs: readonly CustomerScheduledJob[], now: Date): CustomerScheduledJob | null {
   const nowMs = now.getTime();
   const due = jobs.filter((job) => job.status === 'scheduled'
-    && Date.parse(job.dueAt) <= nowMs
+    && dueTime(job) <= nowMs
     && (!job.nextAttemptAt || Date.parse(job.nextAttemptAt) <= nowMs));
   if (due.length === 0) return null;
-  return due.reduce((earliest, job) => (Date.parse(job.dueAt) < Date.parse(earliest.dueAt) ? job : earliest));
+  return due.reduce((earliest, job) => (dueTime(job) < dueTime(earliest) ? job : earliest));
 }
 
 interface ScheduleSettingsStore {

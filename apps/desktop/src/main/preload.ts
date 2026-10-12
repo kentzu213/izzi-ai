@@ -800,6 +800,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:reviewApproval', input),
     runScheduledJobNow: (input: { jobId: string }): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:runScheduledJobNow', input),
+    cancelScheduledJob: (input: { jobId: string }): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:cancelScheduledJob', input),
+    approveDraft: (input: { draftId: string }): Promise<CustomerMutationResult> =>
+      ipcRenderer.invoke('customerMarketing:approveDraft', input),
     onChanged: (listener: () => void) => {
       const handler = () => listener();
       ipcRenderer.on('customerMarketing:changed', handler);
