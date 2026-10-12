@@ -69,6 +69,7 @@ import type {
 import type { CustomerMarketingAssetFileGateway } from './customer-marketing-asset-files';
 import type { CustomerMarketingLegacyImportRegistry } from './customer-marketing-legacy-import';
 import type { CustomerMarketingIntegrationAuthorityGateway } from './customer-marketing-integration-authority';
+import { MAX_JOB_ATTEMPTS, SCHEDULED_JOB_TIMEOUT_MS } from './marketing-schedule';
 
 class MemorySettings {
   readonly values = new Map<string, string>();
@@ -1848,6 +1849,211 @@ describe('CustomerMarketingService onboarding and workflow', () => {
     expect(reviewed.snapshot?.runs[0].steps.every((step) => step.status === 'done')).toBe(true);
     expect(reviewed.snapshot?.externalActionsAllowed).toBe(false);
     expect(director).not.toHaveBeenCalled();
+  });
+
+  describe('local schedule', () => {
+    const DRAFT_REPLY = 'IzziAPI cung cấp catalog API cho nhiều workflow AI [proof-api-catalog]. Dùng thử workflow phù hợp với nhu cầu của bạn.';
+    const AFTER_PLAN = () => new Date(Date.now() + 30 * 24 * 60 * 60_000);
+
+    async function approvedPlan(options: {
+      role?: CustomerRole;
+      reserveQuota?: CustomerMarketingWorkspaceGateway['reserveQuota'];
+      director?: ReturnType<typeof vi.fn>;
+    } = {}) {
+      const base = marketingResourceGateway('owner');
+      const reserveQuota = vi.fn(options.reserveQuota ?? base.gateway.reserveQuota);
+      const director = options.director ?? vi.fn(async () => ({ reply: DRAFT_REPLY }));
+      const context = setup({ director, workspaceGateway: { ...base.gateway, reserveQuota } });
+      await completeOnboarding(context.service);
+      const created = await context.service.createGoal({ goal: 'Prepare the monthly marketing plan' });
+      const reviewed = await context.service.reviewApproval({
+        approvalId: created.snapshot!.approvals[0].id,
+        decision: 'approved',
+      });
+      expect(reviewed.ok).toBe(true);
+      if (options.role) {
+        // The synced workspace is the role authority, so change it there as well as locally.
+        base.workspace.role = options.role;
+        context.db.updateOnlyRecord({ role: options.role });
+      }
+      return { ...context, reserveQuota, reviewed, workspace: base.workspace };
+    }
+
+    function earliestJobId(jobs: readonly { id: string; dueAt: string }[]): string {
+      return jobs.reduce((earliest, job) => (Date.parse(job.dueAt) < Date.parse(earliest.dueAt) ? job : earliest)).id;
+    }
+
+    it('strategy approval schedules jobs on this machine without running them inline', async () => {
+      const { reviewed, director, reserveQuota } = await approvedPlan();
+
+      const jobs = reviewed.snapshot?.schedule?.jobs ?? [];
+      expect(jobs.length).toBeGreaterThan(0);
+      expect(jobs.every((job) => job.status === 'scheduled' && job.attempts === 0)).toBe(true);
+      expect(new Set(jobs.map((job) => job.approvalId))).toEqual(new Set([reviewed.snapshot!.approvals[0].id]));
+      expect(reviewed.snapshot?.schedule?.drafts).toEqual([]);
+      expect(director).not.toHaveBeenCalled();
+      expect(reserveQuota).not.toHaveBeenCalledWith(expect.objectContaining({
+        idempotencyKey: expect.stringMatching(/^content-job:/),
+      }));
+    });
+
+    it('runs the earliest due job into a draft and charges one credit for it', async () => {
+      const { service, director, reserveQuota } = await approvedPlan();
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const schedule = (await service.getSnapshot()).schedule!;
+      const done = schedule.jobs.filter((job) => job.status === 'draft_ready');
+      expect(done).toHaveLength(1);
+      expect(done[0]).toEqual(expect.objectContaining({ attempts: 1, creditsCharged: 1 }));
+      expect(schedule.drafts).toEqual([expect.objectContaining({
+        jobId: done[0].id,
+        body: DRAFT_REPLY,
+        status: 'pending_review',
+      })]);
+      expect(done[0].draftId).toBe(schedule.drafts[0].id);
+      expect(reserveQuota).toHaveBeenCalledWith(expect.objectContaining({
+        units: 1,
+        idempotencyKey: `content-job:${done[0].id}`,
+      }));
+      expect(director).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'customer-marketing-content',
+        enableTools: false,
+      }));
+    });
+
+    it('returns false when nothing is due yet', async () => {
+      const { service, director } = await approvedPlan();
+
+      expect(await service.runDueScheduledJob(new Date(0))).toBe(false);
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('blocks the job without calling the Content Agent when credit is exhausted', async () => {
+      const { service, director } = await approvedPlan({
+        reserveQuota: async () => ({ status: 'quota_exceeded', quota: null }),
+      });
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const schedule = (await service.getSnapshot()).schedule!;
+      expect(schedule.jobs.filter((job) => job.status === 'blocked_quota')).toHaveLength(1);
+      expect(schedule.drafts).toEqual([]);
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('retries an empty Content Agent reply and fails the job after the last attempt', async () => {
+      const director = vi.fn(async () => ({ reply: '' }));
+      const { service } = await approvedPlan({ director });
+      const firstJobId = async () => (await service.getSnapshot()).schedule!.jobs
+        .reduce((earliest, job) => (Date.parse(job.dueAt) < Date.parse(earliest.dueAt) ? job : earliest)).id;
+      const jobId = await firstJobId();
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+      let job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 1 }));
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(job.lastError).toBeTruthy();
+
+      for (let attempt = 2; attempt <= MAX_JOB_ATTEMPTS; attempt += 1) {
+        await service.runScheduledJobNow(jobId);
+      }
+      job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'failed', attempts: MAX_JOB_ATTEMPTS }));
+      expect(job.nextAttemptAt).toBeUndefined();
+    });
+
+    it.each<CustomerRole>(['viewer', 'reviewer'])('does not let %s run a scheduled job', async (role) => {
+      const { service, director, reviewed } = await approvedPlan({ role });
+      const jobId = reviewed.snapshot!.schedule!.jobs[0].id;
+
+      const result = await service.runScheduledJobNow(jobId);
+
+      expect(result.ok).toBe(false);
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('lets an editor run a job now but not one that already has a draft', async () => {
+      const { service, reviewed } = await approvedPlan({ role: 'editor' });
+      const jobId = reviewed.snapshot!.schedule!.jobs[0].id;
+
+      expect((await service.runScheduledJobNow(jobId)).ok).toBe(true);
+      expect((await service.runScheduledJobNow(jobId)).ok).toBe(false);
+    });
+
+    it('re-checks the workspace role before a due job spends credit', async () => {
+      const { service, director, reserveQuota, workspace, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      workspace.role = 'viewer';
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'failed', attempts: 0 }));
+      expect(job.lastError).toBeTruthy();
+      expect(director).not.toHaveBeenCalled();
+      expect(reserveQuota).not.toHaveBeenCalledWith(expect.objectContaining({
+        idempotencyKey: expect.stringMatching(/^content-job:/),
+      }));
+    });
+
+    it('does not use up an attempt when IzziAPI cannot confirm credit', async () => {
+      const { service, director, reviewed } = await approvedPlan({
+        reserveQuota: async () => { throw new Error('offline'); },
+      });
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 0 }));
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('gives up on a Content Agent call that never answers and schedules a retry', async () => {
+      const director = vi.fn(() => new Promise<never>(() => {}));
+      const { service, reviewed } = await approvedPlan({ director });
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const run = service.runDueScheduledJob(AFTER_PLAN());
+        await vi.advanceTimersByTimeAsync(SCHEDULED_JOB_TIMEOUT_MS);
+        expect(await run).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 1 }));
+      expect(job.lastError).toBeTruthy();
+    });
+
+    it('does not leave a job running when drafting throws unexpectedly', async () => {
+      const director = vi.fn(async () => ({}));
+      const { service, reviewed } = await approvedPlan({ director });
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 1 }));
+      expect(job.lastError).toBeTruthy();
+    });
+
+    it('requeues jobs interrupted by an app exit before running the schedule', async () => {
+      const { service, db } = await approvedPlan();
+      const [key, raw] = Array.from(db.values.entries())
+        .find(([name]) => name.startsWith('customer_marketing_schedule:v1:'))!;
+      const stored = JSON.parse(raw) as { jobs: { status: string }[] };
+      db.setSetting(key, JSON.stringify({ ...stored, jobs: stored.jobs.map((job) => ({ ...job, status: 'running' })) }));
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const jobs = (await service.getSnapshot()).schedule!.jobs;
+      expect(jobs.filter((job) => job.status === 'draft_ready')).toHaveLength(1);
+      expect(jobs.some((job) => job.status === 'running')).toBe(false);
+    });
   });
 
   it('mirrors the backend seven-day workflow and confirms remote approval before local completion', async () => {

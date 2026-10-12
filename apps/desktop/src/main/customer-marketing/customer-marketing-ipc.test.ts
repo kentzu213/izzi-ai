@@ -173,6 +173,7 @@ function serviceMock() {
       error: 'Google PageSpeed đang giới hạn số lần gọi.',
     })),
     reviewApproval: vi.fn(),
+    runScheduledJobNow: vi.fn(async () => ({ ok: true })),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
     createWorkspaceInvitation: vi.fn(async () => ({
@@ -595,6 +596,30 @@ describe('customer marketing media IPC', () => {
 
     await expect(handler!(event(), payload)).rejects.toThrow(/Payload (video preview|customer marketing) không hợp lệ/);
     expect(service.openMediaVideoPreview).not.toHaveBeenCalled();
+  });
+
+  it('passes only an exact scheduled job id to the run-now handler', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:runScheduledJobNow');
+    const jobId = 'job-123e4567-e89b-12d3-a456-426614174000';
+
+    await expect(handler!(event(), { jobId })).resolves.toEqual({ ok: true });
+    expect(service.runScheduledJobNow).toHaveBeenCalledWith(jobId);
+  });
+
+  it.each([
+    'job-123e4567-e89b-12d3-a456-426614174000',
+    { jobId: '' },
+    { jobId: 'media-job-1' },
+    { jobId: 'job-123e4567-e89b-12d3-a456-426614174000', force: true },
+  ])('rejects malformed scheduled job payloads before service execution %#', async (payload) => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:runScheduledJobNow');
+
+    await expect(handler!(event(), payload)).rejects.toThrow(/Payload (lịch chạy|customer marketing) không hợp lệ/);
+    expect(service.runScheduledJobNow).not.toHaveBeenCalled();
   });
 });
 

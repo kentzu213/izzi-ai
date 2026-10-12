@@ -93,6 +93,7 @@ import {
 } from './marketing/native-marketing-client';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
+import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import { CustomerMarketingCredentialVault } from './customer-marketing/customer-marketing-credential-vault';
 import { CustomerMarketingConnectorOperationStore } from './customer-marketing/customer-marketing-connector-operation-store';
 import { CustomerMarketingTelegramSandboxConfigStore } from './customer-marketing/customer-marketing-telegram-sandbox-config';
@@ -823,6 +824,17 @@ function setupIPC() {
       return result;
     },
   });
+  const marketingScheduler = new MarketingScheduler(
+    customerMarketingService,
+    () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('customerMarketing:changed');
+      }
+    },
+    (message, error) => console.warn('[CustomerMarketing]', message, error),
+  );
+  marketingScheduler.start();
+  app.on('before-quit', () => marketingScheduler.stop());
 
   // ── Extensions (basic) ──
   ipcMain.handle('extensions:list', async () => {
