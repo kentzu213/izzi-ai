@@ -1514,7 +1514,8 @@
 .izzi-v2 .v2-campaign-board__job.is-running { border-left-color: var(--v2-info); }
 .izzi-v2 .v2-campaign-board__job.is-draft_ready { border-left-color: var(--v2-success); }
 .izzi-v2 .v2-campaign-board__job.is-failed,
-.izzi-v2 .v2-campaign-board__job.is-blocked_quota { border-left-color: var(--v2-danger); }
+.izzi-v2 .v2-campaign-board__job.is-blocked_quota,
+.izzi-v2 .v2-campaign-board__job.is-blocked_connection { border-left-color: var(--v2-danger); }
 .izzi-v2 .v2-campaign-board__job.is-cancelled { opacity: 0.5; }
 
 .izzi-v2 .v2-campaign-board__job-due {

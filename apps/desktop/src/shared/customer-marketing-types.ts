@@ -382,7 +382,17 @@ export type CustomerScheduledJobStatus =
   | 'draft_ready'
   | 'failed'
   | 'blocked_quota'
+  | 'blocked_connection'
   | 'cancelled';
+
+/** Whether a scheduled channel can actually receive the work when it is due. */
+export type CustomerChannelReadinessState = 'ready' | 'manual' | 'needs_login' | 'unavailable';
+
+export interface CustomerChannelReadiness {
+  channel: string;
+  state: CustomerChannelReadinessState;
+  detail?: string;
+}
 
 /** A step of an approved strategy, run automatically on this machine when it is due. */
 export interface CustomerScheduledJob {

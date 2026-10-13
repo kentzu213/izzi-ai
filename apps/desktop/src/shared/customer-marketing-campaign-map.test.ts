@@ -429,6 +429,16 @@ describe('deriveCampaignCellStatus with scheduled work', () => {
     expect(state).toEqual({ status: 'blocked', reason: 'Hết credit' });
   });
 
+  it('shows a job waiting for a channel login as blocked with its error', () => {
+    const state = deriveCampaignCellStatus(
+      planned,
+      runs,
+      linked([job({ status: 'blocked_connection', lastError: 'Chưa kết nối Facebook' })]),
+    );
+
+    expect(state).toEqual({ status: 'blocked', reason: 'Chưa kết nối Facebook' });
+  });
+
   it('is done only when every live job has a draft ready to publish', () => {
     const ready = job({ status: 'draft_ready', draftId: 'draft-1' });
     const cancelled = job({ id: 'job-2', status: 'cancelled' });

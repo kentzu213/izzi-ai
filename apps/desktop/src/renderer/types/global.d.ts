@@ -42,6 +42,7 @@ import type {
   CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
+  CustomerChannelReadiness,
   CustomerMutationResult,
   CustomerOnboardingInput,
   CustomerReviewInput,
@@ -356,6 +357,7 @@ declare global {
     runScheduledJobNow: (input: { jobId: string }) => Promise<CustomerMutationResult>;
     cancelScheduledJob: (input: { jobId: string }) => Promise<CustomerMutationResult>;
     approveDraft: (input: { draftId: string }) => Promise<CustomerMutationResult>;
+    checkScheduleReadiness: () => Promise<CustomerChannelReadiness[]>;
     onChanged: (listener: () => void) => () => void;
   }
 

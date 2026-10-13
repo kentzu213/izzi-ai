@@ -101,6 +101,7 @@ import type {
   CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
+  CustomerChannelReadiness,
   CustomerMutationResult,
   CustomerOnboardingInput,
   CustomerReviewInput,
@@ -806,6 +807,8 @@ const electronAPI = {
       ipcRenderer.invoke('customerMarketing:cancelScheduledJob', input),
     approveDraft: (input: { draftId: string }): Promise<CustomerMutationResult> =>
       ipcRenderer.invoke('customerMarketing:approveDraft', input),
+    checkScheduleReadiness: (): Promise<CustomerChannelReadiness[]> =>
+      ipcRenderer.invoke('customerMarketing:checkScheduleReadiness'),
     onChanged: (listener: () => void) => {
       const handler = () => listener();
       ipcRenderer.on('customerMarketing:changed', handler);

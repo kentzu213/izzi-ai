@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCapability,
+  CustomerChannelReadiness,
   CustomerMarketingAnalyticsReport,
   CustomerMarketingAnalyticsWindow,
   CustomerMarketingResource,
@@ -1883,6 +1884,11 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       return jobs.reduce((earliest, job) => (Date.parse(job.dueAt) < Date.parse(earliest.dueAt) ? job : earliest)).id;
     }
 
+    function channelCheck(state: CustomerChannelReadiness['state'], detail?: string) {
+      return vi.fn(async (_workspaceId: string, channels: readonly string[]) =>
+        channels.map((channel): CustomerChannelReadiness => (detail ? { channel, state, detail } : { channel, state })));
+    }
+
     it('strategy approval schedules jobs on this machine without running them inline', async () => {
       const { reviewed, director, reserveQuota } = await approvedPlan();
 
@@ -2103,6 +2109,212 @@ describe('CustomerMarketingService onboarding and workflow', () => {
       const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
       expect(job).toEqual(expect.objectContaining({ status: 'cancelled', attempts: 0 }));
       expect(director).not.toHaveBeenCalled();
+    });
+
+    it('blocks a job whose channel needs a login before it spends credit or drafts', async () => {
+      const { service, director, reserveQuota, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      const check = channelCheck('needs_login', 'Chưa kết nối Facebook — đăng nhập trong mục Kênh rồi bấm "Chạy lại".');
+      service.setChannelReadinessCheck(check);
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const schedule = (await service.getSnapshot()).schedule!;
+      const job = schedule.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'blocked_connection', attempts: 0, creditsCharged: 0 }));
+      expect(job.nextAttemptAt).toBeUndefined();
+      expect(job.lastError).toContain('Chạy lại');
+      expect(check).toHaveBeenCalledWith(expect.any(String), [job.channel]);
+      expect(schedule.drafts).toEqual([]);
+      expect(director).not.toHaveBeenCalled();
+      expect(reserveQuota).not.toHaveBeenCalledWith(expect.objectContaining({
+        idempotencyKey: expect.stringMatching(/^content-job:/),
+      }));
+    });
+
+    it('reschedules without counting an attempt when the connection cannot be checked', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(channelCheck('unavailable', 'Chưa kiểm tra được kết nối Facebook với IzziAPI; app sẽ thử lại.'));
+
+      expect(await service.runDueScheduledJob(AFTER_PLAN())).toBe(true);
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 0 }));
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(job.lastError).toContain('thử lại');
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('treats a connection check that throws as unavailable, never as ready', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(vi.fn(async () => { throw new Error('vault offline'); }));
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 0 }));
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('waits instead of running when the connection check returns no answer for the channel', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(vi.fn(async () => []));
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'scheduled', attempts: 0 }));
+      expect(job.nextAttemptAt).toBeTruthy();
+      expect(job.lastError).toContain('thử lại');
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it.each<CustomerChannelReadiness['state']>(['ready', 'manual'])('drafts the job when its channel is %s', async (state) => {
+      const { service, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(channelCheck(state));
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'draft_ready', attempts: 1, creditsCharged: 1 }));
+    });
+
+    it('keeps the job blocked when the customer runs it again before logging in', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(channelCheck('needs_login', 'Chưa kết nối Facebook.'));
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const rerun = await service.runScheduledJobNow(jobId);
+
+      expect(rerun.ok).toBe(true);
+      expect(rerun.snapshot!.schedule!.jobs.find((item) => item.id === jobId))
+        .toEqual(expect.objectContaining({ status: 'blocked_connection', attempts: 0 }));
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('runs a connection-blocked job again once the customer has logged in', async () => {
+      const { service, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(channelCheck('needs_login', 'Chưa kết nối Facebook.'));
+      await service.runDueScheduledJob(AFTER_PLAN());
+      service.setChannelReadinessCheck(channelCheck('ready'));
+
+      const rerun = await service.runScheduledJobNow(jobId);
+
+      expect(rerun.ok).toBe(true);
+      expect(rerun.snapshot!.schedule!.jobs.find((item) => item.id === jobId))
+        .toEqual(expect.objectContaining({ status: 'draft_ready', attempts: 1, creditsCharged: 1 }));
+    });
+
+    it('lets the customer cancel a connection-blocked job', async () => {
+      const { service, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(channelCheck('needs_login', 'Chưa kết nối Facebook.'));
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const cancelled = await service.cancelScheduledJob(jobId);
+
+      expect(cancelled.ok).toBe(true);
+      expect(cancelled.snapshot!.schedule!.jobs.find((item) => item.id === jobId))
+        .toEqual(expect.objectContaining({ status: 'cancelled' }));
+    });
+
+    it('does not draft a job cancelled while its connection check was in flight', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      service.setChannelReadinessCheck(vi.fn(async (_workspaceId: string, channels: readonly string[]) => {
+        await service.cancelScheduledJob(jobId);
+        return channels.map((channel): CustomerChannelReadiness => ({ channel, state: 'ready' }));
+      }));
+
+      await service.runDueScheduledJob(AFTER_PLAN());
+
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'cancelled', attempts: 0 }));
+      expect(director).not.toHaveBeenCalled();
+    });
+
+    it('does not start the same job twice while its connection check is in flight', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobId = earliestJobId(reviewed.snapshot!.schedule!.jobs);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const check = vi.fn(async (_workspaceId: string, channels: readonly string[]) => {
+        await gate;
+        return channels.map((channel): CustomerChannelReadiness => ({ channel, state: 'ready' }));
+      });
+      service.setChannelReadinessCheck(check);
+
+      const first = service.runScheduledJobNow(jobId);
+      await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(1));
+      await service.runScheduledJobNow(jobId);
+      release();
+      await first;
+
+      expect(check).toHaveBeenCalledTimes(1);
+      expect(director).toHaveBeenCalledTimes(1);
+      const job = (await service.getSnapshot()).schedule!.jobs.find((item) => item.id === jobId)!;
+      expect(job).toEqual(expect.objectContaining({ status: 'draft_ready', attempts: 1 }));
+    });
+
+    it('moves on to the next due job while another job is still having its connection checked', async () => {
+      const { service, director, reviewed } = await approvedPlan();
+      const jobs = reviewed.snapshot!.schedule!.jobs;
+      const jobId = earliestJobId(jobs);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const check = vi.fn(async (_workspaceId: string, channels: readonly string[]) => {
+        await gate;
+        return channels.map((channel): CustomerChannelReadiness => ({ channel, state: 'ready' }));
+      });
+      service.setChannelReadinessCheck(check);
+
+      const first = service.runScheduledJobNow(jobId);
+      await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(1));
+      const due = service.runDueScheduledJob(AFTER_PLAN());
+      await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
+      release();
+      await Promise.all([first, due]);
+
+      expect(director).toHaveBeenCalledTimes(2);
+      const ready = (await service.getSnapshot()).schedule!.jobs.filter((item) => item.status === 'draft_ready');
+      expect(ready).toHaveLength(2);
+      expect(ready.map((item) => item.id)).toContain(jobId);
+    });
+
+    it('reports connection readiness for each channel with work still waiting', async () => {
+      const { service, reviewed } = await approvedPlan();
+      const channels = [...new Set(reviewed.snapshot!.schedule!.jobs.map((job) => job.channel))];
+      const check = channelCheck('needs_login', 'Chưa kết nối.');
+      service.setChannelReadinessCheck(check);
+
+      const readiness = await service.checkScheduleReadiness();
+
+      expect(readiness.map((item) => item.channel).sort()).toEqual([...channels].sort());
+      expect(readiness.every((item) => item.state === 'needs_login')).toBe(true);
+      expect(check).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the readiness check when no work is waiting', async () => {
+      const { service, reviewed } = await approvedPlan();
+      const check = channelCheck('ready');
+      service.setChannelReadinessCheck(check);
+      for (const job of reviewed.snapshot!.schedule!.jobs) await service.cancelScheduledJob(job.id);
+
+      expect(await service.checkScheduleReadiness()).toEqual([]);
+      expect(check).not.toHaveBeenCalled();
+    });
+
+    it('reports no readiness when no connection check is configured', async () => {
+      const { service } = await approvedPlan();
+
+      expect(await service.checkScheduleReadiness()).toEqual([]);
     });
 
     it('tells the desktop shell when a draft is ready', async () => {

@@ -30,6 +30,8 @@ import type {
   CustomerApproval,
   CustomerCapability,
   CustomerChannel,
+  CustomerChannelReadiness,
+  CustomerChannelReadinessState,
   CustomerDirectorInput,
   CustomerMarketingSnapshot,
   CustomerMutationResult,
@@ -1915,27 +1917,86 @@ const SCHEDULED_JOB_STATUS: Readonly<Record<CustomerScheduledJobStatus, { label:
   draft_ready: { label: 'Đã có bản nháp', tone: 'positive' },
   failed: { label: 'Chạy lỗi', tone: 'negative' },
   blocked_quota: { label: 'Hết hạn mức', tone: 'negative' },
+  blocked_connection: { label: 'Cần đăng nhập', tone: 'negative' },
   cancelled: { label: 'Đã huỷ', tone: 'neutral' },
 };
 
-const RUNNABLE_JOB_STATUSES: readonly CustomerScheduledJobStatus[] = ['scheduled', 'failed', 'blocked_quota'];
+const RUNNABLE_JOB_STATUSES: readonly CustomerScheduledJobStatus[] = ['scheduled', 'failed', 'blocked_quota', 'blocked_connection'];
+
+const CHANNEL_READINESS_LABELS: Readonly<Record<CustomerChannelReadinessState, string>> = {
+  ready: 'Sẵn sàng',
+  manual: 'Bạn tự đăng',
+  needs_login: 'Cần đăng nhập',
+  unavailable: 'Chưa kiểm tra được',
+};
+
+/** Real connection state of each channel that still has scheduled work, checked without spending credit. */
+function ScheduleReadinessNotice({ channelsKey, onOpenChannels }: { channelsKey: string; onOpenChannels: () => void }) {
+  const [readiness, setReadiness] = useState<CustomerChannelReadiness[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    const api = getCustomerApi();
+    if (!channelsKey || !api) return undefined;
+    let active = true;
+    api.checkScheduleReadiness()
+      .then((result) => {
+        if (!active) return;
+        setReadiness(result);
+        setFailed(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setReadiness(null);
+        setFailed(true);
+      });
+    return () => { active = false; };
+  }, [channelsKey, round]);
+  if (!channelsKey) return null;
+  const recheck = <button type="button" className="cmr-button cmr-button--quiet" onClick={() => setRound((value) => value + 1)}>Kiểm tra lại</button>;
+  if (failed) {
+    return <div className="cmr-alert cmr-alert--info" role="status"><p>Chưa kiểm tra được kết nối kênh. Việc đến hạn sẽ chờ tới khi kiểm tra được.</p><div className="cmr-inline-actions">{recheck}</div></div>;
+  }
+  if (!readiness || readiness.length === 0) return null;
+  const needsLogin = readiness.some((item) => item.state === 'needs_login');
+  return (
+    <div className={`cmr-alert cmr-alert--${needsLogin ? 'error' : 'info'}`} role="status">
+      <strong>Kết nối kênh cho lịch chạy</strong>
+      <ul>
+        {readiness.map((item) => (
+          <li key={item.channel}>{item.channel}: {CHANNEL_READINESS_LABELS[item.state]}{item.detail ? ` — ${item.detail}` : ''}</li>
+        ))}
+      </ul>
+      <div className="cmr-inline-actions">
+        {needsLogin && <button type="button" className="cmr-button cmr-button--primary" onClick={onOpenChannels}>Đăng nhập kênh</button>}
+        {recheck}
+      </div>
+    </div>
+  );
+}
 
 function ScheduledWorkPanel({
   snapshot,
   onRunJob,
   onCancelJob,
   onApproveDraft,
+  onOpenChannels,
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
   onRunJob: (jobId: string) => Promise<void>;
   onCancelJob: (jobId: string) => Promise<void>;
   onApproveDraft: (draftId: string) => Promise<void>;
+  onOpenChannels: () => void;
   busy: boolean;
 }) {
   const [copiedDraftId, setCopiedDraftId] = useState('');
   const jobs = snapshot.schedule?.jobs ?? [];
   const drafts = snapshot.schedule?.drafts ?? [];
+  // Re-checks only when the set of waiting channels or their states change.
+  const waitingChannelsKey = [...new Set(jobs
+    .filter((job) => job.status === 'scheduled' || job.status === 'blocked_connection')
+    .map((job) => `${job.channel}:${job.status}`))].sort().join('|');
   if (jobs.length === 0 && drafts.length === 0) return null;
   const canRun = ['owner', 'manager', 'editor'].includes(snapshot.workspace.role);
   const canApproveDraft = ['owner', 'manager', 'reviewer'].includes(snapshot.workspace.role);
@@ -1953,6 +2014,8 @@ function ScheduledWorkPanel({
         <span className="cmr-eyebrow">Tự chạy trên máy này khi đến hạn</span>
         <h3 id="cmr-schedule-title">Lịch chạy</h3>
         <p>Izzi AI kiểm tra lịch mỗi phút, kể cả khi bạn đóng cửa sổ: app vẫn chạy ở khay hệ thống, tự khởi động cùng máy tính và chạy bù khi máy thức dậy. Mỗi bước chỉ tạo bản nháp; việc đăng bài luôn do bạn tự làm.</p>
+        <p>Trước khi chạy, app kiểm tra kênh đã kết nối thật chưa. Kênh chưa đăng nhập thì việc đó tạm dừng, không trừ credit, cho tới khi bạn đăng nhập rồi bấm "Chạy lại".</p>
+        <ScheduleReadinessNotice channelsKey={waitingChannelsKey} onOpenChannels={onOpenChannels} />
         <ul className="cmr-approval-full-list">
           {jobs.map((job) => {
             const status = SCHEDULED_JOB_STATUS[job.status];
@@ -1970,6 +2033,11 @@ function ScheduledWorkPanel({
                 {job.lastError && job.status !== 'draft_ready' && <p className="cmr-alert cmr-alert--error">{job.lastError}</p>}
                 {RUNNABLE_JOB_STATUSES.includes(job.status) && (
                   <div className="cmr-inline-actions">
+                    {job.status === 'blocked_connection' && (
+                      <button type="button" className="cmr-button cmr-button--primary" onClick={onOpenChannels}>
+                        Đăng nhập kênh
+                      </button>
+                    )}
                     <button type="button" className="cmr-button cmr-button--quiet" disabled={busy || !canRun} onClick={() => void onRunJob(job.id)}>
                       {job.status === 'scheduled' ? 'Chạy ngay' : 'Chạy lại'}
                     </button>
@@ -2029,6 +2097,7 @@ function ApprovalsView({
   onRunJob,
   onCancelJob,
   onApproveDraft,
+  onOpenChannels,
   busy,
 }: {
   snapshot: CustomerMarketingSnapshot;
@@ -2036,13 +2105,14 @@ function ApprovalsView({
   onRunJob: (jobId: string) => Promise<void>;
   onCancelJob: (jobId: string) => Promise<void>;
   onApproveDraft: (draftId: string) => Promise<void>;
+  onOpenChannels: () => void;
   busy: boolean;
 }) {
   const canReview = ['owner', 'manager', 'reviewer'].includes(snapshot.workspace.role);
   return (
     <div className="cmr-view-stack">
       <div className="cmr-view-intro"><span className="cmr-eyebrow">Có người phê duyệt</span><h2>Điểm cần duyệt</h2><p>Duyệt chiến lược sẽ lên lịch cho Content Agent tự soạn bản nháp trên máy này khi đến hạn. Hệ thống không tự đăng bài; bạn xem bản nháp rồi tự đăng.</p></div>
-      <ScheduledWorkPanel snapshot={snapshot} onRunJob={onRunJob} onCancelJob={onCancelJob} onApproveDraft={onApproveDraft} busy={busy} />
+      <ScheduledWorkPanel snapshot={snapshot} onRunJob={onRunJob} onCancelJob={onCancelJob} onApproveDraft={onApproveDraft} onOpenChannels={onOpenChannels} busy={busy} />
       {!canReview && <div className="cmr-alert cmr-alert--info">Vai trò hiện tại là {snapshot.workspace.role}. Bạn có thể xem approval nhưng không có quyền quyết định.</div>}
       {snapshot.approvals.length === 0 ? (
         <section className="cmr-panel cmr-empty-panel"><div className="cmr-empty"><ReviewIcon className="cmr-empty__icon" /><h2>Inbox đang trống</h2><p>Các điểm cần duyệt sẽ xuất hiện tại đây khi workflow tạo ra.</p></div></section>
@@ -3570,7 +3640,7 @@ function CustomerRoom({
               <div className="v2-empty"><p>{ANALYTICS_GATE_COPY[analyticsGate.state]}</p></div>
             )}
             channels={<CustomerMarketingChannels role={snapshot.workspace.role} />}
-            inspector={<ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} onCancelJob={cancelJob} onApproveDraft={approveDraft} busy={busy} />}
+            inspector={<ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} onCancelJob={cancelJob} onApproveDraft={approveDraft} onOpenChannels={() => setV2Tab('channels')} busy={busy} />}
             artifacts={snapshot.media.artifacts}
             externalActionsAllowed={snapshot.externalActionsAllowed}
           />
@@ -3630,7 +3700,7 @@ function CustomerRoom({
             />
           )}
           {activeView === 'goals' && <GoalsView snapshot={snapshot} onOpenDirector={() => selectView('director')} />}
-          {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} onCancelJob={cancelJob} onApproveDraft={approveDraft} busy={busy} />}
+          {activeView === 'approvals' && <ApprovalsView snapshot={snapshot} onReview={review} onRunJob={runJob} onCancelJob={cancelJob} onApproveDraft={approveDraft} onOpenChannels={() => selectView('channels')} busy={busy} />}
           {activeView === 'video' && <VideoStudioView snapshot={snapshot} onRepairVoiceStudio={repairVoiceStudio} onImport={onSelectMedia} onPreview={previewMedia} onVoicePreview={previewVoice} onVideoPreview={previewVideo} onOpenVideoPreview={openVideo} onReview={review} busy={busy} />}
           {activeView === 'team' && <TeamView capabilities={snapshot.capabilities} />}
           {activeView === 'apps' && (

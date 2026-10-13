@@ -20,6 +20,7 @@ import type {
   CustomerMediaVideoPreviewInput,
   CustomerMediaVoicePreviewInput,
   CustomerMediaProjectSelectionResult,
+  CustomerChannelReadiness,
   CustomerMutationResult,
   CustomerOnboardingInput,
   CustomerReviewInput,
@@ -667,5 +668,9 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:approveDraft', async (event, payload: unknown): Promise<CustomerMutationResult> => {
     trusted(event);
     return service.approveDraft(draftPayload(payload).draftId);
+  });
+  ipcMain.handle('customerMarketing:checkScheduleReadiness', async (event): Promise<CustomerChannelReadiness[]> => {
+    trusted(event);
+    return service.checkScheduleReadiness();
   });
 }

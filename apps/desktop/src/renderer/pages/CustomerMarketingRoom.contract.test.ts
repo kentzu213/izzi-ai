@@ -200,6 +200,18 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(mainSource).toContain("webContents.send('customerMarketing:changed')");
   });
 
+  it('checks channel connections for scheduled work and sends a blocked job to the channel login', () => {
+    expect(roomSource).toContain('function ScheduleReadinessNotice');
+    expect(roomSource).toContain('api.checkScheduleReadiness()');
+    expect(roomSource).toContain("blocked_connection: { label: 'Cần đăng nhập', tone: 'negative' }");
+    expect(roomSource).toContain("job.status === 'blocked_connection' && (");
+    expect(roomSource).toContain("onOpenChannels={() => setV2Tab('channels')}");
+    expect(roomSource).toContain("onOpenChannels={() => selectView('channels')}");
+    expect(preloadSource).toContain("ipcRenderer.invoke('customerMarketing:checkScheduleReadiness')");
+    expect(rendererTypesSource).toContain('checkScheduleReadiness: () => Promise<CustomerChannelReadiness[]>;');
+    expect(mainSource).toContain('customerMarketingService.setChannelReadinessCheck(createScheduledChannelReadinessCheck({');
+  });
+
   it('surfaces imported SKILL.md knowledge as read-only metadata only', () => {
     expect(roomSource).toContain('SKILL.md · chỉ đọc');
     expect(roomSource).toContain("catalogStatus === 'synced'");

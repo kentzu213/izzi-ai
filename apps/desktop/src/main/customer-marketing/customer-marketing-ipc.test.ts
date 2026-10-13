@@ -176,6 +176,7 @@ function serviceMock() {
     runScheduledJobNow: vi.fn(async () => ({ ok: true })),
     cancelScheduledJob: vi.fn(async () => ({ ok: true })),
     approveDraft: vi.fn(async () => ({ ok: true })),
+    checkScheduleReadiness: vi.fn(async () => [{ channel: 'facebook', state: 'needs_login' }]),
     unmarkCampaignCell: vi.fn(async () => ({ ok: true })),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
@@ -670,6 +671,16 @@ describe('customer marketing media IPC', () => {
     await expect(electronMocks.handlers.get('customerMarketing:approveDraft')!(untrusted, { draftId: 'draft-123e4567-e89b-12d3-a456-426614174000' })).rejects.toThrow();
     expect(service.cancelScheduledJob).not.toHaveBeenCalled();
     expect(service.approveDraft).not.toHaveBeenCalled();
+  });
+
+  it('reports schedule channel readiness only to a trusted renderer', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:checkScheduleReadiness');
+
+    await expect(handler!(event())).resolves.toEqual([{ channel: 'facebook', state: 'needs_login' }]);
+    await expect(handler!(event('https://evil.example/customer-marketing'))).rejects.toThrow();
+    expect(service.checkScheduleReadiness).toHaveBeenCalledTimes(1);
   });
 
   it('takes back a hand-marked cell only for a trusted renderer with an object payload', async () => {
