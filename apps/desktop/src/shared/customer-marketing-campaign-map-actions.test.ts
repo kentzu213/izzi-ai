@@ -15,6 +15,7 @@ import {
   normalizeCampaignMap,
   parseCampaignEvidence,
   unclassifiedCampaignRuns,
+  unmarkCampaignCellDone,
   upcomingSaleSeasons,
   type CampaignCell,
   type CampaignMap,
@@ -254,6 +255,39 @@ describe('markCampaignCellDone', () => {
   it('only treats offline and marketplace channels as manual', () => {
     expect(['kol_koc_pr', 'events', 'outdoor_ads', 'building_frames', 'ecommerce'].every((c) => isManualCampaignChannel(c as never))).toBe(true);
     expect(isManualCampaignChannel('tiktok')).toBe(false);
+  });
+});
+
+describe('unmarkCampaignCellDone', () => {
+  const marked = cell({
+    id: 'ecom',
+    channel: 'ecommerce',
+    phase: 'p4_purchase',
+    manualCompletion: { completedAt: '2026-10-01T00:00:00.000Z', evidence: 'shopee.vn/serum' },
+  });
+  const map: CampaignMap = { cells: [cell({ id: 'tt' }), marked], extraChannels: ['ecommerce'], updatedAt: '2026-10-01T00:00:00.000Z' };
+
+  it('clears the evidence without mutating the stored map', () => {
+    const next = unmarkCampaignCellDone(map, 'ecom', now);
+
+    const cleared = next?.cells.find((c) => c.id === 'ecom');
+    expect(cleared?.manualCompletion).toBeUndefined();
+    expect(cleared && 'manualCompletion' in cleared).toBe(false);
+    expect(cleared?.updatedAt).toBe(now);
+    expect(next?.extraChannels).toEqual(['ecommerce']);
+    expect(next?.updatedAt).toBe(now);
+    expect(map.cells[1].manualCompletion?.evidence).toBe('shopee.vn/serum');
+  });
+
+  it('refuses a missing map, unknown cells, agent channels and cells never marked', () => {
+    const unmarked = { ...map, cells: [cell({ id: 'tt' }), cell({ id: 'ecom', channel: 'ecommerce', phase: 'p4_purchase' })] };
+    const agentMarked = { ...map, cells: [cell({ id: 'tt', manualCompletion: marked.manualCompletion }), marked] };
+
+    expect(unmarkCampaignCellDone(undefined, 'ecom', now)).toBeNull();
+    expect(unmarkCampaignCellDone(map, 'nope', now)).toBeNull();
+    expect(unmarkCampaignCellDone(agentMarked, 'tt', now)).toBeNull();
+    expect(unmarkCampaignCellDone(map, { id: 'ecom' }, now)).toBeNull();
+    expect(unmarkCampaignCellDone(unmarked, 'ecom', now)).toBeNull();
   });
 });
 

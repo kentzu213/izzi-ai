@@ -323,6 +323,71 @@ describe('linkScheduleToCells', () => {
 
     expect(links.byCell.get('p1:fb')?.drafts.map((item) => item.id)).toEqual(['draft-1']);
   });
+
+  it('places a launch post in consideration even when only the post-purchase cell carries the session', () => {
+    const fanpage = (phase: CampaignCell['phase'], runIds: string[]) =>
+      cell({ id: `${phase}:fb`, phase, channel: 'facebook_fanpage', runIds });
+
+    const links = linkScheduleToCells(
+      [fanpage('p0_foundation', []), fanpage('p2_consideration', []), fanpage('p5_post_purchase', ['run-1'])],
+      { jobs: [job({ channel: 'facebook' })], drafts: [] },
+    );
+
+    expect([...links.byCell.keys()]).toEqual(['p2_consideration:fb']);
+  });
+
+  it('links a KPI report to the purchase-stage measurement cell of the same session', () => {
+    const measurement = (phase: CampaignCell['phase']) =>
+      cell({ id: `${phase}:data`, phase, channel: 'data_measurement' });
+    const sessionCell = cell({ id: 'p1:tiktok', runIds: ['run-1'] });
+
+    const links = linkScheduleToCells(
+      [measurement('p0_foundation'), measurement('p4_purchase'), measurement('p5_post_purchase'), sessionCell],
+      { jobs: [job({ kind: 'kpi_report', channel: 'internal' })], drafts: [] },
+    );
+
+    expect([...links.byCell.keys()]).toEqual(['p4_purchase:data']);
+    expect(links.unlinked).toEqual([]);
+  });
+
+  it('links an SEO article to the consideration SEO cell', () => {
+    const seoP0 = cell({ id: 'p0:seo', phase: 'p0_foundation', channel: 'seo', runIds: ['run-1'] });
+    const seoP2 = cell({ id: 'p2:seo', phase: 'p2_consideration', channel: 'seo' });
+
+    const links = linkScheduleToCells([seoP0, seoP2], { jobs: [job({ kind: 'seo_article', channel: 'seo' })], drafts: [] });
+
+    expect([...links.byCell.keys()]).toEqual(['p2:seo']);
+  });
+
+  it('prefers the cell carrying the session when two cells share the preferred phase', () => {
+    const plain = cell({ id: 'p1:fb:a', phase: 'p1_awareness', channel: 'facebook_fanpage' });
+    const withRun = cell({ id: 'p1:fb:b', phase: 'p1_awareness', channel: 'facebook_fanpage', runIds: ['run-1'] });
+
+    const links = linkScheduleToCells([plain, withRun], { jobs: [job({ channel: 'facebook' })], drafts: [] });
+
+    expect([...links.byCell.keys()]).toEqual(['p1:fb:b']);
+  });
+
+  it('never moves a post into a preferred-phase cell another session already owns', () => {
+    const otherSession = cell({ id: 'p2:fb', phase: 'p2_consideration', channel: 'facebook_fanpage', runIds: ['run-2'] });
+    const ownSession = cell({ id: 'p5:fb', phase: 'p5_post_purchase', channel: 'facebook_fanpage', runIds: ['run-1'] });
+
+    const links = linkScheduleToCells([otherSession, ownSession], { jobs: [job({ channel: 'facebook' })], drafts: [] });
+
+    expect([...links.byCell.keys()]).toEqual(['p5:fb']);
+  });
+
+  it('never moves a KPI report into a purchase-stage cell another session already owns', () => {
+    const otherSession = cell({ id: 'p4:data', phase: 'p4_purchase', channel: 'data_measurement', runIds: ['run-2'] });
+    const ownSession = cell({ id: 'p5:data', phase: 'p5_post_purchase', channel: 'data_measurement', runIds: ['run-1'] });
+
+    const links = linkScheduleToCells([otherSession, ownSession], {
+      jobs: [job({ kind: 'kpi_report', channel: 'internal' })],
+      drafts: [],
+    });
+
+    expect([...links.byCell.keys()]).toEqual(['p5:data']);
+  });
 });
 
 describe('deriveCampaignCellStatus with scheduled work', () => {

@@ -176,6 +176,7 @@ function serviceMock() {
     runScheduledJobNow: vi.fn(async () => ({ ok: true })),
     cancelScheduledJob: vi.fn(async () => ({ ok: true })),
     approveDraft: vi.fn(async () => ({ ok: true })),
+    unmarkCampaignCell: vi.fn(async () => ({ ok: true })),
     listWorkspaceMembers: vi.fn(async () => ({ ok: true, members: [] })),
     updateWorkspaceMemberRole: vi.fn(async () => ({ ok: true, members: [] })),
     createWorkspaceInvitation: vi.fn(async () => ({
@@ -669,6 +670,18 @@ describe('customer marketing media IPC', () => {
     await expect(electronMocks.handlers.get('customerMarketing:approveDraft')!(untrusted, { draftId: 'draft-123e4567-e89b-12d3-a456-426614174000' })).rejects.toThrow();
     expect(service.cancelScheduledJob).not.toHaveBeenCalled();
     expect(service.approveDraft).not.toHaveBeenCalled();
+  });
+
+  it('takes back a hand-marked cell only for a trusted renderer with an object payload', async () => {
+    const service = serviceMock();
+    registerCustomerMarketingIpc(service as unknown as CustomerMarketingService);
+    const handler = electronMocks.handlers.get('customerMarketing:unmarkCampaignCell');
+
+    await expect(handler!(event('https://evil.example/customer-marketing'), { cellId: 'ecom' })).rejects.toThrow();
+    await expect(handler!(event(), 'ecom')).rejects.toThrow(/không hợp lệ/);
+    expect(service.unmarkCampaignCell).not.toHaveBeenCalled();
+    await expect(handler!(event(), { cellId: 'ecom' })).resolves.toEqual({ ok: true });
+    expect(service.unmarkCampaignCell).toHaveBeenCalledWith({ cellId: 'ecom' });
   });
 });
 

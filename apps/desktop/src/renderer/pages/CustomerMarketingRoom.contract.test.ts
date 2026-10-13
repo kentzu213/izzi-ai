@@ -210,3 +210,12 @@ describe('Customer Marketing Room Product Context editor contract', () => {
     expect(roomSource).not.toContain('knowledgeSkill.execute');
   });
 });
+
+describe('Customer Marketing Room narrow inspector', () => {
+  it('drops the status pill below card titles instead of splitting words in the 260px inspector', () => {
+    expect(roomStylesSource).toMatch(/\.v2-agent-marketing__inspector \.cmr-approval-card__top \{[^}]*flex-wrap: wrap;/);
+    expect(roomStylesSource).toMatch(
+      /\.v2-agent-marketing__inspector \.cmr-panel,\s*\.v2-agent-marketing__inspector \.cmr-approval-card h3 \{[^}]*overflow-wrap: break-word;/,
+    );
+  });
+});

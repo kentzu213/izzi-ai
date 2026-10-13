@@ -8484,6 +8484,52 @@ describe('CustomerMarketingService campaign board actions', () => {
     });
   });
 
+  it('takes back a hand-marked cell so a new proof can be recorded', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+    await service.addCampaignChannel({ channel: 'ecommerce' });
+    await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'test evidence' });
+
+    const unmarked = await service.unmarkCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce' });
+    const remarked = await service.markCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce', evidence: 'shopee.vn/serum' });
+
+    expect(unmarked.ok).toBe(true);
+    expect(unmarked.snapshot?.campaignMap?.cells.find((c) => c.id === 'tpl:p4_purchase:ecommerce')?.manualCompletion)
+      .toBeUndefined();
+    expect(remarked.snapshot?.campaignMap?.cells.find((c) => c.id === 'tpl:p4_purchase:ecommerce')?.manualCompletion?.evidence)
+      .toBe('shopee.vn/serum');
+  });
+
+  it('explains why an unmark was refused', async () => {
+    const { service } = setup();
+    await completeOnboarding(service);
+    await service.addCampaignChannel({ channel: 'ecommerce' });
+
+    const missing = await service.unmarkCampaignCell({ cellId: 'tpl:p4_purchase:myspace' });
+    const agentCell = await service.unmarkCampaignCell({ cellId: 'tpl:p0_foundation:facebook_fanpage' });
+    const neverMarked = await service.unmarkCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce' });
+
+    expect(missing).toMatchObject({ ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' });
+    expect(agentCell).toMatchObject({
+      ok: false,
+      error: 'Việc trên kênh này hoàn thành qua phiên chạy của agent, không đánh dấu tay.',
+    });
+    expect(neverMarked).toMatchObject({ ok: false, error: 'Việc này chưa được đánh dấu xong.' });
+  });
+
+  it('refuses an unmark from a viewer and before the board exists', async () => {
+    const { service, db } = setup();
+    await completeOnboarding(service);
+
+    const noBoard = await service.unmarkCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce' });
+    db.updateOnlyRecord({ role: 'viewer' });
+    const viewer = await service.unmarkCampaignCell({ cellId: 'tpl:p4_purchase:ecommerce' });
+
+    expect(noBoard).toMatchObject({ ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' });
+    expect(viewer).toMatchObject({ ok: false, error: 'Vai trò hiện tại không có quyền cập nhật kế hoạch.' });
+    expect(storedRecord(db).campaignMap).toBeUndefined();
+  });
+
   it('adds a channel picked at onboarding after the board was first saved', async () => {
     const { service, db } = setup();
     await completeOnboarding(service);

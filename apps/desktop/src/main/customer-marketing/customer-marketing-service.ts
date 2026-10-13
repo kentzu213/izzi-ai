@@ -242,10 +242,12 @@ import {
   normalizeCampaignMap,
   parseCampaignCellSuggestions,
   parseCampaignEvidence,
+  unmarkCampaignCellDone,
   visibleCampaignChannels,
   type CampaignAddChannelInput,
   type CampaignCellDoneInput,
   type CampaignCellSuggestion,
+  type CampaignCellUnmarkInput,
   type CampaignChannel,
   type CampaignMap,
 } from '../../shared/customer-marketing-campaign-map';
@@ -4978,6 +4980,29 @@ export class CustomerMarketingService {
     const campaignMap = markCampaignCellDone(record.campaignMap, seed, input.cellId, input.evidence, updatedAt);
     if (!campaignMap) {
       return { ok: false, error: 'Không thể đánh dấu việc này.' };
+    }
+    const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
+    this.writeRecord(identity, next);
+    return { ok: true, snapshot: await this.snapshot(identity, next) };
+  }
+
+  // Lets the customer take back a hand-marked cell whose proof was wrong or test data.
+  async unmarkCampaignCell(input: CampaignCellUnmarkInput): Promise<CustomerMutationResult> {
+    const identity = this.requireIdentity();
+    const record = this.readRecord(identity);
+    const blocked = this.campaignMapWriteBlocker(record);
+    if (blocked) return { ok: false, error: blocked };
+    const target = record.campaignMap?.cells.find((cell) => cell.id === input.cellId);
+    if (!target) {
+      return { ok: false, error: 'Không tìm thấy đầu việc này trên bảng kế hoạch.' };
+    }
+    if (!isManualCampaignChannel(target.channel)) {
+      return { ok: false, error: 'Việc trên kênh này hoàn thành qua phiên chạy của agent, không đánh dấu tay.' };
+    }
+    const updatedAt = new Date().toISOString();
+    const campaignMap = unmarkCampaignCellDone(record.campaignMap, input.cellId, updatedAt);
+    if (!campaignMap) {
+      return { ok: false, error: 'Việc này chưa được đánh dấu xong.' };
     }
     const next: CustomerTenantRecord = { ...record, campaignMap, updatedAt };
     this.writeRecord(identity, next);

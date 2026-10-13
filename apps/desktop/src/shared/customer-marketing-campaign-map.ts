@@ -4,6 +4,7 @@ import type {
   CustomerMarketingSchedule,
   CustomerRun,
   CustomerScheduledJob,
+  CustomerScheduledJobKind,
 } from './customer-marketing-types';
 
 // Campaign board: 6 customer-journey phases × framework channels. Each cell is one unit of
@@ -257,7 +258,7 @@ export interface CampaignCellSchedule {
 
 export interface CampaignScheduleLinks {
   byCell: Map<string, CampaignCellSchedule>;
-  // Jobs whose session or channel has no cell on the board; they still show on the timeline.
+  // Jobs whose session is not on the board or whose channel has no cell; they still show on the timeline.
   unlinked: CustomerScheduledJob[];
 }
 
@@ -282,20 +283,36 @@ function draftForJob(job: CustomerScheduledJob, drafts: CustomerMarketingDraft[]
     ?? drafts.find((draft) => draft.jobId === job.id);
 }
 
-// A job belongs to a cell of the approving session on the matching channel. A CRO review fixes the
-// foundation; other work goes to the earliest cell past the foundation, else the foundation cell.
+// Jobs carry no phase, so the kind of work picks it: posts open awareness, articles and community
+// threads serve consideration, a CRO review fixes the foundation, a KPI report measures purchases.
+const KIND_PHASE_PREFERENCE: Record<CustomerScheduledJobKind, CampaignPhase[]> = {
+  social_post: ['p1_awareness', 'p2_consideration', 'p5_post_purchase', 'p3_comparison', 'p4_purchase', 'p0_foundation'],
+  seo_article: ['p2_consideration', 'p3_comparison', 'p1_awareness', 'p4_purchase', 'p5_post_purchase', 'p0_foundation'],
+  community_post: ['p2_consideration', 'p1_awareness', 'p5_post_purchase', 'p3_comparison', 'p4_purchase', 'p0_foundation'],
+  cro_review: ['p0_foundation', 'p4_purchase', 'p3_comparison', 'p2_consideration', 'p5_post_purchase', 'p1_awareness'],
+  kpi_report: ['p4_purchase', 'p5_post_purchase', 'p3_comparison', 'p2_consideration', 'p1_awareness', 'p0_foundation'],
+};
+
+// A job lands on the board only when its approving session is on it. Among the cells of the job's
+// channel that carry that session or no session yet, it takes the phase its kind serves first; on a
+// tie, the cell carrying that session. A cell owned by another session keeps that session's status.
+function cellForJob(cells: CampaignCell[], job: CustomerScheduledJob): CampaignCell | undefined {
+  if (!cells.some((cell) => cell.runIds.includes(job.runId))) return undefined;
+  const channel = cellChannelForJob(job.channel);
+  const preference: readonly CampaignPhase[] = KIND_PHASE_PREFERENCE[job.kind] ?? CAMPAIGN_PHASES;
+  const rank = (cell: CampaignCell) => preference.indexOf(cell.phase) * 2 + (cell.runIds.includes(job.runId) ? 0 : 1);
+  return cells
+    .filter((cell) => cell.channel === channel && (cell.runIds.length === 0 || cell.runIds.includes(job.runId)))
+    .reduce<CampaignCell | undefined>((best, cell) => (!best || rank(cell) < rank(best) ? cell : best), undefined);
+}
+
 export function linkScheduleToCells(cells: CampaignCell[], schedule?: CustomerMarketingSchedule): CampaignScheduleLinks {
   const byCell = new Map<string, CampaignCellSchedule>();
   const unlinked: CustomerScheduledJob[] = [];
   if (!schedule) return { byCell, unlinked };
 
-  const ordered = [...cells].sort((a, b) => phaseIndex(a.phase) - phaseIndex(b.phase));
   for (const job of schedule.jobs) {
-    const channel = cellChannelForJob(job.channel);
-    const candidates = ordered.filter((cell) => cell.channel === channel && cell.runIds.includes(job.runId));
-    const target = job.kind === 'cro_review'
-      ? candidates[0]
-      : candidates.find((cell) => cell.phase !== 'p0_foundation') ?? candidates[0];
+    const target = cellForJob(cells, job);
     if (!target) {
       unlinked.push(job);
       continue;
@@ -706,6 +723,22 @@ export function markCampaignCellDone(
   };
 }
 
+// Takes back a hand-marked "done" (wrong evidence, test data). Returns null when there is no map,
+// the cell does not exist, is not on a manual channel, or was never marked.
+export function unmarkCampaignCellDone(map: CampaignMap | undefined, cellId: unknown, now: string): CampaignMap | null {
+  const target = map?.cells.find((cell) => cell.id === cellId);
+  if (!map || !target || !isManualCampaignChannel(target.channel) || !hasManualEvidence(target)) return null;
+  return {
+    cells: map.cells.map((cell) => {
+      if (cell.id !== cellId) return cell;
+      const { manualCompletion: _cleared, ...rest } = cell;
+      return { ...rest, updatedAt: now };
+    }),
+    ...withMapExtras(map),
+    updatedAt: now,
+  };
+}
+
 // Storage keeps only the latest sessions. Before completed ones are dropped, their cells record
 // it so the board does not fall back to "todo" for work that was done.
 export function archiveCompletedCampaignRuns(
@@ -743,6 +776,10 @@ export function fallbackCampaignSuggestions(
 export interface CampaignCellDoneInput {
   cellId: string;
   evidence: string;
+}
+
+export interface CampaignCellUnmarkInput {
+  cellId: string;
 }
 
 export interface CampaignAddChannelInput {
