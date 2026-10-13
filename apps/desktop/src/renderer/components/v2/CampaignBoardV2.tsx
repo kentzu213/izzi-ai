@@ -68,6 +68,7 @@ export interface CampaignBoardV2Props extends CampaignBoard {
   nextActions?: string[];
   initialSelectedCellId?: string;
   onMarkCellDone?: (cellId: string, evidence: string) => void;
+  onUnmarkCellDone?: (cellId: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
   today?: Date;
   /** The room is saving; lock inputs so a mark-done is not sent twice. */
@@ -84,6 +85,7 @@ export function CampaignBoardV2({
   nextActions,
   initialSelectedCellId,
   onMarkCellDone,
+  onUnmarkCellDone,
   onAddChannel,
   today,
   busy = false,
@@ -160,6 +162,7 @@ export function CampaignBoardV2({
           cells={visibleCells}
           onSelect={cellView.onSelect}
           onMarkCellDone={onMarkCellDone}
+          onUnmarkCellDone={onUnmarkCellDone}
           busy={busy}
         />
       ) : null}
@@ -529,6 +532,7 @@ function CampaignCellDetail({
   cells,
   onSelect,
   onMarkCellDone,
+  onUnmarkCellDone,
   busy,
 }: {
   cell: CampaignCell;
@@ -538,6 +542,7 @@ function CampaignCellDetail({
   cells: CampaignCell[];
   onSelect: (cellId: string) => void;
   onMarkCellDone?: (cellId: string, evidence: string) => void;
+  onUnmarkCellDone?: (cellId: string) => void;
   busy: boolean;
 }) {
   const state = deriveCampaignCellStatus(cell, runs, linked);
@@ -555,6 +560,11 @@ function CampaignCellDetail({
       <LinkedCellList wires={wires} cells={cells} onSelect={onSelect} />
       {cell.manualCompletion ? (
         <p className="v2-campaign-board__evidence">Bằng chứng: {cell.manualCompletion.evidence}</p>
+      ) : null}
+      {isManual && cell.manualCompletion?.evidence.trim() && onUnmarkCellDone ? (
+        <button type="button" className="v2-button" disabled={busy} onClick={() => onUnmarkCellDone(cell.id)}>
+          Bỏ đánh dấu
+        </button>
       ) : null}
       {isManual && state.status !== 'done' ? (
         <p className="v2-campaign-board__hint">
@@ -641,6 +651,7 @@ export interface CampaignPlanV2Props {
   extraChannels?: CampaignChannel[];
   nextActions?: string[];
   onMarkCellDone?: (cellId: string, evidence: string) => void;
+  onUnmarkCellDone?: (cellId: string) => void;
   onAddChannel?: (channel: CampaignChannel) => void;
   today?: Date;
   busy?: boolean;
@@ -656,6 +667,7 @@ export function CampaignPlanV2({
   extraChannels,
   nextActions,
   onMarkCellDone,
+  onUnmarkCellDone,
   onAddChannel,
   today,
   busy,
@@ -687,6 +699,7 @@ export function CampaignPlanV2({
           runs={runs}
           nextActions={nextActions}
           onMarkCellDone={onMarkCellDone}
+          onUnmarkCellDone={onUnmarkCellDone}
           onAddChannel={onAddChannel}
           today={today}
           busy={busy}

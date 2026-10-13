@@ -1,4 +1,13 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.102
+
+Agent Marketing: plan board fixes from the beta.101 check.
+
+- A step you marked done by hand now has a "Bỏ đánh dấu" button, so you can undo it.
+- A scheduled job lands in the phase that matches its kind. A Fanpage post is no longer filed under "Sau mua".
+- KPI report jobs now link to the data and measurement step.
+- Draft cards in the narrow side panel no longer split words like "FACEBOOK" or dates across lines.
+
 ## 1.14.0-beta.101
 
 Agent Marketing: the plan board follows the real schedule, step by step.

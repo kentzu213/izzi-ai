@@ -30,7 +30,7 @@ import type {
   CustomerWorkspaceInvitationAcceptanceResult,
   CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
-import type { CampaignAddChannelInput, CampaignCellDoneInput } from '../../shared/customer-marketing-campaign-map';
+import type { CampaignAddChannelInput, CampaignCellDoneInput, CampaignCellUnmarkInput } from '../../shared/customer-marketing-campaign-map';
 import { parseCustomerMarketingAssetUploadInput } from './customer-marketing-asset-files';
 import {
   parseCustomerProductMarketingContextSaveInput,
@@ -592,6 +592,11 @@ export function registerCustomerMarketingIpc(
   ipcMain.handle('customerMarketing:markCampaignCell', async (event, payload: unknown): Promise<CustomerMutationResult> => {
     trusted(event);
     return service.markCampaignCell(objectPayload<CampaignCellDoneInput>(payload));
+  });
+
+  ipcMain.handle('customerMarketing:unmarkCampaignCell', async (event, payload: unknown): Promise<CustomerMutationResult> => {
+    trusted(event);
+    return service.unmarkCampaignCell(objectPayload<CampaignCellUnmarkInput>(payload));
   });
 
   ipcMain.handle('customerMarketing:addCampaignChannel', async (event, payload: unknown): Promise<CustomerMutationResult> => {

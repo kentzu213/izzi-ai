@@ -761,6 +761,18 @@
   }
 }
 
+/* The 220–260px inspector: let the status pill drop below the title instead
+   of squeezing it, and wrap between words, never inside "FACEBOOK". */
+.v2-agent-marketing__inspector .cmr-approval-card__top {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.v2-agent-marketing__inspector .cmr-panel,
+.v2-agent-marketing__inspector .cmr-approval-card h3 {
+  overflow-wrap: break-word;
+}
+
 .cmr-next-panel,
 .cmr-guardrail-panel,
 .cmr-workflow-panel,

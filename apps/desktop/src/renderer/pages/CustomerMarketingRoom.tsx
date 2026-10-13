@@ -3441,6 +3441,10 @@ function CustomerRoom({
     await onMutation((api) => api.markCampaignCell({ cellId, evidence }), 'Đã ghi nhận việc đã làm.');
   };
 
+  const unmarkCampaignCell = async (cellId: string) => {
+    await onMutation((api) => api.unmarkCampaignCell({ cellId }), 'Đã bỏ đánh dấu.');
+  };
+
   const addCampaignChannel = async (channel: CampaignChannel) => {
     await onMutation((api) => api.addCampaignChannel({ channel }), 'Đã thêm kênh vào kế hoạch.');
   };
@@ -3545,6 +3549,7 @@ function CustomerRoom({
                 extraChannels={snapshot.campaignMap?.extraChannels}
                 nextActions={snapshot.nextActions}
                 onMarkCellDone={(cellId, evidence) => { void markCampaignCell(cellId, evidence); }}
+                onUnmarkCellDone={(cellId) => { void unmarkCampaignCell(cellId); }}
                 onAddChannel={(channel) => { void addCampaignChannel(channel); }}
                 busy={busy}
                 schedule={snapshot.schedule}

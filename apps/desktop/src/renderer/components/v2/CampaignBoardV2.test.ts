@@ -252,6 +252,35 @@ describe('CampaignBoardV2 project-manager view', () => {
     expect(done).not.toContain('aria-label="Bằng chứng đã làm"');
   });
 
+  it('lets the customer take back a hand-marked cell', () => {
+    const proven = cell({
+      id: 'ecom',
+      channel: 'ecommerce',
+      phase: 'p4_purchase',
+      tactic: 'Mở gian hàng',
+      manualCompletion: { completedAt: '2026-10-01T00:00:00.000Z', evidence: 'shopee.vn/serum-shop' },
+    });
+    const unmark = { initialSelectedCellId: 'ecom', onUnmarkCellDone: () => undefined };
+
+    expect(renderWith([proven], [], unmark)).toMatch(/<button[^>]*>Bỏ đánh dấu<\/button>/);
+    expect(renderWith([proven], [], { ...unmark, busy: true })).toMatch(
+      /<button[^>]*disabled=""[^>]*>Bỏ đánh dấu<\/button>/,
+    );
+    expect(renderWith([proven], [], { initialSelectedCellId: 'ecom' })).not.toContain('Bỏ đánh dấu');
+    const unproven = cell({ id: 'ecom', channel: 'ecommerce', phase: 'p4_purchase', tactic: 'Mở gian hàng' });
+    expect(renderWith([unproven], [], unmark, ['tiktok'], ['ecommerce'])).not.toContain('Bỏ đánh dấu');
+    const blank = { ...proven, manualCompletion: { completedAt: '2026-10-01T00:00:00.000Z', evidence: '  ' } };
+    const blankHtml = renderWith([blank], [], unmark, ['tiktok'], ['ecommerce']);
+    expect(blankHtml).toContain('Bằng chứng:');
+    expect(blankHtml).not.toContain('Bỏ đánh dấu');
+    expect(
+      renderWith([cell({ id: 'a', manualCompletion: MANUAL_DONE })], [], {
+        initialSelectedCellId: 'a',
+        onUnmarkCellDone: () => undefined,
+      }),
+    ).not.toContain('Bỏ đánh dấu');
+  });
+
   it('offers hidden channels to add only when the room can add them', () => {
     expect(renderWith([cell({ id: 'a' })], [])).not.toContain('+ thêm kênh');
 
