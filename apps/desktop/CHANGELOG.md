@@ -1,4 +1,15 @@
 # Changelog — Izzi AI Desktop
+## 1.14.0-beta.103
+
+Agent Marketing: a scheduled job checks that its channel is really connected before it runs.
+
+- Before a due job starts, the app checks the channel. For Facebook and YouTube it asks IzziAPI whether the official login is still valid. For Telegram it checks that a bot token is saved, encrypted, on this computer; it does not test the bot against Telegram.
+- If the channel is not connected or its login expired, the job stops with "Cần đăng nhập". It uses no credit and makes no draft. Log in from the Kênh page, then press "Chạy lại".
+- If the app cannot check the connection, for example when the network is down, the job waits and tries again every 5 minutes. It does not run until the check succeeds.
+- Lịch chạy now shows the connection state of every channel that has work waiting, with "Đăng nhập kênh" and "Kiểm tra lại" buttons.
+- Only Facebook, YouTube and Telegram have an automatic check. Jobs for Instagram, TikTok, X, website, email and other channels still make drafts, shown as "Bạn tự đăng", and you post them yourself. Internal KPI reports need no connection.
+- The plan board shows a job waiting for a login as stuck, with the reason.
+
 ## 1.14.0-beta.102
 
 Agent Marketing: plan board fixes from the beta.101 check.

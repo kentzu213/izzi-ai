@@ -107,6 +107,7 @@ import { CustomerMarketingCanaryController } from './customer-marketing/customer
 import { CustomerMarketingCanaryNamedApprovalStore } from './customer-marketing/customer-marketing-canary-named-approval';
 import { CustomerMarketingConnectorVaultAdapter } from './customer-marketing/customer-marketing-connector-vault-adapter';
 import { NativeMarketingIntegrationAuthorityGateway } from './customer-marketing/customer-marketing-integration-authority';
+import { createScheduledChannelReadinessCheck } from './customer-marketing/scheduled-channel-readiness';
 import { CustomerMarketingTelegramSandboxConnector } from './customer-marketing/customer-marketing-telegram-sandbox-connector';
 import { CustomerMarketingTelegramBotApiTransport } from './customer-marketing/customer-marketing-telegram-bot-api-transport';
 import { CustomerMarketingTelegramCanaryRuntime } from './customer-marketing/customer-marketing-telegram-canary-runtime';
@@ -757,6 +758,7 @@ function setupIPC() {
   // They never touch GraphClient — `live_profile` egress is forbidden.
   registerLiveProfileIpc(profileStore, { onProfileWritten: recordLiveProfileRevision });
   // Customer AI Marketing Room: tenant identity is resolved in main and never comes from the renderer.
+  const customerMarketingAuthority = new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient());
   customerMarketingService = new CustomerMarketingService(
     dbManager,
     () => {
@@ -886,7 +888,7 @@ function setupIPC() {
     customerMarketingConnectorOperationStore,
     customerMarketingAssetFiles,
     undefined,
-    new NativeMarketingIntegrationAuthorityGateway(getNativeMarketingClient()),
+    customerMarketingAuthority,
     DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   );
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
@@ -922,6 +924,13 @@ function setupIPC() {
     notification.on('click', showMainWindow);
     notification.show();
   });
+  // A due job runs only when its channel can really receive the work; otherwise it waits for a login.
+  customerMarketingService.setChannelReadinessCheck(createScheduledChannelReadinessCheck({
+    authority: customerMarketingAuthority,
+    listAccountHealth: (workspaceId) => getNativeMarketingClient().listAccountHealth(workspaceId),
+    telegramState: (workspaceId) => customerMarketingCredentialVault.listStatuses(workspaceId)
+      .credentials.find((item) => item.provider === 'telegram')?.state ?? 'disconnected',
+  }));
   marketingScheduler.start();
   // A sleeping or locked machine misses minute ticks; catch up as soon as it is back.
   powerMonitor.on('resume', () => void marketingScheduler.tick());

@@ -12,6 +12,7 @@ const JOB_STATUS_LABELS: Record<CustomerScheduledJobStatus, string> = {
   draft_ready: 'Đã có bản nháp',
   failed: 'Chạy lỗi',
   blocked_quota: 'Hết hạn mức',
+  blocked_connection: 'Cần đăng nhập',
   cancelled: 'Đã huỷ',
 };
 

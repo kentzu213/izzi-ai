@@ -70,6 +70,7 @@ import {
   type MarketingScheduleItem,
 } from './marketing-schedule';
 import type { CustomerMarketingIntegrationAuthorityGateway } from './customer-marketing-integration-authority';
+import type { ScheduledChannelReadinessCheck } from './scheduled-channel-readiness';
 import {
   parseCustomerMarketingLegacyImportConfirmedInput,
   type CustomerMarketingLegacyImportConfirmedInput,
@@ -126,6 +127,7 @@ import type {
   CustomerMarketingDraft,
   CustomerScheduledJob,
   CustomerScheduledJobStatus,
+  CustomerChannelReadiness,
   CustomerProductMarketingContextMutationResult,
   CustomerProductMarketingContextRef,
   CustomerProductMarketingContextSaveInput,
@@ -438,7 +440,14 @@ const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 3000;
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MAX_TOKENS = 1500;
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
 const MARKETING_REVIEW_ROLES = new Set<CustomerRole>(['owner', 'manager', 'reviewer']);
-const CANCELLABLE_JOB_STATUSES = new Set<CustomerScheduledJobStatus>(['scheduled', 'failed', 'blocked_quota']);
+const CANCELLABLE_JOB_STATUSES = new Set<CustomerScheduledJobStatus>([
+  'scheduled',
+  'failed',
+  'blocked_quota',
+  'blocked_connection',
+]);
+/** Shown when a scheduled job's channel could not be confirmed, so the job waits instead of running. */
+const READINESS_UNCHECKED_DETAIL = 'Chưa kiểm tra được kết nối kênh; app sẽ thử lại.';
 const MARKETING_CREDENTIAL_REVOKE_ROLES = new Set<CustomerRole>(['owner', 'manager']);
 const MARKETING_EXTERNAL_ACTION_ROLES = new Set<CustomerRole>(['owner', 'manager']);
 const PAGESPEED_WORKSPACE_COOLDOWN_MS = 5_000;
@@ -1585,6 +1594,9 @@ export class CustomerMarketingService {
   private readonly pageSpeedWorkspaceNextRun = new Map<string, number>();
   private readonly recoveredScheduleKeys = new Set<string>();
   private draftReadyListener: ((draft: CustomerMarketingDraft) => void) | null = null;
+  private channelReadinessCheck: ScheduledChannelReadinessCheck | null = null;
+  /** Jobs whose channel connection is being checked, so a second run cannot start them twice. */
+  private readonly preflightingJobs = new Set<string>();
   private mediaToolchainInFlight: Promise<CustomerMediaToolchain> | null = null;
   private readonly productMarketingAuthorityKey = randomUUID();
 
@@ -5727,6 +5739,39 @@ export class CustomerMarketingService {
     this.draftReadyListener = listener;
   }
 
+  /** Checks, before a scheduled job spends credit, that its channel is connected and can receive the work. */
+  setChannelReadinessCheck(check: ScheduledChannelReadinessCheck | null): void {
+    this.channelReadinessCheck = check;
+  }
+
+  /** A failed check is reported as unavailable so the job waits instead of running on an unverified connection. */
+  private async readChannelReadiness(
+    identity: CustomerIdentity,
+    channels: readonly string[],
+  ): Promise<CustomerChannelReadiness[]> {
+    if (!this.channelReadinessCheck) return channels.map((channel) => ({ channel, state: 'ready' }));
+    try {
+      return await this.channelReadinessCheck(this.readRecord(identity).workspaceId, channels);
+    } catch {
+      return channels.map((channel) => ({
+        channel,
+        state: 'unavailable',
+        detail: READINESS_UNCHECKED_DETAIL,
+      }));
+    }
+  }
+
+  /** Connection readiness for every channel that still has work waiting in the schedule. */
+  async checkScheduleReadiness(): Promise<CustomerChannelReadiness[]> {
+    const identity = this.getIdentity();
+    if (!identity || !this.channelReadinessCheck) return [];
+    const channels = [...new Set(this.scheduleStore(identity).read().jobs
+      .filter((job) => job.status === 'scheduled' || job.status === 'blocked_connection')
+      .map((job) => job.channel))];
+    if (channels.length === 0) return [];
+    return this.readChannelReadiness(identity, channels);
+  }
+
   private scheduleKey(identity: CustomerIdentity): string {
     return `customer_marketing_schedule:v1:${tenantHash(identity.id)}`;
   }
@@ -5791,7 +5836,8 @@ export class CustomerMarketingService {
     if (!identity) return false;
     const store = this.scheduleStore(identity);
     this.ensureScheduleRecovered(identity, store);
-    const job = pickDueJob(store.read().jobs, now);
+    // A job whose connection is still being checked is skipped, so the tick moves on to the next due job.
+    const job = pickDueJob(store.read().jobs.filter((item) => !this.preflightingJobs.has(item.id)), now);
     if (!job) return false;
     const record = await this.refreshScheduleRole(identity);
     // Role cannot be confirmed: leave the job untouched and try again on the next tick.
@@ -5897,9 +5943,22 @@ export class CustomerMarketingService {
     store: MarketingScheduleStore,
     jobId: string,
   ): Promise<void> {
-    const job = store.read().jobs.find((item) => item.id === jobId);
+    const isStartable = (item?: CustomerScheduledJob): item is CustomerScheduledJob => item !== undefined
+      && item.status !== 'running' && item.status !== 'draft_ready' && item.status !== 'cancelled';
+    const pending = store.read().jobs.find((item) => item.id === jobId);
     // Re-checked here because the job may have been cancelled while the role was being confirmed.
-    if (!job || job.status === 'running' || job.status === 'draft_ready' || job.status === 'cancelled') return;
+    if (!isStartable(pending) || this.preflightingJobs.has(jobId)) return;
+    this.preflightingJobs.add(jobId);
+    let readiness: CustomerChannelReadiness | undefined;
+    let job: CustomerScheduledJob | undefined;
+    try {
+      [readiness] = await this.readChannelReadiness(identity, [pending.channel]);
+      // Re-read: the customer may have cancelled the job while the connection was being checked.
+      job = store.read().jobs.find((item) => item.id === jobId);
+    } finally {
+      this.preflightingJobs.delete(jobId);
+    }
+    if (!isStartable(job)) return;
     const attempts = job.attempts + 1;
     const update = (patch: Partial<CustomerScheduledJob>, draft?: CustomerMarketingDraft) => {
       const latest = store.read();
@@ -5915,6 +5974,20 @@ export class CustomerMarketingService {
         ? { status: 'scheduled', nextAttemptAt: retryAt, lastError }
         : { status: 'failed', nextAttemptAt: undefined, lastError });
     };
+    // No credit is reserved and no attempt is counted until the channel can actually receive the work.
+    if (readiness?.state === 'needs_login') {
+      update({ status: 'blocked_connection', nextAttemptAt: undefined, lastError: readiness.detail });
+      return;
+    }
+    // Only a confirmed channel lets the job run; anything unconfirmed waits and is checked again later.
+    if (readiness?.state !== 'ready' && readiness?.state !== 'manual') {
+      update({
+        status: 'scheduled',
+        nextAttemptAt: new Date(Date.now() + CREDIT_UNCONFIRMED_RETRY_MS).toISOString(),
+        lastError: readiness?.detail ?? READINESS_UNCHECKED_DETAIL,
+      });
+      return;
+    }
     update({ status: 'running', attempts, lastError: undefined });
     try {
       await this.draftScheduledJob(identity, job, update, fail);

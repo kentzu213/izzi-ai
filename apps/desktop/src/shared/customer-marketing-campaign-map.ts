@@ -338,7 +338,9 @@ function scheduledCellState(linked: CampaignCellSchedule | undefined): CampaignC
   if (live.some((job) => draftOf(job)?.status === 'pending_review')) {
     return { status: 'awaiting_approval', reason: 'Bản nháp chờ bạn duyệt' };
   }
-  const stuck = live.find((job) => job.status === 'failed' || job.status === 'blocked_quota');
+  const stuck = live.find((job) => job.status === 'failed'
+    || job.status === 'blocked_quota'
+    || job.status === 'blocked_connection');
   if (stuck) return stuck.lastError ? { status: 'blocked', reason: stuck.lastError } : { status: 'blocked' };
   if (live.some((job) => job.status === 'scheduled')) return { status: 'planned', reason: 'Đang chờ tới lịch' };
   if (live.every((job) => draftOf(job)?.status === 'ready_to_publish')) return { status: 'done' };
