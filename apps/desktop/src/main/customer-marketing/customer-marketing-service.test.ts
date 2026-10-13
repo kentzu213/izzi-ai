@@ -3035,6 +3035,42 @@ describe('CustomerMarketingService AI Director', () => {
     expect(result.snapshot?.runs[0].stage).toBe('brand_review_blocked');
   });
 
+  it('accepts an untagged intro line ending in a colon before a cited claim', async () => {
+    const director = vi.fn(async () => ({
+      reply: [
+        'IzziAPI hỗ trợ bạn tiếp cận những việc đó bằng các thông tin cụ thể:',
+        '',
+        '📋 **Danh mục:** IzziAPI cung cấp catalog API cho nhiều workflow AI. [proof-api-catalog]',
+      ].join('\n'),
+    }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+
+    const result = await context.service.askDirector({
+      goal: 'Create a claim-safe acquisition plan for next month',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.runs[0].stage).toBe('awaiting_strategy_approval');
+  });
+
+  it('still blocks a colon line whose next line cites no proof or that carries a superlative', async () => {
+    for (const reply of [
+      ['IzziAPI giúp giảm chi phí cho developer:', 'Mọi đội đều tiết kiệm.'].join('\n'),
+      ['IzziAPI là nền tảng tốt nhất:', 'IzziAPI cung cấp catalog API. [proof-api-catalog]'].join('\n'),
+    ]) {
+      const context = setupDirector(vi.fn(async () => ({ reply })));
+      await completeOnboarding(context.service);
+
+      const result = await context.service.askDirector({
+        goal: 'Create a claim-safe acquisition plan for next month',
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('claim sản phẩm chưa trích proof');
+    }
+  });
+
   it('reconstructs a missing tenant mirror from durable workflow evidence after restart', async () => {
     const identity: CustomerIdentity = {
       id: 'tenant-orphan-recovery',

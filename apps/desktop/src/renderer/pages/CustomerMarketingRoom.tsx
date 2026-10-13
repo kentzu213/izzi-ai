@@ -66,6 +66,7 @@ import {
   type AgentMarketingTab,
 } from '../components/v2/AgentMarketingWorkspaceV2';
 import { CampaignPlanV2 } from '../components/v2/CampaignBoardV2';
+import { stripProofTags } from '../components/v2/CampaignScheduleV2';
 import { DirectorReplyText, directorReplyPlainText } from './customer-marketing-director-reply';
 import type { CampaignChannel } from '../../shared/customer-marketing-campaign-map';
 import '../styles/customer-marketing-room.css';
@@ -1940,7 +1941,7 @@ function ScheduledWorkPanel({
   const canApproveDraft = ['owner', 'manager', 'reviewer'].includes(snapshot.workspace.role);
   const copyDraft = async (draftId: string, body: string) => {
     try {
-      await navigator.clipboard.writeText(body);
+      await navigator.clipboard.writeText(stripProofTags(body));
       setCopiedDraftId(draftId);
     } catch {
       setCopiedDraftId('');
@@ -1956,7 +1957,7 @@ function ScheduledWorkPanel({
           {jobs.map((job) => {
             const status = SCHEDULED_JOB_STATUS[job.status];
             return (
-              <li className="cmr-approval-card" key={job.id}>
+              <li className="cmr-approval-card" id={`cmr-job-${job.id}`} key={job.id}>
                 <div className="cmr-approval-card__top">
                   <div><span className="cmr-eyebrow">Hạn chạy {formatDate(job.dueAt, true)} · {job.channel}</span><strong>{job.title}</strong></div>
                   <span className={`cmr-pill cmr-pill--${status.tone}`}><span className="cmr-pill__dot" />{status.label}</span>
@@ -1989,7 +1990,7 @@ function ScheduledWorkPanel({
           <p>Duyệt bản nháp để đánh dấu sẵn sàng đăng. Izzi AI không tự đăng: bạn chép nội dung và tự đăng lên kênh của mình.</p>
           <ul className="cmr-approval-full-list">
             {drafts.map((draft) => (
-              <li className="cmr-approval-card" key={draft.id}>
+              <li className="cmr-approval-card" id={`cmr-draft-${draft.id}`} key={draft.id}>
                 <div className="cmr-approval-card__top">
                   <div><span className="cmr-eyebrow">{draft.channel} · {formatDate(draft.createdAt, true)}</span><strong>{draft.title}</strong></div>
                   <span className={`cmr-pill cmr-pill--${draft.guardian.passed ? 'positive' : 'warning'}`}><span className="cmr-pill__dot" />{draft.guardian.passed ? 'Đạt kiểm tra brand' : 'Cần sửa trước khi đăng'}</span>
@@ -3546,6 +3547,7 @@ function CustomerRoom({
                 onMarkCellDone={(cellId, evidence) => { void markCampaignCell(cellId, evidence); }}
                 onAddChannel={(channel) => { void addCampaignChannel(channel); }}
                 busy={busy}
+                schedule={snapshot.schedule}
                 sessions={<GoalsView snapshot={snapshot} onOpenDirector={toConversation} />}
               />
             )}

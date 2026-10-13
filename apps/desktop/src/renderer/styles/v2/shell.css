@@ -1293,6 +1293,7 @@
   border-radius: var(--v2-radius-card);
 }
 
+.izzi-v2 .v2-campaign-board__cell.is-planned { border-left-color: var(--v2-brand-primary); }
 .izzi-v2 .v2-campaign-board__cell.is-in_progress { border-left-color: var(--v2-info); }
 .izzi-v2 .v2-campaign-board__cell.is-awaiting_approval { border-left-color: var(--v2-warning); }
 .izzi-v2 .v2-campaign-board__cell.is-done { border-left-color: var(--v2-success); }
@@ -1308,6 +1309,7 @@
   font-size: var(--v2-text-label-size);
 }
 
+.izzi-v2 .v2-campaign-board__status.is-planned { color: var(--v2-brand-primary) !important; }
 .izzi-v2 .v2-campaign-board__status.is-in_progress { color: var(--v2-info) !important; }
 .izzi-v2 .v2-campaign-board__status.is-awaiting_approval { color: var(--v2-warning) !important; }
 .izzi-v2 .v2-campaign-board__status.is-done { color: var(--v2-success) !important; }
@@ -1323,6 +1325,10 @@
   color: var(--v2-danger) !important;
   -webkit-text-fill-color: currentColor !important;
   font-size: var(--v2-text-label-size);
+}
+
+.izzi-v2 .v2-campaign-board__reason:not(.is-blocked) {
+  color: var(--v2-text-muted) !important;
 }
 
 .izzi-v2 .v2-campaign-board__toolbar {
@@ -1470,6 +1476,98 @@
   justify-content: space-between;
   gap: var(--v2-space-2);
   font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-campaign-board__schedule {
+  display: grid;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-campaign-board__schedule-title,
+.izzi-v2 .v2-campaign-timeline__title {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-campaign-board__jobs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-campaign-board__job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--v2-space-1) var(--v2-space-2);
+  padding-left: var(--v2-space-2);
+  border-left: 2px solid var(--v2-border-strong);
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-campaign-board__job.is-running { border-left-color: var(--v2-info); }
+.izzi-v2 .v2-campaign-board__job.is-draft_ready { border-left-color: var(--v2-success); }
+.izzi-v2 .v2-campaign-board__job.is-failed,
+.izzi-v2 .v2-campaign-board__job.is-blocked_quota { border-left-color: var(--v2-danger); }
+.izzi-v2 .v2-campaign-board__job.is-cancelled { opacity: 0.5; }
+
+.izzi-v2 .v2-campaign-board__job-due {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-campaign-board__job-title {
+  flex: 1 1 12rem;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-campaign-board__job-status,
+.izzi-v2 .v2-campaign-board__job-draft {
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  text-decoration: underline;
+}
+
+.izzi-v2 .v2-campaign-timeline {
+  display: grid;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-2) var(--v2-space-3);
+  background: var(--v2-bg-deep);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-campaign-timeline__days {
+  display: flex;
+  gap: var(--v2-space-3);
+  margin: 0;
+  padding: 0 0 var(--v2-space-1);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.izzi-v2 .v2-campaign-timeline__day {
+  display: grid;
+  align-content: start;
+  gap: var(--v2-space-1);
+  min-width: 14rem;
+  padding-top: var(--v2-space-1);
+  border-top: 2px solid var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-campaign-timeline__date {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
 }
 
 .izzi-v2 .v2-campaign-board__run-goal {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CustomerRun, CustomerRunStatus } from './customer-marketing-types';
+import type {
+  CustomerMarketingDraft,
+  CustomerRun,
+  CustomerRunStatus,
+  CustomerScheduledJob,
+} from './customer-marketing-types';
 import {
   CAMPAIGN_CHANNELS,
   CAMPAIGN_PHASES,
@@ -9,6 +14,7 @@ import {
   campaignChannelsForCustomerChannels,
   campaignTemplateCells,
   deriveCampaignCellStatus,
+  linkScheduleToCells,
   normalizeCampaignMap,
   parseCampaignCellSuggestions,
   resolveCampaignBoard,
@@ -40,6 +46,41 @@ function cell(extra: Partial<CampaignCell> = {}): CampaignCell {
     tags: ['organic'],
     runIds: [],
     updatedAt: '2026-10-01T00:00:00.000Z',
+    ...extra,
+  };
+}
+
+function job(extra: Partial<CustomerScheduledJob> = {}): CustomerScheduledJob {
+  return {
+    id: 'job-1',
+    runId: 'run-1',
+    approvalId: 'approval-1',
+    kind: 'social_post',
+    channel: 'facebook',
+    title: 'Bài mở màn',
+    brief: '',
+    dueAt: '2026-10-03T02:00:00.000Z',
+    status: 'scheduled',
+    attempts: 0,
+    creditsCharged: 0,
+    createdAt: '2026-10-02T00:00:00.000Z',
+    updatedAt: '2026-10-02T00:00:00.000Z',
+    ...extra,
+  };
+}
+
+function draft(extra: Partial<CustomerMarketingDraft> = {}): CustomerMarketingDraft {
+  return {
+    id: 'draft-1',
+    jobId: 'job-1',
+    runId: 'run-1',
+    kind: 'social_post',
+    channel: 'facebook',
+    title: 'Bài mở màn',
+    body: 'Nội dung',
+    guardian: { passed: true, failedChecks: [] },
+    status: 'pending_review',
+    createdAt: '2026-10-03T02:05:00.000Z',
     ...extra,
   };
 }
@@ -115,7 +156,7 @@ describe('deriveCampaignCellStatus', () => {
     ['in_progress', 'in_progress'],
     ['ready', 'in_progress'],
     ['awaiting_approval', 'awaiting_approval'],
-    ['completed', 'done'],
+    ['completed', 'planned'],
   ] as const)('maps a %s session to %s', (runStatus, expected) => {
     expect(deriveCampaignCellStatus(cell({ runIds: ['run-1'] }), [run('run-1', runStatus)])).toEqual({
       status: expected,
@@ -142,14 +183,14 @@ describe('deriveCampaignCellStatus', () => {
     expect(deriveCampaignCellStatus(cell({ runIds: ['run-1'] }), [superseded])).toEqual({ status: 'todo' });
   });
 
-  it('keeps an approved cell done when a later session fails', () => {
+  it('keeps an approved cell planned when a later session fails', () => {
     const runs = [
       run('run-1', 'completed'),
       run('run-2', 'blocked', { blockedReason: 'Hết quota.' }),
     ];
 
     expect(deriveCampaignCellStatus(cell({ runIds: ['run-1', 'run-2'] }), runs)).toEqual({
-      status: 'done',
+      status: 'planned',
       runId: 'run-1',
     });
   });
@@ -191,7 +232,7 @@ describe('summarizeCampaignPhases', () => {
 
     const summary = summarizeCampaignPhases(cells, runs, ['website_email', 'data_measurement', 'tiktok']);
 
-    expect(summary.p0_foundation).toEqual({ done: 1, total: 2 });
+    expect(summary.p0_foundation).toEqual({ done: 0, total: 2 });
     expect(summary.p1_awareness).toEqual({ done: 0, total: 1 });
     expect(summary.p5_post_purchase).toEqual({ done: 0, total: 0 });
   });
@@ -222,13 +263,125 @@ describe('resolveCampaignBoard', () => {
     expect(board.progress.p1_awareness).toEqual({ done: 0, total: 1 });
   });
 
-  it('uses stored cells and counts their progress', () => {
+  it('uses stored cells and does not count a finished plan as done work', () => {
     const stored = [cell({ runIds: ['run-1'] })];
 
     const board = resolveCampaignBoard(stored, ['tiktok'], [run('run-1', 'completed')]);
 
     expect(board.cells).toBe(stored);
+    expect(board.progress.p1_awareness).toEqual({ done: 0, total: 1 });
+  });
+
+  it('counts a cell done once its scheduled drafts are ready to publish', () => {
+    const stored = [cell({ runIds: ['run-1'] })];
+    const schedule = {
+      jobs: [job({ channel: 'tiktok', status: 'draft_ready', draftId: 'draft-1' })],
+      drafts: [draft({ status: 'ready_to_publish' })],
+    };
+
+    const board = resolveCampaignBoard(stored, ['tiktok'], [run('run-1', 'completed')], undefined, [], schedule);
+
     expect(board.progress.p1_awareness).toEqual({ done: 1, total: 1 });
+  });
+});
+
+describe('linkScheduleToCells', () => {
+  const foundation = cell({ id: 'p0:web', phase: 'p0_foundation', channel: 'website_email', runIds: ['run-1'] });
+  const fanpageP0 = cell({ id: 'p0:fb', phase: 'p0_foundation', channel: 'facebook_fanpage', runIds: ['run-1'] });
+  const fanpageP1 = cell({ id: 'p1:fb', phase: 'p1_awareness', channel: 'facebook_fanpage', runIds: ['run-1'] });
+
+  it('links a facebook post to the fanpage cell past the foundation', () => {
+    const links = linkScheduleToCells([fanpageP0, fanpageP1], { jobs: [job({ channel: 'facebook' })], drafts: [] });
+
+    expect(links.byCell.get('p1:fb')?.jobs.map((item) => item.id)).toEqual(['job-1']);
+    expect(links.byCell.has('p0:fb')).toBe(false);
+  });
+
+  it('links a landing page review to the foundation website cell', () => {
+    const review = job({ kind: 'cro_review', channel: 'website' });
+
+    const links = linkScheduleToCells([foundation], { jobs: [review], drafts: [] });
+
+    expect(links.byCell.get('p0:web')?.jobs).toEqual([review]);
+  });
+
+  it('keeps jobs without a matching cell or session as unlinked', () => {
+    const otherSession = job({ id: 'job-2', channel: 'facebook', runId: 'run-9' });
+    const noCell = job({ id: 'job-3', channel: 'telegram' });
+
+    const links = linkScheduleToCells([fanpageP1], { jobs: [otherSession, noCell], drafts: [] });
+
+    expect(links.byCell.size).toBe(0);
+    expect(links.unlinked.map((item) => item.id)).toEqual(['job-2', 'job-3']);
+  });
+
+  it('attaches the draft each job produced', () => {
+    const links = linkScheduleToCells([fanpageP1], {
+      jobs: [job({ channel: 'facebook', status: 'draft_ready', draftId: 'draft-1' })],
+      drafts: [draft(), draft({ id: 'draft-2', jobId: 'job-other' })],
+    });
+
+    expect(links.byCell.get('p1:fb')?.drafts.map((item) => item.id)).toEqual(['draft-1']);
+  });
+});
+
+describe('deriveCampaignCellStatus with scheduled work', () => {
+  const planned = cell({ runIds: ['run-1'] });
+  const runs = [run('run-1', 'completed')];
+  const linked = (jobs: CustomerScheduledJob[], drafts: CustomerMarketingDraft[] = []) => ({ jobs, drafts });
+
+  it('shows jobs waiting for their time as planned', () => {
+    expect(deriveCampaignCellStatus(planned, runs, linked([job()]))).toEqual({
+      status: 'planned',
+      reason: 'Đang chờ tới lịch',
+    });
+  });
+
+  it('shows a running job as in progress', () => {
+    expect(deriveCampaignCellStatus(planned, runs, linked([job(), job({ id: 'job-2', status: 'running' })]))).toEqual({
+      status: 'in_progress',
+      reason: 'Đang tạo bài',
+    });
+  });
+
+  it('waits for the customer while a draft is pending review', () => {
+    const state = deriveCampaignCellStatus(
+      planned,
+      runs,
+      linked([job({ status: 'draft_ready', draftId: 'draft-1' })], [draft()]),
+    );
+
+    expect(state).toEqual({ status: 'awaiting_approval', reason: 'Bản nháp chờ bạn duyệt' });
+  });
+
+  it('shows a job stopped by quota as blocked with its error', () => {
+    const state = deriveCampaignCellStatus(
+      planned,
+      runs,
+      linked([job({ status: 'blocked_quota', lastError: 'Hết credit' })]),
+    );
+
+    expect(state).toEqual({ status: 'blocked', reason: 'Hết credit' });
+  });
+
+  it('is done only when every live job has a draft ready to publish', () => {
+    const ready = job({ status: 'draft_ready', draftId: 'draft-1' });
+    const cancelled = job({ id: 'job-2', status: 'cancelled' });
+
+    const state = deriveCampaignCellStatus(
+      planned,
+      runs,
+      linked([ready, cancelled], [draft({ status: 'ready_to_publish' })]),
+    );
+
+    expect(state).toEqual({ status: 'done' });
+  });
+
+  it('falls back to the finished plan when every job was cancelled', () => {
+    expect(deriveCampaignCellStatus(planned, runs, linked([job({ status: 'cancelled' })]))).toEqual({
+      status: 'planned',
+      runId: 'run-1',
+    });
   });
 });
 

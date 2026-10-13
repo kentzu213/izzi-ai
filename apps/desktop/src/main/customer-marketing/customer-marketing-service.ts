@@ -1237,21 +1237,28 @@ function unsupportedProductClaims(
   const approvedClaimIds = productContext.product.proofClaims
     .map((claim) => normalizedClaimText(claim.id));
 
+  const citesApprovedClaim = (normalized: string) => approvedClaimIds.some(
+    (claimId) => normalized.includes(claimId),
+  );
+
   // A bracketed proof id right after the full stop ("… OpenAI. [openai-compatible-endpoint]") cites that sentence.
-  return Array.from(reply.matchAll(/([^\r\n.!?。！？]+)([.!?。！？]*)((?:[ \t]*\[[^\]\r\n]+\])*)([\r\n.!?。！？]*)/gu))
+  const segments = Array.from(reply.matchAll(/([^\r\n.!?。！？]+)([.!?。！？]*)((?:[ \t]*\[[^\]\r\n]+\])*)([\r\n.!?。！？]*)/gu))
     .map(([, segment, punctuation, citation, terminator]) => ({
       segment: `${segment}${citation}`.trim(),
       terminator: `${punctuation}${terminator}`,
     }))
-    .filter(({ segment }) => Boolean(segment))
-    .filter(({ segment, terminator }) => {
+    .filter(({ segment }) => Boolean(segment));
+  return segments
+    .filter(({ segment, terminator }, index) => {
       const normalized = normalizedClaimText(segment);
       const namesProduct = productSubjects.some((subject) => normalized.includes(subject));
       const isClaim = PRODUCT_CLAIM_CUE_PATTERN.test(normalized);
-      const hasApprovedReference = approvedClaimIds.some(
-        (claimId) => normalized.includes(claimId),
-      );
-      return namesProduct && isClaim && !hasApprovedReference
+      // A line ending in ":" that introduces a cited claim ("IzziAPI hỗ trợ bạn bằng các thông tin sau:") is not a claim itself.
+      const introducesCitedClaim = normalized.endsWith(':')
+        && !PRODUCT_CLAIM_STRONG_CUE_PATTERN.test(normalized)
+        && citesApprovedClaim(normalizedClaimText(segments[index + 1]?.segment ?? ''));
+      return namesProduct && isClaim && !citesApprovedClaim(normalized)
+        && !introducesCitedClaim
         && !isProductQuestion(normalized, terminator);
     })
     .map(({ segment }) => segment)
