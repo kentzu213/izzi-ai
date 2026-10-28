@@ -13,6 +13,7 @@
 import type {
   GraphNode,
   GraphLink,
+  GraphReadResult,
   GraphCommunity,
   GraphSearchHit,
 } from '../../shared/graph-types';
@@ -107,6 +108,8 @@ function graph() {
   return api as unknown as {
     list(): Promise<GraphNode[]>;
     links(): Promise<GraphLink[]>;
+    readNodes?(): Promise<GraphReadResult<GraphNode>>;
+    readLinks?(): Promise<GraphReadResult<GraphLink>>;
     create(input: Record<string, unknown>): Promise<GraphNode | { error: string }>;
     update(id: string, patch: Record<string, unknown>): Promise<{ ok: boolean } | { error: string }>;
     remove(id: string): Promise<{ ok: boolean; error?: string }>;
@@ -194,19 +197,25 @@ export async function fetchMe(): Promise<ApiResponse<{ id: string }>> {
 
 export async function fetchNodes(): Promise<ApiResponse<{ nodes: UserNode[] }>> {
   try {
-    const nodes = await graph().list();
+    const bridge = graph();
+    const result = await bridge.readNodes?.();
+    if (result && result.data === null) return fail(result.error, result.status);
+    const nodes = result ? result.data : await bridge.list();
     return ok({ nodes: nodes.map(toUserNode) });
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : 'Lỗi tải nodes', 0);
+  } catch {
+    return fail('Không kết nối được graph. Kiểm tra mạng rồi thử lại.', 0);
   }
 }
 
 export async function fetchLinks(): Promise<ApiResponse<{ links: UserLink[] }>> {
   try {
-    const links = await graph().links();
+    const bridge = graph();
+    const result = await bridge.readLinks?.();
+    if (result && result.data === null) return fail(result.error, result.status);
+    const links = result ? result.data : await bridge.links();
     return ok({ links: links.map(toUserLink) });
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : 'Lỗi tải links', 0);
+  } catch {
+    return fail('Không kết nối được graph. Kiểm tra mạng rồi thử lại.', 0);
   }
 }
 

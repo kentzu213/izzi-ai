@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/desktop",
-  "version": "1.14.0-beta.103",
+  "version": "1.14.0-beta.104",
   "private": true,
   "description": "Izzi AI Desktop App - Electron",
   "author": "kentzu213",
@@ -35,15 +35,15 @@
     "test:marketing-safety-core": "node scripts/customer-marketing-packaged-safety-harness.cjs ."
   },
   "dependencies": {
-    "@kentzu213/graph-view": "file:vendor/kentzu213-graph-view-0.1.1.tgz",
+    "@kentzu213/graph-view": "file:vendor/kentzu213-graph-view-0.2.0.tgz",
     "@supabase/supabase-js": "^2.49.0",
-    "@xyflow/react": "^12.11.1",
+    "@xyflow/react": "^12.12.0",
     "axios": "^1.16.0",
     "better-sqlite3": "12.11.1",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.8.3",
     "hyperframes": "0.7.57",
-    "react-force-graph-2d": "1.29.1",
+    "react-force-graph-2d": "1.29.2",
     "zustand": "^5.0.3"
   },
   "optionalDependencies": {

@@ -13,6 +13,11 @@
  * @see Requirements 1.3, 3.2, 7.4
  */
 
+/** Checked graph reads distinguish an empty collection from an unavailable one. */
+export type GraphReadResult<T> =
+  | { data: T[]; error: null; status: number }
+  | { data: null; error: string; status: number };
+
 /** Mirrors the backend `UserNode` exactly (Req 1.3, 3.2). */
 export interface GraphNode {
   id: string;
