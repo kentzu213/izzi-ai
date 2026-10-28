@@ -32,6 +32,7 @@ import type {
 import type {
   GraphNode,
   GraphLink,
+  GraphReadResult,
   MemoryItemDTO,
   GraphCommunity,
   GraphSearchHit,
@@ -534,6 +535,8 @@ const electronAPI = {
 
   graph: {
     list: (): Promise<GraphNode[]> => ipcRenderer.invoke('graph:list'),
+    readNodes: (): Promise<GraphReadResult<GraphNode>> => ipcRenderer.invoke('graph:readNodes'),
+    readLinks: (): Promise<GraphReadResult<GraphLink>> => ipcRenderer.invoke('graph:readLinks'),
     universe: (): Promise<{ nodes: GraphNode[]; links: GraphLink[] }> =>
       ipcRenderer.invoke('graph:universe'),
     nodeDetail: (id: string): Promise<UniverseNodeDetail | null> =>

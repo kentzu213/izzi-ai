@@ -33,6 +33,7 @@ import {
 import type {
   GraphNode,
   GraphLink,
+  GraphReadResult,
   MemoryItemDTO,
   GraphCommunity,
   GraphSearchHit,
@@ -97,6 +98,52 @@ export class GraphClient {
   ) {}
 
   // ── Reads ──────────────────────────────────────────────────────────────
+
+  /** Status-preserving reads for Graph View; legacy list methods stay compatible. */
+  readNodes(): Promise<GraphReadResult<GraphNode>> {
+    return this.readGraphCollection('nodes', userNodeToModel);
+  }
+
+  readLinks(): Promise<GraphReadResult<GraphLink>> {
+    return this.readGraphCollection('links', userLinkToModel);
+  }
+
+  private async readGraphCollection<T>(
+    collection: 'nodes' | 'links',
+    mapper: (raw: unknown) => T | null,
+  ): Promise<GraphReadResult<T>> {
+    try {
+      const token = await this.auth.getAccessToken();
+      if (!token) return { data: null, error: 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.', status: 401 };
+      const response = await fetch(`${IZZI_API_BASE}/api/aibase/${collection}`, {
+        headers: this.authHeaders(token),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) {
+        this.logFailure(`graph.read.${collection}`, response.status);
+        return {
+          data: null,
+          error: response.status === 401
+            ? 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.'
+            : 'Không tải được graph. Hãy thử lại.',
+          status: response.status,
+        };
+      }
+      const payload: unknown = await response.json();
+      if (!Array.isArray(ownValue(payload, collection))) {
+        return { data: null, error: 'Dữ liệu graph không hợp lệ. Hãy thử lại.', status: 502 };
+      }
+      return {
+        data: ownArray(payload, collection).map(mapper).filter((item): item is T => item !== null),
+        error: null,
+        status: response.status,
+      };
+    } catch {
+      // Neither exception text nor response bodies cross IPC or enter diagnostics.
+      this.logFailure(`graph.read.${collection}`, undefined, 'unavailable');
+      return { data: null, error: 'Không kết nối được graph. Kiểm tra mạng rồi thử lại.', status: 0 };
+    }
+  }
 
   /** GET /api/aibase/nodes → GraphNode[] (empty on no-auth / error; Req 1.1, 1.4, 1.5). */
   async listNodes(): Promise<GraphNode[]> {

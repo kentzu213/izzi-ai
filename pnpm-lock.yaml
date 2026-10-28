@@ -53,14 +53,14 @@ importers:
   apps/desktop:
     dependencies:
       '@kentzu213/graph-view':
-        specifier: file:vendor/kentzu213-graph-view-0.1.1.tgz
-        version: file:apps/desktop/vendor/kentzu213-graph-view-0.1.1.tgz(react-dom@19.2.4(react@19.2.4))(react-force-graph-2d@1.29.1(react@19.2.4))(react@19.2.4)
+        specifier: file:vendor/kentzu213-graph-view-0.2.0.tgz
+        version: file:apps/desktop/vendor/kentzu213-graph-view-0.2.0.tgz(react-dom@19.2.4(react@19.2.4))(react-force-graph-2d@1.29.2(react@19.2.4))(react@19.2.4)
       '@supabase/supabase-js':
         specifier: ^2.49.0
         version: 2.101.0
       '@xyflow/react':
-        specifier: ^12.11.1
-        version: 12.11.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: ^12.12.0
+        version: 12.12.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       axios:
         specifier: ^1.16.0
         version: 1.18.1
@@ -77,8 +77,8 @@ importers:
         specifier: 0.7.57
         version: 0.7.57(@types/node@25.5.0)(yauzl@2.10.0)
       react-force-graph-2d:
-        specifier: 1.29.1
-        version: 1.29.1(react@19.2.4)
+        specifier: 1.29.2
+        version: 1.29.2(react@19.2.4)
       zustand:
         specifier: ^5.0.3
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
@@ -966,13 +966,13 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@kentzu213/graph-view@file:apps/desktop/vendor/kentzu213-graph-view-0.1.1.tgz':
-    resolution: {integrity: sha512-/I9vEjkTyNAm8eJoOJPLQdkucyZXAWUtCpHIbQD4Q18c11y7uoYZW/Rj2u49XJLObAtCERU/KQRqigukxis7PQ==, tarball: file:apps/desktop/vendor/kentzu213-graph-view-0.1.1.tgz}
-    version: 0.1.1
+  '@kentzu213/graph-view@file:apps/desktop/vendor/kentzu213-graph-view-0.2.0.tgz':
+    resolution: {integrity: sha512-91gr7nPu7WW31PRzl2sZQDDCKaDP3GT5QnE+X7uJPo7xv/jIi4PyVur2NYoYbaXE78gPbe+B/3ZkY0ztC0u+zg==, tarball: file:apps/desktop/vendor/kentzu213-graph-view-0.2.0.tgz}
+    version: 0.2.0
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
-      react-force-graph-2d: ^1.29.1
+      react-force-graph-2d: ^1.29.2
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -1433,8 +1433,8 @@ packages:
     engines: {node: '>=10.0.0'}
     deprecated: this version has critical issues, please update to the latest version
 
-  '@xyflow/react@12.11.1':
-    resolution: {integrity: sha512-L+zBoLGSXham0MnlY8QqjfR7/C5JNw0zxkaey5aZ5XmCgJBAdH4+WRIu8CR40d3l/BdU635V6YbhBK1jMo8/6Q==}
+  '@xyflow/react@12.12.0':
+    resolution: {integrity: sha512-74oXI0Rgm1Eu33cHQAd74J6oVgCH9mbFyTVQbsGgp2kmWwh0HdtBr2VP04z8mbPD+M/xO69nqG5dDEt7/EN2rQ==}
     peerDependencies:
       '@types/react': '>=17'
       '@types/react-dom': '>=17'
@@ -1446,8 +1446,8 @@ packages:
       '@types/react-dom':
         optional: true
 
-  '@xyflow/system@0.0.78':
-    resolution: {integrity: sha512-lY0z2qP33fUhTva9Vaxrk0lqZta2pkbxB1trHAx1omnJqRtPvDlAQYV2r5fhS6AdpkulYmbNW0svy+A4/t4B/g==}
+  '@xyflow/system@0.0.83':
+    resolution: {integrity: sha512-a//eDjez3WZF47aaPTfVUDD0OINOq+WVwBZCRTqG+m0a5euX8EwlJ4jMY1Wxz0Ocj4xOeekJ70V22Pq0ll8RJw==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -2300,8 +2300,8 @@ packages:
   fontkit@2.0.4:
     resolution: {integrity: sha512-syetQadaUEDNdxdugga9CpEYVaQIxOwk7GlwZWWZ19//qW4zE5bknOKeMBDYAASwnpaSHKJITRLMF9m1fp3s6g==}
 
-  force-graph@1.51.4:
-    resolution: {integrity: sha512-TdJ2KbkoiDQ7NIRx8IPGD0mAXXpLhamS7c+b7W98b0MHG7lphnda1VOQX/98UDTsttIAdH4TcP0l0MauSnLK8w==}
+  force-graph@1.52.0:
+    resolution: {integrity: sha512-0fpxrZzW6qwm9zM7wgh54d7GbxQfQSDV71I0apo+75PVYQPpPHGVPQFLsE9WAu+hOS4VdLd53g0Hua/bxDJKSg==}
     engines: {node: '>=12'}
 
   foreground-child@3.3.1:
@@ -3095,8 +3095,8 @@ packages:
     peerDependencies:
       react: ^19.2.4
 
-  react-force-graph-2d@1.29.1:
-    resolution: {integrity: sha512-1Rl/1Z3xy2iTHKj6a0jRXGyiI86xUti81K+jBQZ+Oe46csaMikp47L5AjrzA9hY9fNGD63X8ffrqnvaORukCuQ==}
+  react-force-graph-2d@1.29.2:
+    resolution: {integrity: sha512-ofAJXlnOufwViZ9YCV8c5S0ZEb2D1pXnD+j2NbVqSzgg217QiycTPrmKQsmODSg6aSssK5BdAX3vhCxM2YmGCQ==}
     engines: {node: '>=12'}
     peerDependencies:
       react: '*'
@@ -4406,11 +4406,11 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@kentzu213/graph-view@file:apps/desktop/vendor/kentzu213-graph-view-0.1.1.tgz(react-dom@19.2.4(react@19.2.4))(react-force-graph-2d@1.29.1(react@19.2.4))(react@19.2.4)':
+  '@kentzu213/graph-view@file:apps/desktop/vendor/kentzu213-graph-view-0.2.0.tgz(react-dom@19.2.4(react@19.2.4))(react-force-graph-2d@1.29.2(react@19.2.4))(react@19.2.4)':
     dependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      react-force-graph-2d: 1.29.1(react@19.2.4)
+      react-force-graph-2d: 1.29.2(react@19.2.4)
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
@@ -4895,9 +4895,9 @@ snapshots:
 
   '@xmldom/xmldom@0.8.13': {}
 
-  '@xyflow/react@12.11.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@xyflow/react@12.12.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
-      '@xyflow/system': 0.0.78
+      '@xyflow/system': 0.0.83
       classcat: 5.0.5
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
@@ -4908,7 +4908,7 @@ snapshots:
     transitivePeerDependencies:
       - immer
 
-  '@xyflow/system@0.0.78':
+  '@xyflow/system@0.0.83':
     dependencies:
       '@types/d3-drag': 3.0.7
       '@types/d3-interpolate': 3.0.4
@@ -5917,7 +5917,7 @@ snapshots:
       unicode-properties: 1.4.1
       unicode-trie: 2.0.0
 
-  force-graph@1.51.4:
+  force-graph@1.52.0:
     dependencies:
       '@tweenjs/tween.js': 25.0.0
       accessor-fn: 1.5.3
@@ -6774,9 +6774,9 @@ snapshots:
       react: 19.2.4
       scheduler: 0.27.0
 
-  react-force-graph-2d@1.29.1(react@19.2.4):
+  react-force-graph-2d@1.29.2(react@19.2.4):
     dependencies:
-      force-graph: 1.51.4
+      force-graph: 1.52.0
       prop-types: 15.8.1
       react: 19.2.4
       react-kapsule: 2.6.0(react@19.2.4)
