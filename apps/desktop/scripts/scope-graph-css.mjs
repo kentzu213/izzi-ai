@@ -68,7 +68,27 @@ root.walkDecls((declaration) => {
 });
 
 const banner = '/* AUTO-GENERATED from @kentzu213/graph-view/dist/graph.css — scoped under .graphview-scope, keyframes namespaced gv-*. Do not edit by hand. */\n';
-const result = banner + root.toString();
+// Desktop has no web navbar. Its graph can be much narrower than the window
+// because the workspace sidebars remain open. Anchor overlays to the host and
+// use a container query rather than the browser viewport for compact panels.
+const hostLayout = `
+/* Desktop host geometry: all overlay dimensions are relative to this island. */
+.graphview-scope { container: graphview / inline-size; }
+.graphview-scope .graph-toolbar { top: 16px; max-width: calc(100% - 32px); }
+.graphview-scope .graph-filter-panel { top: 70px; max-width: calc(100% - 32px); max-height: calc(100% - 86px); }
+.graphview-scope .search-bar { top: 70px; min-width: 0; max-width: calc(100% - 32px); }
+.graphview-scope .graph-stale-banner { top: 70px; max-width: calc(100% - 36px); }
+.graphview-scope .node-panel { top: 80px; width: min(320px, calc(100% - 32px)); max-height: calc(100% - 96px); }
+.graphview-scope .contrib-card { top: 70px; width: min(240px, calc(100% - 32px)); max-height: calc(100% - 86px); overflow-y: auto; }
+.graphview-scope .link-mode-banner { top: 70px; max-width: calc(100% - 32px); }
+@container graphview (max-width: 600px) {
+  .graphview-scope .graph-toolbar { left: 16px; right: 16px; transform: none; }
+  .graphview-scope .search-bar { left: 16px; right: 16px; transform: none; }
+  .graphview-scope .graph-filter-panel { width: min(236px, calc(100% - 32px)); }
+  .graphview-scope .node-panel { top: auto; bottom: 16px; right: 16px; max-height: 45%; }
+}
+`;
+const result = banner + root.toString() + hostLayout;
 const verification = postcss.parse(result, { from: outputPath });
 const failures = [];
 
