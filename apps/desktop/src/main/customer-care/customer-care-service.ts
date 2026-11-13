@@ -290,11 +290,14 @@ const INTENT_PHRASES: Record<CustomerCareFactTopic, readonly string[]> = {
 
 const QUESTION_TAILS = ['khong', 'ko', 'hong', 'chua', 'nao', 'gi', 'sao', 'dau'];
 const QUESTION_PHRASES = ['the nao', 'bao gio', 'duoc khong', 'co khong', 'la gi'];
+// Full refusals block every channel. Channel refusals block only that channel; refusing both is a full decline.
 const DECLINE_PHRASES = [
   'khong de so', 'khong cho so', 'khong muon de so', 'khong muon cho so', 'khong de lai so', 'khong muon de lai',
-  'khong de sdt', 'khong cho sdt', 'ko de so', 'ko cho so', 'k de so', 'khong muon goi', 'dung goi', 'khong goi',
-  'khong can goi', 'khong muon lien he', 'khong muon nhan zalo', 'dung nhan zalo',
+  'khong de sdt', 'khong cho sdt', 'ko de so', 'ko cho so', 'k de so', 'khong muon lien he',
 ];
+// Deliberately broad ("khong goi duoc" also matches): over-reading a call refusal is the safe direction.
+const CALL_REFUSAL_PHRASES = ['khong muon goi', 'dung goi', 'khong goi', 'khong can goi'];
+const ZALO_REFUSAL_PHRASES = ['khong muon nhan zalo', 'dung nhan zalo'];
 const STOP_TOKENS = new Set([
   'co', 'khong', 'ko', 'k', 'ban', 'shop', 'a', 'anh', 'chi', 'em', 'cho', 'hoi', 'la', 'va', 'voi', 'cua',
   'nay', 'do', 'thi', 'minh', 'ben', 'oi', 'nhe', 'nha', 'vay', 'the', 'duoc', 'cai', 'con', 'mot', 'cac',
@@ -494,6 +497,22 @@ interface ComposeInput {
   nextAction: CustomerCareNextAction;
   contactDetected: boolean;
   phoneDetected: boolean;
+  callRefused: boolean;
+  zaloRefused: boolean;
+}
+
+/** Optional contact invitation; never names a channel the customer refused or the operator did not approve. */
+function contactOffer(input: ComposeInput): string {
+  const optional = 'việc này hoàn toàn không bắt buộc, shop vẫn hỗ trợ anh/chị tại đây ạ.';
+  if (input.permission === 'zalo_only' || input.callRefused) {
+    return `Nếu anh/chị muốn được tư vấn kỹ hơn, anh/chị có thể để lại số Zalo; ${optional}`;
+  }
+  if (input.permission === 'call_allowed') {
+    return `Nếu anh/chị muốn nhân viên gọi tư vấn, anh/chị có thể để lại số điện thoại và giờ thuận tiện; ${optional}`;
+  }
+  return input.zaloRefused
+    ? `Nếu anh/chị muốn Sale tư vấn trực tiếp, anh/chị có thể để lại số điện thoại và cách liên hệ thuận tiện; ${optional}`
+    : `Nếu anh/chị muốn Sale tư vấn trực tiếp, anh/chị có thể để lại số điện thoại hoặc Zalo và cách liên hệ thuận tiện; ${optional}`;
 }
 
 function composeReply(input: ComposeInput): string {
@@ -526,18 +545,14 @@ function composeReply(input: ComposeInput): string {
       lines.push('Shop sẽ tiếp tục hỗ trợ anh/chị ngay tại cuộc trò chuyện này ạ.');
       break;
     case 'ask_contact':
-      lines.push(input.permission === 'zalo_only'
-        ? 'Nếu anh/chị muốn được tư vấn kỹ hơn, anh/chị có thể để lại số Zalo; việc này hoàn toàn không bắt buộc, shop vẫn hỗ trợ anh/chị tại đây ạ.'
-        : input.permission === 'call_allowed'
-          ? 'Nếu anh/chị muốn nhân viên gọi tư vấn, anh/chị có thể để lại số điện thoại và giờ thuận tiện; việc này hoàn toàn không bắt buộc, shop vẫn hỗ trợ anh/chị tại đây ạ.'
-          : 'Nếu anh/chị muốn Sale tư vấn trực tiếp, anh/chị có thể để lại số điện thoại hoặc Zalo và cách liên hệ thuận tiện; việc này hoàn toàn không bắt buộc, shop vẫn hỗ trợ anh/chị tại đây ạ.');
+      lines.push(contactOffer(input));
       break;
     case 'handoff':
       if (input.phoneDetected && input.permission === 'call_allowed') {
         lines.push('Nhân viên tư vấn của shop có thể gọi điện theo thông tin anh/chị đã gửi ạ.');
       } else if (input.phoneDetected && input.permission === 'zalo_only') {
         lines.push('Nhân viên tư vấn của shop có thể nhắn Zalo cho anh/chị theo thông tin anh/chị đã gửi ạ.');
-      } else if (input.phoneDetected) {
+      } else if (input.phoneDetected && !input.zaloRefused) {
         lines.push('Shop đã thấy thông tin liên hệ anh/chị gửi. Anh/chị muốn nhân viên tư vấn nhắn Zalo hay tiếp tục trao đổi tại đây ạ?');
       } else if (input.contactDetected) {
         lines.push('Shop đã thấy thông tin liên hệ anh/chị gửi. Nhân viên tư vấn có thể tiếp tục hỗ trợ anh/chị tại cuộc trò chuyện này ạ.');
@@ -751,10 +766,16 @@ export class CustomerCareService {
     const phoneDetected = request.messages.some(
       (message) => message.role === 'customer' && containsPhone(message.text),
     );
-    const customerDeclined = request.messages.some(
-      (message) => message.role === 'customer' && hasPhrase(normalize(message.text), DECLINE_PHRASES),
+    const customerSaid = (phrases: readonly string[]) => request.messages.some(
+      (message) => message.role === 'customer' && hasPhrase(normalize(message.text), phrases),
     );
-    const declined = request.contactPermission === 'declined' || customerDeclined;
+    const callRefused = customerSaid(CALL_REFUSAL_PHRASES);
+    const zaloRefused = customerSaid(ZALO_REFUSAL_PHRASES);
+    const customerDeclined = customerSaid(DECLINE_PHRASES) || (callRefused && zaloRefused);
+    // Refusing the only channel the operator approved leaves nothing to offer, so it stays a decline.
+    const declined = request.contactPermission === 'declined' || customerDeclined
+      || (callRefused && request.contactPermission === 'call_allowed')
+      || (zaloRefused && request.contactPermission === 'zalo_only');
     const callAllowed = phoneDetected && !declined && request.contactPermission === 'call_allowed';
     const zaloAllowed = phoneDetected && !declined && request.contactPermission === 'zalo_only';
     const alreadyOfferedContact = contactWasRequested(request.messages);
@@ -777,6 +798,8 @@ export class CustomerCareService {
         nextAction,
         contactDetected,
         phoneDetected,
+        callRefused,
+        zaloRefused,
       }),
       factIds: selected.map((fact) => fact.id),
       unresolvedQuestions: unresolvedQuestions(unresolved, request.messages),
