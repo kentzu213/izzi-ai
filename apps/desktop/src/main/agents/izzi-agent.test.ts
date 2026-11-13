@@ -342,6 +342,46 @@ describe('IzziAgent tool-calling', () => {
     expect(res.error).toBe('no-key');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('forwards the caller abort signal to every gateway request, including the step-budget wrap-up', async () => {
+    const toolTurn = { choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'social-auto-poster__postNow', arguments: '{}' } }] } }] };
+    const fetchMock = mockFetchSequence([toolTurn]);
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    await new IzziAgent(auth, toolHost).chat(
+      { systemPrompt: 's', message: 'đăng giúp tôi', enableTools: true },
+      undefined,
+      { signal: controller.signal },
+    );
+
+    // 20 tool iterations plus the final tool-free wrap-up request.
+    expect(fetchMock).toHaveBeenCalledTimes(21);
+    for (const call of fetchMock.mock.calls as unknown as Array<[string, RequestInit]>) {
+      expect(call[1].signal).toBe(controller.signal);
+    }
+  });
+
+  it('returns a network error result when the caller aborts an in-flight request', async () => {
+    const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')));
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    const pending = new IzziAgent(auth, toolHost).chat(
+      { systemPrompt: 's', message: 'secret customer text', model: 'gpt-5.6-sol', enableTools: false },
+      undefined,
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    const result = await pending;
+    expect(result).toEqual({ reply: '', error: 'network' });
+    expect(JSON.stringify(result)).not.toContain('izzi_key');
+    expect(JSON.stringify(result)).not.toContain('secret customer text');
+  });
 });
 
 describe('readIzziAgentHttpError', () => {

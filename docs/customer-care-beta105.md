@@ -18,7 +18,7 @@ Izzi AI adds a Customer Care tab to Agent Marketing. An operator can save mercha
 - Treat a phone-formatted value as contact presence only. Email alone never enables calling or Zalo. Calling and Zalo permissions remain separate; a call-only selection does not grant Zalo permission.
 - Explain price differences only through relevant verified configuration and quality statements. If the product or specification is ambiguous, clarify it.
 - Retain redacted excerpts of unresolved customer questions in a handoff draft. One shipping policy does not count as answering a separate warranty question. A draft is not evidence that Sale received it.
-- The model selects fact IDs; its free-form prose is never shown. Invalid selections, unavailable inference or a selection that takes over 15 seconds use the rules fallback. A timed-out provider request may still finish in the background, but its late output is ignored. Exact approved text can still be wrong or stale, so merchant review remains necessary.
+- The model selects fact IDs; its free-form prose is never shown. Invalid selections, unavailable inference or a selection that takes over 15 seconds use the rules fallback. A timed-out provider request is aborted, and any late output is ignored. Exact approved text can still be wrong or stale, so merchant review remains necessary.
 
 ## Storage and scope
 

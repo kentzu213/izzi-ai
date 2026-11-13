@@ -897,7 +897,7 @@ function setupIPC() {
     store: dbManager,
     crypto: safeStorage,
     resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
-    selectFacts: async ({ system, user }) => {
+    selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
       const result = await izziAgent.chat({
         systemPrompt: system,
@@ -905,7 +905,7 @@ function setupIPC() {
         model: 'gpt-5.6-sol',
         enableTools: false,
         maxTokens: 512,
-      });
+      }, undefined, { signal });
       if (result.error || result.truncated) throw new Error('care-model-unavailable');
       return result.reply;
     },

@@ -120,7 +120,7 @@ class FakeSafeStorage implements CustomerCareSafeStorage {
 
 function fixture(options: {
   authority?: unknown;
-  selectFacts?: (input: { system: string; user: string }) => Promise<string>;
+  selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
 } = {}) {
   const store = new MemorySettings();
   const crypto = new FakeSafeStorage();
@@ -519,6 +519,48 @@ describe('CustomerCareService assist drafts', () => {
       const pending = service.assist(ask('Áo thun giá bao nhiêu?'));
       await vi.advanceTimersByTimeAsync(15_000);
       expect(await pending).toMatchObject({ status: 'draft', engine: 'rules', factIds: [PRICE_FACT.id] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('aborts the hung model selection request when the 15 second budget expires', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const { service } = await seeded({
+        selectFacts: async (input) => {
+          signal = input.signal;
+          return new Promise<string>(() => {});
+        },
+      });
+      const pending = service.assist(ask('Áo thun giá bao nhiêu?'));
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toMatchObject({ status: 'draft', engine: 'rules', factIds: [PRICE_FACT.id] });
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not abort a model selection that settles within the budget', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const { service } = await seeded({
+        selectFacts: async (input) => {
+          signal = input.signal;
+          return `{"factIds":["${PRICE_FACT.id}"]}`;
+        },
+      });
+      const result = await service.assist(ask('Áo thun giá bao nhiêu?'));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(result).toMatchObject({ status: 'draft', engine: 'model', factIds: [PRICE_FACT.id] });
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
     } finally {
       vi.useRealTimers();
     }

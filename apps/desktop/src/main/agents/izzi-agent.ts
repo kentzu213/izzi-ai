@@ -118,6 +118,8 @@ export interface IzziAgentChatResult {
 
 export interface IzziAgentChatRequestOptions {
   idempotencyKey?: string;
+  /** Cancels in-flight gateway requests; an aborted request yields `{ error: 'network' }`. */
+  signal?: AbortSignal;
 }
 
 export interface IzziAgentModelExecution {
@@ -415,6 +417,7 @@ export class IzziAgent {
             ...buildIzziRequestHeaders(chatUrl, nextIdempotencyKey()),
           },
           body: JSON.stringify(body),
+          signal: requestOptions.signal,
         });
         if (!res.ok) return { reply: '', error: await readIzziAgentHttpError(res) };
         const data = await readChatCompletion(res);
@@ -485,6 +488,7 @@ export class IzziAgent {
             stream: false,
             max_tokens: maxTokens,
           }),
+          signal: requestOptions.signal,
         });
         if (res.ok) {
           const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };

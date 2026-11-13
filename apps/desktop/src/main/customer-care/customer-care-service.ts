@@ -29,8 +29,11 @@ export interface CustomerCareServiceOptions {
   store: CustomerCareSettingsStore;
   crypto: CustomerCareSafeStorage;
   resolveAuthority: () => Promise<CustomerCareAuthority | null>;
-  /** Optional model hook. It may only return `{"factIds":[...]}`; its prose is never displayed. */
-  selectFacts?: (input: { system: string; user: string }) => Promise<string>;
+  /**
+   * Optional model hook. It may only return `{"factIds":[...]}`; its prose is never displayed.
+   * `signal` aborts when the selection budget expires; the hook should cancel its request.
+   */
+  selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   now?: () => Date;
 }
 
@@ -582,7 +585,7 @@ export class CustomerCareService {
   private readonly store: CustomerCareSettingsStore;
   private readonly crypto: CustomerCareSafeStorage;
   private readonly resolveAuthorityHook: () => Promise<CustomerCareAuthority | null>;
-  private readonly selectFacts?: (input: { system: string; user: string }) => Promise<string>;
+  private readonly selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   private readonly now: () => Date;
 
   constructor(options: CustomerCareServiceOptions) {
@@ -595,11 +598,16 @@ export class CustomerCareService {
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Cancels the provider request on timeout so repeated hangs do not pile up in-flight calls.
+    const controller = new AbortController();
     try {
       return await Promise.race([
-        this.selectFacts!(input),
+        this.selectFacts!({ ...input, signal: controller.signal }),
         new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('care-selection-timeout')), SELECTION_TIMEOUT_MS);
+          timer = setTimeout(() => {
+            reject(new Error('care-selection-timeout'));
+            controller.abort();
+          }, SELECTION_TIMEOUT_MS);
         }),
       ]);
     } finally {
