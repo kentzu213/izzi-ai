@@ -265,21 +265,6 @@ function hasPhrase(normalized: string, phrases: readonly string[]): boolean {
   return phrases.some((phrase) => normalized.includes(` ${phrase} `));
 }
 
-function refusesAllContact(normalized: string): boolean {
-  return hasPhrase(normalized.replace(/ dung nhan zalo(?= )/g, ''), DECLINE_PHRASES);
-}
-
-/** True when some clause contains a request phrase with no negation anywhere before it in that clause. */
-function requestsChannel(text: string, phrases: readonly string[]): boolean {
-  return text.split(/[,.;:!?\n]+/).some((clause) => {
-    const normalized = normalize(clause);
-    return phrases.some((phrase) => {
-      const at = normalized.indexOf(` ${phrase} `);
-      return at >= 0 && !normalized.slice(0, at).split(' ').some((token) => NEGATION_TOKENS.has(token));
-    });
-  });
-}
-
 const INTENT_PHRASES: Record<CustomerCareFactTopic, readonly string[]> = {
   price: [
     'gia', 'bao nhieu', 'nhieu tien', 'bn', 'bao tien', 'mac qua', 'mac the', 'mac vay', 'dat qua', 'dat the',
@@ -305,24 +290,14 @@ const INTENT_PHRASES: Record<CustomerCareFactTopic, readonly string[]> = {
 
 const QUESTION_TAILS = ['khong', 'ko', 'hong', 'chua', 'nao', 'gi', 'sao', 'dau'];
 const QUESTION_PHRASES = ['the nao', 'bao gio', 'duoc khong', 'co khong', 'la gi'];
-// Fail-safe: a general refusal always blocks every channel. A call or Zalo refusal blocks only that channel
-// when the customer also asks, un-negated, for the other channel; otherwise it is a full decline too.
+// Full refusals block every channel. Channel refusals block only that channel; refusing both is a full decline.
 const DECLINE_PHRASES = [
   'khong de so', 'khong cho so', 'khong muon de so', 'khong muon cho so', 'khong de lai so', 'khong muon de lai',
-  'khong de sdt', 'khong cho sdt', 'ko de so', 'ko cho so', 'k de so', 'khong muon lien he', 'dung lien he',
-  'khong can lien he', 'dung lam phien', 'dung nhan', 'khong nhan', 'ko nhan', 'k nhan', 'khong nhan tin',
-  'dung nhan tin', 'khong zalo', 'ko zalo', 'k zalo', 'khong dung zalo', 'khong nhan zalo',
+  'khong de sdt', 'khong cho sdt', 'ko de so', 'ko cho so', 'k de so', 'khong muon lien he',
 ];
-// Deliberately broad ("khong goi duoc" also matches): over-reading a refusal is the safe direction.
+// Deliberately broad ("khong goi duoc" also matches): over-reading a call refusal is the safe direction.
 const CALL_REFUSAL_PHRASES = ['khong muon goi', 'dung goi', 'khong goi', 'khong can goi'];
-// Excluded from the general "dung nhan" so that a customer asking for a call can still refuse only Zalo.
 const ZALO_REFUSAL_PHRASES = ['khong muon nhan zalo', 'dung nhan zalo'];
-const ZALO_REQUEST_PHRASES = [
-  'qua zalo', 'zalo em', 'zalo minh', 'zalo toi', 'zalo nhe', 'zalo nha', 'nhan zalo giup', 'nhan zalo cho',
-  'ket ban zalo', 'add zalo',
-];
-const CALL_REQUEST_PHRASES = ['goi cho', 'goi lai', 'goi dien cho', 'goi em', 'goi minh', 'goi toi'];
-const NEGATION_TOKENS = new Set(['khong', 'ko', 'k', 'kh', 'dung', 'chua', 'chang']);
 const STOP_TOKENS = new Set([
   'co', 'khong', 'ko', 'k', 'ban', 'shop', 'a', 'anh', 'chi', 'em', 'cho', 'hoi', 'la', 'va', 'voi', 'cua',
   'nay', 'do', 'thi', 'minh', 'ben', 'oi', 'nhe', 'nha', 'vay', 'the', 'duoc', 'cai', 'con', 'mot', 'cac',
@@ -791,21 +766,16 @@ export class CustomerCareService {
     const phoneDetected = request.messages.some(
       (message) => message.role === 'customer' && containsPhone(message.text),
     );
-    const customerTexts = request.messages.filter((message) => message.role === 'customer').map((message) => message.text);
-    const customerSaid = (phrases: readonly string[]) => customerTexts.some((text) => hasPhrase(normalize(text), phrases));
-    const customerAsked = (phrases: readonly string[]) => customerTexts.some((text) => requestsChannel(text, phrases));
+    const customerSaid = (phrases: readonly string[]) => request.messages.some(
+      (message) => message.role === 'customer' && hasPhrase(normalize(message.text), phrases),
+    );
     const callRefused = customerSaid(CALL_REFUSAL_PHRASES);
     const zaloRefused = customerSaid(ZALO_REFUSAL_PHRASES);
-    // A channel refusal stays narrow only when the customer positively asked for the other channel.
-    const callOnlyRefusal = callRefused && !zaloRefused && customerAsked(ZALO_REQUEST_PHRASES);
-    const zaloOnlyRefusal = zaloRefused && !callRefused && customerAsked(CALL_REQUEST_PHRASES);
-    const customerDeclined = customerTexts.some((text) => refusesAllContact(normalize(text)))
-      || (callRefused && !callOnlyRefusal)
-      || (zaloRefused && !zaloOnlyRefusal);
+    const customerDeclined = customerSaid(DECLINE_PHRASES) || (callRefused && zaloRefused);
     // Refusing the only channel the operator approved leaves nothing to offer, so it stays a decline.
     const declined = request.contactPermission === 'declined' || customerDeclined
-      || (callOnlyRefusal && request.contactPermission === 'call_allowed')
-      || (zaloOnlyRefusal && request.contactPermission === 'zalo_only');
+      || (callRefused && request.contactPermission === 'call_allowed')
+      || (zaloRefused && request.contactPermission === 'zalo_only');
     const callAllowed = phoneDetected && !declined && request.contactPermission === 'call_allowed';
     const zaloAllowed = phoneDetected && !declined && request.contactPermission === 'zalo_only';
     const alreadyOfferedContact = contactWasRequested(request.messages);

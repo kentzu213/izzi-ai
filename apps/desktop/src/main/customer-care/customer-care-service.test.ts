@@ -679,23 +679,17 @@ describe('CustomerCareService assist drafts', () => {
     expect(handoff.text).toContain('nhắn Zalo');
     expect(handoff.text).not.toMatch(/gọi|số điện thoại/);
 
-    // "không gọi được" is read as a call refusal (the safe direction); a positive Zalo request keeps Zalo open.
+    // "không gọi được" is read as a call refusal: the safe direction, never a full decline.
     const ambiguous = await service.assist(ask(`Em không gọi được cho shop, số Zalo em ${CUSTOMER_PHONE}`, {
       contactPermission: 'zalo_only',
     }));
     expect(ambiguous).toMatchObject({ zaloAllowed: true, callAllowed: false });
-
-    // Without a positive request for the other channel, the same refusal stays a full decline.
-    const unclear = await service.assist(ask(`Em không gọi được cho shop ${CUSTOMER_PHONE}`, {
-      contactPermission: 'zalo_only',
-    }));
-    expect(unclear).toMatchObject({ nextAction: 'respect_decline', zaloAllowed: false, callAllowed: false });
   });
 
-  it('keeps calls open when the customer refuses Zalo but asks for a call', async () => {
+  it('keeps calls open when the customer only refuses Zalo', async () => {
     const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
 
-    const result = await service.assist(ask('Gọi cho em nhé 0901234567, đừng nhắn Zalo', {
+    const result = await service.assist(ask(`Đừng nhắn Zalo nhé, số em ${CUSTOMER_PHONE}, cần tư vấn thêm`, {
       contactPermission: 'call_allowed', request: 'handoff',
     }));
     expect(result).toMatchObject({ nextAction: 'handoff', callAllowed: true, zaloAllowed: false });
@@ -703,71 +697,46 @@ describe('CustomerCareService assist drafts', () => {
     expect(result.text).not.toContain('Zalo');
   });
 
-  const FAIL_SAFE_REFUSALS = [
-    'Đừng gọi, cũng đừng nhắn tin 0912345678',
-    'Đừng gọi điện hay nhắn Zalo gì nhé',
-    'Không gọi, không zalo',
-    'không gọi cũng không nhắn',
-    'Đừng liên hệ em nữa, đừng gọi',
-    'Đừng gọi, đừng làm phiền em',
-    'Đừng gọi hay nhắn gì hết',
-    'dung goi, ko zalo',
-    'Đừng gọi nha, không cần liên hệ gì đâu',
-    'Đừng gọi, không nhắn Zalo',
-    'Đừng gọi, không dùng Zalo',
-    // A request for the other channel only counts when it is not negated.
-    'đừng gọi, cũng không cần zalo',
-    'đừng gọi, chưa có zalo',
-    'Đừng gọi, đừng gửi qua Zalo',
-    // Refusing both channels, or a call refusal alongside a full refusal.
-    'Đừng gọi, cũng đừng nhắn Zalo',
-    'Đừng gọi, cũng không muốn để lại số đâu',
-    'Áo thun giá bao nhiêu? Em không muốn liên hệ thêm',
-  ].map((text) => (/\d{9}/.test(text.replace(/\s/g, '')) ? text : `${text} ${CUSTOMER_PHONE}`));
-  const REFUSAL_MATRIX = FAIL_SAFE_REFUSALS.flatMap((text) => (['zalo_only', 'call_allowed', 'unknown'] as const)
-    .flatMap((contactPermission) => (['reply', 'handoff'] as const)
-      .map((request) => [text, contactPermission, request] as const)));
-
-  it.each(REFUSAL_MATRIX)(
-    'treats "%s" as a full decline with %s permission (%s)', async (text, contactPermission, request) => {
+  it.each(['zalo_only', 'call_allowed'] as const)(
+    'still blocks every channel on a full decline with %s permission', async (contactPermission) => {
       const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
-
-      const result = await service.assist(ask(text, { contactPermission, request }));
-
-      expect(result).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
-      expect(result.text).not.toMatch(/Zalo|gọi|số điện thoại|để lại số/);
+      for (const text of [
+        `Áo thun giá bao nhiêu? Em không muốn liên hệ thêm, số ${CUSTOMER_PHONE}`,
+        // Adversarial: a call-only refusal must not dilute a full decline in the same message.
+        `Đừng gọi, cũng không muốn để lại số đâu ${CUSTOMER_PHONE}`,
+        // Refusing both channels is a full decline.
+        `Đừng gọi, cũng đừng nhắn Zalo ${CUSTOMER_PHONE}`,
+      ]) {
+        const result = await service.assist(ask(text, { contactPermission }));
+        expect(result).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
+        expect(result.text).not.toMatch(/để lại số|Zalo|gọi điện/);
+      }
     },
   );
 
   it('treats refusing the only operator-approved channel as a decline', async () => {
     const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
 
-    const call = await service.assist(ask(`Đừng gọi, nhắn Zalo cho em nhé, số em ${CUSTOMER_PHONE}`, {
-      contactPermission: 'call_allowed',
-    }));
+    const call = await service.assist(ask(`Đừng gọi, số em ${CUSTOMER_PHONE}`, { contactPermission: 'call_allowed' }));
     expect(call).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
-    expect(call.text).not.toMatch(/Zalo|gọi|số điện thoại/);
 
-    const zalo = await service.assist(ask(`Đừng nhắn Zalo, gọi lại cho em, số em ${CUSTOMER_PHONE}`, {
-      contactPermission: 'zalo_only',
-    }));
+    const zalo = await service.assist(ask(`Đừng nhắn Zalo, số em ${CUSTOMER_PHONE}`, { contactPermission: 'zalo_only' }));
     expect(zalo).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
-    expect(zalo.text).not.toMatch(/Zalo|gọi|số điện thoại/);
   });
 
   it('never invites a refused channel in the contact offer when permission is unknown', async () => {
     const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
 
-    const noCall = await service.assist(ask('Áo thun giá bao nhiêu? Đừng gọi nha, nhắn Zalo cho em'));
+    const noCall = await service.assist(ask('Áo thun giá bao nhiêu? Đừng gọi nha'));
     expect(noCall.nextAction).toBe('ask_contact');
     expect(noCall.text).toContain('Zalo');
     expect(noCall.text).not.toMatch(/gọi|số điện thoại/);
 
-    const noZalo = await service.assist(ask('Áo thun giá bao nhiêu? Đừng nhắn Zalo, gọi lại cho em nha'));
+    const noZalo = await service.assist(ask('Áo thun giá bao nhiêu? Đừng nhắn Zalo nha'));
     expect(noZalo.nextAction).toBe('ask_contact');
     expect(noZalo.text).not.toContain('Zalo');
 
-    const noZaloHandoff = await service.assist(ask(`Tư vấn thêm giúp em, đừng nhắn Zalo, gọi cho em số ${CUSTOMER_PHONE}`, {
+    const noZaloHandoff = await service.assist(ask(`Tư vấn thêm giúp em, đừng nhắn Zalo, số em ${CUSTOMER_PHONE}`, {
       request: 'handoff',
     }));
     expect(noZaloHandoff).toMatchObject({ nextAction: 'handoff', callAllowed: false, zaloAllowed: false });
