@@ -662,6 +662,84 @@ describe('CustomerCareService assist drafts', () => {
     expect(customer.text).not.toMatch(/để lại số|Zalo/);
   });
 
+  // Fail-safe by design: any general or channel refusal is a full decline. A false decline only
+  // costs a manual Sale follow-up; a false allow could contact a customer who refused.
+  type Conversation = string | Array<{ role: 'customer'; text: string }>;
+  const withPhone = (text: string) => (/\d{9}/.test(text.replace(/\D/g, '')) ? text : `${text} ${CUSTOMER_PHONE}`);
+  const REFUSALS: Conversation[] = [
+    'Đừng gọi, cũng đừng nhắn tin 0912345678',
+    'Đừng gọi điện hay nhắn Zalo gì nhé',
+    'Không gọi, không zalo',
+    'không gọi cũng không nhắn',
+    'Đừng liên hệ em nữa, đừng gọi',
+    'Đừng gọi, đừng làm phiền em',
+    'Đừng gọi hay nhắn gì hết',
+    'dung goi, ko zalo',
+    'Đừng gọi nha, không cần liên hệ gì đâu',
+    'Đừng gọi, không nhắn Zalo',
+    'Đừng gọi, không dùng Zalo',
+    'Đừng gọi, Zalo em không dùng nữa 0912345678',
+    'Đừng gọi, zalo em cũng đừng',
+    'Đừng gọi, gửi qua Zalo cũng không cần đâu',
+    'Đừng nhắn Zalo, gọi cho em thì không cần đâu',
+    [{ role: 'customer', text: 'Zalo em nhé 0912345678' }, { role: 'customer', text: 'Thôi khỏi, đừng gọi' }],
+    [{ role: 'customer', text: 'Gọi cho em nhé 0912345678' }, { role: 'customer', text: 'Thôi, đừng nhắn Zalo' }],
+    'Đừng gọi, đừng liên lạc gì nữa, zalo em đây',
+    'Đừng gọi, miễn liên hệ, Zalo em',
+    'đừng gọi, cũng không cần zalo',
+    'đừng gọi, chưa có zalo',
+    // One input per newly added general or channel refusal phrase.
+    'Không cần liên hệ đâu',
+    'Khỏi liên hệ nhé',
+    'Miễn liên hệ',
+    'Đừng liên lạc với em',
+    'Không liên lạc gì hết',
+    'Đừng làm phiền em',
+    'Đừng nhắn cho em',
+    'Không nhắn gì cả',
+    'ko nhắn đâu',
+    'k nhắn nha',
+    'Không nhắn tin nhé',
+    'Đừng nhắn tin cho em',
+    'Không zalo đâu',
+    'ko zalo',
+    'k zalo nha',
+    'Không dùng Zalo',
+    'Không nhắn Zalo',
+  ];
+  const REFUSAL_MATRIX = REFUSALS.flatMap((conversation) => (['zalo_only', 'call_allowed', 'unknown'] as const)
+    .flatMap((contactPermission) => (['reply', 'handoff'] as const).map((request) => ({
+      label: typeof conversation === 'string' ? conversation : conversation.map((message) => message.text).join(' | '),
+      messages: typeof conversation === 'string'
+        ? [{ role: 'customer' as const, text: withPhone(conversation) }]
+        : conversation,
+      contactPermission,
+      request,
+    }))));
+
+  it.each(REFUSAL_MATRIX)(
+    'treats $label as a full decline with $contactPermission permission ($request)',
+    async ({ messages, contactPermission, request }) => {
+      const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
+
+      const result = await service.assist(ask(messages, { contactPermission, request }));
+
+      expect(result).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
+      expect(result.text).not.toMatch(/Zalo|gọi|số điện thoại|để lại số/);
+    },
+  );
+
+  it('keeps a mixed call refusal as a full decline (Sale follows up manually)', async () => {
+    const { service } = await seeded({}, setup({ facts: [PRICE_FACT] }));
+
+    const result = await service.assist(ask(`Gửi báo giá qua Zalo ${CUSTOMER_PHONE} giúp tôi, đừng gọi`, {
+      contactPermission: 'zalo_only',
+    }));
+
+    expect(result).toMatchObject({ nextAction: 'respect_decline', callAllowed: false, zaloAllowed: false });
+    expect(result.text).not.toMatch(/Zalo|gọi|số điện thoại|để lại số/);
+  });
+
   it.each(['unknown', 'zalo_only', 'call_allowed'] as const)(
     'never grants phone or Zalo access from email alone with %s permission', async (contactPermission) => {
       const { service } = await seeded();

@@ -294,6 +294,11 @@ const DECLINE_PHRASES = [
   'khong de so', 'khong cho so', 'khong muon de so', 'khong muon cho so', 'khong de lai so', 'khong muon de lai',
   'khong de sdt', 'khong cho sdt', 'ko de so', 'ko cho so', 'k de so', 'khong muon goi', 'dung goi', 'khong goi',
   'khong can goi', 'khong muon lien he', 'khong muon nhan zalo', 'dung nhan zalo',
+  // Fail-safe: every general or channel refusal is a full decline. Keyword matching cannot reliably tell a
+  // channel-only refusal apart, and a false decline only costs a manual Sale follow-up.
+  'dung lien he', 'khong can lien he', 'khoi lien he', 'mien lien he', 'dung lien lac', 'khong lien lac',
+  'dung lam phien', 'dung nhan', 'khong nhan', 'ko nhan', 'k nhan', 'khong nhan tin', 'dung nhan tin',
+  'khong zalo', 'ko zalo', 'k zalo', 'khong dung zalo', 'khong nhan zalo',
 ];
 const STOP_TOKENS = new Set([
   'co', 'khong', 'ko', 'k', 'ban', 'shop', 'a', 'anh', 'chi', 'em', 'cho', 'hoi', 'la', 'va', 'voi', 'cua',
