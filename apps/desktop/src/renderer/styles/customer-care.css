@@ -1,0 +1,223 @@
+.ccw {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 2px;
+}
+
+.ccw__header,
+.ccw__section-heading,
+.ccw__facts-heading,
+.ccw__actions,
+.ccw__fact-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ccw__header h2,
+.ccw__section h3,
+.ccw__result h3 {
+  margin: 4px 0 0;
+  color: var(--cmr-text);
+}
+
+.ccw__header h2 { font-size: clamp(24px, 3vw, 34px); }
+.ccw__section h3,
+.ccw__result h3 { font-size: 18px; }
+
+.ccw__header p,
+.ccw__section-heading p,
+.ccw__facts-heading p,
+.ccw__hint,
+.ccw__transcript small,
+.ccw__evidence p {
+  margin: 6px 0 0;
+  color: var(--cmr-muted);
+  line-height: 1.55;
+}
+
+.ccw__header p,
+.ccw__hint,
+.ccw__blockers,
+.ccw__draft,
+.ccw__evidence {
+  overflow-wrap: anywhere;
+}
+
+.ccw__mode,
+.ccw__synthetic {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--cmr-gold);
+  border-radius: 999px;
+  color: var(--cmr-gold);
+  background: rgba(240, 183, 95, 0.08);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.ccw__loading,
+.ccw__empty,
+.ccw__blockers,
+.ccw__section,
+.ccw__result {
+  padding: 18px;
+  border: 1px solid var(--cmr-border);
+  border-radius: var(--cmr-radius);
+  background: var(--cmr-surface);
+}
+
+.ccw__loading,
+.ccw__empty { color: var(--cmr-muted); }
+
+.ccw__status-grid,
+.ccw__result-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ccw__status-grid article,
+.ccw__result-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 6px;
+  background: var(--cmr-surface-soft);
+}
+
+.ccw__status-grid span,
+.ccw__result-grid dt {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--cmr-muted);
+  font-size: 11px;
+}
+
+.ccw__status-grid strong,
+.ccw__result-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.ccw__blockers {
+  border-color: rgba(240, 183, 95, 0.42);
+  color: var(--cmr-gold);
+}
+
+.ccw__blockers ul,
+.ccw__evidence ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.ccw__section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ccw__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ccw label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--cmr-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ccw input,
+.ccw select,
+.ccw textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--cmr-border-strong);
+  border-radius: 6px;
+  color: var(--cmr-text);
+  background: #080d13;
+}
+
+.ccw textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ccw__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ccw__fact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 7px;
+  background: var(--cmr-surface-soft);
+}
+
+.ccw__fact legend {
+  padding: 0 6px;
+  color: var(--cmr-cyan);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.ccw__fact-text,
+.ccw__fact-actions {
+  grid-column: 1 / -1;
+}
+
+.ccw__fact-actions { justify-content: flex-start; }
+.ccw__actions { justify-content: flex-end; }
+
+.ccw__draft {
+  margin: 14px 0;
+  padding: 14px;
+  border-left: 3px solid var(--cmr-cyan);
+  color: var(--cmr-text);
+  background: var(--cmr-cyan-soft);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.ccw__result-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ccw__evidence { margin-top: 14px; }
+.ccw__evidence strong { display: block; margin-top: 12px; }
+
+.cmr-nav { grid-template-columns: repeat(14, minmax(80px, 1fr)); }
+
+@media (max-width: 980px) {
+  .ccw__facts,
+  .ccw__status-grid,
+  .ccw__result-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .ccw__header,
+  .ccw__section-heading,
+  .ccw__facts-heading { align-items: stretch; flex-direction: column; }
+  .ccw__fields,
+  .ccw__fact { grid-template-columns: minmax(0, 1fr); }
+  .ccw__fact-text,
+  .ccw__fact-actions { grid-column: auto; }
+  .ccw button,
+  .ccw input,
+  .ccw select { min-height: 44px; }
+}

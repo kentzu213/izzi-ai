@@ -6672,6 +6672,23 @@ export class CustomerMarketingService {
     };
   }
 
+  /** Revalidate membership in main for each care request; renderer IDs are never authority. */
+  async resolveCustomerCareAuthority(): Promise<import('../../shared/customer-care-types').CustomerCareAuthority | null> {
+    try {
+      const authority = await this.resolveMarketingResourceAuthority();
+      if (authority.status !== 'synced') return null;
+      // The account can change while the remote membership check is in flight.
+      if (this.getIdentity()?.id !== authority.identity.id) return null;
+      return {
+        identityId: authority.identity.id,
+        workspaceId: authority.workspace.id,
+        role: authority.workspace.role,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async resolveMarketingResourceAuthority(): Promise<CustomerMarketingResourceAuthority> {
     const identity = this.requireIdentity();
     if (!this.workspaceGateway) {

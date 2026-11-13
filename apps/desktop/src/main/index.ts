@@ -5,7 +5,7 @@ import {
   resolveDesktopRuntimeProfile,
 } from './config/desktop-runtime-profile';
 import type { DesktopRuntimeProfile } from './config/desktop-runtime-profile';
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard, Tray, Menu, powerMonitor, Notification } from 'electron';
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, ipcMain, shell, dialog, nativeImage, clipboard, Tray, Menu, powerMonitor, Notification, safeStorage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as net from 'node:net';
@@ -92,6 +92,8 @@ import {
   type NativeMarketingWorkspaceResult,
 } from './marketing/native-marketing-client';
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
+import { registerCustomerCareIpc } from './customer-care/customer-care-ipc';
+import { CustomerCareService } from './customer-care/customer-care-service';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import {
@@ -891,6 +893,23 @@ function setupIPC() {
     customerMarketingAuthority,
     DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   );
+  registerCustomerCareIpc(new CustomerCareService({
+    store: dbManager,
+    crypto: safeStorage,
+    resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
+    selectFacts: async ({ system, user }) => {
+      // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
+      const result = await izziAgent.chat({
+        systemPrompt: system,
+        message: user,
+        model: 'gpt-5.6-sol',
+        enableTools: false,
+        maxTokens: 512,
+      });
+      if (result.error || result.truncated) throw new Error('care-model-unavailable');
+      return result.reply;
+    },
+  }));
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
     acceptInvitation: (token) => customerMarketingService.acceptWorkspaceInvitation(token),

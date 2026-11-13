@@ -63,6 +63,7 @@ function renderWorkspace(tab: AgentMarketingTab, options: {
       tab,
       onTabChange: () => undefined,
       conversation: createElement('div', { id: 'slot-conversation' }, 'conversation'),
+      care: createElement('div', { id: 'slot-care' }, 'care'),
       plan: createElement('div', { id: 'slot-plan' }, 'plan'),
       content: createElement('div', { id: 'slot-content' }, 'content'),
       analytics: createElement('div', { id: 'slot-analytics' }, 'analytics'),
@@ -79,9 +80,9 @@ function count(html: string, needle: string): number {
 }
 
 describe('Agent Marketing V2 tabs', () => {
-  it('exposes the six contract tabs in order and opens on the Director conversation', () => {
+  it('exposes customer care beside the existing tabs and opens on the Director conversation', () => {
     expect(AGENT_MARKETING_TABS.map((item) => item.id)).toEqual([
-      'conversation', 'plan', 'content', 'analytics', 'channels', 'files',
+      'conversation', 'care', 'plan', 'content', 'analytics', 'channels', 'files',
     ]);
     expect(DEFAULT_AGENT_MARKETING_TAB).toBe('conversation');
   });
@@ -96,7 +97,7 @@ describe('Agent Marketing V2 tabs', () => {
     expect(html).toContain(`aria-labelledby="v2-am-tab-${tab}"`);
     expect(count(html, 'aria-selected="true"')).toBe(1);
     expect(html).toMatch(new RegExp(`id="v2-am-tab-${tab}"[^>]*aria-selected="true"`));
-    for (const other of ['conversation', 'plan', 'content', 'analytics', 'channels']) {
+    for (const other of ['conversation', 'care', 'plan', 'content', 'analytics', 'channels']) {
       expect(html.includes(`id="slot-${other}"`)).toBe(other === tab);
     }
     // The inspector (approvals) stays visible on every tab.

@@ -49,6 +49,7 @@ import type {
 } from '../../shared/customer-marketing-types';
 import { CustomerMarketingResources } from './CustomerMarketingResources';
 import { CustomerMarketingChannels } from './CustomerMarketingChannels';
+import { CustomerCareWorkspace } from './CustomerCareWorkspace';
 import { CustomerMarketingCapabilityWorkbench, type CapabilityWorkbenchOpenView } from './CustomerMarketingCapabilityWorkbenches';
 import {
   customerPlanMeetsMinimum,
@@ -78,6 +79,7 @@ type ViewId =
   | 'campaigns'
   | 'content'
   | 'channels'
+  | 'care'
   | 'assets'
   | 'knowledge'
   | 'approvals'
@@ -176,6 +178,7 @@ const VIEW_ITEMS: Array<{
   { id: 'campaigns', label: 'Chiến dịch', icon: PlanningIcon },
   { id: 'content', label: 'Nội dung & Lịch', icon: ContentIcon },
   { id: 'channels', label: 'Kênh', icon: TrendUpIcon },
+  { id: 'care', label: 'Chăm sóc khách hàng', icon: StatusIcon },
   { id: 'assets', label: 'Tài sản', icon: DesignIcon },
   { id: 'knowledge', label: 'Tri thức', icon: KnowledgeIcon },
   { id: 'approvals', label: 'Phê duyệt', icon: ReviewIcon },
@@ -3611,6 +3614,7 @@ function CustomerRoom({
                 onDirectorChannelsChange={setDirectorChannels}
               />
             )}
+            care={<CustomerCareWorkspace scopeKey={snapshot.workspace.id} />}
             plan={(
               <CampaignPlanV2
                 onboardingChannels={snapshot.onboarding?.channels ?? []}
@@ -3688,6 +3692,7 @@ function CustomerRoom({
           {activeView === 'campaigns' && <CustomerMarketingResources kind="campaign" role={snapshot.workspace.role} />}
           {activeView === 'content' && <CustomerMarketingResources kind="content" role={snapshot.workspace.role} />}
           {activeView === 'channels' && <CustomerMarketingChannels role={snapshot.workspace.role} />}
+          {activeView === 'care' && <CustomerCareWorkspace scopeKey={snapshot.workspace.id} />}
           {activeView === 'assets' && <CustomerMarketingResources kind="asset" role={snapshot.workspace.role} />}
           {activeView === 'knowledge' && <CustomerMarketingResources kind="knowledge" role={snapshot.workspace.role} />}
           {activeView === 'director' && (

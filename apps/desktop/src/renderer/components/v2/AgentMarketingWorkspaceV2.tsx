@@ -14,6 +14,7 @@ import type { CapabilityWorkbenchOpenView } from '../../pages/CustomerMarketingC
 // CustomerMarketingRoom; this file never calls IPC.
 export const AGENT_MARKETING_TABS = [
   { id: 'conversation', label: 'Hội thoại' },
+  { id: 'care', label: 'Chăm sóc khách hàng' },
   { id: 'plan', label: 'Kế hoạch' },
   { id: 'content', label: 'Nội dung' },
   { id: 'analytics', label: 'Phân tích' },
@@ -118,6 +119,7 @@ export interface AgentMarketingWorkspaceV2Props {
   tab: AgentMarketingTab;
   onTabChange: (tab: AgentMarketingTab) => void;
   conversation: ReactNode;
+  care: ReactNode;
   plan: ReactNode;
   content: ReactNode;
   analytics: ReactNode;
@@ -131,6 +133,7 @@ export function AgentMarketingWorkspaceV2({
   tab,
   onTabChange,
   conversation,
+  care,
   plan,
   content,
   analytics,
@@ -162,6 +165,7 @@ export function AgentMarketingWorkspaceV2({
 
   const panels: Record<AgentMarketingTab, ReactNode> = {
     conversation,
+    care,
     plan,
     content,
     analytics,

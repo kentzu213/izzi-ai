@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -665,6 +666,11 @@ const electronAPI = {
       ipcRenderer.invoke('marketing:openPath', relativePath),
   },
 
+  customerCare: {
+    getSnapshot: (): Promise<CustomerCareSnapshot> => ipcRenderer.invoke('customerCare:getSnapshot'),
+    saveSetup: (input: CustomerCareSetup): Promise<CustomerCareMutationResult> => ipcRenderer.invoke('customerCare:saveSetup', input),
+    assist: (input: CustomerCareAssistInput): Promise<CustomerCareAssistResult> => ipcRenderer.invoke('customerCare:assist', input),
+  },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
       ipcRenderer.invoke('customerMarketing:getSnapshot'),

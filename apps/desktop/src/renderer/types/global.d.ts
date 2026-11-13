@@ -1,4 +1,5 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -623,6 +624,11 @@ declare global {
     affiliate?: ElectronAffiliateApi;
     izziAccount?: ElectronIzziAccountApi;
     marketing?: ElectronMarketingApi;
+    customerCare?: {
+      getSnapshot(): Promise<CustomerCareSnapshot>;
+      saveSetup(input: CustomerCareSetup): Promise<CustomerCareMutationResult>;
+      assist(input: CustomerCareAssistInput): Promise<CustomerCareAssistResult>;
+    };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;
     nativeMarketing?: ElectronNativeMarketingApi;

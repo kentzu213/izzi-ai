@@ -738,6 +738,32 @@ function setup(options?: {
   };
 }
 
+describe('Customer care membership authority', () => {
+  it('requires live main-resolved workspace membership rather than local cached role', async () => {
+    const local = setup();
+    expect(await local.service.resolveCustomerCareAuthority()).toBeNull();
+    const remote = marketingResourceGateway('viewer');
+    const context = setup({ workspaceGateway: remote.gateway });
+    const authority = await context.service.resolveCustomerCareAuthority();
+    expect(authority).toMatchObject({ workspaceId: remote.workspace.id, role: 'viewer' });
+    expect(remote.getCurrent).toHaveBeenCalled();
+    remote.getCurrent.mockResolvedValueOnce({ status: 'unavailable', workspace: null });
+    expect(await context.service.resolveCustomerCareAuthority()).toBeNull();
+  });
+  it('rejects an account switch while membership is resolving', async () => {
+    const remote = marketingResourceGateway('owner');
+    const context = setup({ workspaceGateway: remote.gateway });
+    let release!: (value: { status: 'synced'; workspace: RemoteMarketingWorkspace }) => void;
+    remote.getCurrent.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const pending = context.service.resolveCustomerCareAuthority();
+    context.setIdentity({ id: 'different-account', name: 'Other', plan: 'pro', balance: 1 });
+    release({ status: 'synced', workspace: remote.workspace });
+    expect(await pending).toBeNull();
+    context.setIdentity(null);
+    expect(await context.service.resolveCustomerCareAuthority()).toBeNull();
+  });
+});
+
 describe('CustomerMarketingService legacy Auto Post reconciliation', () => {
   it.each(['owner', 'manager'] as const)('allows %s to create a local read-only preview', async (role) => {
     const workspace = remoteWorkspace({ role });
