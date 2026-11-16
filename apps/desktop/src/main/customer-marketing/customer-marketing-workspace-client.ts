@@ -98,6 +98,8 @@ export interface CustomerMarketingMemberUpdateState {
 export interface CustomerMarketingWorkspaceState {
   status: CustomerWorkspaceSyncStatus;
   workspace: RemoteMarketingWorkspace | null;
+  /** Set only when the lookup failed because the service was unreachable (timeout, network, 5xx). */
+  transient?: true;
 }
 
 export interface EnsureCustomerMarketingWorkspaceInput {
@@ -389,6 +391,8 @@ export interface CustomerMarketingWorkspaceGateway {
 
 interface AuthTokenProvider {
   getAccessToken(): Promise<string | null>;
+  /** True when no token is available only because the auth server could not be reached. */
+  isSessionRefreshUnavailable?(): boolean;
 }
 
 interface ClientOptions {
@@ -1691,7 +1695,11 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     if (!this.enabled) return { status: 'local', workspace: null };
     if (!this.configurationValid) return { status: 'unavailable', workspace: null };
     const result = await this.request('/api/marketing/workspaces');
-    if (!result.ok) return { status: 'unavailable', workspace: null };
+    if (!result.ok) {
+      return result.transient
+        ? { status: 'unavailable', workspace: null, transient: true }
+        : { status: 'unavailable', workspace: null };
+    }
 
     const workspaces = ownArray(result.body, 'workspaces')
       .map(parseEnvelope)
@@ -2052,7 +2060,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       token = null;
     }
     if (!token || token.length > 8_192) {
-      this.bridgeHealth = 'auth_required';
+      this.bridgeHealth = !token && this.isAuthServerUnavailable() ? 'backend_unavailable' : 'auth_required';
       return failure();
     }
 
@@ -2126,7 +2134,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       token = null;
     }
     if (!token || token.length > 8_192) {
-      this.bridgeHealth = 'auth_required';
+      this.bridgeHealth = !token && this.isAuthServerUnavailable() ? 'backend_unavailable' : 'auth_required';
       return failure();
     }
 
@@ -2230,7 +2238,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       token = null;
     }
     if (!token || token.length > 8_192) {
-      this.bridgeHealth = 'auth_required';
+      this.bridgeHealth = !token && this.isAuthServerUnavailable() ? 'backend_unavailable' : 'auth_required';
       try { await input.body.cancel(); } catch { /* Best-effort local stream cleanup. */ }
       return { status: 'unavailable', outcome: null, reconciliationRequired: false };
     }
@@ -2533,10 +2541,14 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
   private async request(
     path: string,
     init: RequestInit = {},
-  ): Promise<{ ok: true; body: unknown } | { ok: false; status?: number; code?: string }> {
+  ): Promise<{ ok: true; body: unknown } | { ok: false; status?: number; code?: string; transient?: true }> {
     if (!this.configurationValid) return { ok: false };
     const token = await this.auth.getAccessToken();
     if (!token) {
+      if (this.isAuthServerUnavailable()) {
+        this.bridgeHealth = 'backend_unavailable';
+        return { ok: false, transient: true };
+      }
       this.bridgeHealth = 'auth_required';
       return { ok: false, status: 401 };
     }
@@ -2576,6 +2588,7 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
           ok: false,
           status: response.status,
           code: error ? textValue(error, 'code') || undefined : undefined,
+          ...(response.status >= 500 ? { transient: true as const } : {}),
         };
       }
       if (body === null) return { ok: false, status: response.status };
@@ -2584,9 +2597,18 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
     } catch {
       this.bridgeHealth = 'backend_unavailable';
       this.logFailure(path);
-      return { ok: false };
+      return { ok: false, transient: true };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /** A missing token caused by an unreachable auth server is an outage, not a sign-in requirement. */
+  private isAuthServerUnavailable(): boolean {
+    try {
+      return this.auth.isSessionRefreshUnavailable?.() === true;
+    } catch {
+      return false;
     }
   }
 

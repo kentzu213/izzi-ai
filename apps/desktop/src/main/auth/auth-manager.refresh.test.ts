@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthApiError, AuthRetryableFetchError } from '@supabase/supabase-js';
+import { AuthApiError, AuthRetryableFetchError, AuthUnknownError } from '@supabase/supabase-js';
 
 const supabaseMock = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -131,6 +131,62 @@ describe('AuthManager token refresh', () => {
     await vi.waitFor(() => expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('new-refresh'));
 
     expect(JSON.parse(db.settings.get('auth_session') ?? '{}').user).toEqual(USER);
+  });
+
+  it('keeps the session and reports the auth server unreachable when it answers a refresh with an HTML page', async () => {
+    // auth-js raises AuthUnknownError (no status) when a non-2xx body is not JSON, e.g. a 5xx/530 HTML page.
+    const htmlError = new AuthUnknownError(
+      `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`,
+      new SyntaxError('html'),
+    );
+    supabaseMock.refreshSession.mockResolvedValue(rejected(htmlError));
+    const onSessionExpired = vi.fn();
+    const db = createDb({ ...nearExpirySession(), expiresAt: Date.now() - 1_000 });
+    const manager = new AuthManager(db as never, { onSessionExpired });
+
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+    expect(manager.isAuthenticated()).toBe(true);
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('old-refresh');
+    expect(db.settings.get('izzi_desktop_key')).toBe('cached-key');
+    expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a network failure', new AuthRetryableFetchError('fetch failed', 0)],
+    ['a 503 from the auth server', new AuthRetryableFetchError('Service Unavailable', 503)],
+  ])('reports the auth server unreachable after %s', async (_label, error) => {
+    supabaseMock.refreshSession.mockResolvedValue(rejected(error));
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() - 1_000 }) as never);
+
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+    expect(manager.isAuthenticated()).toBe(true);
+  });
+
+  it('clears the unreachable flag once a later refresh succeeds', async () => {
+    supabaseMock.refreshSession
+      .mockResolvedValueOnce(rejected(new AuthRetryableFetchError('fetch failed', 0)))
+      .mockResolvedValueOnce(refreshedSession());
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() - 1_000 }) as never);
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(await manager.getAccessToken()).toBe('new-access');
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+  });
+
+  it('does not report the auth server unreachable when it rejected the refresh token', async () => {
+    supabaseMock.refreshSession.mockResolvedValue(
+      rejected(new AuthApiError('Invalid Refresh Token: Revoked', 400, 'refresh_token_not_found')),
+    );
+    const manager = new AuthManager(createDb(nearExpirySession()) as never);
+
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
   });
 
   it('keeps the session when Supabase is rate limiting refreshes', async () => {

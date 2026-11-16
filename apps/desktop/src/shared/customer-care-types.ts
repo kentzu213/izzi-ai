@@ -33,6 +33,13 @@ export interface CustomerCareAuthority {
   role: CustomerCareRole;
 }
 
+/**
+ * Authority lookup outcome: an authority, `'unavailable'` when the server could not be reached
+ * (timeout, network, 5xx, auth server down), or `null` for a genuine denial / sign-in requirement.
+ * Neither non-authority value ever grants access.
+ */
+export type CustomerCareAuthorityLookup = CustomerCareAuthority | 'unavailable' | null;
+
 export interface CustomerCareSnapshot {
   workspaceId: string;
   setup: CustomerCareSetup | null;

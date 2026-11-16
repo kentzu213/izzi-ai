@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCareAssistInput,
   CustomerCareAuthority,
@@ -13,6 +13,7 @@ import {
   CUSTOMER_CARE_INVALID_INPUT_ERROR,
   CUSTOMER_CARE_SAVE_ERROR,
   CUSTOMER_CARE_SETUP_REQUIRED_ERROR,
+  CUSTOMER_CARE_UNAVAILABLE_ERROR,
   CustomerCareService,
   parseCustomerCareAssistInput,
   parseCustomerCareSetup,
@@ -236,6 +237,88 @@ describe('CustomerCareService storage and authority', () => {
       error: CUSTOMER_CARE_AUTH_ERROR,
     });
     expect(store.writes).toEqual([]);
+  });
+
+  describe('transient authority lookups', () => {
+    const OWNER = { identityId: IDENTITY_A, workspaceId: WORKSPACE_A, role: 'owner' } as const;
+
+    function sequenced(results: Array<CustomerCareAuthority | 'unavailable' | null>) {
+      const store = new MemorySettings();
+      const resolveAuthority = vi.fn(async () => results.shift() ?? null);
+      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority });
+      return { store, service, resolveAuthority };
+    }
+
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('retries once after a short backoff and saves when the second lookup succeeds', async () => {
+      const { store, service, resolveAuthority } = sequenced(['unavailable', OWNER]);
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(499);
+      expect(resolveAuthority).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect((await pending).ok).toBe(true);
+      expect(resolveAuthority).toHaveBeenCalledTimes(2);
+      expect(store.writes).toHaveLength(1);
+    });
+
+    it('reports the service unreachable, not a sign-in prompt, when both lookups are unavailable', async () => {
+      const { store, service, resolveAuthority } = sequenced(['unavailable', 'unavailable']);
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(await pending).toEqual({ ok: false, error: CUSTOMER_CARE_UNAVAILABLE_ERROR });
+      expect(resolveAuthority).toHaveBeenCalledTimes(2);
+      expect(store.writes).toEqual([]);
+    });
+
+    it('fails closed with the unreachable error on snapshot and assist as well', async () => {
+      const { service } = sequenced(['unavailable', 'unavailable', 'unavailable', 'unavailable']);
+
+      const snapshot = service.getSnapshot().then(() => null, (caught: unknown) => caught as Error);
+      const draft = service.assist(ask('Giá bao nhiêu?'));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect((await snapshot)?.message).toBe(CUSTOMER_CARE_UNAVAILABLE_ERROR);
+      expect(await draft).toMatchObject({ status: 'blocked', text: '', error: CUSTOMER_CARE_UNAVAILABLE_ERROR });
+    });
+
+    it('does not retry when the first lookup was already slow, so the wait stays bounded', async () => {
+      const store = new MemorySettings();
+      // e.g. the auth client spent ~25 s on its own refresh retries before giving up.
+      const resolveAuthority = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 7_001));
+        return 'unavailable' as const;
+      });
+      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority });
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(7_001);
+
+      expect(await pending).toEqual({ ok: false, error: CUSTOMER_CARE_UNAVAILABLE_ERROR });
+      expect(resolveAuthority).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a genuine denial and keeps the sign-in error', async () => {
+      const { service, resolveAuthority } = sequenced([null, OWNER]);
+
+      expect(await service.saveSetup(setup())).toEqual({ ok: false, error: CUSTOMER_CARE_AUTH_ERROR });
+      expect(resolveAuthority).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies with the sign-in error when the retry turns into a denial', async () => {
+      const { store, service } = sequenced(['unavailable', null]);
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(await pending).toEqual({ ok: false, error: CUSTOMER_CARE_AUTH_ERROR });
+      expect(store.writes).toEqual([]);
+    });
   });
 
   it('maps a throwing resolver to the fixed public error without leaking its message', async () => {

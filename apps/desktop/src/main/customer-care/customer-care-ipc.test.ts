@@ -4,6 +4,7 @@ const trusted = vi.hoisted(() => vi.fn(() => true));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn((name, handler) => handlers.set(name, handler)) } }));
 vi.mock('../marketing/marketing-ipc', () => ({ isTrustedMarketingSender: trusted }));
 import { registerCustomerCareIpc } from './customer-care-ipc';
+import { CUSTOMER_CARE_AUTH_ERROR, CUSTOMER_CARE_UNAVAILABLE_ERROR } from '../../shared/customer-care-errors';
 
 describe('customer care IPC boundary', () => {
   const service = {
@@ -27,6 +28,13 @@ describe('customer care IPC boundary', () => {
     expect(await handlers.get('customerCare:saveSetup')!({}, payload)).toEqual({ ok: false, error: 'invalid' });
     expect(service.saveSetup).toHaveBeenCalledWith(payload);
   });
+  it.each([CUSTOMER_CARE_AUTH_ERROR, CUSTOMER_CARE_UNAVAILABLE_ERROR])(
+    'passes the fixed public error %s through unchanged',
+    async (message) => {
+      service.getSnapshot.mockRejectedValue(new Error(message));
+      await expect(handlers.get('customerCare:getSnapshot')!({})).rejects.toThrow(message);
+    },
+  );
   it('redacts rejected service errors on all channels', async () => {
     for (const method of ['getSnapshot', 'saveSetup', 'assist'] as const) {
       service[method].mockRejectedValue(new Error('private database or provider details'));

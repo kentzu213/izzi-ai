@@ -409,6 +409,61 @@ describe('CustomerMarketingWorkspaceClient', () => {
     expect(reachableButForbidden.getBridgeHealth()).toBe('connected');
   });
 
+  it('reports the backend unreachable, not a sign-in requirement, when the token refresh failed transiently', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => null), isSessionRefreshUnavailable: () => true },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null, transient: true });
+
+    expect(client.getBridgeHealth()).toBe('backend_unavailable');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('still requires sign-in when there is no token and the refresh was not transiently unavailable', async () => {
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => null), isSessionRefreshUnavailable: () => false },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl: vi.fn<typeof fetch>() },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+
+    expect(client.getBridgeHealth()).toBe('auth_required');
+  });
+
+  it.each([
+    ['a timeout or network error', () => Promise.reject(new DOMException('aborted', 'AbortError'))],
+    ['a 500 response', () => Promise.resolve(jsonResponse({}, 500))],
+    ['a 502 HTML error page', () => Promise.resolve(new Response('<!DOCTYPE html>', { status: 502 }))],
+    ['a Cloudflare tunnel 530', () => Promise.resolve(new Response('error code: 1033', { status: 530 }))],
+  ])('marks the workspace lookup as transient after %s', async (_label, respond) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl: vi.fn<typeof fetch>(respond) },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null, transient: true });
+    warning.mockRestore();
+  });
+
+  it.each([401, 403, 404])('does not mark a %s workspace lookup as transient', async (status) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, status)),
+      },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+    warning.mockRestore();
+  });
+
   it('accepts only reviewed HTTPS origins from runtime configuration', async () => {
     const auth = { getAccessToken: vi.fn(async () => 'test-token') };
 

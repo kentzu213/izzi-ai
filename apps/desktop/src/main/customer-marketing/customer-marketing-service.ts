@@ -323,6 +323,8 @@ type CustomerMarketingResourceAuthority =
   | {
     status: Exclude<CustomerMarketingBridgeStatus, 'synced'>;
     error: string;
+    /** The workspace service was unreachable (timeout, network, 5xx); never grants access. */
+    transient?: true;
   };
 type CustomerMarketingSyncedResourceAuthority = Extract<
   CustomerMarketingResourceAuthority,
@@ -6672,11 +6674,14 @@ export class CustomerMarketingService {
     };
   }
 
-  /** Revalidate membership in main for each care request; renderer IDs are never authority. */
-  async resolveCustomerCareAuthority(): Promise<import('../../shared/customer-care-types').CustomerCareAuthority | null> {
+  /**
+   * Revalidate membership in main for each care request; renderer IDs are never authority.
+   * `'unavailable'` means the server could not be reached; like `null` it never grants access.
+   */
+  async resolveCustomerCareAuthority(): Promise<import('../../shared/customer-care-types').CustomerCareAuthorityLookup> {
     try {
       const authority = await this.resolveMarketingResourceAuthority();
-      if (authority.status !== 'synced') return null;
+      if (authority.status !== 'synced') return authority.transient ? 'unavailable' : null;
       // The account can change while the remote membership check is in flight.
       if (this.getIdentity()?.id !== authority.identity.id) return null;
       return {
@@ -6698,7 +6703,11 @@ export class CustomerMarketingService {
     const workspaceState = await this.resolveWorkspaceAuthorization(record);
     if (workspaceState.status !== 'synced' || !workspaceState.workspace) {
       const status = workspaceState.status === 'local' ? 'local' : 'unavailable';
-      return { status, error: publicMarketingResourceError(status) };
+      return {
+        status,
+        error: publicMarketingResourceError(status),
+        ...(status === 'unavailable' && workspaceState.transient ? { transient: true as const } : {}),
+      };
     }
     const syncedRecord = this.applyRemoteWorkspace(record, workspaceState.workspace);
     if (syncedRecord !== record) this.writeRecord(identity, syncedRecord);

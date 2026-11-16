@@ -7,6 +7,7 @@ import type {
   CustomerCareSetup,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
+import { CUSTOMER_CARE_PUBLIC_ERRORS } from '../../shared/customer-care-errors';
 import '../styles/customer-care.css';
 
 type CustomerCareApi = {
@@ -40,8 +41,12 @@ function getCustomerCareApi(): CustomerCareApi | null {
   return electronApi.customerCare ?? null;
 }
 
-function publicError(reason: unknown, fallback: string): string {
-  const message = reason instanceof Error ? reason.message.toLowerCase() : '';
+export function publicError(reason: unknown, fallback: string): string {
+  const rawMessage = reason instanceof Error ? reason.message : '';
+  // IPC wraps the service's fixed strings ("Error invoking remote method ...: Error: <text>").
+  const known = CUSTOMER_CARE_PUBLIC_ERRORS.find((text) => rawMessage.includes(text));
+  if (known) return known;
+  const message = rawMessage.toLowerCase();
   if (message.includes('auth') || message.includes('identity') || message.includes('workspace')) {
     return 'Phiên làm việc không còn hợp lệ. Hãy đăng nhập lại hoặc chọn lại workspace.';
   }

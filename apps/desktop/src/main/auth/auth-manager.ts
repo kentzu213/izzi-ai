@@ -76,6 +76,8 @@ export class AuthManager {
   private onSessionExpired: () => void;
   /** In-flight refresh shared by concurrent callers: Supabase rotates the refresh token on every use. */
   private refreshInFlight: Promise<boolean> | null = null;
+  /** The last refresh failed for a transient reason (network, 5xx, non-JSON); the session was kept. */
+  private refreshUnavailable = false;
   /** Minted izzi- key for this desktop (bound to a user id), cached in memory. Never logged. */
   private desktopKeyCache: { userId: string; key: string } | null = null;
   /** Pending system-browser Google login; a new attempt cancels the previous one. */
@@ -137,6 +139,7 @@ export class AuthManager {
 
   private saveSession(session: StoredSession) {
     this.session = session;
+    this.refreshUnavailable = false;
     try {
       const serialized = JSON.stringify(session);
       const encrypted = safeStorage.isEncryptionAvailable()
@@ -150,6 +153,7 @@ export class AuthManager {
 
   private clearSession() {
     this.session = null;
+    this.refreshUnavailable = false;
     this.desktopKeyCache = null;
     this.db.deleteSetting('auth_session');
     this.db.deleteSetting('izzi_desktop_key');
@@ -533,6 +537,8 @@ export class AuthManager {
         if (isRefreshTokenRejected(error)) {
           this.clearSession();
           this.onSessionExpired();
+        } else {
+          this.refreshUnavailable = true;
         }
         return false;
       }
@@ -556,6 +562,7 @@ export class AuthManager {
       return true;
     } catch {
       console.error('[Auth] Token refresh error');
+      if (this.session?.refreshToken === refreshToken) this.refreshUnavailable = true;
       return false;
     }
   }
@@ -571,6 +578,15 @@ export class AuthManager {
     }
 
     return this.session?.accessToken ?? null;
+  }
+
+  /**
+   * True while a stored session exists but could not be refreshed because the auth server was
+   * unreachable (network, 5xx, HTML error page). Callers then report "service unavailable"
+   * instead of asking the user to sign in again. A rejected refresh token clears the session.
+   */
+  isSessionRefreshUnavailable(): boolean {
+    return this.session !== null && this.refreshUnavailable;
   }
 
   isAuthenticated(): boolean {

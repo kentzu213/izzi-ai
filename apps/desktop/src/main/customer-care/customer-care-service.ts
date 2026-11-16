@@ -3,6 +3,7 @@ import type {
   CustomerCareAssistInput,
   CustomerCareAssistResult,
   CustomerCareAuthority,
+  CustomerCareAuthorityLookup,
   CustomerCareContactPermission,
   CustomerCareFact,
   CustomerCareFactTopic,
@@ -13,6 +14,17 @@ import type {
   CustomerCareSetup,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
+import {
+  CUSTOMER_CARE_ACCESS_CHANGED_ERROR,
+  CUSTOMER_CARE_AUTH_ERROR,
+  CUSTOMER_CARE_ENCRYPTION_ERROR,
+  CUSTOMER_CARE_FORBIDDEN_ERROR,
+  CUSTOMER_CARE_INVALID_INPUT_ERROR,
+  CUSTOMER_CARE_INVALID_SETUP_ERROR,
+  CUSTOMER_CARE_SAVE_ERROR,
+  CUSTOMER_CARE_SETUP_REQUIRED_ERROR,
+  CUSTOMER_CARE_UNAVAILABLE_ERROR,
+} from '../../shared/customer-care-errors';
 
 interface CustomerCareSettingsStore {
   getSetting(key: string): string | null;
@@ -28,7 +40,7 @@ export interface CustomerCareSafeStorage {
 export interface CustomerCareServiceOptions {
   store: CustomerCareSettingsStore;
   crypto: CustomerCareSafeStorage;
-  resolveAuthority: () => Promise<CustomerCareAuthority | null>;
+  resolveAuthority: () => Promise<CustomerCareAuthorityLookup>;
   /**
    * Optional model hook. It may only return `{"factIds":[...]}`; its prose is never displayed.
    * `signal` aborts when the selection budget expires; the hook should cancel its request.
@@ -39,15 +51,27 @@ export interface CustomerCareServiceOptions {
 
 export type CustomerCareParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-// Public, fixed error strings. None of them echo input, identity, or stored data.
-export const CUSTOMER_CARE_AUTH_ERROR = 'Hãy đăng nhập và chọn workspace để dùng Chăm sóc khách hàng.';
-export const CUSTOMER_CARE_FORBIDDEN_ERROR = 'Chỉ chủ sở hữu và quản lý workspace được thay đổi thiết lập chăm sóc khách hàng.';
-export const CUSTOMER_CARE_ENCRYPTION_ERROR = 'Kho lưu trữ mã hóa chưa sẵn sàng trên thiết bị này.';
-export const CUSTOMER_CARE_SAVE_ERROR = 'Chưa lưu được thiết lập chăm sóc khách hàng một cách bảo mật.';
-export const CUSTOMER_CARE_INVALID_SETUP_ERROR = 'Thiết lập chưa hợp lệ. Kiểm tra các trường, nguồn và ngày duyệt.';
-export const CUSTOMER_CARE_INVALID_INPUT_ERROR = 'Hội thoại chưa hợp lệ. Kiểm tra độ dài và nội dung các lượt trao đổi.';
-export const CUSTOMER_CARE_SETUP_REQUIRED_ERROR = 'Hãy lưu thiết lập chăm sóc khách hàng hợp lệ trước khi tạo nháp.';
-export const CUSTOMER_CARE_ACCESS_CHANGED_ERROR = 'Quyền workspace đã thay đổi trong lúc tạo nháp. Kết quả đã bị loại bỏ.';
+// Public, fixed error strings live in shared so the renderer can show them verbatim.
+export {
+  CUSTOMER_CARE_ACCESS_CHANGED_ERROR,
+  CUSTOMER_CARE_AUTH_ERROR,
+  CUSTOMER_CARE_ENCRYPTION_ERROR,
+  CUSTOMER_CARE_FORBIDDEN_ERROR,
+  CUSTOMER_CARE_INVALID_INPUT_ERROR,
+  CUSTOMER_CARE_INVALID_SETUP_ERROR,
+  CUSTOMER_CARE_SAVE_ERROR,
+  CUSTOMER_CARE_SETUP_REQUIRED_ERROR,
+  CUSTOMER_CARE_UNAVAILABLE_ERROR,
+};
+
+/**
+ * One retry for an unreachable authority lookup (timeout, network, 5xx, auth server down).
+ * Denials are never retried. The retry runs only when the first attempt failed within the
+ * budget (workspace client timeout is 6 s); a slower failure, such as the auth client's own
+ * ~25 s refresh backoff, is reported at once so the total wait stays bounded.
+ */
+const AUTHORITY_RETRY_DELAY_MS = 500;
+const AUTHORITY_RETRY_BUDGET_MS = 7_000;
 
 const STORAGE_PREFIX = 'customer_care_setup:v1';
 const ENVELOPE_VERSION = 1;
@@ -589,7 +613,7 @@ function cloneSetup(setup: CustomerCareSetup): CustomerCareSetup {
 export class CustomerCareService {
   private readonly store: CustomerCareSettingsStore;
   private readonly crypto: CustomerCareSafeStorage;
-  private readonly resolveAuthorityHook: () => Promise<CustomerCareAuthority | null>;
+  private readonly resolveAuthorityHook: () => Promise<CustomerCareAuthorityLookup>;
   private readonly selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   private readonly now: () => Date;
 
@@ -620,16 +644,16 @@ export class CustomerCareService {
     }
   }
 
-  /** Throws only the fixed public auth error; the IPC parent maps it for the renderer. */
+  /** Throws only a fixed public auth/unavailable error; the IPC parent maps it for the renderer. */
   async getSnapshot(): Promise<CustomerCareSnapshot> {
     const authority = await this.resolveAuthority();
-    if (!authority) throw new Error(CUSTOMER_CARE_AUTH_ERROR);
+    if (typeof authority === 'string') throw new Error(authority);
     return this.buildSnapshot(authority);
   }
 
   async saveSetup(input: unknown): Promise<CustomerCareMutationResult> {
     const authority = await this.resolveAuthority();
-    if (!authority) return { ok: false, error: CUSTOMER_CARE_AUTH_ERROR };
+    if (typeof authority === 'string') return { ok: false, error: authority };
     if (!MUTATION_ROLES.includes(authority.role)) return { ok: false, error: CUSTOMER_CARE_FORBIDDEN_ERROR };
     if (!this.encryptionAvailable()) return { ok: false, error: CUSTOMER_CARE_ENCRYPTION_ERROR };
 
@@ -667,7 +691,7 @@ export class CustomerCareService {
     const request = parsed.value;
 
     const authority = await this.resolveAuthority();
-    if (!authority) return deniedResult('blocked', CUSTOMER_CARE_AUTH_ERROR, request.synthetic);
+    if (typeof authority === 'string') return deniedResult('blocked', authority, request.synthetic);
     const loaded = this.loadSetup(authority);
     if (!loaded.encryptionAvailable) {
       return deniedResult('blocked', CUSTOMER_CARE_ENCRYPTION_ERROR, request.synthetic);
@@ -701,7 +725,10 @@ export class CustomerCareService {
       }
       // The await may span a sign-out, workspace switch, or role change: re-check before using anything.
       const current = await this.resolveAuthority();
-      if (!current || !sameAuthority(authority, current)) {
+      if (current === CUSTOMER_CARE_UNAVAILABLE_ERROR) {
+        return deniedResult('blocked', CUSTOMER_CARE_UNAVAILABLE_ERROR, request.synthetic);
+      }
+      if (typeof current === 'string' || !sameAuthority(authority, current)) {
         return deniedResult('blocked', CUSTOMER_CARE_ACCESS_CHANGED_ERROR, request.synthetic);
       }
       const reloaded = this.loadSetup(current);
@@ -795,9 +822,21 @@ export class CustomerCareService {
     };
   }
 
-  private async resolveAuthority(): Promise<CustomerCareAuthority | null> {
+  /** Returns the live authority, or the fixed public error explaining why access is denied. */
+  private async resolveAuthority(): Promise<CustomerCareAuthority | string> {
+    const startedAt = this.now().getTime();
+    let lookup = await this.lookupAuthority();
+    if (lookup === 'unavailable' && this.now().getTime() - startedAt <= AUTHORITY_RETRY_BUDGET_MS) {
+      await new Promise((resolve) => setTimeout(resolve, AUTHORITY_RETRY_DELAY_MS));
+      lookup = await this.lookupAuthority();
+    }
+    if (lookup === 'unavailable') return CUSTOMER_CARE_UNAVAILABLE_ERROR;
+    return parseAuthority(lookup) ?? CUSTOMER_CARE_AUTH_ERROR;
+  }
+
+  private async lookupAuthority(): Promise<unknown> {
     try {
-      return parseAuthority(await this.resolveAuthorityHook());
+      return await this.resolveAuthorityHook();
     } catch {
       return null;
     }

@@ -750,6 +750,17 @@ describe('Customer care membership authority', () => {
     remote.getCurrent.mockResolvedValueOnce({ status: 'unavailable', workspace: null });
     expect(await context.service.resolveCustomerCareAuthority()).toBeNull();
   });
+  it('reports a transient membership lookup as unavailable rather than denied, never as authorised', async () => {
+    const remote = marketingResourceGateway('owner');
+    const context = setup({ workspaceGateway: remote.gateway });
+    remote.getCurrent.mockResolvedValueOnce({ status: 'unavailable', workspace: null, transient: true });
+
+    expect(await context.service.resolveCustomerCareAuthority()).toBe('unavailable');
+
+    // Signed out: a sign-in requirement, regardless of backend reachability.
+    context.setIdentity(null);
+    expect(await context.service.resolveCustomerCareAuthority()).toBeNull();
+  });
   it('rejects an account switch while membership is resolving', async () => {
     const remote = marketingResourceGateway('owner');
     const context = setup({ workspaceGateway: remote.gateway });
