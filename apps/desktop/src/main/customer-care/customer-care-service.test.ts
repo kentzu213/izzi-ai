@@ -135,6 +135,7 @@ function fixture(options: {
     store,
     crypto,
     resolveAuthority: async () => state.authority as CustomerCareAuthority | null,
+    currentIdentityId: () => (state.authority as { identityId?: string } | null)?.identityId ?? null,
     selectFacts: options.selectFacts,
     now: () => new Date(state.now),
   });
@@ -245,7 +246,7 @@ describe('CustomerCareService storage and authority', () => {
     function sequenced(results: Array<CustomerCareAuthority | 'unavailable' | null>) {
       const store = new MemorySettings();
       const resolveAuthority = vi.fn(async () => results.shift() ?? null);
-      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority });
+      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority, currentIdentityId: () => IDENTITY_A });
       return { store, service, resolveAuthority };
     }
 
@@ -294,7 +295,7 @@ describe('CustomerCareService storage and authority', () => {
         await new Promise((resolve) => setTimeout(resolve, 7_001));
         return 'unavailable' as const;
       });
-      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority });
+      const service = new CustomerCareService({ store, crypto: new FakeSafeStorage(), resolveAuthority, currentIdentityId: () => IDENTITY_A });
 
       const pending = service.saveSetup(setup());
       await vi.advanceTimersByTimeAsync(7_001);
@@ -331,6 +332,7 @@ describe('CustomerCareService storage and authority', () => {
         store,
         crypto: new FakeSafeStorage(),
         resolveAuthority,
+        currentIdentityId: () => IDENTITY_A,
         now: () => new Date(NOW),
       });
 
@@ -349,6 +351,7 @@ describe('CustomerCareService storage and authority', () => {
         store,
         crypto: new FakeSafeStorage(),
         resolveAuthority: vi.fn(async () => results.shift() ?? 'unavailable'),
+        currentIdentityId: () => IDENTITY_A,
         now: () => new Date((wallClock += 60_000)),
       });
 
@@ -372,6 +375,27 @@ describe('CustomerCareService storage and authority', () => {
           return next;
         }),
         currentIdentityId: () => signedIn,
+      });
+
+      const save = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(await save).toEqual({ ok: false, error: CUSTOMER_CARE_AUTH_ERROR });
+      expect(store.writes).toEqual([]);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['throwing', () => { throw new Error('identity store locked'); }],
+      ['returning null', () => null],
+    ])('denies a retried lookup when the identity hook is %s', async (_label, hook) => {
+      const store = new MemorySettings();
+      const results: Array<CustomerCareAuthority | 'unavailable'> = ['unavailable', OWNER];
+      const service = new CustomerCareService({
+        store,
+        crypto: new FakeSafeStorage(),
+        resolveAuthority: vi.fn(async () => results.shift() ?? 'unavailable'),
+        currentIdentityId: hook as unknown as () => string | null,
       });
 
       const save = service.saveSetup(setup());
@@ -406,6 +430,7 @@ describe('CustomerCareService storage and authority', () => {
         store: new MemorySettings(),
         crypto: new FakeSafeStorage(),
         resolveAuthority,
+        currentIdentityId: () => IDENTITY_A,
         selectFacts,
       });
       expect((await service.saveSetup(setup())).ok).toBe(true);
@@ -430,6 +455,7 @@ describe('CustomerCareService storage and authority', () => {
       store,
       crypto: new FakeSafeStorage(),
       resolveAuthority: async () => { throw new Error('session token sb-secret-123 expired'); },
+      currentIdentityId: () => IDENTITY_A,
     });
 
     const error = await service.getSnapshot().then(() => null, (caught: unknown) => caught as Error);

@@ -50,8 +50,9 @@ export interface CustomerCareServiceOptions {
   /**
    * The signed-in identity id, read before the first authority lookup. A retry that resolves a
    * different identity (account switched during the wait) is denied instead of being applied.
+   * Required: a missing, throwing or null hook denies every retried lookup.
    */
-  currentIdentityId?: () => string | null;
+  currentIdentityId: () => string | null;
 }
 
 export type CustomerCareParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -621,7 +622,7 @@ export class CustomerCareService {
   private readonly resolveAuthorityHook: () => Promise<CustomerCareAuthorityLookup>;
   private readonly selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   private readonly now: () => Date;
-  private readonly currentIdentityId?: () => string | null;
+  private readonly currentIdentityId: () => string | null;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -851,13 +852,14 @@ export class CustomerCareService {
     const authority = parseAuthority(lookup);
     if (!authority) return CUSTOMER_CARE_AUTH_ERROR;
     // Never apply a newly signed-in account's authority to a request made under the previous one.
-    if (retried && this.currentIdentityId && authority.identityId !== identityBefore) return CUSTOMER_CARE_AUTH_ERROR;
+    if (retried && authority.identityId !== identityBefore) return CUSTOMER_CARE_AUTH_ERROR;
     return authority;
   }
 
   private readIdentityId(): string | null {
     try {
-      return this.currentIdentityId?.() ?? null;
+      const identityId = this.currentIdentityId();
+      return typeof identityId === 'string' && identityId ? identityId : null;
     } catch {
       return null;
     }

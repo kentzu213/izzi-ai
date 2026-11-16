@@ -5,6 +5,8 @@ const supabaseMock = vi.hoisted(() => ({
   createClient: vi.fn(),
   refreshSession: vi.fn(),
   signInWithPassword: vi.fn(),
+  signUp: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -25,12 +27,20 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
   return {
     ...actual,
     createClient: supabaseMock.createClient.mockImplementation(() => ({
-      auth: { refreshSession: supabaseMock.refreshSession, signInWithPassword: supabaseMock.signInWithPassword },
+      auth: {
+        refreshSession: supabaseMock.refreshSession,
+        signInWithPassword: supabaseMock.signInWithPassword,
+        signUp: supabaseMock.signUp,
+        signOut: supabaseMock.signOut,
+      },
     })),
   };
 });
 
-import { AuthManager } from './auth-manager';
+import { AUTH_SERVER_UNREACHABLE_ERROR, AUTH_SIGNUP_UNCONFIRMED_ERROR, AuthManager } from './auth-manager';
+import { IzziAccountClient } from '../izzi-account/izzi-account-client';
+import type { SecretStore } from '../agent/secret-store';
+import type { ProviderSettingsStore } from '../agent/provider-settings-store';
 
 const USER = { id: 'user-1', email: 'user@example.test', name: 'User' };
 
@@ -430,5 +440,261 @@ describe('AuthManager when the auth server hangs', () => {
 
     expect(manager.isSessionRefreshUnavailable()).toBe(false);
     expect(supabaseMock.refreshSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthManager follow-ups for a slow auth server', () => {
+  const FRESH = () => ({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 });
+
+  /** A request that only ends when its abort signal fires, like a hung upstream. */
+  function hangingFetch() {
+    return vi.fn((_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')));
+    }));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    supabaseMock.createClient.mockClear();
+    supabaseMock.refreshSession.mockReset();
+    supabaseMock.signInWithPassword.mockReset();
+    supabaseMock.signUp.mockReset();
+    supabaseMock.signOut.mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('resolves the refresh once the rotated tokens are saved, even if /api/auth/me hangs', async () => {
+    vi.stubGlobal('fetch', hangingFetch());
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const db = createDb(FRESH());
+    const manager = new AuthManager(db as never);
+
+    expect(await manager.refreshAccessToken()).toBe(true);
+
+    expect(await manager.getAccessToken()).toBe('new-access');
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('new-refresh');
+    expect(await manager.refreshAccessToken()).toBe(true);
+    expect(supabaseMock.refreshSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up on /api/auth/me after 8 seconds and keeps the stored user', async () => {
+    const network = hangingFetch();
+    vi.stubGlobal('fetch', network);
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const db = createDb(FRESH());
+    const manager = new AuthManager(db as never);
+    await manager.refreshAccessToken();
+    const signal = network.mock.calls[0][1]?.signal as AbortSignal;
+
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(signal.aborted).toBe(true);
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').user).toEqual(USER);
+  });
+
+  it('still updates the profile out of band when /api/auth/me answers after the refresh resolved', async () => {
+    let answer: (value: unknown) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => { answer = resolve; })));
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const manager = new AuthManager(createDb(FRESH()) as never);
+    expect(await manager.refreshAccessToken()).toBe(true);
+
+    answer({ ok: true, json: async () => ({ id: 'user-1', email: 'user@example.test', name: 'Renamed' }) });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(manager.getCurrentUser()?.name).toBe('Renamed');
+  });
+
+  it('lets the account client retry a 401 with the rotated token while /api/auth/me hangs', async () => {
+    vi.useRealTimers();
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => {
+      if (input.endsWith('/api/auth/me')) return new Promise(() => {});
+      const auth = (init?.headers as Record<string, string>).Authorization;
+      seen.push(`${input.replace('https://api.example.test', '')} ${auth}`);
+      if (auth !== 'Bearer new-access') return Promise.resolve(new Response('{}', { status: 401 }));
+      const body = input.endsWith('/api/billing/balance') ? { balance: 3, plan: 'pro' } : {};
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    }));
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const manager = new AuthManager(createDb(FRESH()) as never);
+    const client = new IzziAccountClient(
+      manager,
+      { getKey: () => null } as unknown as SecretStore,
+      {} as unknown as ProviderSettingsStore,
+    );
+
+    const overview = await client.getOverview();
+
+    expect(overview.ok).toBe(true);
+    expect(overview.balance).toBe(3);
+    expect(supabaseMock.refreshSession).toHaveBeenCalledTimes(1);
+    expect(seen.filter((line) => line.endsWith('Bearer new-access'))).toHaveLength(3);
+  });
+
+  it('signs out locally at once while a hung refresh holds the auth client, and the late refresh cannot undo it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    let settle: (value: unknown) => void = () => {};
+    supabaseMock.refreshSession.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    supabaseMock.signOut.mockReturnValue(new Promise(() => {})); // queued behind the refresh lock
+    const db = createDb({ ...nearExpirySession(), expiresAt: Date.now() - 1_000 });
+    const manager = new AuthManager(db as never);
+    void manager.getAccessToken();
+
+    await manager.logout();
+
+    expect(manager.isAuthenticated()).toBe(false);
+    expect(db.settings.has('auth_session')).toBe(false);
+    expect(supabaseMock.signOut).toHaveBeenCalledTimes(1);
+
+    settle(refreshedSession());
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(manager.isAuthenticated()).toBe(false);
+    expect(await manager.getAccessToken()).toBeNull();
+    expect(db.settings.has('auth_session')).toBe(false);
+  });
+
+  it.each([
+    ['an aborted request', new AuthRetryableFetchError('This operation was aborted', 0)],
+    ['a 504 from the auth server', new AuthRetryableFetchError('Gateway Timeout', 504)],
+  ])('explains in Vietnamese that the sign-in server is not responding after %s', async (_label, error) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    supabaseMock.signInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.login('user@example.test', 'pw')).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+  });
+
+  it('maps a thrown abort during sign-in to the same fixed message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    supabaseMock.signInWithPassword.mockRejectedValue(new DOMException('This operation was aborted', 'AbortError'));
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.login('user@example.test', 'pw')).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+  });
+
+  it('keeps the specific message for wrong credentials', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError('Invalid login credentials', 400, 'invalid_credentials'),
+    });
+    const manager = new AuthManager(createDb(null) as never);
+
+    const result = await manager.login('user@example.test', 'pw');
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toBe(AUTH_SERVER_UNREACHABLE_ERROR);
+    expect(result.error).toContain('Email hoặc mật khẩu không đúng');
+  });
+
+  it('tells the user to check their email before retrying when signup times out', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    supabaseMock.signUp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthRetryableFetchError('This operation was aborted', 0),
+    });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.signup('new@example.test', 'pw123456', 'New')).toEqual({
+      success: false,
+      error: AUTH_SIGNUP_UNCONFIRMED_ERROR,
+    });
+  });
+
+  it('gives signup 20 seconds while other auth requests keep 8 seconds', async () => {
+    const network = hangingFetch();
+    vi.stubGlobal('fetch', network);
+    new AuthManager(createDb(null) as never);
+    const authFetch = supabaseMock.createClient.mock.calls[0][2].global.fetch as typeof fetch;
+
+    void authFetch('https://supabase.example.test/auth/v1/signup?redirect_to=x', { method: 'POST' }).catch(() => {});
+    void authFetch('https://supabase.example.test/auth/v1/token?grant_type=password', { method: 'POST' }).catch(() => {});
+    const signupSignal = network.mock.calls[0][1]?.signal as AbortSignal;
+    const passwordSignal = network.mock.calls[1][1]?.signal as AbortSignal;
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(passwordSignal.aborted).toBe(true);
+    expect(signupSignal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(12_000);
+
+    expect(signupSignal.aborted).toBe(true);
+  });
+});
+
+describe('AuthManager sign-in after a pending remote sign-out', () => {
+  function loginSucceeds() {
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: {
+        session: { access_token: 'login-access', refresh_token: 'login-refresh', expires_at: Math.floor(Date.now() / 1000) + 3600 },
+        user: { id: 'user-1', email: 'user@example.test', user_metadata: {} },
+      },
+      error: null,
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    supabaseMock.createClient.mockClear();
+    supabaseMock.refreshSession.mockReset();
+    supabaseMock.signInWithPassword.mockReset();
+    supabaseMock.signUp.mockReset();
+    supabaseMock.signOut.mockReset();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('waits for the remote sign-out before signing in, so it cannot revoke the new session', async () => {
+    let finishSignOut: () => void = () => {};
+    supabaseMock.signOut.mockReturnValue(new Promise<void>((resolve) => { finishSignOut = resolve; }));
+    loginSucceeds();
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 }) as never);
+    await manager.logout();
+
+    const login = manager.login('user@example.test', 'pw');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(supabaseMock.signInWithPassword).not.toHaveBeenCalled();
+    finishSignOut();
+
+    expect((await login).success).toBe(true);
+    expect(supabaseMock.signInWithPassword).toHaveBeenCalledTimes(1);
+    expect(await manager.getAccessToken()).toBe('login-access');
+  });
+
+  it('refuses to sign in with the fixed message while the remote sign-out is stuck', async () => {
+    supabaseMock.signOut.mockReturnValue(new Promise(() => {}));
+    loginSucceeds();
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 }) as never);
+    await manager.logout();
+
+    const login = manager.login('user@example.test', 'pw');
+    const signup = manager.signup('new@example.test', 'pw123456', 'New');
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await login).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+    expect(await signup).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+    expect(supabaseMock.signInWithPassword).not.toHaveBeenCalled();
+    expect(supabaseMock.signUp).not.toHaveBeenCalled();
+  });
+
+  it('signs in without waiting when no sign-out is pending', async () => {
+    loginSucceeds();
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect((await manager.login('user@example.test', 'pw')).success).toBe(true);
   });
 });
