@@ -37,7 +37,12 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
   };
 });
 
-import { AUTH_SERVER_UNREACHABLE_ERROR, AUTH_SIGNUP_UNCONFIRMED_ERROR, AuthManager } from './auth-manager';
+import {
+  AUTH_NETWORK_ERROR,
+  AUTH_SERVER_UNREACHABLE_ERROR,
+  AUTH_SIGNUP_UNCONFIRMED_ERROR,
+  AuthManager,
+} from './auth-manager';
 import { IzziAccountClient } from '../izzi-account/izzi-account-client';
 import type { SecretStore } from '../agent/secret-store';
 import type { ProviderSettingsStore } from '../agent/provider-settings-store';
@@ -696,5 +701,142 @@ describe('AuthManager sign-in after a pending remote sign-out', () => {
     const manager = new AuthManager(createDb(null) as never);
 
     expect((await manager.login('user@example.test', 'pw')).success).toBe(true);
+  });
+});
+
+describe('AuthManager profile writes and sign-in messages', () => {
+  const PROFILE_A = { id: 'user-1', email: 'user@example.test', name: 'Profile A', plan: 'pro' };
+  const PROFILE_B = { id: 'user-2', email: 'other@example.test', name: 'Profile B', plan: 'free' };
+
+  function loginAsB() {
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: {
+        session: { access_token: 'login-access', refresh_token: 'login-refresh', expires_at: Math.floor(Date.now() / 1000) + 3600 },
+        user: { id: 'user-2', email: 'other@example.test', user_metadata: {} },
+      },
+      error: null,
+    });
+  }
+
+  /** /api/auth/me answers per bearer token; `held` tokens wait until released. */
+  function profileServer(profiles: Record<string, unknown>, held: string[] = []) {
+    const releases = new Map<string, () => void>();
+    vi.stubGlobal('fetch', vi.fn((_input: string, init?: RequestInit) => {
+      const token = ((init?.headers as Record<string, string>).Authorization ?? '').replace('Bearer ', '');
+      const answer = () => (profiles[token]
+        ? { ok: true, json: async () => profiles[token] }
+        : { ok: false, json: async () => ({}) });
+      if (!held.includes(token)) return Promise.resolve(answer());
+      return new Promise((resolve) => { releases.set(token, () => resolve(answer())); });
+    }));
+    return { release: (token: string) => releases.get(token)?.() };
+  }
+
+  beforeEach(() => {
+    supabaseMock.createClient.mockClear();
+    supabaseMock.refreshSession.mockReset();
+    supabaseMock.signInWithPassword.mockReset();
+    supabaseMock.signUp.mockReset();
+    supabaseMock.signOut.mockReset();
+    supabaseMock.signOut.mockResolvedValue({ error: null });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('discards a slow profile for account A after the user switched to account B', async () => {
+    const server = profileServer({ 'old-access': PROFILE_A, 'login-access': PROFILE_B }, ['old-access']);
+    loginAsB();
+    const db = createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 });
+    const manager = new AuthManager(db as never);
+
+    const slow = manager.refreshProfile();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await manager.logout();
+    expect((await manager.login('other@example.test', 'pw')).success).toBe(true);
+    server.release('old-access');
+
+    expect(await slow).toBeNull();
+    expect(manager.getCurrentUser()).toMatchObject({ id: 'user-2', name: 'Profile B' });
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').user).toMatchObject({ id: 'user-2', name: 'Profile B' });
+  });
+
+  it('never applies a profile that describes a different user than the session', async () => {
+    profileServer({ 'old-access': PROFILE_B });
+    const db = createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 });
+    const manager = new AuthManager(db as never);
+
+    expect(await manager.refreshProfile()).toBeNull();
+
+    expect(manager.getCurrentUser()).toEqual(USER);
+  });
+
+  it('applies a matching profile without mutating the previous session object', async () => {
+    profileServer({ 'old-access': PROFILE_A });
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 }) as never);
+    const before = manager.getCurrentUser();
+
+    expect(await manager.refreshProfile()).toMatchObject({ name: 'Profile A' });
+
+    expect(manager.getCurrentUser()).toMatchObject({ id: 'user-1', name: 'Profile A' });
+    expect(before).toEqual(USER);
+  });
+
+  it('falls back to the signed-in user when /api/auth/me describes someone else at login', async () => {
+    profileServer({ 'login-access': PROFILE_A });
+    loginAsB();
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect((await manager.login('other@example.test', 'pw')).user?.id).toBe('user-2');
+  });
+
+  it('does not apply a refreshed profile for another user after a token rotation', async () => {
+    profileServer({ 'new-access': PROFILE_B });
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const manager = new AuthManager(createDb({ ...nearExpirySession(), expiresAt: Date.now() + 3_600_000 }) as never);
+
+    expect(await manager.refreshAccessToken()).toBe(true);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(manager.getCurrentUser()).toEqual(USER);
+  });
+
+  it.each([
+    ['a 502', new AuthRetryableFetchError('Bad Gateway', 502), AUTH_SERVER_UNREACHABLE_ERROR],
+    ['a 503', new AuthRetryableFetchError('Service Unavailable', 503), AUTH_SERVER_UNREACHABLE_ERROR],
+    ['an HTML 500 page', new AuthUnknownError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`, new SyntaxError('html')), AUTH_SERVER_UNREACHABLE_ERROR],
+    ['no network', new AuthRetryableFetchError('fetch failed', 0), AUTH_NETWORK_ERROR],
+  ])('maps %s at sign-in to the fixed message', async (_label, error, message) => {
+    profileServer({});
+    supabaseMock.signInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.login('user@example.test', 'pw')).toEqual({ success: false, error: message });
+  });
+
+  it.each([
+    ['a thrown fetch failure', new TypeError('fetch failed')],
+    ['an unresolvable host', Object.assign(new Error('getaddrinfo ENOTFOUND supabase.example.test'), { code: 'ENOTFOUND' })],
+  ])('asks the user to check the network after %s', async (_label, error) => {
+    profileServer({});
+    supabaseMock.signInWithPassword.mockRejectedValue(error);
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.login('user@example.test', 'pw')).toEqual({ success: false, error: AUTH_NETWORK_ERROR });
+  });
+
+  it('recognises a rate limit by its 429 status, whatever the wording', async () => {
+    profileServer({});
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError('Request rate limit reached', 429, 'over_request_rate_limit'),
+    });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect((await manager.login('user@example.test', 'pw')).error).toBe('Quá nhiều lần thử. Vui lòng đợi vài phút rồi thử lại.');
   });
 });

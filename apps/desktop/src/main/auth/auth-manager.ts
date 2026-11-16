@@ -25,8 +25,8 @@ function isRefreshTokenRejected(error: unknown): boolean {
 
 /**
  * Each HTTP request to Supabase Auth is aborted after this long, body included. auth-js turns
- * the abort into a retryable error, so its refresh retry loop (30 s backoff window) always
- * settles, at worst after about 34 s, and a later refresh can start.
+ * the abort into a retryable error, so its refresh retry loop always settles: it starts no new
+ * attempt once 30 s of backoff have passed, so the last 8 s attempt ends by about 38 s.
  */
 const AUTH_REQUEST_TIMEOUT_MS = 8_000;
 /**
@@ -44,6 +44,9 @@ const PROFILE_TIMEOUT_MS = 8_000;
 const REFRESH_WAIT_MS = 8_000;
 
 export const AUTH_SERVER_UNREACHABLE_ERROR = 'Máy chủ đăng nhập không phản hồi. Vui lòng thử lại sau ít phút.';
+export const AUTH_NETWORK_ERROR = 'Không kết nối được máy chủ đăng nhập. Kiểm tra mạng rồi thử lại.';
+const AUTH_RATE_LIMITED_ERROR = 'Quá nhiều lần thử. Vui lòng đợi vài phút rồi thử lại.';
+const NETWORK_ERROR_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'EHOSTUNREACH']);
 export const AUTH_SIGNUP_UNCONFIRMED_ERROR =
   'Máy chủ đăng nhập không phản hồi. Tài khoản có thể đã được tạo: hãy kiểm tra email xác nhận trước khi đăng ký lại.';
 
@@ -73,11 +76,38 @@ function fetchWithTimeout(timeoutMs: number, signupTimeoutMs: number): typeof fe
   };
 }
 
-/** Timeout, abort, network failure or 502/503/504 from the auth server. */
+/**
+ * Fixed message for an auth server that could not be reached (network) or did not answer
+ * properly (timeout/abort, 502/503/504, HTML error page); null for a real answer such as wrong
+ * credentials, which keeps its specific message.
+ */
+function authUnavailableMessage(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const { name, message, code, status } = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
+  const text = typeof message === 'string' ? message : '';
+  const aborted = name === 'AbortError' || name === 'TimeoutError' || /\baborted\b|timed? ?out/i.test(text);
+  const networkFailure = (typeof code === 'string' && NETWORK_ERROR_CODES.has(code))
+    || /fetch failed|network|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(text);
+  if (isAuthRetryableFetchError(error)) {
+    return status === 0 && !aborted && networkFailure ? AUTH_NETWORK_ERROR : AUTH_SERVER_UNREACHABLE_ERROR;
+  }
+  if (aborted) return AUTH_SERVER_UNREACHABLE_ERROR;
+  if (name === 'AuthUnknownError') return AUTH_SERVER_UNREACHABLE_ERROR;
+  if (networkFailure) return AUTH_NETWORK_ERROR;
+  return null;
+}
+
 function isAuthServerUnreachable(error: unknown): boolean {
-  if (isAuthRetryableFetchError(error)) return true;
-  const name = (error as { name?: unknown } | null)?.name;
-  return name === 'AbortError' || name === 'TimeoutError';
+  return authUnavailableMessage(error) !== null;
+}
+
+function isRateLimited(error: { status?: unknown; message: string }): boolean {
+  return error.status === 429 || error.message.includes('Too many requests');
+}
+
+/** A profile is only ever applied to the session of the user it describes. */
+function profileFor(profile: User | null, userId: string | undefined): User | null {
+  return profile && userId && profile.id === userId ? profile : null;
 }
 
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
@@ -145,6 +175,9 @@ export class AuthManager {
   /**
    * Remote sign-out still running after logout() returned. auth-js signs in without its lock, so a
    * new sign-in must wait for it: a global sign-out landing afterwards would revoke the new session.
+   * During an outage the sign-out itself can take ~85 s (queued behind a refresh retry loop of up
+   * to ~38 s, a second refresh loop while it loads an expired in-memory session, then its own 8 s
+   * request). Sign-ins never wait that long: remoteSignOutSettled() gives up after 8 s.
    */
   private pendingSignOut: Promise<void> | null = null;
 
@@ -321,14 +354,15 @@ export class AuthManager {
 
         // Translate common Supabase errors to helpful Vietnamese messages
         let userMessage = error.message;
-        if (isAuthServerUnreachable(error)) {
-          userMessage = AUTH_SERVER_UNREACHABLE_ERROR;
+        const unavailable = authUnavailableMessage(error);
+        if (unavailable) {
+          userMessage = unavailable;
         } else if (error.message === 'Invalid login credentials') {
           userMessage = 'Email hoặc mật khẩu không đúng. Nếu chưa có tài khoản, vui lòng bấm "Đăng ký miễn phí" hoặc "Đăng nhập với Google".';
         } else if (error.message.includes('Email not confirmed')) {
           userMessage = 'Email chưa được xác nhận. Vui lòng kiểm tra hộp thư để xác nhận tài khoản.';
-        } else if (error.message.includes('Too many requests')) {
-          userMessage = 'Quá nhiều lần thử. Vui lòng đợi vài phút rồi thử lại.';
+        } else if (isRateLimited(error)) {
+          userMessage = AUTH_RATE_LIMITED_ERROR;
         }
 
         return { success: false, error: userMessage };
@@ -339,7 +373,7 @@ export class AuthManager {
       }
 
       // Fetch full profile from izzi-backend
-      const profile = await this.fetchProfile(data.session.access_token);
+      const profile = profileFor(await this.fetchProfile(data.session.access_token), data.user.id);
       const user: User = profile || {
         id: data.user.id,
         email: data.user.email || email,
@@ -361,7 +395,7 @@ export class AuthManager {
       const message = err.message || 'Login failed';
       console.error('[Auth] Login error:', message);
       this.db.appendDiagnosticEvent({ type: 'auth.login', status: 'error', detail: message, meta: { email } });
-      return { success: false, error: isAuthServerUnreachable(err) ? AUTH_SERVER_UNREACHABLE_ERROR : message };
+      return { success: false, error: authUnavailableMessage(err) ?? message };
     }
   }
 
@@ -379,6 +413,9 @@ export class AuthManager {
       return { success: false, error: 'Supabase not configured' };
     }
 
+    // Never create a new server session while a global sign-out is still queued.
+    if (this.pendingSignOut && !(await this.remoteSignOutSettled())) return { success: false, error: AUTH_SERVER_UNREACHABLE_ERROR };
+
     this.googleLoginReceiver?.close();
     let receiver: LoopbackReceiver | null = null;
     try {
@@ -387,26 +424,33 @@ export class AuthManager {
 
       const oauthClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { autoRefreshToken: false, persistSession: false, flowType: 'pkce' },
+        global: { fetch: fetchWithTimeout(AUTH_REQUEST_TIMEOUT_MS, AUTH_SIGNUP_TIMEOUT_MS) },
       });
       const { data, error } = await oauthClient.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: receiver.redirectUrl, skipBrowserRedirect: true },
       });
-      if (error) return { success: false, error: error.message };
+      if (error) return { success: false, error: authUnavailableMessage(error) ?? error.message };
       if (!data.url) return { success: false, error: 'No OAuth URL returned' };
 
       await shell.openExternal(data.url);
       const outcome = await receiver.result;
       if (outcome.kind === 'error') return { success: false, error: outcome.message };
+      // The user may have signed out elsewhere in the app while the browser was open.
+      if (!(await this.remoteSignOutSettled())) return { success: false, error: AUTH_SERVER_UNREACHABLE_ERROR };
 
       const exchanged = await oauthClient.auth.exchangeCodeForSession(outcome.code);
       if (exchanged.error || !exchanged.data.session) {
-        return { success: false, error: exchanged.error?.message || 'Không đổi được mã đăng nhập Google' };
+        return {
+          success: false,
+          error: authUnavailableMessage(exchanged.error)
+            ?? (exchanged.error?.message || 'Không đổi được mã đăng nhập Google'),
+        };
       }
       const { access_token, refresh_token } = exchanged.data.session;
       return await this.setSessionFromTokens(access_token, refresh_token);
     } catch (err: any) {
-      return { success: false, error: err.message };
+      return { success: false, error: authUnavailableMessage(err) ?? err.message };
     } finally {
       receiver?.close();
       if (this.googleLoginReceiver === receiver) this.googleLoginReceiver = null;
@@ -427,11 +471,12 @@ export class AuthManager {
       });
 
       if (error || !data.session) {
-        if (isAuthServerUnreachable(error)) return { success: false, error: AUTH_SERVER_UNREACHABLE_ERROR };
+        const unavailable = authUnavailableMessage(error);
+        if (unavailable) return { success: false, error: unavailable };
         return { success: false, error: error?.message || 'Failed to set session' };
       }
 
-      const profile = await this.fetchProfile(data.session.access_token);
+      const profile = profileFor(await this.fetchProfile(data.session.access_token), data.user?.id);
       const user: User = profile || {
         id: data.user?.id || '',
         email: data.user?.email || '',
@@ -450,7 +495,7 @@ export class AuthManager {
       console.log('[Auth] Google OAuth login successful:', user.email);
       return { success: true, user };
     } catch (err: any) {
-      return { success: false, error: isAuthServerUnreachable(err) ? AUTH_SERVER_UNREACHABLE_ERROR : err.message };
+      return { success: false, error: authUnavailableMessage(err) ?? err.message };
     }
   }
 
@@ -548,7 +593,7 @@ export class AuthManager {
 
       // If Supabase returned a session (email confirmation disabled), auto-login
       if (data.session) {
-        const profile = await this.fetchProfile(data.session.access_token);
+        const profile = profileFor(await this.fetchProfile(data.session.access_token), data.user?.id);
         const user: User = profile || {
           id: data.user?.id || '',
           email: data.user?.email || email,
@@ -577,8 +622,8 @@ export class AuthManager {
 
   async logout(): Promise<void> {
     // Local sign-out first: clearing the session makes any refresh still in flight discard its
-    // result (memory and disk). The remote sign-out can queue behind a hung refresh inside
-    // auth-js for ~34 s, so it is best-effort and not awaited.
+    // result (memory and disk). The remote sign-out can queue behind hung refreshes inside
+    // auth-js for over a minute (see pendingSignOut), so it is best-effort and not awaited.
     this.clearSession();
     const signOut = Promise.resolve()
       .then(() => this.supabase?.auth.signOut())
@@ -669,7 +714,8 @@ export class AuthManager {
 
       // Profile data is cosmetic: never let /api/auth/me hold the refresh (or its callers) open.
       void this.fetchProfile(rotated.accessToken).then((profile) => {
-        if (profile && this.session === rotated) this.saveSession({ ...rotated, user: profile });
+        const own = profileFor(profile, rotated.user.id);
+        if (own && this.session === rotated) this.saveSession({ ...rotated, user: own });
       });
 
       return true;
@@ -817,13 +863,14 @@ export class AuthManager {
    */
   async refreshProfile(): Promise<User | null> {
     const token = await this.getAccessToken();
-    if (!token) return null;
+    const before = this.session;
+    if (!token || !before) return null;
 
-    const profile = await this.fetchProfile(token);
-    if (profile && this.session) {
-      this.session.user = profile;
-      this.saveSession(this.session);
-    }
+    // The request can span a logout, an account switch or a token rotation: apply the answer only
+    // to the exact session it was asked for, and only if it describes that session's user.
+    const profile = profileFor(await this.fetchProfile(token), before.user.id);
+    if (!profile || this.session !== before) return null;
+    this.saveSession({ ...before, user: profile });
     return profile;
   }
 }

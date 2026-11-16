@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthRetryableFetchError, AuthUnknownError } from '@supabase/supabase-js';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setSession: vi.fn(),
   openExternal: vi.fn(),
   startLoopbackReceiver: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -29,6 +31,7 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
         signInWithOAuth: mocks.signInWithOAuth,
         exchangeCodeForSession: mocks.exchangeCodeForSession,
         setSession: mocks.setSession,
+        signOut: mocks.signOut,
       },
     })),
   };
@@ -36,7 +39,7 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
 
 vi.mock('./oauth-loopback', () => ({ startLoopbackReceiver: mocks.startLoopbackReceiver }));
 
-import { AuthManager } from './auth-manager';
+import { AUTH_NETWORK_ERROR, AUTH_SERVER_UNREACHABLE_ERROR, AuthManager } from './auth-manager';
 
 const REDIRECT = 'http://127.0.0.1:50123/auth/callback';
 const SESSION = { access_token: 'access', refresh_token: 'refresh', expires_at: Math.floor(Date.now() / 1000) + 3600 };
@@ -80,6 +83,7 @@ describe('AuthManager Google login in the system browser', () => {
 
     expect(mocks.createClient).toHaveBeenLastCalledWith('https://supabase.example.test', 'anon-key', {
       auth: { autoRefreshToken: false, persistSession: false, flowType: 'pkce' },
+      global: { fetch: expect.any(Function) },
     });
     expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
       provider: 'google',
@@ -149,5 +153,135 @@ describe('AuthManager Google login in the system browser', () => {
     expect(first.close).toHaveBeenCalled();
     await expect(firstAttempt).resolves.toEqual({ success: false, error: 'cancelled' });
     expect(second.success).toBe(true);
+  });
+});
+
+describe('AuthManager Google login when the auth server stalls', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.createClient.mockImplementation(() => ({
+      auth: {
+        signInWithOAuth: mocks.signInWithOAuth,
+        exchangeCodeForSession: mocks.exchangeCodeForSession,
+        setSession: mocks.setSession,
+        signOut: mocks.signOut,
+      },
+    }));
+    mocks.signInWithOAuth.mockResolvedValue({ data: { url: 'https://supabase.example.test/authorize?x=1' }, error: null });
+    mocks.exchangeCodeForSession.mockResolvedValue({ data: { session: SESSION }, error: null });
+    mocks.setSession.mockResolvedValue({
+      data: { session: SESSION, user: { id: 'user-1', email: 'user@example.test', user_metadata: { full_name: 'User' } } },
+      error: null,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('bounds every request of the PKCE client, including the code exchange, to 8 seconds', async () => {
+    mocks.startLoopbackReceiver.mockResolvedValue(receiverWith({ kind: 'code', code: 'c' }));
+    await createManager().loginWithGoogle();
+    const pkceFetch = mocks.createClient.mock.calls[1][2].global.fetch as typeof fetch;
+    const network = vi.fn((_input: unknown, _init?: RequestInit) => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', network);
+
+    void pkceFetch('https://supabase.example.test/auth/v1/token?grant_type=pkce', { method: 'POST' });
+    const signal = network.mock.calls[0][1]?.signal as AbortSignal;
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(signal.aborted).toBe(true);
+  });
+
+  it.each([
+    ['an aborted exchange', { data: { session: null }, error: new AuthRetryableFetchError('This operation was aborted', 0) }, AUTH_SERVER_UNREACHABLE_ERROR],
+    ['a 503 during the exchange', { data: { session: null }, error: new AuthRetryableFetchError('Service Unavailable', 503) }, AUTH_SERVER_UNREACHABLE_ERROR],
+    ['an offline exchange', { data: { session: null }, error: new AuthRetryableFetchError('fetch failed', 0) }, AUTH_NETWORK_ERROR],
+  ])('shows the fixed message after %s', async (_label, exchanged, message) => {
+    mocks.startLoopbackReceiver.mockResolvedValue(receiverWith({ kind: 'code', code: 'c' }));
+    mocks.exchangeCodeForSession.mockResolvedValue(exchanged);
+
+    expect(await createManager().loginWithGoogle()).toEqual({ success: false, error: message });
+    expect(mocks.setSession).not.toHaveBeenCalled();
+  });
+
+  it('maps a thrown abort during the exchange to the fixed message', async () => {
+    mocks.startLoopbackReceiver.mockResolvedValue(receiverWith({ kind: 'code', code: 'c' }));
+    mocks.exchangeCodeForSession.mockRejectedValue(new DOMException('This operation was aborted', 'AbortError'));
+
+    expect(await createManager().loginWithGoogle()).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+  });
+
+  it('does not open the browser while the previous remote sign-out is stuck', async () => {
+    mocks.signOut.mockReturnValue(new Promise(() => {}));
+    const manager = createManager();
+    await manager.logout();
+
+    const login = manager.loginWithGoogle();
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await login).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+    expect(mocks.startLoopbackReceiver).not.toHaveBeenCalled();
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('does not exchange the code when a sign-out started while the browser was open is still stuck', async () => {
+    let deliver: (outcome: unknown) => void = () => {};
+    mocks.startLoopbackReceiver.mockResolvedValue({
+      redirectUrl: REDIRECT,
+      result: new Promise((resolve) => { deliver = resolve; }),
+      close: vi.fn(),
+    });
+    mocks.signOut.mockReturnValue(new Promise(() => {}));
+    const manager = createManager();
+    const login = manager.loginWithGoogle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.openExternal).toHaveBeenCalledTimes(1);
+
+    await manager.logout();
+    deliver({ kind: 'code', code: 'c' });
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await login).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+    expect(mocks.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(mocks.setSession).not.toHaveBeenCalled();
+  });
+
+  it('does not set a session from a callback while the previous remote sign-out is stuck', async () => {
+    mocks.signOut.mockReturnValue(new Promise(() => {}));
+    const manager = createManager();
+    await manager.logout();
+
+    const result = manager.handleOAuthCallback('izzi://auth/callback#access_token=a&refresh_token=b');
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await result).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+    expect(mocks.setSession).not.toHaveBeenCalled();
+  });
+
+  it.each([502, 503, 504])('maps a %s while setting the session to the fixed message', async (status) => {
+    mocks.setSession.mockResolvedValue({ data: { session: null, user: null }, error: new AuthRetryableFetchError('Bad Gateway', status) });
+
+    const result = await createManager().handleOAuthCallback('izzi://auth/callback#access_token=a&refresh_token=b');
+
+    expect(result).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+  });
+
+  it('maps an HTML error page while setting the session to the fixed message', async () => {
+    mocks.setSession.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthUnknownError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`, new SyntaxError('html')),
+    });
+
+    const result = await createManager().handleOAuthCallback('izzi://auth/callback#access_token=a&refresh_token=b');
+
+    expect(result).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
   });
 });
