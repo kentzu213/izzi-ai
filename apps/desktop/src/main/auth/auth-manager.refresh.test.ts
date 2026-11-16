@@ -785,6 +785,29 @@ describe('AuthManager profile writes and sign-in messages', () => {
     expect(before).toEqual(USER);
   });
 
+  it('returns the profile when its own token read rotated the session and the background update landed first', async () => {
+    const answers: Array<() => void> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => {
+      answers.push(() => resolve({ ok: true, json: async () => PROFILE_A }));
+    })));
+    supabaseMock.refreshSession.mockResolvedValue(refreshedSession());
+    const db = createDb(nearExpirySession());
+    const manager = new AuthManager(db as never);
+
+    const result = manager.refreshProfile();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    answers[0]();
+    await vi.waitFor(() => expect(manager.getCurrentUser()).toMatchObject({ name: 'Profile A' }));
+    answers[1]();
+
+    expect(await result).toMatchObject({ id: 'user-1', name: 'Profile A' });
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}')).toMatchObject({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      user: { id: 'user-1', name: 'Profile A' },
+    });
+  });
+
   it('falls back to the signed-in user when /api/auth/me describes someone else at login', async () => {
     profileServer({ 'login-access': PROFILE_A });
     loginAsB();
@@ -809,6 +832,7 @@ describe('AuthManager profile writes and sign-in messages', () => {
     ['a 502', new AuthRetryableFetchError('Bad Gateway', 502), AUTH_SERVER_UNREACHABLE_ERROR],
     ['a 503', new AuthRetryableFetchError('Service Unavailable', 503), AUTH_SERVER_UNREACHABLE_ERROR],
     ['an HTML 500 page', new AuthUnknownError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`, new SyntaxError('html')), AUTH_SERVER_UNREACHABLE_ERROR],
+    ['a JSON 500 from the auth server', new AuthApiError('Database error querying schema', 500, 'unexpected_failure'), AUTH_SERVER_UNREACHABLE_ERROR],
     ['no network', new AuthRetryableFetchError('fetch failed', 0), AUTH_NETWORK_ERROR],
   ])('maps %s at sign-in to the fixed message', async (_label, error, message) => {
     profileServer({});
@@ -838,5 +862,50 @@ describe('AuthManager profile writes and sign-in messages', () => {
     const manager = new AuthManager(createDb(null) as never);
 
     expect((await manager.login('user@example.test', 'pw')).error).toBe('Quá nhiều lần thử. Vui lòng đợi vài phút rồi thử lại.');
+  });
+
+  it.each([
+    ['a 429 that mentions the network', new AuthApiError('Too many requests from this network', 429, 'over_request_rate_limit'), 'Quá nhiều lần thử. Vui lòng đợi vài phút rồi thử lại.'],
+    ['a 400 that mentions a timeout', new AuthApiError('Verification timed out, request a new code', 400, 'otp_expired'), 'Verification timed out, request a new code'],
+    ['a 422 that mentions an abort', new AuthApiError('Sign-in aborted by hook', 422, 'hook_payload_invalid'), 'Sign-in aborted by hook'],
+  ])('keeps the specific handling of %s instead of reporting a connection problem', async (_label, error, message) => {
+    profileServer({});
+    supabaseMock.signInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.login('user@example.test', 'pw')).toEqual({ success: false, error: message });
+  });
+
+  it('keeps the check-your-email wording when signup gets a JSON 500', async () => {
+    profileServer({});
+    supabaseMock.signUp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError('Database error saving new user', 500, 'unexpected_failure'),
+    });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.signup('new@example.test', 'pw123456', 'New')).toEqual({
+      success: false,
+      error: AUTH_SIGNUP_UNCONFIRMED_ERROR,
+    });
+  });
+
+  it.each([
+    ['describes the new user', 'user-2', 'Profile B'],
+    ['describes someone else', 'user-1', 'New'],
+  ])('applies the profile at signup auto-login only when it %s', async (_label, profileId, expectedName) => {
+    profileServer({ 'signup-access': { ...PROFILE_B, id: profileId } });
+    supabaseMock.signUp.mockResolvedValue({
+      data: {
+        session: { access_token: 'signup-access', refresh_token: 'signup-refresh', expires_at: Math.floor(Date.now() / 1000) + 3600 },
+        user: { id: 'user-2', email: 'other@example.test', user_metadata: {} },
+      },
+      error: null,
+    });
+    const manager = new AuthManager(createDb(null) as never);
+
+    expect(await manager.signup('other@example.test', 'pw123456', 'New')).toEqual({ success: true });
+
+    expect(manager.getCurrentUser()).toMatchObject({ id: 'user-2', name: expectedName });
   });
 });

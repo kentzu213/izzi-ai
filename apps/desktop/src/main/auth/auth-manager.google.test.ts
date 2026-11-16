@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthRetryableFetchError, AuthUnknownError } from '@supabase/supabase-js';
+import { AuthApiError, AuthRetryableFetchError, AuthUnknownError } from '@supabase/supabase-js';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -105,13 +105,32 @@ describe('AuthManager Google login in the system browser', () => {
   });
 
   it('returns the browser error without exchanging a code', async () => {
-    mocks.startLoopbackReceiver.mockResolvedValue(receiverWith({ kind: 'error', message: 'Google từ chối đăng nhập (denied)' }));
+    const receiver = receiverWith({ kind: 'error', message: 'Google từ chối đăng nhập (denied)' });
+    mocks.startLoopbackReceiver.mockResolvedValue(receiver);
 
     const result = await createManager().loginWithGoogle();
 
     expect(result).toEqual({ success: false, error: 'Google từ chối đăng nhập (denied)' });
     expect(mocks.exchangeCodeForSession).not.toHaveBeenCalled();
     expect(mocks.setSession).not.toHaveBeenCalled();
+    expect(receiver.close).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['describes the signed-in user', 'user-1', 'Google Profile'],
+    ['describes someone else', 'user-2', 'User'],
+  ])('applies the /api/auth/me profile after Google login only when it %s', async (_label, profileId, expectedName) => {
+    mocks.startLoopbackReceiver.mockResolvedValue(receiverWith({ kind: 'code', code: 'c' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: profileId, email: 'user@example.test', name: 'Google Profile' }),
+    }));
+    const manager = createManager();
+
+    const result = await manager.loginWithGoogle();
+
+    expect(result).toMatchObject({ success: true, user: { id: 'user-1', name: expectedName } });
+    expect(manager.getCurrentUser()).toMatchObject({ id: 'user-1', name: expectedName });
   });
 
   it('reports a failed code exchange', async () => {
@@ -278,6 +297,17 @@ describe('AuthManager Google login when the auth server stalls', () => {
     mocks.setSession.mockResolvedValue({
       data: { session: null, user: null },
       error: new AuthUnknownError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`, new SyntaxError('html')),
+    });
+
+    const result = await createManager().handleOAuthCallback('izzi://auth/callback#access_token=a&refresh_token=b');
+
+    expect(result).toEqual({ success: false, error: AUTH_SERVER_UNREACHABLE_ERROR });
+  });
+
+  it('maps a JSON 500 from the auth server while setting the session to the fixed message', async () => {
+    mocks.setSession.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError('Database error querying schema', 500, 'unexpected_failure'),
     });
 
     const result = await createManager().handleOAuthCallback('izzi://auth/callback#access_token=a&refresh_token=b');

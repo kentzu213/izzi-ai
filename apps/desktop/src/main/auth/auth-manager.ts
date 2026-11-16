@@ -78,19 +78,24 @@ function fetchWithTimeout(timeoutMs: number, signupTimeoutMs: number): typeof fe
 
 /**
  * Fixed message for an auth server that could not be reached (network) or did not answer
- * properly (timeout/abort, 502/503/504, HTML error page); null for a real answer such as wrong
+ * properly (timeout/abort, any 5xx, HTML error page); null for a real answer such as wrong
  * credentials, which keeps its specific message.
  */
 function authUnavailableMessage(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
   const { name, message, code, status } = error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown };
   const text = typeof message === 'string' ? message : '';
-  const aborted = name === 'AbortError' || name === 'TimeoutError' || /\baborted\b|timed? ?out/i.test(text);
+  // The wording only describes a transport failure when no HTTP answer came back: a 4xx that
+  // happens to mention "network" or "timeout" is still a real answer.
+  const noHttpStatus = typeof status !== 'number' || status === 0;
+  const aborted = name === 'AbortError' || name === 'TimeoutError' || (noHttpStatus && /\baborted\b|timed? ?out/i.test(text));
   const networkFailure = (typeof code === 'string' && NETWORK_ERROR_CODES.has(code))
-    || /fetch failed|network|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(text);
+    || (noHttpStatus && /fetch failed|network|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(text));
   if (isAuthRetryableFetchError(error)) {
     return status === 0 && !aborted && networkFailure ? AUTH_NETWORK_ERROR : AUTH_SERVER_UNREACHABLE_ERROR;
   }
+  // A JSON 5xx (e.g. "Database error querying schema") is an AuthApiError, not a retryable one.
+  if (typeof status === 'number' && status >= 500) return AUTH_SERVER_UNREACHABLE_ERROR;
   if (aborted) return AUTH_SERVER_UNREACHABLE_ERROR;
   if (name === 'AuthUnknownError') return AUTH_SERVER_UNREACHABLE_ERROR;
   if (networkFailure) return AUTH_NETWORK_ERROR;
@@ -867,10 +872,13 @@ export class AuthManager {
     if (!token || !before) return null;
 
     // The request can span a logout, an account switch or a token rotation: apply the answer only
-    // to the exact session it was asked for, and only if it describes that session's user.
+    // while the session still holds the token it was asked with (compared by token, not by object,
+    // because a background profile update may replace the session object), and only if it
+    // describes that session's user.
     const profile = profileFor(await this.fetchProfile(token), before.user.id);
-    if (!profile || this.session !== before) return null;
-    this.saveSession({ ...before, user: profile });
+    const current = this.session;
+    if (!profile || !current || current.accessToken !== before.accessToken) return null;
+    this.saveSession({ ...current, user: profile });
     return profile;
   }
 }
