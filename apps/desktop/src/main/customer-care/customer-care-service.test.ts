@@ -319,6 +319,109 @@ describe('CustomerCareService storage and authority', () => {
       expect(await pending).toEqual({ ok: false, error: CUSTOMER_CARE_AUTH_ERROR });
       expect(store.writes).toEqual([]);
     });
+
+    it('measures the retry budget independently of the injected wall clock', async () => {
+      const store = new MemorySettings();
+      const resolveAuthority = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 7_001));
+        return 'unavailable' as const;
+      });
+      // A frozen clock must not make a slow first lookup look instant and trigger a retry.
+      const service = new CustomerCareService({
+        store,
+        crypto: new FakeSafeStorage(),
+        resolveAuthority,
+        now: () => new Date(NOW),
+      });
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(7_001);
+
+      expect(await pending).toEqual({ ok: false, error: CUSTOMER_CARE_UNAVAILABLE_ERROR });
+      expect(resolveAuthority).toHaveBeenCalledTimes(1);
+    });
+
+    it('still retries a fast failure when the injected wall clock jumps forward', async () => {
+      const store = new MemorySettings();
+      const results: Array<CustomerCareAuthority | 'unavailable'> = ['unavailable', OWNER];
+      let wallClock = Date.parse(NOW);
+      const service = new CustomerCareService({
+        store,
+        crypto: new FakeSafeStorage(),
+        resolveAuthority: vi.fn(async () => results.shift() ?? 'unavailable'),
+        now: () => new Date((wallClock += 60_000)),
+      });
+
+      const pending = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect((await pending).ok).toBe(true);
+    });
+
+    it('denies with the sign-in error when the account changes between the first lookup and the retry', async () => {
+      const store = new MemorySettings();
+      const OTHER = { identityId: IDENTITY_B, workspaceId: WORKSPACE_B, role: 'owner' } as const;
+      const results: Array<CustomerCareAuthority | 'unavailable'> = ['unavailable', OTHER];
+      let signedIn = IDENTITY_A;
+      const service = new CustomerCareService({
+        store,
+        crypto: new FakeSafeStorage(),
+        resolveAuthority: vi.fn(async () => {
+          const next = results.shift() ?? 'unavailable';
+          signedIn = IDENTITY_B; // the user switched accounts during the backoff
+          return next;
+        }),
+        currentIdentityId: () => signedIn,
+      });
+
+      const save = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(await save).toEqual({ ok: false, error: CUSTOMER_CARE_AUTH_ERROR });
+      expect(store.writes).toEqual([]);
+    });
+
+    it('accepts the retried authority when the same account is still signed in', async () => {
+      const store = new MemorySettings();
+      const results: Array<CustomerCareAuthority | 'unavailable'> = ['unavailable', OWNER];
+      const service = new CustomerCareService({
+        store,
+        crypto: new FakeSafeStorage(),
+        resolveAuthority: vi.fn(async () => results.shift() ?? 'unavailable'),
+        currentIdentityId: () => IDENTITY_A,
+      });
+
+      const save = service.saveSetup(setup());
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect((await save).ok).toBe(true);
+      expect(store.writes).toHaveLength(1);
+    });
+
+    it('blocks a draft with the unreachable error when the post-selection re-check is unavailable', async () => {
+      const results: Array<CustomerCareAuthority | 'unavailable'> = [OWNER, OWNER, 'unavailable', 'unavailable'];
+      const resolveAuthority = vi.fn(async () => results.shift() ?? 'unavailable');
+      const selectFacts = vi.fn(async () => '{"factIds":["price-ao-thun"]}');
+      const service = new CustomerCareService({
+        store: new MemorySettings(),
+        crypto: new FakeSafeStorage(),
+        resolveAuthority,
+        selectFacts,
+      });
+      expect((await service.saveSetup(setup())).ok).toBe(true);
+
+      const draft = service.assist(ask('Áo thun giá bao nhiêu?'));
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(selectFacts).toHaveBeenCalledTimes(1);
+      expect(resolveAuthority).toHaveBeenCalledTimes(4);
+      expect(await draft).toMatchObject({
+        status: 'blocked',
+        text: '',
+        factIds: [],
+        error: CUSTOMER_CARE_UNAVAILABLE_ERROR,
+      });
+    });
   });
 
   it('maps a throwing resolver to the fixed public error without leaking its message', async () => {

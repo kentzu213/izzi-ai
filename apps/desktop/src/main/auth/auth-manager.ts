@@ -23,6 +23,32 @@ function isRefreshTokenRejected(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
 }
 
+/**
+ * Each HTTP request to Supabase Auth is aborted after this long, body included. auth-js turns
+ * the abort into a retryable error, so its refresh retry loop (30 s backoff window) always
+ * settles, at worst after about 34 s, and a later refresh can start.
+ */
+const AUTH_REQUEST_TIMEOUT_MS = 8_000;
+/**
+ * Callers wait at most this long, from the start of a refresh, for the refresh to finish. Same
+ * order as the 6 s workspace-client timeout so a hung auth server cannot stall every Care and
+ * Marketing call for the full auth-js backoff.
+ */
+const REFRESH_WAIT_MS = 8_000;
+
+function fetchWithTimeout(timeoutMs: number): typeof fetch {
+  return (input, init) => {
+    const controller = new AbortController();
+    // Not cleared on headers: the body read must be bounded too. Aborting a finished request is a no-op.
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    timer.unref?.();
+    const callerSignal = init?.signal;
+    if (callerSignal?.aborted) controller.abort();
+    else callerSignal?.addEventListener('abort', () => controller.abort(), { once: true });
+    return fetch(input, { ...init, signal: controller.signal });
+  };
+}
+
 // Demo password hashing helpers (Node.js built-in crypto — zero new deps)
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
@@ -74,7 +100,10 @@ export class AuthManager {
   private db: DatabaseManager;
   private googleOAuthEnabled: boolean;
   private onSessionExpired: () => void;
-  /** In-flight refresh shared by concurrent callers: Supabase rotates the refresh token on every use. */
+  /**
+   * In-flight refresh shared by concurrent callers: Supabase rotates the refresh token on every use.
+   * This is the deadline-bounded view; the refresh itself keeps running until auth-js settles.
+   */
   private refreshInFlight: Promise<boolean> | null = null;
   /** The last refresh failed for a transient reason (network, 5xx, non-JSON); the session was kept. */
   private refreshUnavailable = false;
@@ -101,6 +130,7 @@ export class AuthManager {
           persistSession: false, // We handle persistence ourselves via safeStorage
           flowType: 'implicit', // Signup confirmation links carry tokens in the hash; Google login uses its own PKCE client.
         },
+        global: { fetch: fetchWithTimeout(AUTH_REQUEST_TIMEOUT_MS) },
       });
       console.log('[Auth] Supabase client initialized');
     } else {
@@ -513,16 +543,37 @@ export class AuthManager {
 
   refreshAccessToken(): Promise<boolean> {
     if (!this.refreshInFlight) {
-      this.refreshInFlight = this.refreshAccessTokenOnce().finally(() => {
+      const refreshToken = this.session?.refreshToken;
+      // A refresh that outlives the deadline is still applied when it settles (the server may
+      // already have rotated the token); until then later callers get `false` without waiting.
+      const settled = this.refreshAccessTokenOnce().finally(() => {
         this.refreshInFlight = null;
       });
+      this.refreshInFlight = this.boundRefreshWait(settled, refreshToken);
     }
     return this.refreshInFlight;
   }
 
+  private boundRefreshWait(settled: Promise<boolean>, refreshToken: string | undefined): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => {
+        console.error('[Auth] Token refresh timed out');
+        // Keep the session: a slow auth server is an outage, not a sign-out.
+        if (refreshToken && this.session?.refreshToken === refreshToken) this.refreshUnavailable = true;
+        resolve(false);
+      }, REFRESH_WAIT_MS);
+    });
+    return Promise.race([settled, deadline]).finally(() => clearTimeout(timer));
+  }
+
   private async refreshAccessTokenOnce(): Promise<boolean> {
     const refreshToken = this.session?.refreshToken;
-    if (!refreshToken || !this.supabase) return false;
+    if (!refreshToken || !this.supabase) {
+      // Nothing to retry, so a missing token is a sign-in requirement, never an outage.
+      this.refreshUnavailable = false;
+      return false;
+    }
 
     try {
       const { data, error } = await this.supabase.auth.refreshSession({

@@ -464,6 +464,64 @@ describe('CustomerMarketingWorkspaceClient', () => {
     warning.mockRestore();
   });
 
+  it.each([
+    ['a 408 request timeout', () => Promise.resolve(jsonResponse({}, 408))],
+    ['a 429 rate limit', () => Promise.resolve(jsonResponse({ error: { code: 'rate_limited' } }, 429))],
+    ['an HTML 401 page from a proxy', () => Promise.resolve(new Response('<!DOCTYPE html>', { status: 401 }))],
+    ['an HTML 403 page from a proxy', () => Promise.resolve(new Response('<html>Access denied</html>', { status: 403 }))],
+    ['an empty 400 response', () => Promise.resolve(new Response('', { status: 400 }))],
+    ['a 200 with an HTML body', () => Promise.resolve(new Response('<html>captive portal</html>', { status: 200 }))],
+  ])('reports the backend unavailable, not a sign-in requirement, after %s', async (_label, respond) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      { enabled: true, baseUrl: 'https://api.example.test', fetchImpl: vi.fn<typeof fetch>(respond) },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null, transient: true });
+
+    expect(client.getBridgeHealth()).toBe('backend_unavailable');
+    warning.mockRestore();
+  });
+
+  it('keeps a JSON quota response as an answer from the backend, not an outage', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ error: { code: 'quota_exceeded' } }, 429)),
+      },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+
+    expect(client.getBridgeHealth()).toBe('connected');
+    warning.mockRestore();
+  });
+
+  it.each([
+    [401, 'auth_required'],
+    [403, 'connected'],
+    [404, 'route_missing'],
+  ] as const)('keeps a JSON %s as a real answer with bridge health %s', async (status, health) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new CustomerMarketingWorkspaceClient(
+      { getAccessToken: vi.fn(async () => 'test-token') },
+      {
+        enabled: true,
+        baseUrl: 'https://api.example.test',
+        fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ error: { code: 'denied' } }, status)),
+      },
+    );
+
+    await expect(client.getCurrent()).resolves.toEqual({ status: 'unavailable', workspace: null });
+
+    expect(client.getBridgeHealth()).toBe(health);
+    warning.mockRestore();
+  });
+
   it('accepts only reviewed HTTPS origins from runtime configuration', async () => {
     const auth = { getAccessToken: vi.fn(async () => 'test-token') };
 

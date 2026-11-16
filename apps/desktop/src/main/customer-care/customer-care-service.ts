@@ -47,6 +47,11 @@ export interface CustomerCareServiceOptions {
    */
   selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   now?: () => Date;
+  /**
+   * The signed-in identity id, read before the first authority lookup. A retry that resolves a
+   * different identity (account switched during the wait) is denied instead of being applied.
+   */
+  currentIdentityId?: () => string | null;
 }
 
 export type CustomerCareParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -67,8 +72,8 @@ export {
 /**
  * One retry for an unreachable authority lookup (timeout, network, 5xx, auth server down).
  * Denials are never retried. The retry runs only when the first attempt failed within the
- * budget (workspace client timeout is 6 s); a slower failure, such as the auth client's own
- * ~25 s refresh backoff, is reported at once so the total wait stays bounded.
+ * budget (workspace client timeout is 6 s); a slower failure, such as the 8 s token refresh
+ * deadline when the auth server hangs, is reported at once so the total wait stays bounded.
  */
 const AUTHORITY_RETRY_DELAY_MS = 500;
 const AUTHORITY_RETRY_BUDGET_MS = 7_000;
@@ -616,6 +621,7 @@ export class CustomerCareService {
   private readonly resolveAuthorityHook: () => Promise<CustomerCareAuthorityLookup>;
   private readonly selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   private readonly now: () => Date;
+  private readonly currentIdentityId?: () => string | null;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -623,6 +629,7 @@ export class CustomerCareService {
     this.resolveAuthorityHook = options.resolveAuthority;
     this.selectFacts = options.selectFacts;
     this.now = options.now ?? (() => new Date());
+    this.currentIdentityId = options.currentIdentityId;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -824,14 +831,36 @@ export class CustomerCareService {
 
   /** Returns the live authority, or the fixed public error explaining why access is denied. */
   private async resolveAuthority(): Promise<CustomerCareAuthority | string> {
-    const startedAt = this.now().getTime();
-    let lookup = await this.lookupAuthority();
-    if (lookup === 'unavailable' && this.now().getTime() - startedAt <= AUTHORITY_RETRY_BUDGET_MS) {
+    const identityBefore = this.readIdentityId();
+    // Measured with a timer, like the retry delay, so a frozen or jumping wall clock cannot force a retry.
+    let withinBudget = true;
+    const budget = setTimeout(() => { withinBudget = false; }, AUTHORITY_RETRY_BUDGET_MS);
+    let lookup: unknown;
+    try {
+      lookup = await this.lookupAuthority();
+    } finally {
+      clearTimeout(budget);
+    }
+    let retried = false;
+    if (lookup === 'unavailable' && withinBudget) {
       await new Promise((resolve) => setTimeout(resolve, AUTHORITY_RETRY_DELAY_MS));
       lookup = await this.lookupAuthority();
+      retried = true;
     }
     if (lookup === 'unavailable') return CUSTOMER_CARE_UNAVAILABLE_ERROR;
-    return parseAuthority(lookup) ?? CUSTOMER_CARE_AUTH_ERROR;
+    const authority = parseAuthority(lookup);
+    if (!authority) return CUSTOMER_CARE_AUTH_ERROR;
+    // Never apply a newly signed-in account's authority to a request made under the previous one.
+    if (retried && this.currentIdentityId && authority.identityId !== identityBefore) return CUSTOMER_CARE_AUTH_ERROR;
+    return authority;
+  }
+
+  private readIdentityId(): string | null {
+    try {
+      return this.currentIdentityId?.() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async lookupAuthority(): Promise<unknown> {

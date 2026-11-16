@@ -2568,28 +2568,41 @@ export class CustomerMarketingWorkspaceClient implements CustomerMarketingWorksp
       const tunnelUnavailable = response.status === 530
         && await this.isCloudflareTunnelUnavailable(response.clone());
       let body: unknown = null;
+      let isJson = false;
       try {
         body = await response.json();
+        isJson = true;
       } catch {
         // Invalid or empty responses fail closed below.
       }
       if (!response.ok) {
-        if (response.status === 401) this.bridgeHealth = 'auth_required';
-        else if (response.status === 404 && path === '/api/marketing/workspaces') {
-          this.bridgeHealth = 'route_missing';
-        }
-        else if (tunnelUnavailable) {
-          this.bridgeHealth = 'tunnel_unavailable';
-        } else if (response.status >= 500) this.bridgeHealth = 'backend_unavailable';
+        const error = ownObject(body, 'error');
+        const code = error ? textValue(error, 'code') || undefined : undefined;
+        const routeMissing = response.status === 404 && path === '/api/marketing/workspaces';
+        // Our API answers in JSON; an HTML/empty error page comes from a proxy or edge in front of it.
+        const transient = !routeMissing && (
+          !isJson
+          || response.status >= 500
+          || response.status === 408
+          || (response.status === 429 && code !== 'quota_exceeded')
+        );
+        if (routeMissing) this.bridgeHealth = 'route_missing';
+        else if (tunnelUnavailable) this.bridgeHealth = 'tunnel_unavailable';
+        else if (transient) this.bridgeHealth = 'backend_unavailable';
+        else if (response.status === 401) this.bridgeHealth = 'auth_required';
         else this.bridgeHealth = 'connected';
         this.logFailure(path, response.status);
-        const error = ownObject(body, 'error');
         return {
           ok: false,
           status: response.status,
-          code: error ? textValue(error, 'code') || undefined : undefined,
-          ...(response.status >= 500 ? { transient: true as const } : {}),
+          code,
+          ...(transient ? { transient: true as const } : {}),
         };
+      }
+      if (!isJson) {
+        this.bridgeHealth = 'backend_unavailable';
+        this.logFailure(path, response.status);
+        return { ok: false, status: response.status, transient: true };
       }
       if (body === null) return { ok: false, status: response.status };
       this.bridgeHealth = 'connected';

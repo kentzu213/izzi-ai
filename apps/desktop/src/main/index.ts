@@ -897,6 +897,7 @@ function setupIPC() {
     store: dbManager,
     crypto: safeStorage,
     resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
     selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
       const result = await izziAgent.chat({

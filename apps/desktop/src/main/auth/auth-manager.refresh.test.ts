@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthApiError, AuthRetryableFetchError, AuthUnknownError } from '@supabase/supabase-js';
 
 const supabaseMock = vi.hoisted(() => ({
   createClient: vi.fn(),
   refreshSession: vi.fn(),
+  signInWithPassword: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -24,7 +25,7 @@ vi.mock('@supabase/supabase-js', async (importOriginal) => {
   return {
     ...actual,
     createClient: supabaseMock.createClient.mockImplementation(() => ({
-      auth: { refreshSession: supabaseMock.refreshSession },
+      auth: { refreshSession: supabaseMock.refreshSession, signInWithPassword: supabaseMock.signInWithPassword },
     })),
   };
 });
@@ -227,5 +228,207 @@ describe('AuthManager token refresh', () => {
     expect(await read).toBeNull();
     expect(manager.isAuthenticated()).toBe(false);
     expect(db.settings.has('auth_session')).toBe(false);
+  });
+});
+
+describe('AuthManager when the auth server hangs', () => {
+  function hungRefresh() {
+    let settle: (value: unknown) => void = () => {};
+    let fail: (error: unknown) => void = () => {};
+    supabaseMock.refreshSession.mockReturnValueOnce(new Promise((resolve, reject) => { settle = resolve; fail = reject; }));
+    return { settle: (value: unknown) => settle(value), fail: (error: unknown) => fail(error) };
+  }
+
+  function expiredSession() {
+    return { ...nearExpirySession(), expiresAt: Date.now() - 1_000 };
+  }
+
+  function loginSucceeds() {
+    supabaseMock.signInWithPassword.mockResolvedValue({
+      data: {
+        session: { access_token: 'login-access', refresh_token: 'login-refresh', expires_at: Math.floor(Date.now() / 1000) + 3600 },
+        user: { id: 'user-2', email: 'other@example.test', user_metadata: {} },
+      },
+      error: null,
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    supabaseMock.createClient.mockClear();
+    supabaseMock.refreshSession.mockReset();
+    supabaseMock.signInWithPassword.mockReset();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('aborts every Supabase Auth request after 8 seconds, including the body read', async () => {
+    const network = vi.fn((_input: unknown, _init?: RequestInit) => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', network);
+    new AuthManager(createDb(null) as never);
+    const authFetch = supabaseMock.createClient.mock.calls[0][2].global.fetch as typeof fetch;
+
+    void authFetch('https://supabase.example.test/auth/v1/token?grant_type=refresh_token', { method: 'POST' });
+    const signal = network.mock.calls[0][1]?.signal as AbortSignal;
+    await vi.advanceTimersByTimeAsync(7_999);
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(signal.aborted).toBe(true);
+    expect(network.mock.calls[0][1]?.method).toBe('POST');
+  });
+
+  it('returns no token within 8 seconds, keeps the session and reports the auth server unreachable', async () => {
+    hungRefresh();
+    const onSessionExpired = vi.fn();
+    const db = createDb(expiredSession());
+    const manager = new AuthManager(db as never, { onSessionExpired });
+
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await token).toBeNull();
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+    expect(manager.isAuthenticated()).toBe(true);
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('old-refresh');
+    expect(db.settings.get('izzi_desktop_key')).toBe('cached-key');
+    expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it('keeps using a still-valid token when the refresh hangs', async () => {
+    hungRefresh();
+    const manager = new AuthManager(createDb(nearExpirySession()) as never);
+
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(await token).toBe('old-access');
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+  });
+
+  it('shares the hung refresh and answers later callers at once instead of starting another request', async () => {
+    hungRefresh();
+    const manager = new AuthManager(createDb(expiredSession()) as never);
+    const first = [manager.getAccessToken(), manager.getAccessToken()];
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await Promise.all(first)).toEqual([null, null]);
+
+    const later = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(later).resolves.toBeNull();
+    expect(supabaseMock.refreshSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies a refresh that finishes after the deadline, because the server already rotated the token', async () => {
+    const refresh = hungRefresh();
+    const db = createDb(expiredSession());
+    const manager = new AuthManager(db as never);
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await token).toBeNull();
+
+    refresh.settle(refreshedSession());
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('new-refresh');
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+    expect(await manager.getAccessToken()).toBe('new-access');
+  });
+
+  it('starts a fresh refresh once the hung one has given up, and clears the flag when it succeeds', async () => {
+    const refresh = hungRefresh();
+    const manager = new AuthManager(createDb(expiredSession()) as never);
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await token).toBeNull();
+    refresh.settle(rejected(new AuthRetryableFetchError('signal is aborted without reason', 0)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+    supabaseMock.refreshSession.mockResolvedValueOnce(refreshedSession());
+
+    expect(await manager.getAccessToken()).toBe('new-access');
+
+    expect(supabaseMock.refreshSession).toHaveBeenCalledTimes(2);
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+  });
+
+  it('does not let a late refresh overwrite a newer sign-in', async () => {
+    const refresh = hungRefresh();
+    loginSucceeds();
+    const db = createDb(expiredSession());
+    const manager = new AuthManager(db as never);
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await token).toBeNull();
+    expect((await manager.login('other@example.test', 'pw')).success).toBe(true);
+
+    refresh.settle(refreshedSession());
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('login-refresh');
+    expect(await manager.getAccessToken()).toBe('login-access');
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+  });
+
+  it('does not let a late refresh resurrect a session the user signed out of', async () => {
+    const refresh = hungRefresh();
+    const db = createDb(expiredSession());
+    const manager = new AuthManager(db as never);
+    const token = manager.getAccessToken();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await token).toBeNull();
+    await manager.logout();
+
+    refresh.settle(refreshedSession());
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(manager.isAuthenticated()).toBe(false);
+    expect(db.settings.has('auth_session')).toBe(false);
+  });
+
+  it('keeps the session and reports the auth server unreachable when the refresh call throws', async () => {
+    const refresh = hungRefresh();
+    const db = createDb(expiredSession());
+    const manager = new AuthManager(db as never);
+    const token = manager.getAccessToken();
+
+    refresh.fail(new TypeError('fetch failed'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await token).toBeNull();
+    expect(manager.isSessionRefreshUnavailable()).toBe(true);
+    expect(JSON.parse(db.settings.get('auth_session') ?? '{}').refreshToken).toBe('old-refresh');
+  });
+
+  it('does not flag a newer session when a refresh for the previous one throws late', async () => {
+    const refresh = hungRefresh();
+    loginSucceeds();
+    const manager = new AuthManager(createDb(expiredSession()) as never);
+    void manager.getAccessToken();
+    expect((await manager.login('other@example.test', 'pw')).success).toBe(true);
+
+    refresh.fail(new TypeError('fetch failed'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+    expect(await manager.getAccessToken()).toBe('login-access');
+  });
+
+  it('treats a session without a refresh token as a sign-in requirement, not an outage', async () => {
+    const manager = new AuthManager(createDb({ ...expiredSession(), refreshToken: '' }) as never);
+    await vi.advanceTimersByTimeAsync(0); // let the constructor's refresh attempt settle
+    // A flag left over from an earlier outage must not survive a refresh that cannot even start.
+    (manager as unknown as { refreshUnavailable: boolean }).refreshUnavailable = true;
+
+    expect(await manager.getAccessToken()).toBeNull();
+
+    expect(manager.isSessionRefreshUnavailable()).toBe(false);
+    expect(supabaseMock.refreshSession).not.toHaveBeenCalled();
   });
 });
