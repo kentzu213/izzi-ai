@@ -4,6 +4,7 @@ import { GraphClient, type NodeCreateInput } from '../graph/graph-client';
 import { coalesceGroups, resolveConflict, type QueueOp } from '../../shared/offline-queue';
 import type { GraphNode } from '../../shared/graph-types';
 import { IZZI_API_BASE } from '../config/public-config';
+import { refreshGraphNodes } from './graph-node-refresh';
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success';
 
@@ -119,12 +120,12 @@ export class SyncEngine {
       }
 
       // 5. Sync graph nodes from izzi-backend /api/aibase/nodes (Knowledge/Graph surface)
+      // Conditional (ETag): an unchanged graph is not downloaded again.
       // Best-effort: a failure here must not break the existing sync steps (Req 10.3).
       this.state.progress = 90;
       let latestNodes: GraphNode[] = [];
       try {
-        latestNodes = await this.graphClient.listNodes();
-        this.db.cacheUserData('graph_nodes', 'graph_nodes', latestNodes as object);
+        latestNodes = await refreshGraphNodes(this.graphClient, this.db);
         console.log('[Sync] Graph nodes synced:', latestNodes.length);
       } catch (err: any) {
         console.warn('[Sync] Graph sync failed:', err.message);

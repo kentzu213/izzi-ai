@@ -56,6 +56,12 @@ export interface WriteOptions {
   queueOnOffline?: boolean;
 }
 
+/** Outcome of the sync loop's conditional node-list read (`listNodesIfChanged`). */
+export type ConditionalNodeList =
+  | { status: 'changed'; nodes: GraphNode[]; etag: string | null }
+  | { status: 'unchanged' }
+  | { status: 'failed' };
+
 /** A minimal structural view of a fetch `Response` (avoids DOM-lib coupling in main). */
 interface JsonResponse {
   readonly ok: boolean;
@@ -166,6 +172,37 @@ export class GraphClient {
     } catch (err) {
       this.logFailure('graph.listNodes', undefined, shortError(err));
       return []; // Req 1.5 — never throw to the renderer
+    }
+  }
+
+  /**
+   * GET /api/aibase/nodes with If-None-Match, for the 5-minute sync. The backend
+   * answers 304 when the list has not changed since `etag`, so an idle graph is
+   * not downloaded again. Fails closed like `listNodes`; never throws.
+   */
+  async listNodesIfChanged(etag: string | null): Promise<ConditionalNodeList> {
+    const token = await this.auth.getAccessToken();
+    if (token == null) return { status: 'failed' };
+
+    const headers = etag
+      ? { ...this.authHeaders(token), 'If-None-Match': etag }
+      : this.authHeaders(token);
+    try {
+      const res = await fetch(`${IZZI_API_BASE}/api/aibase/nodes`, { headers });
+      if (res.status === 304) return { status: 'unchanged' };
+      if (res.status === 401) return { status: 'failed' };
+      if (!res.ok) {
+        this.logFailure('graph.listNodes', res.status);
+        return { status: 'failed' };
+      }
+      const data = await res.json();
+      const nodes = ownArray(data, 'nodes')
+        .map(userNodeToModel)
+        .filter((node): node is GraphNode => node !== null);
+      return { status: 'changed', nodes, etag: res.headers.get('etag') };
+    } catch (err) {
+      this.logFailure('graph.listNodes', undefined, shortError(err));
+      return { status: 'failed' };
     }
   }
 
