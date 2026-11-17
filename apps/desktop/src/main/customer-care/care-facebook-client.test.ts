@@ -4,7 +4,7 @@
  * exact allowlist, and failures collapse to bounded codes (404 => unsupported, 5xx/network => unavailable).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { CareFacebookClient } from './care-facebook-client';
+import { CARE_FACEBOOK_CALLBACK_TIMEOUT_MS, CareFacebookClient } from './care-facebook-client';
 import type { NativeMarketingTokenProvider } from '../marketing/native-marketing-client';
 
 const ORIGIN = 'https://api.izziapi.com';
@@ -178,6 +178,30 @@ describe('CareFacebookClient failure mapping', () => {
     }
   });
 
+  // The callback exchanges the code and reads every Graph page of the
+  // merchant's Pages (up to 100), so it gets a longer budget than other calls.
+  it('gives the callback a longer budget than the default timeout', async () => {
+    expect(CARE_FACEBOOK_CALLBACK_TIMEOUT_MS).toBe(30_000);
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      }));
+      const slow = new CareFacebookClient(tokens(), { fetchImpl: fetchImpl as unknown as typeof fetch, timeoutMs: 1_000 });
+      let settled = false;
+      const pending = slow.completeCallback(WORKSPACE, STATE, CODE).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(CARE_FACEBOOK_CALLBACK_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toEqual({ ok: false, error: 'unavailable' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('treats an unreadable success body as an invalid response', async () => {
     const { instance } = client({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } } as unknown as Response);
     expect(await instance.getStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
@@ -247,15 +271,16 @@ describe('CareFacebookClient strict response parsing', () => {
     ['ineligible with the eligible reason', [{ ...PAGES[0], eligible: false, reason: 'eligible' }]],
     ['control characters in the name', [{ ...PAGES[0], name: `Shop${String.fromCharCode(0x202e)}evil` }]],
     ['oversized name', [{ ...PAGES[0], name: 'x'.repeat(201) }]],
-    ['more than 25 pages', Array.from({ length: 26 }, (_, index) => ({ ...PAGES[0], pageId: String(10_000 + index) }))],
+    ['more than 100 pages', Array.from({ length: 101 }, (_, index) => ({ ...PAGES[0], pageId: String(10_000 + index) }))],
   ])('rejects Page choices with %s', async (_label, pages) => {
     expect(await callbackWith({ ...CALLBACK_BODY, pages })).toEqual({ ok: false, error: 'invalid-response' });
   });
 
-  it('accepts exactly 25 pages', async () => {
-    const pages = Array.from({ length: 25 }, (_, index) => ({ ...PAGES[0], pageId: String(10_000 + index) }));
+  // Merchants with many Pages (their own plus Business portfolios') get up to 100.
+  it('accepts exactly 100 pages', async () => {
+    const pages = Array.from({ length: 100 }, (_, index) => ({ ...PAGES[0], pageId: String(10_000 + index) }));
     const result = await callbackWith({ ...CALLBACK_BODY, pages });
-    expect(result.ok && result.value.pages).toHaveLength(25);
+    expect(result.ok && result.value.pages).toHaveLength(100);
   });
 
   it.each([

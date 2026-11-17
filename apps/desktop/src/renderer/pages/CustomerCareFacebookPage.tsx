@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   CustomerCareFacebookError,
   CustomerCareFacebookPageChoice,
@@ -115,37 +116,76 @@ export function setupForSave(
   };
 }
 
+/** Long Page lists get a filter; short ones stay a plain list. */
+const PAGE_FILTER_THRESHOLD = 8;
+
+function foldForSearch(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+}
+
+/** Pages whose name (ignoring accents and case) or ID contains the query. */
+export function filterPageChoices(
+  pages: readonly CustomerCareFacebookPageChoice[],
+  query: string,
+): CustomerCareFacebookPageChoice[] {
+  const needle = foldForSearch(query.trim());
+  if (!needle) return [...pages];
+  return pages.filter((page) => page.pageId.includes(needle) || foldForSearch(page.name ?? '').includes(needle));
+}
+
 function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: CustomerCareFacebookPageChoices }) {
   const { choices, selectedPageId, busy } = props;
-  const selected = choices.pages.find((page) => page.pageId === selectedPageId);
+  const [filter, setFilter] = useState('');
+  const visiblePages = filterPageChoices(choices.pages, filter);
+  // Only a Page the merchant can currently see may be confirmed.
+  const selected = visiblePages.find((page) => page.pageId === selectedPageId);
   return (
     <fieldset className="ccw__page-picker">
       <legend>Chọn Page dùng cho Chăm sóc khách hàng</legend>
       {choices.pages.length === 0 ? (
         <p className="ccw__hint">Không có Page nào để chọn. Hãy kiểm tra tài khoản Facebook đã quản lý Page của shop.</p>
       ) : (
-        <ul>
-          {choices.pages.map((page) => (
-            <li key={page.pageId}>
-              <label className={page.eligible ? 'ccw__page-choice' : 'ccw__page-choice ccw__page-choice--disabled'}>
-                <input
-                  type="radio"
-                  name="ccw-page-choice"
-                  value={page.pageId}
-                  checked={selectedPageId === page.pageId}
-                  disabled={!page.eligible || busy}
-                  onChange={() => props.onSelectPage(page.pageId)}
-                />
-                <span>
-                  <strong>{page.name ?? 'Page chưa có tên'}</strong>
-                  <small>ID {page.pageId}</small>
-                  {!page.eligible && <small className="ccw__page-reason">{CHOICE_REASON_LABELS[page.reason]}</small>}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
+        <>
+          {choices.pages.length > PAGE_FILTER_THRESHOLD && (
+            <input
+              id="ccw-page-filter"
+              type="search"
+              className="ccw__page-filter"
+              placeholder={`Tìm trong ${choices.pages.length} Page theo tên hoặc ID`}
+              aria-label="Tìm Page theo tên hoặc ID"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          )}
+          {visiblePages.length === 0 && <p className="ccw__hint">Không có Page nào khớp với từ khóa.</p>}
+          <ul>
+            {visiblePages.map((page) => (
+              <li key={page.pageId}>
+                <label className={page.eligible ? 'ccw__page-choice' : 'ccw__page-choice ccw__page-choice--disabled'}>
+                  <input
+                    type="radio"
+                    name="ccw-page-choice"
+                    value={page.pageId}
+                    checked={selectedPageId === page.pageId}
+                    disabled={!page.eligible || busy}
+                    onChange={() => props.onSelectPage(page.pageId)}
+                  />
+                  <span>
+                    <strong>{page.name ?? 'Page chưa có tên'}</strong>
+                    <small>ID {page.pageId}</small>
+                    {!page.eligible && <small className="ccw__page-reason">{CHOICE_REASON_LABELS[page.reason]}</small>}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
+      <p className="ccw__hint">
+        Không thấy Page? Page thuộc Business (Trình quản lý kinh doanh) chỉ hiện khi bạn được chỉ định vào Page đó:
+        vào Cài đặt doanh nghiệp → Trang → chọn Page → Chỉ định người → chọn bạn với quyền truy cập đầy đủ.
+        Sau đó bấm kết nối lại và tích chọn Page trong hộp thoại Facebook.
+      </p>
       {choices.missingScopes.length > 0 && (
         <p className="ccw__hint">
           Facebook chưa cấp đủ quyền: {choices.missingScopes.join(', ')}. Page vẫn được kết nối nhưng sẽ hiện cảnh báo thiếu quyền.
@@ -209,7 +249,7 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
       {canManage && waitingForFacebook && (
         <p className="ccw__hint" role="status">Đang chờ bạn cấp quyền trên Facebook trong trình duyệt…</p>
       )}
-      {canManage && choices && <PagePicker {...props} choices={choices} />}
+      {canManage && choices && <PagePicker key={choices.choiceId} {...props} choices={choices} />}
     </section>
   );
 }

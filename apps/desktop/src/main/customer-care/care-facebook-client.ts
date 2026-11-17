@@ -24,7 +24,12 @@ import {
 } from '../../shared/customer-care-types';
 
 export const CARE_FACEBOOK_ROOT = '/api/marketing/care/facebook';
-export const CARE_FACEBOOK_MAX_PAGES = 25;
+// Same bound as the backend: merchants often manage dozens of Pages across
+// their own account and Business portfolios.
+export const CARE_FACEBOOK_MAX_PAGES = 100;
+// The callback exchanges the code twice and reads every Graph page of the
+// merchant's Pages (up to 100) before answering, so it gets a longer budget.
+export const CARE_FACEBOOK_CALLBACK_TIMEOUT_MS = 30_000;
 export const CARE_FACEBOOK_PAGE_ID_PATTERN = /^[0-9]{5,30}$/;
 const SCOPE_PATTERN = /^[a-z_]{3,64}$/;
 const MAX_SCOPES = 32;
@@ -297,10 +302,12 @@ export class CareFacebookClient {
     if (!isCareFacebookChoiceId(workspaceId) || !OAUTH_STATE_PATTERN.test(state) || !OAUTH_CODE_PATTERN.test(code)) {
       return INVALID_REQUEST;
     }
-    const result = await this.request('callback', '/callback', {
-      method: 'POST',
-      body: JSON.stringify({ workspaceId, state, code }),
-    });
+    const result = await this.request(
+      'callback',
+      '/callback',
+      { method: 'POST', body: JSON.stringify({ workspaceId, state, code }) },
+      Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
+    );
     if (!result.ok) return result;
     const envelope = parseSuccessEnvelope(
       result.body,
@@ -373,13 +380,18 @@ export class CareFacebookClient {
    * One authed request. The token is attached here and nowhere else; only the parsed JSON body leaves
    * this method, and an error body is reduced to its bounded `reason` by `careFacebookFailure`.
    */
-  private async request(label: string, path: string, init: RequestInit = {}): Promise<RequestOutcome> {
+  private async request(
+    label: string,
+    path: string,
+    init: RequestInit = {},
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<RequestOutcome> {
     if (!this.baseUrl) return { ok: false, error: 'not_configured' };
     const token = await this.auth.getAccessToken().catch(() => null);
     if (!token) return { ok: false, error: 'auth' };
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await this.fetchImpl(`${this.baseUrl}${CARE_FACEBOOK_ROOT}${path}`, {
         ...init,

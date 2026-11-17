@@ -10,6 +10,7 @@ import type {
 import {
   CustomerCareFacebookPagePanel,
   facebookErrorMessage,
+  filterPageChoices,
   pageStatusLabel,
   setupForSave,
   type CustomerCareFacebookPagePanelProps,
@@ -133,10 +134,43 @@ describe('CustomerCareFacebookPagePanel picker', () => {
     expect(button(render({ choices: CHOICES, selectedPageId: PAGE, busy: true }), 'Dùng Page đã chọn')).toMatch(/disabled/);
   });
 
+  it('offers a filter only when the Page list is long', () => {
+    expect(render({ choices: CHOICES })).not.toContain('ccw-page-filter');
+    const many = Array.from({ length: 12 }, (_, index) => ({ ...PAGES[0], pageId: String(300_000 + index) }));
+    expect(render({ choices: { ...CHOICES, pages: many } })).toContain('ccw-page-filter');
+  });
+
+  it('tells how to make a Business portfolio Page appear', () => {
+    const html = render({ choices: CHOICES });
+    expect(html).toContain('Không thấy Page');
+    expect(html).toContain('Chỉ định người');
+  });
+
   it('explains an empty Page list and scopes Facebook did not grant', () => {
     const html = render({ choices: { ...CHOICES, pages: [], missingScopes: ['pages_messaging'] } });
     expect(html).toContain('Không có Page nào');
     expect(html).toContain('pages_messaging');
+  });
+});
+
+describe('filterPageChoices', () => {
+  const pages: CustomerCareFacebookPageChoice[] = [
+    { pageId: '105252511858057', name: 'Đồng Thờ Hồng Hưng', eligible: true, reason: 'eligible' },
+    { pageId: '631891669999823', name: 'Tri Thức Việt', eligible: true, reason: 'eligible' },
+    { pageId: '2234567890', name: null, eligible: false, reason: 'missing_page_token' },
+  ];
+
+  it('keeps every Page for a blank query', () => {
+    expect(filterPageChoices(pages, '   ')).toEqual(pages);
+  });
+
+  it('matches names without accents or case', () => {
+    expect(filterPageChoices(pages, 'dong tho').map((page) => page.pageId)).toEqual(['105252511858057']);
+    expect(filterPageChoices(pages, 'TRI THỨC').map((page) => page.pageId)).toEqual(['631891669999823']);
+  });
+
+  it('matches a Page ID fragment', () => {
+    expect(filterPageChoices(pages, '22345').map((page) => page.pageId)).toEqual(['2234567890']);
   });
 });
 

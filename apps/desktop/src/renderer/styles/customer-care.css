@@ -248,8 +248,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Up to 100 Pages: scroll inside the picker so the actions stay in reach.
+     The padding keeps the focus outline of the first and last row visible. */
+  max-height: 420px;
   margin: 0;
-  padding: 0;
+  padding: 4px;
+  overflow-y: auto;
   list-style: none;
 }
 
