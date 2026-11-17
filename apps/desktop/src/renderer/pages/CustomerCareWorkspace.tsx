@@ -13,6 +13,7 @@ import type {
 } from '../../shared/customer-care-types';
 import { CUSTOMER_CARE_PUBLIC_ERRORS } from '../../shared/customer-care-errors';
 import { CustomerCareFacebookPagePanel, facebookErrorMessage, pageStatusLabel } from './CustomerCareFacebookPage';
+import { CustomerCareLeadsPanel } from './CustomerCareLeadsPanel';
 import {
   INITIAL_PAGE_FLOW,
   isSaveDisabled,
@@ -120,6 +121,9 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   const [snapshot, setSnapshot] = useState<CustomerCareSnapshot | null>(null);
   const [setup, setSetup] = useState<CustomerCareSetup>(EMPTY_SETUP);
   const [transcript, setTranscript] = useState('');
+  // True once "Soạn trả lời" put a real customer message in the transcript; drafts then say so.
+  const [transcriptFromLead, setTranscriptFromLead] = useState(false);
+  const transcriptRef = useRef<HTMLTextAreaElement>(null);
   const [permission, setPermission] = useState<CustomerCareAssistInput['contactPermission']>('unknown');
   const [request, setRequest] = useState<CustomerCareAssistInput['request']>('reply');
   const [result, setResult] = useState<CustomerCareAssistResult | null>(null);
@@ -176,6 +180,17 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
       operationRef.current += 1;
     };
   }, [loadSnapshot]);
+
+  // A real customer message never carries over into another workspace's draft panel.
+  const transcriptScopeRef = useRef(scopeKey);
+  useEffect(() => {
+    if (transcriptScopeRef.current === scopeKey) return;
+    transcriptScopeRef.current = scopeKey;
+    if (transcriptFromLead) {
+      setTranscript('');
+      setTranscriptFromLead(false);
+    }
+  }, [scopeKey, transcriptFromLead]);
 
   const applyPageStep = useCallback((step: CarePageFlowStep) => {
     pageFlowRef.current = step.flow;
@@ -328,7 +343,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
         messages,
         contactPermission: permission,
         request,
-        synthetic: true,
+        synthetic: !transcriptFromLead,
       });
       if (operation !== operationRef.current) return;
       setResult(response);
@@ -341,6 +356,18 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
       if (operation === operationRef.current) setAssisting(false);
     }
   };
+
+  // "Soạn trả lời": only fills the draft input. The operator still presses "Tạo bản nháp"; nothing is sent.
+  const composeFromLead = useCallback((leadTranscript: string) => {
+    setTranscript(leadTranscript);
+    setTranscriptFromLead(true);
+    setResult(null);
+    setError('');
+    setNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. izzi không gửi gì cho khách.');
+    const field = transcriptRef.current;
+    field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    field?.focus({ preventScroll: true });
+  }, []);
 
   const copyDraft = async () => {
     if (!result || result.status !== 'draft' || !result.text) return;
@@ -421,6 +448,10 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               onConfirmPage={() => { void confirmPage(); }}
               onCancelChoices={() => applyPageStep({ flow: { ...pageFlowRef.current, choices: null, selectedPageId: '' } })}
             />
+          )}
+
+          {snapshot?.pageConnection.state === 'connected' && (
+            <CustomerCareLeadsPanel key={scopeKey} scopeKey={scopeKey} onCompose={composeFromLead} />
           )}
 
           <form className="ccw__section" onSubmit={saveSetup}>
@@ -515,13 +546,21 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
                 <span className="cmr-eyebrow">Phòng thử tổng hợp</span>
                 <h3>Tạo bản nháp cho Sale</h3>
               </div>
-              <span className="ccw__synthetic">Synthetic · Không dùng dữ liệu khách thật</span>
+              <span className="ccw__synthetic">
+                {transcriptFromLead ? 'Tin thật của khách · Chỉ soạn nháp, không gửi' : 'Synthetic · Không dùng dữ liệu khách thật'}
+              </span>
             </div>
             <label className="ccw__transcript">
               <span>Hội thoại, mỗi lượt một dòng</span>
               <textarea
+                ref={transcriptRef}
                 value={transcript}
-                onChange={(event) => setTranscript(event.currentTarget.value)}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setTranscript(value);
+                  // Real customer text stays marked as real until the field is cleared.
+                  if (!value.trim()) setTranscriptFromLead(false);
+                }}
                 rows={7}
                 placeholder={'Khách: Giá bộ này bao nhiêu?\nSale: Anh/chị đang quan tâm kích thước nào ạ?'}
               />
@@ -560,7 +599,8 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
                   <span className="cmr-eyebrow">Kết quả · {result.engine === 'model' ? 'Bộ chọn tri thức' : 'Luật an toàn'}</span>
                   <h3 id="ccw-result-title">Bản nháp chưa gửi</h3>
                 </div>
-                {result.status === 'draft' && result.text && result.synthetic && !result.externalActionPerformed && (
+                {/* Drafts from a real lead are copied by hand into Pancake; izzi itself never sends them. */}
+                {result.status === 'draft' && result.text && !result.externalActionPerformed && (
                   <button type="button" className="cmr-button" onClick={() => { void copyDraft(); }}>Sao chép bản nháp</button>
                 )}
               </div>

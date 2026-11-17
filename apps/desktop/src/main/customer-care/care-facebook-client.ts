@@ -19,8 +19,13 @@ import {
 } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_FACEBOOK_REJECT_REASONS,
+  CUSTOMER_CARE_LEAD_STATUSES,
   type CustomerCareFacebookPageChoice,
   type CustomerCareFacebookRejectReason,
+  type CustomerCareInboxState,
+  type CustomerCareLead,
+  type CustomerCareLeadMessage,
+  type CustomerCareLeadStatus,
 } from '../../shared/customer-care-types';
 
 export const CARE_FACEBOOK_ROOT = '/api/marketing/care/facebook';
@@ -42,6 +47,17 @@ const CHOICE_REASONS: readonly CustomerCareFacebookPageChoice['reason'][] = [
   'missing_moderate_task',
   'missing_page_token',
 ];
+// Phase B1 bounds, from the backend contract.
+export const CARE_LEADS_PAGE_SIZE = 50;
+export const CARE_LEAD_MAX_MESSAGES = 3;
+export const CARE_LEAD_MAX_MESSAGE_LENGTH = 500;
+export const CARE_LEAD_PHONE_PATTERN = /^0[35789]\d{8}$/;
+/** Opaque pagination cursor: printable ASCII without spaces, bounded. */
+export const CARE_LEADS_CURSOR_PATTERN = /^[\x21-\x7e]{1,512}$/;
+// Customer-written text keeps tabs and line breaks; other control characters and bidi overrides
+// are replaced, so one crafted message can neither disguise text nor hide every other lead.
+const UNSAFE_CUSTOMER_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202A-\u202E\u2066-\u2069]/g;
+const REPLACEMENT_CHARACTER = '\uFFFD';
 
 export type CareFacebookClientError =
   | 'unsupported'
@@ -97,11 +113,20 @@ export interface CareFacebookStatus {
   connection: CareFacebookConnection | null;
 }
 
+/** One page of leads, newest `phoneCapturedAt` first. */
+export interface CareLeadPage {
+  leads: CustomerCareLead[];
+  nextCursor: string | null;
+}
+
 /** The surface `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export type CareFacebookGateway = Pick<
   CareFacebookClient,
   'startConnect' | 'completeCallback' | 'selectPage' | 'getStatus' | 'disconnect'
 >;
+
+/** Phase B1 inbox and lead routes; read-only towards customers. */
+export type CareLeadsGateway = Pick<CareFacebookClient, 'getInbox' | 'setInbox' | 'listLeads' | 'setLeadStatus'>;
 
 type RequestOutcome =
   | { ok: true; body: unknown }
@@ -227,6 +252,87 @@ export function parseCareFacebookConnection(value: unknown): CareFacebookConnect
     verifiedAt: connection.verifiedAt,
     tokenExpiresAt: connection.tokenExpiresAt,
   };
+}
+
+export function isCareLeadsCursor(value: unknown): value is string {
+  return typeof value === 'string' && CARE_LEADS_CURSOR_PATTERN.test(value);
+}
+
+export function isCareLeadStatus(value: unknown): value is CustomerCareLeadStatus {
+  return typeof value === 'string' && (CUSTOMER_CARE_LEAD_STATUSES as readonly string[]).includes(value);
+}
+
+function isIsoOrNull(value: unknown): value is string | null {
+  return value === null || isIso(value);
+}
+
+export function parseCareInboxState(value: unknown): CustomerCareInboxState | null {
+  const inbox = exactRecord(value, ['enabled', 'subscribedAt', 'lastEventAt']);
+  if (!inbox || typeof inbox.enabled !== 'boolean') return null;
+  if (!isIsoOrNull(inbox.subscribedAt) || !isIsoOrNull(inbox.lastEventAt)) return null;
+  return { enabled: inbox.enabled, subscribedAt: inbox.subscribedAt, lastEventAt: inbox.lastEventAt };
+}
+
+/** Facebook's display name; a name that could disguise text degrades to "no name" instead of hiding the lead. */
+function parseCustomerName(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  return parseName(value) ?? null;
+}
+
+function parseLeadMessage(value: unknown): CustomerCareLeadMessage | null {
+  const message = exactRecord(value, ['text', 'at']);
+  if (!message || typeof message.text !== 'string' || !isIso(message.at)) return null;
+  // Counted in code points: an emoji-heavy 500-character message is still within the contract.
+  if (Array.from(message.text).length > CARE_LEAD_MAX_MESSAGE_LENGTH) return null;
+  return { text: message.text.replace(UNSAFE_CUSTOMER_TEXT, REPLACEMENT_CHARACTER), at: message.at };
+}
+
+/** One lead, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. */
+export function parseCareLead(value: unknown): CustomerCareLead | null {
+  const lead = exactRecord(value, [
+    'id', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'status',
+    'phoneCapturedAt', 'lastMessageAt', 'statusChangedAt', 'recentMessages',
+  ]);
+  if (!lead || !isCareFacebookChoiceId(lead.id) || !isCareFacebookPageId(lead.pageId)) return null;
+  if (typeof lead.phone !== 'string' || !CARE_LEAD_PHONE_PATTERN.test(lead.phone)) return null;
+  if (typeof lead.zaloMentioned !== 'boolean' || !isCareLeadStatus(lead.status)) return null;
+  if (!isIso(lead.phoneCapturedAt) || !isIso(lead.lastMessageAt) || !isIsoOrNull(lead.statusChangedAt)) return null;
+  const customerName = parseCustomerName(lead.customerName);
+  if (customerName === undefined) return null;
+  if (!Array.isArray(lead.recentMessages) || lead.recentMessages.length > CARE_LEAD_MAX_MESSAGES) return null;
+  const recentMessages: CustomerCareLeadMessage[] = [];
+  for (const raw of lead.recentMessages as unknown[]) {
+    const message = parseLeadMessage(raw);
+    if (!message) return null;
+    recentMessages.push(message);
+  }
+  return {
+    id: lead.id,
+    pageId: lead.pageId,
+    customerName,
+    phone: lead.phone,
+    zaloMentioned: lead.zaloMentioned,
+    status: lead.status,
+    phoneCapturedAt: lead.phoneCapturedAt,
+    lastMessageAt: lead.lastMessageAt,
+    statusChangedAt: lead.statusChangedAt,
+    recentMessages,
+  };
+}
+
+function parseCareLeadPage(leadsValue: unknown, cursorValue: unknown): CareLeadPage | null {
+  if (!Array.isArray(leadsValue) || leadsValue.length > CARE_LEADS_PAGE_SIZE) return null;
+  if (cursorValue !== null && !isCareLeadsCursor(cursorValue)) return null;
+  const leads: CustomerCareLead[] = [];
+  const seen = new Set<string>();
+  for (const raw of leadsValue as unknown[]) {
+    const lead = parseCareLead(raw);
+    if (!lead || seen.has(lead.id)) return null;
+    seen.add(lead.id);
+    leads.push(lead);
+  }
+  return { leads, nextCursor: cursorValue };
 }
 
 function rejectReason(body: unknown): CustomerCareFacebookRejectReason | string | undefined {
@@ -374,6 +480,61 @@ export class CareFacebookClient {
     if (!result.ok) return result;
     const envelope = parseSuccessEnvelope(result.body, ['connection'], workspaceId);
     return envelope && envelope.connection === null ? { ok: true, value: null } : INVALID_RESPONSE;
+  }
+
+  /** GET /inbox — the Page's message subscription, or null without a live Page binding. */
+  async getInbox(workspaceId: string): Promise<CareFacebookResult<CustomerCareInboxState | null>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const result = await this.request('inbox', `/inbox?workspaceId=${encodeURIComponent(workspaceId)}`);
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['inbox'], workspaceId);
+    if (!envelope) return INVALID_RESPONSE;
+    if (envelope.inbox === null) return { ok: true, value: null };
+    const inbox = parseCareInboxState(envelope.inbox);
+    return inbox ? { ok: true, value: inbox } : INVALID_RESPONSE;
+  }
+
+  /** POST /inbox — subscribe or unsubscribe the Page's messages; the answer must match the request. */
+  async setInbox(workspaceId: string, enabled: boolean): Promise<CareFacebookResult<CustomerCareInboxState>> {
+    if (!isCareFacebookChoiceId(workspaceId) || typeof enabled !== 'boolean') return INVALID_REQUEST;
+    const result = await this.request('inbox-set', '/inbox', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, enabled }),
+    });
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['inbox'], workspaceId);
+    const inbox = envelope ? parseCareInboxState(envelope.inbox) : null;
+    return inbox && inbox.enabled === enabled ? { ok: true, value: inbox } : INVALID_RESPONSE;
+  }
+
+  /** GET /leads — one page of leads; `cursor` is the previous page's opaque `nextCursor`. */
+  async listLeads(workspaceId: string, cursor: string | null = null): Promise<CareFacebookResult<CareLeadPage>> {
+    if (!isCareFacebookChoiceId(workspaceId) || (cursor !== null && !isCareLeadsCursor(cursor))) return INVALID_REQUEST;
+    const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+    const result = await this.request('leads', `/leads?workspaceId=${encodeURIComponent(workspaceId)}${query}`);
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['leads', 'nextCursor'], workspaceId);
+    const page = envelope ? parseCareLeadPage(envelope.leads, envelope.nextCursor) : null;
+    return page ? { ok: true, value: page } : INVALID_RESPONSE;
+  }
+
+  /** POST /leads/status — records who moved the lead; the answer must be that lead in that status. */
+  async setLeadStatus(
+    workspaceId: string,
+    leadId: string,
+    status: CustomerCareLeadStatus,
+  ): Promise<CareFacebookResult<CustomerCareLead>> {
+    if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(leadId) || !isCareLeadStatus(status)) {
+      return INVALID_REQUEST;
+    }
+    const result = await this.request('lead-status', '/leads/status', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, leadId, status }),
+    });
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['lead'], workspaceId);
+    const lead = envelope ? parseCareLead(envelope.lead) : null;
+    return lead && lead.id === leadId && lead.status === status ? { ok: true, value: lead } : INVALID_RESPONSE;
   }
 
   /**

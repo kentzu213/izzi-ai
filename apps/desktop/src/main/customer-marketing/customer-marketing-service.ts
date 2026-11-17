@@ -6675,6 +6675,21 @@ export class CustomerMarketingService {
   }
 
   /**
+   * The workspace this account works in on this device, read locally without a request; null when
+   * signed out. Background Care checks compare it with the workspace they watch, so a switch takes
+   * effect at once instead of after their cache expires.
+   */
+  getActiveWorkspaceId(): string | null {
+    const identity = this.getIdentity();
+    if (!identity) return null;
+    try {
+      return this.readRecord(identity).workspaceId;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Revalidate membership in main for each care request; renderer IDs are never authority.
    * `'unavailable'` means the server could not be reached; like `null` it never grants access.
    */

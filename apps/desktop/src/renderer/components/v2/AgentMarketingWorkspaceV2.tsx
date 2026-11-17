@@ -9,6 +9,7 @@ import {
   type CustomerCapabilitySurfaceState,
 } from '../../pages/customer-capability-actions';
 import type { CapabilityWorkbenchOpenView } from '../../pages/CustomerMarketingCapabilityWorkbenches';
+import { PanelVisibleContext } from '../../lib/panel-visibility';
 
 // M4 Agent Marketing V2: presentational tab frame only. Data, mutations and gates stay in
 // CustomerMarketingRoom; this file never calls IPC.
@@ -207,7 +208,10 @@ export function AgentMarketingWorkspaceV2({
             tabIndex={0}
             hidden={item.id !== tab}
           >
-            {(item.id === tab || mountedTabs.has(item.id)) && panels[item.id]}
+            {/* Kept-mounted panels learn when they are hidden, so their pollers can pause. */}
+            <PanelVisibleContext.Provider value={item.id === tab}>
+              {(item.id === tab || mountedTabs.has(item.id)) && panels[item.id]}
+            </PanelVisibleContext.Provider>
           </div>
         ))}
       </div>

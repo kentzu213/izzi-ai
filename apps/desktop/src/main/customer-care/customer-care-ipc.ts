@@ -14,12 +14,17 @@ const METHODS = [
   'selectFacebookPage',
   'disconnectFacebookPage',
   'takeFacebookPageChoices',
+  'getFacebookInbox',
+  'setFacebookInbox',
+  'listLeads',
+  'setLeadStatus',
 ] as const;
 
 export function registerCustomerCareIpc(
   service: Pick<
     CustomerCareService,
-    'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'disconnectFacebookPage'
+    | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'disconnectFacebookPage'
+    | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus'
   >,
   facebook: Pick<CareFacebookOAuthCoordinator, 'connect' | 'takeChoices'>,
 ): void {
@@ -35,6 +40,11 @@ export function registerCustomerCareIpc(
         if (method === 'disconnectFacebookPage') return await service.disconnectFacebookPage();
         // Take-once: the buffered deep-link outcome is cleared as it is handed out.
         if (method === 'takeFacebookPageChoices') return await facebook.takeChoices();
+        // Phase B1: only `{ enabled }`, `{ cursor }` or `{ leadId, status }` cross; main parses them strictly.
+        if (method === 'getFacebookInbox') return await service.getFacebookInbox();
+        if (method === 'setFacebookInbox') return await service.setFacebookInbox(input);
+        if (method === 'listLeads') return await service.listLeads(input);
+        if (method === 'setLeadStatus') return await service.setLeadStatus(input);
         return await service.assist(input);
       } catch (error) {
         // Fixed public Customer Care strings carry no data; anything else is never serialized.

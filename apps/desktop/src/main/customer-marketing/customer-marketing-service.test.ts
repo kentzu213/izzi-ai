@@ -773,6 +773,17 @@ describe('Customer care membership authority', () => {
     context.setIdentity(null);
     expect(await context.service.resolveCustomerCareAuthority()).toBeNull();
   });
+  it('reads the active workspace locally, follows a synced switch and is null when signed out', async () => {
+    const remote = marketingResourceGateway('editor');
+    const context = setup({ workspaceGateway: remote.gateway });
+
+    expect(context.service.getActiveWorkspaceId()).toEqual(expect.any(String));
+    expect(remote.getCurrent).not.toHaveBeenCalled();
+    await context.service.resolveCustomerCareAuthority();
+    expect(context.service.getActiveWorkspaceId()).toBe(remote.workspace.id);
+    context.setIdentity(null);
+    expect(context.service.getActiveWorkspaceId()).toBeNull();
+  });
 });
 
 describe('CustomerMarketingService legacy Auto Post reconciliation', () => {

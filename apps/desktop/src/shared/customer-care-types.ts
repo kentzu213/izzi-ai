@@ -96,6 +96,9 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   'token_invalid',
   'token_app_mismatch',
   'token_page_mismatch',
+  // 422, Phase B1: no live Page binding for the inbox, or a lead outside this workspace.
+  'page_not_connected',
+  'lead_not_found',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -140,6 +143,67 @@ export type CustomerCareFacebookActionResult = { ok: true; snapshot: CustomerCar
 export interface CustomerCareFacebookSelectInput {
   choiceId: string;
   pageId: string;
+}
+
+// Phase B1: izzi reads Page messages and lists customers who left a phone number. Nothing is ever sent
+// to a customer. Lead phones and messages live in memory for display only: never persisted or tracked.
+
+/** The Page's Messenger webhook subscription as reported by the izzi backend. */
+export interface CustomerCareInboxState {
+  enabled: boolean;
+  subscribedAt: string | null;
+  /** When izzi last stored a customer message for this workspace. */
+  lastEventAt: string | null;
+}
+
+export const CUSTOMER_CARE_LEAD_STATUSES = ['new', 'contacted', 'closed'] as const;
+export type CustomerCareLeadStatus = (typeof CUSTOMER_CARE_LEAD_STATUSES)[number];
+
+export interface CustomerCareLeadMessage {
+  text: string;
+  at: string;
+}
+
+export interface CustomerCareLead {
+  id: string;
+  pageId: string;
+  customerName: string | null;
+  /** Normalized Vietnamese mobile, `0xxxxxxxxx`. */
+  phone: string;
+  zaloMentioned: boolean;
+  status: CustomerCareLeadStatus;
+  phoneCapturedAt: string;
+  lastMessageAt: string;
+  statusChangedAt: string | null;
+  /** Up to 3 customer messages, oldest first, plain text. */
+  recentMessages: CustomerCareLeadMessage[];
+}
+
+/** `inbox` is null without a live Page binding; `canManage` is a display hint, main re-checks the role. */
+export type CustomerCareInboxResult =
+  | { ok: true; workspaceId: string; inbox: CustomerCareInboxState | null; canManage: boolean }
+  | CustomerCareFacebookFailure;
+
+export type CustomerCareLeadListResult =
+  | { ok: true; workspaceId: string; leads: CustomerCareLead[]; nextCursor: string | null }
+  | CustomerCareFacebookFailure;
+
+export type CustomerCareLeadStatusResult =
+  | { ok: true; workspaceId: string; lead: CustomerCareLead }
+  | CustomerCareFacebookFailure;
+
+/** Renderer inputs; the workspace always comes from main's live authority. */
+export interface CustomerCareInboxInput {
+  enabled: boolean;
+}
+
+export interface CustomerCareLeadListInput {
+  cursor: string | null;
+}
+
+export interface CustomerCareLeadStatusInput {
+  leadId: string;
+  status: CustomerCareLeadStatus;
 }
 
 export type CustomerCareMessageRole = 'customer' | 'sale';

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -681,6 +681,13 @@ const electronAPI = {
       ipcRenderer.on('customerCare:facebookPageChoices', handler);
       return () => { ipcRenderer.removeListener('customerCare:facebookPageChoices', handler); };
     },
+    getFacebookInbox: (): Promise<CustomerCareInboxResult> => ipcRenderer.invoke('customerCare:getFacebookInbox'),
+    setFacebookInbox: (input: CustomerCareInboxInput): Promise<CustomerCareInboxResult> =>
+      ipcRenderer.invoke('customerCare:setFacebookInbox', input),
+    listLeads: (input: CustomerCareLeadListInput): Promise<CustomerCareLeadListResult> =>
+      ipcRenderer.invoke('customerCare:listLeads', input),
+    setLeadStatus: (input: CustomerCareLeadStatusInput): Promise<CustomerCareLeadStatusResult> =>
+      ipcRenderer.invoke('customerCare:setLeadStatus', input),
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>

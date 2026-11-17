@@ -10,6 +10,7 @@ describe('customer care IPC boundary', () => {
   const service = {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
     selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
+    getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
@@ -21,6 +22,10 @@ describe('customer care IPC boundary', () => {
     ['selectFacebookPage', service.selectFacebookPage],
     ['disconnectFacebookPage', service.disconnectFacebookPage],
     ['takeFacebookPageChoices', facebook.takeChoices],
+    ['getFacebookInbox', service.getFacebookInbox],
+    ['setFacebookInbox', service.setFacebookInbox],
+    ['listLeads', service.listLeads],
+    ['setLeadStatus', service.setLeadStatus],
   ] as const;
 
   beforeEach(() => {
@@ -53,6 +58,24 @@ describe('customer care IPC boundary', () => {
     expect(await invoke('disconnectFacebookPage', { workspaceId: 'injected' })).toEqual({ ok: false, error: 'forbidden' });
     expect(facebook.connect).toHaveBeenCalledWith();
     expect(service.disconnectFacebookPage).toHaveBeenCalledWith();
+  });
+  it('registers the Phase B1 inbox and lead channels and forwards only their opaque input', async () => {
+    service.getFacebookInbox.mockResolvedValue({ ok: false, error: 'forbidden' });
+    service.setFacebookInbox.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    service.listLeads.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    service.setLeadStatus.mockResolvedValue({ ok: false, error: 'invalid_input' });
+
+    expect(await invoke('getFacebookInbox', { workspaceId: 'injected' })).toEqual({ ok: false, error: 'forbidden' });
+    expect(service.getFacebookInbox).toHaveBeenCalledWith();
+    const toggle = { enabled: true };
+    expect(await invoke('setFacebookInbox', toggle, 'extra')).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.setFacebookInbox).toHaveBeenCalledWith(toggle);
+    const page = { cursor: null };
+    await invoke('listLeads', page);
+    expect(service.listLeads).toHaveBeenCalledWith(page);
+    const status = { leadId: 'l', status: 'closed' };
+    await invoke('setLeadStatus', status);
+    expect(service.setLeadStatus).toHaveBeenCalledWith(status);
   });
   it('hands the buffered Page choices out without any renderer input', async () => {
     const choices = { ok: true, choiceId: 'c', expiresAt: 'e', pages: [], missingScopes: [] };

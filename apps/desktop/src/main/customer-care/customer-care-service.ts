@@ -16,6 +16,9 @@ import type {
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookFailure,
+  CustomerCareInboxResult,
+  CustomerCareLeadListResult,
+  CustomerCareLeadStatusResult,
   CustomerCarePageConnection,
 } from '../../shared/customer-care-types';
 import {
@@ -24,7 +27,17 @@ import {
   type CareFacebookFailure,
   type CareFacebookGateway,
   type CareFacebookResult,
+  type CareLeadsGateway,
 } from './care-facebook-client';
+import {
+  CARE_INBOX_MANAGE_ROLES,
+  CARE_LEAD_READ_ROLES,
+  canManageCareInbox,
+  copyCareLead,
+  parseCareInboxInput,
+  parseCareLeadListInput,
+  parseCareLeadStatusInput,
+} from './care-leads';
 import {
   connectedPage,
   deriveCareMode,
@@ -73,6 +86,10 @@ export interface CustomerCareServiceOptions {
   currentIdentityId: () => string | null;
   /** Care Facebook Page backend. Absent ⇒ every snapshot reports the Page connection as `unsupported`. */
   facebook?: CareFacebookGateway;
+  /** Phase B1 inbox and lead routes. Absent ⇒ every inbox and lead call answers `unsupported`. */
+  leads?: CareLeadsGateway;
+  /** Called after the Page inbox was switched on or off, so background lead checks re-read it at once. */
+  onFacebookInboxChanged?: () => void;
 }
 
 /** Main-only result of starting a connect: the state never reaches the renderer. */
@@ -655,6 +672,8 @@ export class CustomerCareService {
   private readonly now: () => Date;
   private readonly currentIdentityId: () => string | null;
   private readonly facebook?: CareFacebookGateway;
+  private readonly leads?: CareLeadsGateway;
+  private readonly onFacebookInboxChanged?: () => void;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -664,6 +683,8 @@ export class CustomerCareService {
     this.now = options.now ?? (() => new Date());
     this.currentIdentityId = options.currentIdentityId;
     this.facebook = options.facebook;
+    this.leads = options.leads;
+    this.onFacebookInboxChanged = options.onFacebookInboxChanged;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -800,6 +821,81 @@ export class CustomerCareService {
     const result = await this.runFacebookCall(authority, () => facebook.disconnect(authority.workspaceId));
     if (!result.ok) return result;
     return { ok: true, snapshot: this.buildSnapshot(authority, { state: 'not_connected' }) };
+  }
+
+  /** Owner, manager and editor read the inbox state; `canManage` tells the screen who may switch it. */
+  async getFacebookInbox(): Promise<CustomerCareInboxResult> {
+    const gate = await this.leadsAuthority(CARE_LEAD_READ_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    const result = await this.runFacebookCall(authority, () => leads.getInbox(authority.workspaceId));
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      inbox: result.value ? { ...result.value } : null,
+      canManage: canManageCareInbox(authority.role),
+    };
+  }
+
+  /** Renderer input is only `{ enabled }`; owner/manager subscribe or unsubscribe the Page's messages. */
+  async setFacebookInbox(input: unknown): Promise<CustomerCareInboxResult> {
+    const parsed = parseCareInboxInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.leadsAuthority(CARE_INBOX_MANAGE_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    const result = await this.runFacebookCall(authority, () => leads.setInbox(authority.workspaceId, parsed.enabled));
+    if (!result.ok) return result;
+    try {
+      this.onFacebookInboxChanged?.();
+    } catch {
+      // A background refresh hook must never turn a completed switch into a failure.
+    }
+    return { ok: true, workspaceId: authority.workspaceId, inbox: { ...result.value }, canManage: true };
+  }
+
+  /** Renderer input is only `{ cursor }`; phones leave main only in this answer, never on disk or in logs. */
+  async listLeads(input: unknown): Promise<CustomerCareLeadListResult> {
+    const parsed = parseCareLeadListInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.leadsAuthority(CARE_LEAD_READ_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    const result = await this.runFacebookCall(authority, () => leads.listLeads(authority.workspaceId, parsed.cursor));
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      leads: result.value.leads.map(copyCareLead),
+      nextCursor: result.value.nextCursor,
+    };
+  }
+
+  async setLeadStatus(input: unknown): Promise<CustomerCareLeadStatusResult> {
+    const parsed = parseCareLeadStatusInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.leadsAuthority(CARE_LEAD_READ_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    const result = await this.runFacebookCall(
+      authority,
+      () => leads.setLeadStatus(authority.workspaceId, parsed.leadId, parsed.status),
+    );
+    if (!result.ok) return result;
+    return { ok: true, workspaceId: authority.workspaceId, lead: copyCareLead(result.value) };
+  }
+
+  /** Fresh authority for an inbox or lead call: signed in, one of `roles`, and the B1 backend present. */
+  private async leadsAuthority(roles: readonly CustomerCareRole[]): Promise<
+    { ok: true; authority: CustomerCareAuthority; leads: CareLeadsGateway } | CustomerCareFacebookFailure
+  > {
+    const authority = await this.resolveAuthority();
+    if (authority === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
+    if (typeof authority === 'string') return { ok: false, error: 'auth' };
+    if (!roles.includes(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!this.leads) return { ok: false, error: 'unsupported' };
+    return { ok: true, authority, leads: this.leads };
   }
 
   /** Fresh authority for a Page mutation: signed in, owner/manager, and a Facebook backend present. */

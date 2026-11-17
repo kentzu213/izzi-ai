@@ -96,6 +96,7 @@ import { registerCustomerCareIpc } from './customer-care/customer-care-ipc';
 import { CustomerCareService } from './customer-care/customer-care-service';
 import { CareFacebookClient } from './customer-care/care-facebook-client';
 import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './customer-care/care-facebook-oauth';
+import { CareLeadNotifier } from './customer-care/care-lead-notifier';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import {
@@ -220,6 +221,8 @@ const pendingNativeMarketingOAuth = new Map<string, {
 }>();
 // Owns the Care Facebook Login pending states; claims the shared Marketing OAuth deep link first.
 let careFacebookOAuth: CareFacebookOAuthCoordinator | null = null;
+// Background "new lead" notifications for Customer Care (Phase B1); never carries a phone.
+let careLeadNotifier: CareLeadNotifier | null = null;
 
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
@@ -254,6 +257,7 @@ function clearSignedOutCustomerMarketingState(): void {
   customerMarketingService?.clearPendingWorkspaceInvitationCopy();
   customerMarketingInvitationCoordinator?.clearPending();
   bufferedCustomerMarketingInvitationStatus = null;
+  careLeadNotifier?.reset();
 }
 
 async function resolveIzziCredential(auth: AuthManager): Promise<string | null> {
@@ -897,17 +901,37 @@ function setupIPC() {
     customerMarketingAuthority,
     DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   );
+  // Same reviewed origin as Native Marketing; an unreviewed origin fails closed as not configured.
+  const careFacebookClient = new CareFacebookClient(authManager, {
+    baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+      ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
+    allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
+  });
+  careLeadNotifier = new CareLeadNotifier({
+    resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+    // Local read: a workspace switch stops checks for the old workspace on the next tick.
+    currentWorkspaceId: () => customerMarketingService.getActiveWorkspaceId(),
+    gateway: careFacebookClient,
+    store: dbManager,
+    // The body is the customer's name or "Khách Facebook" only; the phone stays in the Care screen.
+    notify: ({ title, body }) => {
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title, body });
+      // No navigation hook from main to the Care tab exists yet; bring the window forward.
+      notification.on('click', showMainWindow);
+      notification.show();
+    },
+    log: (message) => console.warn('[CustomerCare]', message),
+  });
   const customerCareService = new CustomerCareService({
     store: dbManager,
     crypto: safeStorage,
     resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
-    // Same reviewed origin as Native Marketing; an unreviewed origin fails closed as not configured.
-    facebook: new CareFacebookClient(authManager, {
-      baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
-        ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
-      allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
-    }),
+    facebook: careFacebookClient,
+    leads: careFacebookClient,
+    onFacebookInboxChanged: () => careLeadNotifier?.refresh(),
     selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
       const result = await izziAgent.chat({
@@ -934,7 +958,12 @@ function setupIPC() {
   registerCustomerCareIpc(customerCareService, careFacebookOAuth);
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
-    acceptInvitation: (token) => customerMarketingService.acceptWorkspaceInvitation(token),
+    acceptInvitation: async (token) => {
+      const result = await customerMarketingService.acceptWorkspaceInvitation(token);
+      // Accepting an invitation makes that workspace active: stop lead checks for the previous one.
+      if (result.ok) careLeadNotifier?.reset();
+      return result;
+    },
     notify: (result) => {
       bufferedCustomerMarketingInvitationStatus = result;
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -977,6 +1006,9 @@ function setupIPC() {
   powerMonitor.on('resume', () => void marketingScheduler.tick());
   powerMonitor.on('unlock-screen', () => void marketingScheduler.tick());
   app.on('before-quit', () => marketingScheduler.stop());
+  // Runs in main, so new leads are still announced while the window sits in the tray.
+  careLeadNotifier.start();
+  app.on('before-quit', () => careLeadNotifier?.stop());
 
   // ── Extensions (basic) ──
   ipcMain.handle('extensions:list', async () => {

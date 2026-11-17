@@ -19,6 +19,7 @@ import {
   withMountedTab,
   type AgentMarketingTab,
 } from './AgentMarketingWorkspaceV2';
+import { usePanelVisible } from '../../lib/panel-visibility';
 
 function analyticsCapability(overrides: Partial<CustomerCapability> = {}): CustomerCapability {
   return {
@@ -125,6 +126,30 @@ describe('Agent Marketing V2 panel persistence', () => {
 
     expect([...next]).toEqual(['conversation', 'analytics']);
     expect([...mounted]).toEqual(['conversation']);
+  });
+
+  it('tells each kept-mounted panel whether it is the visible one, so its pollers can pause', () => {
+    function VisibilityProbe() {
+      return createElement('span', { id: 'probe' }, usePanelVisible() ? 'visible' : 'hidden');
+    }
+    const html = renderToStaticMarkup(createElement(AgentMarketingWorkspaceV2, {
+      tab: 'care',
+      onTabChange: () => undefined,
+      conversation: null,
+      care: createElement(VisibilityProbe),
+      plan: null,
+      content: null,
+      analytics: null,
+      channels: null,
+      inspector: null,
+      artifacts: [],
+      externalActionsAllowed: false,
+    }));
+    expect(html).toContain('<span id="probe">visible</span>');
+    // Outside a tab frame (legacy view) a mounted panel counts as visible.
+    expect(renderToStaticMarkup(createElement(VisibilityProbe))).toContain('visible');
+    const component = readFileSync(fileURLToPath(new URL('./AgentMarketingWorkspaceV2.tsx', import.meta.url)), 'utf8');
+    expect(component).toContain('<PanelVisibleContext.Provider value={item.id === tab}>');
   });
 
   it('keeps the Director draft and Analytics mounted across a round trip of tab switches', () => {

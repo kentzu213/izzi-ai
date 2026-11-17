@@ -1,5 +1,5 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -633,6 +633,10 @@ declare global {
       disconnectFacebookPage(): Promise<CustomerCareFacebookActionResult>;
       takeFacebookPageChoices(): Promise<CustomerCareFacebookChoicesEvent | null>;
       onFacebookPageChoices(listener: (event: CustomerCareFacebookChoicesEvent) => void): () => void;
+      getFacebookInbox(): Promise<CustomerCareInboxResult>;
+      setFacebookInbox(input: CustomerCareInboxInput): Promise<CustomerCareInboxResult>;
+      listLeads(input: CustomerCareLeadListInput): Promise<CustomerCareLeadListResult>;
+      setLeadStatus(input: CustomerCareLeadStatusInput): Promise<CustomerCareLeadStatusResult>;
     };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;
