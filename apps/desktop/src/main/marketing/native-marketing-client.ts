@@ -362,10 +362,10 @@ export type NativeMarketingOAuthCallbackResult =
   | NativeMarketingFailure;
 
 const MARKETING_ROOT = '/api/marketing';
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const OAUTH_STATE_PATTERN = /^[A-Za-z0-9._~-]{16,512}$/;
-const OAUTH_CODE_PATTERN = /^[A-Za-z0-9._~+\/%=-]{8,2048}$/;
-const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const OAUTH_STATE_PATTERN = /^[A-Za-z0-9._~-]{16,512}$/;
+export const OAUTH_CODE_PATTERN = /^[A-Za-z0-9._~+\/%=-]{8,2048}$/;
+export const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 /**
  * Origins a reviewer has signed off for native Marketing traffic. The public

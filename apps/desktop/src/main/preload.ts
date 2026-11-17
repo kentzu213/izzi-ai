@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -670,6 +670,17 @@ const electronAPI = {
     getSnapshot: (): Promise<CustomerCareSnapshot> => ipcRenderer.invoke('customerCare:getSnapshot'),
     saveSetup: (input: CustomerCareSetup): Promise<CustomerCareMutationResult> => ipcRenderer.invoke('customerCare:saveSetup', input),
     assist: (input: CustomerCareAssistInput): Promise<CustomerCareAssistResult> => ipcRenderer.invoke('customerCare:assist', input),
+    connectFacebookPage: (): Promise<CustomerCareFacebookConnectResult> => ipcRenderer.invoke('customerCare:connectFacebookPage'),
+    selectFacebookPage: (input: CustomerCareFacebookSelectInput): Promise<CustomerCareFacebookActionResult> =>
+      ipcRenderer.invoke('customerCare:selectFacebookPage', input),
+    disconnectFacebookPage: (): Promise<CustomerCareFacebookActionResult> => ipcRenderer.invoke('customerCare:disconnectFacebookPage'),
+    takeFacebookPageChoices: (): Promise<CustomerCareFacebookChoicesEvent | null> =>
+      ipcRenderer.invoke('customerCare:takeFacebookPageChoices'),
+    onFacebookPageChoices: (listener: (event: CustomerCareFacebookChoicesEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, result: CustomerCareFacebookChoicesEvent) => listener(result);
+      ipcRenderer.on('customerCare:facebookPageChoices', handler);
+      return () => { ipcRenderer.removeListener('customerCare:facebookPageChoices', handler); };
+    },
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>

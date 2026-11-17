@@ -94,6 +94,8 @@ import {
 import { registerCustomerMarketingIpc } from './customer-marketing/customer-marketing-ipc';
 import { registerCustomerCareIpc } from './customer-care/customer-care-ipc';
 import { CustomerCareService } from './customer-care/customer-care-service';
+import { CareFacebookClient } from './customer-care/care-facebook-client';
+import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './customer-care/care-facebook-oauth';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import {
@@ -216,6 +218,8 @@ const pendingNativeMarketingOAuth = new Map<string, {
   platform: 'facebook' | 'youtube';
   expiresAt: string | null;
 }>();
+// Owns the Care Facebook Login pending states; claims the shared Marketing OAuth deep link first.
+let careFacebookOAuth: CareFacebookOAuthCoordinator | null = null;
 
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
@@ -893,11 +897,17 @@ function setupIPC() {
     customerMarketingAuthority,
     DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   );
-  registerCustomerCareIpc(new CustomerCareService({
+  const customerCareService = new CustomerCareService({
     store: dbManager,
     crypto: safeStorage,
     resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+    // Same reviewed origin as Native Marketing; an unreviewed origin fails closed as not configured.
+    facebook: new CareFacebookClient(authManager, {
+      baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+        ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
+      allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
+    }),
     selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
       const result = await izziAgent.chat({
@@ -910,7 +920,18 @@ function setupIPC() {
       if (result.error || result.truncated) throw new Error('care-model-unavailable');
       return result.reply;
     },
-  }));
+  });
+  careFacebookOAuth = new CareFacebookOAuthCoordinator({
+    service: customerCareService,
+    openExternal: (url) => shell.openExternal(url),
+    notify: (result) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('customerCare:facebookPageChoices', result);
+      }
+    },
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+  });
+  registerCustomerCareIpc(customerCareService, careFacebookOAuth);
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
     acceptInvitation: (token) => customerMarketingService.acceptWorkspaceInvitation(token),
@@ -2217,7 +2238,8 @@ function handleProtocolUrl(url: string): void {
     return;
   }
   if (url.startsWith('openclaw://marketing/oauth/callback')) {
-    handleNativeMarketingOAuthCallback(url);
+    // Care claims the link only when the state is one it minted; otherwise Native Marketing handles it.
+    routeMarketingOAuthCallback(url, careFacebookOAuth, handleNativeMarketingOAuthCallback);
     return;
   }
   if (!customerMarketingInvitationCoordinator) {

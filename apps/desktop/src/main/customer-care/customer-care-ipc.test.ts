@@ -9,36 +9,69 @@ import { CUSTOMER_CARE_AUTH_ERROR, CUSTOMER_CARE_UNAVAILABLE_ERROR } from '../..
 describe('customer care IPC boundary', () => {
   const service = {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
+    selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
   };
+  const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
+  const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
+  const CHANNELS = [
+    ['getSnapshot', service.getSnapshot],
+    ['saveSetup', service.saveSetup],
+    ['assist', service.assist],
+    ['connectFacebookPage', facebook.connect],
+    ['selectFacebookPage', service.selectFacebookPage],
+    ['disconnectFacebookPage', service.disconnectFacebookPage],
+    ['takeFacebookPageChoices', facebook.takeChoices],
+  ] as const;
+
   beforeEach(() => {
     handlers.clear(); vi.clearAllMocks(); trusted.mockReturnValue(true);
-    registerCustomerCareIpc(service);
+    registerCustomerCareIpc(service, facebook);
   });
   it('rejects untrusted senders on every channel before accessing data', async () => {
     trusted.mockReturnValue(false);
-    for (const method of ['getSnapshot', 'saveSetup', 'assist'] as const) {
-      await expect(handlers.get(`customerCare:${method}`)!({})).rejects.toThrow('Không thể truy cập');
-      expect(service[method]).not.toHaveBeenCalled();
+    for (const [channel, target] of CHANNELS) {
+      await expect(invoke(channel, {})).rejects.toThrow('Không thể truy cập');
+      expect(target).not.toHaveBeenCalled();
     }
-    expect(handlers.size).toBe(3);
+    expect(handlers.size).toBe(CHANNELS.length);
   });
   it('passes opaque inputs to the main service parser', async () => {
     const payload = { workspaceId: 'injected' };
     service.saveSetup.mockResolvedValue({ ok: false, error: 'invalid' });
-    expect(await handlers.get('customerCare:saveSetup')!({}, payload)).toEqual({ ok: false, error: 'invalid' });
+    expect(await invoke('saveSetup', payload)).toEqual({ ok: false, error: 'invalid' });
     expect(service.saveSetup).toHaveBeenCalledWith(payload);
+  });
+  it('forwards only the opaque Page selection and nothing else from the renderer', async () => {
+    const selection = { choiceId: 'c', pageId: 'p' };
+    service.selectFacebookPage.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    expect(await invoke('selectFacebookPage', selection, 'extra')).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.selectFacebookPage).toHaveBeenCalledWith(selection);
+
+    facebook.connect.mockResolvedValue({ ok: true });
+    service.disconnectFacebookPage.mockResolvedValue({ ok: false, error: 'forbidden' });
+    expect(await invoke('connectFacebookPage', { workspaceId: 'injected' })).toEqual({ ok: true });
+    expect(await invoke('disconnectFacebookPage', { workspaceId: 'injected' })).toEqual({ ok: false, error: 'forbidden' });
+    expect(facebook.connect).toHaveBeenCalledWith();
+    expect(service.disconnectFacebookPage).toHaveBeenCalledWith();
+  });
+  it('hands the buffered Page choices out without any renderer input', async () => {
+    const choices = { ok: true, choiceId: 'c', expiresAt: 'e', pages: [], missingScopes: [] };
+    facebook.takeChoices.mockReturnValueOnce(choices).mockReturnValueOnce(null);
+    expect(await invoke('takeFacebookPageChoices', { identityId: 'injected' })).toEqual(choices);
+    expect(await invoke('takeFacebookPageChoices')).toBeNull();
+    expect(facebook.takeChoices).toHaveBeenCalledWith();
   });
   it.each([CUSTOMER_CARE_AUTH_ERROR, CUSTOMER_CARE_UNAVAILABLE_ERROR])(
     'passes the fixed public error %s through unchanged',
     async (message) => {
       service.getSnapshot.mockRejectedValue(new Error(message));
-      await expect(handlers.get('customerCare:getSnapshot')!({})).rejects.toThrow(message);
+      await expect(invoke('getSnapshot')).rejects.toThrow(message);
     },
   );
   it('redacts rejected service errors on all channels', async () => {
-    for (const method of ['getSnapshot', 'saveSetup', 'assist'] as const) {
-      service[method].mockRejectedValue(new Error('private database or provider details'));
-      await expect(handlers.get(`customerCare:${method}`)!({})).rejects.toThrow(/^Không thể truy cập/);
+    for (const [channel, target] of CHANNELS) {
+      target.mockRejectedValue(new Error('private database or provider details'));
+      await expect(invoke(channel, {})).rejects.toThrow(/^Không thể truy cập/);
     }
   });
 });

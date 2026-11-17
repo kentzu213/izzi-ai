@@ -1,5 +1,5 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -628,6 +628,11 @@ declare global {
       getSnapshot(): Promise<CustomerCareSnapshot>;
       saveSetup(input: CustomerCareSetup): Promise<CustomerCareMutationResult>;
       assist(input: CustomerCareAssistInput): Promise<CustomerCareAssistResult>;
+      connectFacebookPage(): Promise<CustomerCareFacebookConnectResult>;
+      selectFacebookPage(input: CustomerCareFacebookSelectInput): Promise<CustomerCareFacebookActionResult>;
+      disconnectFacebookPage(): Promise<CustomerCareFacebookActionResult>;
+      takeFacebookPageChoices(): Promise<CustomerCareFacebookChoicesEvent | null>;
+      onFacebookPageChoices(listener: (event: CustomerCareFacebookChoicesEvent) => void): () => void;
     };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;

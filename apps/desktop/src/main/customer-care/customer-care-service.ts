@@ -13,7 +13,25 @@ import type {
   CustomerCareRole,
   CustomerCareSetup,
   CustomerCareSnapshot,
+  CustomerCareFacebookActionResult,
+  CustomerCareFacebookChoicesEvent,
+  CustomerCareFacebookFailure,
+  CustomerCarePageConnection,
 } from '../../shared/customer-care-types';
+import {
+  isCareFacebookChoiceId,
+  isCareFacebookPageId,
+  type CareFacebookFailure,
+  type CareFacebookGateway,
+  type CareFacebookResult,
+} from './care-facebook-client';
+import {
+  connectedPage,
+  deriveCareMode,
+  derivePageBlockers,
+  toCustomerCarePageConnection,
+} from './care-page-connection';
+import { OAUTH_CODE_PATTERN, OAUTH_STATE_PATTERN } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_ACCESS_CHANGED_ERROR,
   CUSTOMER_CARE_AUTH_ERROR,
@@ -53,6 +71,19 @@ export interface CustomerCareServiceOptions {
    * Required: a missing, throwing or null hook denies every retried lookup.
    */
   currentIdentityId: () => string | null;
+  /** Care Facebook Page backend. Absent ⇒ every snapshot reports the Page connection as `unsupported`. */
+  facebook?: CareFacebookGateway;
+}
+
+/** Main-only result of starting a connect: the state never reaches the renderer. */
+export type CustomerCareFacebookBeginResult =
+  | { ok: true; workspaceId: string; identityId: string; state: string; expiresAt: string; authorizeUrl: string }
+  | CustomerCareFacebookFailure;
+
+/** The authority a pending OAuth state was minted under; the callback must still match it. */
+export interface CustomerCareFacebookPendingBinding {
+  workspaceId: string;
+  identityId: string;
 }
 
 export type CustomerCareParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -78,6 +109,8 @@ export {
  */
 const AUTHORITY_RETRY_DELAY_MS = 500;
 const AUTHORITY_RETRY_BUDGET_MS = 7_000;
+/** Upper bound for the Page status read inside a snapshot, including a stalled token refresh. */
+const FACEBOOK_STATUS_TIMEOUT_MS = 10_000;
 
 const STORAGE_PREFIX = 'customer_care_setup:v1';
 const ENVELOPE_VERSION = 1;
@@ -122,8 +155,6 @@ const SYSTEM_PROMPT = [
 const BLOCKER_ENCRYPTION = 'Kho lưu trữ mã hóa chưa sẵn sàng, chưa thể đọc hoặc lưu thiết lập.';
 const BLOCKER_UNREADABLE = 'Không xác minh được thiết lập đã lưu cho tài khoản và workspace này nên đã bỏ qua. Hãy lưu lại thiết lập.';
 const BLOCKER_NOT_SAVED = 'Chưa lưu thiết lập chăm sóc khách hàng cho workspace này.';
-const BLOCKER_NO_PAGE = 'Chưa nhập Facebook Page. Chế độ thử chỉ tạo nháp, không gửi tin.';
-const BLOCKER_PAGE_UNVERIFIED = 'Page chưa kết nối. Page ID được nhập thủ công, chưa được xác minh; chế độ thử không gửi tin.';
 const BLOCKER_NO_HANDOFF = 'Chưa có người nhận bàn giao Sale để xử lý các câu hỏi còn thiếu thông tin đã duyệt.';
 const BLOCKER_NO_ACTIVE_FACTS = 'Chưa có tri thức đã duyệt còn hiệu lực; nháp chỉ hỏi làm rõ hoặc đề nghị Sale hỗ trợ.';
 
@@ -623,6 +654,7 @@ export class CustomerCareService {
   private readonly selectFacts?: (input: { system: string; user: string; signal: AbortSignal }) => Promise<string>;
   private readonly now: () => Date;
   private readonly currentIdentityId: () => string | null;
+  private readonly facebook?: CareFacebookGateway;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -631,6 +663,7 @@ export class CustomerCareService {
     this.selectFacts = options.selectFacts;
     this.now = options.now ?? (() => new Date());
     this.currentIdentityId = options.currentIdentityId;
+    this.facebook = options.facebook;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -656,7 +689,7 @@ export class CustomerCareService {
   async getSnapshot(): Promise<CustomerCareSnapshot> {
     const authority = await this.resolveAuthority();
     if (typeof authority === 'string') throw new Error(authority);
-    return this.buildSnapshot(authority);
+    return this.buildSnapshot(authority, await this.readPageConnection(authority));
   }
 
   async saveSetup(input: unknown): Promise<CustomerCareMutationResult> {
@@ -688,7 +721,137 @@ export class CustomerCareService {
     } catch {
       return { ok: false, error: CUSTOMER_CARE_SAVE_ERROR };
     }
-    return { ok: true, snapshot: this.buildSnapshot(authority) };
+    return { ok: true, snapshot: this.buildSnapshot(authority, await this.readPageConnection(authority)) };
+  }
+
+  /** Owner/manager only. Returns the OAuth state and dialog URL to main; never to the renderer. */
+  async beginFacebookConnect(): Promise<CustomerCareFacebookBeginResult> {
+    const gate = await this.facebookAuthority();
+    if (!gate.ok) return gate;
+    const { authority, facebook } = gate;
+    const result = await this.runFacebookCall(authority, () => facebook.startConnect(authority.workspaceId));
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      identityId: authority.identityId,
+      state: result.value.state,
+      expiresAt: result.value.expiresAt,
+      authorizeUrl: result.value.authorizeUrl,
+    };
+  }
+
+  /**
+   * Completes the Facebook Login deep link. `pending` is the authority the state was minted under;
+   * the live authority must still match it, before and after the backend call.
+   */
+  async completeFacebookConnect(
+    state: string,
+    code: string,
+    pending: CustomerCareFacebookPendingBinding,
+  ): Promise<CustomerCareFacebookChoicesEvent> {
+    if (typeof state !== 'string' || !OAUTH_STATE_PATTERN.test(state)
+      || typeof code !== 'string' || !OAUTH_CODE_PATTERN.test(code)) {
+      return { ok: false, error: 'invalid_input' };
+    }
+    const gate = await this.facebookAuthority();
+    if (!gate.ok) return gate;
+    const { authority, facebook } = gate;
+    if (authority.workspaceId !== pending.workspaceId || authority.identityId !== pending.identityId) {
+      return { ok: false, error: 'access_changed' };
+    }
+    const result = await this.runFacebookCall(
+      authority,
+      () => facebook.completeCallback(authority.workspaceId, state, code),
+    );
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      choiceId: result.value.choiceId,
+      expiresAt: result.value.expiresAt,
+      pages: result.value.pages.map((page) => ({ ...page })),
+      missingScopes: [...result.value.missingScopes],
+    };
+  }
+
+  /** Renderer input is only `{ choiceId, pageId }`; the workspace always comes from the live authority. */
+  async selectFacebookPage(input: unknown): Promise<CustomerCareFacebookActionResult> {
+    if (!isExactPlainRecord(input, ['choiceId', 'pageId'])
+      || !isCareFacebookChoiceId(input.choiceId)
+      || !isCareFacebookPageId(input.pageId)) {
+      return { ok: false, error: 'invalid_input' };
+    }
+    const { choiceId, pageId } = input;
+    const gate = await this.facebookAuthority();
+    if (!gate.ok) return gate;
+    const { authority, facebook } = gate;
+    const result = await this.runFacebookCall(
+      authority,
+      () => facebook.selectPage(authority.workspaceId, choiceId, pageId),
+    );
+    if (!result.ok) return result;
+    return { ok: true, snapshot: this.buildSnapshot(authority, connectedPage(result.value)) };
+  }
+
+  async disconnectFacebookPage(): Promise<CustomerCareFacebookActionResult> {
+    const gate = await this.facebookAuthority();
+    if (!gate.ok) return gate;
+    const { authority, facebook } = gate;
+    const result = await this.runFacebookCall(authority, () => facebook.disconnect(authority.workspaceId));
+    if (!result.ok) return result;
+    return { ok: true, snapshot: this.buildSnapshot(authority, { state: 'not_connected' }) };
+  }
+
+  /** Fresh authority for a Page mutation: signed in, owner/manager, and a Facebook backend present. */
+  private async facebookAuthority(): Promise<
+    { ok: true; authority: CustomerCareAuthority; facebook: CareFacebookGateway } | CustomerCareFacebookFailure
+  > {
+    const authority = await this.resolveAuthority();
+    if (authority === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
+    if (typeof authority === 'string') return { ok: false, error: 'auth' };
+    if (!MUTATION_ROLES.includes(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!this.facebook) return { ok: false, error: 'unsupported' };
+    return { ok: true, authority, facebook: this.facebook };
+  }
+
+  /**
+   * Runs one backend call, then re-resolves authority. A sign-out, account/workspace switch or role
+   * change during the call discards the result, so it is never applied under a different authority.
+   */
+  private async runFacebookCall<T>(
+    authority: CustomerCareAuthority,
+    call: () => Promise<CareFacebookResult<T>>,
+  ): Promise<{ ok: true; value: T } | CustomerCareFacebookFailure> {
+    let result: CareFacebookResult<T>;
+    try {
+      result = await call();
+    } catch {
+      result = { ok: false, error: 'unavailable' };
+    }
+    const current = await this.resolveAuthority();
+    if (current === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
+    if (typeof current === 'string' || !sameAuthority(authority, current)) return { ok: false, error: 'access_changed' };
+    return result.ok ? result : facebookFailure(result);
+  }
+
+  /** Bounded status read; any failure or timeout reports `unavailable`, never a connected Page. */
+  private async readPageConnection(authority: CustomerCareAuthority): Promise<CustomerCarePageConnection> {
+    const facebook = this.facebook;
+    if (!facebook) return { state: 'unsupported' };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        facebook.getStatus(authority.workspaceId),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('care-status-timeout')), FACEBOOK_STATUS_TIMEOUT_MS);
+        }),
+      ]);
+      return toCustomerCarePageConnection(result);
+    } catch {
+      return { state: 'unavailable' };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async assist(input: unknown): Promise<CustomerCareAssistResult> {
@@ -916,7 +1079,10 @@ export class CustomerCareService {
     }
   }
 
-  private buildSnapshot(authority: CustomerCareAuthority): CustomerCareSnapshot {
+  private buildSnapshot(
+    authority: CustomerCareAuthority,
+    pageConnection: CustomerCarePageConnection,
+  ): CustomerCareSnapshot {
     const loaded = this.loadSetup(authority);
     const blockers: string[] = [];
     if (!loaded.encryptionAvailable) blockers.push(BLOCKER_ENCRYPTION);
@@ -924,7 +1090,7 @@ export class CustomerCareService {
     else if (!loaded.setup) blockers.push(BLOCKER_NOT_SAVED);
 
     const setup = loaded.setup;
-    blockers.push(setup && setup.pageId !== '' ? BLOCKER_PAGE_UNVERIFIED : BLOCKER_NO_PAGE);
+    blockers.push(...derivePageBlockers(pageConnection, setup));
     if (!setup || setup.handoffTarget === '') blockers.push(BLOCKER_NO_HANDOFF);
     const nowMs = this.now().getTime();
     const activeCount = setup ? setup.facts.filter((fact) => isActive(fact, nowMs)).length : 0;
@@ -934,15 +1100,23 @@ export class CustomerCareService {
       blockers.push(`${inactiveCount} thông tin đã hết hiệu lực hoặc chưa có hiệu lực, không được dùng trong nháp.`);
     }
 
+    const careMode = deriveCareMode({ pageConnection });
     return {
       workspaceId: authority.workspaceId,
       setup: setup ? cloneSetup(setup) : null,
       blockers,
-      mode: 'shadow',
-      outboundEnabled: false,
+      pageConnection,
+      canManagePage: MUTATION_ROLES.includes(authority.role),
+      mode: careMode.mode,
+      modeReasons: careMode.reasons,
+      outboundEnabled: careMode.outboundEnabled,
       encryptedStorageAvailable: loaded.encryptionAvailable,
     };
   }
+}
+
+function facebookFailure(result: CareFacebookFailure): CustomerCareFacebookFailure {
+  return result.reason ? { ok: false, error: result.error, reason: result.reason } : { ok: false, error: result.error };
 }
 
 function scopeHash(authority: CustomerCareAuthority): string {

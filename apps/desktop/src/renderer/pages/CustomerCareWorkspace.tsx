@@ -3,20 +3,46 @@ import type {
   CustomerCareAssistInput,
   CustomerCareAssistResult,
   CustomerCareFact,
+  CustomerCareFacebookActionResult,
+  CustomerCareFacebookChoicesEvent,
+  CustomerCareFacebookConnectResult,
+  CustomerCareFacebookSelectInput,
   CustomerCareMutationResult,
   CustomerCareSetup,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
 import { CUSTOMER_CARE_PUBLIC_ERRORS } from '../../shared/customer-care-errors';
+import { CustomerCareFacebookPagePanel, facebookErrorMessage, pageStatusLabel } from './CustomerCareFacebookPage';
+import {
+  INITIAL_PAGE_FLOW,
+  isSaveDisabled,
+  pageFlowOnActionResult,
+  pageFlowOnChoices,
+  pageFlowOnConnectResult,
+  pageFlowOnFailure,
+  pageFlowOnStart,
+  pageFlowOnWaitTimeout,
+  savePayload,
+  type CarePageFlowState,
+  type CarePageFlowStep,
+} from './customer-care-page-flow';
 import '../styles/customer-care.css';
 
 type CustomerCareApi = {
   getSnapshot: () => Promise<CustomerCareSnapshot>;
   saveSetup: (input: CustomerCareSetup) => Promise<CustomerCareMutationResult>;
   assist: (input: CustomerCareAssistInput) => Promise<CustomerCareAssistResult>;
+  connectFacebookPage: () => Promise<CustomerCareFacebookConnectResult>;
+  selectFacebookPage: (input: CustomerCareFacebookSelectInput) => Promise<CustomerCareFacebookActionResult>;
+  disconnectFacebookPage: () => Promise<CustomerCareFacebookActionResult>;
+  takeFacebookPageChoices: () => Promise<CustomerCareFacebookChoicesEvent | null>;
+  onFacebookPageChoices: (listener: (event: CustomerCareFacebookChoicesEvent) => void) => () => void;
 };
 
 type FactTopic = CustomerCareFact['topic'];
+
+const PAGE_SELECTED_NOTICE = 'Đã kết nối Page Facebook. Hãy bấm “Lưu thiết lập” để dùng Page này cho Chăm sóc khách hàng.';
+const PAGE_DISCONNECTED_NOTICE = 'Đã ngắt kết nối Page Facebook. Chăm sóc khách hàng vẫn ở chế độ thử.';
 
 const FACT_TOPICS: Array<{ value: FactTopic; label: string }> = [
   { value: 'catalog', label: 'Sản phẩm' },
@@ -102,6 +128,9 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   const [assisting, setAssisting] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [pageFlow, setPageFlow] = useState<CarePageFlowState>(INITIAL_PAGE_FLOW);
+  // Mirrors pageFlow so async callbacks and the IPC listener always transition from the latest state.
+  const pageFlowRef = useRef<CarePageFlowState>(INITIAL_PAGE_FLOW);
   const operationRef = useRef(0);
   const shadowSafe = snapshot?.mode === 'shadow' && snapshot.outboundEnabled === false;
 
@@ -116,6 +145,8 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     setResult(null);
     setNotice('');
     setError('');
+    pageFlowRef.current = INITIAL_PAGE_FLOW;
+    setPageFlow(INITIAL_PAGE_FLOW);
     if (!api) {
       setError('Chăm sóc khách hàng cần chạy trong Izzi AI Desktop.');
       setLoading(false);
@@ -146,6 +177,96 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     };
   }, [loadSnapshot]);
 
+  const applyPageStep = useCallback((step: CarePageFlowStep) => {
+    pageFlowRef.current = step.flow;
+    setPageFlow(step.flow);
+    if (step.error !== undefined) setError(step.error);
+    if (step.notice !== undefined) setNotice(step.notice);
+    if (step.snapshot) setSnapshot(step.snapshot);
+  }, []);
+
+  // Facebook Login finishes in the system browser. Main buffers the outcome (Page list, never tokens):
+  // take it on mount, and take it on every live push too, so one outcome is shown exactly once.
+  useEffect(() => {
+    const api = getCustomerCareApi();
+    if (!api?.takeFacebookPageChoices) return undefined;
+    let active = true;
+    const take = () => {
+      api.takeFacebookPageChoices().then(
+        (event) => { if (active) applyPageStep(pageFlowOnChoices(pageFlowRef.current, event)); },
+        () => { /* Nothing could be taken; the next live push or mount takes the buffer again. */ },
+      );
+    };
+    take();
+    const unsubscribe = api.onFacebookPageChoices?.(take);
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [scopeKey, applyPageStep]);
+
+  // Without an outcome in time, the wait for Facebook ends with the expired message.
+  useEffect(() => {
+    const waitingUntil = pageFlow.waitingUntil;
+    if (waitingUntil === null) return undefined;
+    const timer = setTimeout(
+      () => applyPageStep(pageFlowOnWaitTimeout(pageFlowRef.current, Date.now())),
+      Math.max(0, waitingUntil - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [pageFlow.waitingUntil, applyPageStep]);
+
+  const failPageAction = (operation: number, reason: unknown) => {
+    if (operation !== operationRef.current) return;
+    applyPageStep(pageFlowOnFailure(pageFlowRef.current, publicError(reason, facebookErrorMessage('unavailable'))));
+  };
+
+  const connectPage = async () => {
+    const api = getCustomerCareApi();
+    if (!api) return;
+    const operation = ++operationRef.current;
+    applyPageStep(pageFlowOnStart(pageFlowRef.current));
+    try {
+      const response = await api.connectFacebookPage();
+      if (operation === operationRef.current) {
+        applyPageStep(pageFlowOnConnectResult(pageFlowRef.current, response, Date.now()));
+      }
+    } catch (reason) {
+      failPageAction(operation, reason);
+    }
+  };
+
+  const confirmPage = async () => {
+    const api = getCustomerCareApi();
+    const { choices, selectedPageId } = pageFlowRef.current;
+    if (!api || !choices || !selectedPageId) return;
+    const operation = ++operationRef.current;
+    applyPageStep(pageFlowOnStart(pageFlowRef.current, true));
+    try {
+      const response = await api.selectFacebookPage({ choiceId: choices.choiceId, pageId: selectedPageId });
+      if (operation === operationRef.current) {
+        applyPageStep(pageFlowOnActionResult(pageFlowRef.current, response, scopeKey, PAGE_SELECTED_NOTICE));
+      }
+    } catch (reason) {
+      failPageAction(operation, reason);
+    }
+  };
+
+  const disconnectPage = async () => {
+    const api = getCustomerCareApi();
+    if (!api) return;
+    const operation = ++operationRef.current;
+    applyPageStep(pageFlowOnStart(pageFlowRef.current));
+    try {
+      const response = await api.disconnectFacebookPage();
+      if (operation === operationRef.current) {
+        applyPageStep(pageFlowOnActionResult(pageFlowRef.current, response, scopeKey, PAGE_DISCONNECTED_NOTICE));
+      }
+    } catch (reason) {
+      failPageAction(operation, reason);
+    }
+  };
+
   const updateFact = (id: string, patch: Partial<CustomerCareFact>) => {
     setSetup((current) => ({
       ...current,
@@ -165,7 +286,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     setNotice('');
     setError('');
     try {
-      const response = await api.saveSetup(setup);
+      const response = await api.saveSetup(savePayload(setup, snapshot));
       if (operation !== operationRef.current) return;
       if (!response.ok) {
         setError(response.error || 'Cấu hình chưa được lưu.');
@@ -264,9 +385,15 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
             </article>
             <article>
               <span>Kết nối Page</span>
-              <strong>Chưa xác minh</strong>
+              <strong>{pageStatusLabel(snapshot?.pageConnection)}</strong>
             </article>
           </div>
+
+          {snapshot?.modeReasons.length ? (
+            <ul className="ccw__mode-reasons" aria-label="Lý do đang ở chế độ thử">
+              {snapshot.modeReasons.map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+          ) : null}
 
           {snapshot?.blockers.length ? (
             <div className="ccw__blockers">
@@ -278,6 +405,22 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
             <div className="ccw__blockers" role="alert">
               <strong>Trạng thái an toàn không hợp lệ. Lưu cấu hình và tạo bản nháp đã bị khóa.</strong>
             </div>
+          )}
+
+          {snapshot && (
+            <CustomerCareFacebookPagePanel
+              connection={snapshot.pageConnection}
+              canManage={snapshot.canManagePage}
+              busy={pageFlow.busy || saving || assisting}
+              waitingForFacebook={pageFlow.waitingUntil !== null}
+              choices={pageFlow.choices}
+              selectedPageId={pageFlow.selectedPageId}
+              onConnect={() => { void connectPage(); }}
+              onDisconnect={() => { void disconnectPage(); }}
+              onSelectPage={(pageId) => applyPageStep({ flow: { ...pageFlowRef.current, selectedPageId: pageId } })}
+              onConfirmPage={() => { void confirmPage(); }}
+              onCancelChoices={() => applyPageStep({ flow: { ...pageFlowRef.current, choices: null, selectedPageId: '' } })}
+            />
           )}
 
           <form className="ccw__section" onSubmit={saveSetup}>
@@ -294,19 +437,11 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
                 Thiết lập mẫu Hoàng Hưng
               </button>
             </div>
-            <p className="ccw__hint">Nút mẫu chỉ điền tên người bán. Page ID và tên Page vẫn trống cho tới khi được xác minh.</p>
+            <p className="ccw__hint">Nút mẫu chỉ điền tên người bán. Page được lấy từ kết nối Page Facebook đã xác minh khi bạn lưu thiết lập.</p>
             <div className="ccw__fields">
               <label>
                 <span>Tên người bán</span>
                 <input value={setup.merchantName} onChange={(event) => setSetup({ ...setup, merchantName: event.currentTarget.value })} />
-              </label>
-              <label>
-                <span>Page ID (chưa xác minh kết nối)</span>
-                <input value={setup.pageId} onChange={(event) => setSetup({ ...setup, pageId: event.currentTarget.value })} placeholder="Để trống nếu chưa xác minh" />
-              </label>
-              <label>
-                <span>Tên Page tham chiếu</span>
-                <input value={setup.pageName} onChange={(event) => setSetup({ ...setup, pageName: event.currentTarget.value })} placeholder="Không suy ra từ tên người bán" />
               </label>
               <label>
                 <span>Đích bàn giao cho Sale</span>
@@ -362,7 +497,13 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               </div>
             )}
             <div className="ccw__actions">
-              <button type="submit" className="cmr-button cmr-button--primary" disabled={saving || assisting || !snapshot?.encryptedStorageAvailable || !shadowSafe}>
+              <button type="submit" className="cmr-button cmr-button--primary" disabled={isSaveDisabled({
+                saving,
+                assisting,
+                pageBusy: pageFlow.busy,
+                encryptedStorageAvailable: snapshot?.encryptedStorageAvailable === true,
+                shadowSafe,
+              })}>
                 {saving ? 'Đang lưu…' : 'Lưu thiết lập'}
               </button>
             </div>
@@ -406,7 +547,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               </label>
             </div>
             <div className="ccw__actions">
-              <button type="submit" className="cmr-button cmr-button--primary" disabled={assisting || saving || !shadowSafe}>
+              <button type="submit" className="cmr-button cmr-button--primary" disabled={assisting || saving || pageFlow.busy || !shadowSafe}>
                 {assisting ? 'Đang tạo bản nháp…' : 'Tạo bản nháp'}
               </button>
             </div>
