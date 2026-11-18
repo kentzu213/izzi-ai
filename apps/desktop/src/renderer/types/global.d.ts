@@ -1,5 +1,5 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -637,6 +637,7 @@ declare global {
       setFacebookInbox(input: CustomerCareInboxInput): Promise<CustomerCareInboxResult>;
       listLeads(input: CustomerCareLeadListInput): Promise<CustomerCareLeadListResult>;
       setLeadStatus(input: CustomerCareLeadStatusInput): Promise<CustomerCareLeadStatusResult>;
+      purgeLead(input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult>;
     };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;

@@ -5,6 +5,8 @@ import type {
   CustomerCareLead,
   CustomerCareLeadListInput,
   CustomerCareLeadListResult,
+  CustomerCareLeadPurgeInput,
+  CustomerCareLeadPurgeResult,
   CustomerCareLeadStatus,
   CustomerCareLeadStatusInput,
   CustomerCareLeadStatusResult,
@@ -28,7 +30,9 @@ import {
   leadDisplayName,
   leadListOnFirstPage,
   leadListOnMore,
+  leadListOnPurge,
   leadListOnStatus,
+  purgeLeadConfirmText,
   shouldPollLeads,
   type CareInboxView,
   type CareLeadListState,
@@ -40,6 +44,8 @@ type CareLeadsApi = {
   setFacebookInbox: (input: CustomerCareInboxInput) => Promise<CustomerCareInboxResult>;
   listLeads: (input: CustomerCareLeadListInput) => Promise<CustomerCareLeadListResult>;
   setLeadStatus: (input: CustomerCareLeadStatusInput) => Promise<CustomerCareLeadStatusResult>;
+  /** B1b; absent on an older preload, which simply hides the purge action. */
+  purgeLead?: (input: CustomerCareLeadPurgeInput) => Promise<CustomerCareLeadPurgeResult>;
 };
 
 const GENERIC_ERROR = 'Chưa tải được khách để lại số. Thử lại sau ít phút.';
@@ -82,10 +88,11 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
   const [toggling, setToggling] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  const [purgeBusyId, setPurgeBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const documentVisible = useDocumentVisible();
   const mountedRef = useRef(true);
-  // Bumped by every status change: a refresh that started before it must not undo it on screen.
+  // Bumped by every status change or purge: a refresh that started before it must not undo it on screen.
   const mutationRef = useRef(0);
 
   useEffect(() => {
@@ -218,7 +225,7 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
 
   const changeStatus = async (lead: CustomerCareLead, status: CustomerCareLeadStatus) => {
     const api = getCareLeadsApi();
-    if (!api || status === lead.status || statusBusyId !== null) return;
+    if (!api || status === lead.status || statusBusyId !== null || purgeBusyId !== null) return;
     mutationRef.current += 1;
     setStatusBusyId(lead.id);
     setError('');
@@ -241,6 +248,37 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
     }
   };
 
+  /** B1b: owner/manager delete one customer's phone and messages after an explicit confirm. */
+  const purgeLead = async (lead: CustomerCareLead) => {
+    const api = getCareLeadsApi();
+    if (!api?.purgeLead || view.state !== 'ready' || !view.canManage) return;
+    if (statusBusyId !== null || purgeBusyId !== null) return;
+    if (!window.confirm(purgeLeadConfirmText(lead))) return;
+    mutationRef.current += 1;
+    setPurgeBusyId(lead.id);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api.purgeLead({ leadId: lead.id });
+      if (!mountedRef.current) return;
+      if (!result.ok) {
+        if (failureDropsLeads(result)) dropLeads();
+        setError(careLeadsErrorMessage(result, 'purge'));
+        if (result.reason === 'lead_not_found') void refreshLeads();
+        return;
+      }
+      if (result.workspaceId !== scopeKey) return;
+      // A refresh that read the list while the purge ran must not bring the row back.
+      mutationRef.current += 1;
+      setList((current) => leadListOnPurge(current, result.leadId));
+      setNotice(`Đã xoá dữ liệu của ${leadDisplayName(lead)}.`);
+    } catch {
+      if (mountedRef.current) setError('Chưa xoá được dữ liệu khách. Thử lại sau ít phút.');
+    } finally {
+      if (mountedRef.current) setPurgeBusyId(null);
+    }
+  };
+
   const copyPhone = async (lead: CustomerCareLead) => {
     try {
       await navigator.clipboard.writeText(lead.phone);
@@ -257,6 +295,9 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
   };
 
   if (view.state === 'loading' || view.state === 'hidden') return null;
+
+  const canPurge = view.state === 'ready' && view.canManage && Boolean(getCareLeadsApi()?.purgeLead);
+  const rowsLocked = statusBusyId !== null || purgeBusyId !== null;
 
   return (
     <section className="ccw__section ccw__leads" aria-labelledby="ccw-leads-title">
@@ -315,10 +356,13 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
                   lead={lead}
                   now={now}
                   busy={statusBusyId === lead.id}
-                  locked={statusBusyId !== null}
+                  locked={rowsLocked}
+                  canPurge={canPurge}
+                  purging={purgeBusyId === lead.id}
                   onCopy={() => { void copyPhone(lead); }}
                   onCompose={() => compose(lead)}
                   onStatus={(status) => { void changeStatus(lead, status); }}
+                  onPurge={() => { void purgeLead(lead); }}
                 />
               ))}
             </ul>
@@ -342,12 +386,18 @@ interface CareLeadRowProps {
   now: number;
   busy: boolean;
   locked: boolean;
+  /** Owner/manager only; a display hint, main and the server re-check the role. */
+  canPurge: boolean;
+  purging: boolean;
   onCopy: () => void;
   onCompose: () => void;
   onStatus: (status: CustomerCareLeadStatus) => void;
+  onPurge: () => void;
 }
 
-function CareLeadRow({ lead, now, busy, locked, onCopy, onCompose, onStatus }: CareLeadRowProps) {
+function CareLeadRow({
+  lead, now, busy, locked, canPurge, purging, onCopy, onCompose, onStatus, onPurge,
+}: CareLeadRowProps) {
   const name = leadDisplayName(lead);
   const canCompose = latestCustomerText(lead) !== null;
   const statusId = `ccw-lead-status-${lead.id}`;
@@ -405,6 +455,18 @@ function CareLeadRow({ lead, now, busy, locked, onCopy, onCompose, onStatus }: C
         >
           Soạn trả lời
         </button>
+        {canPurge && (
+          <button
+            type="button"
+            className="cmr-button cmr-button--danger"
+            disabled={locked}
+            aria-busy={purging || undefined}
+            aria-label={`Xoá dữ liệu khách ${name}`}
+            onClick={onPurge}
+          >
+            {purging ? 'Đang xoá…' : 'Xoá dữ liệu khách'}
+          </button>
+        )}
       </div>
     </li>
   );

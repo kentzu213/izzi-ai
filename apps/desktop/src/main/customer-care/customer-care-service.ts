@@ -18,6 +18,7 @@ import type {
   CustomerCareFacebookFailure,
   CustomerCareInboxResult,
   CustomerCareLeadListResult,
+  CustomerCareLeadPurgeResult,
   CustomerCareLeadStatusResult,
   CustomerCarePageConnection,
 } from '../../shared/customer-care-types';
@@ -31,11 +32,13 @@ import {
 } from './care-facebook-client';
 import {
   CARE_INBOX_MANAGE_ROLES,
+  CARE_LEAD_PURGE_ROLES,
   CARE_LEAD_READ_ROLES,
   canManageCareInbox,
   copyCareLead,
   parseCareInboxInput,
   parseCareLeadListInput,
+  parseCareLeadPurgeInput,
   parseCareLeadStatusInput,
 } from './care-leads';
 import {
@@ -884,6 +887,18 @@ export class CustomerCareService {
     );
     if (!result.ok) return result;
     return { ok: true, workspaceId: authority.workspaceId, lead: copyCareLead(result.value) };
+  }
+
+  /** B1b: renderer input is only `{ leadId }`; owner/manager delete that customer's lead and messages. */
+  async purgeLead(input: unknown): Promise<CustomerCareLeadPurgeResult> {
+    const parsed = parseCareLeadPurgeInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.leadsAuthority(CARE_LEAD_PURGE_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    const result = await this.runFacebookCall(authority, () => leads.purgeLead(authority.workspaceId, parsed.leadId));
+    if (!result.ok) return result;
+    return { ok: true, workspaceId: authority.workspaceId, leadId: result.value.leadId };
   }
 
   /** Fresh authority for an inbox or lead call: signed in, one of `roles`, and the B1 backend present. */

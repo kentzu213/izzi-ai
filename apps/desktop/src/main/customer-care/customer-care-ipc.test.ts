@@ -11,6 +11,7 @@ describe('customer care IPC boundary', () => {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
     selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
+    purgeLead: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
@@ -26,6 +27,7 @@ describe('customer care IPC boundary', () => {
     ['setFacebookInbox', service.setFacebookInbox],
     ['listLeads', service.listLeads],
     ['setLeadStatus', service.setLeadStatus],
+    ['purgeLead', service.purgeLead],
   ] as const;
 
   beforeEach(() => {
@@ -76,6 +78,9 @@ describe('customer care IPC boundary', () => {
     const status = { leadId: 'l', status: 'closed' };
     await invoke('setLeadStatus', status);
     expect(service.setLeadStatus).toHaveBeenCalledWith(status);
+    const purge = { leadId: 'l' };
+    await invoke('purgeLead', purge, 'extra');
+    expect(service.purgeLead).toHaveBeenCalledWith(purge);
   });
   it('hands the buffered Page choices out without any renderer input', async () => {
     const choices = { ok: true, choiceId: 'c', expiresAt: 'e', pages: [], missingScopes: [] };

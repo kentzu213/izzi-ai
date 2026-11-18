@@ -109,7 +109,30 @@ describe('CareFacebookClient Phase B1 requests', () => {
     }
     expect(await instance.setLeadStatus(WORKSPACE, 'lead-1', 'new')).toEqual(invalidRequest);
     expect(await instance.setLeadStatus(WORKSPACE, LEAD_ID, 'done' as never)).toEqual(invalidRequest);
+    expect(await instance.purgeLead(WORKSPACE, 'lead-1')).toEqual(invalidRequest);
+    expect(await instance.purgeLead('not-a-uuid', LEAD_ID)).toEqual(invalidRequest);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('purges one customer with the workspace and lead in the body and checks the answer names that lead', async () => {
+    const ok = client(json({ success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, deletedMessages: 3 }));
+    expect(await ok.instance.purgeLead(WORKSPACE, LEAD_ID)).toEqual({ ok: true, value: { leadId: LEAD_ID, deletedMessages: 3 } });
+    const [url, init] = call(ok.fetchImpl);
+    expect(url).toBe(`${ROOT}/leads/purge`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE, leadId: LEAD_ID });
+
+    const invalid = { ok: false, error: 'invalid-response' };
+    for (const body of [
+      { success: true, workspaceId: WORKSPACE, leadId: LEAD_ID_2, deletedMessages: 3 },
+      { success: true, workspaceId: OTHER_WORKSPACE, leadId: LEAD_ID, deletedMessages: 3 },
+      { success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, deletedMessages: -1 },
+      { success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, deletedMessages: 1.5 },
+      { success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, deletedMessages: 3, phone: PHONE },
+      { success: true, workspaceId: WORKSPACE, leadId: LEAD_ID },
+    ]) {
+      expect(await client(json(body)).instance.purgeLead(WORKSPACE, LEAD_ID)).toEqual(invalid);
+    }
   });
 });
 
@@ -233,6 +256,7 @@ describe('CareFacebookClient Phase B1 failure mapping', () => {
     expect(await client(json(body, status)).instance.getInbox(WORKSPACE)).toEqual(expected);
     expect(await client(json(body, status)).instance.listLeads(WORKSPACE)).toEqual(expected);
     expect(await client(json(body, status)).instance.setLeadStatus(WORKSPACE, LEAD_ID, 'closed')).toEqual(expected);
+    expect(await client(json(body, status)).instance.purgeLead(WORKSPACE, LEAD_ID)).toEqual(expected);
   });
 
   it('logs only the route label and status, never the workspace, phone or server text', async () => {

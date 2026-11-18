@@ -125,8 +125,17 @@ export type CareFacebookGateway = Pick<
   'startConnect' | 'completeCallback' | 'selectPage' | 'getStatus' | 'disconnect'
 >;
 
-/** Phase B1 inbox and lead routes; read-only towards customers. */
-export type CareLeadsGateway = Pick<CareFacebookClient, 'getInbox' | 'setInbox' | 'listLeads' | 'setLeadStatus'>;
+/** What the backend deleted for one customer (B1b). */
+export interface CareLeadPurge {
+  leadId: string;
+  deletedMessages: number;
+}
+
+/** Phase B1 inbox and lead routes, plus the B1b customer purge; nothing is ever sent to a customer. */
+export type CareLeadsGateway = Pick<
+  CareFacebookClient,
+  'getInbox' | 'setInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
+>;
 
 type RequestOutcome =
   | { ok: true; body: unknown }
@@ -535,6 +544,23 @@ export class CareFacebookClient {
     const envelope = parseSuccessEnvelope(result.body, ['lead'], workspaceId);
     const lead = envelope ? parseCareLead(envelope.lead) : null;
     return lead && lead.id === leadId && lead.status === status ? { ok: true, value: lead } : INVALID_RESPONSE;
+  }
+
+  /** POST /leads/purge — owner/manager delete one customer's lead and messages; the answer must name that lead. */
+  async purgeLead(workspaceId: string, leadId: string): Promise<CareFacebookResult<CareLeadPurge>> {
+    if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(leadId)) return INVALID_REQUEST;
+    const result = await this.request('lead-purge', '/leads/purge', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, leadId }),
+    });
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['leadId', 'deletedMessages'], workspaceId);
+    const deletedMessages = envelope?.deletedMessages;
+    if (!envelope || envelope.leadId !== leadId || typeof deletedMessages !== 'number'
+      || !Number.isSafeInteger(deletedMessages) || deletedMessages < 0) {
+      return INVALID_RESPONSE;
+    }
+    return { ok: true, value: { leadId, deletedMessages } };
   }
 
   /**

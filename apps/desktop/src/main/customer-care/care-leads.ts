@@ -9,6 +9,7 @@ import type {
   CustomerCareInboxInput,
   CustomerCareLead,
   CustomerCareLeadListInput,
+  CustomerCareLeadPurgeInput,
   CustomerCareLeadStatusInput,
   CustomerCareRole,
 } from '../../shared/customer-care-types';
@@ -18,6 +19,8 @@ import { isCareFacebookChoiceId, isCareLeadStatus, isCareLeadsCursor } from './c
 export const CARE_LEAD_READ_ROLES: readonly CustomerCareRole[] = ['owner', 'manager', 'editor'];
 /** Only owner and manager subscribe or unsubscribe the Page's messages. */
 export const CARE_INBOX_MANAGE_ROLES: readonly CustomerCareRole[] = ['owner', 'manager'];
+/** B1b, mirrors the backend: only owner and manager delete a customer's data. */
+export const CARE_LEAD_PURGE_ROLES: readonly CustomerCareRole[] = ['owner', 'manager'];
 
 export function canReadCareLeads(role: CustomerCareRole): boolean {
   return CARE_LEAD_READ_ROLES.includes(role);
@@ -56,6 +59,12 @@ export function parseCareLeadStatusInput(input: unknown): CustomerCareLeadStatus
   const record = exactPlainRecord(input, ['leadId', 'status']);
   if (!record || !isCareFacebookChoiceId(record.leadId) || !isCareLeadStatus(record.status)) return null;
   return { leadId: record.leadId, status: record.status };
+}
+
+/** `{ leadId }` only; the workspace always comes from main's live authority. */
+export function parseCareLeadPurgeInput(input: unknown): CustomerCareLeadPurgeInput | null {
+  const record = exactPlainRecord(input, ['leadId']);
+  return record && isCareFacebookChoiceId(record.leadId) ? { leadId: record.leadId } : null;
 }
 
 /** A fresh copy, so the object handed to IPC shares nothing with the client's parse result. */

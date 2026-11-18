@@ -64,6 +64,18 @@ export function leadListOnStatus(state: CareLeadListState, lead: CustomerCareLea
   return { ...state, leads: state.leads.map((item) => (item.id === lead.id ? lead : item)) };
 }
 
+/** B1b: the customer's data is gone on the server; drop their row (and phone) from memory too. */
+export function leadListOnPurge(state: CareLeadListState, leadId: string): CareLeadListState {
+  if (!state.leads.some((lead) => lead.id === leadId)) return state;
+  return { ...state, leads: state.leads.filter((lead) => lead.id !== leadId) };
+}
+
+/** The confirm step before a purge: names the customer (never the phone) and says it cannot be undone. */
+export function purgeLeadConfirmText(lead: Pick<CustomerCareLead, 'customerName'>): string {
+  return `Xoá toàn bộ dữ liệu của ${leadDisplayName(lead)}: số điện thoại và mọi tin nhắn izzi đã lưu của khách này? `
+    + 'Việc này không thể hoàn tác. Nếu khách nhắn tiếp vào Page, izzi sẽ lưu tin mới như bình thường.';
+}
+
 export function leadDisplayName(lead: Pick<CustomerCareLead, 'customerName'>): string {
   const name = lead.customerName?.trim();
   return name ? name : CARE_LEAD_FALLBACK_NAME;
@@ -185,11 +197,20 @@ const INBOX_MESSAGES: Partial<Record<CustomerCareFacebookFailure['error'], strin
   rejected: 'Facebook chưa cho izzi đăng ký nhận tin nhắn của Page. Hãy kiểm tra quyền của Page rồi thử lại.',
 };
 
+const PURGE_MESSAGES: Partial<Record<CustomerCareFacebookFailure['error'], string>> = {
+  forbidden: 'Chỉ chủ sở hữu và quản lý workspace được xoá dữ liệu khách.',
+};
+
 /** Fixed Vietnamese text for a bounded failure; nothing from the server is ever shown. */
-export function careLeadsErrorMessage(failure: CustomerCareFacebookFailure, context: 'leads' | 'inbox'): string {
+export function careLeadsErrorMessage(
+  failure: CustomerCareFacebookFailure,
+  context: 'leads' | 'inbox' | 'purge',
+): string {
   if (failure.reason === 'page_not_connected') return 'Page Facebook chưa được kết nối. Hãy kết nối Page trước.';
   if (failure.reason === 'lead_not_found') return 'Không tìm thấy khách này trong workspace. Danh sách đã được tải lại.';
   if (failure.error === 'rejected' && failure.reason === 'invalid_request') return LEADS_MESSAGES.invalid_input!;
-  const contextual = context === 'inbox' ? INBOX_MESSAGES[failure.error] : undefined;
+  const contextual = context === 'inbox'
+    ? INBOX_MESSAGES[failure.error]
+    : context === 'purge' ? PURGE_MESSAGES[failure.error] : undefined;
   return contextual ?? LEADS_MESSAGES[failure.error] ?? facebookErrorMessage(failure.error, failure.reason);
 }

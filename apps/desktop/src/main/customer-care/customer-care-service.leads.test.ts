@@ -6,8 +6,13 @@ import type {
   CustomerCareLeadStatus,
 } from '../../shared/customer-care-types';
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
-import type { CareFacebookResult, CareLeadPage, CareLeadsGateway } from './care-facebook-client';
-import { parseCareInboxInput, parseCareLeadListInput, parseCareLeadStatusInput } from './care-leads';
+import type { CareFacebookResult, CareLeadPage, CareLeadPurge, CareLeadsGateway } from './care-facebook-client';
+import {
+  parseCareInboxInput,
+  parseCareLeadListInput,
+  parseCareLeadPurgeInput,
+  parseCareLeadStatusInput,
+} from './care-leads';
 
 const IDENTITY_A = 'user-aaaa-1111';
 const IDENTITY_B = 'user-bbbb-2222';
@@ -61,6 +66,10 @@ class FakeLeads implements CareLeadsGateway {
   }
   async setLeadStatus(workspaceId: string, leadId: string, status: CustomerCareLeadStatus) {
     this.calls.push(['setLeadStatus', workspaceId, leadId, status]); this.during(); return this.statusResult;
+  }
+  purgeResult: CareFacebookResult<CareLeadPurge> = { ok: true, value: { leadId: LEAD_ID, deletedMessages: 2 } };
+  async purgeLead(workspaceId: string, leadId: string) {
+    this.calls.push(['purgeLead', workspaceId, leadId]); this.during(); return this.purgeResult;
   }
 }
 
@@ -212,11 +221,53 @@ describe('CustomerCareService leads', () => {
   });
 });
 
+describe('CustomerCareService customer purge (B1b)', () => {
+  it.each(['owner', 'manager'] as const)('lets %s delete one customer of the live workspace', async (role) => {
+    const { service, leads } = fixture({ authority: as(role) });
+    expect(await service.purgeLead({ leadId: LEAD_ID }))
+      .toEqual({ ok: true, workspaceId: WORKSPACE_A, leadId: LEAD_ID });
+    expect(leads.calls).toEqual([['purgeLead', WORKSPACE_A, LEAD_ID]]);
+  });
+
+  it.each(['editor', 'reviewer', 'viewer'] as const)('refuses %s without asking the backend', async (role) => {
+    const { service, leads } = fixture({ authority: as(role) });
+    expect(await service.purgeLead({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'forbidden' });
+    expect(leads.calls).toEqual([]);
+  });
+
+  it.each([
+    undefined,
+    {},
+    { leadId: 'lead-1' },
+    { leadId: LEAD_ID, workspaceId: WORKSPACE_B },
+    { leadId: LEAD_ID, phone: '0901234567' },
+  ])('rejects purge input %j without a backend call', async (input) => {
+    const { service, leads } = fixture();
+    expect(await service.purgeLead(input)).toEqual({ ok: false, error: 'invalid_input' });
+    expect(leads.calls).toEqual([]);
+  });
+
+  it('forwards lead_not_found, maps a throwing gateway to unavailable and drops an answer after an account switch', async () => {
+    const { service, leads } = fixture();
+    leads.purgeResult = { ok: false, error: 'rejected', reason: 'lead_not_found' };
+    expect(await service.purgeLead({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'rejected', reason: 'lead_not_found' });
+
+    leads.purgeLead = async () => { throw new Error('socket hang up 0901234567'); };
+    expect(await service.purgeLead({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'unavailable' });
+
+    const changing = fixture();
+    changing.leads.during = () => changing.switchTo({ ...OWNER, workspaceId: WORKSPACE_B });
+    expect(await changing.service.purgeLead({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'access_changed' });
+  });
+});
+
 describe('care-leads input parsers', () => {
   it('accepts exactly the documented shapes', () => {
     expect(parseCareInboxInput({ enabled: false })).toEqual({ enabled: false });
     expect(parseCareLeadListInput({ cursor: null })).toEqual({ cursor: null });
     expect(parseCareLeadStatusInput({ leadId: LEAD_ID, status: 'closed' })).toEqual({ leadId: LEAD_ID, status: 'closed' });
+    expect(parseCareLeadPurgeInput({ leadId: LEAD_ID })).toEqual({ leadId: LEAD_ID });
     expect(parseCareInboxInput(Object.create({ enabled: true }))).toBeNull();
+    expect(parseCareLeadPurgeInput(Object.create({ leadId: LEAD_ID }))).toBeNull();
   });
 });

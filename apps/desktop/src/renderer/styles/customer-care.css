@@ -464,7 +464,7 @@
 
 .ccw__lead-messages time { flex: 0 0 auto; color: var(--cmr-muted); font-size: 11px; }
 
-.ccw__lead-actions { display: flex; justify-content: flex-end; }
+.ccw__lead-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .ccw__actions--center { justify-content: center; }
 
 @media (prefers-reduced-motion: reduce) {

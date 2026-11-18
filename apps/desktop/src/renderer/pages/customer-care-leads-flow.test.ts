@@ -18,7 +18,9 @@ import {
   leadDisplayName,
   leadListOnFirstPage,
   leadListOnMore,
+  leadListOnPurge,
   leadListOnStatus,
+  purgeLeadConfirmText,
   shouldPollLeads,
 } from './customer-care-leads-flow';
 import { parseCustomerCareTranscript } from './CustomerCareWorkspace';
@@ -188,5 +190,28 @@ describe('error text', () => {
     expect(careLeadsErrorMessage({ ok: false, error: 'forbidden' }, 'leads')).toContain('biên tập viên');
     expect(careLeadsErrorMessage({ ok: false, error: 'not_configured' }, 'inbox')).toContain('liên hệ hỗ trợ izzi');
     expect(careLeadsErrorMessage({ ok: false, error: 'expired' }, 'leads')).toBe('Phiên kết nối Facebook đã hết hạn. Hãy bấm kết nối lại.');
+  });
+});
+
+describe('customer purge (B1b)', () => {
+  it('removes only the purged lead and keeps the cursor and loaded pages', () => {
+    const list = { leads: [lead(1), lead(2), lead(3)], nextCursor: 'next', extraPagesLoaded: true };
+    expect(leadListOnPurge(list, lead(2).id)).toEqual({ leads: [lead(1), lead(3)], nextCursor: 'next', extraPagesLoaded: true });
+    expect(leadListOnPurge(list, 'unknown')).toEqual(list);
+    expect(list.leads).toHaveLength(3);
+  });
+
+  it('asks for confirmation naming the customer, without the phone, and says it cannot be undone', () => {
+    const text = purgeLeadConfirmText(lead(7, { customerName: 'Lan Nguyễn' }));
+    expect(text).toContain('Lan Nguyễn');
+    expect(text).toContain('không thể hoàn tác');
+    expect(text).not.toContain('0901234567');
+    expect(purgeLeadConfirmText(lead(8, { customerName: null }))).toContain(CARE_LEAD_FALLBACK_NAME);
+  });
+
+  it('explains a refused purge in its own words', () => {
+    expect(careLeadsErrorMessage({ ok: false, error: 'forbidden' }, 'purge')).toBe('Chỉ chủ sở hữu và quản lý workspace được xoá dữ liệu khách.');
+    expect(careLeadsErrorMessage({ ok: false, error: 'rejected', reason: 'lead_not_found' }, 'purge')).toContain('Không tìm thấy khách');
+    expect(careLeadsErrorMessage({ ok: false, error: 'unavailable' }, 'purge')).toContain('Chưa kết nối được máy chủ izzi');
   });
 });

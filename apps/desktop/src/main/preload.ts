@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -688,6 +688,8 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:listLeads', input),
     setLeadStatus: (input: CustomerCareLeadStatusInput): Promise<CustomerCareLeadStatusResult> =>
       ipcRenderer.invoke('customerCare:setLeadStatus', input),
+    purgeLead: (input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult> =>
+      ipcRenderer.invoke('customerCare:purgeLead', input),
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>

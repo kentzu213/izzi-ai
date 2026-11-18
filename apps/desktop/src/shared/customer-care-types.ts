@@ -192,6 +192,11 @@ export type CustomerCareLeadStatusResult =
   | { ok: true; workspaceId: string; lead: CustomerCareLead }
   | CustomerCareFacebookFailure;
 
+/** B1b: the customer's lead and every message izzi stored for them are deleted on the server. */
+export type CustomerCareLeadPurgeResult =
+  | { ok: true; workspaceId: string; leadId: string }
+  | CustomerCareFacebookFailure;
+
 /** Renderer inputs; the workspace always comes from main's live authority. */
 export interface CustomerCareInboxInput {
   enabled: boolean;
@@ -204,6 +209,10 @@ export interface CustomerCareLeadListInput {
 export interface CustomerCareLeadStatusInput {
   leadId: string;
   status: CustomerCareLeadStatus;
+}
+
+export interface CustomerCareLeadPurgeInput {
+  leadId: string;
 }
 
 export type CustomerCareMessageRole = 'customer' | 'sale';
