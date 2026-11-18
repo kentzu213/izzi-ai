@@ -56,7 +56,7 @@ type CareLead = {
 ## Behaviour notes
 
 - **Lead creation.** Leads are created only from messages the customer sent: echoes are ignored. A later message with a newer phone replaces the phone and reopens a `closed` or `contacted` lead as `new`.
-- **Nothing is sent.** No route sends a message to a customer.
+- **Nothing is sent by these routes.** Phase C adds automatic replies behind a separate owner/manager switch (`/auto-reply`); see `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md`.
 - **Customer purge (B1b).** `POST /leads/purge` deletes the lead and every stored message of that customer (same Page and PSID) in the workspace, atomically and under the same per-customer lock the webhook uses. For 8 days a hashed marker (not the PSID) refuses late Meta retries of older messages; a NEW message from the customer is stored as usual.
 
 ## Meta data deletion (B1b, public, no izzi login)

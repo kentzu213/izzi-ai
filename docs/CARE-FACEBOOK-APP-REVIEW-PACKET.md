@@ -1,11 +1,13 @@
 # Hồ sơ Meta App Review: Chăm sóc khách hàng ← Page Facebook
 
-Hồ sơ này dùng để nộp **App Review** cho app Meta **N8-2-Auto-1** (App ID `960313042869972`), để izzi nhận tin nhắn Page của **khách thật**, không chỉ của tài khoản có vai trò trên app.
+Hồ sơ này dùng để nộp **App Review** cho app Meta **N8-2-Auto-1** (App ID `960313042869972`), để izzi **nhận tin nhắn Page và tự trả lời khách thật** (Phase C), không chỉ tài khoản có vai trò trên app.
 
 - Phần tiếng Việt dành cho bạn.
 - Các khối **English** dán thẳng vào form của Meta, vì người duyệt đọc tiếng Anh.
 
-Liên quan: `CARE-FACEBOOK-PHASE-B1-LEADS.md` (kế hoạch B1 và B1b), `CARE-FACEBOOK-PHASE-B1-API.md` (hợp đồng API).
+Liên quan: `CARE-FACEBOOK-PHASE-B1-LEADS.md` (kế hoạch B1 và B1b), `CARE-FACEBOOK-PHASE-B1-API.md` (hợp đồng API), `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md` (Phase C: tự trả lời khách).
+
+> **Cập nhật 2026-11-18 (Phase C):** izzi giờ **gửi** tin trả lời tự động cho khách qua Send API. Mọi đoạn trước đây nói "izzi không gửi tin nào cho khách" đã được thay bằng mô tả việc gửi. Screencast phải quay cả cảnh izzi tự trả lời (mục 3, bước 7–9).
 
 ---
 
@@ -25,6 +27,12 @@ Mọi mục dưới đây phải xong. Thiếu mục nào thì Meta gần như c
 | 8 | Tạo một tài khoản izzi dành cho người duyệt, kèm workspace có quyền owner | bạn. Mật khẩu chỉ điền vào ô "test credentials" của Meta, không ghi vào file này. | chưa |
 | 9 | Kiểm tra **không còn kết nối Page nào thiếu ID người cấp**: `select count(*) from customer_care_page_bindings where status <> 'disconnected' and granted_by_facebook_user_id is null` phải bằng 0 | tôi, qua SQL Editor | chưa |
 | 10 | Quyết định về dữ liệu **Marketing** (mục 7) | bạn | chưa |
+| 11 | **Phase C chạy trên production**: migration `20261121`, deploy backend (env `CUSTOMER_CARE_AUTO_REPLY_ENABLED=true`), phát hành desktop có khối "Tự động trả lời khách" | tôi, khi bạn OK từng bước | chưa |
+| 12 | App Dashboard → **Messenger → Webhooks** (Page): tick thêm field `message_echoes` (izzi dùng để biết nhân viên đã trả lời và dừng lại) | bạn, hoặc tôi khi bạn OK | chưa |
+| 13 | Chính sách bảo mật: thay đoạn "izzi không gửi tin cho khách" bằng đoạn mới ở mục 6 (izzi tự trả lời khi chủ shop bật) | bạn duyệt nội dung; sửa ở repo izzi-web | chưa |
+| 14 | Trước khi quay: trên Page thử **tắt Trả lời nhanh (Instant Reply)** của Facebook và lời chào tự động của Pancake, để video chỉ có tin của izzi | bạn | chưa |
+
+> Trạng thái các mục 1–10 theo ghi chú phiên B1b (18/11): mục 1, 2, 6 đã xong; mục 3 (app thuộc portfolio "Đồng Thờ Hồng Hưng") đã xong; mục 9 bằng 0; mục 10 đếm được 0 kết nối Marketing có token. Mục 5: PR chính sách đã merge nhưng bản deploy izzi-web còn chờ PR sửa CI. Hãy kiểm lại trước khi nộp.
 
 ---
 
@@ -56,11 +64,11 @@ Mọi mục dưới đây phải xong. Thiếu mục nào thì Meta gần như c
 | Quyền / tính năng | izzi dùng để | Gọi API nào |
 |---|---|---|
 | `pages_show_list` | Liệt kê các Page người dùng quản lý để họ chọn đúng Page | `GET /me/accounts` |
-| `pages_manage_metadata` | Đăng ký và huỷ đăng ký webhook tin nhắn cho Page | `POST` / `DELETE /{page-id}/subscribed_apps` |
-| `pages_messaging` | Nhận tin nhắn khách gửi tới Page (webhook `messages`, `standby`) | Webhook `https://api.izziapi.com/api/meta/webhook` |
+| `pages_manage_metadata` | Đăng ký và huỷ đăng ký webhook tin nhắn cho Page (`messages`, `standby`, `message_echoes`) | `POST` / `DELETE /{page-id}/subscribed_apps` |
+| `pages_messaging` | Nhận tin nhắn khách gửi tới Page (webhook `messages`, `standby`, `message_echoes`) **và tự trả lời khách** trong cửa sổ 24 giờ | Webhook `https://api.izziapi.com/api/meta/webhook`; Send API `POST /{page-id}/messages` (`messaging_type=RESPONSE`) |
 | **Business Asset User Profile Access** (feature) | Hiện tên khách (họ, tên) cạnh số điện thoại để Sale nhận ra khách | `GET /{psid}?fields=first_name,last_name` |
 
-izzi **không gửi** tin nhắn nào cho khách: không có lệnh gọi Send API. Nhân viên shop vẫn trả lời trên công cụ hiện có (ví dụ Pancake). Hãy nói rõ điều này với người duyệt; các khối English bên dưới đã ghi sẵn.
+izzi **gửi** tin nhắn cho khách chỉ khi chủ shop bật "Tự động trả lời khách" (mặc định tắt): tối đa 3 tin mỗi khách trong 24 giờ, chỉ trong cửa sổ 24 giờ của Messenger, nội dung chỉ gồm câu cố định và thông tin shop đã duyệt, mục đích là xin số điện thoại/Zalo để nhân viên tư vấn. izzi dừng khi khách để số, khi khách từ chối, hoặc khi nhân viên trả lời (Page Inbox, Pancake). Các khối English bên dưới đã ghi sẵn.
 
 ### 2.1 `pages_show_list` (English, paste into "How will your app use this permission?")
 
@@ -71,13 +79,19 @@ izzi is a Windows/macOS desktop app that helps small Vietnamese shops follow up 
 ### 2.2 `pages_manage_metadata`
 
 ```text
-After the shop owner picks a Page, they turn on "Receive messages from the Page" (Nhận tin nhắn từ Page) inside izzi. izzi then calls POST /{page-id}/subscribed_apps with subscribed_fields=messages,standby so that Messenger delivers this Page's customer messages to izzi's webhook. Turning the switch off, disconnecting the Page, or a Facebook data deletion request calls DELETE /{page-id}/subscribed_apps. izzi uses pages_manage_metadata only for this subscription; it does not change any other Page setting.
+After the shop owner picks a Page, they turn on "Receive messages from the Page" (Nhận tin nhắn từ Page) inside izzi. izzi then calls POST /{page-id}/subscribed_apps with subscribed_fields=messages,standby so that Messenger delivers this Page's customer messages to izzi's webhook. When the owner also turns on "Automatic replies" (Tự động trả lời khách), izzi subscribes the same Page to message_echoes as well, only to notice when the shop's staff (or another inbox app) answered a customer, so that izzi stops replying to that customer. Turning the switches off, disconnecting the Page, or a Facebook data deletion request calls DELETE /{page-id}/subscribed_apps or re-subscribes without echoes. izzi uses pages_manage_metadata only for this subscription; it does not change any other Page setting.
 ```
 
 ### 2.3 `pages_messaging`
 
 ```text
-izzi uses pages_messaging only to RECEIVE messages that customers send to the shop's Page (webhook fields "messages" and "standby"); izzi never sends a message to a customer. When a customer writes their Vietnamese mobile number in a message, izzi lists that customer in "Customers who left a phone number" (Khách để lại số) so the shop's sales staff can call them or contact them on Zalo. Messages are stored encrypted (AES-256-GCM) for 30 days and leads for 90 days after the last message, then deleted automatically. A shop owner/manager can delete any single customer's data at any time ("Delete customer data" / Xoá dữ liệu khách). Messages written by the Page itself (echoes) are ignored.
+izzi uses pages_messaging to RECEIVE the messages customers send to the shop's Page and to ANSWER them automatically on the shop's behalf.
+
+Receiving: customer messages arrive through the webhook (fields "messages" and "standby"). When a customer writes their Vietnamese mobile number, izzi lists that customer in "Customers who left a phone number" (Khách để lại số) so the shop's sales staff can call them or contact them on Zalo.
+
+Answering: only after the shop owner or manager turns on "Automatic replies" (Tự động trả lời khách, off by default), izzi replies to a customer's new messages with the Send API (POST /{page-id}/messages, messaging_type=RESPONSE), always within 23 hours of the customer's latest message. Each reply is built only from fixed courteous phrases and facts the shop approved in izzi (prices, delivery and return policies, store address); customer text is never repeated and no AI writes free text. The reply answers what it can and asks whether the customer would like to leave a phone number or Zalo so a sales person can advise them. izzi sends at most 3 automatic replies per customer in 24 hours and stops for that customer as soon as they leave a phone number (after one short confirmation), decline to be contacted, or a person or another inbox app answers from the Page (detected through message echoes). Messages arriving as "standby" (another app controls the conversation) are never answered.
+
+Data: messages and izzi's replies are stored encrypted (AES-256-GCM) for 30 days, leads for 90 days after the last message, then deleted automatically. A shop owner/manager can delete any single customer's data, including the replies izzi sent, at any time ("Delete customer data" / Xoá dữ liệu khách).
 ```
 
 ### 2.4 Business Asset User Profile Access
@@ -102,15 +116,21 @@ When a customer leaves a phone number, izzi shows the customer's first and last 
 | 2 | Khối "Kết nối Page cho Chăm sóc khách hàng" | Bấm **Kết nối Page** | "Connect the shop's Facebook Page." |
 | 3 | Hộp thoại Facebook Login | Để **rõ toàn bộ danh sách quyền** (pages_show_list, pages_manage_metadata, pages_messaging), rồi bấm Continue | "Facebook Login asks for pages_show_list, pages_manage_metadata and pages_messaging." |
 | 4 | izzi: "Chọn Page dùng cho Chăm sóc khách hàng" | Chọn Page, bấm xác nhận; izzi hiện Page đã kết nối | "pages_show_list: the owner picks one Page from the Pages they manage." |
-| 5 | Khối "Khách để lại số" | Bật **Nhận tin nhắn từ Page**, đồng ý hộp xác nhận | "pages_manage_metadata: izzi subscribes the Page to message webhooks. izzi only reads; it never sends." |
-| 6 | Messenger (tài khoản khách) | Khách nhắn vào Page: *"Shop ơi, tư vấn giúp mình, số mình 0912 345 678, có Zalo"* | "A customer messages the Page and leaves a phone number." |
-| 7 | izzi | Trong ≤ 30 giây, khách hiện trong **Khách để lại số**: tên khách, số, nhãn "Có nhắc Zalo", tin gần nhất; có thông báo Windows | "pages_messaging: the message arrives through the webhook; the customer becomes a lead. Business Asset User Profile Access: the customer's name is shown." |
-| 8 | izzi | Bấm **Sao chép**, đổi trạng thái **Mới → Đã liên hệ**, bấm **Soạn trả lời** để thấy nháp | "Sales staff copy the number and track the follow-up. Nothing is sent from izzi." |
-| 9 | izzi | Bấm **Xoá dữ liệu khách**, đọc hộp xác nhận, bấm OK; khách biến khỏi danh sách | "On request, the owner deletes this customer's phone and messages." |
-| 10 | izzi | Tắt **Nhận tin nhắn từ Page**, rồi **Ngắt kết nối** Page | "Turning off removes the webhook subscription; disconnecting deletes the stored Page token." |
-| 11 | Facebook Settings → Apps and Websites (tuỳ chọn) | Gỡ app, **Send request**, mở link trạng thái | "Facebook data deletion callback: izzi confirms the deletion with a status page." |
+| 5 | Khối "Khách để lại số" | Bật **Nhận tin nhắn từ Page**, đồng ý hộp xác nhận | "pages_manage_metadata: izzi subscribes the Page to message webhooks." |
+| 6 | Khối "Tự động trả lời khách" | Bật **Trả lời và xin SĐT/Zalo**, đọc rõ hộp xác nhận (tối đa 3 tin/khách/24 giờ, dừng khi khách để số/từ chối/nhân viên trả lời), bấm OK | "The owner turns on automatic replies. izzi will answer only with facts the shop approved, at most 3 replies per customer in 24 hours." |
+| 7 | Messenger (tài khoản khách, đặt cạnh izzi) | Khách nhắn vào Page: *"Shop ơi, bộ đồ thờ 60cm giá bao nhiêu?"* | "A customer messages the Page." |
+| 8 | Messenger (tài khoản khách) | Trong khoảng 10–30 giây, khách nhận tin tự động: lời cảm ơn, giá đã duyệt (nếu có), lời mời để lại số điện thoại hoặc Zalo | "pages_messaging: izzi replies within the 24-hour window with the shop's approved price and asks for a phone number or Zalo." |
+| 9 | Messenger (tài khoản khách) | Khách trả lời: *"Số mình 0912 345 678, có Zalo"*; khách nhận tin chốt "Shop đã nhận được số của anh/chị…"; izzi không gửi thêm | "The customer leaves a number; izzi confirms once and stops replying to this customer." |
+| 10 | izzi | Trong ≤ 30 giây, khách hiện trong **Khách để lại số**: tên khách, số, nhãn "Có nhắc Zalo", tin gần nhất; có thông báo Windows. Khối "Tự động trả lời khách" hiện "đã gửi 2 tin" | "The customer becomes a lead for the shop's sales staff. Business Asset User Profile Access: the customer's name is shown." |
+| 11 | izzi | Bấm **Sao chép**, đổi trạng thái **Mới → Đã liên hệ** | "Sales staff copy the number and track the follow-up." |
+| 12 | izzi | Bấm **Xoá dữ liệu khách**, đọc hộp xác nhận, bấm OK; khách biến khỏi danh sách | "On request, the owner deletes this customer's phone, messages and the replies izzi sent." |
+| 13 | izzi | Tắt **Trả lời và xin SĐT/Zalo**, tắt **Nhận tin nhắn từ Page**, rồi **Ngắt kết nối** Page | "Turning off stops automatic replies and removes the webhook subscription; disconnecting deletes the stored Page token." |
+| 14 | Facebook Settings → Apps and Websites (tuỳ chọn) | Gỡ app, **Send request**, mở link trạng thái | "Facebook data deletion callback: izzi confirms the deletion with a status page." |
 
-Mẹo: quay bước 11 riêng ở cuối, vì sau bước này binding bị ngắt.
+Mẹo:
+- Bước 14 quay riêng ở cuối, vì sau bước này binding bị ngắt. **Không** làm bước này trên Page Hồng Hưng đang dùng thật; bỏ qua cũng được.
+- Tài khoản khách dùng để quay phải là **Tester** (trước khi được duyệt, Facebook chỉ cho gửi tới tài khoản có vai trò trên app), chưa nhắn Page trong 24 giờ trước lúc bật công tắc, và chưa có lead cũ (nếu có, bấm "Xoá dữ liệu khách" trước).
+- Tắt Trả lời nhanh của Facebook và lời chào tự động của Pancake trên Page thử (mục 0.14).
 
 ---
 
@@ -124,10 +144,11 @@ https://github.com/kentzu213/izzi-ai/releases (latest release, "Izzi-AI-<version
 2. Open Marketing → "Chăm sóc khách hàng" (Customer Care).
 3. Under "Kết nối Page cho Chăm sóc khách hàng" (Connect a Page for Customer Care) click "Kết nối Page" (Connect Page). Your browser opens Facebook Login; grant the requested permissions for a Page you administer, then return to izzi and pick that Page.
 4. In "Khách để lại số" (Customers who left a phone number), turn on "Nhận tin nhắn từ Page" (Receive messages from the Page) and confirm.
-5. From another Facebook account, send the Page a message containing a Vietnamese mobile number, for example: "Hi, my number is 0912345678".
-6. Within about 30 seconds the customer appears in the list with their name, the phone number and the latest message. You can copy the number, change the status, or delete this customer's data with "Xoá dữ liệu khách".
-7. izzi never sends messages to customers; there is no send action in the app.
-8. To finish, turn the switch off and click "Ngắt kết nối" (Disconnect). Data deletion requests from Facebook settings are handled at https://api.izziapi.com/api/meta/data-deletion.
+5. In "Tự động trả lời khách" (Automatic replies), turn on "Trả lời và xin SĐT/Zalo" (Reply and ask for a phone number / Zalo) and confirm. The answers use only the facts saved under the Customer Care setup of the test workspace.
+6. From another Facebook account, send the Page a message, for example: "Hi shop, how much is it?". Within about 10–30 seconds that account receives an automatic reply that answers with an approved fact when one matches and asks whether they would like to leave a phone number or Zalo.
+7. Reply with a Vietnamese mobile number, for example: "My number is 0912345678". The account receives one short confirmation and no further automatic messages. Within about 30 seconds the customer appears in "Khách để lại số" with their name, the phone number and the latest message. You can copy the number, change the status, or delete this customer's data (including izzi's replies) with "Xoá dữ liệu khách".
+8. If someone answers the customer from the Page Inbox, izzi stops replying to that customer. At most 3 automatic replies are sent per customer in 24 hours, and only within the 24-hour messaging window.
+9. To finish, turn both switches off and click "Ngắt kết nối" (Disconnect). Data deletion requests from Facebook settings are handled at https://api.izziapi.com/api/meta/data-deletion.
 
 The screencast shows the complete flow with English captions.
 ```
@@ -140,7 +161,7 @@ The screencast shows the complete flow with English captions.
 |---|---|
 | Data processors / service providers | Supabase (database hosting), Vultr (backend server). No data is sold or shared for advertising. |
 | Where is data stored | Encrypted at rest in Supabase Postgres (Singapore region; xác nhận lại vùng trước khi nộp); Page tokens and message text additionally encrypted with AES-256-GCM by the backend. |
-| Retention | Messages 30 days, leads 90 days after the customer's last message, Page token until the Page is disconnected. |
+| Retention | Messages and izzi's automatic replies 30 days, leads 90 days after the customer's last message, the shop's approved reply facts until the shop replaces them, Page token until the Page is disconnected. |
 | Deletion | Data deletion callback (Section 1), in-app "Delete customer data", disconnecting the Page, or email support@izziapi.com. |
 | Who can access | Only the shop's izzi workspace members with owner, manager or editor roles; viewers never see phone numbers. |
 
@@ -159,11 +180,11 @@ Khi bạn kết nối một Fanpage với tính năng Chăm sóc khách hàng c�
 - ID Facebook (theo ứng dụng) của người cấp quyền, ID và tên Page, mã truy cập (token) của Page (mã hoá AES-256-GCM);
 - tin nhắn khách gửi tới Page (mã hoá, giữ 30 ngày);
 - số điện thoại khách tự gửi trong tin nhắn, tên Facebook của khách (giữ 90 ngày kể từ tin nhắn cuối).
-izzi chỉ đọc tin nhắn để liệt kê khách để lại số cho nhân viên của bạn; izzi không gửi tin cho khách, không bán hay chia sẻ dữ liệu này.
+izzi đọc tin nhắn để liệt kê khách để lại số cho nhân viên của bạn. Khi bạn bật "Tự động trả lời khách", izzi gửi thay Page tối đa 3 tin trả lời mỗi khách trong 24 giờ, chỉ dùng thông tin bạn đã duyệt, để xin số điện thoại hoặc Zalo; các tin đó được mã hoá và giữ 30 ngày. izzi không bán hay chia sẻ dữ liệu này.
 
 Xoá dữ liệu: chủ shop có thể xoá dữ liệu của từng khách ngay trong app (nút "Xoá dữ liệu khách"), ngắt kết nối Page, hoặc gỡ ứng dụng trong Cài đặt Facebook → Ứng dụng và trang web → Gửi yêu cầu xoá. Bạn cũng có thể email support@izziapi.com.
 
-When you connect a Facebook Page to izzi Customer Care, izzi receives and stores: the app-scoped Facebook ID of the person who granted access, the Page ID, name and Page access token (encrypted with AES-256-GCM); messages customers send to the Page (encrypted, kept 30 days); phone numbers customers send in those messages and the customer's Facebook name (kept 90 days after their last message). izzi only reads messages to list customers who left a phone number for your staff; izzi does not message customers and does not sell or share this data.
+When you connect a Facebook Page to izzi Customer Care, izzi receives and stores: the app-scoped Facebook ID of the person who granted access, the Page ID, name and Page access token (encrypted with AES-256-GCM); messages customers send to the Page (encrypted, kept 30 days); phone numbers customers send in those messages and the customer's Facebook name (kept 90 days after their last message). izzi reads messages to list customers who left a phone number for your staff. When you turn on "Automatic replies", izzi sends up to 3 replies per customer in 24 hours on the Page's behalf, using only information you approved, to ask for a phone number or Zalo; those replies are stored encrypted for 30 days. izzi does not sell or share this data.
 
 Deletion: shop owners can delete any customer's data in the app ("Delete customer data"), disconnect the Page, or remove the app in Facebook Settings → Apps and Websites → Send deletion request. You can also email support@izziapi.com.
 ```
@@ -208,8 +229,13 @@ Deletion: shop owners can delete any customer's data in the app ("Delete custome
 
 ---
 
+- **Phase C (tự trả lời):**
+  - Không có câu báo "trợ lý tự động" trong tin (quyết định của chủ shop, 18/11). Chính sách Meta chỉ bắt buộc ở nơi luật yêu cầu (ví dụ người dùng ở California, Đức) và khuyến nghị ở mọi nơi. Nếu người duyệt hỏi, trả lời rằng shop bán cho khách ở Việt Nam và có thể bật câu báo sau.
+  - Nếu Page đặt ứng dụng khác (Pancake) làm ứng dụng mặc định trong Phân luồng hội thoại, tin về izzi ở dạng `standby` và izzi không trả lời; màn Care báo lý do.
+  - Một echo đến trong 10 giây sau tin khách được coi là trả lời tự động (Trả lời nhanh, lời chào), không làm izzi dừng; khách có thể nhận hai lời chào nếu chưa tắt các tính năng đó.
+
 ## 8. Sau khi được duyệt
 
 1. Chuyển app sang **Live mode**, nếu chưa.
 2. Thử lại luồng ở mục 3 bằng một tài khoản **không** có vai trò trên app.
-3. Theo dõi log backend (`CUSTOMER_CARE_WEBHOOK`, `CUSTOMER_CARE_DATA_DELETION`). Log chỉ có số đếm, không có nội dung tin nhắn.
+3. Theo dõi log backend (`CUSTOMER_CARE_WEBHOOK`, `CUSTOMER_CARE_AUTO_REPLY`, `CUSTOMER_CARE_PAGE_ECHOES`, `CUSTOMER_CARE_DATA_DELETION`). Log chỉ có số đếm và mã lý do, không có nội dung tin nhắn.
