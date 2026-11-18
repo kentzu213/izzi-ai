@@ -373,7 +373,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     setTranscriptFromLead(true);
     setResult(null);
     setError('');
-    setNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. izzi không gửi gì cho khách.');
+    setNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. Bản nháp không được gửi cho khách.');
     const field = transcriptRef.current;
     field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     field?.focus({ preventScroll: true });

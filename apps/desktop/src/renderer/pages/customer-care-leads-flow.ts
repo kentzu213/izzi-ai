@@ -17,7 +17,8 @@ export const CARE_LEADS_REFRESH_MS = 30_000;
 export const CARE_LEAD_FALLBACK_NAME = 'Khách Facebook';
 /** What the backend stores for a message that only carried a file or image. */
 export const CARE_LEAD_ATTACHMENT_TEXT = '[tệp đính kèm]';
-export const CARE_INBOX_ENABLE_CONFIRM = 'izzi sẽ đăng ký nhận tin nhắn của Page; izzi chỉ đọc, không gửi gì cho khách.';
+export const CARE_INBOX_ENABLE_CONFIRM =
+  'izzi sẽ đăng ký nhận tin nhắn của Page để đọc. izzi chỉ gửi tin cho khách khi bật “Tự động trả lời khách”.';
 
 export const CARE_LEAD_STATUS_OPTIONS: ReadonlyArray<{ value: CustomerCareLeadStatus; label: string }> = [
   { value: 'new', label: 'Mới' },

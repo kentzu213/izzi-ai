@@ -107,8 +107,10 @@ describe('lead display', () => {
     expect(emptyLeadsMessage(OFF, false)).toContain('Chủ sở hữu hoặc quản lý');
   });
 
-  it('asks for confirmation in one sentence that izzi only reads', () => {
-    expect(CARE_INBOX_ENABLE_CONFIRM).toBe('izzi sẽ đăng ký nhận tin nhắn của Page; izzi chỉ đọc, không gửi gì cho khách.');
+  it('asks for confirmation that receiving only reads and sending needs the automatic replies switch', () => {
+    expect(CARE_INBOX_ENABLE_CONFIRM).toBe(
+      'izzi sẽ đăng ký nhận tin nhắn của Page để đọc. izzi chỉ gửi tin cho khách khi bật “Tự động trả lời khách”.',
+    );
   });
 });
 

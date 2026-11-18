@@ -191,7 +191,7 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
       if (result.workspaceId !== scopeKey || !result.inbox) return;
       setView({ state: 'ready', inbox: result.inbox, canManage: result.canManage });
       setNotice(enable
-        ? 'Đã bật nhận tin nhắn từ Page. izzi chỉ đọc, không gửi gì cho khách.'
+        ? 'Đã bật nhận tin nhắn từ Page. izzi chỉ gửi tin cho khách khi bật “Tự động trả lời khách”.'
         : 'Đã tắt nhận tin nhắn từ Page.');
     } catch {
       if (mountedRef.current) setError(careLeadsErrorMessage({ ok: false, error: 'unavailable' }, 'inbox'));

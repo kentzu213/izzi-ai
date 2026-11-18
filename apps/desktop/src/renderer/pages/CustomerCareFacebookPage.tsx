@@ -242,7 +242,7 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
         <p className="ccw__hint">Page còn thiếu quyền: {connection.missingScopes.join(', ')}.</p>
       )}
       <p className="ccw__hint">
-        Kết nối chỉ xác minh Page. izzi chỉ đọc tin nhắn khi bạn bật “Nhận tin nhắn từ Page”, và không gửi tin nhắn nào cho khách.
+        Kết nối chỉ xác minh Page. izzi chỉ đọc tin nhắn khi bạn bật “Nhận tin nhắn từ Page”, và chỉ gửi tin cho khách khi chủ sở hữu hoặc quản lý bật “Tự động trả lời khách”.
       </p>
       {!canManage && (
         <p className="ccw__hint">Chỉ chủ sở hữu và quản lý workspace được kết nối hoặc thay đổi Page Facebook.</p>
