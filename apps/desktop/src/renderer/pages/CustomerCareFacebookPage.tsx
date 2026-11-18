@@ -46,6 +46,7 @@ const ERROR_MESSAGES: Record<CustomerCareFacebookError, string> = {
   page_bound_elsewhere: 'Page này đang được kết nối với một workspace khác. Hãy liên hệ hỗ trợ izzi.',
   no_pages: 'Không tìm thấy Page nào mà tài khoản Facebook này quản lý.',
   'invalid-response': 'Phản hồi từ máy chủ không hợp lệ. Page chưa được kết nối.',
+  setup_required: 'Hãy lưu thiết lập chăm sóc khách hàng trước.',
 };
 
 const REASON_MESSAGES: Partial<Record<CustomerCareFacebookRejectReason, string>> = {

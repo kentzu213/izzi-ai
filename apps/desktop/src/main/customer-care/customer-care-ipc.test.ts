@@ -11,7 +11,7 @@ describe('customer care IPC boundary', () => {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
     selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
-    purgeLead: vi.fn(),
+    purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
@@ -28,6 +28,8 @@ describe('customer care IPC boundary', () => {
     ['listLeads', service.listLeads],
     ['setLeadStatus', service.setLeadStatus],
     ['purgeLead', service.purgeLead],
+    ['getAutoReply', service.getAutoReply],
+    ['setAutoReply', service.setAutoReply],
   ] as const;
 
   beforeEach(() => {

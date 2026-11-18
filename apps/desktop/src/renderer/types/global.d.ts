@@ -1,5 +1,5 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -638,6 +638,8 @@ declare global {
       listLeads(input: CustomerCareLeadListInput): Promise<CustomerCareLeadListResult>;
       setLeadStatus(input: CustomerCareLeadStatusInput): Promise<CustomerCareLeadStatusResult>;
       purgeLead(input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult>;
+      getAutoReply(): Promise<CustomerCareAutoReplyResult>;
+      setAutoReply(input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult>;
     };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;

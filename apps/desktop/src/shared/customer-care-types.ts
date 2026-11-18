@@ -99,6 +99,9 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   // 422, Phase B1: no live Page binding for the inbox, or a lead outside this workspace.
   'page_not_connected',
   'lead_not_found',
+  // 422, Phase C: automatic replies need the inbox on and the pages_messaging grant.
+  'inbox_off',
+  'permission_missing',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -116,7 +119,9 @@ export type CustomerCareFacebookError =
   | 'rejected'
   | 'page_bound_elsewhere'
   | 'no_pages'
-  | 'invalid-response';
+  | 'invalid-response'
+  // Phase C: automatic replies need a saved Care setup to answer from.
+  | 'setup_required';
 
 export interface CustomerCareFacebookFailure {
   ok: false;
@@ -215,6 +220,53 @@ export interface CustomerCareLeadPurgeInput {
   leadId: string;
 }
 
+// Phase C: the izzi server answers Page customers by itself, from the shop's approved facts, until the
+// customer leaves a phone number, declines, or someone else replies from the Page. Owner/manager switch.
+
+/** Bounded codes for the last reply izzi did not send; the renderer maps them to Vietnamese text. */
+export const CUSTOMER_CARE_AUTO_REPLY_PROBLEMS = [
+  'standby',
+  'outside_window',
+  'page_limit',
+  'declined',
+  'other_app',
+  'recipient_not_allowed',
+  'recipient_unavailable',
+  'token_invalid',
+  'token_unreadable',
+  'permission_missing',
+  'rate_limited',
+  'invalid_script',
+  'message_unreadable',
+  'switched_off',
+  'unknown',
+] as const;
+export type CustomerCareAutoReplyProblem = (typeof CUSTOMER_CARE_AUTO_REPLY_PROBLEMS)[number];
+
+export interface CustomerCareAutoReplyState {
+  enabled: boolean;
+  enabledAt: string | null;
+  /** The izzi server allows automatic replies (deployment switch). */
+  available: boolean;
+  /** When the facts izzi answers with were last uploaded from this app. */
+  scriptUpdatedAt: string | null;
+  factCount: number;
+  sentLast24h: number;
+  lastSentAt: string | null;
+  stoppedLast24h: number;
+  lastProblem: { reason: CustomerCareAutoReplyProblem; at: string } | null;
+}
+
+/** `autoReply` is null without a live Page binding; `canManage` is a display hint, main re-checks the role. */
+export type CustomerCareAutoReplyResult =
+  | { ok: true; workspaceId: string; autoReply: CustomerCareAutoReplyState | null; canManage: boolean }
+  | CustomerCareFacebookFailure;
+
+/** Renderer input; main builds the script from the saved setup itself. */
+export interface CustomerCareAutoReplyInput {
+  enabled: boolean;
+}
+
 export type CustomerCareMessageRole = 'customer' | 'sale';
 
 export interface CustomerCareMessage {
@@ -255,4 +307,6 @@ export interface CustomerCareMutationResult {
   ok: boolean;
   snapshot?: CustomerCareSnapshot;
   error?: string;
+  /** Phase C, only while automatic replies are on: whether the server now answers with the saved facts. */
+  autoReplyScript?: 'updated' | 'failed';
 }

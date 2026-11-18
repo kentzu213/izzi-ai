@@ -14,6 +14,8 @@ import type {
 import { CUSTOMER_CARE_PUBLIC_ERRORS } from '../../shared/customer-care-errors';
 import { CustomerCareFacebookPagePanel, facebookErrorMessage, pageStatusLabel } from './CustomerCareFacebookPage';
 import { CustomerCareLeadsPanel } from './CustomerCareLeadsPanel';
+import { CustomerCareAutoReplyPanel } from './CustomerCareAutoReplyPanel';
+import { autoReplyScriptNotice } from './customer-care-auto-reply-flow';
 import {
   INITIAL_PAGE_FLOW,
   isSaveDisabled,
@@ -133,6 +135,9 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [pageFlow, setPageFlow] = useState<CarePageFlowState>(INITIAL_PAGE_FLOW);
+  // Phase C: whether the izzi server answers Page customers by itself (reported by the panel).
+  const [autoReplyOn, setAutoReplyOn] = useState(false);
+  const [autoReplyRefresh, setAutoReplyRefresh] = useState(0);
   // Mirrors pageFlow so async callbacks and the IPC listener always transition from the latest state.
   const pageFlowRef = useRef<CarePageFlowState>(INITIAL_PAGE_FLOW);
   const operationRef = useRef(0);
@@ -311,7 +316,12 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
         setSnapshot(response.snapshot);
         setSetup(response.snapshot.setup ?? setup);
       }
-      setNotice('Đã lưu cấu hình bảo mật cho workspace hiện tại.');
+      const scriptNotice = autoReplyScriptNotice(response.autoReplyScript);
+      if (scriptNotice?.kind === 'error') setError(scriptNotice.text);
+      setNotice(scriptNotice?.kind === 'success'
+        ? `Đã lưu cấu hình bảo mật cho workspace hiện tại. ${scriptNotice.text}`
+        : 'Đã lưu cấu hình bảo mật cho workspace hiện tại.');
+      if (response.autoReplyScript) setAutoReplyRefresh((value) => value + 1);
     } catch (reason) {
       if (operation === operationRef.current) {
         setError(publicError(reason, 'Không lưu được cấu hình. Dữ liệu trước đó vẫn được giữ lại.'));
@@ -383,11 +393,19 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     <section className="ccw" aria-labelledby="ccw-title">
       <header className="ccw__header">
         <div>
-          <span className="cmr-eyebrow">AI Customer Care · Shadow</span>
+          <span className="cmr-eyebrow">{autoReplyOn ? 'AI Customer Care · Tự động trả lời' : 'AI Customer Care · Shadow'}</span>
           <h2 id="ccw-title">Chăm sóc khách hàng</h2>
-          <p>Tạo bản nháp từ tri thức đã duyệt. Không gửi tin, không gọi điện và không tự chuyển khách.</p>
+          <p>
+            {autoReplyOn
+              ? 'izzi đang tự trả lời khách nhắn Page bằng thông tin đã duyệt, tới khi khách để lại số. Bản nháp bên dưới không gửi tin.'
+              : 'Tạo bản nháp từ tri thức đã duyệt. Không gửi tin, không gọi điện và không tự chuyển khách.'}
+          </p>
         </div>
-        <span className="ccw__mode" aria-label="Chế độ shadow, gửi tin đã tắt">Shadow · Gửi tắt</span>
+        {autoReplyOn ? (
+          <span className="ccw__mode" aria-label="Đang tự động trả lời khách nhắn Page">Tự trả lời · Bật</span>
+        ) : (
+          <span className="ccw__mode" aria-label="Chế độ shadow, gửi tin đã tắt">Shadow · Gửi tắt</span>
+        )}
       </header>
 
       {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
@@ -407,8 +425,8 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               <strong>{snapshot?.encryptedStorageAvailable ? 'Sẵn sàng' : 'Chưa sẵn sàng'}</strong>
             </article>
             <article>
-              <span>Hành động bên ngoài</span>
-              <strong>{snapshot?.outboundEnabled ? 'Bật' : 'Tắt'}</strong>
+              <span>Tự trả lời tin Page</span>
+              <strong>{autoReplyOn ? 'Bật' : 'Tắt'}</strong>
             </article>
             <article>
               <span>Kết nối Page</span>
@@ -451,7 +469,15 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
           )}
 
           {snapshot?.pageConnection.state === 'connected' && (
-            <CustomerCareLeadsPanel key={scopeKey} scopeKey={scopeKey} onCompose={composeFromLead} />
+            <>
+              <CustomerCareAutoReplyPanel
+                key={`auto-${scopeKey}`}
+                scopeKey={scopeKey}
+                refreshKey={autoReplyRefresh}
+                onEnabledChange={setAutoReplyOn}
+              />
+              <CustomerCareLeadsPanel key={scopeKey} scopeKey={scopeKey} onCompose={composeFromLead} />
+            </>
           )}
 
           <form className="ccw__section" onSubmit={saveSetup}>

@@ -18,8 +18,12 @@ import {
   type NativeMarketingTokenProvider,
 } from '../marketing/native-marketing-client';
 import {
+  CUSTOMER_CARE_AUTO_REPLY_PROBLEMS,
   CUSTOMER_CARE_FACEBOOK_REJECT_REASONS,
   CUSTOMER_CARE_LEAD_STATUSES,
+  type CustomerCareAutoReplyProblem,
+  type CustomerCareAutoReplyState,
+  type CustomerCareFactTopic,
   type CustomerCareFacebookPageChoice,
   type CustomerCareFacebookRejectReason,
   type CustomerCareInboxState,
@@ -136,6 +140,22 @@ export type CareLeadsGateway = Pick<
   CareFacebookClient,
   'getInbox' | 'setInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
 >;
+
+/** One approved fact as the server answers with it (Phase C). Only `text` ever reaches a customer. */
+export interface CareAutoReplyScriptFact {
+  id: string;
+  topic: CustomerCareFactTopic;
+  text: string;
+  approvedAt: string;
+  expiresAt: string | null;
+}
+
+export interface CareAutoReplyScript {
+  facts: CareAutoReplyScriptFact[];
+}
+
+/** Phase C automatic reply routes: the server sends; this app only switches and uploads approved facts. */
+export type CareAutoReplyGateway = Pick<CareFacebookClient, 'getAutoReply' | 'setAutoReply'>;
 
 type RequestOutcome =
   | { ok: true; body: unknown }
@@ -280,6 +300,41 @@ export function parseCareInboxState(value: unknown): CustomerCareInboxState | nu
   if (!inbox || typeof inbox.enabled !== 'boolean') return null;
   if (!isIsoOrNull(inbox.subscribedAt) || !isIsoOrNull(inbox.lastEventAt)) return null;
   return { enabled: inbox.enabled, subscribedAt: inbox.subscribedAt, lastEventAt: inbox.lastEventAt };
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Phase C state, rebuilt from an exact allowlist; an unknown problem code is kept as `unknown`. */
+export function parseCareAutoReplyState(value: unknown): CustomerCareAutoReplyState | null {
+  const state = exactRecord(value, [
+    'enabled', 'enabledAt', 'available', 'scriptUpdatedAt', 'factCount',
+    'sentLast24h', 'lastSentAt', 'stoppedLast24h', 'lastProblem',
+  ]);
+  if (!state || typeof state.enabled !== 'boolean' || typeof state.available !== 'boolean') return null;
+  if (!isIsoOrNull(state.enabledAt) || !isIsoOrNull(state.scriptUpdatedAt) || !isIsoOrNull(state.lastSentAt)) return null;
+  if (!isCount(state.factCount) || !isCount(state.sentLast24h) || !isCount(state.stoppedLast24h)) return null;
+  let lastProblem: CustomerCareAutoReplyState['lastProblem'] = null;
+  if (state.lastProblem !== null) {
+    const problem = exactRecord(state.lastProblem, ['reason', 'at']);
+    if (!problem || typeof problem.reason !== 'string' || !isIso(problem.at)) return null;
+    const reason = (CUSTOMER_CARE_AUTO_REPLY_PROBLEMS as readonly string[]).includes(problem.reason)
+      ? problem.reason as CustomerCareAutoReplyProblem
+      : 'unknown';
+    lastProblem = { reason, at: problem.at };
+  }
+  return {
+    enabled: state.enabled,
+    enabledAt: state.enabledAt,
+    available: state.available,
+    scriptUpdatedAt: state.scriptUpdatedAt,
+    factCount: state.factCount,
+    sentLast24h: state.sentLast24h,
+    lastSentAt: state.lastSentAt,
+    stoppedLast24h: state.stoppedLast24h,
+    lastProblem,
+  };
 }
 
 /** Facebook's display name; a name that could disguise text degrades to "no name" instead of hiding the lead. */
@@ -561,6 +616,40 @@ export class CareFacebookClient {
       return INVALID_RESPONSE;
     }
     return { ok: true, value: { leadId, deletedMessages } };
+  }
+
+  /** GET /auto-reply — Phase C state, or null without a live Page binding. */
+  async getAutoReply(workspaceId: string): Promise<CareFacebookResult<CustomerCareAutoReplyState | null>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const result = await this.request('auto-reply', `/auto-reply?workspaceId=${encodeURIComponent(workspaceId)}`);
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['autoReply'], workspaceId);
+    if (!envelope) return INVALID_RESPONSE;
+    if (envelope.autoReply === null) return { ok: true, value: null };
+    const state = parseCareAutoReplyState(envelope.autoReply);
+    return state ? { ok: true, value: state } : INVALID_RESPONSE;
+  }
+
+  /**
+   * POST /auto-reply — turn automatic replies on (uploading the approved facts) or off. The answer must
+   * report the requested switch position.
+   */
+  async setAutoReply(
+    workspaceId: string,
+    enabled: boolean,
+    script: CareAutoReplyScript | null,
+  ): Promise<CareFacebookResult<CustomerCareAutoReplyState>> {
+    if (!isCareFacebookChoiceId(workspaceId) || typeof enabled !== 'boolean' || (enabled && script === null)) {
+      return INVALID_REQUEST;
+    }
+    const result = await this.request('auto-reply-set', '/auto-reply', {
+      method: 'POST',
+      body: JSON.stringify(enabled ? { workspaceId, enabled, script } : { workspaceId, enabled }),
+    });
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['autoReply'], workspaceId);
+    const state = envelope ? parseCareAutoReplyState(envelope.autoReply) : null;
+    return state && state.enabled === enabled ? { ok: true, value: state } : INVALID_RESPONSE;
   }
 
   /**

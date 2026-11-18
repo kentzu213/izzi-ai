@@ -931,6 +931,7 @@ function setupIPC() {
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
     facebook: careFacebookClient,
     leads: careFacebookClient,
+    autoReply: careFacebookClient,
     onFacebookInboxChanged: () => careLeadNotifier?.refresh(),
     selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.

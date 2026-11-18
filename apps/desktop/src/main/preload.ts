@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -690,6 +690,9 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:setLeadStatus', input),
     purgeLead: (input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult> =>
       ipcRenderer.invoke('customerCare:purgeLead', input),
+    getAutoReply: (): Promise<CustomerCareAutoReplyResult> => ipcRenderer.invoke('customerCare:getAutoReply'),
+    setAutoReply: (input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult> =>
+      ipcRenderer.invoke('customerCare:setAutoReply', input),
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>

@@ -19,6 +19,8 @@ const METHODS = [
   'listLeads',
   'setLeadStatus',
   'purgeLead',
+  'getAutoReply',
+  'setAutoReply',
 ] as const;
 
 export function registerCustomerCareIpc(
@@ -26,6 +28,7 @@ export function registerCustomerCareIpc(
     CustomerCareService,
     | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'disconnectFacebookPage'
     | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
+    | 'getAutoReply' | 'setAutoReply'
   >,
   facebook: Pick<CareFacebookOAuthCoordinator, 'connect' | 'takeChoices'>,
 ): void {
@@ -48,6 +51,9 @@ export function registerCustomerCareIpc(
         if (method === 'setLeadStatus') return await service.setLeadStatus(input);
         // B1b: only `{ leadId }` crosses; owner/manager is re-checked in main and on the server.
         if (method === 'purgeLead') return await service.purgeLead(input);
+        // Phase C: only `{ enabled }` crosses; main builds the uploaded facts from the saved setup itself.
+        if (method === 'getAutoReply') return await service.getAutoReply();
+        if (method === 'setAutoReply') return await service.setAutoReply(input);
         return await service.assist(input);
       } catch (error) {
         // Fixed public Customer Care strings carry no data; anything else is never serialized.

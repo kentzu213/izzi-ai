@@ -19,7 +19,7 @@ export const CARE_BLOCKER_PAGE_UNSUPPORTED =
   'Máy chủ chưa bật kết nối Page Facebook. Page chưa kết nối; chế độ thử không gửi tin.';
 
 export const CARE_MODE_REASON_PHASE =
-  'Giai đoạn này Chăm sóc khách hàng chưa gửi tin nhắn Messenger: izzi chỉ đọc tin khi bạn bật "Nhận tin nhắn từ Page".';
+  'Bản nháp ở đây không gửi tin. Tin Messenger chỉ được gửi khi chủ sở hữu hoặc quản lý bật "Tự động trả lời khách".';
 export const CARE_MODE_REASON_PAGE = 'Chưa có Page Facebook đã xác minh với đủ quyền cho Chăm sóc khách hàng.';
 
 export interface CareModeDecision {

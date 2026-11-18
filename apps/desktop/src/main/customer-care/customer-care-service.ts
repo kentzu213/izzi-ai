@@ -13,6 +13,7 @@ import type {
   CustomerCareRole,
   CustomerCareSetup,
   CustomerCareSnapshot,
+  CustomerCareAutoReplyResult,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookFailure,
@@ -25,11 +26,19 @@ import type {
 import {
   isCareFacebookChoiceId,
   isCareFacebookPageId,
+  type CareAutoReplyGateway,
   type CareFacebookFailure,
   type CareFacebookGateway,
   type CareFacebookResult,
   type CareLeadsGateway,
 } from './care-facebook-client';
+import {
+  CARE_AUTO_REPLY_MANAGE_ROLES,
+  buildCareAutoReplyScript,
+  canManageCareAutoReply,
+  copyCareAutoReplyState,
+  parseCareAutoReplyInput,
+} from './care-auto-reply';
 import {
   CARE_INBOX_MANAGE_ROLES,
   CARE_LEAD_PURGE_ROLES,
@@ -93,6 +102,8 @@ export interface CustomerCareServiceOptions {
   leads?: CareLeadsGateway;
   /** Called after the Page inbox was switched on or off, so background lead checks re-read it at once. */
   onFacebookInboxChanged?: () => void;
+  /** Phase C automatic reply routes. Absent ⇒ every automatic reply call answers `unsupported`. */
+  autoReply?: CareAutoReplyGateway;
 }
 
 /** Main-only result of starting a connect: the state never reaches the renderer. */
@@ -677,6 +688,7 @@ export class CustomerCareService {
   private readonly facebook?: CareFacebookGateway;
   private readonly leads?: CareLeadsGateway;
   private readonly onFacebookInboxChanged?: () => void;
+  private readonly autoReply?: CareAutoReplyGateway;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -688,6 +700,7 @@ export class CustomerCareService {
     this.facebook = options.facebook;
     this.leads = options.leads;
     this.onFacebookInboxChanged = options.onFacebookInboxChanged;
+    this.autoReply = options.autoReply;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -745,7 +758,71 @@ export class CustomerCareService {
     } catch {
       return { ok: false, error: CUSTOMER_CARE_SAVE_ERROR };
     }
-    return { ok: true, snapshot: this.buildSnapshot(authority, await this.readPageConnection(authority)) };
+    const autoReplyScript = await this.refreshAutoReplyScript(authority, parsed.value);
+    return {
+      ok: true,
+      snapshot: this.buildSnapshot(authority, await this.readPageConnection(authority)),
+      ...(autoReplyScript ? { autoReplyScript } : {}),
+    };
+  }
+
+  /**
+   * Phase C: while the server answers customers automatically, a saved setup is uploaded at once so it
+   * answers with the facts the shop just approved. Best effort: the setup is saved either way.
+   */
+  private async refreshAutoReplyScript(
+    authority: CustomerCareAuthority,
+    setup: CustomerCareSetup,
+  ): Promise<'updated' | 'failed' | null> {
+    const autoReply = this.autoReply;
+    if (!autoReply || !canManageCareAutoReply(authority.role)) return null;
+    // Unknown state (old server, network): say nothing rather than claim izzi answers with old facts.
+    const state = await this.runFacebookCall(authority, () => autoReply.getAutoReply(authority.workspaceId));
+    if (!state.ok || !state.value?.enabled) return null;
+    const updated = await this.runFacebookCall(
+      authority,
+      () => autoReply.setAutoReply(authority.workspaceId, true, buildCareAutoReplyScript(setup, this.now())),
+    );
+    return updated.ok ? 'updated' : 'failed';
+  }
+
+  /** Phase C: owner, manager and editor read the state; `canManage` tells the screen who may switch it. */
+  async getAutoReply(): Promise<CustomerCareAutoReplyResult> {
+    const gate = await this.autoReplyAuthority(CARE_LEAD_READ_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, autoReply } = gate;
+    const result = await this.runFacebookCall(authority, () => autoReply.getAutoReply(authority.workspaceId));
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      autoReply: result.value ? copyCareAutoReplyState(result.value) : null,
+      canManage: canManageCareAutoReply(authority.role),
+    };
+  }
+
+  /**
+   * Phase C: renderer input is only `{ enabled }`. Turning on uploads the facts of the setup saved on this
+   * machine for this account and workspace; the server then answers customers with them.
+   */
+  async setAutoReply(input: unknown): Promise<CustomerCareAutoReplyResult> {
+    const parsed = parseCareAutoReplyInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.autoReplyAuthority(CARE_AUTO_REPLY_MANAGE_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, autoReply } = gate;
+    let script = null;
+    if (parsed.enabled) {
+      const loaded = this.loadSetup(authority);
+      if (!loaded.setup) return { ok: false, error: 'setup_required' };
+      script = buildCareAutoReplyScript(loaded.setup, this.now());
+    }
+    const result = await this.runFacebookCall(
+      authority,
+      () => autoReply.setAutoReply(authority.workspaceId, parsed.enabled, script),
+    );
+    if (!result.ok) return result;
+    return { ok: true, workspaceId: authority.workspaceId, autoReply: copyCareAutoReplyState(result.value), canManage: true };
   }
 
   /** Owner/manager only. Returns the OAuth state and dialog URL to main; never to the renderer. */
@@ -911,6 +988,18 @@ export class CustomerCareService {
     if (!roles.includes(authority.role)) return { ok: false, error: 'forbidden' };
     if (!this.leads) return { ok: false, error: 'unsupported' };
     return { ok: true, authority, leads: this.leads };
+  }
+
+  /** Fresh authority for an automatic reply call: signed in, one of `roles`, and the Phase C backend present. */
+  private async autoReplyAuthority(roles: readonly CustomerCareRole[]): Promise<
+    { ok: true; authority: CustomerCareAuthority; autoReply: CareAutoReplyGateway } | CustomerCareFacebookFailure
+  > {
+    const authority = await this.resolveAuthority();
+    if (authority === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
+    if (typeof authority === 'string') return { ok: false, error: 'auth' };
+    if (!roles.includes(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!this.autoReply) return { ok: false, error: 'unsupported' };
+    return { ok: true, authority, autoReply: this.autoReply };
   }
 
   /** Fresh authority for a Page mutation: signed in, owner/manager, and a Facebook backend present. */
