@@ -40,6 +40,7 @@ type CareLead = {
 | `POST /inbox` | `{ workspaceId, enabled: boolean }` | owner, manager | `workspaceId`, `inbox: CareInboxState` |
 | `GET /leads` | `?workspaceId=<uuid>&cursor=<opaque>` | owner, manager, editor | `workspaceId`, `leads: CareLead[]` (≤ 50, newest `phoneCapturedAt` first), `nextCursor: string \| null` |
 | `POST /leads/status` | `{ workspaceId, leadId, status: CareLeadStatus }` | owner, manager, editor | `workspaceId`, `lead: CareLead` |
+| `POST /leads/purge` (B1b) | `{ workspaceId, leadId }` | owner, manager | `workspaceId`, `leadId`, `deletedMessages: number` |
 
 ## Failure reasons
 
@@ -48,7 +49,7 @@ type CareLead = {
 | 400 | `invalid_request` | The request fails validation. |
 | 403 | `forbidden` | Not a member, or the role is too low (a viewer gets this on every route). |
 | 422 | `page_not_connected` | `POST /inbox` with no active binding. |
-| 422 | `lead_not_found` | `POST /leads/status` for an unknown lead or another workspace's lead. |
+| 422 | `lead_not_found` | `POST /leads/status` or `POST /leads/purge` for an unknown lead or another workspace's lead. |
 | 502 | `provider_rejected` / `provider_unavailable` / `provider_timeout` / `invalid_response` | Facebook failed during `POST /inbox`. |
 | 503 | `not_configured` | Server missing the Facebook config or the vault. |
 
@@ -56,4 +57,14 @@ type CareLead = {
 
 - **Lead creation.** Leads are created only from messages the customer sent: echoes are ignored. A later message with a newer phone replaces the phone and reopens a `closed` or `contacted` lead as `new`.
 - **Nothing is sent.** No route sends a message to a customer.
+- **Customer purge (B1b).** `POST /leads/purge` deletes the lead and every stored message of that customer (same Page and PSID) in the workspace, atomically and under the same per-customer lock the webhook uses. For 8 days a hashed marker (not the PSID) refuses late Meta retries of older messages; a NEW message from the customer is stored as usual.
+
+## Meta data deletion (B1b, public, no izzi login)
+
+| Method & path | Input | Answer |
+|---|---|---|
+| `POST /api/meta/data-deletion` | form field `signed_request` (HMAC-SHA256 with the app secret) | `200 { url, confirmation_code }`; `400 { error: "invalid_request" }` when the request cannot be verified; `503` without the Facebook config |
+| `GET /api/meta/data-deletion/status?code=<24 hex>` | confirmation code | HTML status page (Vietnamese + English); `404` page for an unknown code |
+
+The callback first learns the grantor of any live binding made before grantors were recorded (debug_token, also hourly in the background). It then disconnects every live Care Page binding granted by that Facebook person, clears their Page tokens, removes the Page webhooks, deletes those Pages' Care messages and leads (unless the Page is live again in that workspace under another person's grant), deletes expired Page choices, forgets the person's Facebook id and logs the request by the SHA-256 of the code. A per-Page lock shared with the webhook guarantees no message of those Pages is stored after the deletion. Every request is logged "in progress" with only the SHA-256 of the person's id, then settled in one transaction: the grants of every pending requester now named on any binding are deleted, and requests are completed (hash forgotten) only when no live binding is left without a known grantor — normally at once. Otherwise the hourly backfill learns grantors and settles again. Scope: Customer Care only; Native Marketing connections made with the same Meta app are not yet covered.
 - **Phone handling in the desktop client.** The phone appears only in API responses. The client must not persist it or emit it to analytics or logs.

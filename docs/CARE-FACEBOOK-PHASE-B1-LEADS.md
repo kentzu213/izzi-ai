@@ -98,6 +98,12 @@ Luật cố định, không dùng AI.
   - Khi có yêu cầu xoá: izzi ngắt kết nối và xoá token Page do người đó cấp. Tin nhắn và lead của Page đó xoá theo.
   - Trả `url` và `confirmation_code` theo chuẩn Meta.
 - **Bắt buộc trước App Review.**
+- **Đã làm (B1b, 2026-11-18):**
+  - Migration `20261120_customer_care_data_deletion.sql`.
+  - Route `POST /api/meta/data-deletion` cùng trang trạng thái `GET /api/meta/data-deletion/status?code=`.
+  - Route `POST /api/marketing/care/facebook/leads/purge` và nút **"Xoá dữ liệu khách"** (owner/manager).
+  - ID người cấp lấy từ `user_id` trong debug_token của Page token, lúc chọn Page và mỗi lần kiểm tra lại token.
+  - Hồ sơ nộp Meta: `CARE-FACEBOOK-APP-REVIEW-PACKET.md`.
 
 ---
 
