@@ -82,11 +82,12 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
   - Mỗi lần gọi được ghi sổ **trước** khi gọi, kể cả lần dự phòng và lần lỗi.
   - Mỗi lần gọi hết hạn sau 90 giây.
 - Không có hoạt động mới thì không gọi model.
-- Model dùng (đổi sau review):
-  - chính: `gpt-4o-mini`;
-  - dự phòng một lần: `gpt-5.6-sol`.
-
-  Lý do: `gpt-5.6-sol` luôn chạy chế độ suy luận cao. Token suy luận tính chung vào `max_tokens`, nên đắt hơn và dễ làm JSON bị cắt. Khi dự phòng sang model này, ngân sách được cộng thêm 4000 token cho phần suy luận.
+- Model dùng (chủ shop chọn ngày 2026-11-19):
+  - chính: `gpt-6-luna` (GPT-6 Luna, chạy qua codex-lb, giá $0.10 vào / $0.50 ra cho mỗi 1 triệu token);
+  - dự phòng một lần: `gpt-4o-mini`. Model này đi qua nhà cung cấp khác (OpenRouter), nên vẫn trả lời được khi pool codex-lb báo hỏng.
+- `gpt-6-luna` suy luận ở mức mặc định. Token suy luận tính chung vào `max_tokens`, nên ngân sách được cộng thêm 3000 token cho phần đó.
+- Không dùng `gpt-5.6-sol`: model này luôn chạy suy luận mức cao, đắt hơn và dễ làm JSON bị cắt.
+- Model "Terra 6.1" không có trong catalog codex-lb; chỉ có `gpt-6.1-sol` và `gpt-5.6-terra`.
 - Lỗi 402 (hết credit) thì dừng ngay, không thử model dự phòng.
 - Mỗi lần chạy tối đa 4 agent; agent có việc **chờ lâu nhất** được làm trước, nên không agent nào bị bỏ đói. Agent chưa tới lượt giữ nguyên mốc.
 - Mỗi agent có **mốc riêng**: mốc là thời điểm của hoạt động mới nhất đã đọc. Việc xong trong lúc model đang chạy vẫn được đọc ở lần sau.
@@ -159,6 +160,6 @@ Test kèm theo:
 ## 8. Quyết định của chủ shop (2026-11-19: "Duyệt theo đề xuất")
 
 1. Chế độ mặc định của hồ sơ: **Duyệt**.
-2. Model chắt lọc: model rẻ, trần 3 lần mỗi ngày. Lúc duyệt dự kiến dùng `gpt-5.6-sol`. Khi code thì đổi sang `gpt-4o-mini` làm chính và `gpt-5.6-sol` làm dự phòng, vì `gpt-5.6-sol` luôn suy luận cao nên đắt hơn và dễ làm cắt JSON (xem mục 4).
+2. Model chắt lọc: trần 3 lần mỗi ngày. Lúc duyệt dự kiến dùng `gpt-5.6-sol`. Sau đó chủ shop chọn **GPT-6 Luna** ("Dùng Luna 6 hoặc Terra 6.1", 2026-11-19), nên model chính là `gpt-6-luna`, dự phòng là `gpt-4o-mini` (xem mục 4).
 3. Đầu vào: lịch sử chat persona cộng kết quả marketing.
 4. Thứ tự: phát hành #69 + #70 trước (đã làm, beta.115), rồi mới làm S2.

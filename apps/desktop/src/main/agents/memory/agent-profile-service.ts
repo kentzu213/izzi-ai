@@ -4,8 +4,9 @@
  * MyGraph or feeds an agent yet; a profile is only stored.
  *
  * Credit guard:
- * - a cheap model first (`gpt-4o-mini`), one fallback (`gpt-5.6-sol`, which always reasons, so it gets
- *   room for that), and a stop on an out-of-credit answer;
+ * - `gpt-6-luna` first (the owner's choice, served by codex-lb, cheap; it reasons by default, so it gets
+ *   room for that), one fallback to `gpt-4o-mini` on another provider (it still answers when the codex-lb
+ *   pool is down), and a stop on an out-of-credit answer;
  * - at most 4 agents per run, output budget sized to them, and a 90 s timeout per call;
  * - at most `AGENT_PROFILES_MAX_RUNS_PER_DAY` runs and `AGENT_PROFILES_MAX_CALLS_PER_DAY` model calls a day
  *   (every call is counted before it is made, so a failure cannot slip past the cap);
@@ -39,13 +40,15 @@ import {
   type StoredProfiles,
 } from './agent-profile-store';
 
-export const AGENT_PROFILE_MODEL = 'gpt-4o-mini';
-export const AGENT_PROFILE_FALLBACK_MODEL = 'gpt-5.6-sol';
+/** The owner's choice (2026-11-19): GPT-6 Luna, served by codex-lb. */
+export const AGENT_PROFILE_MODEL = 'gpt-6-luna';
+/** Another provider, so a degraded codex-lb pool does not stop the run. */
+export const AGENT_PROFILE_FALLBACK_MODEL = 'gpt-4o-mini';
 export const AGENT_PROFILES_MAX_AGENTS_PER_RUN = 4;
 const OUTPUT_TOKENS_BASE = 400;
 const OUTPUT_TOKENS_PER_AGENT = 700;
-/** gpt-5.6-sol always runs with high reasoning; its reasoning tokens come out of the same budget. */
-const REASONING_TOKENS = 4000;
+/** gpt-6-luna reasons at its default effort; those tokens come out of the same budget. */
+const REASONING_TOKENS = 3000;
 const CALL_TIMEOUT_MS = 90_000;
 const MAX_AGENT_ID_CHARS = 100;
 const QUOTA_ERROR = /\b402\b|insufficient|quota/i;
@@ -86,7 +89,7 @@ function parseActionInput(input: unknown): string | null {
 
 export function maxTokensFor(model: string, agentCount: number): number {
   const output = OUTPUT_TOKENS_BASE + OUTPUT_TOKENS_PER_AGENT * Math.max(1, agentCount);
-  return model === AGENT_PROFILE_FALLBACK_MODEL ? output + REASONING_TOKENS : output;
+  return model === AGENT_PROFILE_MODEL ? output + REASONING_TOKENS : output;
 }
 
 export class AgentProfileService {

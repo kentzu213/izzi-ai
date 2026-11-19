@@ -77,7 +77,8 @@ describe('AgentProfileService.refresh', () => {
     expect(chat).toHaveBeenCalledTimes(1);
     const [payload, signal] = chat.mock.calls[0];
     expect(payload).toMatchObject({ model: AGENT_PROFILE_MODEL, enableTools: false });
-    expect(payload.maxTokens).toBeLessThanOrEqual(3200);
+    expect(payload.model).toBe('gpt-6-luna');
+    expect(payload.maxTokens).toBe(400 + 700 * 2 + 3000);
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(payload.message).toContain('Agent: Socrates (id: socrates)');
     expect(payload.message).toContain('Chiến lược "Chiến lược 12"');
@@ -159,7 +160,7 @@ describe('AgentProfileService.refresh', () => {
     expect(chat).not.toHaveBeenCalled();
   });
 
-  it('falls back once to the second model, with room for its reasoning', async () => {
+  it('falls back once to gpt-4o-mini, which needs no room for reasoning', async () => {
     // Arrange
     const chat = vi.fn()
       .mockResolvedValueOnce({ reply: '', error: 'http 503: No provider available' })
@@ -171,7 +172,8 @@ describe('AgentProfileService.refresh', () => {
 
     // Assert
     expect(chat.mock.calls.map((call) => call[0].model)).toEqual([AGENT_PROFILE_MODEL, AGENT_PROFILE_FALLBACK_MODEL]);
-    expect(chat.mock.calls[1][0].maxTokens).toBeGreaterThan(chat.mock.calls[0][0].maxTokens);
+    expect(chat.mock.calls[1][0].model).toBe('gpt-4o-mini');
+    expect(chat.mock.calls[1][0].maxTokens).toBe(400 + 700 * 2);
     expect(result.ok).toBe(true);
   });
 
