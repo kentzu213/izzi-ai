@@ -16,7 +16,8 @@
 import { createHash } from 'node:crypto';
 import type { CustomerCareAuthorityLookup, CustomerCareLead } from '../../shared/customer-care-types';
 import { ISO_PATTERN } from '../marketing/native-marketing-client';
-import type { CareLeadsGateway } from './care-facebook-client';
+import { CARE_LEADS_PAGE_SIZE, type CareLeadsGateway } from './care-facebook-client';
+import { summarizeCareLeads, type CareLeadSummary } from './care-graph-digest';
 import { canReadCareLeads } from './care-leads';
 
 export const CARE_LEAD_POLL_MS = 60_000;
@@ -58,6 +59,11 @@ export interface CareLeadNotifierOptions {
   /** Fixed diagnostics only; never receives lead data. */
   log?: (message: string) => void;
   now?: () => number;
+  /**
+   * Counts of the lead page just read, for the Care graph nodes. Counts only: no phone, name or message
+   * leaves the notifier. Not called when the leads could not be read.
+   */
+  onLeadSummary?: (identityId: string, workspaceId: string, summary: CareLeadSummary) => void;
 }
 
 /**
@@ -183,6 +189,8 @@ export class CareLeadNotifier {
     }
     const latestAllowed = this.now() + CARE_LEAD_MAX_CLOCK_SKEW_MS;
     const leads = result.value.leads.filter((lead) => Date.parse(lead.phoneCapturedAt) <= latestAllowed);
+    const capped = result.value.nextCursor !== null || result.value.leads.length >= CARE_LEADS_PAGE_SIZE;
+    this.reportSummary(identityId, workspaceId, summarizeCareLeads(leads, this.now(), capped));
     const newest = newestCapturedAt(leads);
     // No mark yet, or one that lies beyond the allowed skew: start over from what is already there.
     if (mark === null || Date.parse(mark) > latestAllowed) {
@@ -270,6 +278,14 @@ export class CareLeadNotifier {
     } catch {
       this.log('lead mark not saved');
       return false;
+    }
+  }
+
+  private reportSummary(identityId: string, workspaceId: string, summary: CareLeadSummary): void {
+    try {
+      this.options.onLeadSummary?.(identityId, workspaceId, summary);
+    } catch {
+      this.log('lead summary listener failed');
     }
   }
 
