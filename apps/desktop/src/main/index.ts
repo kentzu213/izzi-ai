@@ -74,7 +74,7 @@ import { DockerAgentService, type DockerAgentPayload } from './agents/docker-age
 import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
 import { IzziLlmProxy } from './agents/izzi-llm-proxy';
 import { AgentSessionCapturer } from './agents/agent-session-graph';
-import { SessionRecorder } from './agents/agent-session-recorder';
+import { AGENT_SESSION_GRAPH_CAPTURE_SETTING, SessionRecorder } from './agents/agent-session-recorder';
 import { registerMarketingIpc } from './marketing/marketing-ipc';
 import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import {
@@ -621,9 +621,11 @@ function setupIPC() {
   scheduleService = new ScheduleService(dbManager);
   registerScheduleIpc(scheduleService);
 
-  // Agent-side write loop: record each finished agent turn into the unified
-  // surfaces — my-graph (knowledge) + Replay tasks (daily work board).
-  const sessionRecorder = new SessionRecorder(new AgentSessionCapturer(graphClient), dbManager);
+  // Agent-side write loop: record each finished agent turn into Replay tasks (daily work board).
+  // The raw my-graph transcript write is off unless the local setting turns it back on.
+  const sessionRecorder = new SessionRecorder(new AgentSessionCapturer(graphClient), dbManager, {
+    captureToGraph: () => dbManager.getSetting(AGENT_SESSION_GRAPH_CAPTURE_SETTING) === 'on',
+  });
 
   // Gateway chat history persistence (survives restart), scoped to the signed-in
   // account resolved here in main. No secrets are ever included (the Izzi key
