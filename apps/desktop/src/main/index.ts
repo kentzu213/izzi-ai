@@ -68,7 +68,10 @@ import { UpdaterService } from './updater/updater-service';
 import { SetupWizardService } from './setup/setup-wizard-service';
 import { BudgetService } from './budget/budget-service';
 import { registerBudgetIpc } from './budget/budget-ipc';
-import { registerGatewaySessionIpc } from './gateway/gateway-session-ipc';
+import { gatewaySessionScope, registerGatewaySessionIpc } from './gateway/gateway-session-ipc';
+import { registerAgentProfileIpc } from './agents/memory/agent-profile-ipc';
+import { AgentProfileService } from './agents/memory/agent-profile-service';
+import { AgentProfileStore } from './agents/memory/agent-profile-store';
 import { registerAgentIpcHandlers, shutdownAgents } from './agents';
 import { DockerAgentService, type DockerAgentPayload } from './agents/docker-agent-service';
 import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
@@ -968,6 +971,17 @@ function setupIPC() {
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
   });
   registerCustomerCareIpc(customerCareService, careFacebookOAuth);
+  // Agent profiles (MyGraph agent memory, S2): on request, one short profile per agent distilled from the
+  // account's own chat history and marketing outcomes, kept on this machine until the owner approves it.
+  registerAgentProfileIpc(new AgentProfileService({
+    store: new AgentProfileStore(dbManager),
+    currentOwnerId: () => authManager.getCurrentUser()?.id ?? null,
+    readChatSessions: (ownerId) => dbManager.getUserData(gatewaySessionScope(ownerId)),
+    readMarketingSnapshot: () => customerMarketingService.getSnapshot(),
+    // Direct, tool-free call with a timeout: never recorded as an agent session.
+    chat: (payload, signal) => izziAgent.chat(payload, undefined, { signal }),
+    log: (message) => console.warn('[AgentProfiles]', message),
+  }));
   // Care → MyGraph: three count-only nodes, written only when they change; the Director reads them back
   // from the synced node list, so the Care block costs no request at planning time.
   careGraphPublisher = new CareGraphPublisher({

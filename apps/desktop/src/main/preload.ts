@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AgentProfileActionInput, AgentProfilesResult } from '../shared/agent-profile-types';
 import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
@@ -693,6 +694,13 @@ const electronAPI = {
     getAutoReply: (): Promise<CustomerCareAutoReplyResult> => ipcRenderer.invoke('customerCare:getAutoReply'),
     setAutoReply: (input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult> =>
       ipcRenderer.invoke('customerCare:setAutoReply', input),
+  },
+  // Agent profiles (MyGraph agent memory, S2): distilled on request, used only after the owner approves.
+  agentProfiles: {
+    get: (): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:get'),
+    refresh: (): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:refresh'),
+    approve: (input: AgentProfileActionInput): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:approve', input),
+    discard: (input: AgentProfileActionInput): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:discard', input),
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>
