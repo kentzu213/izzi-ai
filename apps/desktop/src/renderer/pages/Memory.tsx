@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAgentWorkspaceStore } from '../store/agentWorkspace';
 import type { AgentMemory } from '../../main/agent/types';
 import type { MemoryItemDTO } from '../../shared/graph-types';
+import { AgentProfilesSection } from '../components/AgentProfilesSection';
 
 type MemoryScope = 'all' | 'current';
 
@@ -80,6 +81,8 @@ export function MemoryPage() {
         </div>
         <IzziMemoryList state={izziMemoryState} items={izziMemories} />
       </section>
+
+      <AgentProfilesSection />
 
       {/* Local device memory — what the agent captured on this machine. */}
       <section className="memory-section">

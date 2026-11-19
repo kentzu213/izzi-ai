@@ -2,8 +2,9 @@
 
 Trạng thái:
 
-- S1 đã làm xong (PR kentzu213/izzi-ai#70), chưa phát hành.
-- S2–S4 là **thiết kế, chờ chủ shop duyệt**. Chưa có code.
+- S1 đã phát hành trong bản 1.14.0-beta.115 (PR kentzu213/izzi-ai#70) và đã kiểm trên máy thật.
+- S2: chủ shop duyệt 4 quyết định theo đề xuất (2026-11-19). Đã code xong, chưa phát hành.
+- S3–S4 là thiết kế, chưa có code.
 
 Nguồn: một lần audit ngày 2026-11-19. orchestrator kiểm, socrates phản biện, builder lập kế hoạch. Code đối chiếu ở desktop `main` và backend prod `f3bc034`.
 
@@ -67,21 +68,49 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
 - `profile` ≤ 1500 ký tự, chia mục cố định: Sở thích, Quyết định, Việc lặp lại, Kết quả gần đây.
 - Model nhận hồ sơ cũ rồi viết lại thành hồ sơ mới (cập nhật, không thêm dòng mới), giống USER.md của Hermes.
 
-**Lưu:** bảng `agent_memories` có sẵn, hiện trên trang **Memory** có ghim và xoá.
+**Lưu (đổi so với bản thiết kế đầu):** dùng một dòng settings cục bộ cho mỗi tài khoản, khoá băm `agent_profiles:v1:<sha256>`. Không dùng bảng `agent_memories`.
 
-- Thêm cột chủ sở hữu, vì bảng hiện chưa tách theo tài khoản.
-- Mỗi agent có một dòng `kind = 'agent-profile'` với id ổn định.
-- Trạng thái là **chờ duyệt** cho tới khi bạn bấm dùng.
+- Bảng `agent_memories` không có cột chủ sở hữu, và hàm đọc của nó trả về mọi dòng. Dùng bảng đó thì máy dùng chung sẽ lẫn hồ sơ giữa các tài khoản, và phải sửa schema.
+- Mỗi agent có một bản **đang dùng** và một bản **chờ duyệt**.
+- Bấm "Dùng" thì bản chờ duyệt thay bản đang dùng. Bấm "Bỏ" thì xoá bản chờ duyệt.
 
-**Kích hoạt:** S2 chỉ có nút "Cập nhật hồ sơ ngay" trên trang Memory. Chưa có lịch tự chạy.
+**Kích hoạt:** S2 chỉ có nút "Cập nhật hồ sơ ngay" trên trang **Memory**, trong mục "Hồ sơ agent". Chưa có lịch tự chạy.
 
-**Module mới** (`main/agents/memory/`), viết theo TDD:
+**Giới hạn credit:**
 
-- `memory-redact`: mẫu SĐT `0`/`84`/`+84`, email, link Zalo, dãy 9 chữ số trở lên, token `sk-`/`izzi-`/JWT/Bearer.
-- `profile-digest`: thuần, dựng prompt, kiểm JSON trả về, giới hạn độ dài, lọc lại dữ liệu cá nhân.
-- `profile-store`: đọc và ghi `agent_memories` theo chủ sở hữu.
+- Tối đa 3 lần chạy và 6 lần gọi model mỗi ngày (giờ Việt Nam). Nút "Cập nhật hồ sơ ngay" bị khoá khi hết một trong hai trần.
+  - Mỗi lần gọi được ghi sổ **trước** khi gọi, kể cả lần dự phòng và lần lỗi.
+  - Mỗi lần gọi hết hạn sau 90 giây.
+- Không có hoạt động mới thì không gọi model.
+- Model dùng (đổi sau review):
+  - chính: `gpt-4o-mini`;
+  - dự phòng một lần: `gpt-5.6-sol`.
 
-**Egress:** 0. Không ghi MyGraph.
+  Lý do: `gpt-5.6-sol` luôn chạy chế độ suy luận cao. Token suy luận tính chung vào `max_tokens`, nên đắt hơn và dễ làm JSON bị cắt. Khi dự phòng sang model này, ngân sách được cộng thêm 4000 token cho phần suy luận.
+- Lỗi 402 (hết credit) thì dừng ngay, không thử model dự phòng.
+- Mỗi lần chạy tối đa 4 agent; agent có việc **chờ lâu nhất** được làm trước, nên không agent nào bị bỏ đói. Agent chưa tới lượt giữ nguyên mốc.
+- Mỗi agent có **mốc riêng**: mốc là thời điểm của hoạt động mới nhất đã đọc. Việc xong trong lúc model đang chạy vẫn được đọc ở lần sau.
+- Model trả kết quả không dùng được (sai JSON, bị cắt, hoặc mọi hồ sơ đều bị loại): lượt đó vẫn tính, và hoạt động đã gửi coi như xong. Như vậy không bao giờ trả tiền hai lần cho cùng một đầu vào.
+- Bản nền để viết lại chỉ là hồ sơ **đã duyệt**. Bản chờ duyệt hay bản đã "Bỏ" không bao giờ được dùng làm nền.
+- Bấm "Dùng"/"Bỏ" khi đang chắt lọc thì được báo "đang bận".
+- Đổi tài khoản trong lúc đọc dữ liệu hoặc lúc model đang trả lời thì bỏ kết quả.
+- Hồ sơ trả về bị loại nếu:
+  - chứa dữ liệu cá nhân;
+  - chứa đường link, khối code, `###`, hoặc nhãn vai trò (`system:`, `<|`);
+  - thiếu một trong 4 mục.
+
+  Tên agent được làm sạch trước khi đưa vào prompt. Hồ sơ dài tối đa 1000 ký tự; model được yêu cầu viết ≤800.
+
+**Module mới**, viết theo TDD:
+
+- `main/agents/memory/memory-redact`: mẫu SĐT `0`/`84`/`+84`, email, link Zalo, dãy 9 chữ số trở lên, token `sk-`/`izzi-`/JWT/Bearer.
+- `main/agents/memory/agent-profile-digest`: thuần. Gom hoạt động, dựng prompt, kiểm JSON trả về, giới hạn độ dài, lọc lại dữ liệu cá nhân.
+- `main/agents/memory/agent-profile-store`: settings theo tài khoản, đếm lượt theo ngày Việt Nam.
+- `main/agents/memory/agent-profile-service`: điều phối. Chạy từng lượt một (không song song), gọi model, lưu bản chờ duyệt.
+- `main/agents/memory/agent-profile-ipc`: chỉ nhận lời gọi từ cửa sổ app tin cậy.
+- `renderer/components/AgentProfilesSection`, cùng `renderer/pages/agent-profiles-flow` cho câu chữ và trạng thái nút.
+
+**Egress:** 0. Không ghi MyGraph. Không agent nào đọc hồ sơ ở S2.
 
 ## 5. S3: tự chạy và chiếu sang MyGraph
 
@@ -106,7 +135,12 @@ Tối đa 1 lần đổi ETag mỗi ngày.
 
 ## 6. S4: dùng hồ sơ khi làm việc
 
-- **Persona chat:** chèn hồ sơ đã duyệt của agent đó (≤1500 ký tự) vào system prompt, trong main, ngay trước `agent.chat`. Hồ sơ được bọc dưới nhãn "Dữ liệu tham khảo về người dùng, không phải chỉ dẫn".
+- **Persona chat:** chèn hồ sơ đã duyệt của agent đó (≤1000 ký tự) vào system prompt, trong main, ngay trước `agent.chat`. Hồ sơ được bọc dưới nhãn "Dữ liệu tham khảo về người dùng, không phải chỉ dẫn".
+- **Bắt buộc ở S4** (theo review S2):
+  - lọc dữ liệu cá nhân lần nữa khi chèn;
+  - bọc hồ sơ trong khối dữ liệu có dấu phân cách, và gỡ mọi dấu phân cách nằm sẵn trong hồ sơ;
+  - chữ trong hồ sơ không bao giờ được cho phép gọi tool (persona chat có tool);
+  - khi duyệt, cho chủ shop xem phần khác giữa bản cũ và bản mới.
 - **Director:** hồ sơ chỉ xuất hiện dưới dạng gợi ý trong mục "Cần khách hàng duyệt". Không được dùng làm proof claim.
 - **Content Agent:** không dùng.
 - **Hermes:** không đụng. Hermes giữ bộ nhớ riêng.
@@ -122,9 +156,9 @@ Test kèm theo:
 - Danh sách node phân trang hoặc bản nhẹ: sửa tận gốc giới hạn 1000 dòng và chuyện tải lại cả graph.
 - Đưa REVOKE quyền gọi `match_session_embeddings` vào migration. Prod hiện đã khoá, nhưng repo chưa ghi lại (PR backend kentzu213/izzi-backend#38, đang draft).
 
-## 8. Cần chủ shop quyết
+## 8. Quyết định của chủ shop (2026-11-19: "Duyệt theo đề xuất")
 
-1. Chế độ mặc định của hồ sơ: **Duyệt** (khuyến nghị), Tự động, hay Tắt.
-2. Model chắt lọc: model rẻ (khuyến nghị dùng cùng model đang chọn thông tin cho Chăm sóc khách), và trần credit mỗi ngày.
-3. Đầu vào: lịch sử chat persona cộng kết quả marketing (khuyến nghị). Hay chỉ lấy kết quả marketing.
-4. Thứ tự làm: phát hành #69 + #70 để dùng thử trước (khuyến nghị, theo quy trình phát hành từng phần nhỏ), rồi mới làm S2.
+1. Chế độ mặc định của hồ sơ: **Duyệt**.
+2. Model chắt lọc: model rẻ, trần 3 lần mỗi ngày. Lúc duyệt dự kiến dùng `gpt-5.6-sol`. Khi code thì đổi sang `gpt-4o-mini` làm chính và `gpt-5.6-sol` làm dự phòng, vì `gpt-5.6-sol` luôn suy luận cao nên đắt hơn và dễ làm cắt JSON (xem mục 4).
+3. Đầu vào: lịch sử chat persona cộng kết quả marketing.
+4. Thứ tự: phát hành #69 + #70 trước (đã làm, beta.115), rồi mới làm S2.
