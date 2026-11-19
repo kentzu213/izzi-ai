@@ -46,8 +46,8 @@ Mỗi node chỉ có một nguồn, để hai máy của cùng một tài khoả
 
 | Node (`metadata.kind`) | Tiêu đề | Nguồn, khi nào được dựng | Nội dung hiển thị | Đổi khi |
 |---|---|---|---|---|
-| `care-process` | `Chăm sóc khách · Quy trình` | Trạng thái trên máy chủ. Luôn dựng. | Luật Phase C rút gọn: trả lời bằng câu cố định + thông tin đã duyệt rồi xin SĐT/Zalo; tối đa 3 tin/khách/24 giờ trong cửa sổ 23 giờ; dừng khi khách để số, từ chối, hoặc người/ứng dụng khác trả lời; câu hỏi chưa có thông tin thì hẹn nhân viên báo lại; khách để số thì vào "Khách để lại số". Dòng trạng thái: Page đã kết nối hay chưa, tự trả lời bật từ lúc nào hay đang tắt. | Bật/tắt công tắc, kết nối hoặc ngắt Page, đổi phiên bản luật |
-| `care-facts` | `Chăm sóc khách · Thông tin đã duyệt` | Thiết lập đã lưu (mã hoá) trên máy này. Chỉ dựng khi máy có thiết lập. | Số thông tin theo chủ đề (Danh mục, Giá, Chất lượng, Chính sách, Liên hệ), số đã hết hạn, chủ đề còn thiếu, bàn giao nhân viên đã cài hay chưa, lần gửi lên máy chủ gần nhất | Lưu thiết lập, gửi thông tin lên máy chủ |
+| `care-process` | `Chăm sóc khách · Quy trình` | Trạng thái trên máy chủ. Luôn dựng. | Luật Phase C rút gọn: trả lời bằng câu cố định + thông tin đã duyệt rồi xin SĐT/Zalo; tối đa 3 tin/khách/24 giờ trong cửa sổ 23 giờ; dừng khi khách để số, từ chối, hoặc người/ứng dụng khác trả lời; câu hỏi chưa có thông tin thì hẹn nhân viên báo lại; khách để số thì vào "Khách để lại số". Dòng trạng thái: Page đã kết nối hay chưa, tự trả lời bật từ lúc nào hay đang tắt, máy chủ đang trả lời bằng bao nhiêu thông tin và gửi lên lúc nào. | Bật/tắt công tắc, kết nối hoặc ngắt Page, gửi thông tin lên máy chủ, đổi phiên bản luật |
+| `care-facts` | `Chăm sóc khách · Thông tin đã duyệt` | Thiết lập đã lưu (mã hoá) trên máy này. Chỉ dựng khi máy có thiết lập, và khi tự trả lời đang bật thì số thông tin còn hiệu lực trên máy phải bằng số máy chủ đang dùng (máy cầm thiết lập cũ hơn hoặc mới hơn thì không ghi). | Số thông tin theo chủ đề (Danh mục, Giá, Chất lượng, Chính sách, Liên hệ), số đã hết hạn, chủ đề còn thiếu, bàn giao nhân viên đã cài hay chưa | Lưu thiết lập |
 | `care-results` | `Chăm sóc khách · Kết quả` | Số đếm trên máy chủ + lần đọc lead mới nhất trên máy này. Chỉ dựng khi lần đọc lead chưa quá 15 phút. | 24 giờ qua: số tin izzi gửi, số khách izzi đã dừng. 7 ngày qua: số khách để số, số khách chưa gọi lại. Lý do lần gần nhất không gửi được. Cập nhật lúc nào. | Số đếm đổi (tối đa 1 lần/6 giờ), hoặc làm mới mốc thời gian mỗi 24 giờ |
 
 Node không được dựng ở một lượt thì giữ nguyên nội dung đang có trong graph.
@@ -64,10 +64,11 @@ Ví dụ với Hồng Hưng hôm nay: Danh mục 4 · Giá 1 · Chất lượng 
 type CareGraphMeta =
   | { kind: 'care-process'; schema: 1; wsKey: string; processVersion: 'phase-c-1';
       page: 'connected' | 'needs_reauth' | 'not_connected' | 'unknown';
-      autoReply: 'on' | 'off' | 'unavailable' | 'unknown'; autoReplySince: string | null }
+      autoReply: 'on' | 'off' | 'unavailable' | 'unknown'; autoReplySince: string | null;
+      factsUploadedAt: string | null; serverFactCount: number | null }
   | { kind: 'care-facts'; schema: 1; wsKey: string; handoffSet: boolean;
       byTopic: Record<'catalog'|'price'|'quality'|'policy'|'contact', number>;
-      expired: number; missing: CareTopic[]; uploadedAt: string | null }
+      expired: number; missing: CareTopic[] }
   | { kind: 'care-results'; schema: 1; wsKey: string; asOf: string;
       sent24h: number | null; stopped24h: number | null;
       leads24h: number | null; leads7d: number | null; leadsOpen: number | null; leadsCapped: boolean;
@@ -155,7 +156,11 @@ Cách ghi một node. Backend prod (`rc-f3bc034`) **không** chống trùng: m�
 
 Dùng các hàm có sẵn của `GraphClient` (`readNodes`, `createNode`, `updateNode`, `createLink`), không sửa `GraphClient`. Mọi lần ghi dùng `queueOnOffline: false`: mất mạng thì lần chạy sau thử lại, hàng đợi offline không phình.
 
-Giới hạn đã biết: nếu người dùng xoá một node Care trong 5 phút trước khi cache kịp sync, lượt ghi đó `PATCH` vào id đã mất (prod vẫn trả ok). Node được tạo lại ở lần ghi sau đó. Với node Kết quả, chậm nhất là sau 24 giờ.
+Giới hạn đã biết:
+
+- Nếu người dùng xoá một node Care trong 5 phút trước khi cache kịp sync, lượt ghi đó `PATCH` vào id đã mất (prod vẫn trả ok). Node được tạo lại ở lần ghi kế tiếp có thay đổi. Với node Kết quả, chậm nhất là sau 24 giờ.
+- Hai máy cùng tài khoản cùng ghi lần đầu đúng một lúc có thể tạo hai node cùng url. Người đọc và lần ghi sau luôn chọn node mới nhất, nên node thừa chỉ nằm yên.
+- Một cạnh tạo hỏng không được thử lại.
 
 An toàn khi chạy:
 

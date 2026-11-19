@@ -166,7 +166,10 @@ describe('buildCareGraphNodes', () => {
       page: 'connected',
       autoReply: 'on',
       autoReplySince: '2026-11-19T03:05:00.000Z',
+      factsUploadedAt: '2026-11-19T03:05:00.000Z',
+      serverFactCount: 8,
     });
+    expect(process.content).toContain('Máy chủ đang trả lời bằng 8 thông tin đã duyệt, gửi lên lúc 19/11/2026 10:05.');
     expect(process.content).toContain('Đồng Thờ Hồng Hưng');
     expect(process.content).toContain('đang bật từ 19/11/2026 10:05');
     expect(process.content).toContain('tối đa 3 tin');
@@ -185,11 +188,38 @@ describe('buildCareGraphNodes', () => {
       byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 },
       expired: 0,
       missing: ['quality', 'policy'],
-      uploadedAt: '2026-11-19T03:05:00.000Z',
     });
     expect(facts.content).toContain('Danh mục 4 · Giá 1 · Chất lượng 0 · Chính sách 0 · Liên hệ 3');
     expect(facts.content).toContain('Còn thiếu: Chất lượng, Chính sách');
     expect(facts.content).toContain('Bàn giao nhân viên: đã cài');
+  });
+
+  it('leaves the facts node alone when this machine holds a different setup than the server answers with', () => {
+    // Arrange: automatic replies are on and the server script has 9 facts; this machine has 8 active ones.
+    const older = source({ autoReply: { ...AUTO_REPLY_ON, factCount: 9 } });
+    const offline = source({ autoReply: { ...AUTO_REPLY_ON, enabled: false, factCount: 9 } });
+
+    // Act
+    const kinds = buildCareGraphNodes(older, wsKey, asOf).map((node) => node.kind);
+    const kindsWhenOff = buildCareGraphNodes(offline, wsKey, asOf).map((node) => node.kind);
+
+    // Assert
+    expect(kinds).toEqual(['care-process', 'care-results']);
+    expect(kindsWhenOff).toEqual(['care-process', 'care-facts', 'care-results']);
+  });
+
+  it('keeps the facts fingerprint when only the server upload time changes', () => {
+    // Act
+    const before = buildCareGraphNodes(source(), wsKey, asOf);
+    const after = buildCareGraphNodes(
+      source({ autoReply: { ...AUTO_REPLY_ON, scriptUpdatedAt: '2026-11-19T04:59:00.000Z' } }),
+      wsKey,
+      asOf,
+    );
+
+    // Assert
+    expect(after[1].fingerprint).toBe(before[1].fingerprint);
+    expect(after[0].fingerprint).not.toBe(before[0].fingerprint);
   });
 
   it('puts only counts, a problem code and the time in the results node', () => {
@@ -224,7 +254,9 @@ describe('buildCareGraphNodes', () => {
 
     // Assert
     expect(nodes.map((node) => node.kind)).toEqual(['care-process']);
-    expect(nodes[0].metadata).toMatchObject({ page: 'not_connected', autoReply: 'unknown', autoReplySince: null });
+    expect(nodes[0].metadata).toMatchObject({
+      page: 'not_connected', autoReply: 'unknown', autoReplySince: null, factsUploadedAt: null, serverFactCount: null,
+    });
   });
 
   it('keeps a fingerprint that ignores the refresh time but follows every number', () => {

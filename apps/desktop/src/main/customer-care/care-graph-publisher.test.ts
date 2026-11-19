@@ -41,6 +41,15 @@ function snapshot(overrides: Partial<CareGraphSnapshot['source']> = {}): CareGra
 
 const LEADS: CareLeadSummary = { last24h: 1, last7d: 3, open: 2, capped: false };
 
+type TopicCounts = { catalog: number; price: number; quality: number; policy: number; contact: number };
+
+/** A new saved setup that the server now answers with too (same active fact count). */
+function withFacts(byTopic: TopicCounts): Partial<CareGraphSnapshot['source']> {
+  const base = snapshot().source.autoReply!;
+  const factCount = Object.values(byTopic).reduce((sum, count) => sum + count, 0);
+  return { facts: { byTopic, expired: 0, handoffSet: true }, autoReply: { ...base, factCount } };
+}
+
 /** The production backend: POST always inserts, PATCH of an unknown id answers ok and changes nothing. */
 function fakeServer(clock: () => number) {
   const nodes: GraphNode[] = [];
@@ -166,14 +175,14 @@ describe('CareGraphPublisher.run', () => {
     vi.clearAllMocks();
 
     // Act
-    current = snapshot({ facts: { byTopic: { catalog: 4, price: 2, quality: 1, policy: 0, contact: 3 }, expired: 0, handoffSet: true } });
+    current = snapshot(withFacts({ catalog: 4, price: 2, quality: 1, policy: 0, contact: 3 }));
     await context.publisher.run();
 
-    // Assert
+    // Assert: the process node shows the new server fact count, the facts node the new topics.
     expect(context.graph.readNodes).not.toHaveBeenCalled();
     expect(context.graph.createNode).not.toHaveBeenCalled();
-    expect(context.graph.updateNode).toHaveBeenCalledTimes(1);
-    const [id, patch, options] = context.graph.updateNode.mock.calls[0] as unknown as [string, { metadata: Record<string, unknown> }, unknown];
+    expect(patchedKinds(context.graph)).toEqual(['care-process', 'care-facts']);
+    const [id, patch, options] = context.graph.updateNode.mock.calls[1] as unknown as [string, { metadata: Record<string, unknown> }, unknown];
     expect(id).toBe('node-2');
     expect(patch.metadata).toMatchObject({ kind: 'care-facts', missing: ['policy'] });
     expect(options).toEqual({ queueOnOffline: false });
@@ -229,7 +238,7 @@ describe('CareGraphPublisher.run', () => {
     vi.clearAllMocks();
 
     // Act
-    current = snapshot({ facts: { byTopic: { catalog: 5, price: 1, quality: 0, policy: 0, contact: 3 }, expired: 0, handoffSet: true } });
+    current = snapshot({ facts: { byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 }, expired: 0, handoffSet: false } });
     await context.publisher.run();
 
     // Assert

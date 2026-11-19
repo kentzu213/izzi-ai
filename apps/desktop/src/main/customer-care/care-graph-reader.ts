@@ -79,11 +79,15 @@ function parseProcess(meta: Fields, wsKey: string): CareProcessMeta | null {
   const page = own(meta, 'page');
   const autoReply = own(meta, 'autoReply');
   const since = isoOrNull(own(meta, 'autoReplySince'));
+  const factsUploadedAt = isoOrNull(own(meta, 'factsUploadedAt'));
+  const serverFactCount = countOrNull(own(meta, 'serverFactCount'));
   const processVersion = own(meta, 'processVersion');
   if (!isOneOf(page, PAGE_STATES) || !isOneOf(autoReply, AUTO_REPLY_MODES) || since === undefined) return null;
+  if (factsUploadedAt === undefined || serverFactCount === undefined) return null;
   if (typeof processVersion !== 'string' || processVersion.length === 0 || processVersion.length > 40) return null;
   return {
     kind: 'care-process', schema: CARE_GRAPH_SCHEMA, wsKey, processVersion, page, autoReply, autoReplySince: since,
+    factsUploadedAt, serverFactCount,
   };
 }
 
@@ -92,8 +96,7 @@ function parseFacts(meta: Fields, wsKey: string): CareFactsMeta | null {
   const rawTopics = record(own(meta, 'byTopic'));
   const expired = own(meta, 'expired');
   const rawMissing = own(meta, 'missing');
-  const uploadedAt = isoOrNull(own(meta, 'uploadedAt'));
-  if (typeof handoffSet !== 'boolean' || !rawTopics || !isCount(expired) || uploadedAt === undefined) return null;
+  if (typeof handoffSet !== 'boolean' || !rawTopics || !isCount(expired)) return null;
   const byTopic = {} as CareTopicCounts;
   for (const topic of CARE_TOPICS) {
     const count = own(rawTopics, topic);
@@ -103,7 +106,7 @@ function parseFacts(meta: Fields, wsKey: string): CareFactsMeta | null {
   if (!Array.isArray(rawMissing) || rawMissing.length > CARE_TOPICS.length) return null;
   if (!rawMissing.every((topic) => isOneOf(topic, CARE_TOPICS))) return null;
   const missing = CARE_TOPICS.filter((topic) => rawMissing.includes(topic)) as CustomerCareFactTopic[];
-  return { kind: 'care-facts', schema: CARE_GRAPH_SCHEMA, wsKey, handoffSet, byTopic, expired, missing, uploadedAt };
+  return { kind: 'care-facts', schema: CARE_GRAPH_SCHEMA, wsKey, handoffSet, byTopic, expired, missing };
 }
 
 function parseResults(meta: Fields, wsKey: string): CareResultsMeta | null {

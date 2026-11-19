@@ -110,6 +110,9 @@ export interface CareProcessMeta {
   page: CarePageState;
   autoReply: CareAutoReplyMode;
   autoReplySince: string | null;
+  /** When the facts the server answers with were last uploaded, and how many there are (server state). */
+  factsUploadedAt: string | null;
+  serverFactCount: number | null;
 }
 export interface CareFactsMeta {
   kind: 'care-facts';
@@ -119,7 +122,6 @@ export interface CareFactsMeta {
   byTopic: CareTopicCounts;
   expired: number;
   missing: CustomerCareFactTopic[];
-  uploadedAt: string | null;
 }
 export interface CareResultsMeta {
   kind: 'care-results';
@@ -284,11 +286,18 @@ function processNode(source: CareGraphSource, wsKey: string): CareGraphNodeDraft
     page: source.page,
     autoReply: mode,
     autoReplySince: since,
+    factsUploadedAt: source.autoReply?.scriptUpdatedAt ?? null,
+    serverFactCount: source.autoReply?.factCount ?? null,
   };
   const switchText = since ? `${AUTO_REPLY_TEXT[mode]} từ ${formatCareGraphTime(since)}` : AUTO_REPLY_TEXT[mode];
+  const uploaded = metadata.factsUploadedAt && metadata.serverFactCount !== null
+    ? `Máy chủ đang trả lời bằng ${metadata.serverFactCount} thông tin đã duyệt, `
+      + `gửi lên lúc ${formatCareGraphTime(metadata.factsUploadedAt)}.`
+    : 'Máy chủ chưa nhận thông tin đã duyệt nào.';
   const content = [
     `Quy trình chăm sóc khách trên Facebook Page${pageName ? ` "${pageName}"` : ''} (izzi tự trả lời).`,
     `Trạng thái: tự trả lời ${switchText} · Page ${PAGE_TEXT[source.page]}.`,
+    uploaded,
     '',
     '1. Khách nhắn Page: izzi trả lời bằng câu cố định và thông tin shop đã duyệt, rồi xin SĐT/Zalo.',
     '2. Mỗi khách nhận tối đa 3 tin tự động trong 24 giờ, chỉ khi tin cuối của khách chưa quá 23 giờ.',
@@ -299,10 +308,9 @@ function processNode(source: CareGraphSource, wsKey: string): CareGraphNodeDraft
   return draft('care-process', 'Chăm sóc khách · Quy trình', content, metadata, wsKey);
 }
 
-function factsNode(source: CareGraphSource, coverage: CareSetupCoverage, wsKey: string): CareGraphNodeDraft {
+function factsNode(coverage: CareSetupCoverage, wsKey: string): CareGraphNodeDraft {
   const byTopic: CareTopicCounts = { ...coverage.byTopic };
   const missing = CARE_TOPICS.filter((topic) => byTopic[topic] === 0);
-  const uploadedAt = source.autoReply?.scriptUpdatedAt ?? null;
   const metadata: CareFactsMeta = {
     kind: 'care-facts',
     schema: CARE_GRAPH_SCHEMA,
@@ -311,7 +319,6 @@ function factsNode(source: CareGraphSource, coverage: CareSetupCoverage, wsKey: 
     byTopic,
     expired: coverage.expired,
     missing,
-    uploadedAt,
   };
   const lines = [
     'Thông tin shop đã duyệt để izzi trả lời khách (chỉ số lượng, không chép nội dung).',
@@ -322,9 +329,6 @@ function factsNode(source: CareGraphSource, coverage: CareSetupCoverage, wsKey: 
       : 'Đủ cả 5 chủ đề.',
     `Bàn giao nhân viên: ${coverage.handoffSet ? 'đã cài' : 'chưa cài'}.`,
   ];
-  lines.push(uploadedAt
-    ? `Gửi lên máy chủ lần cuối: ${formatCareGraphTime(uploadedAt)}.`
-    : 'Chưa gửi lên máy chủ.');
   return draft('care-facts', 'Chăm sóc khách · Thông tin đã duyệt', lines.join('\n'), metadata, wsKey);
 }
 
@@ -370,12 +374,22 @@ function resultsNode(
 }
 
 /**
+ * While the server answers customers, its script is the truth: a machine whose saved setup has a different
+ * number of active facts (an older or newer setup on another device) does not describe the facts.
+ */
+function setupMatchesServer(coverage: CareSetupCoverage, state: CustomerCareAutoReplyState | null): boolean {
+  if (!state?.enabled) return true;
+  const active = CARE_TOPICS.reduce((sum, topic) => sum + coverage.byTopic[topic], 0);
+  return active === state.factCount;
+}
+
+/**
  * The Care nodes this machine can vouch for, in a fixed order: process always; facts only with a saved
  * setup; results only with a fresh lead check. A node left out keeps what the graph already holds.
  */
 export function buildCareGraphNodes(source: CareGraphSource, wsKey: string, asOf: string): CareGraphNodeDraft[] {
   const nodes = [processNode(source, wsKey)];
-  if (source.facts) nodes.push(factsNode(source, source.facts, wsKey));
+  if (source.facts && setupMatchesServer(source.facts, source.autoReply)) nodes.push(factsNode(source.facts, wsKey));
   if (source.leads) nodes.push(resultsNode(source, source.leads, wsKey, asOf));
   return nodes;
 }
