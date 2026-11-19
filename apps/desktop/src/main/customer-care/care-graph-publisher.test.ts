@@ -4,6 +4,7 @@ import type { CareGraphSnapshot, CareLeadSummary } from './care-graph-digest';
 import { careNodeUrl, careWorkspaceKey } from './care-graph-digest';
 import {
   CARE_GRAPH_FIRST_RUN_MS,
+  CARE_GRAPH_NODE_LIST_CAP,
   CARE_GRAPH_REFRESH_MS,
   CareGraphPublisher,
   type CareGraphWriter,
@@ -221,6 +222,23 @@ describe('CareGraphPublisher.run', () => {
     expect(afterFailure).toBe(0);
     expect(context.log).toHaveBeenCalledWith('care graph read failed');
     expect(context.server.nodes).toHaveLength(2);
+  });
+
+  it('creates nothing when the fresh list may be cut at the backend row cap', async () => {
+    // Arrange: a big graph; the list the backend returns is exactly at the cap, oldest nodes cut off.
+    const context = setup();
+    const at = new Date(START).toISOString();
+    const full = Array.from({ length: CARE_GRAPH_NODE_LIST_CAP }, (_, index) => ({
+      id: `other-${index}`, title: 'n', nodeType: 'note', color: '#000', createdAt: at, updatedAt: at,
+    }));
+    context.graph.readNodes.mockResolvedValueOnce({ data: full, error: null, status: 200 } as never);
+
+    // Act
+    await context.publisher.run();
+
+    // Assert
+    expect(context.graph.createNode).not.toHaveBeenCalled();
+    expect(context.log).toHaveBeenCalledWith('care graph list incomplete');
   });
 
   it('patches the most recently updated node when the graph already holds duplicates', async () => {

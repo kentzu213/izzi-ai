@@ -161,6 +161,11 @@ Giới hạn đã biết:
 - Nếu người dùng xoá một node Care trong 5 phút trước khi cache kịp sync, lượt ghi đó `PATCH` vào id đã mất (prod vẫn trả ok). Node được tạo lại ở lần ghi kế tiếp có thay đổi. Với node Kết quả, chậm nhất là sau 24 giờ.
 - Hai máy cùng tài khoản cùng ghi lần đầu đúng một lúc có thể tạo hai node cùng url. Người đọc và lần ghi sau luôn chọn node mới nhất, nên node thừa chỉ nằm yên.
 - Một cạnh tạo hỏng không được thử lại.
+- `GET /api/aibase/nodes` trả tối đa số dòng của PostgREST (mặc định Supabase là 1000), node mới nhất đứng trước. Khi graph lớn hơn mức đó, node Care cũ có thể rơi khỏi danh sách. Lúc ấy:
+  - publisher không tạo node mới, vì danh sách không chứng minh được node đã mất (log `care graph list incomplete`);
+  - Director có thể không thấy khối Care.
+
+  Cách sửa gốc là phân trang hoặc trả danh sách nhẹ ở backend, hoặc bớt node transcript thô.
 
 An toàn khi chạy:
 

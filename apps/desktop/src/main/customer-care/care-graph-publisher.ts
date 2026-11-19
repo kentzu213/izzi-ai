@@ -35,6 +35,11 @@ export const CARE_GRAPH_REFRESH_MS = 6 * 60 * 60 * 1000;
 /** A little under the refresh period, so timer drift never pushes a results write to the next period. */
 export const CARE_GRAPH_RESULTS_MIN_MS = CARE_GRAPH_REFRESH_MS - 10 * 60 * 1000;
 export const CARE_GRAPH_RESULTS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/**
+ * GET /api/aibase/nodes returns at most this many rows (PostgREST max-rows, Supabase default 1000), newest
+ * first. A list this long may be cut, so it cannot prove that a Care node does not exist.
+ */
+export const CARE_GRAPH_NODE_LIST_CAP = 1000;
 /** Lead counts come from the minute lead check; older ones mean it stopped (inbox off, signed out). */
 export const CARE_GRAPH_LEADS_MAX_AGE_MS = 15 * 60 * 1000;
 const STATE_PREFIX = 'care_graph:v1';
@@ -236,14 +241,24 @@ export class CareGraphPublisher {
     }
     const fromCache = indexByUrl(cached, urls);
     if (due.every((draft) => fromCache.has(draft.url))) return fromCache;
+    let fresh: GraphReadResult<GraphNode> | null = null;
     try {
-      const fresh = await this.options.graph.readNodes();
-      if (fresh.data !== null) return indexByUrl(fresh.data, urls);
+      fresh = await this.options.graph.readNodes();
     } catch {
-      // Reported below.
+      fresh = null;
     }
-    this.log('care graph read failed');
-    return null;
+    if (!fresh || fresh.data === null) {
+      this.log('care graph read failed');
+      return null;
+    }
+    const found = indexByUrl(fresh.data, urls);
+    // The list is newest first and cut at the backend's row cap, so a Care node created long ago can be
+    // missing from a full list without being gone: then "absent" is not proven, and nothing is created.
+    if (fresh.data.length >= CARE_GRAPH_NODE_LIST_CAP && !due.every((draft) => found.has(draft.url))) {
+      this.log('care graph list incomplete');
+      return null;
+    }
+    return found;
   }
 
   private async write(draft: CareGraphNodeDraft, existingId: string | undefined): Promise<{ id: string; created: boolean } | null> {
