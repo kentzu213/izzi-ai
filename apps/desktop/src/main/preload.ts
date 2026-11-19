@@ -701,6 +701,7 @@ const electronAPI = {
     refresh: (): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:refresh'),
     approve: (input: AgentProfileActionInput): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:approve', input),
     discard: (input: AgentProfileActionInput): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:discard', input),
+    forget: (input: AgentProfileActionInput): Promise<AgentProfilesResult> => ipcRenderer.invoke('agentProfiles:forget', input),
   },
   customerMarketing: {
     getSnapshot: (): Promise<CustomerMarketingSnapshot> =>

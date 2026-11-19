@@ -20,4 +20,5 @@ export function registerAgentProfileIpc(service: AgentProfileService): void {
   ipcMain.handle('agentProfiles:refresh', guard(() => service.refresh()));
   ipcMain.handle('agentProfiles:approve', guard((input: unknown) => service.approve(input)));
   ipcMain.handle('agentProfiles:discard', guard((input: unknown) => service.discard(input)));
+  ipcMain.handle('agentProfiles:forget', guard((input: unknown) => service.forget(input)));
 }

@@ -21,6 +21,7 @@ import {
   CustomerMarketingCanaryController,
   type CustomerMarketingCanaryStatus,
 } from './customer-marketing-canary-controller';
+import { withDirectorProfile } from '../agents/memory/agent-profile-context';
 import type {
   CustomerProductMarketingContextSaveInput,
 } from '../../shared/customer-marketing-product-context';
@@ -2847,6 +2848,46 @@ describe('CustomerMarketingService AI Director', () => {
     const message = director.mock.calls[0][0].message as string;
     for (const line of careLines) expect(message).toContain(line);
     expect(message.indexOf(careLines[0])).toBeLessThan(message.indexOf('Chỉ đề xuất kế hoạch'));
+  });
+
+  it('puts the approved Director profile after the Care block, as suggestions only, for the planning account', async () => {
+    // Arrange
+    const director = vi.fn(async () => ({ reply: '1. Kế hoạch\n\nCần khách hàng duyệt: brief' }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+    const approvedProfile = vi.fn((_agentId: string, _ownerId?: string): string | null => (
+      'Sở thích:\n- câu ngắn, giọng thân thiện\nQuyết định:\n- tập trung khách để lại số tháng 12'
+    ));
+    context.service.setCareContextReader(withDirectorProfile(() => ['Chăm sóc khách: 2 lead mới'], { approvedProfile }));
+
+    // Act
+    await context.service.askDirector({ goal: 'Tăng khách để lại số tháng 12', channels: ['facebook'] });
+
+    // Assert
+    const message = director.mock.calls[0][0].message as string;
+    const care = message.indexOf('Chăm sóc khách: 2 lead mới');
+    const header = message.indexOf('Gợi ý từ hồ sơ AI Marketing Director');
+    expect(care).toBeGreaterThan(-1);
+    expect(header).toBeGreaterThan(care);
+    expect(message.indexOf('- Sở thích: câu ngắn, giọng thân thiện')).toBeGreaterThan(header);
+    expect(message.indexOf('Chỉ đề xuất kế hoạch')).toBeGreaterThan(message.indexOf('"Cần khách hàng duyệt"'));
+    expect(approvedProfile).toHaveBeenCalledWith('customer-marketing-director', expect.any(String));
+  });
+
+  it('keeps the Care block and the Director profile lines, and cuts anything past 24 lines', async () => {
+    // Arrange
+    const director = vi.fn(async () => ({ reply: '1. Kế hoạch\n\nCần khách hàng duyệt: brief' }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+    context.service.setCareContextReader(() => Array.from({ length: 30 }, (_, i) => `Dòng ${i + 1}: ngữ cảnh`));
+
+    // Act
+    await context.service.askDirector({ goal: 'Tăng khách để lại số tháng 12', channels: ['facebook'] });
+
+    // Assert
+    const message = director.mock.calls[0][0].message as string;
+    expect(message).toContain('Dòng 24: ngữ cảnh');
+    expect(message).not.toContain('Dòng 25: ngữ cảnh');
   });
 
   it('keeps the Director prompt unchanged when MyGraph has no Care block or reading it fails', async () => {
