@@ -109,6 +109,8 @@ Mã lỗi 422 mới: `inbox_off`, `permission_missing`. Bật khi env tắt tr�
 
 **Webhook:** khi bật, izzi đăng ký lại Page với `subscribed_fields=messages,standby,message_echoes`. Ở **App Dashboard → Messenger → Webhooks** cũng phải tick field `message_echoes`.
 
+Từ Phase D1, Page luôn được đăng ký `messages,standby,message_echoes,messaging_referrals` mỗi khi bật "Nhận tin nhắn từ Page", nên trong Dashboard phải tick thêm `messaging_referrals`. Echo đã được kiểm tra: tin izzi gửi mà 2 phút không có echo thì công tắc tự tắt (`echo_missing`). Xem `CARE-FACEBOOK-PHASE-D-AI-REPLY.md`.
+
 **Log:**
 
 - `CUSTOMER_CARE_AUTO_REPLY` (kết quả, mã lý do)

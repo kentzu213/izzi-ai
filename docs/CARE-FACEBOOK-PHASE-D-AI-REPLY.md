@@ -1,6 +1,25 @@
 # Customer Care Phase D: izzi hiểu hội thoại bằng AI, trả lời bằng thông tin đã duyệt
 
-Trạng thái: **thiết kế v2, chờ chủ shop chốt.** Đã sửa theo review độc lập (socrates, 2026-11-19: ACCEPT WITH FIXES). Chưa có code.
+Trạng thái: **thiết kế v2 đã duyệt** (chủ shop, 2026-11-19: "Duyệt theo đề xuất"). Đã sửa theo review độc lập (socrates: ACCEPT WITH FIXES). Đang làm D1.
+
+**Quyết định đã chốt (mục 10):**
+1. izzi chịu chi phí AI trong giai đoạn thử.
+2. Đồng ý gửi tin khách tới nhà cung cấp AI ở nước ngoài qua OpenRouter, với ZDR và đã che SĐT, Zalo, tên.
+3. Nhân viên hoặc Pancake trả lời thì izzi dừng hẳn với khách đó (phương án A).
+4. AI lỗi từ tin thứ hai thì izzi im lặng.
+5. Giữ tối đa 3 tin mỗi khách trong 24 giờ.
+6. Chưa đặt giờ làm việc: câu chuyển nhân viên không nhắc giờ.
+
+**D1 (backend, chưa đổi cách trả lời), 2026-11-19, chưa deploy:**
+- Migration `20261122_customer_care_conversation_context.sql`:
+  - bảng `customer_care_page_messages` (tin Page gửi khách, niêm phong);
+  - bảng `customer_care_customer_referrals` (quảng cáo khách bấm vào);
+  - cột `customer_care_outbound_messages.echoed_at`;
+  - hàm `customer_care_record_page_message`, `customer_care_record_referral`, `customer_care_flag_missing_echoes`.
+- Trigger xoá theo khách được mở rộng sang hai bảng mới. Hai bảng cũng được dọn sau 30 ngày.
+- Chỉ lưu cho khách đã có tin nhắn. Tin của chính izzi chỉ đánh dấu `echoed_at`.
+- Page được đăng ký `messages,standby,message_echoes,messaging_referrals` mỗi khi bật "Nhận tin nhắn". Tắt trả lời tự động không còn đổi danh sách field.
+- Kiểm tra: PGlite 52/52 cho D1 và 81/81 cho Phase C (đã áp D1). Security review: không có CRITICAL/HIGH; đã sửa 2 MEDIUM (echo về sớm hơn lúc ghi `mid`; một mục lỗi làm hỏng cả lượt) và các LOW (index, ký tự vô hình, kết quả quảng cáo cũ).
 
 Phase C (luật cứng) vẫn ở prod `rc-f7bd66e`. Công tắc và "Nhận tin nhắn từ Page" đang tắt.
 
@@ -103,7 +122,7 @@ Sai định dạng hoặc vi phạm bất kỳ ràng buộc nào thì coi như A
   - Echo của nhân viên hoặc Pancake đến hơn 10 giây sau tin khách thì izzi dừng hẳn với khách đó.
   - Echo đến trong vòng 10 giây được coi là tin tự động, izzi đọc làm ngữ cảnh và không xin số lại.
 - **Phương án B:** echo chỉ là ngữ cảnh, izzi trả lời tiếp. Nhưng izzi chen ngang nhân viên, khó kiểm soát.
-- **Tự kiểm tra:** izzi gửi một tin mà trong 60 giây không thấy echo của chính nó, nghĩa là echo đang hỏng. Khi đó công tắc tự tắt và app báo lý do. Như vậy luật dừng không bao giờ chạy mù nữa.
+- **Tự kiểm tra:** izzi gửi một tin mà trong 2 phút không thấy echo của chính nó (so `mid` Send API trả về với `mid` của echo), nghĩa là echo đang hỏng. Khi đó công tắc tự tắt, tin đó được ghi `echo_missing`, và app báo lý do. Như vậy luật dừng không bao giờ chạy mù nữa. Đã làm trong D1.
 - **Handoff:** izzi không hứa "gọi lại ngay". Câu chuẩn: "Dạ em chuyển câu hỏi cho nhân viên tư vấn; anh/chị để lại số điện thoại hoặc Zalo để nhân viên liên hệ ạ." Sau đó izzi dừng, và app đếm số lần chuyển nhân viên.
 
 ## 8. Đo chất lượng trước khi gửi thật
