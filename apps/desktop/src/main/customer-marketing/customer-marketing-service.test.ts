@@ -2822,6 +2822,52 @@ describe('CustomerMarketingService AI Director', () => {
     expect(durableArtifact?.content).not.toContain('modelExecution');
   });
 
+  it('adds the Care block it reads from MyGraph for the active workspace', async () => {
+    // Arrange
+    const director = vi.fn(async () => ({ reply: '1. Kế hoạch\n\nCần khách hàng duyệt: brief' }));
+    const context = setupDirector(director);
+    await completeOnboarding(context.service);
+    const careLines = [
+      'Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11/2026 12:00):',
+      '- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách.',
+    ];
+    const reader = vi.fn((_workspaceId: string) => careLines);
+    context.service.setCareContextReader(reader);
+
+    // Act
+    const result = await context.service.askDirector({ goal: 'Tăng khách để lại số tháng 12', channels: ['facebook'] });
+
+    // Assert
+    expect(result.ok).toBe(true);
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(reader.mock.calls[0][0]).toBe(context.service.getActiveWorkspaceId());
+    const message = director.mock.calls[0][0].message as string;
+    for (const line of careLines) expect(message).toContain(line);
+    expect(message.indexOf(careLines[0])).toBeLessThan(message.indexOf('Chỉ đề xuất kế hoạch'));
+  });
+
+  it('keeps the Director prompt unchanged when MyGraph has no Care block or reading it fails', async () => {
+    // Arrange
+    const empty = vi.fn(async () => ({ reply: '1. Kế hoạch\n\nCần khách hàng duyệt: brief' }));
+    const failing = vi.fn(async () => ({ reply: '1. Kế hoạch\n\nCần khách hàng duyệt: brief' }));
+    const emptyContext = setupDirector(empty);
+    const failingContext = setupDirector(failing);
+    await completeOnboarding(emptyContext.service);
+    await completeOnboarding(failingContext.service);
+    emptyContext.service.setCareContextReader(() => []);
+    failingContext.service.setCareContextReader(() => { throw new Error('cache unreadable'); });
+
+    // Act
+    const emptyResult = await emptyContext.service.askDirector({ goal: 'Tăng khách tháng 12', channels: ['facebook'] });
+    const failingResult = await failingContext.service.askDirector({ goal: 'Tăng khách tháng 12', channels: ['facebook'] });
+
+    // Assert
+    expect(emptyResult.ok).toBe(true);
+    expect(failingResult.ok).toBe(true);
+    expect(empty.mock.calls[0][0].message).not.toContain('Chăm sóc khách');
+    expect(failing.mock.calls[0][0].message).not.toContain('Chăm sóc khách');
+  });
+
   it('creates one model-backed draft with bounded cost and provenance behind the staging gate', async () => {
     const director = vi.fn(async () => ({
       reply: modelDraftReply(),

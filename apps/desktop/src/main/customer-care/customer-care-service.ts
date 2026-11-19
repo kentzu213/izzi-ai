@@ -14,6 +14,7 @@ import type {
   CustomerCareSetup,
   CustomerCareSnapshot,
   CustomerCareAutoReplyResult,
+  CustomerCareAutoReplyState,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookFailure,
@@ -56,6 +57,7 @@ import {
   derivePageBlockers,
   toCustomerCarePageConnection,
 } from './care-page-connection';
+import { carePageState, countCareFacts, type CareGraphSnapshot } from './care-graph-digest';
 import { OAUTH_CODE_PATTERN, OAUTH_STATE_PATTERN } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_ACCESS_CHANGED_ERROR,
@@ -104,6 +106,8 @@ export interface CustomerCareServiceOptions {
   onFacebookInboxChanged?: () => void;
   /** Phase C automatic reply routes. Absent ⇒ every automatic reply call answers `unsupported`. */
   autoReply?: CareAutoReplyGateway;
+  /** Called after a setup save or an automatic-reply switch succeeded, so the Care graph nodes refresh. */
+  onCareChanged?: () => void;
 }
 
 /** Main-only result of starting a connect: the state never reaches the renderer. */
@@ -689,6 +693,7 @@ export class CustomerCareService {
   private readonly leads?: CareLeadsGateway;
   private readonly onFacebookInboxChanged?: () => void;
   private readonly autoReply?: CareAutoReplyGateway;
+  private readonly onCareChanged?: () => void;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -701,6 +706,7 @@ export class CustomerCareService {
     this.leads = options.leads;
     this.onFacebookInboxChanged = options.onFacebookInboxChanged;
     this.autoReply = options.autoReply;
+    this.onCareChanged = options.onCareChanged;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -759,6 +765,7 @@ export class CustomerCareService {
       return { ok: false, error: CUSTOMER_CARE_SAVE_ERROR };
     }
     const autoReplyScript = await this.refreshAutoReplyScript(authority, parsed.value);
+    this.notifyCareChanged();
     return {
       ok: true,
       snapshot: this.buildSnapshot(authority, await this.readPageConnection(authority)),
@@ -822,7 +829,46 @@ export class CustomerCareService {
       () => autoReply.setAutoReply(authority.workspaceId, parsed.enabled, script),
     );
     if (!result.ok) return result;
+    this.notifyCareChanged();
     return { ok: true, workspaceId: authority.workspaceId, autoReply: copyCareAutoReplyState(result.value), canManage: true };
+  }
+
+  /**
+   * Main-only: what the Care graph nodes may say about the active workspace (counts, codes and the Page's
+   * public name). Never fact text, sources, the handoff text or the Page id. Null for roles that may not
+   * read leads, or without a usable authority.
+   */
+  async readGraphSnapshot(): Promise<CareGraphSnapshot | null> {
+    const authority = await this.resolveAuthority();
+    if (typeof authority === 'string' || !CARE_LEAD_READ_ROLES.includes(authority.role)) return null;
+    const { setup } = this.loadSetup(authority);
+    const connection = await this.readPageConnection(authority);
+    let autoReply: CustomerCareAutoReplyState | null = null;
+    const gateway = this.autoReply;
+    if (gateway && connection.state === 'connected') {
+      const result = await this.runFacebookCall(authority, () => gateway.getAutoReply(authority.workspaceId));
+      if (!result.ok && result.error === 'access_changed') return null;
+      autoReply = result.ok && result.value ? copyCareAutoReplyState(result.value) : null;
+    }
+    return {
+      identityId: authority.identityId,
+      workspaceId: authority.workspaceId,
+      source: {
+        pageName: connection.state === 'connected' ? connection.pageName : null,
+        page: carePageState(connection),
+        handoffSet: setup !== null && setup.handoffTarget.trim() !== '',
+        facts: setup ? countCareFacts(setup.facts, this.now().getTime()) : null,
+        autoReply,
+      },
+    };
+  }
+
+  private notifyCareChanged(): void {
+    try {
+      this.onCareChanged?.();
+    } catch {
+      // The graph refresh is best effort; it must never fail a save or a switch.
+    }
   }
 
   /** Owner/manager only. Returns the OAuth state and dialog URL to main; never to the renderer. */

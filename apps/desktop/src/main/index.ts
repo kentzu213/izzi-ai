@@ -97,6 +97,8 @@ import { CustomerCareService } from './customer-care/customer-care-service';
 import { CareFacebookClient } from './customer-care/care-facebook-client';
 import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './customer-care/care-facebook-oauth';
 import { CareLeadNotifier } from './customer-care/care-lead-notifier';
+import { CareGraphPublisher } from './customer-care/care-graph-publisher';
+import { careDirectorContextFromCache } from './customer-care/care-graph-reader';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import {
@@ -223,6 +225,8 @@ const pendingNativeMarketingOAuth = new Map<string, {
 let careFacebookOAuth: CareFacebookOAuthCoordinator | null = null;
 // Background "new lead" notifications for Customer Care (Phase B1); never carries a phone.
 let careLeadNotifier: CareLeadNotifier | null = null;
+// Keeps the count-only Care nodes in MyGraph fresh for izzi agents (docs/CARE-GRAPH-AGENTS.md).
+let careGraphPublisher: CareGraphPublisher | null = null;
 
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
@@ -923,6 +927,10 @@ function setupIPC() {
       notification.show();
     },
     log: (message) => console.warn('[CustomerCare]', message),
+    // Counts only, from the page already read: lead numbers for the Care graph cost no extra request.
+    onLeadSummary: (identityId, workspaceId, summary) => {
+      careGraphPublisher?.noteLeadSummary(identityId, workspaceId, summary);
+    },
   });
   const customerCareService = new CustomerCareService({
     store: dbManager,
@@ -933,6 +941,7 @@ function setupIPC() {
     leads: careFacebookClient,
     autoReply: careFacebookClient,
     onFacebookInboxChanged: () => careLeadNotifier?.refresh(),
+    onCareChanged: () => careGraphPublisher?.requestPublish(),
     selectFacts: async ({ system, user, signal }) => {
       // Direct, tool-free call: no session recorder, Graph capture or conversation persistence.
       const result = await izziAgent.chat({
@@ -957,6 +966,19 @@ function setupIPC() {
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
   });
   registerCustomerCareIpc(customerCareService, careFacebookOAuth);
+  // Care → MyGraph: three count-only nodes, written only when they change; the Director reads them back
+  // from the synced node list, so the Care block costs no request at planning time.
+  careGraphPublisher = new CareGraphPublisher({
+    graph: graphClient,
+    readSnapshot: () => customerCareService.readGraphSnapshot(),
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+    currentWorkspaceId: () => customerMarketingService.getActiveWorkspaceId(),
+    store: dbManager,
+    log: (message) => console.warn('[CustomerCare]', message),
+  });
+  customerMarketingService.setCareContextReader((workspaceId) => (
+    careDirectorContextFromCache(dbManager.getUserData('graph_nodes')[0], workspaceId, Date.now())
+  ));
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),
     acceptInvitation: async (token) => {
@@ -1010,6 +1032,8 @@ function setupIPC() {
   // Runs in main, so new leads are still announced while the window sits in the tray.
   careLeadNotifier.start();
   app.on('before-quit', () => careLeadNotifier?.stop());
+  careGraphPublisher.start();
+  app.on('before-quit', () => careGraphPublisher?.stop());
 
   // ── Extensions (basic) ──
   ipcMain.handle('extensions:list', async () => {

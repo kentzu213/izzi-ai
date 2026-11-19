@@ -1,6 +1,6 @@
 # Nối Chăm sóc khách hàng vào MyGraph cho agent izzi
 
-Trạng thái: **bản thiết kế, chờ chủ shop duyệt**. Chưa có dòng code nào.
+Trạng thái: chủ shop **đã duyệt Slice 1** (2026-11-19). Slice 1 đã code xong (desktop), chưa phát hành.
 
 Nối tiếp `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md` (izzi tự trả lời khách trên Page, live từ 2026-11-19 trên Hồng Hưng).
 
@@ -59,8 +59,8 @@ Ví dụ với Hồng Hưng hôm nay: Danh mục 4 · Giá 1 · Chất lượng 
 type CareGraphMeta =
   | { kind: 'care-process'; schema: 1; wsKey: string; processVersion: 'phase-c-1';
       page: 'connected' | 'needs_reauth' | 'not_connected' | 'unknown';
-      autoReply: 'on' | 'off' | 'unavailable'; autoReplySince: string | null; handoffSet: boolean }
-  | { kind: 'care-facts'; schema: 1; wsKey: string;
+      autoReply: 'on' | 'off' | 'unavailable' | 'unknown'; autoReplySince: string | null; handoffSet: boolean }
+  | { kind: 'care-facts'; schema: 1; wsKey: string; setupSaved: boolean;
       byTopic: Record<'catalog'|'price'|'quality'|'policy'|'contact', number>;
       expired: number; missing: CareTopic[]; uploadedAt: string | null }
   | { kind: 'care-results'; schema: 1; wsKey: string; asOf: string;
@@ -69,7 +69,7 @@ type CareGraphMeta =
       lastProblem: CustomerCareAutoReplyProblem | null };
 ```
 
-`null` nghĩa là chưa đọc được. Ví dụ: Page chưa kết nối, hoặc vai trò không được xem lead. `leadsCapped` bằng `true` khi trang lead đầu đã đầy 50, lúc đó con số hiện là "50+".
+`autoReply: 'unknown'` nghĩa là không đọc được trạng thái công tắc. `null` nghĩa là chưa đọc được số. Ví dụ: Page chưa kết nối, vai trò không được xem lead, hoặc lần đọc lead gần nhất đã quá 15 phút (inbox tắt). `leadsCapped` bằng `true` khi trang lead đầu đã đầy 50, lúc đó con số hiện là "50+".
 
 **Chưa có "tỉ lệ trả lời → để số".** Máy chủ hiện chỉ trả số tin đã gửi và số khách đã dừng trong 24 giờ, không tách theo lý do dừng. Lead lại gồm cả khách tự để số mà không cần izzi trả lời. Ghép hai số đó thành tỉ lệ sẽ sai. Xem Slice 2 ở mục 8.
 
@@ -92,11 +92,17 @@ Luật cho Director:
 Khối thêm vào `prompt` của Director (cả chế độ kế hoạch lẫn chế độ JSON):
 
 ```
-Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11 12:00):
-- Tự trả lời: đang bật từ 19/11/2026; Page đã kết nối; bàn giao đã cài.
-- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; thiếu: Chất lượng, Chính sách.
-- 24 giờ qua: izzi gửi 5 tin, dừng với 2 khách. 7 ngày qua: 1 khách để số, 1 khách chưa được gọi lại.
+Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11/2026 12:00):
+- Tự trả lời khách: đang bật từ 19/11/2026 10:05; Page đã kết nối; bàn giao nhân viên đã cài.
+- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách.
+- 24 giờ qua: izzi gửi 5 tin, dừng với 2 khách. 7 ngày qua: 1 khách để lại số, 1 khách chưa được gọi lại.
+Cách dùng khối Chăm sóc khách:
+- Tự trả lời đang bật: được dùng CTA "Nhắn tin Page để được tư vấn"; KPI tuần có "số khách để lại số qua Messenger".
+- Trong mục "Cần khách hàng duyệt", thêm việc bổ sung thông tin đã duyệt về: Chất lượng, Chính sách (...).
+- Khối này là số liệu vận hành, không phải proof claim: không dùng nó để khẳng định điều gì về sản phẩm.
 ```
+
+Director nhận khối này qua `CustomerMarketingService.setCareContextReader`. Hàm đọc nằm ở `careDirectorContextFromCache` và không gọi mạng.
 
 Không có node (chưa sync, không có quyền Care, lỗi đọc), thì không có khối này và Director chạy như hiện nay.
 
@@ -160,7 +166,7 @@ An toàn khi chạy:
   - đổi danh tính giữa chừng thì không ghi;
   - lỗi mạng không ném lỗi và không vào hàng đợi offline;
   - log không có dữ liệu.
-- **`care-graph-reader.test.ts`**: bỏ qua node của `wsKey` khác, metadata sai kiểu hoặc có trường lạ, số âm hay quá lớn. Kiểm khối prompt cho dữ liệu cũ hơn 48 giờ.
+- **`care-graph-reader.test.ts`**: bỏ qua node của `wsKey` khác, metadata sai kiểu, số âm, số lẻ hay quá lớn, mã lý do lạ. Trường lạ thì bỏ qua chứ không từ chối, vì backend tự gộp `tags` vào metadata. Kiểm khối prompt cho dữ liệu cũ hơn 48 giờ.
 - **`graph-client` test** cho `findOrCreateNodeByUrl`.
 - **Test Director:** có node thì prompt có khối Care, không có node thì prompt giữ nguyên như cũ.
 - Chạy toàn bộ desktop vitest, `tsc` (main và renderer), eslint. Trước khi sửa mỗi hàm có sẵn, chạy `gitnexus_impact` lên `GraphClient`, `CareLeadNotifier`, `CustomerCareService.saveSetup/setAutoReply` và hàm dựng prompt Director.

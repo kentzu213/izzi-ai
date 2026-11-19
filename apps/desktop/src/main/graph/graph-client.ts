@@ -359,6 +359,44 @@ export class GraphClient {
   }
 
   /**
+   * POST /api/aibase/nodes for a background writer that names its node by a stable `url`. The backend
+   * returns the caller's existing node for the same url (`deduped: true`) instead of inserting again, so
+   * retries and other devices never create a duplicate. `created` tells the writer whether to link the
+   * node. Never queued offline: the writer simply tries again on its next run.
+   */
+  async findOrCreateNodeByUrl(
+    input: NodeCreateInput & { url: string },
+  ): Promise<{ id: string; created: boolean } | { error: string }> {
+    const title = typeof input?.title === 'string' ? input.title.trim() : '';
+    const url = typeof input?.url === 'string' ? input.url.trim() : '';
+    if (title.length === 0 || url.length === 0) return { error: 'url and title required' };
+
+    const token = await this.auth.getAccessToken();
+    if (token == null) return { error: 'unauthorized' };
+
+    try {
+      const res = await fetch(`${IZZI_API_BASE}/api/aibase/nodes`, {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body: JSON.stringify(modelToCreatePayload({ ...input, title, url })),
+      });
+      if (res.status === 401) return { error: 'unauthorized' };
+      if (!res.ok) {
+        const message = await this.readBackendError(res);
+        this.logFailure('graph.findOrCreateNode', res.status);
+        return { error: message };
+      }
+      const data = await res.json();
+      const id = ownValue(ownValue(data, 'node'), 'id');
+      if (typeof id !== 'string' || id.length === 0) return { error: 'Invalid response' };
+      return { id, created: ownValue(data, 'deduped') !== true };
+    } catch (err) {
+      this.logFailure('graph.findOrCreateNode', undefined, shortError(err));
+      return { error: 'network error' };
+    }
+  }
+
+  /**
    * PATCH /api/aibase/nodes/:id with the patch whitelist only (Req 2.3). The
    * backend confirms with `{ ok: true }` (it does not echo the node), so success
    * is reported as `{ ok: true }`; the renderer store re-reads the source of
