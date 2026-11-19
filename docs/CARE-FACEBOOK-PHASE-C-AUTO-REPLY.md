@@ -30,6 +30,7 @@ Mỗi tin chỉ ghép từ **câu tiếng Việt cố định** và **nguyên v�
 - **Tin 1:** "Dạ, shop cảm ơn anh/chị đã nhắn tin ạ.", rồi thông tin đã duyệt khớp câu hỏi, rồi lời xin SĐT/Zalo.
 - **Tin 2 và 3:** mở đầu "Dạ vâng ạ.", phần sau giống tin 1.
 - **Câu hỏi chưa có thông tin đã duyệt** (ví dụ giá): "Về giá, nhân viên tư vấn của shop sẽ kiểm tra và báo lại chính xác cho anh/chị ạ.", kèm lời xin SĐT/Zalo.
+- **Câu hỏi chung chung về giá, sản phẩm hoặc chất lượng** (ví dụ "Giá bao nhiêu?", "bao nhiêu tiền bức đấy em") khi shop chỉ có đúng **một** thông tin đã duyệt cho chủ đề đó: izzi dùng thông tin ấy. Ngoại lệ: khách nêu tên một sản phẩm khác có trong danh mục, vì giá đó có thể là của sản phẩm khác. Liên hệ và chính sách không áp dụng luật này: một thông tin (ví dụ địa chỉ) không trả lời được mọi câu hỏi cùng chủ đề (ví dụ hotline). Luật này chỉ có ở máy chủ (backend `f7bd66e`), bản nháp desktop chưa có. Lý do: ngày 2026-11-19, ba tin trả lời một khách thật không dùng thông tin nào, vì câu hỏi giá không trùng từ cụ thể nào.
 - **Khách vừa gửi số:** một tin chốt "Shop đã nhận được số của anh/chị. Nhân viên tư vấn sẽ liên hệ anh/chị sớm qua điện thoại hoặc Zalo ạ.", rồi dừng.
 - **Khách từ chối** ("đừng nhắn", "không để số", "stop"…): izzi không gửi gì và dừng.
 - **Khách nhắn nhiều tin liên tiếp:** izzi đợi khách ngừng gõ 8 giây (tối đa 30 giây kể từ tin đầu chưa trả lời), rồi trả lời một lần cho cả cụm.
