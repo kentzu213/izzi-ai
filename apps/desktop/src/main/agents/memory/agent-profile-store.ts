@@ -185,6 +185,16 @@ export function discardProfile(data: StoredProfiles, agentId: string): StoredPro
   return { ...data, agents: { ...data.agents, [agentId]: { ...current, pending: null } } };
 }
 
+/** Stops using the approved profile; a pending one stays for review. An agent left with nothing is dropped. */
+export function forgetProfile(data: StoredProfiles, agentId: string): StoredProfiles | null {
+  const current = Object.hasOwn(data.agents, agentId) ? data.agents[agentId] : undefined;
+  if (!current?.approved) return null;
+  const agents = { ...data.agents };
+  if (current.pending) agents[agentId] = { ...current, approved: null };
+  else delete agents[agentId];
+  return { ...data, agents };
+}
+
 /** Watermarks move forward only. */
 export function advanceWatermarks(data: StoredProfiles, newest: Readonly<Record<string, number>>): StoredProfiles {
   const watermarks = { ...data.watermarks };

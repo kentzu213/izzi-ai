@@ -1,8 +1,13 @@
 /**
- * Display logic for the "Hồ sơ agent" section of the Memory page (docs/MYGRAPH-AGENT-MEMORY.md, S2).
+ * Display logic for the "Hồ sơ agent" section of the Memory page (docs/MYGRAPH-AGENT-MEMORY.md, S2 and S4).
  * Pure: the component only renders what these functions decide.
  */
-import type { AgentProfilesError, AgentProfilesResult, AgentProfilesState } from '../../shared/agent-profile-types';
+import {
+  AGENT_IDS_NOT_READING_PROFILE,
+  type AgentProfilesError,
+  type AgentProfilesResult,
+  type AgentProfilesState,
+} from '../../shared/agent-profile-types';
 
 const ERROR_TEXT: Record<AgentProfilesError, string> = {
   auth: 'Hãy đăng nhập izzi để cập nhật hồ sơ agent.',
@@ -13,7 +18,8 @@ const ERROR_TEXT: Record<AgentProfilesError, string> = {
   model_unavailable: 'Máy chủ AI đang bận hoặc không trả lời. Thử lại sau ít phút.',
   invalid_output: 'AI trả về kết quả không dùng được nên lần này bỏ qua. Lần sau chỉ đọc hoạt động mới.',
   invalid_input: 'Yêu cầu không hợp lệ. Tải lại trang rồi thử lại.',
-  not_found: 'Hồ sơ này không còn bản chờ duyệt. Tải lại để xem trạng thái mới.',
+  not_found: 'Hồ sơ này đã đổi trạng thái. Tải lại để xem trạng thái mới.',
+  storage: 'Không lưu được thay đổi trên máy này, nên hồ sơ vẫn như cũ. Thử lại sau.',
 };
 
 export function agentProfilesErrorText(error: AgentProfilesError): string {
@@ -44,4 +50,40 @@ export function refreshNotice(result: AgentProfilesResult): string {
   return updated > 0
     ? `Đã cập nhật ${updated} hồ sơ. Xem rồi bấm "Dùng" cho hồ sơ bạn đồng ý.`
     : 'Chưa có điều gì đáng ghi thêm vào hồ sơ.';
+}
+
+export interface ProfileLineDiff {
+  added: string[];
+  removed: string[];
+}
+
+/** One line as compared: inner spacing folded, ends trimmed. */
+function normalizedLines(text: string): string[] {
+  return text.split('\n').map((line) => line.replace(/\s+/g, ' ').trim()).filter((line) => line.length > 0);
+}
+
+/** What the pending profile adds to, and drops from, the approved one, line by line. */
+export function profileLineDiff(approvedText: string, pendingText: string): ProfileLineDiff {
+  const before = normalizedLines(approvedText);
+  const after = normalizedLines(pendingText);
+  const beforeSet = new Set(before);
+  const afterSet = new Set(after);
+  return {
+    added: after.filter((line) => !beforeSet.has(line)),
+    removed: before.filter((line) => !afterSet.has(line)),
+  };
+}
+
+const DIRECTOR_AGENT_ID = 'customer-marketing-director';
+
+/** How the agent uses its approved profile, when that is not the usual chat context; null otherwise. */
+export function profileUseNote(agentId: string): string | null {
+  if (agentId === 'hermes') return 'Hermes dùng bộ nhớ riêng nên không đọc hồ sơ này.';
+  if (AGENT_IDS_NOT_READING_PROFILE.includes(agentId)) return 'Agent này viết bài công khai nên không đọc hồ sơ này.';
+  if (agentId === DIRECTOR_AGENT_ID) return 'Chỉ dùng làm gợi ý trong kế hoạch, chờ bạn duyệt.';
+  return null;
+}
+
+export function forgetConfirmText(agentName: string): string {
+  return `Ngừng dùng hồ sơ của ${agentName}? Agent sẽ không đọc hồ sơ này nữa và bản đang dùng bị xoá khỏi máy.`;
 }

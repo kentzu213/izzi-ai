@@ -16,6 +16,7 @@ function fakeService() {
     refresh: vi.fn(async () => OK),
     approve: vi.fn(async () => OK),
     discard: vi.fn(async () => OK),
+    forget: vi.fn(async () => OK),
   };
 }
 
@@ -36,12 +37,14 @@ describe('registerAgentProfileIpc', () => {
       handlers.get('agentProfiles:refresh')!({}),
       handlers.get('agentProfiles:approve')!({}, { agentId: 'socrates' }),
       handlers.get('agentProfiles:discard')!({}, { agentId: 'socrates' }),
+      handlers.get('agentProfiles:forget')!({}, { agentId: 'socrates' }),
     ]);
 
     // Assert
-    expect(results).toEqual([OK, OK, OK, OK]);
+    expect(results).toEqual([OK, OK, OK, OK, OK]);
     expect(service.approve).toHaveBeenCalledWith({ agentId: 'socrates' });
     expect(service.discard).toHaveBeenCalledWith({ agentId: 'socrates' });
+    expect(service.forget).toHaveBeenCalledWith({ agentId: 'socrates' });
   });
 
   it('refuses calls from anything but the trusted app window', async () => {

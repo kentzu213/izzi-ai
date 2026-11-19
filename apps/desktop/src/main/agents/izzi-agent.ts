@@ -508,18 +508,34 @@ export class IzziAgent {
   }
 }
 
+export interface IzziAgentIpcOptions {
+  /** Adds what main knows about the persona to its system prompt (S4: the owner's approved profile). */
+  augmentSystemPrompt?: (systemPrompt: string, agentId: string | undefined) => string;
+}
+
+/** The payload with main's additions to the system prompt; unchanged when there are none or they fail. */
+function withMainContext(payload: IzziAgentChatPayload, options: IzziAgentIpcOptions): IzziAgentChatPayload {
+  if (!options.augmentSystemPrompt || typeof payload?.systemPrompt !== 'string') return payload;
+  try {
+    return { ...payload, systemPrompt: options.augmentSystemPrompt(payload.systemPrompt, payload.agentId) };
+  } catch {
+    return payload;
+  }
+}
+
 /**
  * Register the `izziAgent:chat` IPC handler. The Izzi key stays inside IzziAgent
  * (main process) and NEVER crosses the bridge — the renderer only receives
  * `{ reply, error }`.
  */
-export function registerIzziAgentIpc(agent: IzziAgent, recorder?: SessionRecorder): void {
+export function registerIzziAgentIpc(agent: IzziAgent, recorder?: SessionRecorder, options: IzziAgentIpcOptions = {}): void {
   ipcMain.handle('izziAgent:chat', async (event, payload: IzziAgentChatPayload) => {
     const turnId = typeof payload?.turnId === 'string' ? payload.turnId : '';
     const startedAt = new Date().toISOString();
     // Forward live process events to the renderer; collect steps for the record.
     const collector = createStreamCollector((evt) => event.sender.send('agentStream:event', evt));
-    const result = await agent.chat(payload, turnId ? collector.onEvent : undefined);
+    // The record keeps the owner's own request; main's additions only go to the model.
+    const result = await agent.chat(withMainContext(payload, options), turnId ? collector.onEvent : undefined);
 
     // Record the finished turn into the unified surfaces (my-graph + Replay tasks).
     if (recorder && payload?.agentId && typeof result.reply === 'string' && result.reply.length > 0) {

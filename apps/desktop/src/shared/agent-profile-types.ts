@@ -37,13 +37,20 @@ export type AgentProfilesError =
   | 'model_unavailable'
   | 'invalid_output'
   | 'invalid_input'
-  | 'not_found';
+  | 'not_found'
+  | 'storage';
 
 export type AgentProfilesResult =
   | { ok: true; state: AgentProfilesState; updated?: number }
   | { ok: false; error: AgentProfilesError };
 
-/** Renderer input for approve / discard; main validates it. */
+/**
+ * Agents that never read their profile (S4): Hermes keeps its own memory, and the Content Agent writes
+ * public posts. The profile may still be reviewed; it is simply not used.
+ */
+export const AGENT_IDS_NOT_READING_PROFILE: readonly string[] = ['hermes', 'customer-marketing-content'];
+
+/** Renderer input for approve / discard / forget; main validates it. */
 export interface AgentProfileActionInput {
   agentId: string;
 }

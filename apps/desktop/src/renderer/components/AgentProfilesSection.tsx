@@ -1,12 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { AgentProfileView, AgentProfilesResult, AgentProfilesState } from '../../shared/agent-profile-types';
-import { agentProfilesErrorText, refreshButtonState, refreshNotice } from '../pages/agent-profiles-flow';
+import {
+  agentProfilesErrorText,
+  forgetConfirmText,
+  profileLineDiff,
+  profileUseNote,
+  refreshButtonState,
+  refreshNotice,
+} from '../pages/agent-profiles-flow';
 
 /**
- * "Hồ sơ agent" on the Memory page (docs/MYGRAPH-AGENT-MEMORY.md, S2): the owner asks izzi to distil
- * one short profile per agent from their own recent work, then approves ("Dùng") or drops ("Bỏ") it.
- * Agents do not read the profiles yet; that comes in a later version.
+ * "Hồ sơ agent" on the Memory page (docs/MYGRAPH-AGENT-MEMORY.md, S2 and S4): the owner asks izzi to
+ * distil one short profile per agent from their own recent work, sees what changed against the profile in
+ * use, then approves ("Dùng") or drops ("Bỏ") it. "Ngừng dùng" removes the approved profile.
  */
+type ProfileAction = 'approve' | 'discard' | 'forget';
+
 export function AgentProfilesSection() {
   const api = window.electronAPI?.agentProfiles;
   const [state, setState] = useState<AgentProfilesState | null>(null);
@@ -55,7 +64,9 @@ export function AgentProfilesSection() {
     }
   };
 
-  const act = async (kind: 'approve' | 'discard', agentId: string) => {
+  const act = async (kind: ProfileAction, profile: AgentProfileView) => {
+    if (kind === 'forget' && !window.confirm(forgetConfirmText(profile.agentName))) return;
+    const { agentId } = profile;
     setActingOn(agentId);
     try {
       const result = await api[kind]({ agentId });
@@ -73,7 +84,7 @@ export function AgentProfilesSection() {
   return (
     <section className="memory-section" aria-labelledby="agent-profiles-title">
       <div className="memory-section__header">
-        <h3 id="agent-profiles-title" className="memory-section__title">Hồ sơ agent (chờ bạn duyệt)</h3>
+        <h3 id="agent-profiles-title" className="memory-section__title">Hồ sơ agent</h3>
         <span className="memory-section__count">{profiles.length || ''}</span>
         <button
           type="button"
@@ -88,7 +99,8 @@ export function AgentProfilesSection() {
       </div>
       <p className="memory-section__empty">
         izzi đọc việc bạn đã làm với từng agent trên máy này (đã ẩn số điện thoại, email, Zalo) rồi viết một hồ sơ
-        ngắn. Bạn bấm &quot;Dùng&quot; thì hồ sơ mới thay hồ sơ cũ. Agent sẽ đọc hồ sơ đã duyệt ở bản sau.
+        ngắn. Bạn bấm &quot;Dùng&quot; thì hồ sơ mới thay hồ sơ cũ. Khi bạn chat, agent đọc hồ sơ đã duyệt như dữ
+        liệu tham khảo, không thêm quyền gì. Bấm &quot;Ngừng dùng&quot; để gỡ.
         {button.hint ? ` ${button.hint}` : ''}
       </p>
       {notice ? <div className="memory-section__empty" role="status">{notice}</div> : null}
@@ -120,24 +132,27 @@ function AgentProfileCard({
   profile: AgentProfileView;
   disabled: boolean;
   busy: boolean;
-  onAct: (kind: 'approve' | 'discard', agentId: string) => Promise<void>;
+  onAct: (kind: ProfileAction, profile: AgentProfileView) => Promise<void>;
 }) {
+  const useNote = profileUseNote(profile.agentId);
   return (
     <article className="memory-card glass-card" aria-busy={busy}>
       <div className="memory-card__meta">
         <span className="memory-card__kind">{profile.agentName}</span>
         <span>{profile.pending ? 'Có bản mới chờ duyệt' : 'Đang dùng'}</span>
       </div>
+      {useNote ? <div className="memory-card__meta">{useNote}</div> : null}
       {profile.pending ? (
         <>
           <div className="memory-card__content" style={{ whiteSpace: 'pre-wrap' }}>{profile.pending.text}</div>
+          {profile.approved ? <ProfileChanges approvedText={profile.approved.text} pendingText={profile.pending.text} /> : null}
           <div className="memory-card__actions">
             <button
               type="button"
               className="btn btn--primary btn--sm"
               disabled={disabled}
               aria-label={`Dùng hồ sơ mới của ${profile.agentName}`}
-              onClick={() => void onAct('approve', profile.agentId)}
+              onClick={() => void onAct('approve', profile)}
             >
               Dùng
             </button>
@@ -146,7 +161,7 @@ function AgentProfileCard({
               className="btn btn--ghost btn--sm"
               disabled={disabled}
               aria-label={`Bỏ hồ sơ mới của ${profile.agentName}`}
-              onClick={() => void onAct('discard', profile.agentId)}
+              onClick={() => void onAct('discard', profile)}
             >
               Bỏ
             </button>
@@ -159,6 +174,36 @@ function AgentProfileCard({
           <div className="memory-card__content" style={{ whiteSpace: 'pre-wrap' }}>{profile.approved.text}</div>
         </details>
       ) : null}
+      {profile.approved ? (
+        <div className="memory-card__actions">
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            disabled={disabled}
+            aria-label={`Ngừng dùng hồ sơ của ${profile.agentName}`}
+            onClick={() => void onAct('forget', profile)}
+          >
+            Ngừng dùng
+          </button>
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+/** What "Dùng" would change: the lines the new profile adds and the ones it drops. */
+function ProfileChanges({ approvedText, pendingText }: { approvedText: string; pendingText: string }) {
+  const { added, removed } = profileLineDiff(approvedText, pendingText);
+  if (added.length === 0 && removed.length === 0) {
+    return <div className="memory-card__meta">Giống hồ sơ đang dùng.</div>;
+  }
+  return (
+    <div className="memory-card__content">
+      <strong>Khác với hồ sơ đang dùng:</strong>
+      <ul style={{ margin: '4px 0 0', paddingInlineStart: 16 }}>
+        {added.map((line, index) => <li key={`added-${index}`}>Thêm: {line}</li>)}
+        {removed.map((line, index) => <li key={`removed-${index}`}>Không còn: {line}</li>)}
+      </ul>
+    </div>
   );
 }

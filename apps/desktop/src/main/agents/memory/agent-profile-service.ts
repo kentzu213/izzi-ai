@@ -1,7 +1,7 @@
 /**
  * Agent profiles, S2 of docs/MYGRAPH-AGENT-MEMORY.md: on the owner's request, distil the account's new
  * activity into one short profile per agent, kept for review on this machine. Nothing here writes to
- * MyGraph or feeds an agent yet; a profile is only stored.
+ * MyGraph; approved profiles reach agents through agent-profile-context (S4).
  *
  * Credit guard:
  * - `gpt-6-luna` first (the owner's choice, served by codex-lb, cheap; it reasons by default, so it gets
@@ -31,6 +31,7 @@ import {
   callsToday,
   countCall,
   discardProfile,
+  forgetProfile,
   recordRun,
   runsToday,
   setPendingProfiles,
@@ -129,6 +130,23 @@ export class AgentProfileService {
     return this.change(input, (data, agentId) => discardProfile(data, agentId));
   }
 
+  /** "Ngừng dùng": the agent stops using its approved profile. */
+  async forget(input: unknown): Promise<AgentProfilesResult> {
+    return this.change(input, (data, agentId) => forgetProfile(data, agentId));
+  }
+
+  /**
+   * The approved profile text of the signed-in account for this agent, or null. Never a pending draft.
+   * With `ownerId`, also null unless that account is the one signed in (a run planned for another account).
+   */
+  approvedProfile(agentId: string, ownerId?: string): string | null {
+    if (typeof agentId !== 'string' || agentId.length === 0 || agentId.length > MAX_AGENT_ID_CHARS) return null;
+    const owner = this.owner();
+    if (!owner || (ownerId !== undefined && ownerId !== owner)) return null;
+    const data = this.options.store.load(owner);
+    return Object.hasOwn(data.agents, agentId) ? data.agents[agentId].approved?.text ?? null : null;
+  }
+
   private async distil(owner: string): Promise<AgentProfilesResult> {
     const startMs = this.now();
     const data = this.options.store.load(owner);
@@ -216,7 +234,8 @@ export class AgentProfileService {
     if (this.running) return failure('busy');
     const next = update(this.options.store.load(owner), agentId);
     if (!next) return failure('not_found');
-    this.options.store.save(owner, next);
+    // Unsaved means unchanged: agents would keep reading the old state, so the owner must not see success.
+    if (!this.options.store.save(owner, next)) return failure('storage');
     return { ok: true, state: toProfilesState(next, this.now()) };
   }
 

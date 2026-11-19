@@ -438,8 +438,8 @@ const CUSTOMER_MARKETING_DIRECTOR_MODEL = 'gpt-6.1-sol';
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
 // gpt-6.1-sol streams, so a richer plan has room to finish instead of stopping mid-sentence.
 const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 3000;
-/** The Care block from MyGraph is about ten lines; anything longer is cut, never trusted to grow. */
-const CARE_CONTEXT_MAX_LINES = 16;
+/** The Care block from MyGraph is about ten lines and the Director profile at most six; longer is cut. */
+const CARE_CONTEXT_MAX_LINES = 24;
 /** Reads the Director's Care block for one account's workspace from the synced MyGraph nodes. */
 export type CareContextReader = (scope: { identityId: string; workspaceId: string }) => string[];
 // The gpt-4o-mini route answers 402 at >=2000 reserved tokens; 1500 still fits a complete plan.

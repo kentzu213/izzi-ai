@@ -320,3 +320,51 @@ describe('AgentProfileService approve and discard', () => {
     expect(await service.discard(null)).toEqual({ ok: false, error: 'invalid_input' });
   });
 });
+
+describe('AgentProfileService forget and approvedProfile', () => {
+  it('reads only the approved profile of the signed-in account, and forget stops using it', async () => {
+    // Arrange
+    let owner: string | null = 'user-1';
+    const { service } = setup({ owner: () => owner });
+    await service.refresh();
+    expect(service.approvedProfile('socrates')).toBeNull();
+    await service.approve({ agentId: 'socrates' });
+
+    // Act
+    const inUse = service.approvedProfile('socrates');
+    const forOwner = service.approvedProfile('socrates', 'user-1');
+    const forOtherOwner = service.approvedProfile('socrates', 'user-2');
+    owner = 'user-2';
+    const otherAccount = service.approvedProfile('socrates');
+    owner = 'user-1';
+    const forgotten = await service.forget({ agentId: 'socrates' });
+
+    // Assert
+    expect(inUse).toBe(profileText('caption ngắn'));
+    expect(forOwner).toBe(inUse);
+    expect(forOtherOwner).toBeNull();
+    expect(otherAccount).toBeNull();
+    expect(forgotten.ok && forgotten.state.profiles.find((p) => p.agentId === 'socrates')).toBeUndefined();
+    expect(service.approvedProfile('socrates')).toBeNull();
+    expect(await service.forget({ agentId: 'socrates' })).toEqual({ ok: false, error: 'not_found' });
+    expect(await service.forget({})).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.approvedProfile('')).toBeNull();
+  });
+});
+
+describe('AgentProfileService when the settings write fails', () => {
+  it('reports the failure instead of a change that was not saved', async () => {
+    // Arrange
+    const { service, store } = setup();
+    await service.refresh();
+    await service.approve({ agentId: 'socrates' });
+    vi.spyOn(store, 'save').mockReturnValue(false);
+
+    // Act
+    const result = await service.forget({ agentId: 'socrates' });
+
+    // Assert
+    expect(result).toEqual({ ok: false, error: 'storage' });
+    expect(service.approvedProfile('socrates')).toBe(profileText('caption ngắn'));
+  });
+});

@@ -8,6 +8,7 @@ import {
   countCall,
   discardProfile,
   emptyProfiles,
+  forgetProfile,
   recordRun,
   setPendingProfiles,
   toProfilesState,
@@ -144,5 +145,27 @@ describe('profile state changes', () => {
     expect(watermarkMs(back, 'socrates', NOW)).toBe(NOW - HOUR);
     expect(watermarkMs(back, 'builder', NOW)).toBe(NOW);
     expect(watermarkMs(back, 'nobody', NOW)).toBeNull();
+  });
+});
+
+describe('forgetProfile', () => {
+  it('stops using the approved profile, keeps a pending one, and drops an agent left with nothing', () => {
+    // Arrange
+    const approved = approveProfile(
+      setPendingProfiles(emptyProfiles(), [{ agentId: 'socrates', text: 'v1' }], { socrates: 'Socrates' }, NOW),
+      'socrates',
+      NOW,
+    )!;
+    const withPending = setPendingProfiles(approved, [{ agentId: 'socrates', text: 'v2' }], { socrates: 'Socrates' }, NOW);
+
+    // Act
+    const forgotten = forgetProfile(approved, 'socrates');
+    const keptPending = forgetProfile(withPending, 'socrates');
+
+    // Assert
+    expect(forgotten?.agents).toEqual({});
+    expect(keptPending?.agents.socrates).toEqual({ agentName: 'Socrates', approved: null, pending: { text: 'v2', at: iso(NOW) } });
+    expect(forgetProfile(emptyProfiles(), 'socrates')).toBeNull();
+    expect(forgetProfile(forgotten!, 'socrates')).toBeNull();
   });
 });
