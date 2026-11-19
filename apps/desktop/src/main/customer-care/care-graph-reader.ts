@@ -79,24 +79,21 @@ function parseProcess(meta: Fields, wsKey: string): CareProcessMeta | null {
   const page = own(meta, 'page');
   const autoReply = own(meta, 'autoReply');
   const since = isoOrNull(own(meta, 'autoReplySince'));
-  const handoffSet = own(meta, 'handoffSet');
   const processVersion = own(meta, 'processVersion');
-  if (!isOneOf(page, PAGE_STATES) || !isOneOf(autoReply, AUTO_REPLY_MODES)) return null;
-  if (since === undefined || typeof handoffSet !== 'boolean') return null;
+  if (!isOneOf(page, PAGE_STATES) || !isOneOf(autoReply, AUTO_REPLY_MODES) || since === undefined) return null;
   if (typeof processVersion !== 'string' || processVersion.length === 0 || processVersion.length > 40) return null;
   return {
-    kind: 'care-process', schema: CARE_GRAPH_SCHEMA, wsKey, processVersion, page, autoReply,
-    autoReplySince: since, handoffSet,
+    kind: 'care-process', schema: CARE_GRAPH_SCHEMA, wsKey, processVersion, page, autoReply, autoReplySince: since,
   };
 }
 
 function parseFacts(meta: Fields, wsKey: string): CareFactsMeta | null {
-  const setupSaved = own(meta, 'setupSaved');
+  const handoffSet = own(meta, 'handoffSet');
   const rawTopics = record(own(meta, 'byTopic'));
   const expired = own(meta, 'expired');
   const rawMissing = own(meta, 'missing');
   const uploadedAt = isoOrNull(own(meta, 'uploadedAt'));
-  if (typeof setupSaved !== 'boolean' || !rawTopics || !isCount(expired) || uploadedAt === undefined) return null;
+  if (typeof handoffSet !== 'boolean' || !rawTopics || !isCount(expired) || uploadedAt === undefined) return null;
   const byTopic = {} as CareTopicCounts;
   for (const topic of CARE_TOPICS) {
     const count = own(rawTopics, topic);
@@ -106,7 +103,7 @@ function parseFacts(meta: Fields, wsKey: string): CareFactsMeta | null {
   if (!Array.isArray(rawMissing) || rawMissing.length > CARE_TOPICS.length) return null;
   if (!rawMissing.every((topic) => isOneOf(topic, CARE_TOPICS))) return null;
   const missing = CARE_TOPICS.filter((topic) => rawMissing.includes(topic)) as CustomerCareFactTopic[];
-  return { kind: 'care-facts', schema: CARE_GRAPH_SCHEMA, wsKey, setupSaved, byTopic, expired, missing, uploadedAt };
+  return { kind: 'care-facts', schema: CARE_GRAPH_SCHEMA, wsKey, handoffSet, byTopic, expired, missing, uploadedAt };
 }
 
 function parseResults(meta: Fields, wsKey: string): CareResultsMeta | null {
@@ -180,15 +177,13 @@ function processLine(process: CareProcessMeta): string {
   const switchText = process.autoReply === 'on' && process.autoReplySince
     ? `đang bật từ ${formatCareGraphTime(process.autoReplySince)}`
     : AUTO_REPLY_TEXT[process.autoReply];
-  return `- Tự trả lời khách: ${switchText}; Page ${PAGE_TEXT[process.page]}; `
-    + `bàn giao nhân viên ${process.handoffSet ? 'đã cài' : 'chưa cài'}.`;
+  return `- Tự trả lời khách: ${switchText}; Page ${PAGE_TEXT[process.page]}.`;
 }
 
 function factsLine(facts: CareFactsMeta): string {
-  if (!facts.setupSaved) return '- Thông tin đã duyệt: chưa lưu thiết lập chăm sóc khách.';
   const counts = CARE_TOPICS.map((topic) => `${CARE_TOPIC_LABELS[topic]} ${facts.byTopic[topic]}`).join(', ');
   const missing = facts.missing.length > 0 ? `; còn thiếu: ${topicList(facts.missing)}` : '; đủ cả 5 chủ đề';
-  return `- Thông tin đã duyệt: ${counts}${missing}.`;
+  return `- Thông tin đã duyệt: ${counts}${missing}; bàn giao nhân viên ${facts.handoffSet ? 'đã cài' : 'chưa cài'}.`;
 }
 
 function count(value: number, capped: boolean): string {
@@ -206,17 +201,18 @@ function resultsLine(results: CareResultsMeta): string {
   return `- ${replies} ${leads}`;
 }
 
-function guidance(view: CareGraphView): string[] {
+function guidance(view: CareGraphView, fresh: boolean): string[] {
   const lines = ['Cách dùng khối Chăm sóc khách:'];
-  if (view.process?.autoReply === 'on') {
+  if (view.process?.autoReply === 'on' && fresh) {
     lines.push('- Tự trả lời đang bật: được dùng CTA "Nhắn tin Page để được tư vấn"; '
       + 'KPI tuần có "số khách để lại số qua Messenger".');
+  } else if (view.process?.autoReply === 'on') {
+    lines.push('- Chưa có số liệu mới để xác nhận tự trả lời còn chạy: không hứa khách sẽ được trả lời ngay trên '
+      + 'Messenger cho tới khi chủ shop kiểm tra lại.');
   } else if (view.process) {
     lines.push('- Tự trả lời đang không bật: không hứa khách sẽ được trả lời ngay trên Messenger.');
   }
-  if (view.facts && !view.facts.setupSaved) {
-    lines.push('- Trong mục "Cần khách hàng duyệt", thêm việc lưu thiết lập Chăm sóc khách với thông tin đã duyệt.');
-  } else if (view.facts && view.facts.missing.length > 0) {
+  if (view.facts && view.facts.missing.length > 0) {
     lines.push('- Trong mục "Cần khách hàng duyệt", thêm việc bổ sung thông tin đã duyệt về: '
       + `${topicList(view.facts.missing)} (khách hỏi các chủ đề này phải chờ nhân viên).`);
   }
@@ -229,9 +225,16 @@ function guidance(view: CareGraphView): string[] {
   return lines;
 }
 
-/** The Director's Care block for a workspace, from the cached node list; empty when there is none. */
-export function careDirectorContextFromCache(cachedNodes: unknown, workspaceId: string, nowMs: number): string[] {
-  const view = readCareGraph(cachedNodes, careWorkspaceKey(workspaceId));
+/**
+ * The Director's Care block for an account's workspace, from the cached node list; empty when there is
+ * none. A list still cached for another account never matches, because the key includes the account.
+ */
+export function careDirectorContextFromCache(
+  cachedNodes: unknown,
+  scope: { identityId: string; workspaceId: string },
+  nowMs: number,
+): string[] {
+  const view = readCareGraph(cachedNodes, careWorkspaceKey(scope.identityId, scope.workspaceId));
   return view ? careDirectorContext(view, nowMs) : [];
 }
 
@@ -239,6 +242,7 @@ export function careDirectorContextFromCache(cachedNodes: unknown, workspaceId: 
 export function careDirectorContext(view: CareGraphView, nowMs: number): string[] {
   const asOf = view.results?.asOf ?? null;
   const stale = asOf !== null && nowMs - Date.parse(asOf) > CARE_GRAPH_STALE_MS;
+  const fresh = asOf !== null && !stale;
   const when = asOf ? `cập nhật ${formatCareGraphTime(asOf)}` : 'chưa có số liệu kết quả';
   const header = `Chăm sóc khách trên Facebook Page (từ MyGraph, ${when}`
     + `${stale ? '; số liệu đã cũ hơn 48 giờ, không đặt KPI theo các số này' : ''}):`;
@@ -251,5 +255,5 @@ export function careDirectorContext(view: CareGraphView, nowMs: number): string[
       lines.push(`- Lần gần nhất izzi không gửi được: ${CARE_PROBLEM_LABELS[view.results.lastProblem]}.`);
     }
   }
-  return [...lines, ...guidance(view)];
+  return [...lines, ...guidance(view, fresh)];
 }

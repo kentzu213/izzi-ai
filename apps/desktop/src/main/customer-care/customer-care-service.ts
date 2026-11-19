@@ -835,20 +835,24 @@ export class CustomerCareService {
 
   /**
    * Main-only: what the Care graph nodes may say about the active workspace (counts, codes and the Page's
-   * public name). Never fact text, sources, the handoff text or the Page id. Null for roles that may not
-   * read leads, or without a usable authority.
+   * public name). Never fact text, sources, the handoff text or the Page id. Null, so nothing is written,
+   * for roles that may not read leads, without a usable authority, when the workspace does not use Care
+   * here (no saved setup and no connected Page), and when the Page or switch state could not be read: a
+   * passing failure must not overwrite good graph state with "unknown".
    */
   async readGraphSnapshot(): Promise<CareGraphSnapshot | null> {
     const authority = await this.resolveAuthority();
     if (typeof authority === 'string' || !CARE_LEAD_READ_ROLES.includes(authority.role)) return null;
     const { setup } = this.loadSetup(authority);
     const connection = await this.readPageConnection(authority);
+    if (connection.state === 'unavailable') return null;
+    if (!setup && connection.state !== 'connected') return null;
     let autoReply: CustomerCareAutoReplyState | null = null;
     const gateway = this.autoReply;
     if (gateway && connection.state === 'connected') {
       const result = await this.runFacebookCall(authority, () => gateway.getAutoReply(authority.workspaceId));
-      if (!result.ok && result.error === 'access_changed') return null;
-      autoReply = result.ok && result.value ? copyCareAutoReplyState(result.value) : null;
+      if (!result.ok) return null;
+      autoReply = result.value ? copyCareAutoReplyState(result.value) : null;
     }
     return {
       identityId: authority.identityId,
@@ -856,8 +860,9 @@ export class CustomerCareService {
       source: {
         pageName: connection.state === 'connected' ? connection.pageName : null,
         page: carePageState(connection),
-        handoffSet: setup !== null && setup.handoffTarget.trim() !== '',
-        facts: setup ? countCareFacts(setup.facts, this.now().getTime()) : null,
+        facts: setup
+          ? { ...countCareFacts(setup.facts, this.now().getTime()), handoffSet: setup.handoffTarget.trim() !== '' }
+          : null,
         autoReply,
       },
     };

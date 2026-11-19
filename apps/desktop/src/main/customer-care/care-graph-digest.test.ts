@@ -3,6 +3,7 @@ import type { CustomerCareAutoReplyState } from '../../shared/customer-care-type
 import {
   CARE_GRAPH_COLOR,
   buildCareGraphNodes,
+  carePageState,
   careWorkspaceKey,
   countCareFacts,
   formatCareGraphTime,
@@ -31,10 +32,10 @@ function source(overrides: Partial<CareGraphSource> = {}): CareGraphSource {
   return {
     pageName: 'Đồng Thờ Hồng Hưng',
     page: 'connected',
-    handoffSet: true,
     facts: {
       byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 },
       expired: 0,
+      handoffSet: true,
     },
     autoReply: AUTO_REPLY_ON,
     leads: { last24h: 1, last7d: 3, open: 2, capped: false },
@@ -43,17 +44,27 @@ function source(overrides: Partial<CareGraphSource> = {}): CareGraphSource {
 }
 
 describe('careWorkspaceKey', () => {
-  it('is stable, 16 letters a-p, and never contains the workspace id or a digit', () => {
-    // Arrange
-    const workspaceId = 'ws-1234567890-abc';
-
+  it('is stable, 16 letters a-p, and depends on both the account and the workspace', () => {
     // Act
-    const key = careWorkspaceKey(workspaceId);
+    const key = careWorkspaceKey('user-1', 'ws-1234567890-abc');
 
     // Assert
     expect(key).toMatch(/^[a-p]{16}$/);
-    expect(careWorkspaceKey(workspaceId)).toBe(key);
-    expect(careWorkspaceKey('ws-other')).not.toBe(key);
+    expect(careWorkspaceKey('user-1', 'ws-1234567890-abc')).toBe(key);
+    expect(careWorkspaceKey('user-1', 'ws-other')).not.toBe(key);
+    expect(careWorkspaceKey('user-2', 'ws-1234567890-abc')).not.toBe(key);
+  });
+});
+
+describe('carePageState', () => {
+  it('names an active, a stale, a missing and an unreadable Page connection', () => {
+    const connected = {
+      state: 'connected' as const, pageId: '1', pageName: null, missingScopes: [], verifiedAt: iso(NOW),
+    };
+    expect(carePageState({ ...connected, status: 'active' })).toBe('connected');
+    expect(carePageState({ ...connected, status: 'needs_reauth' })).toBe('needs_reauth');
+    expect(carePageState({ state: 'not_connected' })).toBe('not_connected');
+    expect(carePageState({ state: 'unsupported' })).toBe('unknown');
   });
 });
 
@@ -119,7 +130,7 @@ describe('formatCareGraphTime', () => {
 });
 
 describe('buildCareGraphNodes', () => {
-  const wsKey = careWorkspaceKey('ws-hong-hung');
+  const wsKey = careWorkspaceKey('user-1', 'ws-hong-hung');
   const asOf = iso(NOW);
 
   it('builds the three Care nodes with fixed titles, a per-workspace url and the muted color', () => {
@@ -142,7 +153,7 @@ describe('buildCareGraphNodes', () => {
     }
   });
 
-  it('describes the process, the switch and the Page in the process node', () => {
+  it('describes the process, the switch and the Page in the process node, from server state only', () => {
     // Act
     const [process] = buildCareGraphNodes(source(), wsKey, asOf);
 
@@ -155,14 +166,13 @@ describe('buildCareGraphNodes', () => {
       page: 'connected',
       autoReply: 'on',
       autoReplySince: '2026-11-19T03:05:00.000Z',
-      handoffSet: true,
     });
     expect(process.content).toContain('Đồng Thờ Hồng Hưng');
     expect(process.content).toContain('đang bật từ 19/11/2026 10:05');
     expect(process.content).toContain('tối đa 3 tin');
   });
 
-  it('lists topic counts and missing topics in the facts node, never fact text', () => {
+  it('lists topic counts, missing topics and the handoff flag in the facts node, never fact text', () => {
     // Act
     const [, facts] = buildCareGraphNodes(source(), wsKey, asOf);
 
@@ -171,7 +181,7 @@ describe('buildCareGraphNodes', () => {
       kind: 'care-facts',
       schema: 1,
       wsKey,
-      setupSaved: true,
+      handoffSet: true,
       byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 },
       expired: 0,
       missing: ['quality', 'policy'],
@@ -179,6 +189,7 @@ describe('buildCareGraphNodes', () => {
     });
     expect(facts.content).toContain('Danh mục 4 · Giá 1 · Chất lượng 0 · Chính sách 0 · Liên hệ 3');
     expect(facts.content).toContain('Còn thiếu: Chất lượng, Chính sách');
+    expect(facts.content).toContain('Bàn giao nhân viên: đã cài');
   });
 
   it('puts only counts, a problem code and the time in the results node', () => {
@@ -203,20 +214,17 @@ describe('buildCareGraphNodes', () => {
     expect(results.content).toContain('3 khách để lại số');
   });
 
-  it('reports unknown numbers as null when Care data could not be read', () => {
+  it('builds only the process node when this machine has no saved setup and no fresh lead check', () => {
     // Act
     const nodes = buildCareGraphNodes(
-      source({ page: 'not_connected', pageName: null, facts: null, autoReply: null, leads: null, handoffSet: false }),
+      source({ page: 'not_connected', pageName: null, facts: null, autoReply: null, leads: null }),
       wsKey,
       asOf,
     );
 
     // Assert
+    expect(nodes.map((node) => node.kind)).toEqual(['care-process']);
     expect(nodes[0].metadata).toMatchObject({ page: 'not_connected', autoReply: 'unknown', autoReplySince: null });
-    expect(nodes[1].metadata).toMatchObject({ setupSaved: false, missing: [], uploadedAt: null });
-    expect(nodes[2].metadata).toMatchObject({
-      sent24h: null, stopped24h: null, leads24h: null, leads7d: null, leadsOpen: null, lastProblem: null,
-    });
   });
 
   it('keeps a fingerprint that ignores the refresh time but follows every number', () => {
@@ -236,11 +244,11 @@ describe('buildCareGraphNodes', () => {
   });
 
   it('never lets customer data or long digit runs into any node payload', () => {
-    // Arrange: a Page name with a phone, and lead-like data that must not travel anywhere.
-    const planted = ['0912345678', '84912345678', '7712345678901234', 'Nguyễn Văn Khách', 'zalo.me/0912345678'];
+    // Arrange: a Page name with a phone, and ids that must not travel anywhere.
+    const planted = ['0912345678', '7712345678901234', 'user-1', 'zalo.me/0912345678'];
     const nodes = buildCareGraphNodes(
       source({ pageName: 'Hồng Hưng 0912345678 zalo.me/0912345678' }),
-      careWorkspaceKey('7712345678901234'),
+      careWorkspaceKey('user-1', '7712345678901234'),
       asOf,
     );
 

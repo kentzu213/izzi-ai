@@ -119,8 +119,7 @@ describe('CustomerCareService.readGraphSnapshot', () => {
       source: {
         pageName: 'Đồng Thờ Hồng Hưng',
         page: 'connected',
-        handoffSet: true,
-        facts: { byTopic: { catalog: 0, price: 1, quality: 0, policy: 0, contact: 1 }, expired: 0 },
+        facts: { byTopic: { catalog: 0, price: 1, quality: 0, policy: 0, contact: 1 }, expired: 0, handoffSet: true },
         autoReply: STATE,
       },
     });
@@ -138,40 +137,57 @@ describe('CustomerCareService.readGraphSnapshot', () => {
     expect(await fixture(as('editor')).service.readGraphSnapshot()).not.toBeNull();
   });
 
+  it('gives no snapshot for a workspace that does not use Care here: no setup and no connected Page', async () => {
+    // Arrange
+    const { service, facebook } = fixture();
+    facebook.status = { ok: true, value: { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null } };
+
+    // Act
+    const snapshot = await service.readGraphSnapshot();
+
+    // Assert
+    expect(snapshot).toBeNull();
+  });
+
   it('reports the Page state and skips the automatic-reply read without a connected Page', async () => {
     // Arrange
     const disconnected = fixture();
+    await disconnected.service.saveSetup(SETUP);
+    disconnected.autoReply.getAutoReply.mockClear();
     disconnected.facebook.status = { ok: true, value: { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null } };
     const reauth = fixture();
     reauth.facebook.status = {
       ok: true,
       value: { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: { ...CONNECTION, status: 'needs_reauth' } },
     };
-    const unreadable = fixture();
-    unreadable.facebook.status = { ok: false, error: 'unavailable' };
 
     // Act
     const none = await disconnected.service.readGraphSnapshot();
     const stale = await reauth.service.readGraphSnapshot();
-    const unknown = await unreadable.service.readGraphSnapshot();
 
     // Assert
-    expect(none?.source).toMatchObject({ page: 'not_connected', pageName: null, autoReply: null, facts: null, handoffSet: false });
+    expect(none?.source).toMatchObject({ page: 'not_connected', pageName: null, autoReply: null });
+    expect(none?.source.facts).not.toBeNull();
     expect(disconnected.autoReply.getAutoReply).not.toHaveBeenCalled();
     expect(stale?.source.page).toBe('needs_reauth');
-    expect(unknown?.source).toMatchObject({ page: 'unknown', pageName: null });
+    expect(stale?.source.facts).toBeNull();
   });
 
-  it('leaves the automatic-reply state unknown when it cannot be read', async () => {
+  it('skips the run instead of writing "unknown" when the Page or switch state cannot be read', async () => {
     // Arrange
-    const { service, autoReply } = fixture();
-    autoReply.getResult = { ok: false, error: 'unavailable' };
+    const pageDown = fixture();
+    await pageDown.service.saveSetup(SETUP);
+    pageDown.facebook.status = { ok: false, error: 'unavailable' };
+    const switchDown = fixture();
+    switchDown.autoReply.getResult = { ok: false, error: 'unavailable' };
 
     // Act
-    const snapshot = await service.readGraphSnapshot();
+    const withoutPage = await pageDown.service.readGraphSnapshot();
+    const withoutSwitch = await switchDown.service.readGraphSnapshot();
 
     // Assert
-    expect(snapshot?.source.autoReply).toBeNull();
+    expect(withoutPage).toBeNull();
+    expect(withoutSwitch).toBeNull();
   });
 });
 

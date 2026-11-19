@@ -440,6 +440,8 @@ const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MODEL = 'gpt-4o-mini';
 const CUSTOMER_MARKETING_DIRECTOR_MAX_TOKENS = 3000;
 /** The Care block from MyGraph is about ten lines; anything longer is cut, never trusted to grow. */
 const CARE_CONTEXT_MAX_LINES = 16;
+/** Reads the Director's Care block for one account's workspace from the synced MyGraph nodes. */
+export type CareContextReader = (scope: { identityId: string; workspaceId: string }) => string[];
 // The gpt-4o-mini route answers 402 at >=2000 reserved tokens; 1500 still fits a complete plan.
 const CUSTOMER_MARKETING_DIRECTOR_FALLBACK_MAX_TOKENS = 1500;
 const MARKETING_AUTHOR_ROLES = new Set<CustomerRole>(['owner', 'manager', 'editor']);
@@ -1599,7 +1601,7 @@ export class CustomerMarketingService {
   private readonly recoveredScheduleKeys = new Set<string>();
   private draftReadyListener: ((draft: CustomerMarketingDraft) => void) | null = null;
   private channelReadinessCheck: ScheduledChannelReadinessCheck | null = null;
-  private careContextReader: ((workspaceId: string) => string[]) | null = null;
+  private careContextReader: CareContextReader | null = null;
   /** Jobs whose channel connection is being checked, so a second run cannot start them twice. */
   private readonly preflightingJobs = new Set<string>();
   private mediaToolchainInFlight: Promise<CustomerMediaToolchain> | null = null;
@@ -4728,7 +4730,7 @@ export class CustomerMarketingService {
       'Doanh nghiệp: ' + profile?.business.name + ' · ' + profile?.business.industry,
       'Sản phẩm/dịch vụ: ' + profile?.business.offer,
       'Khách hàng mục tiêu: ' + profile?.audience.segments + '; nhu cầu: ' + profile?.audience.needs,
-      ...this.careContextLines(record.workspaceId),
+      ...this.careContextLines(identity.id, record.workspaceId),
       'Chỉ đề xuất kế hoạch và các bước cần duyệt. Không publish, không spend, không thay đổi integration.',
       ...(modelDraftEnabled
         ? [
@@ -5754,15 +5756,15 @@ export class CustomerMarketingService {
    * Reads the Care block for a workspace from the synced MyGraph nodes (docs/CARE-GRAPH-AGENTS.md):
    * counts and codes only, already validated. The Director adds it to its prompt; none means no block.
    */
-  setCareContextReader(reader: ((workspaceId: string) => string[]) | null): void {
+  setCareContextReader(reader: CareContextReader | null): void {
     this.careContextReader = reader;
   }
 
   /** Best effort: a missing or failing reader leaves the Director prompt as it was. */
-  private careContextLines(workspaceId: string | null): string[] {
+  private careContextLines(identityId: string, workspaceId: string | null): string[] {
     if (!workspaceId || !this.careContextReader) return [];
     try {
-      const lines = this.careContextReader(workspaceId);
+      const lines = this.careContextReader({ identityId, workspaceId });
       return Array.isArray(lines)
         ? lines.filter((line): line is string => typeof line === 'string').slice(0, CARE_CONTEXT_MAX_LINES)
         : [];

@@ -7,7 +7,8 @@ Nối tiếp `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md` (izzi tự trả lời khách
 ## 0. Hiện trạng
 
 - Chăm sóc khách hàng đang tách rời. Module `main/customer-care/*` và màn `CustomerCareWorkspace.tsx` không ghi gì vào MyGraph.
-- MyGraph (`/api/aibase/nodes`, bảng `user_nodes`) là graph **cá nhân của từng tài khoản**. Mỗi lần tạo hoặc sửa nội dung node, backend tự gắn tag, embed `title + content` để nối "liên quan", và đổi ETag. Lần sync 5 phút kế tiếp vì vậy tải lại cả danh sách node (khoảng 0,37 MB thô, khoảng 90 KB nén, với 331 node).
+- MyGraph (`/api/aibase/nodes`, bảng `user_nodes`) là graph **cá nhân của từng tài khoản**. Mỗi lần tạo hoặc sửa node đều đổi ETag. Lần sync 5 phút kế tiếp vì vậy tải lại cả danh sách node (khoảng 0,37 MB thô, khoảng 90 KB nén, với 331 node).
+- Backend prod (`rc-f3bc034`) chèn node mới ở mỗi `POST`, không chống trùng theo url, không tự gắn tag, không embed node. Nhánh `integration/pricing-security-e5a1c47` có các tính năng đó nhưng chưa lên prod. Code ở đây không dựa vào chúng, nhưng vẫn chịu được trường `tags` nếu sau này backend gộp vào metadata.
 - **AI Marketing Director không đọc MyGraph.** Prompt của Director chỉ có:
   - Product Marketing Context (proof claims);
   - hồ sơ onboarding;
@@ -35,19 +36,23 @@ Nối tiếp `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md` (izzi tự trả lời khách
   - Director chỉ cần biết chủ đề nào thiếu, không cần chữ;
   - Content Agent đã có proof claims để viết.
 - Không đưa "người nhận bàn giao" dạng chữ (đây là chữ tự do, có thể chứa tên người hoặc số điện thoại). Graph chỉ ghi "đã cài" hoặc "chưa cài".
-- ID workspace không nằm trong graph. Node mang `wsKey` = 16 ký tự đầu của SHA-256(workspaceId).
+- ID tài khoản và ID workspace không nằm trong graph. Node mang `wsKey` = 16 chữ cái (a–p) lấy từ SHA-256(tài khoản, workspace). Có tài khoản trong khoá, nên danh sách node còn cache của tài khoản khác không bao giờ khớp.
 
-## 3. Node và cạnh: 3 node, 2 cạnh cho mỗi workspace
+## 3. Node và cạnh: tối đa 3 node, 2 cạnh cho mỗi tài khoản và workspace
 
 Màu teal nhạt `#5B8AA6`, cùng kiểu node hub agent. `nodeType: 'note'`.
 
-| Node (`metadata.kind`) | Tiêu đề | Nội dung hiển thị | Đổi khi |
-|---|---|---|---|
-| `care-process` | `Chăm sóc khách · Quy trình` | Luật Phase C rút gọn: trả lời bằng câu cố định + thông tin đã duyệt rồi xin SĐT/Zalo; tối đa 3 tin/khách/24 giờ trong cửa sổ 23 giờ; dừng khi khách để số, từ chối, hoặc người/ứng dụng khác trả lời; câu hỏi chưa có thông tin thì hẹn nhân viên báo lại; khách để số thì vào "Khách để lại số". Dòng trạng thái: Page đã kết nối hay chưa, tự trả lời bật từ lúc nào hay đang tắt, bàn giao đã cài hay chưa. | Bật/tắt công tắc, kết nối hoặc ngắt Page, đổi phiên bản luật |
-| `care-facts` | `Chăm sóc khách · Thông tin đã duyệt` | Số thông tin theo chủ đề (Danh mục, Giá, Chất lượng, Chính sách, Liên hệ), số đã hết hạn, chủ đề còn thiếu, lần gửi lên máy chủ gần nhất | Lưu thiết lập, gửi thông tin lên máy chủ |
-| `care-results` | `Chăm sóc khách · Kết quả` | 24 giờ qua: số tin izzi gửi, số khách izzi đã dừng. 7 ngày qua: số khách để số, số khách chưa gọi lại. Lý do lần gần nhất không gửi được. Cập nhật lúc nào. | Số đếm đổi (tối đa 1 lần/6 giờ), hoặc làm mới mốc thời gian mỗi 24 giờ |
+Mỗi node chỉ có một nguồn, để hai máy của cùng một tài khoản không ghi đè nhau bằng dữ liệu kém hơn:
 
-Cạnh: `care-process → care-facts` (nhãn "dùng") và `care-process → care-results` (nhãn "kết quả"). Cạnh chỉ được tạo lúc node con được tạo mới.
+| Node (`metadata.kind`) | Tiêu đề | Nguồn, khi nào được dựng | Nội dung hiển thị | Đổi khi |
+|---|---|---|---|---|
+| `care-process` | `Chăm sóc khách · Quy trình` | Trạng thái trên máy chủ. Luôn dựng. | Luật Phase C rút gọn: trả lời bằng câu cố định + thông tin đã duyệt rồi xin SĐT/Zalo; tối đa 3 tin/khách/24 giờ trong cửa sổ 23 giờ; dừng khi khách để số, từ chối, hoặc người/ứng dụng khác trả lời; câu hỏi chưa có thông tin thì hẹn nhân viên báo lại; khách để số thì vào "Khách để lại số". Dòng trạng thái: Page đã kết nối hay chưa, tự trả lời bật từ lúc nào hay đang tắt. | Bật/tắt công tắc, kết nối hoặc ngắt Page, đổi phiên bản luật |
+| `care-facts` | `Chăm sóc khách · Thông tin đã duyệt` | Thiết lập đã lưu (mã hoá) trên máy này. Chỉ dựng khi máy có thiết lập. | Số thông tin theo chủ đề (Danh mục, Giá, Chất lượng, Chính sách, Liên hệ), số đã hết hạn, chủ đề còn thiếu, bàn giao nhân viên đã cài hay chưa, lần gửi lên máy chủ gần nhất | Lưu thiết lập, gửi thông tin lên máy chủ |
+| `care-results` | `Chăm sóc khách · Kết quả` | Số đếm trên máy chủ + lần đọc lead mới nhất trên máy này. Chỉ dựng khi lần đọc lead chưa quá 15 phút. | 24 giờ qua: số tin izzi gửi, số khách izzi đã dừng. 7 ngày qua: số khách để số, số khách chưa gọi lại. Lý do lần gần nhất không gửi được. Cập nhật lúc nào. | Số đếm đổi (tối đa 1 lần/6 giờ), hoặc làm mới mốc thời gian mỗi 24 giờ |
+
+Node không được dựng ở một lượt thì giữ nguyên nội dung đang có trong graph.
+
+Cạnh: `care-process → care-facts` (nhãn "dùng") và `care-process → care-results` (nhãn "kết quả"). Cạnh chỉ được tạo lúc node con hoặc node quy trình được tạo mới. Một cạnh tạo hỏng không được thử lại.
 
 Ví dụ với Hồng Hưng hôm nay: Danh mục 4 · Giá 1 · Chất lượng 0 · Chính sách 0 · Liên hệ 3. Còn thiếu: Chất lượng, Chính sách.
 
@@ -59,8 +64,8 @@ Ví dụ với Hồng Hưng hôm nay: Danh mục 4 · Giá 1 · Chất lượng 
 type CareGraphMeta =
   | { kind: 'care-process'; schema: 1; wsKey: string; processVersion: 'phase-c-1';
       page: 'connected' | 'needs_reauth' | 'not_connected' | 'unknown';
-      autoReply: 'on' | 'off' | 'unavailable' | 'unknown'; autoReplySince: string | null; handoffSet: boolean }
-  | { kind: 'care-facts'; schema: 1; wsKey: string; setupSaved: boolean;
+      autoReply: 'on' | 'off' | 'unavailable' | 'unknown'; autoReplySince: string | null }
+  | { kind: 'care-facts'; schema: 1; wsKey: string; handoffSet: boolean;
       byTopic: Record<'catalog'|'price'|'quality'|'policy'|'contact', number>;
       expired: number; missing: CareTopic[]; uploadedAt: string | null }
   | { kind: 'care-results'; schema: 1; wsKey: string; asOf: string;
@@ -69,7 +74,7 @@ type CareGraphMeta =
       lastProblem: CustomerCareAutoReplyProblem | null };
 ```
 
-`autoReply: 'unknown'` nghĩa là không đọc được trạng thái công tắc. `null` nghĩa là chưa đọc được số. Ví dụ: Page chưa kết nối, vai trò không được xem lead, hoặc lần đọc lead gần nhất đã quá 15 phút (inbox tắt). `leadsCapped` bằng `true` khi trang lead đầu đã đầy 50, lúc đó con số hiện là "50+".
+`autoReply: 'unknown'` nghĩa là máy này không có route tự trả lời. `sent24h`/`stopped24h` bằng `null` khi Page chưa có binding trên máy chủ. `leadsCapped` bằng `true` khi trang lead đầu đã đầy 50, lúc đó con số hiện là "50+".
 
 **Chưa có "tỉ lệ trả lời → để số".** Máy chủ hiện chỉ trả số tin đã gửi và số khách đã dừng trong 24 giờ, không tách theo lý do dừng. Lead lại gồm cả khách tự để số mà không cần izzi trả lời. Ghép hai số đó thành tỉ lệ sẽ sai. Xem Slice 2 ở mục 8.
 
@@ -82,7 +87,8 @@ type CareGraphMeta =
 
 Luật cho Director:
 
-- Tự trả lời đang bật: được dùng CTA "Nhắn tin Page để được tư vấn". KPI tuần có "số khách để lại số qua Messenger".
+- Tự trả lời đang bật **và** node Kết quả còn mới (dưới 48 giờ): được dùng CTA "Nhắn tin Page để được tư vấn". KPI tuần có "số khách để lại số qua Messenger".
+- Tự trả lời đang bật nhưng chưa có số liệu mới: không hứa trả lời ngay trên Messenger cho tới khi chủ shop kiểm tra lại.
 - Tự trả lời đang tắt hoặc Page chưa kết nối: không hứa trả lời tức thì trên Messenger.
 - Chủ đề có 0 thông tin đã duyệt (nhất là Giá): thêm vào mục "Cần khách hàng duyệt" một việc "Bổ sung thông tin đã duyệt về …", vì khách hỏi chủ đề đó sẽ phải chờ nhân viên.
 - `lastProblem` là `standby` hoặc `other_app`: đề xuất chỉnh Conversation Routing (Pancake đang giữ hội thoại).
@@ -93,8 +99,8 @@ Khối thêm vào `prompt` của Director (cả chế độ kế hoạch lẫn c
 
 ```
 Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11/2026 12:00):
-- Tự trả lời khách: đang bật từ 19/11/2026 10:05; Page đã kết nối; bàn giao nhân viên đã cài.
-- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách.
+- Tự trả lời khách: đang bật từ 19/11/2026 10:05; Page đã kết nối.
+- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách; bàn giao nhân viên đã cài.
 - 24 giờ qua: izzi gửi 5 tin, dừng với 2 khách. 7 ngày qua: 1 khách để lại số, 1 khách chưa được gọi lại.
 Cách dùng khối Chăm sóc khách:
 - Tự trả lời đang bật: được dùng CTA "Nhắn tin Page để được tư vấn"; KPI tuần có "số khách để lại số qua Messenger".
@@ -102,7 +108,7 @@ Cách dùng khối Chăm sóc khách:
 - Khối này là số liệu vận hành, không phải proof claim: không dùng nó để khẳng định điều gì về sản phẩm.
 ```
 
-Director nhận khối này qua `CustomerMarketingService.setCareContextReader`. Hàm đọc nằm ở `careDirectorContextFromCache` và không gọi mạng.
+Director nhận khối này qua `CustomerMarketingService.setCareContextReader`, với tài khoản và workspace của lượt lập kế hoạch. Hàm đọc nằm ở `careDirectorContextFromCache` và không gọi mạng.
 
 Không có node (chưa sync, không có quyền Care, lỗi đọc), thì không có khối này và Director chạy như hiện nay.
 
@@ -118,7 +124,7 @@ Nguồn số liệu, không thêm route backend nào:
 
 | Số liệu | Nguồn | Chi phí mạng thêm |
 |---|---|---|
-| Setup, chủ đề, hết hạn, bàn giao | `CustomerCareService.getSnapshot()` (giải mã trên máy) | 1 request đọc kết nối Page mỗi lần chạy |
+| Setup, chủ đề, hết hạn, bàn giao | `CustomerCareService.readGraphSnapshot()` (giải mã trên máy) | 1 request đọc kết nối Page mỗi lần chạy |
 | Công tắc, gửi/dừng 24 giờ, `lastProblem` | `GET /auto-reply` sẵn có | 1 request mỗi lần chạy |
 | Lead 24 giờ / 7 ngày / chưa gọi | `CareLeadNotifier` vốn đọc trang lead đầu mỗi phút. Thêm callback `onLeadSummary` chỉ trả số đếm, SĐT không rời notifier. | 0 |
 
@@ -127,49 +133,59 @@ Khi nào chạy:
 1. Ngay sau khi lưu thiết lập Care thành công, hoặc bật/tắt công tắc thành công. Dùng một callback `onCareChanged` mới trong `CustomerCareService`.
 2. Mỗi 6 giờ khi đang đăng nhập, và một lần sau khi app mở, trễ 2 phút để không chen lần sync đầu.
 
+Một lượt bị bỏ qua hẳn, không ghi gì, khi:
+
+- vai trò không được đọc lead (reviewer, viewer), hoặc không có quyền hợp lệ;
+- workspace không dùng Care trên máy này: chưa lưu thiết lập **và** Page chưa kết nối;
+- không đọc được kết nối Page hoặc trạng thái công tắc. Lỗi tạm thời không được ghi đè trạng thái tốt bằng "chưa rõ".
+
 Khi nào ghi:
 
 - Mỗi node có hash nội dung lưu trong settings cục bộ, theo khoá `care_graph:v1:<identity>:<wsKey>:<kind>`. Hash không đổi thì không gửi gì.
 - Riêng `care-results`: ghi tối đa 1 lần/6 giờ, và làm mới `asOf` khi lần ghi trước đã quá 24 giờ.
 - Ước tính: khoảng 5 lần ghi/ngày/máy. Mỗi lần ghi kéo theo 1 lần đọc lại đầy đủ danh sách node (khoảng 90 KB nén), tức dưới 0,5 MB/ngày, so với ngân sách khoảng 167 MB/ngày.
 
-Cách ghi một node:
+Cách ghi một node. Backend prod (`rc-f3bc034`) **không** chống trùng: mỗi `POST /api/aibase/nodes` đều chèn node mới, và `PATCH` vào id đã bị xoá vẫn trả ok. Vì vậy desktop tự tìm node:
 
-1. `POST /api/aibase/nodes` với `url` cố định `https://izziapi.com/aibase/graph?care=<kind>&ws=<wsKey>`. Backend đã chống trùng theo (người dùng, url). Vì vậy:
-   - gửi lại cũng không tạo node đôi;
-   - hai máy cùng tài khoản cũng không tạo node đôi;
-   - người dùng xoá node thì lần sau node được tạo lại;
-   - bấm vào url chỉ mở trang graph web.
-2. Node đã có sẵn: `PATCH` nội dung và `metadata`.
-3. Node vừa tạo mới: tạo cạnh từ `care-process`.
+1. Mỗi node có `url` cố định `https://izziapi.com/aibase/graph?care=<kind>&ws=<wsKey>`. Bấm vào url chỉ mở trang graph web.
+2. Tìm node theo url trong danh sách node mà lần sync 5 phút đã cache (`graph_nodes`). Không tốn request.
+3. Nếu một node sắp ghi không có trong cache (lần đầu, cache cũ, hoặc người dùng đã xoá), đọc lại danh sách node đúng **một lần** (`GraphClient.readNodes`). Lần đọc lỗi thì **không tạo gì**, chờ lượt sau. Thà không ghi còn hơn tạo node đôi.
+4. Có node: `PATCH` nội dung và `metadata` theo id. Có nhiều node cùng url (node đôi cũ) thì sửa node mới nhất.
+5. Không có: `POST` tạo mới, rồi tạo cạnh từ `care-process`.
 
-Thêm `GraphClient.findOrCreateNodeByUrl()` trả về `{ id, created }`. Hàm `createNode` hiện tại bỏ mất cờ `deduped` của backend. Mọi lần ghi dùng `queueOnOffline: false`: mất mạng thì lần chạy sau thử lại, hàng đợi offline không phình.
+Dùng các hàm có sẵn của `GraphClient` (`readNodes`, `createNode`, `updateNode`, `createLink`), không sửa `GraphClient`. Mọi lần ghi dùng `queueOnOffline: false`: mất mạng thì lần chạy sau thử lại, hàng đợi offline không phình.
+
+Giới hạn đã biết: nếu người dùng xoá một node Care trong 5 phút trước khi cache kịp sync, lượt ghi đó `PATCH` vào id đã mất (prod vẫn trả ok). Node được tạo lại ở lần ghi sau đó. Với node Kết quả, chậm nhất là sau 24 giờ.
 
 An toàn khi chạy:
 
 - Danh tính và workspace được kiểm lại ngay trước khi ghi. Đổi tài khoản hoặc workspace giữa chừng thì huỷ lượt đó.
 - Mọi lỗi đều được nuốt: Care và Director không bao giờ hỏng vì graph.
-- Log chỉ có mã cố định, ví dụ `care-graph: write failed 500`.
-- Viewer không có quyền Care, nên không có node nào được ghi.
+- Log chỉ có chuỗi cố định, ví dụ `care graph write failed`.
+- Viewer và reviewer không đọc được lead, nên không có node nào được ghi.
 
 ## 6. Kiểm thử (TDD)
 
 - **`care-graph-digest.test.ts`**:
   - đếm theo chủ đề, chủ đề thiếu, thông tin hết hạn;
   - cửa sổ 24 giờ và 7 ngày của lead, trường hợp đủ 50 lead;
-  - Page chưa kết nối;
-  - **bất biến riêng tư:** cho input chứa SĐT, Zalo, PSID, tin nhắn và tên khách, kiểm rằng chuỗi JSON của mọi payload POST/PATCH không chứa giá trị nào trong số đó, cũng không có dãy từ 8 chữ số trở lên.
-- **`care-graph-publisher.test.ts`**:
-  - hash không đổi thì không ghi;
-  - giới hạn 6 giờ và làm mới mỗi 24 giờ;
-  - tạo cạnh chỉ khi `created`;
-  - đổi danh tính giữa chừng thì không ghi;
-  - lỗi mạng không ném lỗi và không vào hàng đợi offline;
-  - log không có dữ liệu.
-- **`care-graph-reader.test.ts`**: bỏ qua node của `wsKey` khác, metadata sai kiểu, số âm, số lẻ hay quá lớn, mã lý do lạ. Trường lạ thì bỏ qua chứ không từ chối, vì backend tự gộp `tags` vào metadata. Kiểm khối prompt cho dữ liệu cũ hơn 48 giờ.
-- **`graph-client` test** cho `findOrCreateNodeByUrl`.
-- **Test Director:** có node thì prompt có khối Care, không có node thì prompt giữ nguyên như cũ.
-- Chạy toàn bộ desktop vitest, `tsc` (main và renderer), eslint. Trước khi sửa mỗi hàm có sẵn, chạy `gitnexus_impact` lên `GraphClient`, `CareLeadNotifier`, `CustomerCareService.saveSetup/setAutoReply` và hàm dựng prompt Director.
+  - chỉ dựng node quy trình khi máy không có thiết lập và không có lần đọc lead mới;
+  - **bất biến riêng tư:** cho tên Page chứa SĐT và Zalo, kiểm rằng chuỗi JSON của mọi node không chứa các giá trị đó, ID tài khoản hay ID workspace, cũng không có dãy từ 8 chữ số trở lên.
+- **`care-graph-publisher.test.ts`**, chạy với backend giả giống prod (POST luôn chèn, PATCH id mất vẫn ok):
+  - lần đầu đọc lại danh sách một lần rồi tạo node và cạnh;
+  - không đổi gì thì không gửi request nào;
+  - node có trong cache thì `PATCH` theo id, không đọc lại, không tạo mới;
+  - node chưa có trong cache nhưng có trên máy chủ thì không bị tạo đôi;
+  - đọc lại lỗi thì không tạo gì, lượt sau thử lại;
+  - có node đôi thì sửa node mới nhất;
+  - node quy trình bị xoá rồi tạo lại thì được nối với node con còn lại;
+  - giới hạn 6 giờ và làm mới mỗi 24 giờ; không có lần đọc lead mới thì không đụng node Kết quả;
+  - đổi tài khoản hoặc workspace giữa chừng thì không ghi; lỗi ghi không ném lỗi và log không có dữ liệu.
+- **`customer-care-service.graph.test.ts`**: snapshot không chứa chữ của thông tin, nguồn, chữ bàn giao hay Page id; vai trò không đọc lead thì không có snapshot; không dùng Care thì không có snapshot; lỗi đọc Page hoặc công tắc thì bỏ lượt; `onCareChanged` chỉ chạy sau khi lưu hoặc bật/tắt thành công.
+- **`care-lead-notifier.summary.test.ts`**: chỉ số đếm rời notifier; trang đầy 50 hoặc còn trang sau thì đánh dấu "50+".
+- **`care-graph-reader.test.ts`**: bỏ qua node của `wsKey` khác (kể cả tài khoản khác), metadata sai kiểu, số âm, số lẻ hay quá lớn, mã lý do lạ. Trường lạ thì bỏ qua chứ không từ chối (bản backend có auto-tag sẽ gộp `tags` vào metadata). Dữ liệu cũ hơn 48 giờ hoặc chưa có node Kết quả thì không gợi ý CTA/KPI.
+- **Test Director:** có node thì prompt có khối Care, không có node hoặc đọc lỗi thì prompt giữ nguyên như cũ.
+- Chạy toàn bộ desktop vitest, `tsc` (main và renderer), eslint. Trước khi sửa mỗi hàm có sẵn, chạy `gitnexus_impact` lên `CareLeadNotifier`, `CustomerCareService` và `askDirector`.
 
 ## 7. Không làm trong Slice 1
 

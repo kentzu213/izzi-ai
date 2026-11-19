@@ -971,13 +971,14 @@ function setupIPC() {
   careGraphPublisher = new CareGraphPublisher({
     graph: graphClient,
     readSnapshot: () => customerCareService.readGraphSnapshot(),
+    readCachedNodes: () => dbManager.getUserData('graph_nodes')[0],
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
     currentWorkspaceId: () => customerMarketingService.getActiveWorkspaceId(),
     store: dbManager,
     log: (message) => console.warn('[CustomerCare]', message),
   });
-  customerMarketingService.setCareContextReader((workspaceId) => (
-    careDirectorContextFromCache(dbManager.getUserData('graph_nodes')[0], workspaceId, Date.now())
+  customerMarketingService.setCareContextReader((scope) => (
+    careDirectorContextFromCache(dbManager.getUserData('graph_nodes')[0], scope, Date.now())
   ));
   customerMarketingInvitationCoordinator = new CustomerMarketingInvitationCoordinator({
     isAuthenticated: async () => authManager.isAuthenticated(),

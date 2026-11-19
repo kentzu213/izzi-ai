@@ -4,7 +4,11 @@
  * Builds the three per-workspace Care nodes izzi agents read from the personal graph. The input type
  * holds only counts, fixed codes, topic names, times and the Page's public name, so customer messages,
  * PSIDs, names, phones and Zalo cannot reach a node by construction. The Page name is scrubbed of long
- * digit runs, and the workspace is named by a letters-only hash, never by its id.
+ * digit runs, and the account + workspace are named by a letters-only hash, never by their ids.
+ *
+ * Each node has one source, so two devices of one account never overwrite each other with less:
+ * process = server state (Page, switch); facts = this machine's saved setup (built only when there is
+ * one); results = server counts + this machine's fresh lead check (built only when there is one).
  *
  * @module main/customer-care/care-graph-digest
  */
@@ -64,6 +68,10 @@ export interface CareFactCoverage {
   byTopic: CareTopicCounts;
   expired: number;
 }
+/** The saved setup as the graph may know it: fact counts and whether a handoff target is set. */
+export interface CareSetupCoverage extends CareFactCoverage {
+  handoffSet: boolean;
+}
 export interface CareLeadSummary {
   last24h: number;
   last7d: number;
@@ -79,12 +87,11 @@ export type CareAutoReplyMode = 'on' | 'off' | 'unavailable' | 'unknown';
 export interface CareGraphSource {
   pageName: string | null;
   page: CarePageState;
-  handoffSet: boolean;
-  /** null: no Care setup saved on this machine for this account and workspace. */
-  facts: CareFactCoverage | null;
-  /** null: no live Page binding, a role without access, or the state could not be read. */
+  /** null: no Care setup saved on this machine for this account and workspace (no facts node). */
+  facts: CareSetupCoverage | null;
+  /** null: no live Page binding, or no automatic-reply backend. */
   autoReply: CustomerCareAutoReplyState | null;
-  /** null: leads are not being read (inbox off, role, not yet checked). */
+  /** null: no fresh lead check (inbox off, not checked yet): no results node. */
   leads: CareLeadSummary | null;
 }
 
@@ -103,13 +110,12 @@ export interface CareProcessMeta {
   page: CarePageState;
   autoReply: CareAutoReplyMode;
   autoReplySince: string | null;
-  handoffSet: boolean;
 }
 export interface CareFactsMeta {
   kind: 'care-facts';
   schema: 1;
   wsKey: string;
-  setupSaved: boolean;
+  handoffSet: boolean;
   byTopic: CareTopicCounts;
   expired: number;
   missing: CustomerCareFactTopic[];
@@ -148,9 +154,12 @@ function lettersHash(value: string, length: number): string {
   return Array.from(hex, (char) => String.fromCharCode(97 + parseInt(char, 16))).join('');
 }
 
-/** Names a workspace inside the graph without its id. */
-export function careWorkspaceKey(workspaceId: string): string {
-  return lettersHash(JSON.stringify(['care-graph.v1', workspaceId]), 16);
+/**
+ * Names an account's workspace inside the graph without either id. The account is part of the key, so a
+ * node list still cached for another account never matches.
+ */
+export function careWorkspaceKey(identityId: string, workspaceId: string): string {
+  return lettersHash(JSON.stringify(['care-graph.v1', identityId, workspaceId]), 16);
 }
 
 export function countCareFacts(
@@ -236,6 +245,11 @@ function countText(value: number | null, capped = false): string {
   return capped ? `${value}+` : String(value);
 }
 
+/** The stable address of one Care node; the publisher finds the node in the graph by it. */
+export function careNodeUrl(kind: CareGraphKind, wsKey: string): string {
+  return `${GRAPH_URL}?care=${kind}&ws=${wsKey}`;
+}
+
 function draft(
   kind: CareGraphKind,
   title: string,
@@ -250,7 +264,7 @@ function draft(
     kind,
     title,
     content: extraContent ? `${stableContent}\n${extraContent}` : stableContent,
-    url: `${GRAPH_URL}?care=${kind}&ws=${wsKey}`,
+    url: careNodeUrl(kind, wsKey),
     color: CARE_GRAPH_COLOR,
     nodeType: 'note',
     metadata,
@@ -270,13 +284,11 @@ function processNode(source: CareGraphSource, wsKey: string): CareGraphNodeDraft
     page: source.page,
     autoReply: mode,
     autoReplySince: since,
-    handoffSet: source.handoffSet,
   };
   const switchText = since ? `${AUTO_REPLY_TEXT[mode]} từ ${formatCareGraphTime(since)}` : AUTO_REPLY_TEXT[mode];
   const content = [
     `Quy trình chăm sóc khách trên Facebook Page${pageName ? ` "${pageName}"` : ''} (izzi tự trả lời).`,
-    `Trạng thái: tự trả lời ${switchText} · Page ${PAGE_TEXT[source.page]} · `
-      + `bàn giao nhân viên ${source.handoffSet ? 'đã cài' : 'chưa cài'}.`,
+    `Trạng thái: tự trả lời ${switchText} · Page ${PAGE_TEXT[source.page]}.`,
     '',
     '1. Khách nhắn Page: izzi trả lời bằng câu cố định và thông tin shop đã duyệt, rồi xin SĐT/Zalo.',
     '2. Mỗi khách nhận tối đa 3 tin tự động trong 24 giờ, chỉ khi tin cuối của khách chưa quá 23 giờ.',
@@ -287,42 +299,42 @@ function processNode(source: CareGraphSource, wsKey: string): CareGraphNodeDraft
   return draft('care-process', 'Chăm sóc khách · Quy trình', content, metadata, wsKey);
 }
 
-function factsNode(source: CareGraphSource, wsKey: string): CareGraphNodeDraft {
-  const coverage = source.facts;
-  const byTopic: CareTopicCounts = coverage
-    ? { ...coverage.byTopic }
-    : { catalog: 0, price: 0, quality: 0, policy: 0, contact: 0 };
-  const missing = coverage ? CARE_TOPICS.filter((topic) => byTopic[topic] === 0) : [];
+function factsNode(source: CareGraphSource, coverage: CareSetupCoverage, wsKey: string): CareGraphNodeDraft {
+  const byTopic: CareTopicCounts = { ...coverage.byTopic };
+  const missing = CARE_TOPICS.filter((topic) => byTopic[topic] === 0);
   const uploadedAt = source.autoReply?.scriptUpdatedAt ?? null;
   const metadata: CareFactsMeta = {
     kind: 'care-facts',
     schema: CARE_GRAPH_SCHEMA,
     wsKey,
-    setupSaved: coverage !== null,
+    handoffSet: coverage.handoffSet,
     byTopic,
-    expired: coverage?.expired ?? 0,
+    expired: coverage.expired,
     missing,
     uploadedAt,
   };
-  const lines = ['Thông tin shop đã duyệt để izzi trả lời khách (chỉ số lượng, không chép nội dung).'];
-  if (!coverage) {
-    lines.push('Chưa lưu thiết lập chăm sóc khách trên máy này.');
-  } else {
-    lines.push(`${CARE_TOPICS.map((topic) => `${CARE_TOPIC_LABELS[topic]} ${byTopic[topic]}`).join(' · ')}.`);
-    lines.push(`Đã hết hạn: ${coverage.expired}.`);
-    lines.push(missing.length > 0
+  const lines = [
+    'Thông tin shop đã duyệt để izzi trả lời khách (chỉ số lượng, không chép nội dung).',
+    `${CARE_TOPICS.map((topic) => `${CARE_TOPIC_LABELS[topic]} ${byTopic[topic]}`).join(' · ')}.`,
+    `Đã hết hạn: ${coverage.expired}.`,
+    missing.length > 0
       ? `Còn thiếu: ${missing.map((topic) => CARE_TOPIC_LABELS[topic]).join(', ')}.`
-      : 'Đủ cả 5 chủ đề.');
-  }
+      : 'Đủ cả 5 chủ đề.',
+    `Bàn giao nhân viên: ${coverage.handoffSet ? 'đã cài' : 'chưa cài'}.`,
+  ];
   lines.push(uploadedAt
     ? `Gửi lên máy chủ lần cuối: ${formatCareGraphTime(uploadedAt)}.`
     : 'Chưa gửi lên máy chủ.');
   return draft('care-facts', 'Chăm sóc khách · Thông tin đã duyệt', lines.join('\n'), metadata, wsKey);
 }
 
-function resultsNode(source: CareGraphSource, wsKey: string, asOf: string): CareGraphNodeDraft {
+function resultsNode(
+  source: CareGraphSource,
+  leads: CareLeadSummary,
+  wsKey: string,
+  asOf: string,
+): CareGraphNodeDraft {
   const state = source.autoReply;
-  const leads = source.leads;
   const metadata: CareResultsMeta = {
     kind: 'care-results',
     schema: CARE_GRAPH_SCHEMA,
@@ -330,10 +342,10 @@ function resultsNode(source: CareGraphSource, wsKey: string, asOf: string): Care
     asOf,
     sent24h: state?.sentLast24h ?? null,
     stopped24h: state?.stoppedLast24h ?? null,
-    leads24h: leads?.last24h ?? null,
-    leads7d: leads?.last7d ?? null,
-    leadsOpen: leads?.open ?? null,
-    leadsCapped: leads?.capped ?? false,
+    leads24h: leads.last24h,
+    leads7d: leads.last7d,
+    leadsOpen: leads.open,
+    leadsCapped: leads.capped,
     lastProblem: state?.lastProblem?.reason ?? null,
   };
   const capped = metadata.leadsCapped;
@@ -357,7 +369,13 @@ function resultsNode(source: CareGraphSource, wsKey: string, asOf: string): Care
   );
 }
 
-/** The three Care nodes in a fixed order: process, facts, results. */
+/**
+ * The Care nodes this machine can vouch for, in a fixed order: process always; facts only with a saved
+ * setup; results only with a fresh lead check. A node left out keeps what the graph already holds.
+ */
 export function buildCareGraphNodes(source: CareGraphSource, wsKey: string, asOf: string): CareGraphNodeDraft[] {
-  return [processNode(source, wsKey), factsNode(source, wsKey), resultsNode(source, wsKey, asOf)];
+  const nodes = [processNode(source, wsKey)];
+  if (source.facts) nodes.push(factsNode(source, source.facts, wsKey));
+  if (source.leads) nodes.push(resultsNode(source, source.leads, wsKey, asOf));
+  return nodes;
 }

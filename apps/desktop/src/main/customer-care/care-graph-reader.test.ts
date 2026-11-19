@@ -5,14 +5,14 @@ import { careDirectorContext, careDirectorContextFromCache, readCareGraph } from
 
 const NOW = Date.parse('2026-11-19T05:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
-const WS = careWorkspaceKey('ws-hong-hung');
-const OTHER_WS = careWorkspaceKey('ws-other');
+const SCOPE = { identityId: 'user-1', workspaceId: 'ws-hong-hung' };
+const WS = careWorkspaceKey(SCOPE.identityId, SCOPE.workspaceId);
+const OTHER_WS = careWorkspaceKey(SCOPE.identityId, 'ws-other');
 
 const SOURCE: CareGraphSource = {
   pageName: 'Đồng Thờ Hồng Hưng',
   page: 'connected',
-  handoffSet: true,
-  facts: { byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 }, expired: 0 },
+  facts: { byTopic: { catalog: 4, price: 1, quality: 0, policy: 0, contact: 3 }, expired: 0, handoffSet: true },
   autoReply: {
     enabled: true,
     enabledAt: '2026-11-19T03:05:00.000Z',
@@ -42,14 +42,19 @@ function cachedNodes(source: CareGraphSource, wsKey: string, asOf: string, updat
   }));
 }
 
+const directorText = (source: CareGraphSource, asOf: number): string => {
+  const view = readCareGraph(cachedNodes(source, WS, new Date(asOf).toISOString()), WS)!;
+  return careDirectorContext(view, NOW).join('\n');
+};
+
 describe('readCareGraph', () => {
-  it('reads back the three Care nodes of the workspace, ignoring backend tags and other nodes', () => {
+  it('reads back the Care nodes of the workspace, ignoring backend tags and other nodes', () => {
     // Arrange
     const asOf = new Date(NOW).toISOString();
     const nodes = [
       { id: 'n1', title: 'Ghi chú', nodeType: 'note', color: '#fff', createdAt: asOf, updatedAt: asOf },
       ...cachedNodes(SOURCE, WS, asOf),
-      ...cachedNodes({ ...SOURCE, leads: null }, OTHER_WS, asOf),
+      ...cachedNodes({ ...SOURCE, facts: null }, OTHER_WS, asOf),
     ];
 
     // Act
@@ -101,34 +106,35 @@ describe('readCareGraph', () => {
 });
 
 describe('careDirectorContextFromCache', () => {
-  it('reads the cached graph for a workspace id and returns the Director block, or nothing', () => {
+  it('reads the cached graph for the account and workspace, and nothing cached for another account', () => {
     // Arrange
     const nodes = cachedNodes(SOURCE, WS, new Date(NOW).toISOString());
 
     // Act
-    const lines = careDirectorContextFromCache(nodes, 'ws-hong-hung', NOW);
-    const none = careDirectorContextFromCache(nodes, 'ws-other', NOW);
-    const broken = careDirectorContextFromCache('not a list', 'ws-hong-hung', NOW);
+    const lines = careDirectorContextFromCache(nodes, SCOPE, NOW);
+    const otherWorkspace = careDirectorContextFromCache(nodes, { ...SCOPE, workspaceId: 'ws-other' }, NOW);
+    const otherAccount = careDirectorContextFromCache(nodes, { ...SCOPE, identityId: 'user-2' }, NOW);
+    const broken = careDirectorContextFromCache('not a list', SCOPE, NOW);
 
     // Assert
     expect(lines[0]).toContain('từ MyGraph');
-    expect(none).toEqual([]);
+    expect(otherWorkspace).toEqual([]);
+    expect(otherAccount).toEqual([]);
     expect(broken).toEqual([]);
   });
 });
 
 describe('careDirectorContext', () => {
   it('summarises Care for the Director and turns gaps into actions', () => {
-    // Arrange
-    const view = readCareGraph(cachedNodes(SOURCE, WS, new Date(NOW).toISOString()), WS)!;
-
     // Act
-    const text = careDirectorContext(view, NOW).join('\n');
+    const text = directorText(SOURCE, NOW);
 
     // Assert
     expect(text).toContain('Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11/2026 12:00)');
-    expect(text).toContain('Tự trả lời khách: đang bật từ 19/11/2026 10:05; Page đã kết nối; bàn giao nhân viên đã cài.');
-    expect(text).toContain('Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách.');
+    expect(text).toContain('Tự trả lời khách: đang bật từ 19/11/2026 10:05; Page đã kết nối.');
+    expect(text).toContain(
+      'Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách; bàn giao nhân viên đã cài.',
+    );
     expect(text).toContain('24 giờ qua: izzi gửi 5 tin, dừng với 2 khách. 7 ngày qua: 3 khách để lại số, 2 khách chưa được gọi lại.');
     expect(text).toContain('CTA "Nhắn tin Page để được tư vấn"');
     expect(text).toContain('bổ sung thông tin đã duyệt về: Chất lượng, Chính sách');
@@ -137,12 +143,8 @@ describe('careDirectorContext', () => {
   });
 
   it('does not promise instant Messenger answers when automatic replies are off', () => {
-    // Arrange
-    const off = { ...SOURCE, autoReply: { ...SOURCE.autoReply!, enabled: false, lastProblem: null } };
-    const view = readCareGraph(cachedNodes(off, WS, new Date(NOW).toISOString()), WS)!;
-
     // Act
-    const text = careDirectorContext(view, NOW).join('\n');
+    const text = directorText({ ...SOURCE, autoReply: { ...SOURCE.autoReply!, enabled: false, lastProblem: null } }, NOW);
 
     // Assert
     expect(text).toContain('Tự trả lời khách: đang tắt');
@@ -151,28 +153,33 @@ describe('careDirectorContext', () => {
     expect(text).not.toContain('Phân luồng hội thoại');
   });
 
-  it('flags numbers older than 48 hours so no KPI is set from them', () => {
-    // Arrange
-    const view = readCareGraph(cachedNodes(SOURCE, WS, new Date(NOW - 49 * HOUR).toISOString()), WS)!;
-
+  it('flags numbers older than 48 hours and drops the CTA and KPI advice built on them', () => {
     // Act
-    const text = careDirectorContext(view, NOW).join('\n');
+    const text = directorText(SOURCE, NOW - 49 * HOUR);
 
     // Assert
     expect(text).toContain('đã cũ hơn 48 giờ');
     expect(text).toContain('không đặt KPI theo các số này');
+    expect(text).not.toContain('CTA "Nhắn tin Page để được tư vấn"');
+    expect(text).toContain('Chưa có số liệu mới để xác nhận tự trả lời còn chạy');
   });
 
-  it('shows unknown counts as unknown rather than zero', () => {
-    // Arrange
-    const unknown = { ...SOURCE, autoReply: null, leads: null };
-    const view = readCareGraph(cachedNodes(unknown, WS, new Date(NOW).toISOString()), WS)!;
-
+  it('gives no CTA advice when the graph has no results node yet', () => {
     // Act
-    const text = careDirectorContext(view, NOW).join('\n');
+    const text = directorText({ ...SOURCE, leads: null }, NOW);
+
+    // Assert
+    expect(text).toContain('(từ MyGraph, chưa có số liệu kết quả)');
+    expect(text).not.toContain('CTA "Nhắn tin Page để được tư vấn"');
+    expect(text).not.toContain('24 giờ qua');
+  });
+
+  it('shows reply counts the server did not give as unread rather than zero', () => {
+    // Act
+    const text = directorText({ ...SOURCE, autoReply: null }, NOW);
 
     // Assert
     expect(text).toContain('24 giờ qua: chưa đọc được số tin izzi gửi.');
-    expect(text).toContain('7 ngày qua: chưa đọc được số khách để lại số.');
+    expect(text).toContain('7 ngày qua: 3 khách để lại số');
   });
 });

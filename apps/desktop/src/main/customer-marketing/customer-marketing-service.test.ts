@@ -2831,7 +2831,7 @@ describe('CustomerMarketingService AI Director', () => {
       'Chăm sóc khách trên Facebook Page (từ MyGraph, cập nhật 19/11/2026 12:00):',
       '- Thông tin đã duyệt: Danh mục 4, Giá 1, Chất lượng 0, Chính sách 0, Liên hệ 3; còn thiếu: Chất lượng, Chính sách.',
     ];
-    const reader = vi.fn((_workspaceId: string) => careLines);
+    const reader = vi.fn((_scope: { identityId: string; workspaceId: string }) => careLines);
     context.service.setCareContextReader(reader);
 
     // Act
@@ -2840,7 +2840,10 @@ describe('CustomerMarketingService AI Director', () => {
     // Assert
     expect(result.ok).toBe(true);
     expect(reader).toHaveBeenCalledTimes(1);
-    expect(reader.mock.calls[0][0]).toBe(context.service.getActiveWorkspaceId());
+    expect(reader.mock.calls[0][0]).toEqual({
+      identityId: expect.any(String),
+      workspaceId: context.service.getActiveWorkspaceId(),
+    });
     const message = director.mock.calls[0][0].message as string;
     for (const line of careLines) expect(message).toContain(line);
     expect(message.indexOf(careLines[0])).toBeLessThan(message.indexOf('Chỉ đề xuất kế hoạch'));
