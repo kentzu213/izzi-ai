@@ -49,13 +49,14 @@ export function writeFileAtomic(file, data) {
 
 export const writeJsonAtomic = (file, value) => writeFileAtomic(file, `${JSON.stringify(value)}\n`);
 
-// { status: 'ok' | 'missing' | 'corrupt', value }
+// { status: 'ok' | 'missing' | 'unreadable' | 'corrupt', value }. Only a file that was read but does not
+// parse is 'corrupt'; a read error (EBUSY, EPERM...) is 'unreadable' and must not be overwritten.
 export function readJson(file) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (error) {
-    return { status: error && error.code === 'ENOENT' ? 'missing' : 'corrupt', value: null };
+    return { status: error && error.code === 'ENOENT' ? 'missing' : 'unreadable', value: null };
   }
   try {
     return { status: 'ok', value: JSON.parse(text) };
@@ -92,6 +93,14 @@ function removeOlderThan(dir, cutoffMs, pattern) {
       // best effort
     }
   }
+}
+
+// Temp files left by an interrupted atomic write (<file>.<pid>.<hex>.tmp), removed once an hour old.
+export const TMP_MAX_AGE_MS = 3_600_000;
+const OUR_TMP = /\.\d+\.[a-f0-9]+\.tmp$/;
+
+export function removeStaleTemp(home, nowMs) {
+  for (const dir of [home, path.join(home, 'state')]) removeOlderThan(dir, nowMs - TMP_MAX_AGE_MS, OUR_TMP);
 }
 
 // Removes state older than 30 days and logs older than 180 days, at most once a day.

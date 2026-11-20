@@ -14,8 +14,14 @@ const LIMIT = {
   flow: 25,
   longApproval: 60,
   reply: 40,
-  rawSkip: 20_000, // huge pastes are too-long without normalizing them
+  replyScan: 200, // only the start of a checkpoint reply is read
+  rawSkip: 2000, // longer raw prompts are too-long without normalizing them
 };
+const ASK_BLOCK_LINES = 10; // the "Trả lời:" line must follow the header within this many lines
+const ANSWER_LINE = 'Trả lời';
+
+// Labels that can be a completion milestone.
+export const MILESTONE_LABELS = new Set(['approve_decision', 'praise']);
 
 // Unaccented forms that collide with other words (đừng/dùng/đúng/dừng) are never matched.
 const AMBIGUOUS_PLAIN = new Set(['dung', 'dung roi']);
@@ -25,14 +31,27 @@ export function stripAccents(text) {
   return text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').normalize('NFC');
 }
 
+const TRAILING_PUNCTUATION = new Set(['.', '!', '…']);
+
+// Callers pass short text only (classifyPrompt checks rawSkip first, replies are cut to replyScan).
+// Trailing punctuation is trimmed with a loop: /[.!…]+$/ is quadratic on long runs that do not end the text.
 export function normalize(text) {
-  return text
-    .normalize('NFC')
-    .toLocaleLowerCase('vi')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.!…]+$/u, '')
-    .trim();
+  const s = text.normalize('NFC').toLocaleLowerCase('vi').replace(/\s+/g, ' ').trim();
+  let end = s.length;
+  while (end > 0 && TRAILING_PUNCTUATION.has(s[end - 1])) end -= 1;
+  return s.slice(0, end).trim();
+}
+
+// Chat abbreviations, expanded before matching. "ko" stays as typed: every word list already has it.
+const ABBREVIATIONS = new Map([
+  ['dc', 'được'], ['đc', 'được'], ['cx', 'cũng'], ['cg', 'cũng'],
+  ['k', 'không'], ['kh', 'không'], ['khg', 'không'], ['hok', 'không'], ['hông', 'không'],
+]);
+const ABBREVIATION_RE = /(?<![\p{L}\p{N}\p{M}])(?:dc|đc|cx|cg|khg|kh|k|hok|hông)(?![\p{L}\p{N}\p{M}])/gu;
+
+// An unaccented prompt gets unaccented expansions, so the accent rule below still applies.
+function expandAbbreviations(norm, accented) {
+  return norm.replace(ABBREVIATION_RE, (w) => (accented ? ABBREVIATIONS.get(w) : stripAccents(ABBREVIATIONS.get(w))));
 }
 
 const tokenize = (text) => text.split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
@@ -163,6 +182,51 @@ function narrowedDung(ctx) {
   return ctx.tokens.indexOf('nữa', at + 1) > at || firstKey(ctx.tokens, DUNG_MARKERS.accented) !== null;
 }
 
+// Any of these anywhere in a short approval or praise candidate makes it abstain (PLAN §4.9, review fix 1).
+// A token typed with accents must match the accented word; a token typed without accents matches the
+// unaccented form, so an ambiguous unaccented token ("dung", "hoan", "thoi") always vetoes.
+const vetoWords = (list) => list.map((w) => ({ accented: tokenize(w), plain: tokenize(stripAccents(w)) }));
+const VETO = [
+  ['negator', vetoWords(['đừng', 'chưa', 'không', 'ko', 'chẳng', 'khoan', 'đâu'])],
+  ['cancel', vetoWords(['dừng', 'ngừng', 'huỷ', 'hủy', 'hoãn', 'revert', 'rollback', 'roll back', 'undo', 'cancel'])],
+  ['question', vetoWords(['có nên', 'thế nào', 'như nào', 'khi nào', 'lúc nào', 'nào', 'bao giờ', 'bao nhiêu', 'gì', 'sao', 'mấy', 'liệu'])],
+  ['shrug', vetoWords(['thôi', 'kệ'])],
+  ['contrast', vetoWords(['nhưng', 'tuy nhiên', 'có điều'])],
+];
+const NEGATOR_WORDS = VETO[0][1];
+// "không sao", "đừng lo", "không vấn đề (gì)" are reassurance, not negation: the whole phrase is skipped.
+const REASSURANCE_NEXT = vetoWords(['vấn đề gì', 'vấn đề', 'vấn', 'sao', 'lo']);
+// "mà" and "hay" veto only with a word after them: "đẹp rồi mà sai màu", "merge hay đợi"; not "hay rồi".
+const NEEDS_NEXT = vetoWords(['mà', 'hay']);
+const HAY_PRAISE_NEXT = vetoWords(['rồi', 'quá', 'lắm', 'thế', 'đấy', 'đó', 'ghê', 'thật']);
+
+function wordAt(tokens, i, word) {
+  return word.accented.every((a, j) => {
+    const t = tokens[i + j];
+    return t === a || (t !== undefined && t === word.plain[j] && stripAccents(t) === t);
+  });
+}
+
+const anyWordAt = (tokens, i, words) => words.some((w) => wordAt(tokens, i, w));
+
+function vetoKind(tokens) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const reassurance = anyWordAt(tokens, i, NEGATOR_WORDS) && REASSURANCE_NEXT.find((w) => wordAt(tokens, i + 1, w));
+    if (reassurance) {
+      i += reassurance.accented.length;
+      continue;
+    }
+    const kind = VETO.find(([, words]) => anyWordAt(tokens, i, words));
+    if (kind) return kind[0];
+    if (i + 1 < tokens.length && anyWordAt(tokens, i, NEEDS_NEXT)) {
+      const isHay = wordAt(tokens, i, NEEDS_NEXT[1]);
+      if (!isHay) return 'contrast';
+      if (!anyWordAt(tokens, i + 1, HAY_PRAISE_NEXT)) return 'question';
+    }
+  }
+  return null;
+}
+
 function abstainRule(raw) {
   if (typeof raw !== 'string' || raw.trim() === '') return 'abstain:empty';
   const trimmed = raw.trimStart();
@@ -179,10 +243,11 @@ const result = (label, ruleId) => ({ label, ruleId });
 export function classifyPrompt(text) {
   const early = abstainRule(text);
   if (early) return result('abstain', early);
-  const norm = normalize(text);
-  if (norm.length > LIMIT.tooLong) return result('abstain', 'abstain:too-long');
+  const typed = normalize(text);
+  if (typed.length > LIMIT.tooLong) return result('abstain', 'abstain:too-long');
+  const norm = expandAbbreviations(typed, stripAccents(typed) !== typed);
   const plain = stripAccents(norm);
-  const ctx = { norm, len: norm.length, accented: plain !== norm, tokens: tokenize(norm), plainTokens: tokenize(plain) };
+  const ctx = { norm, len: typed.length, accented: plain !== norm, tokens: tokenize(norm), plainTokens: tokenize(plain) };
 
   if (ctx.len <= LIMIT.resignation) {
     const key = matchBlocking(ctx, RESIGNATION);
@@ -210,7 +275,9 @@ export function classifyPrompt(text) {
   for (const [label, group, limit] of positive) {
     if (ctx.len > limit) continue;
     const key = matchPositive(ctx, group);
-    if (key) return result(label, `${label}:${key}`);
+    if (!key) continue;
+    const veto = MILESTONE_LABELS.has(label) ? vetoKind(ctx.tokens) : null;
+    return veto ? result('abstain', `abstain:veto-${veto}`) : result(label, `${label}:${key}`);
   }
   if (ctx.len > LIMIT.longApproval && matchBlocking(ctx, APPROVAL_TERMS)) return result('abstain', 'abstain:long-approval');
   return result('none', 'none');
@@ -218,6 +285,21 @@ export function classifyPrompt(text) {
 
 export function isWrapperPrompt(cls) {
   return Boolean(cls) && cls.label === 'abstain' && WRAPPER_RULES.has(cls.ruleId);
+}
+
+// True when an assistant message holds the skill's ask block: a line starting with the header (indent
+// allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence does not count.
+export function hasCheckpointAsk(text) {
+  if (typeof text !== 'string') return false;
+  const lines = text.normalize('NFC').split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
+    const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
+    for (let j = i + 1; j < end; j += 1) {
+      if (lines[j].trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE)) return true;
+    }
+  }
+  return false;
 }
 
 export function lengthBucket(text) {
@@ -239,16 +321,18 @@ function startsWithWords(tokens, words) {
 }
 
 // Reply to a checkpoint question: accept | edit | skip | ignored (PLAN §4.3 step 1, §4.9 item 2).
+// Only the first replyScan characters are read; a longer reply can still pick an option word, never an alias.
 export function classifyCheckpointReply(text) {
   if (typeof text !== 'string') return 'ignored';
-  const norm = normalize(text).replace(/^[^\p{L}\p{N}]+/u, '');
+  const cut = text.length > LIMIT.replyScan;
+  const norm = normalize(cut ? text.slice(0, LIMIT.replyScan) : text).replace(/^[^\p{L}\p{N}]+/u, '');
   const accented = stripAccents(norm) !== norm;
   const form = (w) => (accented ? w : stripAccents(w));
   const tokens = tokenize(norm);
   for (const [word, choice] of OPTION_WORDS) {
     if (startsWithWords(tokens, form(word))) return choice;
   }
-  if (norm.length > LIMIT.reply) return 'ignored';
+  if (cut || norm.length > LIMIT.reply) return 'ignored';
   const fillers = new Set(FILLERS.map(form));
   for (const [alias, choice] of ALIASES) {
     const word = form(alias);

@@ -17,6 +17,7 @@ import {
   resolveTargets,
   runCli,
   serializeLike,
+  sha256,
   toSlash,
   withoutHookGroup,
   writeChecked,
@@ -26,12 +27,18 @@ function planSettings(t, manifest) {
   if (!fs.existsSync(t.settings)) return { mode: 'none', current: null, data: null, lines: ['no settings.json found'] };
   const current = readSettings(t.settings);
   const backup = manifest && manifest.backup ? path.resolve(manifest.backup) : null;
+  const lines = [];
   if (backup && manifest.settingsShaAfter === current.sha && fs.existsSync(backup)) {
-    return { mode: 'restore', current, data: fs.readFileSync(backup), lines: [`restore ${toSlash(t.settings)} byte-for-byte from ${toSlash(backup)}`] };
+    const data = fs.readFileSync(backup);
+    if (sha256(data) === manifest.settingsShaBefore) {
+      return { mode: 'restore', current, data, lines: [`restore ${toSlash(t.settings)} byte-for-byte from ${toSlash(backup)}`] };
+    }
+    lines.push(`backup ${toSlash(backup)} does not match the sha recorded at install; not restoring from it`);
   }
   const { settings: next, removed } = withoutHookGroup(current.value);
-  if (removed === 0) return { mode: 'none', current, data: null, lines: ['no agent-maturity hook in settings.json'] };
-  const lines = ['settings.json changed after install: removing only the agent-maturity hook group, keeping every other change'];
+  if (removed === 0) return { mode: 'none', current, data: null, lines: [...lines, 'no agent-maturity hook in settings.json'] };
+  const why = lines.length > 0 ? 'backup unusable' : 'settings.json changed after install';
+  lines.push(`${why}: removing only the agent-maturity hook group, keeping every other change`);
   if (backup) lines.push(`backup kept at ${toSlash(backup)}`);
   return { mode: 'remove-group', current, data: serializeLike(next, current.text), lines };
 }

@@ -254,3 +254,33 @@ test('uninstall never deletes a manifest path outside its own folders', () => {
   assert.equal(readFileSync(victim, 'utf8'), 'keep me');
   assert.ok(existsSync(join(home, 'settings.json')));
 });
+
+test('uninstall never restores from a backup whose sha differs from the one recorded at install', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const manifest = JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8'));
+  writeFileSync(manifest.backup, `${JSON.stringify({ model: 'tampered', hooks: {} }, null, 2)}\n`);
+  const r = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.equal(r.mode, 'remove-group');
+  assert.ok(r.lines.some((l) => /does not match/i.test(l)), r.lines.join('\n'));
+  assert.deepEqual(readSettings(settings), ORIGINAL);
+});
+
+test('re-adding the hook after it was removed records the new backup sha, so uninstall restores that state', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const withoutOurs = readSettings(settings);
+  withoutOurs.hooks.UserPromptSubmit = withoutOurs.hooks.UserPromptSubmit.filter((g) => !isOurs(g));
+  withoutOurs.theme = 'between-installs';
+  writeFileSync(settings, `${JSON.stringify(withoutOurs, null, 2)}\n`);
+  const beforeSecond = readFileSync(settings);
+  const r = install({ claudeHome: home, env: ENV, now: new Date(Date.now() + 5_000) });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  const manifest = JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8'));
+  assert.deepEqual(readFileSync(manifest.backup), beforeSecond);
+  assert.equal(manifest.settingsShaBefore, sha(beforeSecond));
+  const u = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(u.mode, 'restore', u.lines.join('\n'));
+  assert.deepEqual(readFileSync(settings), beforeSecond);
+});

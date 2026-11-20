@@ -216,7 +216,8 @@ function applyInstall(t, current, next, files, previous, opts) {
     claudeHome: toSlash(t.home),
     settingsPath: toSlash(t.settings),
     backup: backup ? toSlash(backup) : null,
-    settingsShaBefore: previous ? previous.settingsShaBefore : current.sha,
+    // A new backup holds the current bytes, so its sha replaces the one from an earlier install.
+    settingsShaBefore: previous && !next ? previous.settingsShaBefore : current.sha,
     settingsShaAfter: shaAfter,
     hookCommand: hookCommand(t.home),
     files: files.map((f) => toSlash(f.to)),

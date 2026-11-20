@@ -22,7 +22,7 @@
     "test:renderer-budget": "node --test tools/renderer-bundle-budget.test.mjs",
     "test:lint-config": "node --test tools/eslint-config-contract.test.mjs",
     "test:socrates": "node --test tools/socrates-tier1.test.mjs",
-    "test:agent-maturity": "node --test tools/agent-maturity/test/classify.test.mjs tools/agent-maturity/test/decide.test.mjs tools/agent-maturity/test/transcript-tail.test.mjs tools/agent-maturity/test/hook.test.mjs tools/agent-maturity/test/install.test.mjs",
+    "test:agent-maturity": "node --test tools/agent-maturity/test/classify.test.mjs tools/agent-maturity/test/holdout.test.mjs tools/agent-maturity/test/decide.test.mjs tools/agent-maturity/test/transcript-tail.test.mjs tools/agent-maturity/test/hook.test.mjs tools/agent-maturity/test/install.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "clean": "pnpm -r clean"

@@ -4,6 +4,8 @@
 // Stores no prompt or reply text. See docs/izzi-v2/PLAN.md §4.4 and §4.9.
 
 const BUDGET_MS = 4000;
+// Text checks read at most this many prompt characters; only the length bucket uses the full prompt.
+const MAX_PROMPT_CHARS = 4096;
 process.on('uncaughtException', () => process.exit(0));
 process.on('unhandledRejection', () => process.exit(0));
 setTimeout(() => process.exit(0), BUDGET_MS).unref();
@@ -25,7 +27,7 @@ function logQuietly(store, home, events, now) {
 function checkpointAsk(lib, input, cls, prompt) {
   if (lib.classify.isWrapperPrompt(cls) || typeof input.transcript_path !== 'string') return { ask: null, choice: null };
   const turn = lib.tail.lastAssistantTurn(input.transcript_path);
-  const asked = Boolean(turn) && turn.text.normalize('NFC').includes(lib.classify.CHECKPOINT_HEADER);
+  const asked = Boolean(turn) && lib.classify.hasCheckpointAsk(turn.text);
   return { ask: { asked, id: turn ? turn.id : null }, choice: asked ? lib.classify.classifyCheckpointReply(prompt) : null };
 }
 
@@ -33,39 +35,44 @@ async function handle(lib, home, now, started) {
   const { classify, decision, store } = lib;
   const entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT ?? '';
   const input = JSON.parse((await readStdin()) || '{}');
-  const prompt = input && typeof input.prompt === 'string' ? input.prompt : '';
+  const fullPrompt = input && typeof input.prompt === 'string' ? input.prompt : '';
+  const prompt = fullPrompt.length > MAX_PROMPT_CHARS ? fullPrompt.slice(0, MAX_PROMPT_CHARS) : fullPrompt;
   const key = store.sessionKey(input && input.session_id);
   const cls = classify.classifyPrompt(prompt);
+  const stamp = { ts: now.toISOString(), session: key, ep: entrypoint };
   const preEvents = [];
 
-  let state = null;
-  if (key) {
-    const loaded = store.readJson(store.statePath(home, key));
-    if (loaded.status === 'corrupt') preEvents.push({ type: 'error', name: 'CorruptState' });
-    state = loaded.value;
-  }
+  const loaded = key ? store.readJson(store.statePath(home, key)) : { status: 'missing', value: null };
   const globalRead = store.readJson(store.globalPath(home));
+  if (loaded.status === 'unreadable' || globalRead.status === 'unreadable') {
+    // Another process may hold the file (EBUSY/EPERM): skip this turn instead of overwriting it.
+    logQuietly(store, home, [{ ...stamp, type: 'error', name: 'StateUnreadable' }], now);
+    return null;
+  }
+  if (loaded.status === 'corrupt') preEvents.push({ type: 'error', name: 'CorruptState' });
   const global = decision.normalizeGlobal(globalRead.value);
   const { ask, choice } = key ? checkpointAsk(lib, input, cls, prompt) : { ask: null, choice: null };
 
-  const result = decision.decide(state, global, cls, {
+  const result = decision.decide(loaded.value, global, cls, {
     sessionId: key,
     entrypoint,
     ask,
     choice,
-    lengthBucket: classify.lengthBucket(prompt),
+    lengthBucket: classify.lengthBucket(fullPrompt),
+    nowMs: now.getTime(),
   });
 
   if (key) store.writeJsonAtomic(store.statePath(home, key), result.state);
-  if (globalRead.status !== 'ok' || JSON.stringify(result.global) !== JSON.stringify(global)) {
+  const interactive = decision.NUDGE_ENTRYPOINTS.has(entrypoint);
+  if (interactive && (globalRead.status !== 'ok' || JSON.stringify(result.global) !== JSON.stringify(global))) {
     store.writeJsonAtomic(store.globalPath(home), result.global);
   }
 
   const ms = Math.round(performance.now() - started);
-  const stamp = { ts: now.toISOString(), session: key, ep: entrypoint };
   const events = [...preEvents, ...result.events].map((e) => ({ ...stamp, ...e, ...(e.type === 'prompt' ? { ms } : {}) }));
   logQuietly(store, home, events, now);
   try {
+    store.removeStaleTemp(home, now.getTime());
     store.cleanupIfDue(home, now.getTime());
   } catch {
     // cleanup is best effort

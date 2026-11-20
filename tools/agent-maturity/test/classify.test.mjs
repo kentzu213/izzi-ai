@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   classifyCheckpointReply,
   classifyPrompt,
+  hasCheckpointAsk,
   isWrapperPrompt,
   lengthBucket,
 } from '../lib/classify.mjs';
@@ -173,4 +174,64 @@ test('checkpoint reply: short aliases count only when they stand alone and the r
   for (const reply of ['có lỗi rồi', '1 cái nữa là xong', 'làm tiếp phần B', 'ok', 'có, nhưng trước hết em kiểm lại toàn bộ log build hôm qua đã']) {
     assert.equal(classifyCheckpointReply(reply), 'ignored', reply);
   }
+});
+
+test('reassurance ("không sao", "đừng lo", "không vấn đề gì") does not veto an approval', () => {
+  for (const text of ['không sao, merge đi', 'đừng lo, phát hành đi', 'không vấn đề gì, merge đi', 'ko sao, đồng ý']) {
+    assert.equal(classifyPrompt(text).label, 'approve_decision', text);
+  }
+});
+
+test('checkpoint reply: a long reply never counts as a bare alias, even when its tail is cut', () => {
+  assert.equal(classifyCheckpointReply(`có ${'x'.repeat(300)}`), 'ignored');
+  assert.equal(classifyCheckpointReply(`Nâng cấp ${'x'.repeat(300)}`), 'accept');
+});
+
+// 200k-character adversarial inputs: long punctuation runs followed by a letter, repeated words, accents.
+const ADVERSARIAL = {
+  dotsThenLetter: `${'.'.repeat(200_000)}x`,
+  bangsThenLetter: `${'!'.repeat(200_000)}a`,
+  ellipsisThenLetter: `${'…'.repeat(200_000)}a`,
+  optionThenDots: `Nâng cấp${'.'.repeat(200_000)}x`,
+  aliasThenDots: `có${'.'.repeat(200_000)}x`,
+  spacedDots: `${' .'.repeat(100_000)}x`,
+  repeatedWords: 'merge đi '.repeat(22_300),
+  accents: 'ệ'.repeat(200_000),
+  combining: 'e\u0302\u0323'.repeat(70_000),
+};
+
+test('classifyPrompt and classifyCheckpointReply stay fast on 200k-character adversarial input', (t) => {
+  const slow = [];
+  for (const [name, text] of Object.entries(ADVERSARIAL)) {
+    for (const [fn, f] of [['classifyPrompt', classifyPrompt], ['classifyCheckpointReply', classifyCheckpointReply]]) {
+      const started = performance.now();
+      f(text);
+      const ms = performance.now() - started;
+      t.diagnostic(`${fn} ${name} ${ms.toFixed(1)} ms`);
+      if (ms > 50) slow.push(`${fn} ${name} ${ms.toFixed(0)} ms`);
+    }
+  }
+  assert.deepEqual(slow, []);
+});
+
+const ASK_BLOCK = [
+  '[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?',
+  '- Đề xuất: Chạy test thật trước khi báo xong.',
+  '- Áp dụng cho: builder · sửa lỗi · dự án này',
+  '- Cách kiểm: báo cáo có lệnh test và mã thoát',
+  '- Bằng chứng: anh bắt chạy lại test → anh duyệt bản có log',
+  '- Loại: cổng chất lượng · Tra cứu: R0',
+  'Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua',
+].join('\n');
+
+test('a checkpoint ask counts only as the skill block: header at a line start and a Trả lời line after it', () => {
+  assert.equal(hasCheckpointAsk(`Đã merge.\n\n${ASK_BLOCK}`), true);
+  assert.equal(hasCheckpointAsk(`Đã merge.\n\n${ASK_BLOCK.replace(/\n/g, '\r\n')}`), true);
+  assert.equal(hasCheckpointAsk(ASK_BLOCK.split('\n').map((l) => `    ${l}`).join('\n')), true);
+  // quoted inline, or a header without the answer line, is not an ask
+  assert.equal(hasCheckpointAsk('The hook counts every `[Checkpoint nâng cấp]` header, so I will not add one.'), false);
+  assert.equal(hasCheckpointAsk('Lần sau em sẽ dùng [Checkpoint nâng cấp] khi có bằng chứng.'), false);
+  assert.equal(hasCheckpointAsk('> [Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?\n> Trả lời: Nâng cấp / Chỉnh / Bỏ qua'), false);
+  assert.equal(hasCheckpointAsk('[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?'), false);
+  assert.equal(hasCheckpointAsk(undefined), false);
 });

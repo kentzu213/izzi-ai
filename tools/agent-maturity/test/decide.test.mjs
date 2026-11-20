@@ -259,3 +259,52 @@ test('normalizeState and normalizeGlobal reset unknown or broken shapes', () => 
   const ok = { ...freshState(), turn: 3, pending: { turn: 2, kind: 'weak' } };
   assert.deepEqual(normalizeState(ok), ok);
 });
+
+const DAY = 86_400_000;
+const NOW = Date.UTC(2026, 10, 20, 12);
+
+test('a nudge in strict mode tells the agent strict mode is on', () => {
+  const start = { global: { ...freshGlobal(), strict: true } };
+  const { results } = run(['correction', 'approve'], start);
+  assert.match(results[1].context, /strict mode is on/i);
+  assert.ok(results[1].context.length <= 700, `length ${results[1].context.length}`);
+  const normal = run(['correction', 'approve']);
+  assert.doesNotMatch(normal.results[1].context, /strict mode/i);
+});
+
+test('strict mode records when it turned on and clears 7 days later with an empty outcome window', () => {
+  const recentOutcomes = ['skip', 'skip', 'ignored', 'skip', 'ignored', 'accept', 'accept', 'edit', 'accept'];
+  const on = run([{ cls: L.none, ask: ask('q'), choice: 'skip', info: { nowMs: NOW } }], { global: { ...freshGlobal(), recentOutcomes } });
+  assert.equal(on.global.strict, true);
+  assert.equal(on.global.strictSince, NOW);
+
+  const stillOn = run([{ cls: L.none, info: { nowMs: NOW + 6 * DAY } }], { global: on.global });
+  assert.equal(stillOn.global.strict, true);
+
+  const off = run([{ cls: L.correction, info: { nowMs: NOW + 7 * DAY } }, { cls: L.approve, info: { nowMs: NOW + 7 * DAY } }], { global: on.global });
+  assert.equal(off.global.strict, false);
+  assert.equal(off.global.strictSince, null);
+  assert.deepEqual(off.global.recentOutcomes, []);
+  assert.ok(off.results[0].events.some((e) => e.type === 'strict_off'));
+  assert.doesNotMatch(off.results[1].context, /strict mode/i);
+});
+
+test('a strict global saved without strictSince starts its 7-day clock on the next interactive turn', () => {
+  const legacy = { v: 1, recentOutcomes: [], strict: true };
+  const first = run([{ cls: L.none, info: { nowMs: NOW } }], { global: legacy });
+  assert.equal(first.global.strict, true);
+  assert.equal(first.global.strictSince, NOW);
+  const later = run([{ cls: L.none, info: { nowMs: NOW + 8 * DAY } }], { global: first.global });
+  assert.equal(later.global.strict, false);
+});
+
+test('non-interactive entrypoints log checkpoint outcomes but never change the shared outcome list', () => {
+  const recentOutcomes = ['skip', 'skip', 'ignored', 'skip', 'ignored', 'accept', 'accept', 'edit', 'accept'];
+  for (const entrypoint of ['sdk-cli', 'sdk-ts', '', undefined]) {
+    const start = { global: { ...freshGlobal(), recentOutcomes } };
+    const { results, global } = run([{ cls: L.none, ask: ask('n1'), choice: 'skip', info: { entrypoint, nowMs: NOW } }], start);
+    assert.equal(outcomeOf(results[0]).outcome, 'skip', String(entrypoint));
+    assert.deepEqual(global, normalizeGlobal(start.global), String(entrypoint));
+    assert.equal(results[0].events.some((e) => e.type === 'strict_on'), false, String(entrypoint));
+  }
+});

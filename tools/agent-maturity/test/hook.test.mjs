@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -61,6 +61,25 @@ function assertQuiet(r) {
   assert.equal(r.code, 0);
   assert.equal(r.stderr, '');
 }
+
+const ASK_BLOCK = [
+  '[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?',
+  '- Đề xuất: Chạy test thật trước khi báo xong.',
+  '- Áp dụng cho: builder · sửa lỗi · dự án này',
+  '- Cách kiểm: báo cáo có lệnh test và mã thoát',
+  '- Bằng chứng: anh bắt chạy lại test → anh duyệt bản có log',
+  '- Loại: cổng chất lượng · Tra cứu: R0',
+  'Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua',
+].join('\n');
+
+function writeTranscript(file, assistantText, uuid) {
+  writeFileSync(file, [
+    JSON.stringify({ type: 'user', message: { content: 'merge' } }),
+    JSON.stringify({ type: 'assistant', uuid, message: { content: [{ type: 'text', text: assistantText }] } }),
+  ].join('\n'));
+}
+
+const readState = (home, session) => JSON.parse(readFileSync(join(home, 'state', `${session}.json`), 'utf8'));
 
 test('a completion signal after a correction prints the UserPromptSubmit context shape', () => {
   const home = newHome();
@@ -181,10 +200,7 @@ test('a checkpoint in the transcript tail is detected and the reply recorded', (
   runHook(prompt('làm lại', 'sess-ckpt', { transcript_path: transcript }), { home });
   const nudge = runHook(prompt('merge', 'sess-ckpt', { transcript_path: transcript }), { home });
   assert.ok(nudge.stdout.length > 0);
-  writeFileSync(transcript, [
-    JSON.stringify({ type: 'user', message: { content: 'merge' } }),
-    JSON.stringify({ type: 'assistant', uuid: 'a9', message: { content: [{ type: 'text', text: 'Đã merge.\n\n[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?' }] } }),
-  ].join('\n'));
+  writeTranscript(transcript, `Đã merge.\n\n${ASK_BLOCK}`, 'a9');
   assertQuiet(runHook(prompt('Nâng cấp', 'sess-ckpt', { transcript_path: transcript }), { home }));
   const outcome = readEvents(home).find((e) => e.type === 'checkpoint_outcome');
   assert.equal(outcome.outcome, 'accept');
@@ -233,4 +249,96 @@ test('an unsafe session id is hashed for the file name and the log', () => {
   assert.equal(names.length, 1);
   assert.match(names[0], /^[a-f0-9]{40}\.json$/);
   assert.ok(readEvents(home).every((e) => !String(e.session).includes('evil')));
+});
+
+test('quoting the checkpoint header inline is not counted as an ask', () => {
+  const home = newHome();
+  const transcript = join(scratch, 'quoted.jsonl');
+  writeTranscript(transcript, 'Em không hỏi lần này; hook đếm mọi header `[Checkpoint nâng cấp]` nên em chỉ nhắc tên nó.', 'q1');
+  assertQuiet(runHook(prompt('tiếp tục', 'sess-quoted', { transcript_path: transcript }), { home }));
+  assert.equal(readState(home, 'sess-quoted').asks, 0);
+  assert.equal(readEvents(home).some((e) => e.type === 'checkpoint_outcome'), false);
+});
+
+test('claude -p and SDK sessions log outcomes but never write the shared global.json', () => {
+  const home = newHome();
+  const transcript = join(scratch, 'sdk.jsonl');
+  const env = { CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' };
+  for (const text of ['làm lại', 'merge']) assertQuiet(runHook(prompt(text, 'sess-sdk'), { home, env }));
+  writeTranscript(transcript, `Xong.\n\n${ASK_BLOCK}`, 's1');
+  assertQuiet(runHook(prompt('Bỏ qua', 'sess-sdk', { transcript_path: transcript }), { home, env }));
+  assert.equal(existsSync(join(home, 'global.json')), false);
+  assert.ok(readEvents(home).some((e) => e.type === 'checkpoint_outcome' && e.outcome === 'skip'));
+  const cli = newHome();
+  assertQuiet(runHook(prompt('làm lại', 'sess-cli-global'), { home: cli }));
+  assert.equal(existsSync(join(cli, 'global.json')), true);
+});
+
+test('an unreadable state file is left alone: no reset, no write this turn', () => {
+  const home = newHome();
+  const stateFile = join(home, 'state', 'sess-busy.json');
+  mkdirSync(stateFile, { recursive: true }); // a directory where the file should be: read fails with EISDIR
+  const r = runHook(prompt('làm lại', 'sess-busy'), { home });
+  assertQuiet(r);
+  assert.equal(r.stdout, '');
+  assert.ok(statSync(stateFile).isDirectory());
+  assert.equal(existsSync(join(home, 'global.json')), false);
+  const events = readEvents(home);
+  assert.equal(events.some((e) => e.name === 'CorruptState'), false);
+  assert.ok(events.some((e) => e.type === 'error' && e.name === 'StateUnreadable'));
+});
+
+test('stale temp files older than an hour are removed on the next run; fresh ones are kept', () => {
+  const home = newHome();
+  mkdirSync(join(home, 'state'), { recursive: true });
+  const stale = join(home, 'state', 'sess-old.json.1234.abcdef012345.tmp');
+  const staleGlobal = join(home, 'global.json.1234.abcdef012345.tmp');
+  const fresh = join(home, 'state', 'sess-new.json.5678.0123456789ab.tmp');
+  const other = join(home, 'state', 'notes.tmp');
+  for (const f of [stale, staleGlobal, fresh, other]) writeFileSync(f, '{}');
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+  for (const f of [stale, staleGlobal, other]) utimesSync(f, twoHoursAgo, twoHoursAgo);
+  assertQuiet(runHook(prompt('tiếp tục', 'sess-tmp'), { home }));
+  assert.equal(existsSync(stale), false);
+  assert.equal(existsSync(staleGlobal), false);
+  assert.equal(existsSync(fresh), true);
+  assert.equal(existsSync(other), true, 'only our own <file>.<pid>.<hex>.tmp names are removed');
+});
+
+test('a 200k-character adversarial prompt after an ask finishes well under 1 s', (t) => {
+  const home = newHome();
+  const transcript = join(scratch, 'adversarial.jsonl');
+  writeTranscript(transcript, `Xong.\n\n${ASK_BLOCK}`, 'adv');
+  const prompts = {
+    optionThenDots: `Nâng cấp${'.'.repeat(200_000)}x`,
+    aliasThenDots: `có${'.'.repeat(200_000)}x`,
+    dotsThenLetter: `${'.'.repeat(200_000)}x`,
+    repeatedWords: 'merge đi '.repeat(22_300),
+    accents: `${'ệ'.repeat(100_000)}${'!'.repeat(100_000)}a`,
+  };
+  for (const [name, text] of Object.entries(prompts)) {
+    const session = `sess-adv-${name}`;
+    const started = performance.now();
+    const r = runHook(prompt(text, session, { transcript_path: transcript }), { home });
+    const ms = performance.now() - started;
+    t.diagnostic(`hook ${name} wall ${ms.toFixed(0)} ms`);
+    assertQuiet(r);
+    assert.ok(ms < 1000, `${name} took ${ms.toFixed(0)} ms`);
+    assert.equal(readState(home, session).asks, 1);
+  }
+  const internal = readEvents(home).filter((e) => e.type === 'prompt').map((e) => e.ms);
+  t.diagnostic(`hook internal ms: ${internal.join(', ')}`);
+  assert.ok(internal.every((ms) => ms < 250), internal.join(', '));
+});
+
+test('store.readJson separates missing, unreadable and corrupt files', async () => {
+  const store = await import('../lib/store.mjs');
+  const dir = join(scratch, 'readjson');
+  mkdirSync(join(dir, 'a-directory.json'), { recursive: true });
+  writeFileSync(join(dir, 'bad.json'), '{broken');
+  writeFileSync(join(dir, 'good.json'), '{"v":1}');
+  assert.equal(store.readJson(join(dir, 'missing.json')).status, 'missing');
+  assert.equal(store.readJson(join(dir, 'a-directory.json')).status, 'unreadable');
+  assert.equal(store.readJson(join(dir, 'bad.json')).status, 'corrupt');
+  assert.deepEqual(store.readJson(join(dir, 'good.json')), { status: 'ok', value: { v: 1 } });
 });
