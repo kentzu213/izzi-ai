@@ -55,11 +55,30 @@ Trạng thái: **thiết kế v2 đã duyệt** (chủ shop, 2026-11-19: "Duyệ
   - tsc sạch; 2373 test vitest qua;
   - PGlite: D2 32/32, D1 52/52 và Phase C 81/81 khi đã áp D2;
   - security review 2 vòng: vòng 1 có 3 HIGH, đã sửa và vòng 2 xác nhận; vòng 2 có 3 MEDIUM, đã sửa.
+- **Đổi nhà cung cấp (chủ shop quyết định, 2026-11-20):** tạm dùng **codex-lb** của izzi (`CUSTOMER_CARE_AI_PROVIDER=codex_lb`, model kiểu `gpt-6.1-sol`), gác OpenRouter lại cho sau.
+  - Điều này đảo ngược dòng "codex-lb không dùng" ở mục 4. codex-lb chạy trên tài khoản ChatGPT nên không có ZDR; dữ liệu khách vẫn được che trước khi gửi.
+  - Tài khoản OpenRouter lúc đó đang âm 0,20 USD (đã nạp 25, đã dùng 25,20).
+  - Cờ `CUSTOMER_CARE_AI_USE_POOL_KEY` vẫn còn để dùng OpenRouter sau này.
+- **Kết quả bộ chấm qua codex-lb (205 biến thể, chạy trên server, 2026-11-20):**
+
+  | | gpt-6.1-sol | gpt-6-luna |
+  |---|---|---|
+  | Lỗi nghiêm trọng | 0 | 0 |
+  | Câu trả lời sai định dạng / quá giờ | 0 | 0 |
+  | Chọn đúng thông tin | 97,3% | 93,5% |
+  | p50 / p95 | 2,7 s / 3,9 s | 2,2 s / 3,4 s |
+  | Chuyển nhân viên đúng / không xin số khi không nên / nêu factGap | 100% / 100% / 100% | 100% / 100% / 100% |
+  | Lượt Plus 5 giờ đã dùng | ~6% | ~0% |
+
+  - Đề xuất: **gpt-6.1-sol làm model chính, gpt-6-luna làm dự phòng.**
+  - Lỗi còn lại đều nhẹ: khách hỏi lại câu giá đã được trả lời thì model gửi thêm "báo giá các mẫu khác".
+  - Đáp án của tình huống "tầm chục củ có mẫu nào không" đã được sửa sau lần chạy đầu. Trước đó mình ghi nhầm giá bộ đồ thờ là "cấm", trong khi khách hỏi mọi mẫu trong tầm giá đó.
+- **Rủi ro chính của codex-lb:** pool chỉ có một tài khoản Plus và tài khoản này hay hết lượt. Ngày 2026-11-20 pool báo `no_routable_accounts` nhiều lần. Khi đó AI lỗi: tin đầu dùng luật Phase C, từ tin thứ hai izzi im lặng.
 - **Còn lại trước khi bật:**
-  - chủ shop tạo key OpenRouter riêng, bật ZDR cho cả tài khoản;
-  - chạy bộ chấm, chọn model;
   - công cụ chạy lại trên hội thoại thật;
-  - chủ shop xem kết quả rồi mới bật.
+  - chạy migration 20261123 và deploy, mỗi bước xin chủ shop đồng ý riêng;
+  - đặt biến môi trường trên VPS;
+  - chủ shop xem kết quả chạy lại rồi mới bật.
 
 Công tắc "Tự động trả lời khách" vẫn tắt.
 
