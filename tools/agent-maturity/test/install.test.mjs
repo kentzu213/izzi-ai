@@ -1,0 +1,256 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import { install } from '../install.mjs';
+import { uninstall } from '../uninstall.mjs';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const REAL_CLAUDE = join(homedir(), '.claude');
+const REAL_SETTINGS = join(REAL_CLAUDE, 'settings.json');
+const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+const realSettingsShaAtStart = existsSync(REAL_SETTINGS) ? sha(readFileSync(REAL_SETTINGS)) : null;
+const scratch = mkdtempSync(join(tmpdir(), 'am-install-'));
+const ENV = { AGENT_MATURITY_TEST: '1' };
+
+after(() => {
+  rmSync(scratch, { recursive: true, force: true });
+  assert.equal(existsSync(join(REAL_CLAUDE, 'agent-maturity')), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.equal(existsSync(join(REAL_CLAUDE, 'skills', 'upgrade-checkpoint')), false, 'real skill dir must not exist');
+  if (realSettingsShaAtStart) assert.equal(sha(readFileSync(REAL_SETTINGS)), realSettingsShaAtStart, 'real settings.json changed');
+});
+
+const ORIGINAL = {
+  model: 'opus',
+  hooks: {
+    PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'npx some-guard' }] }],
+    UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node "C:/x/agent-mention.js"', timeout: 10 }] }],
+  },
+  permissions: { allow: ['Bash(git status)'] },
+};
+
+let n = 0;
+function makeHome({ settingsText } = {}) {
+  n += 1;
+  const home = join(scratch, `claude-${n}`);
+  mkdirSync(home, { recursive: true });
+  const text = settingsText ?? `${JSON.stringify(ORIGINAL, null, 2)}\n`;
+  writeFileSync(join(home, 'settings.json'), text);
+  return { home, settings: join(home, 'settings.json'), bytes: readFileSync(join(home, 'settings.json')) };
+}
+
+function snapshot(dir) {
+  const out = {};
+  for (const rel of readdirSync(dir, { recursive: true })) {
+    const p = join(dir, String(rel));
+    if (statSync(p).isFile()) out[String(rel).replace(/\\/g, '/')] = sha(readFileSync(p));
+  }
+  return out;
+}
+
+const ourCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/bin/hooks/prompt-signal.mjs"`;
+const isOurs = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/hooks/prompt-signal.mjs'));
+const readSettings = (file) => JSON.parse(readFileSync(file, 'utf8'));
+const backupsIn = (home) => readdirSync(home).filter((f) => /^settings\.json\.bak-\d{8}-\d{6}(-\d+)?-agent-maturity$/.test(f));
+
+test('install backs up settings byte-for-byte and keeps every other hook', () => {
+  const { home, settings, bytes } = makeHome();
+  const r = install({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  const backups = backupsIn(home);
+  assert.equal(backups.length, 1);
+  assert.deepEqual(readFileSync(join(home, backups[0])), bytes);
+  const next = readSettings(settings);
+  const ours = next.hooks.UserPromptSubmit.filter(isOurs);
+  assert.equal(ours.length, 1);
+  const withoutOurs = { ...next, hooks: { ...next.hooks, UserPromptSubmit: next.hooks.UserPromptSubmit.filter((g) => !isOurs(g)) } };
+  assert.deepEqual(withoutOurs, ORIGINAL);
+});
+
+test('the installed hook entry uses / paths, timeout 5 and no onFailure', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const group = readSettings(settings).hooks.UserPromptSubmit.find(isOurs);
+  assert.deepEqual(group, { hooks: [{ type: 'command', command: ourCommand(home), timeout: 5 }] });
+  assert.ok(!group.hooks[0].command.includes('\\'));
+  assert.equal('onFailure' in group.hooks[0], false);
+});
+
+test('install copies runtime files and the marked skill, and the copied hook runs', () => {
+  const { home } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  for (const rel of ['lib/classify.mjs', 'lib/decide.mjs', 'lib/store.mjs', 'lib/transcript-tail.mjs', 'hooks/prompt-signal.mjs']) {
+    assert.ok(existsSync(join(home, 'agent-maturity', 'bin', rel)), rel);
+  }
+  assert.ok(existsSync(join(home, 'skills', 'upgrade-checkpoint', 'SKILL.md')));
+  assert.ok(existsSync(join(home, 'skills', 'upgrade-checkpoint', '.agent-maturity')));
+  const manifest = JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8'));
+  assert.equal(manifest.settingsShaAfter, sha(readFileSync(join(home, 'settings.json'))));
+  assert.ok(manifest.backup.endsWith('-agent-maturity'));
+  assert.ok(manifest.files.length >= 7);
+
+  const fakeUser = join(scratch, `user-${n}`);
+  mkdirSync(fakeUser);
+  const env = { ...process.env, ...ENV, HOME: fakeUser, USERPROFILE: fakeUser, AGENT_MATURITY_HOME: join(home, 'agent-maturity'), CLAUDE_CODE_ENTRYPOINT: 'cli' };
+  delete env.AGENT_MATURITY;
+  const run = (prompt) => spawnSync(process.execPath, [join(home, 'agent-maturity', 'bin', 'hooks', 'prompt-signal.mjs')], {
+    input: JSON.stringify({ prompt, session_id: 'inst-run' }), encoding: 'utf8', env, timeout: 15_000,
+  });
+  assert.equal(run('làm lại').status, 0);
+  const r = run('merge');
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr, '');
+  assert.equal(JSON.parse(r.stdout).hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+});
+
+test('installing twice keeps a single hook group and the first backup', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const firstManifest = readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8');
+  const r = install({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0);
+  assert.equal(readSettings(settings).hooks.UserPromptSubmit.filter(isOurs).length, 1);
+  assert.equal(backupsIn(home).length, 1);
+  assert.equal(JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8')).backup, JSON.parse(firstManifest).backup);
+});
+
+test('install then uninstall restores settings byte-for-byte and removes installed files', () => {
+  const crlf = `${JSON.stringify(ORIGINAL, null, 4).replace(/\n/g, '\r\n')}\r\n`;
+  const { home, settings, bytes } = makeHome({ settingsText: crlf });
+  install({ claudeHome: home, env: ENV });
+  assert.ok(readFileSync(settings, 'utf8').includes('\r\n'), 'install keeps CRLF line endings');
+  const r = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.equal(r.mode, 'restore');
+  assert.deepEqual(readFileSync(settings), bytes);
+  assert.equal(existsSync(join(home, 'agent-maturity', 'bin')), false);
+  assert.equal(existsSync(join(home, 'agent-maturity', 'install-manifest.json')), false);
+  assert.equal(existsSync(join(home, 'skills', 'upgrade-checkpoint')), false);
+});
+
+test('uninstall after a third-party settings edit removes only our group and keeps the backup', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const edited = readSettings(settings);
+  edited.theme = 'dark';
+  edited.hooks.Stop = [{ hooks: [{ type: 'command', command: 'node stop.js' }] }];
+  writeFileSync(settings, `${JSON.stringify(edited, null, 2)}\n`);
+  const r = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0);
+  assert.equal(r.mode, 'remove-group');
+  assert.ok(r.lines.some((l) => /backup kept/i.test(l)));
+  const expected = { ...ORIGINAL, theme: 'dark', hooks: { ...ORIGINAL.hooks, Stop: edited.hooks.Stop } };
+  assert.deepEqual(readSettings(settings), expected);
+  assert.equal(backupsIn(home).length, 1);
+});
+
+test('uninstall drops an emptied UserPromptSubmit list it created', () => {
+  const bare = { model: 'opus', hooks: { PreToolUse: ORIGINAL.hooks.PreToolUse } };
+  const { home, settings } = makeHome({ settingsText: `${JSON.stringify(bare, null, 2)}\n` });
+  install({ claudeHome: home, env: ENV });
+  const edited = readSettings(settings);
+  edited.theme = 'light';
+  writeFileSync(settings, JSON.stringify(edited, null, 2));
+  uninstall({ claudeHome: home, env: ENV });
+  assert.deepEqual(readSettings(settings), { ...bare, theme: 'light' });
+});
+
+test('--dry-run writes nothing for install or uninstall', () => {
+  const { home } = makeHome();
+  const before = snapshot(home);
+  const r = install({ claudeHome: home, dryRun: true, env: ENV });
+  assert.equal(r.code, 0);
+  assert.ok(r.lines.length > 0);
+  assert.deepEqual(snapshot(home), before);
+  install({ claudeHome: home, env: ENV });
+  const installed = snapshot(home);
+  assert.equal(uninstall({ claudeHome: home, dryRun: true, env: ENV }).code, 0);
+  assert.deepEqual(snapshot(home), installed);
+});
+
+test('broken settings JSON exits 1 and writes nothing (CLI)', () => {
+  const { home } = makeHome({ settingsText: '{ "hooks": ' });
+  const before = snapshot(home);
+  const r = spawnSync(process.execPath, [join(ROOT, 'install.mjs'), '--claude-home', home], {
+    encoding: 'utf8', env: { ...process.env, ...ENV }, timeout: 15_000,
+  });
+  assert.equal(r.status, 1);
+  assert.deepEqual(snapshot(home), before);
+});
+
+test('AGENT_MATURITY_TEST=1 refuses the real ~/.claude', () => {
+  const r1 = install({ claudeHome: REAL_CLAUDE, dryRun: true, env: ENV });
+  assert.equal(r1.code, 1);
+  assert.equal(r1.error, 'refuse_real_home');
+  const { home } = makeHome();
+  const r2 = install({ claudeHome: home, settingsPath: REAL_SETTINGS, dryRun: true, env: ENV });
+  assert.equal(r2.error, 'refuse_real_home');
+  const r3 = uninstall({ claudeHome: REAL_CLAUDE, dryRun: true, env: ENV });
+  assert.equal(r3.error, 'refuse_real_home');
+});
+
+test('a foreign upgrade-checkpoint skill directory is never overwritten', () => {
+  const { home } = makeHome();
+  mkdirSync(join(home, 'skills', 'upgrade-checkpoint'), { recursive: true });
+  writeFileSync(join(home, 'skills', 'upgrade-checkpoint', 'SKILL.md'), 'someone else');
+  const before = snapshot(home);
+  const r = install({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 1);
+  assert.deepEqual(snapshot(home), before);
+});
+
+test('settings changed between read and rename aborts with temp file cleaned up', () => {
+  const { home, settings } = makeHome();
+  const thirdParty = `${JSON.stringify({ ...ORIGINAL, theme: 'race' }, null, 2)}\n`;
+  let tmpSeen = [];
+  const r = install({
+    claudeHome: home,
+    env: ENV,
+    beforeRename: () => {
+      tmpSeen = readdirSync(home).filter((f) => f.endsWith('.tmp'));
+      writeFileSync(settings, thirdParty);
+    },
+  });
+  assert.equal(r.code, 1);
+  assert.equal(r.error, 'settings_changed');
+  assert.equal(tmpSeen.length, 1);
+  assert.match(tmpSeen[0], /^settings\.json\.\d+\.[a-f0-9]+\.tmp$/);
+  assert.equal(readFileSync(settings, 'utf8'), thirdParty);
+  assert.deepEqual(readdirSync(home).filter((f) => f.endsWith('.tmp')), []);
+  assert.equal(existsSync(join(home, 'agent-maturity', 'install-manifest.json')), false);
+});
+
+test('uninstall keeps state and log unless --purge', () => {
+  const { home } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const am = join(home, 'agent-maturity');
+  mkdirSync(join(am, 'state'), { recursive: true });
+  mkdirSync(join(am, 'log'), { recursive: true });
+  writeFileSync(join(am, 'state', 's.json'), '{}');
+  writeFileSync(join(am, 'log', 'events-2026-11.jsonl'), '{}\n');
+  uninstall({ claudeHome: home, env: ENV });
+  assert.ok(existsSync(join(am, 'state', 's.json')));
+  assert.ok(existsSync(join(am, 'log', 'events-2026-11.jsonl')));
+  install({ claudeHome: home, env: ENV });
+  uninstall({ claudeHome: home, purge: true, env: ENV });
+  assert.equal(existsSync(am), false);
+});
+
+test('uninstall never deletes a manifest path outside its own folders', () => {
+  const { home } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const victim = join(scratch, `victim-${n}.txt`);
+  writeFileSync(victim, 'keep me');
+  const manifestPath = join(home, 'agent-maturity', 'install-manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  manifest.files.push(victim.replace(/\\/g, '/'), join(home, 'settings.json').replace(/\\/g, '/'));
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  uninstall({ claudeHome: home, env: ENV });
+  assert.equal(readFileSync(victim, 'utf8'), 'keep me');
+  assert.ok(existsSync(join(home, 'settings.json')));
+});
