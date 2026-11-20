@@ -1,6 +1,10 @@
 # Customer Care Phase D: izzi hiểu hội thoại bằng AI, trả lời bằng thông tin đã duyệt
 
-Trạng thái: **thiết kế v2 đã duyệt** (chủ shop, 2026-11-19: "Duyệt theo đề xuất"). Đã sửa theo review độc lập (socrates: ACCEPT WITH FIXES). Đang làm D1.
+Trạng thái: **thiết kế v2 đã duyệt** (chủ shop, 2026-11-19: "Duyệt theo đề xuất"). Đã sửa theo review độc lập (socrates: ACCEPT WITH FIXES).
+
+**Tiến độ (2026-11-20):** D1 đã chạy trên prod (`rc-395d26e`). Echo của nhân viên/Pancake và quảng cáo đã về thật lúc 12:06 UTC. D2 backend đã code xong, chưa migration, chưa deploy, chưa bật (xem "D2 backend" bên dưới).
+
+**Thay đổi so với thiết kế (sau security review D2):** AI **không còn viết câu dẫn tự do** (`ack`). Nó chọn một câu mở đầu có sẵn của máy chủ (`opener`). Lý do: reviewer lách được bộ lọc câu tự do bằng nhiều cách: chữ không dấu ("muoi sau trieu"), ký tự tách dấu hoặc vô hình, chữ Cyrillic giả chữ Latin, "bit.ly", câu "Dạ có ạ" (ngầm khẳng định còn hàng hoặc có ship), và token `[TÊN]` lọt ra cho khách. Danh sách từ cấm không bao giờ đủ. Giờ **mọi chữ khách đọc** chỉ có thể là câu của máy chủ hoặc nguyên văn thông tin đã duyệt.
 
 **Quyết định đã chốt (mục 10):**
 1. izzi chịu chi phí AI trong giai đoạn thử.
@@ -21,7 +25,43 @@ Trạng thái: **thiết kế v2 đã duyệt** (chủ shop, 2026-11-19: "Duyệ
 - Page được đăng ký `messages,standby,message_echoes,messaging_referrals` mỗi khi bật "Nhận tin nhắn". Tắt trả lời tự động không còn đổi danh sách field.
 - Kiểm tra: PGlite 52/52 cho D1 và 81/81 cho Phase C (đã áp D1). Security review: không có CRITICAL/HIGH; đã sửa 2 MEDIUM (echo về sớm hơn lúc ghi `mid`; một mục lỗi làm hỏng cả lượt) và các LOW (index, ký tự vô hình, kết quả quảng cáo cũ).
 
-Phase C (luật cứng) vẫn ở prod `rc-f7bd66e`. Công tắc và "Nhận tin nhắn từ Page" đang tắt.
+**D2 backend (2026-11-20, chưa migration, chưa deploy, chưa bật):**
+- **Chạy AI ở đâu:** `CUSTOMER_CARE_AI_ENABLED=true` cộng key OpenRouter **riêng** (`CUSTOMER_CARE_AI_OPENROUTER_KEY`), `CUSTOMER_CARE_AI_MODEL`, tùy chọn `CUSTOMER_CARE_AI_FALLBACK_MODEL`. Thiếu bất kỳ cái nào thì luật Phase C trả lời như cũ.
+  - Key trùng với pool bán lại (`OPENROUTER_API_KEYS`) bị từ chối.
+  - Model có hậu tố `:online` hoặc `:nitro`, hay `openrouter/auto`, bị từ chối.
+- **Gọi AI:** mỗi lần đều có `provider: { zdr: true, data_collection: "deny", require_parameters: true }` và JSON schema strict. Không ghi log key, prompt hay câu trả lời.
+- **Che dữ liệu trước khi gửi:**
+  - số điện thoại thành `[SĐT]`, kể cả dạng có ngoặc, có (+84), số cố định, chữ số toàn bề rộng, số đọc bằng chữ;
+  - dãy 9–15 chữ số khác (số tài khoản, CCCD) thành `[SỐ]`;
+  - email thành `[EMAIL]`, link và @handle thành `[LINK]`;
+  - tên sau "anh/chị/ông/…" hoặc "tên là…" thành `[TÊN]`; tên viết hoa toàn bộ cũng che;
+  - tin dài hơn 2000 ký tự bị cắt trước khi che.
+- **AI trả về:** `intent`, `factIds` (tối đa 3, chỉ thông tin chưa gửi), `opener` (id câu mở đầu), `askContact`, `handoff`, `factGap`. Có câu báo trợ lý tự động.
+  - Câu mở đầu phải khớp loại thông tin đi sau ("Dạ về giá…" chỉ khi có thông tin giá), sai thì dùng câu chung.
+  - Không xin số khi tin trước của izzi hoặc tin gần nhất của nhân viên/Pancake đã xin.
+- **Thời gian:**
+  - chờ khách ngừng gõ 4 giây (tối đa 8 giây); hạn chót = lúc khách gửi + 25 giây;
+  - mỗi lần gọi AI tối đa min(8 giây, thời gian còn lại − 5 giây); model dự phòng chỉ chạy khi còn hơn 10 giây;
+  - có `typing_on`, không `mark_seen`;
+  - khách nhắn thêm trong lúc izzi soạn: bỏ lượt đang soạn (`superseded`), và lượt mới chạy ngay sau đó.
+- **Khi AI lỗi:** tin thứ nhất dùng luật Phase C kèm câu báo trợ lý; từ tin thứ hai im lặng (`ai_unavailable`). Chuyển nhân viên thì dừng hội thoại (`handoff`).
+- **Migration `20261123_customer_care_ai_reply.sql`:**
+  - cột cách viết tin (`composer`, `disclosed`, `asked_contact`, `ai_intent`, `fact_gap_sealed` niêm phong);
+  - lý do dừng `handoff`;
+  - các hàm `customer_care_auto_reply_context`, `customer_care_note_ai_reply`, `customer_care_auto_reply_superseded`;
+  - thống kê không tính `nothing_to_say` hay `superseded` là sự cố.
+- **Bộ chấm:** 44 tình huống, nhân thành 205 biến thể. Lệnh chạy: `npx tsx scripts/care-ai-eval.ts`. Mọi dòng không phải câu máy chủ hoặc nguyên văn thông tin đã duyệt đều tính là lỗi nghiêm trọng.
+- **Kiểm tra:**
+  - tsc sạch; 2373 test vitest qua;
+  - PGlite: D2 32/32, D1 52/52 và Phase C 81/81 khi đã áp D2;
+  - security review 2 vòng: vòng 1 có 3 HIGH, đã sửa và vòng 2 xác nhận; vòng 2 có 3 MEDIUM, đã sửa.
+- **Còn lại trước khi bật:**
+  - chủ shop tạo key OpenRouter riêng, bật ZDR cho cả tài khoản;
+  - chạy bộ chấm, chọn model;
+  - công cụ chạy lại trên hội thoại thật;
+  - chủ shop xem kết quả rồi mới bật.
+
+Công tắc "Tự động trả lời khách" vẫn tắt.
 
 ## 1. Vì sao cần Phase D
 
