@@ -25,6 +25,7 @@ import {
 } from './extension-tools';
 import { createStreamCollector, type AgentTurnEvent } from '../../shared/agent-turn-events';
 import type { SessionRecorder } from './agent-session-recorder';
+import { isTrustedMarketingSender } from '../marketing/marketing-ipc';
 
 const IZZI_LLM_BASE = 'https://api.izziapi.com/v1';
 const MAX_TOOL_ITERATIONS = 20;
@@ -526,10 +527,12 @@ function withMainContext(payload: IzziAgentChatPayload, options: IzziAgentIpcOpt
 /**
  * Register the `izziAgent:chat` IPC handler. The Izzi key stays inside IzziAgent
  * (main process) and NEVER crosses the bridge — the renderer only receives
- * `{ reply, error }`.
+ * `{ reply, error }`. Only the app's own window may call: the chat spends the
+ * owner's credit and carries their approved profile.
  */
 export function registerIzziAgentIpc(agent: IzziAgent, recorder?: SessionRecorder, options: IzziAgentIpcOptions = {}): void {
   ipcMain.handle('izziAgent:chat', async (event, payload: IzziAgentChatPayload) => {
+    if (!isTrustedMarketingSender(event)) return { reply: '', error: 'untrusted-sender' };
     const turnId = typeof payload?.turnId === 'string' ? payload.turnId : '';
     const startedAt = new Date().toISOString();
     // Forward live process events to the renderer; collect steps for the record.

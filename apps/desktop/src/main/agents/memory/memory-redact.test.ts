@@ -12,6 +12,17 @@ describe('redactPersonalData', () => {
     ['gọi 0912  345  678 ạ', 'gọi [đã ẩn] ạ'],
     ['gọi 0912\r\n345 678 ạ', 'gọi [đã ẩn] ạ'],
     ['gọi 0912 345 678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0 912 345 678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0.912.345.678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0-912-345-678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi (0) 912 345 678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0\n912 345 678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0 912 345 678 ạ', 'gọi [đã ẩn] ạ'],
+    ['gọi 0 28 3823 4567 ạ', 'gọi [đã ẩn] ạ'],
+    ['số 0 912 345 678\n0 987 654 321', 'số [đã ẩn]\n[đã ẩn]'],
+    ['số (0) 912 345 678 (0) 987 654 321', 'số [đã ẩn] [đã ẩn]'],
+    ['số 0912 345 678 0 987 654 321', 'số [đã ẩn] [đã ẩn]'],
+    ['số 0912 345 678 0987 654 321', 'số [đã ẩn] [đã ẩn]'],
     ['mail khach.hang@gmail.com giúp', 'mail [đã ẩn] giúp'],
     ['zalo.me/0912345678 hoặc zalo.me/g/abcdef', '[đã ẩn] hoặc [đã ẩn]'],
     ['PSID 7712345678901234 của khách', 'PSID [đã ẩn] của khách'],
@@ -44,6 +55,14 @@ describe('redactPersonalData', () => {
     'Chạy từ 2026-01-05 - 2026-01-09',
     'giá 0 - 100.000.000đ',
     'tỉ lệ 0.37, 0,5 và 0 đồng',
+    'giá 0 - 9.000.000đ',
+    'từ 0 đến 912.345đ',
+    'giờ 0 15 30 45 60',
+    'tỉ lệ 0.25 0.30 0.45',
+    'giá 0.5 1.200.000đ',
+    'Khoảng giá 0-500.000.000đ',
+    'giá 0-1.000.000.000 VNĐ',
+    'Size 0 2 4 6 8 10 12 14',
   ])('leaves date and price ranges alone: %j', (text) => {
     expect(redactPersonalData(text)).toBe(text);
   });
@@ -59,6 +78,7 @@ describe('hasPersonalData', () => {
   it('detects what redaction would hide, across odd spacing, and passes clean text', () => {
     expect(hasPersonalData('liên hệ 0987 654 321')).toBe(true);
     expect(hasPersonalData('liên hệ 0987  654\n321')).toBe(true);
+    expect(hasPersonalData('liên hệ 0 987 654 321')).toBe(true);
     expect(hasPersonalData('Sở thích: viết ngắn, giọng thân thiện.')).toBe(false);
     expect(hasPersonalData(redactPersonalData('liên hệ 0987 654 321'))).toBe(false);
   });
