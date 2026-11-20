@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+const trusted = vi.hoisted(() => vi.fn(() => true));
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn((name: string, handler: (...args: unknown[]) => unknown) => handlers.set(name, handler)) } }));
+vi.mock('../marketing/marketing-ipc', () => ({ isTrustedMarketingSender: trusted }));
 
 import { registerIzziAgentIpc, type IzziAgent, type IzziAgentChatPayload } from './izzi-agent';
 import type { SessionRecorder } from './agent-session-recorder';
@@ -25,7 +27,29 @@ const PAYLOAD: IzziAgentChatPayload = {
 };
 
 describe('registerIzziAgentIpc', () => {
-  beforeEach(() => handlers.clear());
+  beforeEach(() => {
+    handlers.clear();
+    trusted.mockReturnValue(true);
+  });
+
+  it('refuses a sender that is not the app window, before the model, the profile or the record', async () => {
+    // Arrange
+    const agent = fakeAgent();
+    const recorder = fakeRecorder();
+    const augment = vi.fn((prompt: string) => prompt);
+    registerIzziAgentIpc(agent as unknown as IzziAgent, recorder as unknown as SessionRecorder, { augmentSystemPrompt: augment });
+    trusted.mockReturnValue(false);
+
+    // Act
+    const result = await handlers.get('izziAgent:chat')!(EVENT, PAYLOAD);
+
+    // Assert
+    expect(result).toEqual({ reply: '', error: 'untrusted-sender' });
+    expect(trusted).toHaveBeenCalledWith(EVENT);
+    expect(agent.chat).not.toHaveBeenCalled();
+    expect(augment).not.toHaveBeenCalled();
+    expect(recorder.record).not.toHaveBeenCalled();
+  });
 
   it('sends the persona prompt with what main adds, and records the original request', async () => {
     // Arrange

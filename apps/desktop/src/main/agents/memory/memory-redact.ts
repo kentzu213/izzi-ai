@@ -38,7 +38,12 @@ const RULES: readonly Rule[] = [
   // Vietnamese phone numbers: 0 (followed directly by 1-9) / 84 / +84, optionally in brackets, then 8-10
   // digits with up to 2 spaces, line breaks, dots, dashes or brackets between digits. The 2-character limit
   // keeps " - " out, so date and price ranges ("01.11.2026 - 05.11.2026", "0 - 100.000đ") stay readable.
-  { pattern: /(?<![\d+])\(?(?:\+?84|0(?=[1-9]))\)?(?:[\s.()-]{0,2}\d){8,10}(?!\d)/g },
+  // A 10th digit only counts when it touches the 9th, so the leading 0 of a next number is never taken.
+  { pattern: /(?<![\d+])\(?(?:\+?84|0(?=[1-9]))\)?(?:[\s.()-]{0,2}\d){8,9}\d?(?!\d)/g },
+  // The same with a separator right after the 0 ("0 912 345 678", "(0) 912…"): 9-10 digits after the 0 like
+  // a real number, a first group of 2+ digits and no currency after it, so lists and prices that start with 0
+  // ("0 15 30 45 60", "Size 0 2 4 6 8 10…", "0-500.000.000đ") stay readable.
+  { pattern: /(?<![\d+])\(?0\)?[\s.()-]{1,2}(?=[1-9]\d)(?:[\s.()-]{0,2}\d){9}\d?(?!\d)(?!\s?(?:đ|₫|vnđ|vnd))/gi },
   // Card numbers, spaced or dashed.
   { pattern: /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/g },
   // Long digit runs: Facebook PSIDs, account or order ids.

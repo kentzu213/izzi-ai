@@ -4,7 +4,7 @@ Trạng thái:
 
 - S1 đã phát hành trong bản 1.14.0-beta.115 (PR kentzu213/izzi-ai#70) và đã kiểm trên máy thật.
 - S2: chủ shop duyệt 4 quyết định theo đề xuất (2026-11-19). Đã phát hành trong bản 1.14.0-beta.116 (PR kentzu213/izzi-ai#71) và đã kiểm trên máy thật.
-- S4: đã code xong (2026-11-19), chưa phát hành. Chi tiết ở mục 6.
+- S4 đã phát hành trong bản 1.14.0-beta.117 (PR kentzu213/izzi-ai#72). Chi tiết ở mục 6.
 - S3 là thiết kế, chưa có code.
 
 Nguồn: một lần audit ngày 2026-11-19. orchestrator kiểm, socrates phản biện, builder lập kế hoạch. Code đối chiếu ở desktop `main` và backend prod `f3bc034`.
@@ -183,6 +183,14 @@ Test kèm theo:
   - Nút "Ngừng dùng" (có hỏi lại) gỡ bản đang dùng; bản chờ duyệt, nếu có, vẫn giữ để duyệt. Lưu không được thì báo lỗi, không báo thành công.
   - Thẻ của Hermes và Content Agent ghi rõ agent đó không đọc hồ sơ.
   - IPC mới: `agentProfiles:forget`.
+
+### Sửa thêm (2026-11-20)
+
+- **Lọc số điện thoại:** bắt cả số có dấu cách, dấu chấm, gạch hay ngoặc ngay sau số 0 đầu (`0 912 345 678`, `0.912.345.678`, `(0) 912 345 678`). Dạng này phải có đủ 9–10 chữ số sau số 0 như số thật, nhóm đầu có từ 2 chữ số, và không có đơn vị tiền phía sau, nên dãy ngắn và khoảng giá bắt đầu bằng 0 (`0 15 30 45 60`, `0.25 0.30 0.45`, `0-500.000.000đ`) vẫn giữ nguyên.
+- **Hai số đứng cạnh nhau:** trước đây chữ số thứ 10 có thể "ăn" số 0 đầu của số kế tiếp, nên số thứ hai lọt (`0912 345 678 0 987 654 321`). Giờ chữ số thứ 10 chỉ được tính khi dính liền chữ số thứ 9.
+- **Còn lọt (có từ trước, chưa sửa):** số ngăn bằng gạch dài hoặc gạch chéo (`0–912–345–678`, `0/912/345/678`). Thêm hai dấu này vào luật sẽ che nhầm khoảng ngày kiểu `01/11/2026-05/11/2026`.
+- **`izziAgent:chat`:** chỉ nhận lời gọi từ cửa sổ của app (`isTrustedMarketingSender`, như các IPC hồ sơ). Lời gọi lạ nhận `untrusted-sender`, không gọi model, không đọc hồ sơ, không ghi phiên.
+- **Director khi không có workspace:** đã kiểm, không cần sửa. Director chỉ chạy khi giữ được hạn mức trên máy chủ cho một workspace. Không có workspace thì lượt chạy dừng ở `quota_unavailable` trước khi dựng prompt, nên không có trường hợp Director chạy mà thiếu hồ sơ.
 
 ## 7. Việc backend, để sau (cần OK; sau 2026-11-24)
 
