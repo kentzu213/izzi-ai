@@ -1,6 +1,13 @@
 {
   "note": "Held-out probes for D1 fix round 1, written by hand from the reviewer's findings and ordinary chat phrasing, not generated from lib/classify.mjs word lists. mustNot cases list the labels they may get; none of them may be approve_decision or praise. keep cases are true positives that must keep their exact label.",
   "mustNot": [
+    { "group": "defer", "text": "để sau hẵng merge", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "lát nữa phát hành", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "từ từ hẵng merge", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "đợi CI xong rồi merge", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "mai phát hành", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "tuần sau merge", "allowed": ["correction", "abstain"] },
+    { "group": "defer", "text": "chờ anh xem lại rồi duyệt", "allowed": ["correction", "abstain", "none"] },
     { "group": "negation-wide", "text": "đừng vội vàng merge", "allowed": ["correction", "abstain"] },
     { "group": "negation-wide", "text": "em đừng tự ý merge", "allowed": ["correction", "abstain"] },
     { "group": "negation-wide", "text": "không bao giờ merge", "allowed": ["correction", "abstain"] },

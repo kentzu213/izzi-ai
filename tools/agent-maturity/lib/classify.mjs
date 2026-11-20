@@ -191,6 +191,8 @@ const VETO = [
   ['cancel', vetoWords(['dừng', 'ngừng', 'huỷ', 'hủy', 'hoãn', 'revert', 'rollback', 'roll back', 'undo', 'cancel'])],
   ['question', vetoWords(['có nên', 'thế nào', 'như nào', 'khi nào', 'lúc nào', 'nào', 'bao giờ', 'bao nhiêu', 'gì', 'sao', 'mấy', 'liệu'])],
   ['shrug', vetoWords(['thôi', 'kệ'])],
+  // Deferral: "để sau hẵng merge", "mai phát hành" postpone the action, so they are not approval yet.
+  ['defer', vetoWords(['để sau', 'hẵng', 'lát', 'từ từ', 'đợi', 'chờ', 'mai', 'tuần sau', 'sau này'])],
   ['contrast', vetoWords(['nhưng', 'tuy nhiên', 'có điều'])],
 ];
 const NEGATOR_WORDS = VETO[0][1];
