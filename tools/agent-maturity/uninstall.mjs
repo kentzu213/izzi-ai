@@ -98,6 +98,10 @@ export function uninstall(opts = {}) {
     if (opts.purge) {
       for (const dir of ['state', 'log']) fs.rmSync(path.join(t.maturity, dir), { recursive: true, force: true });
       for (const file of ['global.json', 'config.json', '.last-cleanup', 'standards.json']) fs.rmSync(path.join(t.maturity, file), { force: true });
+      // The daily refresh's slot markers (.refresh-started-<slot>, and the single marker of the first D2 build).
+      for (const name of fs.existsSync(t.maturity) ? fs.readdirSync(t.maturity) : []) {
+        if (name.startsWith('.refresh-started')) fs.rmSync(path.join(t.maturity, name), { force: true });
+      }
     }
     removeEmptyDir(t.maturity);
     lines.push('uninstalled');

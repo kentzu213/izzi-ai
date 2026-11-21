@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -11,25 +10,20 @@ import { checkTranscripts } from '../metrics/check-repeats.mjs';
 import { checkCorrection, contentTerms, DEFAULT_THRESHOLD, normalizeStandards, scorePair } from '../metrics/checker.mjs';
 import { evaluatePairs, GATE, gateOf } from '../metrics/eval-checker.mjs';
 import { readOwnerPrompts } from '../metrics/transcript-prompts.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES = join(ROOT, 'test', 'fixtures');
 const PAIRS = join(FIXTURES, 'metrics-checker-pairs.json');
 const TRANSCRIPT = join(FIXTURES, 'metrics-checker-transcript.jsonl');
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const scratch = mkdtempSync(join(tmpdir(), 'am-checker-'));
 
-// After D2 installs the hook the real home exists; the tests must leave it exactly as it was.
-function listFiles(dir) {
-  return readdirSync(dir, { recursive: true }).map((p) => join(dir, String(p))).filter((p) => statSync(p).isFile()).sort();
-}
-const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
-const realSnapshot = () => (existsSync(REAL_MATURITY_HOME) ? listFiles(REAL_MATURITY_HOME).map((f) => [f, statSync(f).mtimeMs, sha(f)]) : null);
-const REAL_BEFORE = realSnapshot();
+// After D2 the real home exists and live sessions write it; these tests must leave no trace there (real-home-guard.mjs).
+const REAL_BEFORE = realHomeSnapshot();
 
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.deepEqual(realSnapshot(), REAL_BEFORE, 'real ~/.claude/agent-maturity changed');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 const pairsDoc = () => JSON.parse(readFileSync(PAIRS, 'utf8'));

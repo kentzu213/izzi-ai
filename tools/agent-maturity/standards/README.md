@@ -12,7 +12,8 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 | `project-root.mjs` | Folder -> main git checkout (a worktree counts as the repo it came from); registered-project lookup. |
 | `inject.mjs` | Picks the standards for a session folder and renders the injected block (≤1200 characters). |
 | `import-feedback.mjs` | Imports auto-memory notes of `type: feedback` as candidates. Never promotes, never edits a note. |
-| `refresh.mjs` | The scheduled job's single entry point: export, then import. |
+| `refresh.mjs` | The daily refresh's single entry point: export, then import. |
+| `refresh-if-due.mjs` | SessionStart launcher: starts `refresh.mjs` in the background when the export is ≥20 h old (at most one start per 6-hour slot); prints nothing. |
 | `../hooks/session-start.mjs` | The hook. Reads the export; writes only a log line when the export is stale; fails open (exit 0, no output) on any error. |
 
 ## Lifecycle (who does what)
@@ -194,7 +195,7 @@ U+2060-2064, U+FEFF) are dropped, and `<` `>` become `‹` `›`, so no item can
 **Stale export.** An export whose `exported_at` is missing or older than **7 days** (`MAX_EXPORT_AGE_DAYS` in
 `inject.mjs`) is not injected; the hook appends one line `{ ts, session, ep, type: 'standards_export_stale',
 exported_at, max_age_days: 7 }` to `<AGENT_MATURITY_HOME>/log/events-YYYY-MM.jsonl` instead (timestamps only). The
-daily refresh job keeps the export well inside that window.
+daily refresh keeps the export well inside that window.
 
 **Entrypoints.** The injection runs for every entrypoint: `cli`, `claude-desktop`, the SDKs and `claude -p` (root
 decision 21/11: the owner wants every agent in every project to keep improving). This differs from the D1 nudge,
@@ -202,13 +203,23 @@ which only speaks in interactive sessions. Off everywhere with `AGENT_MATURITY=o
 `config.json`, like the D1 hook. Install/uninstall register and remove it together with the D1 hook; installing for
 real is root's job in D2.
 
-## Scheduled refresh
+## Daily refresh
 
-    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)]
+    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)] [--log-home <dir>]
 
-The one entry point for the scheduled job (root registers it, daily): `exportActive` first (so a failing import never
+The one entry point for the daily refresh: `exportActive` first (so a failing import never
 leaves the hook with stale data), then the feedback-note import below. Prints `{ code, export, import }`; exit 1 when
-the export or the import as a whole failed. Never promotes.
+the export or the import as a whole failed. Never promotes. With `--log-home` it also appends
+`{ ts, type: 'refresh_done', code, standards, export_error, captured, failed, import_error }` (counts and error codes,
+no paths or note text) to that home's event log.
+
+Started by `refresh-if-due.mjs`, a `SessionStart` hook. When `standards.json` is missing or at least 20 hours old, it
+claims the current 6-hour slot by creating `.refresh-started-<slot>` exclusively (so sessions that start together
+launch one refresh), removes older markers, logs `{ ts, type: 'refresh_started' }`, starts `refresh.mjs --log-home
+<home>` as a detached background process (no window, cwd the temp folder) and exits, so no session waits. A refresh
+that fails leaves the old export mtime, so the first session in the next slot tries again. Chosen over an OS
+scheduler: nothing to install outside `~/.claude`, uninstall removes it with the other hooks (`--purge` also removes
+the markers), and the export only matters when a session starts.
 
 ## Importing auto-memory feedback notes
 

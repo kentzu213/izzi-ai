@@ -28,18 +28,43 @@ import {
   userSource,
 } from '../standards/store-cli.mjs';
 import { doorCandidateId, doorEntry, doorSource, doorStandard, doorTopic, rawCli } from './fixtures/door-standard.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const STARIZZI_ROOT = 'F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw';
 const STARIZZI_ID = '2a906db6-a103-5375-b672-ad090f686c7e';
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
+const REAL_BEFORE = realHomeSnapshot();
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-// sha256 only: mtime is left out because another session may touch the real store while these tests run.
+
+// Every record these tests write has a source "claude-session://sess-…" (real Claude session ids are UUIDs) or
+// one of two fixed topic keys. These strings in the real store or vault can only come from a test that escaped
+// its temp store; another session writing the real store mid-run changes its bytes but never adds them.
+const TEST_TRACES = ['claude-session://sess-', 'some-other-memory', 'cli-other-memory'];
+function readIfPresent(p) {
+  try {
+    return statSync(p).isFile() ? readFileSync(p) : null;
+  } catch {
+    return null; // removed or rewritten by another writer between listing and reading
+  }
+}
+function testTraces(store = DEFAULT_STORE, vault = DEFAULT_VAULT) {
+  const files = ['memory.sqlite3', 'memory.sqlite3-wal'].map((f) => join(store, f));
+  if (existsSync(vault)) files.push(...readdirSync(vault, { recursive: true }).map((rel) => join(vault, String(rel))));
+  const hits = [];
+  for (const p of files) {
+    const bytes = readIfPresent(p);
+    if (!bytes) continue;
+    for (const needle of TEST_TRACES) if (bytes.includes(needle)) hits.push(`${p}: ${needle}`);
+  }
+  return hits;
+}
+
+// Diagnostic only (see the last test): another session may change these bytes while the tests run.
 function realStoreDigest() {
   const files = {};
   for (const f of ['memory.sqlite3', 'memory.sqlite3-wal', 'memory.sqlite3-shm']) {
@@ -49,10 +74,10 @@ function realStoreDigest() {
   const h = createHash('sha256');
   if (existsSync(DEFAULT_VAULT)) {
     for (const rel of readdirSync(DEFAULT_VAULT, { recursive: true }).map(String).sort()) {
-      const p = join(DEFAULT_VAULT, rel);
-      if (!statSync(p).isFile()) continue;
+      const bytes = readIfPresent(join(DEFAULT_VAULT, rel));
+      if (!bytes) continue;
       h.update(`${rel.split(sep).join('/')}\0`);
-      h.update(readFileSync(p));
+      h.update(bytes);
     }
   }
   return { files, vault: h.digest('hex') };
@@ -62,7 +87,7 @@ const realAtStart = realStoreDigest();
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-store-')));
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 let n = 0;
@@ -395,7 +420,30 @@ test('without AGENT_MATURITY_TEST the export trusts only the critic store under 
   assert.deepEqual(run({ ...base, criticStore: homeCritic }), { standards: [std.id], skipped: [] }, 'naming the home store is allowed');
 });
 
-test('the real KnowledgeMemory store and vault are unchanged by these tests', (t) => {
-  assert.deepEqual(realStoreDigest(), realAtStart);
-  t.diagnostic(`memory.sqlite3 ${realAtStart.files['memory.sqlite3']}; vault ${realAtStart.vault}`);
+test('the trace scan finds a test string that reached a store or a vault', () => {
+  // Arrange: a store and a vault that each hold one trace, and a clean pair
+  const dir = join(scratch, 'traces');
+  mkdirSync(join(dir, 'store'), { recursive: true });
+  mkdirSync(join(dir, 'vault', 'notes'), { recursive: true });
+  writeFileSync(join(dir, 'store', 'memory.sqlite3'), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from('claude-session://sess-1/x')]));
+  writeFileSync(join(dir, 'vault', 'notes', 'a.md'), 'topic: cli-other-memory');
+  mkdirSync(join(dir, 'clean-store'), { recursive: true });
+  mkdirSync(join(dir, 'clean-vault'), { recursive: true });
+  writeFileSync(join(dir, 'clean-store', 'memory.sqlite3'), 'claude-session://0f2c9a1e-real-session/x');
+
+  // Act
+  const dirty = testTraces(join(dir, 'store'), join(dir, 'vault'));
+  const clean = testTraces(join(dir, 'clean-store'), join(dir, 'clean-vault'));
+
+  // Assert
+  assert.equal(dirty.length, 2, dirty.join('\n'));
+  assert.deepEqual(clean, []);
+});
+
+test('nothing these tests write reaches the real KnowledgeMemory store or vault', (t) => {
+  // Another session may write the real store while this file runs, so its bytes are not compared;
+  // only strings that these tests alone write are looked for.
+  assert.deepEqual(testTraces(), []);
+  const changed = JSON.stringify(realStoreDigest()) !== JSON.stringify(realAtStart);
+  t.diagnostic(changed ? 'real store or vault changed during the run (another writer); no test traces in it' : 'real store and vault byte-identical');
 });
