@@ -1,0 +1,312 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, sep } from 'node:path';
+import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import { buildContext } from '../standards/inject.mjs';
+import { checkoutInfo, samePath } from '../standards/project-root.mjs';
+import {
+  DEFAULT_STORE,
+  DEFAULT_VAULT,
+  StoreCliError,
+  buildExport,
+  capture,
+  cliAvailable,
+  exportActive,
+  get,
+  listProjects,
+  promote,
+  pythonEnv,
+  retract,
+  runCli,
+  supersede,
+  userSource,
+} from '../standards/store-cli.mjs';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+const STARIZZI_ROOT = 'F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw';
+const STARIZZI_ID = '2a906db6-a103-5375-b672-ad090f686c7e';
+const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
+const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
+delete ENV.AGENT_MATURITY_HOME;
+const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
+
+const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+// sha256 only: mtime is left out because another session may touch the real store while these tests run.
+function realStoreDigest() {
+  const files = {};
+  for (const f of ['memory.sqlite3', 'memory.sqlite3-wal', 'memory.sqlite3-shm']) {
+    const p = join(DEFAULT_STORE, f);
+    files[f] = existsSync(p) ? sha(readFileSync(p)) : null;
+  }
+  const h = createHash('sha256');
+  if (existsSync(DEFAULT_VAULT)) {
+    for (const rel of readdirSync(DEFAULT_VAULT, { recursive: true }).map(String).sort()) {
+      const p = join(DEFAULT_VAULT, rel);
+      if (!statSync(p).isFile()) continue;
+      h.update(`${rel.split(sep).join('/')}\0`);
+      h.update(readFileSync(p));
+    }
+  }
+  return { files, vault: h.digest('hex') };
+}
+const realAtStart = realStoreDigest();
+
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-store-')));
+after(() => {
+  rmSync(scratch, { recursive: true, force: true });
+  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+});
+
+let n = 0;
+function newStore() {
+  n += 1;
+  const dir = join(scratch, `s${n}`);
+  mkdirSync(join(dir, 'store'), { recursive: true });
+  mkdirSync(join(dir, 'vault'), { recursive: true });
+  return { store: join(dir, 'store'), vault: join(dir, 'vault'), out: join(dir, 'home', 'standards.json'), env: ENV };
+}
+
+const candidate = (topic, summary, session, extra = {}) => ({
+  topic,
+  title: `Chuẩn ${topic}`,
+  summary,
+  source: userSource(session, '2026-11-21T01:00:00Z'),
+  ...extra,
+});
+const ids = (list) => list.map((s) => s.id);
+
+test('capture → promote → export → supersede → export on a temp store', { skip }, (t) => {
+  const s = newStore();
+  const first = capture(candidate('verify-before-done', 'Báo xong phải kèm lệnh test và mã thoát.', 'sess-1'), s);
+  assert.equal(first.state, 'candidate');
+  assert.equal(first.scope, 'user');
+  assert.equal(first.topic_key, 'dev-standard/verify-before-done');
+  assert.equal(exportActive(s).standards.length, 0, 'a candidate is not exported');
+
+  assert.equal(promote(first.id, 'user_instruction', s).state, 'active');
+  const e1 = exportActive(s);
+  assert.deepEqual(ids(e1.standards), [first.id]);
+  assert.equal(e1.standards[0].topic, 'verify-before-done');
+  assert.deepEqual(JSON.parse(readFileSync(s.out, 'utf8')), e1, 'the file holds what was returned');
+
+  const second = capture(candidate('verify-before-done', 'Báo xong phải kèm lệnh test, mã thoát và log.', 'sess-2'), s);
+  promote(second.id, 'user_instruction', s);
+  const clash = exportActive(s);
+  assert.deepEqual(ids(clash.standards), [], 'two active standards on one topic are both held back');
+  assert.deepEqual(clash.skipped.map((k) => k.reason), ['conflict', 'conflict']);
+
+  const old = supersede(first.id, second.id, 'owner replaced the wording', s);
+  assert.equal(old.state, 'superseded');
+  assert.equal(old.superseded_by, second.id);
+  const e2 = exportActive(s);
+  assert.deepEqual(ids(e2.standards), [second.id]);
+  assert.match(e2.standards[0].summary, /log/);
+  assert.equal(get(first.id, s).state, 'superseded', 'history is kept');
+
+  retract(second.id, 'owner dropped it', s);
+  assert.deepEqual(exportActive(s).standards, []);
+  t.diagnostic(`export1=[${ids(e1.standards)}] conflict-skipped=${clash.skipped.length} export2=[${ids(e2.standards)}] old=${first.id} superseded_by=${old.superseded_by}`);
+});
+
+test('project scope from a worktree path lands on the main checkout project', { skip }, (t) => {
+  const s = newStore();
+  const info = checkoutInfo(REPO_ROOT);
+  assert.ok(info.root, 'the repo is a git checkout');
+  const rec = capture(candidate('repo-only', 'Chạy test agent-maturity trước khi mở PR.', 'sess-3', { scope: 'project', projectPath: join(REPO_ROOT, 'tools') }), s);
+  const projects = listProjects(s);
+  assert.equal(projects.length, 1);
+  assert.ok(samePath(projects[0].root, info.root), `${projects[0].root} vs ${info.root}`);
+  assert.equal(rec.project_id, projects[0].id);
+  if (samePath(info.root, STARIZZI_ROOT)) assert.equal(rec.project_id, STARIZZI_ID);
+
+  const again = capture(candidate('repo-only-2', 'Ghi bằng chứng vào mô tả PR.', 'sess-3', { scope: 'project', projectPath: REPO_ROOT }), s);
+  assert.equal(again.project_id, rec.project_id);
+  assert.equal(listProjects(s).length, 1, 'the main checkout is registered once');
+
+  promote(rec.id, 'user_instruction', s);
+  const userStd = capture(candidate('all-projects', 'Áp cho mọi dự án.', 'sess-3'), s);
+  promote(userStd.id, 'user_instruction', s);
+  const e = exportActive(s);
+  assert.deepEqual(e.projects.map((p) => p.id), [rec.project_id]);
+  assert.equal(buildContext(e, scratch).includes('Chuẩn repo-only'), false, 'another folder does not see the project standard');
+
+  // End to end: the real hook reads this export and injects it for a session opened in the worktree.
+  const env = { ...ENV, AGENT_MATURITY_HOME: join(s.out, '..') };
+  delete env.AGENT_MATURITY;
+  const hook = spawnSync(process.execPath, [join(ROOT, 'hooks', 'session-start.mjs')], {
+    input: JSON.stringify({ session_id: 'e2e', hook_event_name: 'SessionStart', source: 'startup', cwd: REPO_ROOT }), encoding: 'utf8', env, timeout: 15_000,
+  });
+  assert.equal(hook.status, 0);
+  const block = JSON.parse(hook.stdout).hookSpecificOutput.additionalContext;
+  assert.ok(block.includes('Chuẩn repo-only'));
+  assert.ok(block.includes('Chuẩn all-projects'));
+  assert.ok(block.length <= 1200);
+  t.diagnostic(`worktree ${REPO_ROOT} -> project ${rec.project_id} root ${projects[0].root}; injected block ${block.length} chars`);
+});
+
+test('user is the default scope; project scope needs a project; other scopes are refused', { skip }, () => {
+  const s = newStore();
+  assert.equal(capture(candidate('default-scope', 'Mặc định áp cho mọi dự án.', 'sess-4'), s).scope, 'user');
+  assert.throws(() => capture(candidate('no-project', 'x', 'sess-4', { scope: 'project' }), s), (e) => e instanceof StoreCliError && e.code === 'bad_input');
+  assert.throws(() => capture(candidate('role', 'x', 'sess-4', { scope: 'role' }), s), (e) => e.code === 'bad_input');
+  assert.throws(() => capture(candidate('', 'x', 'sess-4'), s), (e) => e.code === 'bad_input');
+});
+
+test('records outside the dev-standard topic are never exported', { skip }, () => {
+  const s = newStore();
+  const file = join(scratch, `other-${n}.json`);
+  writeFileSync(file, JSON.stringify({
+    scope: 'user', kind: 'fact', topic_key: 'some-other-memory', title: 'Not a standard', summary: 'Other knowledge.',
+    source: { type: 'user', uri: 'claude-session://x/2026-11-21' }, author: 'root', evidence: 'direct', confidence: 0.9,
+  }));
+  const other = runCli(['capture', '--file', file], s);
+  runCli(['promote', other.id, '--basis', 'user_instruction'], s);
+  assert.deepEqual(exportActive(s).standards, []);
+});
+
+test('buildExport holds back expired, changed-source, conflicting and other-scope records with a reason', () => {
+  const rec = (id, extra = {}) => ({
+    id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${id}`, kind: 'procedure', title: id, summary: id,
+    review_after: '2099-01-01T00:00:00Z', source_current: true, expired: false, conflicts: [], ...extra,
+  });
+  const out = buildExport({
+    projects: [{ id: 'p1', root: 'C:/p1', title: 'P1' }, { id: 'p2', root: 'C:/p2', title: 'P2' }],
+    records: [
+      rec('ok'),
+      rec('proj', { scope: 'project', project_id: 'p1' }),
+      rec('cand', { state: 'candidate' }),
+      rec('old', { expired: true }),
+      rec('changed', { source_current: false }),
+      rec('clash', { conflicts: ['x'] }),
+      rec('role', { scope: 'role' }),
+      rec('foreign', { topic_key: 'other' }),
+    ],
+  }, new Date('2026-11-21T00:00:00Z'));
+  assert.deepEqual(ids(out.standards), ['ok', 'proj']);
+  assert.deepEqual(out.projects, [{ id: 'p1', root: 'C:/p1' }]);
+  assert.deepEqual(out.skipped, [
+    { id: 'old', topic: 'old', reason: 'review_due' },
+    { id: 'changed', topic: 'changed', reason: 'source_changed' },
+    { id: 'clash', topic: 'clash', reason: 'conflict' },
+    { id: 'role', topic: 'role', reason: 'unsupported_scope' },
+  ]);
+  assert.equal(out.schema, 'agent-maturity/standards@1');
+  assert.equal(out.exported_at, '2026-11-21T00:00:00.000Z');
+});
+
+test('AGENT_MATURITY_TEST=1 refuses the real store, vault and ~/.claude export', () => {
+  const tmp = newStore();
+  const refused = (e) => e instanceof StoreCliError && e.code === 'refuse_real_store';
+  assert.throws(() => capture(candidate('x', 'y', 'z'), { env: ENV }), refused);
+  assert.throws(() => promote('00000000-0000-0000-0000-000000000000', 'user_instruction', { store: DEFAULT_STORE, vault: tmp.vault, env: ENV }), refused);
+  assert.throws(() => retract('00000000-0000-0000-0000-000000000000', 'r', { store: tmp.store, vault: DEFAULT_VAULT, env: ENV }), refused);
+  assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, env: ENV }), refused, 'default export target is the real ~/.claude');
+});
+
+test('CLI rejections surface as StoreCliError without payload text', { skip }, () => {
+  const s = newStore();
+  const secret = 'owner.private@example.com';
+  let caught = null;
+  try {
+    capture(candidate('leaky', `Gửi báo cáo cho ${secret}`, 'sess-5'), s);
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught instanceof StoreCliError);
+  assert.equal(caught.code, 'cli_failed');
+  assert.ok(!caught.message.includes(secret));
+  assert.throws(() => promote('11111111-1111-1111-1111-111111111111', 'user_instruction', s), (e) => e.code === 'cli_failed');
+});
+
+test('the command line re-exports after promote and prints a summary', { skip }, () => {
+  const s = newStore();
+  const rec = capture(candidate('cli-flow', 'Dùng đường dẫn tuyệt đối trong worktree.', 'sess-6'), s);
+  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--basis', 'user_instruction', '--store', s.store, '--vault', s.vault, '--out', s.out], {
+    encoding: 'utf8', env: ENV, timeout: 60_000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const printed = JSON.parse(r.stdout);
+  assert.equal(printed.result.state, 'active');
+  assert.equal(printed.export.standards, 1);
+  assert.deepEqual(ids(JSON.parse(readFileSync(s.out, 'utf8')).standards), [rec.id]);
+  const bad = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--store', s.store, '--vault', s.vault, '--out', s.out], { encoding: 'utf8', env: ENV, timeout: 60_000 });
+  assert.equal(bad.status, 1);
+});
+
+test('buildExport holds back a record whose review_after has passed, even when the store did not flag it', () => {
+  const rec = (id, reviewAfter) => ({
+    id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${id}`, kind: 'procedure', title: id, summary: id,
+    review_after: reviewAfter, source_current: true, expired: false, conflicts: [],
+  });
+  const out = buildExport({ projects: [], records: [rec('ok', '2026-12-01T00:00:00Z'), rec('due', '2026-11-20T00:00:00Z'), rec('none', null)] }, new Date('2026-11-21T00:00:00Z'));
+  assert.deepEqual(ids(out.standards), ['ok']);
+  assert.deepEqual(out.skipped, [{ id: 'due', topic: 'due', reason: 'review_due' }, { id: 'none', topic: 'none', reason: 'review_due' }]);
+});
+
+test('pythonEnv drops PYTHONPATH, PYTHONHOME and PYTHONSTARTUP in any letter case and keeps UTF-8 output', () => {
+  const env = pythonEnv({ PATH: 'p', PYTHONPATH: 'a', PythonHome: 'b', pythonstartup: 'c', PYTHONIOENCODING: 'latin-1', OTHER: 'o' });
+  assert.deepEqual(env, { PATH: 'p', OTHER: 'o', PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' });
+});
+
+test('the CLI runs isolated: planted modules on PYTHONPATH or in the caller folder never load', { skip }, () => {
+  const s = newStore();
+  const planted = join(scratch, `planted-${n}`);
+  mkdirSync(planted);
+  const marker = join(scratch, `planted-ran-${n}.txt`);
+  const code = `open(${JSON.stringify(marker)}, "w").write("ran")\nraise SystemExit(97)\n`;
+  for (const m of ['argparse.py', 'json.py', 'memory_store.py', 'runpy.py']) writeFileSync(join(planted, m), code);
+  const env = { ...ENV, PYTHONPATH: planted, PYTHONHOME: join(planted, 'no-such-home'), PYTHONSTARTUP: join(planted, 'json.py') };
+  const previous = process.cwd();
+  process.chdir(planted);
+  try {
+    const rec = capture(candidate('isolated-python', 'Chạy CLI ở chế độ cô lập.', 'sess-7'), { ...s, env });
+    assert.equal(rec.state, 'candidate');
+    assert.equal(exportActive({ ...s, env }).standards.length, 0);
+  } finally {
+    process.chdir(previous);
+  }
+  assert.equal(existsSync(marker), false, 'no planted module ran');
+});
+
+test('the real-store guard sees through junctions and 8.3 names, also for paths not created yet', { skip: !existsSync(DEFAULT_STORE) && 'no real store on this machine' }, () => {
+  const tmp = newStore();
+  // A missing Python makes any call that slips past the guard fail before it can touch a store.
+  const noPython = join(scratch, 'no-python.exe');
+  const refused = (e) => e instanceof StoreCliError && e.code === 'refuse_real_store';
+  const codexLink = join(scratch, `codex-link-${n}`);
+  const storeLink = join(scratch, `store-link-${n}`);
+  symlinkSync(dirname(DEFAULT_STORE), codexLink, 'junction');
+  symlinkSync(DEFAULT_STORE, storeLink, 'junction');
+  try {
+    assert.throws(() => capture(candidate('x', 'y', 'z'), { store: storeLink, vault: tmp.vault, python: noPython, env: ENV }), refused);
+    assert.throws(() => exportActive({ store: join(codexLink, 'KnowledgeMemory'), vault: tmp.vault, out: tmp.out, python: noPython, env: ENV }), refused);
+    assert.throws(() => exportActive({ store: tmp.store, vault: join(codexLink, 'KnowledgeVault'), out: tmp.out, python: noPython, env: ENV }), refused);
+    assert.throws(() => listProjects({ store: join(codexLink, 'KnowledgeMemory', 'not-created-yet'), vault: tmp.vault, python: noPython, env: ENV }), refused);
+  } finally {
+    unlinkSync(codexLink);
+    unlinkSync(storeLink);
+  }
+  const homeLink = join(scratch, `home-link-${n}`);
+  symlinkSync(join(homedir(), '.claude'), homeLink, 'junction');
+  try {
+    assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, out: join(homeLink, 'agent-maturity-guard-test', 'standards.json'), python: noPython, env: ENV }), refused);
+  } finally {
+    unlinkSync(homeLink);
+  }
+  // os.tmpdir() may be an 8.3 path (C:\Users\ABCDEF~1\...); its home part then names the real home another way.
+  const shortHome = join(tmpdir(), '..', '..', '..');
+  if (!samePath(shortHome, homedir()) && samePath(realpathSync.native(shortHome), homedir())) {
+    assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, out: join(shortHome, '.claude', 'agent-maturity-guard-test', 'standards.json'), python: noPython, env: ENV }), refused);
+  }
+});
+
+test('the real KnowledgeMemory store and vault are unchanged by these tests', (t) => {
+  assert.deepEqual(realStoreDigest(), realAtStart);
+  t.diagnostic(`memory.sqlite3 ${realAtStart.files['memory.sqlite3']}; vault ${realAtStart.vault}`);
+});

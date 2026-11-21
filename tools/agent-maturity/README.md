@@ -19,15 +19,18 @@ short note asking the agent to consider one upgrade question at the end of its r
     node tools/agent-maturity/install.mjs [--claude-home <dir>] [--settings <file>]
 
 Backs up `settings.json` byte-for-byte, copies the runtime into `<claude-home>/agent-maturity/bin/` and the skill
-into `<claude-home>/skills/upgrade-checkpoint/`, then adds one hook group (timeout 5 s). Re-running does not add a
-second group. It stops if `settings.json` changes while it runs.
+into `<claude-home>/skills/upgrade-checkpoint/`, then adds two hook groups, `UserPromptSubmit` (upgrade checkpoint)
+and `SessionStart` (dev standards, see `standards/README.md`), each with timeout 5 s. Re-running adds only a missing
+group, never a second copy; upgrading an install from before D3 keeps its original backup when `settings.json` was
+not changed since. It stops if `settings.json` changes while it runs.
 
 ## Uninstall
 
     node tools/agent-maturity/uninstall.mjs [--dry-run] [--purge]
 
-Restores `settings.json` byte-for-byte when nothing else changed it since install; otherwise removes only this
-hook group and keeps the backup. State and log stay unless `--purge`.
+Restores `settings.json` byte-for-byte when nothing else changed it since install and the backup holds no
+agent-maturity hook; otherwise removes only these two hook groups and keeps the backup. State and log stay unless
+`--purge`.
 
 ## Turn off
 
