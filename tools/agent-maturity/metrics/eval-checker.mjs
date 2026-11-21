@@ -12,10 +12,69 @@ import { num } from './format.mjs';
 import { readOwnerPrompts } from './transcript-prompts.mjs';
 
 const USAGE = 'usage: node tools/agent-maturity/metrics/eval-checker.mjs --pairs <file> [--threshold n] [--json]';
-// Part 2 gate from docs/izzi-v2/PLAN.md (D5 row): precision >= 0.8 on >= 30 labelled pairs (proposed threshold).
-export const GATE = { minPairs: 30, minPrecision: 0.8 };
+// Part 2 gate (docs/izzi-v2/PLAN.md, D5 row: precision >= 0.8 on >= 30 labelled pairs), made strict enough that a
+// handful of lucky hits cannot pass it: the 95% Clopper-Pearson lower bound of precision must reach 0.8, which needs
+// at least 17 predicted repeats with no false positive.
+export const GATE = { minPairs: 30, minPredictedRepeats: 10, minDistinctCorrections: 10, minPrecisionLowerBound: 0.8, confidence: 0.95 };
+const BISECT_STEPS = 60;
 
 const ratio = (n, d) => (d === 0 ? null : n / d);
+
+// Clopper-Pearson, copied from D0 eval/eval-gold.mjs.
+// P(X <= k) for X ~ Binomial(n, p), summed in log space so a large n does not underflow the first term.
+function binomCdf(k, n, p) {
+  if (k < 0) return 0;
+  if (k >= n || p <= 0) return 1;
+  if (p >= 1) return 0;
+  const step = Math.log(p) - Math.log1p(-p);
+  let logTerm = n * Math.log1p(-p);
+  let sum = Math.exp(logTerm);
+  for (let i = 1; i <= k; i += 1) {
+    logTerm += Math.log((n - i + 1) / i) + step;
+    sum += Math.exp(logTerm);
+  }
+  return Math.min(1, sum);
+}
+
+// Smallest p in [0, 1] where holds(p) is true; holds must switch once from false to true as p grows.
+function bisect(holds) {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < BISECT_STEPS; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (holds(mid)) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Exact (Clopper-Pearson) two-sided interval for x successes in n trials; null when n is 0.
+export function clopperPearson(x, n, confidence = GATE.confidence) {
+  if (n === 0) return null;
+  const tail = (1 - confidence) / 2;
+  const lower = x === 0 ? 0 : bisect((p) => 1 - binomCdf(x - 1, n, p) >= tail);
+  const upper = x === n ? 1 : bisect((p) => binomCdf(x, n, p) <= tail);
+  return { lower, upper };
+}
+
+// Every check must pass; each carries its value so a failed gate says which minimum it missed.
+export function gateOf({ pairs, tp, fp, distinctCorrections }) {
+  const ci = clopperPearson(tp, tp + fp);
+  const check = (name, value, min) => ({ name, value, min, passed: value !== null && value >= min });
+  const checks = [
+    check('pairs', pairs, GATE.minPairs),
+    check('predictedRepeats', tp + fp, GATE.minPredictedRepeats),
+    check('distinctCorrections', distinctCorrections, GATE.minDistinctCorrections),
+    check('precisionLowerBound', ci === null ? null : ci.lower, GATE.minPrecisionLowerBound),
+  ];
+  return { ...GATE, ci, checks, passed: checks.every((c) => c.passed) };
+}
+
+// Identity of the correction behind a pair, kept in memory only, so one correction scored against several standards
+// counts once.
+const correctionKey = (c, baseDir) => (typeof c.text === 'string'
+  ? JSON.stringify(['text', c.text, c.project_root ?? null, c.project_id ?? null, c.at ?? null])
+  : JSON.stringify(['line', path.resolve(baseDir, c.transcript).toLowerCase(), c.uuid]));
 
 function invalid(message) {
   throw new Error(`pairs file: ${message}`);
@@ -60,6 +119,7 @@ export async function evaluatePairs(doc, { threshold = DEFAULT_THRESHOLD, baseDi
   const cache = new Map();
   const results = [];
   const unresolved = [];
+  const corrections = new Set();
   for (const pair of doc.pairs) {
     const standard = standards.get(pair.standard);
     const correction = standard ? await resolveCorrection(pair.correction, baseDir, cache) : null;
@@ -67,6 +127,7 @@ export async function evaluatePairs(doc, { threshold = DEFAULT_THRESHOLD, baseDi
       unresolved.push(pair.id);
       continue;
     }
+    corrections.add(correctionKey(pair.correction, baseDir));
     const s = scorePair(correction, standard);
     results.push({
       id: pair.id,
@@ -91,7 +152,8 @@ export async function evaluatePairs(doc, { threshold = DEFAULT_THRESHOLD, baseDi
     precision,
     recall: ratio(tp, tp + fn),
     accuracy: ratio(tp + tn, results.length),
-    gate: { ...GATE, passed: results.length >= GATE.minPairs && precision !== null && precision >= GATE.minPrecision },
+    distinctCorrections: corrections.size,
+    gate: gateOf({ pairs: results.length, tp, fp, distinctCorrections: corrections.size }),
     unresolved,
     results,
   };
@@ -102,13 +164,25 @@ const whyNot = (x) => {
   if (!x.scopeMatched) return ' (khác phạm vi)';
   return x.eligible ? '' : ' (chuẩn đã hết hiệu lực hoặc có sau lần sửa)';
 };
+const CHECK_LABELS = {
+  pairs: 'cặp có nhãn',
+  predictedRepeats: 'cặp máy đoán trùng',
+  distinctCorrections: 'lần sửa khác nhau',
+  precisionLowerBound: 'cận dưới khoảng tin cậy 95% của precision',
+};
+const checkLine = (c) => {
+  const value = c.name === 'precisionLowerBound' ? num(c.value, 3) : c.value;
+  const min = c.name === 'precisionLowerBound' ? num(c.min, 1) : c.min;
+  return `  ${c.passed ? 'đạt' : 'CHƯA'}: ${CHECK_LABELS[c.name]} ${value} (cần từ ${min})`;
+};
 
 function formatText(r) {
   const lines = [
     `Checker lỗi bị nhắc lại v1, ngưỡng ${num(r.threshold, 2)}: ${r.pairs} cặp có nhãn, ${r.unresolved.length} cặp không đọc được`
       + `${r.unresolved.length ? ` (${r.unresolved.join(', ')})` : ''}`,
     `precision ${num(r.precision, 3)} (${r.tp}/${r.tp + r.fp}) · recall ${num(r.recall, 3)} (${r.tp}/${r.tp + r.fn}) · accuracy ${num(r.accuracy, 3)}`,
-    `Cổng phần 2 (precision từ ${num(r.gate.minPrecision, 1)} trên ít nhất ${r.gate.minPairs} cặp): ${r.gate.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}`,
+    `Cổng phần 2: ${r.gate.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}`,
+    ...r.gate.checks.map(checkLine),
     ...r.results.map((x) => `${x.id} ${x.standard} nhãn=${yesNo(x.label)} máy=${yesNo(x.predicted)} ${num(x.confidence, 2)}`
       + `${x.label === x.predicted ? '' : ' SAI'}${whyNot(x)}`),
   ];

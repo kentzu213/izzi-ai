@@ -14,28 +14,44 @@ import { readOwnerPrompts } from './transcript-prompts.mjs';
 
 const USAGE = 'usage: node tools/agent-maturity/metrics/check-repeats.mjs --standards <file> --transcript <file> [--transcript <file>...] [--threshold n] [--json]';
 
-// Prompts are classified with the D1 classifier, so the corrections checked are the ones the hook logs.
-export async function checkTranscripts({ standards, files, threshold = DEFAULT_THRESHOLD }) {
+// Prompts are classified with the D1 classifier, so the corrections checked are the ones the hook logs. Prompts follow
+// the D0 rules (readOwnerPrompts); wrapper prompts and checkpoint answers are not counted, as in the report.
+export async function checkTranscripts({ standards, files, threshold = DEFAULT_THRESHOLD, warn }) {
   let prompts = 0;
+  let checkpointAnswers = 0;
   const matches = [];
   for (const file of files) {
-    for (const p of await readOwnerPrompts(file)) {
+    for (const p of await readOwnerPrompts(file, warn ? { warn } : {})) {
       const cls = classifyPrompt(p.text);
       if (isWrapperPrompt(cls)) continue;
+      if (p.checkpointAnswer) {
+        checkpointAnswers += 1;
+        continue;
+      }
       prompts += 1;
       if (!CORRECTION_LABELS.has(cls.label)) continue;
       const result = checkCorrection({ text: p.text, project_root: p.cwd, at: p.at }, standards, { threshold });
       matches.push({ transcript: path.basename(file), uuid: p.uuid, at: p.at, label: cls.label, ...result });
     }
   }
-  return { threshold, transcripts: files.length, prompts, corrections: matches.length, repeats: matches.filter((m) => m.repeat).length, matches };
+  return {
+    threshold,
+    transcripts: files.length,
+    prompts,
+    checkpointAnswers,
+    corrections: matches.length,
+    repeats: matches.filter((m) => m.repeat).length,
+    matches,
+  };
 }
 
 function formatText(r) {
   const lines = [
     `Checker lỗi bị nhắc lại v1 (chưa chấm trên cặp thật), ngưỡng ${num(r.threshold, 2)}`,
-    `Chuẩn: ${r.standards.usable} dùng được, ${r.standards.unusable} không còn hiệu lực, ${r.standards.skipped} bản ghi bỏ qua`,
-    `Transcript: ${r.transcripts}, câu lệnh: ${r.prompts}, lần sửa đã xét: ${r.corrections}, trùng chuẩn có trước: ${r.repeats}`,
+    `Chuẩn: ${r.standards.usable} dùng được, ${r.standards.unusable} không còn hiệu lực, ${r.standards.skipped} bản ghi bỏ qua, `
+      + `${r.standards.unmatchable} chuẩn dự án không khớp được thư mục nào (chỉ có project_id lạ)`,
+    `Transcript: ${r.transcripts}, câu lệnh: ${r.prompts} (không tính ${r.checkpointAnswers} câu trả lời checkpoint), `
+      + `lần sửa đã xét: ${r.corrections}, trùng chuẩn có trước: ${r.repeats}`,
     ...r.matches.map((m) => `${m.at ?? '-'} ${m.transcript} ${m.uuid ?? '-'} ${m.label} `
       + `${m.repeat ? `trùng ${m.standardId}` : 'không trùng'} ${num(m.confidence, 2)}`),
   ];
@@ -67,7 +83,7 @@ async function main(argv) {
 
   const result = await checkTranscripts({ standards: loaded.standards, files: args.transcript, threshold });
   const usable = loaded.standards.filter((s) => s.usable).length;
-  const out = { ...result, standards: { usable, unusable: loaded.standards.length - usable, skipped: loaded.skipped } };
+  const out = { ...result, standards: { usable, unusable: loaded.standards.length - usable, skipped: loaded.skipped, unmatchable: loaded.unmatchable } };
   process.stdout.write(args.json ? `${JSON.stringify(out, null, 2)}\n` : formatText(out));
   return 0;
 }

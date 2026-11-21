@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { parseBaseline, compareToBaseline } from '../metrics/baseline.mjs';
-import { computeMetrics, FATIGUE_TRIGGER, FATIGUE_WINDOW, REOPEN_WINDOW_PROMPTS } from '../metrics/compute.mjs';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+import { BASELINE_SCHEMA, classifierVersion, compareToBaseline, parseBaseline } from '../metrics/baseline.mjs';
+import { computeMetrics, FATIGUE_TRIGGER, FATIGUE_WINDOW, METRICS_VERSION, REOPEN_WINDOW_PROMPTS } from '../metrics/compute.mjs';
 import { parseEventLines } from '../metrics/events.mjs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -40,12 +43,12 @@ test('event lines: malformed lines and lines without a valid ts or type are skip
 
 test('fixture log: prompt and correction counts, clarify counted as a correction', () => {
   const m = fixtureMetrics();
-  assert.equal(m.prompts, 23);
-  assert.deepEqual(m.excluded, { wrapperPrompts: 1, nonInteractivePrompts: 2, noSession: 0 });
+  assert.equal(m.prompts, 21);
+  assert.deepEqual(m.excluded, { wrapperPrompts: 1, nonInteractivePrompts: 2, noSession: 0, checkpointAnswers: 2 });
   assert.equal(m.corrections.correction, 4);
   assert.equal(m.corrections.clarify, 1);
   assert.equal(m.corrections.total, 5);
-  close(m.corrections.per100Prompts, (5 * 100) / 23);
+  close(m.corrections.per100Prompts, (5 * 100) / 21);
 });
 
 test('fixture log: milestones and first-pass approval use corrections since the previous milestone', () => {
@@ -87,7 +90,7 @@ test('fixture log: strict mode off, fatigue window reads every asked outcome inc
 
 test('a later --since drops earlier prompts and milestones but keeps the open task corrections', () => {
   const m = fixtureMetrics({ sinceMs: Date.parse('2026-11-13T00:00:00Z') });
-  assert.equal(m.prompts, 10);
+  assert.equal(m.prompts, 9);
   assert.equal(m.milestones, 3);
   assert.equal(m.firstPass.passed, 3);
   assert.equal(m.checkpoints.nudged.total, 1);
@@ -201,42 +204,118 @@ test('reopen: wrapper prompts do not use up the window and sessions do not mix',
   assert.equal(m.excluded.wrapperPrompts, 3);
 });
 
-test('baseline: both instruments parsed, classifier is like for like, gold is reference only', () => {
-  const baseline = parseBaseline(JSON.parse(fixture('metrics-baseline.json')));
-  const comparisons = compareToBaseline(fixtureMetrics(), baseline);
-  assert.deepEqual(comparisons.map((c) => [c.instrument, c.likeForLike]), [['classifier', true], ['gold', false]]);
-  const [classifier, gold] = comparisons;
-  close(classifier.firstPassRate.current, 3 / 7);
-  assert.equal(classifier.firstPassRate.baseline, 0.5);
-  close(classifier.firstPassRate.delta, 3 / 7 - 0.5);
-  assert.equal(classifier.correctionsPer100.baseline, 2.5);
-  close(classifier.correctionsPer100.delta, (5 * 100) / 23 - 2.5);
+test('checkpoint answers (accept/edit/skip) are not owner prompts; an ignored ask stays one', () => {
+  const answer = (minute, label, value) => [
+    ev(minute, 'prompt', { label, turn: minute }),
+    ev(minute, 'checkpoint_outcome', { outcome: value, initiated: 'nudge', turn: minute }),
+  ];
+  const events = [
+    ev(0, 'prompt', { label: 'approve_decision', turn: 0 }), ev(0, 'milestone', { corrections: 0, nudged: true, turn: 0 }),
+    ...answer(1, 'none', 'accept'),
+    ...answer(2, 'correction', 'edit'),
+    ...answer(3, 'none', 'skip'),
+    ...answer(4, 'none', 'ignored'),
+    ev(5, 'prompt', { label: 'none', turn: 5 }),
+    ev(6, 'prompt', { label: 'correction', turn: 6 }),
+  ];
+  const m = computeMetrics(events, { sinceMs: SINCE, nowMs: NOW });
+  assert.equal(m.prompts, 4);
+  assert.equal(m.excluded.checkpointAnswers, 3);
+  assert.equal(m.corrections.total, 1, 'the edit answer is not a correction');
+  // Answers do not use up the reopen window: ignored, none, then the correction is the 3rd owner prompt.
+  assert.equal(m.reopened.reopened, 1);
+  // A prompt of another hook run (other ts or turn) is not taken for the answer.
+  const other = computeMetrics([ev(1, 'prompt', { label: 'none', turn: 1 }), ev(2, 'checkpoint_outcome', { outcome: 'accept', initiated: 'agent', turn: 1 })], { sinceMs: SINCE, nowMs: NOW });
+  assert.equal(other.prompts, 1);
+});
+
+const lfHash = (file) => createHash('sha256').update(readFileSync(file, 'utf8').replace(/\r\n/g, '\n')).digest('hex').slice(0, 12);
+const CURRENT = classifierVersion();
+
+function baselineDoc(extra = {}) {
+  return {
+    schema: 'agent-maturity/baseline@1',
+    definitions: 'metrics@1',
+    classifierVersion: CURRENT,
+    split: 'test',
+    n: { prompts: { classifier: 252, gold: 252 }, milestones: { classifier: 13, gold: 60 } },
+    instruments: {
+      classifier: { correctionsPer100: 3.2, firstPassRate: 0.9, reopenedRate: 0.1 },
+      gold: { correctionsPer100: 15.1, firstPassRate: 0.817, reopenedRate: 0.133 },
+    },
+    ownerReviewed: false,
+    ...extra,
+  };
+}
+
+test('metrics@1 and the classifier version follow the D0 rule (sha256 of LF classify.mjs, 12 hex)', () => {
+  assert.equal(METRICS_VERSION, 'metrics@1');
+  assert.equal(BASELINE_SCHEMA, 'agent-maturity/baseline@1');
+  assert.equal(CURRENT, lfHash(fileURLToPath(new URL('../lib/classify.mjs', import.meta.url))));
+  assert.match(CURRENT, /^[0-9a-f]{12}$/);
+});
+
+test('baseline@1 like for like: classifier deltas for all three rates, gold never gets a delta', () => {
+  const r = compareToBaseline(fixtureMetrics(), parseBaseline(baselineDoc()));
+  assert.equal(r.comparable, true);
+  assert.deepEqual(r.reasons, []);
+  assert.deepEqual({ split: r.split, ownerReviewed: r.ownerReviewed, definitions: r.definitions, classifierVersion: r.classifierVersion }, {
+    split: 'test', ownerReviewed: false, definitions: { baseline: 'metrics@1', current: 'metrics@1' }, classifierVersion: { baseline: CURRENT, current: CURRENT },
+  });
+  assert.deepEqual(r.comparisons.map((c) => [c.instrument, c.likeForLike]), [['classifier', true], ['gold', false]]);
+  const [classifier, gold] = r.comparisons;
+  close(classifier.firstPassRate.delta, 3 / 7 - 0.9);
+  close(classifier.correctionsPer100.delta, (5 * 100) / 21 - 3.2);
+  close(classifier.reopenedRate.current, 2 / 7);
+  close(classifier.reopenedRate.delta, 2 / 7 - 0.1);
+  assert.equal(classifier.warning, undefined);
+  for (const key of ['firstPassRate', 'correctionsPer100', 'reopenedRate']) assert.equal(gold[key].delta, null, key);
   assert.equal(gold.firstPassRate.baseline, 0.817);
-  assert.equal(gold.correctionsPer100.baseline, 14.3);
+  assert.match(gold.warning, /gold/i);
 });
 
-test('baseline: one instrument is enough and a missing value compares as null', () => {
-  const baseline = parseBaseline({ instruments: { classifier: { firstPassRate: 0.9 } } });
-  const [c] = compareToBaseline(fixtureMetrics(), baseline);
-  assert.equal(c.instrument, 'classifier');
-  assert.equal(c.correctionsPer100.baseline, null);
-  assert.equal(c.correctionsPer100.delta, null);
-  const empty = compareToBaseline(computeMetrics([], { sinceMs: SINCE, nowMs: NOW }), baseline);
-  assert.equal(empty[0].firstPassRate.delta, null);
+test('baseline@1: no delta when the definitions or the classifier version differ, with the reason', () => {
+  const stale = compareToBaseline(fixtureMetrics(), parseBaseline(baselineDoc({ classifierVersion: '000000000000' })));
+  assert.equal(stale.comparable, false);
+  assert.equal(stale.reasons.length, 1);
+  assert.match(stale.reasons[0], /classifierVersion: baseline 000000000000, current [0-9a-f]{12}/);
+  for (const c of stale.comparisons) for (const key of ['firstPassRate', 'correctionsPer100', 'reopenedRate']) assert.equal(c[key].delta, null);
+  const old = compareToBaseline(fixtureMetrics(), parseBaseline(baselineDoc({ definitions: 'metrics@0' })));
+  assert.equal(old.comparable, false);
+  assert.match(old.reasons[0], /definitions: baseline metrics@0, current metrics@1/);
+  assert.equal(old.comparisons[0].firstPassRate.delta, null);
+  assert.equal(compareToBaseline(fixtureMetrics(), parseBaseline(baselineDoc()), { classifierVersion: 'ffffffffffff' }).comparable, false);
 });
 
-test('baseline: invalid files are rejected with a message', () => {
+test('baseline@1: a null rate compares as null; an empty log gives null deltas', () => {
+  const doc = baselineDoc();
+  const baseline = parseBaseline({ ...doc, instruments: { classifier: { ...doc.instruments.classifier, reopenedRate: null } } });
+  const [c] = compareToBaseline(fixtureMetrics(), baseline).comparisons;
+  assert.equal(c.reopenedRate.delta, null);
+  const [empty] = compareToBaseline(computeMetrics([], { sinceMs: SINCE, nowMs: NOW }), baseline).comparisons;
+  assert.equal(empty.firstPassRate.delta, null);
+});
+
+test('baseline@1: invalid files, including the old unversioned format, are rejected with a message', () => {
+  const doc = baselineDoc();
   const bad = [
     null,
     [],
     {},
-    { instruments: {} },
-    { instruments: { human: { firstPassRate: 0.8 } } },
-    { instruments: { gold: { firstPassRate: 1.2 } } },
-    { instruments: { gold: { firstPassRate: '0.8' } } },
-    { instruments: { gold: { correctionsPer100: -1 } } },
-    { instruments: { gold: {} } },
-    { instruments: { gold: { firstPassRate: 0.8, extra: 1 } } },
+    { instruments: { classifier: { firstPassRate: 0.9, correctionsPer100: 1.2 } } },
+    { ...doc, schema: 'agent-maturity/baseline@2' },
+    { ...doc, definitions: '' },
+    { ...doc, classifierVersion: 'abc' },
+    { ...doc, split: 3 },
+    { ...doc, ownerReviewed: 'no' },
+    { ...doc, instruments: {} },
+    { ...doc, instruments: { human: doc.instruments.gold } },
+    { ...doc, instruments: { gold: { ...doc.instruments.gold, firstPassRate: 1.2 } } },
+    { ...doc, instruments: { gold: { ...doc.instruments.gold, reopenedRate: '0.1' } } },
+    { ...doc, instruments: { gold: { ...doc.instruments.gold, correctionsPer100: -1 } } },
+    { ...doc, instruments: { gold: { ...doc.instruments.gold, extra: 1 } } },
+    { ...doc, instruments: { gold: { firstPassRate: 0.8 } } },
+    { ...doc, n: { prompts: { classifier: -1 } } },
   ];
   for (const value of bad) assert.throws(() => parseBaseline(value), /baseline/i, JSON.stringify(value));
 });

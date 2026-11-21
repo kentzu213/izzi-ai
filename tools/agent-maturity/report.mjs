@@ -5,18 +5,22 @@
 import { parseArgs } from 'node:util';
 
 import { resolveHome } from './lib/store.mjs';
-import { compareToBaseline, parseBaseline } from './metrics/baseline.mjs';
+import { classifierVersion, compareToBaseline, parseBaseline } from './metrics/baseline.mjs';
 import { fail, readJson, reason } from './metrics/cli.mjs';
-import { computeMetrics } from './metrics/compute.mjs';
+import { computeMetrics, METRICS_VERSION } from './metrics/compute.mjs';
 import { loadEvents, logFiles } from './metrics/events.mjs';
 import { formatReport } from './metrics/format.mjs';
 
 const USAGE = 'usage: node tools/agent-maturity/report.mjs --since <YYYY-MM-DD> [--events <file>] [--baseline <file>] [--json]';
 const SINCE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
 
-// A bare date is midnight UTC; a full timestamp must carry its offset.
+// A bare date is midnight UTC; a full timestamp must carry its offset. Date.parse rolls an impossible day over
+// (2026-02-30 becomes 2026-03-02), so the calendar date is checked on its own.
 function parseSince(value) {
   if (typeof value !== 'string' || !SINCE.test(value)) return null;
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) return null;
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
 }
@@ -51,10 +55,13 @@ function main(argv) {
   }
 
   const metrics = computeMetrics(log.events, { sinceMs, nowMs: Date.now() });
+  const current = classifierVersion();
   const result = {
+    definitions: METRICS_VERSION,
+    classifierVersion: current,
     ...metrics,
     log: { files: log.files, events: log.events.length, skippedLines: log.skipped },
-    baseline: baseline ? { source: baseline.source, comparisons: compareToBaseline(metrics, baseline) } : null,
+    baseline: baseline ? compareToBaseline(metrics, baseline, { classifierVersion: current }) : null,
   };
   process.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatReport(result));
   return 0;

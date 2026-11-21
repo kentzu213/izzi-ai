@@ -1,7 +1,12 @@
 {
-  "source": "synthetic test baseline (shape of docs/izzi-v2/D0-REPORT.md)",
+  "schema": "agent-maturity/baseline@1",
+  "definitions": "metrics@1",
+  "classifierVersion": "000000000000",
+  "split": "test",
+  "n": { "prompts": { "classifier": 40, "gold": 40 }, "milestones": { "classifier": 8, "gold": 12 } },
   "instruments": {
-    "classifier": { "firstPassRate": 0.5, "correctionsPer100": 2.5 },
-    "gold": { "firstPassRate": 0.817, "correctionsPer100": 14.3 }
-  }
+    "classifier": { "correctionsPer100": 2.5, "firstPassRate": 0.5, "reopenedRate": 0.125 },
+    "gold": { "correctionsPer100": 15.1, "firstPassRate": 0.817, "reopenedRate": 0.133 }
+  },
+  "ownerReviewed": false
 }

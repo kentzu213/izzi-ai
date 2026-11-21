@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { checkTranscripts } from '../metrics/check-repeats.mjs';
 import { checkCorrection, contentTerms, DEFAULT_THRESHOLD, normalizeStandards, scorePair } from '../metrics/checker.mjs';
-import { evaluatePairs } from '../metrics/eval-checker.mjs';
+import { evaluatePairs, GATE, gateOf } from '../metrics/eval-checker.mjs';
 import { readOwnerPrompts } from '../metrics/transcript-prompts.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -18,9 +19,17 @@ const TRANSCRIPT = join(FIXTURES, 'metrics-checker-transcript.jsonl');
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const scratch = mkdtempSync(join(tmpdir(), 'am-checker-'));
 
+// After D2 installs the hook the real home exists; the tests must leave it exactly as it was.
+function listFiles(dir) {
+  return readdirSync(dir, { recursive: true }).map((p) => join(dir, String(p))).filter((p) => statSync(p).isFile()).sort();
+}
+const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
+const realSnapshot = () => (existsSync(REAL_MATURITY_HOME) ? listFiles(REAL_MATURITY_HOME).map((f) => [f, statSync(f).mtimeMs, sha(f)]) : null);
+const REAL_BEFORE = realSnapshot();
+
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.deepEqual(realSnapshot(), REAL_BEFORE, 'real ~/.claude/agent-maturity changed');
 });
 
 const pairsDoc = () => JSON.parse(readFileSync(PAIRS, 'utf8'));
@@ -116,10 +125,10 @@ test('checker results carry ids and numbers only, never the correction text', ()
 
 test('transcript reader returns owner prompts only, in memory', async () => {
   const prompts = await readOwnerPrompts(TRANSCRIPT);
-  assert.deepEqual(prompts.map((p) => p.uuid), ['u-start', 'u-corr-1', 'u-corr-2', 'u-clar', 'u-praise', 'u-wrap']);
+  // u-wrap starts with '<': not a typed prompt (D0 rule).
+  assert.deepEqual(prompts.map((p) => p.uuid), ['u-start', 'u-corr-1', 'u-corr-2', 'u-clar', 'u-praise']);
   assert.equal(prompts[1].cwd, 'F:/proj-a');
   assert.equal(prompts[1].at, '2026-11-12T09:00:00.000Z');
-  assert.deepEqual(await readOwnerPrompts(join(scratch, 'missing.jsonl')), []);
 });
 
 test('checkTranscripts classifies prompts in place and checks corrections and clarifications', async () => {
@@ -151,6 +160,7 @@ test('check-repeats CLI prints ids and scores only and writes no file', () => {
   }
   const json = JSON.parse(run('check-repeats.mjs', ['--standards', standardsFile, '--transcript', transcript, '--json']).stdout);
   assert.equal(json.repeats, 2);
+  assert.deepEqual(json.standards, { usable: 4, unusable: 1, skipped: 0, unmatchable: 0 });
   assert.deepEqual(readdirSync(dir).sort(), before);
 });
 
@@ -218,4 +228,126 @@ test('eval-checker CLI prints precision, recall and pair ids without prompt text
   assert.equal(json.precision, 6 / 7);
   assert.equal(run('eval-checker.mjs', []).code, 1);
   assert.equal(run('eval-checker.mjs', ['--pairs', join(scratch, 'missing.json')]).code, 1);
+});
+
+// ---- part-2 gate (PLAN D5): >=30 pairs, >=10 predicted repeats, >=10 distinct corrections, CP 95% lower bound >= 0.8
+
+const failed = (gate) => gate.checks.filter((c) => !c.passed).map((c) => c.name);
+
+test('gate passes at 17/17 predicted repeats (lower bound 0.805) and fails at 16/16 (0.794)', () => {
+  const pass = gateOf({ pairs: 30, tp: 17, fp: 0, distinctCorrections: 10 });
+  assert.equal(pass.passed, true);
+  assert.ok(pass.ci.lower >= 0.8 && pass.ci.lower < 0.81, String(pass.ci.lower));
+  const fail = gateOf({ pairs: 30, tp: 16, fp: 0, distinctCorrections: 10 });
+  assert.equal(fail.passed, false);
+  assert.deepEqual(failed(fail), ['precisionLowerBound']);
+  assert.ok(fail.ci.lower > 0.79 && fail.ci.lower < 0.8, String(fail.ci.lower));
+});
+
+test('gate with false positives: 29/30 passes (0.828), 28/30 fails (0.779) although precision is 0.93', () => {
+  assert.equal(gateOf({ pairs: 40, tp: 29, fp: 1, distinctCorrections: 30 }).passed, true);
+  const fail = gateOf({ pairs: 40, tp: 28, fp: 2, distinctCorrections: 30 });
+  assert.deepEqual(failed(fail), ['precisionLowerBound']);
+});
+
+test('gate needs >=30 labelled pairs, >=10 predicted repeats and >=10 distinct corrections', () => {
+  assert.deepEqual(failed(gateOf({ pairs: 29, tp: 17, fp: 0, distinctCorrections: 10 })), ['pairs']);
+  assert.deepEqual(failed(gateOf({ pairs: 30, tp: 17, fp: 0, distinctCorrections: 9 })), ['distinctCorrections']);
+  const few = gateOf({ pairs: 30, tp: 9, fp: 0, distinctCorrections: 10 });
+  assert.ok(failed(few).includes('predictedRepeats'));
+  assert.deepEqual(few.checks.find((c) => c.name === 'predictedRepeats'), { name: 'predictedRepeats', value: 9, min: 10, passed: false });
+  const none = gateOf({ pairs: 30, tp: 0, fp: 0, distinctCorrections: 10 });
+  assert.equal(none.ci, null);
+  assert.ok(failed(none).includes('precisionLowerBound'));
+  assert.deepEqual(GATE, { minPairs: 30, minPredictedRepeats: 10, minDistinctCorrections: 10, minPrecisionLowerBound: 0.8, confidence: 0.95 });
+});
+
+test('harness gate on the synthetic pairs: too few pairs and predicted repeats; distinct corrections counted', async () => {
+  const result = await evaluatePairs(pairsDoc(), { baseDir: FIXTURES });
+  assert.equal(result.distinctCorrections, 12);
+  assert.equal(result.gate.passed, false);
+  assert.deepEqual(failed(result.gate), ['pairs', 'predictedRepeats', 'precisionLowerBound']);
+  // The same correction scored against two standards is one distinct correction.
+  const doc = pairsDoc();
+  const twice = { ...doc, pairs: [doc.pairs[0], { ...doc.pairs[2], correction: doc.pairs[0].correction }, doc.pairs[11], { ...doc.pairs[11], id: 'p12b', standard: 'std-no-purple', repeat: false }] };
+  assert.equal((await evaluatePairs(twice, { baseDir: FIXTURES })).distinctCorrections, 2);
+});
+
+// ---- project scope (PLAN §2.5): worktrees count as the root project
+
+const STARIZZI = '2a906db6-a103-5375-b672-ad090f686c7e';
+const scopeStandards = () => normalizeStandards([
+  { id: 'std-by-id', scope: 'project', project_id: STARIZZI, state: 'active', created_at: '2026-11-01T00:00:00Z', keywords: ['kiểm sha'] },
+  { id: 'std-by-wt-root', scope: 'project', project_root: 'F:/Ai Tools/_wt-izzi-v2-d3', state: 'active', created_at: '2026-11-01T00:00:00Z', keywords: ['bản live'] },
+  { id: 'std-unknown-id', scope: 'project', project_id: 'not-a-known-project', state: 'active', created_at: '2026-11-01T00:00:00Z', keywords: ['mã thoát'] },
+]);
+
+test('a project_id-only standard matches corrections in the root project and in its _wt- worktrees', () => {
+  const { standards: list } = scopeStandards();
+  const text = 'vẫn chưa kiểm sha';
+  for (const cwd of ['F:/Ai Tools/Tool Starizzi - B2C - Openclaw', 'f:\\ai tools\\tool starizzi - b2c - openclaw\\apps', 'F:\\Ai Tools\\_wt-izzi-v2-d5', 'F:/Ai Tools/_wt-izzi-v2-d5/tools/x']) {
+    assert.equal(checkCorrection({ text, cwd, at }, list).standardId, 'std-by-id', cwd);
+  }
+  for (const cwd of ['F:/Ai Tools/other-project', 'F:/Ai Tools/Tool Starizzi - B2C - Openclaw-copy', 'F:/Ai Tools']) {
+    assert.equal(checkCorrection({ text, cwd, at }, list).repeat, false, cwd);
+  }
+});
+
+test('a standard saved with a worktree root counts for the root project and every worktree', () => {
+  const { standards: list } = scopeStandards();
+  const text = 'deploy đè bản live';
+  assert.equal(checkCorrection({ text, cwd: 'F:/Ai Tools/Tool Starizzi - B2C - Openclaw/apps', at }, list).standardId, 'std-by-wt-root');
+  assert.equal(checkCorrection({ text, cwd: 'F:/Ai Tools/_wt-izzi-v2-d0', at }, list).standardId, 'std-by-wt-root');
+  assert.equal(checkCorrection({ text, cwd: 'F:/proj-a', at }, list).repeat, false);
+});
+
+test('standards whose project cannot be matched from a folder are counted', () => {
+  const { standards: list, unmatchable, skipped } = scopeStandards();
+  assert.equal(list.length, 3);
+  assert.equal(skipped, 0);
+  assert.equal(unmatchable, 1);
+  assert.equal(checkCorrection({ text: 'thiếu mã thoát', cwd: 'F:/Ai Tools/_wt-izzi-v2-d5', at }, list).repeat, false);
+  assert.equal(checkCorrection({ text: 'thiếu mã thoát', project_id: 'not-a-known-project', at }, list).standardId, 'std-unknown-id');
+  assert.equal(normalizeStandards(pairsDoc().standards).unmatchable, 0);
+});
+
+// ---- transcript reading: D0 prompt rules, checkpoint answers, warnings
+
+const ASK = '[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?\n- Đề xuất: chuẩn tổng hợp.\nTrả lời: Nâng cấp / Chỉnh / Bỏ qua';
+const userLine = (uuid, content) => JSON.stringify({ type: 'user', uuid, timestamp: '2026-11-12T10:00:00.000Z', cwd: 'F:/proj-a', message: { role: 'user', content } });
+const assistantLine = (text) => JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } });
+
+test('transcript reader applies the D0 prompt rules and flags checkpoint answers', async () => {
+  const file = join(scratch, 'd0-rules.jsonl');
+  writeFileSync(file, [
+    userLine('u-ok', 'sửa lại màu nút'),
+    userLine('u-long', 'x'.repeat(4001)),
+    userLine('u-4000', `   ${'y'.repeat(4000)}   `),
+    userLine('u-int', '[Request interrupted by user]'),
+    userLine('u-empty', '   '),
+    assistantLine(`Đã xong.\n\n${ASK}`),
+    userLine('u-answer', 'Bỏ qua'),
+    assistantLine(`Đã xong.\n\n${ASK}`),
+    userLine('u-other', 'làm tiếp phần đăng nhập'),
+    assistantLine('Đã xong.'),
+    userLine('u-not-asked', 'bỏ qua'),
+  ].join('\n'));
+  const prompts = await readOwnerPrompts(file);
+  assert.deepEqual(prompts.map((p) => [p.uuid, p.checkpointAnswer]), [
+    ['u-ok', false], ['u-4000', false], ['u-answer', true], ['u-other', false], ['u-not-asked', false],
+  ]);
+  const result = await checkTranscripts({ standards: standards(), files: [file] });
+  assert.equal(result.prompts, 4, 'the checkpoint answer is not counted');
+  assert.equal(result.checkpointAnswers, 1);
+});
+
+test('transcript reader warns instead of silently skipping a missing or too large transcript', async () => {
+  const warnings = [];
+  const warn = (message) => warnings.push(message);
+  assert.deepEqual(await readOwnerPrompts(join(scratch, 'missing.jsonl'), { warn }), []);
+  assert.deepEqual(await readOwnerPrompts(TRANSCRIPT, { warn, maxBytes: 10 }), []);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /missing\.jsonl.*ENOENT/);
+  assert.match(warnings[1], /metrics-checker-transcript\.jsonl.*too large/);
+  for (const word of PROMPT_WORDS) assert.equal(warnings.join('\n').includes(word), false, word);
 });

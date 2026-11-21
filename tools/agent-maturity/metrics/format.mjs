@@ -11,15 +11,35 @@ function strictLine(s) {
   return 'Chế độ chặt: tắt';
 }
 
-function baselineLines(baseline) {
-  if (!baseline) return ['So với baseline D0: chưa có, thêm --baseline <file>'];
-  const lines = [`So với baseline D0${baseline.source ? ` (${baseline.source})` : ''}:`];
-  for (const c of baseline.comparisons) {
-    const label = c.likeForLike ? `${c.instrument} (cùng thước đo)` : `${c.instrument} (khác thước đo, chỉ tham khảo)`;
-    const f = c.firstPassRate;
-    const k = c.correctionsPer100;
-    lines.push(`  ${label}: duyệt ngay lần đầu ${num(f.current, 3)} so với ${num(f.baseline, 3)} (${signed(f.delta, 3)}); `
-      + `sửa trên 100 câu ${num(k.current, 1)} so với ${num(k.baseline, 1)} (${signed(k.delta, 1)})`);
+// [field, label, decimals] in the order the owner reads them.
+const RATES = [
+  ['firstPassRate', 'duyệt ngay lần đầu', 3],
+  ['correctionsPer100', 'sửa trên 100 câu', 1],
+  ['reopenedRate', 'mở lại (ước lượng)', 3],
+];
+const GOLD_NOTE = 'nhãn vàng là thước đo khác; log hook do bộ phân loại gắn nhãn nên không tính chênh lệch. '
+  + 'Muốn so với nhãn vàng phải gắn nhãn vàng cho một mẫu câu của pilot theo cùng cách.';
+
+function rateParts(c) {
+  return RATES.map(([key, label, digits]) => {
+    const v = c[key];
+    const change = v.delta === null ? '' : ` (${signed(v.delta, digits)})`;
+    return `${label} ${num(v.current, digits)} so với ${num(v.baseline, digits)}${change}`;
+  }).join('; ');
+}
+
+function baselineLines(b) {
+  if (!b) return ['So với baseline D0: chưa có, thêm --baseline <file> (file agent-maturity/baseline@1 do D0 xuất)'];
+  const size = b.n && b.n.prompts ? `, ${b.n.prompts.classifier ?? b.n.prompts.gold} câu` : '';
+  const lines = [
+    `So với baseline D0 (tập ${b.split}${size}; ${b.definitions.baseline}; bộ phân loại ${b.classifierVersion.baseline}; `
+      + `nhãn vàng ${b.ownerReviewed ? 'đã' : 'chưa'} được anh xem lại):`,
+  ];
+  if (!b.comparable) lines.push(`  KHÔNG tính chênh lệch vì khác thước đo: ${b.reasons.join('; ')}`);
+  for (const c of b.comparisons) {
+    const label = c.likeForLike ? `${c.instrument} (cùng thước đo)` : `${c.instrument} (khác thước đo, không tính chênh lệch)`;
+    lines.push(`  ${label}: ${rateParts(c)}`);
+    if (c.warning) lines.push(`    Cảnh báo: ${GOLD_NOTE}`);
   }
   return lines;
 }
@@ -28,9 +48,10 @@ export function formatReport(r) {
   const c = r.checkpoints;
   const x = r.excluded;
   const lines = [
-    `Số đo agent-maturity từ ${day(r.window.since)} đến ${day(r.window.now)} (UTC)`,
+    `Số đo agent-maturity (${r.definitions}, bộ phân loại ${r.classifierVersion}) từ ${day(r.window.since)} đến ${day(r.window.now)} (UTC)`,
     `Log: ${r.log.files} file, ${r.log.events} sự kiện, ${r.log.skippedLines} dòng hỏng đã bỏ qua`,
-    `Câu lệnh: ${r.prompts} (không tính: ${x.wrapperPrompts} lệnh wrapper, ${x.nonInteractivePrompts} câu ở phiên không tương tác, ${x.noSession} câu không có phiên)`,
+    `Câu lệnh: ${r.prompts} (không tính: ${x.wrapperPrompts} lệnh wrapper, ${x.checkpointAnswers} câu trả lời checkpoint, `
+      + `${x.nonInteractivePrompts} câu ở phiên không tương tác, ${x.noSession} câu không có phiên)`,
     `Checkpoint: nhắc ${c.nudged.total} (mạnh ${c.nudged.strong}, yếu ${c.nudged.weak}); agent hỏi ${c.asked.total} `
       + `(sau nhắc ${c.asked.afterNudge}, tự hỏi ${c.asked.agentInitiated}); được nhắc mà không hỏi ${c.abstained}`,
     `  Trả lời trên ${c.asked.total} lần hỏi: Nâng cấp ${pct(c.rates.accept)} · Chỉnh ${pct(c.rates.edit)} · `
