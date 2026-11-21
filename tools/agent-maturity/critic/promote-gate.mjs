@@ -61,7 +61,8 @@ function checkCandidate(candidate, candidateId) {
   if (!isObject(candidate) || candidate.id !== candidateId || !Number.isInteger(candidate.revision) || candidate.revision < 1) {
     refuse('candidate_invalid', 'the stored candidate must carry this id and its revision');
   }
-  const { revision, ...raw } = candidate;
+  // The stored candidate carries its revision; validation runs on the candidate fields without it.
+  const raw = Object.fromEntries(Object.entries(candidate).filter(([key]) => key !== 'revision'));
   const r = validateCandidate(raw);
   if (!r.ok || canonical(r.value) !== canonical(raw)) refuse('candidate_invalid', 'the candidate does not validate as stored');
 }

@@ -206,7 +206,7 @@ const has = (re, t) => {
 // A word list read in four forms of the text: as written, with digit look-alikes undone ("t3sts"), and, for English
 // (ASCII) words only, both again with diacritics stripped ("Skip tést"). Vietnamese words are never stripped:
 // stripping merges lời/lỗi and tất/tắt.
-const isEnglish = (w) => /^[\x00-\x7f]*$/.test(w) && !VIETNAMESE_ASCII.includes(w);
+const isEnglish = (w) => /^\p{ASCII}*$/u.test(w) && !VIETNAMESE_ASCII.includes(w);
 function matcher(list) {
   const all = word(list);
   const english = list.filter(isEnglish);

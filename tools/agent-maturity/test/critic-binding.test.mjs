@@ -106,7 +106,7 @@ test('record-verdict refuses when the stored snapshot does not match what is rec
 test('a reply without inputFingerprint is refused (format, one retry)', () => {
   const adapter = createJsonAdapter(freshStore());
   brief(adapter, A);
-  const { inputFingerprint: _drop, ...noFp } = JSON.parse(reply(A));
+  const noFp = Object.fromEntries(Object.entries(JSON.parse(reply(A))).filter(([key]) => key !== 'inputFingerprint'));
   assert.throws(() => record(adapter, A, JSON.stringify(noFp)), refused(EXIT.invalid, /fingerprint_missing.*one retry/));
   assert.equal(record(adapter, A, reply(A)).verdict, 'ACCEPT');
 });

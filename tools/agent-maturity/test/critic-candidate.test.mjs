@@ -30,7 +30,8 @@ test('a complete candidate is valid and normalized without the managed revision'
 });
 
 test('optional parts default to empty values', () => {
-  const { flags, existingStandards, research, ...minimal } = GOOD;
+  const optional = ['flags', 'existingStandards', 'research'];
+  const minimal = Object.fromEntries(Object.entries(GOOD).filter(([key]) => !optional.includes(key)));
   const r = validateCandidate(minimal);
   assert.equal(r.ok, true, JSON.stringify(r.errors));
   assert.deepEqual(r.value.flags, {});

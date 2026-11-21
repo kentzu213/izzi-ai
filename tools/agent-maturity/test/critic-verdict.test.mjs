@@ -409,9 +409,10 @@ test('a reply with duplicate JSON keys is refused at any depth', () => {
 });
 
 test('the verdict must echo the briefed inputFingerprint and candidateRevision', () => {
-  const { inputFingerprint: _fp, ...noFp } = ACCEPT;
+  const without = (key) => Object.fromEntries(Object.entries(ACCEPT).filter(([k]) => k !== key));
+  const noFp = without('inputFingerprint');
   assert.deepEqual(codes(validate(noFp)), ['fingerprint_missing']);
-  const { candidateRevision: _rev, ...noRev } = ACCEPT;
+  const noRev = without('candidateRevision');
   assert.deepEqual(codes(validate(noRev)), ['revision_missing']);
   assert.ok(codes(validate({ ...ACCEPT, inputFingerprint: 'f'.repeat(64) })).includes('fingerprint_mismatch'));
   const r = validate(ACCEPT);
