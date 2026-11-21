@@ -22,7 +22,27 @@ Một chuẩn chỉ vào kho KnowledgeMemory qua **một cửa duy nhất**, và
   6. `exportActive` để khối chèn cập nhật ngay.
   7. Ghi sự kiện `standard_promoted` vào sổ phản biện.
   Bước nào lỗi thì dừng và báo rõ, không để kho ở trạng thái lửng.
-- **Khoá cửa sau.** `store-cli.mjs` `promote` từ chối mọi bản ghi topic `dev-standard/` nếu không được gọi từ `promote-standard` (token nội bộ do module cấp, test được), mã lỗi `promote_requires_gate`. Bản ghi không thuộc `dev-standard/` giữ nguyên hành vi.
+- **Khoá cửa sau (bản sửa theo review, 21/11).**
+  - Token JS không phải ranh giới an toàn: reviewer đã đi vòng qua được nó. **Ranh giới thật là file xuất.** `buildExport`/`exportActive` chỉ xuất một bản ghi `dev-standard/` khi đủ cả năm điều kiện:
+    1. topic là topic của cửa;
+    2. basis là `user_instruction`;
+    3. nguồn có loại `user`;
+    4. URI nguồn đúng định dạng `?candidate=…&verdict=c…`;
+    5. sổ phản biện có sự kiện `standard_promoted` cho đúng bản ghi đó.
+  - Thiếu một điều kiện thì bản ghi bị bỏ qua với lý do `not_via_door`.
+  - `promote` thường vẫn từ chối mọi bản ghi `dev-standard/` (`promote_requires_gate`).
+  - `claimPromoteGate` và `runCli` không còn được export ra ngoài.
+- **Gắn lời duyệt với đúng câu (bản sửa theo review).**
+  - Khi anh trả lời một khối hỏi checkpoint, hook D1 ghi lại `askId`, `proposalSha256` (sha256 của nguyên văn dòng "Đề xuất") và nhãn an toàn đang hiển thị.
+  - Cửa đòi hash đó khớp với đúng câu sắp lưu. Với NARROW, câu sắp lưu là câu đã thu hẹp, nên bước show_diff cũng phải là một khối hỏi.
+  - Nếu chuẩn không thuộc nhóm `pass`, nhãn ghi trong log phải khớp với nhãn của chuẩn.
+  - Không khớp thì từ chối với mã `owner_message_unbound`.
+- **`--supersedes <id>`.** Chuẩn mới diễn đạt khác có thể thay chuẩn cũ khi đủ cả ba điều kiện:
+  - id của chuẩn cũ nằm trong `existingStandards` của ứng viên;
+  - chuẩn cũ đang dùng, do cửa tạo ra, cùng phạm vi và cùng dự án;
+  - chuẩn cũ không phải bản ghi import.
+
+  Chuẩn mới được lưu dưới topic của chuẩn cũ.
 - **Cài đặt.** `install.mjs` chép thêm `critic/*.mjs` (trừ test-corpus, dry-runs) và `standards/promote-standard.mjs`, `standards/store-cli.mjs`, `standards/refresh.mjs` vào `~/.claude/agent-maturity/bin/`. SKILL.md trỏ tới đường dẫn đã cài, kèm phương án dự phòng là đường dẫn repo.
 - **SKILL.md:** quy trình sau "Nâng cấp" kết thúc bằng đúng một lệnh `promote-standard`.
 
