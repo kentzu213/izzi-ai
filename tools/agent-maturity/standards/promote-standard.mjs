@@ -15,6 +15,12 @@
 //      "Đề xuất" line of the ask block the owner answered; it must be the sha256 of the statement the gate will store
 //      (the narrowed text for NARROW), and when that text's floor class is not pass, the label the block showed must
 //      be that class (hard_reject is refused by the gate whatever was shown). Read-only too.
+//   1b'. The real transcript says the same (owner_message_transcript_mismatch, fail closed): in
+//      ~/.claude/projects/*/<sessionId>.jsonl (exactly one file; --projects-dir only under AGENT_MATURITY_TEST=1) the
+//      owner's prompt at the answer time (±5 s) is exactly the option word, and the assistant message right before it
+//      holds exactly one live ask block whose "Đề xuất" line hashes to the logged proposalSha256 (and whose label is the
+//      logged one). This raises the bar against a forged hook-log line; it is not a security boundary against the
+//      same OS user, who can edit both files. Read-only too.
 //   1c. --supersedes <standardId>, new wording for an old standard (supersedes_invalid): the id is in the candidate's
 //      existingStandards, and that record is a standard this door stored (not an import) on the same scope and
 //      project, active or already superseded by this candidate's own record (a rerun or a later revision). Read-only
@@ -46,9 +52,10 @@ import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { statementKey, verdictDigest } from '../critic/loop-guard.mjs';
 import { assertPromotable } from '../critic/promote-gate.mjs';
 import { promotedFloor, promotedTopics } from '../critic/verdict.mjs';
-import { proposalDigest } from '../lib/classify.mjs';
+import { checkpointAskParts, isLiteralAccept, proposalDigest } from '../lib/classify.mjs';
 import { NUDGE_ENTRYPOINTS } from '../lib/decide.mjs';
 import { logPath, resolveHome } from '../lib/store.mjs';
+import { answeredTurn } from '../lib/transcript-tail.mjs';
 import { isInside } from './project-root.mjs';
 import {
   TOPIC_PREFIX,
@@ -200,6 +207,35 @@ function checkAnswerBound(answer, statement, floorClass) {
   }
 }
 
+// The session transcript ~/.claude/projects/<project>/<sessionId>.jsonl (exactly one), or null. Only tests
+// (AGENT_MATURITY_TEST=1, checked in promoteStandard) name another projects folder.
+function transcriptOf(sessionId, projectsDir) {
+  const root = path.resolve(projectsDir ?? path.join(os.homedir(), '.claude', 'projects'));
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory());
+  } catch {
+    // no projects folder: no transcript
+  }
+  const found = dirs.map((d) => path.join(root, d.name, `${sessionId}.jsonl`)).filter((f) => fs.existsSync(f));
+  return found.length === 1 ? found[0] : null;
+}
+
+// Re-derived from the real transcript, failing closed (owner_message_transcript_mismatch): the owner's prompt at the
+// logged answer time is exactly the option word, and the assistant message right before it holds exactly one live ask
+// block whose "Đề xuất" line hashes to the logged proposalSha256 and whose label is the logged one. This raises the bar
+// against a forged hook-log line; it is not a boundary against the same OS user editing both files.
+function checkTranscript(answer, sessionId, projectsDir) {
+  const file = transcriptOf(sessionId, projectsDir);
+  const found = file ? answeredTurn(file, Date.parse(answer.ts), OWNER_MESSAGE_WINDOW_MS) : null;
+  const parts = found ? checkpointAskParts(found.turn.text) : null;
+  const same = Boolean(found) && isLiteralAccept(found.prompt) && typeof parts?.proposal === 'string'
+    && proposalDigest(parts.proposal) === answer.proposalSha256 && (parts.floor ?? undefined) === answer.floor;
+  if (!same) {
+    fail('owner_message_transcript_mismatch', 'the session transcript does not show that answer (missing, unreadable, or not exactly Nâng cấp right after one ask block with the logged text): ask the checkpoint question again');
+  }
+}
+
 // --supersedes: the owner approved new wording for an old standard. Returns the old record, or refuses
 // (supersedes_invalid). On a rerun the old record is already superseded by this candidate's own door-made record.
 function checkSupersedes(candidate, oldId, scope, projectId, km) {
@@ -247,7 +283,7 @@ function planTopic({ candidate, statement, supersedes, projectPath, km }) {
 
 // Under the critic store lock: the approval names what the stored verdict allows (the narrowed text for NARROW) and
 // the floor label stored with it; the gate re-derives and checks every one of them and returns what may be stored.
-function gateLocked({ adapter, candidateId, answer, ownerMessage, projectPath, supersedes, km, now }) {
+function gateLocked({ adapter, candidateId, answer, ownerMessage, projectPath, projectsDir, supersedes, km, now }) {
   const record = adapter.loadCandidate(candidateId);
   const last = record && Array.isArray(record.verdicts) ? record.verdicts.at(-1) : undefined;
   const candidate = record && isObject(record.candidate) ? record.candidate : null;
@@ -259,6 +295,7 @@ function gateLocked({ adapter, candidateId, answer, ownerMessage, projectPath, s
   const topics = isObject(last) ? promotedTopics(last) : null;
   const statement = isObject(last) && last.verdict === 'NARROW' ? last.narrowed?.statement : candidate?.statement;
   checkAnswerBound(answer, statement, floorClass);
+  checkTranscript(answer, ownerMessage.sessionId, projectsDir);
   const { old, topic } = candidate ? planTopic({ candidate, statement, supersedes, projectPath, km }) : { old: null, topic: null };
   const ownerApproval = {
     approved: true,
@@ -345,12 +382,14 @@ function storeStandard({ adapter, gate, candidate, verdict, old, topic, message,
   };
 }
 
-// opts: { candidateId, ownerMessage, criticStore?, store?, vault?, out?, projectPath?, supersedes?, env?, python?,
-// cli?, now? }. Returns what was stored; throws an error with `code` (and `step` after the gate).
+// opts: { candidateId, ownerMessage, criticStore?, projectsDir?, store?, vault?, out?, projectPath?, supersedes?, env?,
+// python?, cli?, now? }. criticStore and projectsDir are honoured only with AGENT_MATURITY_TEST=1. Returns what was
+// stored; throws an error with `code` (and `step` after the gate).
 export function promoteStandard(opts = {}) {
-  const { candidateId, ownerMessage, criticStore, projectPath, supersedes, env = process.env, now = new Date() } = opts;
+  const { candidateId, ownerMessage, criticStore, projectsDir, projectPath, supersedes, env = process.env, now = new Date() } = opts;
   if (typeof candidateId !== 'string' || !ID_RE.test(candidateId)) fail('bad_input', '--candidate must be a candidate id');
   if (supersedes !== undefined && !(typeof supersedes === 'string' && UUID_RE.test(supersedes))) fail('bad_input', '--supersedes must be a standard record id');
+  if (projectsDir !== undefined && env.AGENT_MATURITY_TEST !== '1') fail('bad_input', '--projects-dir is for tests only (AGENT_MATURITY_TEST=1): the transcript is read from ~/.claude/projects');
   const message = parseOwnerMessage(ownerMessage);
   const home = resolveHome(env);
   // The export reads only this critic store (store-cli criticPath): --critic-store is for tests only.
@@ -364,7 +403,7 @@ export function promoteStandard(opts = {}) {
   const adapter = createJsonAdapter(criticDir);
   const ownerPointer = { sessionId: message.sessionId, ts: answer.ts };
   const { gate, candidate, verdict, old, topic } = adapter.withLock(() =>
-    gateLocked({ adapter, candidateId, answer, ownerMessage: ownerPointer, projectPath, supersedes, km, now }));
+    gateLocked({ adapter, candidateId, answer, ownerMessage: ownerPointer, projectPath, projectsDir, supersedes, km, now }));
   return storeStandard({ adapter, gate, candidate, verdict, old, topic, message, answer, projectPath, km, now });
 }
 
@@ -377,8 +416,9 @@ const FLAGS = {
   '--out': 'out',
   '--project': 'projectPath',
   '--supersedes': 'supersedes',
+  '--projects-dir': 'projectsDir',
 };
-const USAGE = 'usage: node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time> [--critic-store d] [--store d] [--vault d] [--out f] [--project d] [--supersedes <standardId>]';
+const USAGE = 'usage: node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time> [--store d] [--vault d] [--out f] [--project d] [--supersedes <standardId>] [--critic-store d] [--projects-dir d] (the last two: tests only)';
 
 function parseArgs(argv) {
   const opts = {};

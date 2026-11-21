@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -15,6 +15,7 @@ import { validateCandidate } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
+import { proposalDigest } from '../lib/classify.mjs';
 import { OWNER_ANSWER_MAX_AGE_MS, OWNER_MESSAGE_WINDOW_MS, promoteStandard } from '../standards/promote-standard.mjs';
 import * as storeCli from '../standards/store-cli.mjs';
 import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, retract, userSource } from '../standards/store-cli.mjs';
@@ -40,12 +41,13 @@ after(() => {
   assert.equal(existsSync(join(REAL_CLAUDE, 'agent-maturity')), realMaturityExisted, 'real ~/.claude/agent-maturity touched');
 });
 
-// One isolated world: AGENT_MATURITY_HOME (hook log + export), critic store, KnowledgeMemory store and vault.
+// One isolated world: AGENT_MATURITY_HOME (hook log + export), critic store, KnowledgeMemory store and vault, and the
+// projects folder holding the session transcripts (~/.claude/projects in real use).
 let n = 0;
 function world() {
   n += 1;
   const dir = join(scratch, `w${n}`);
-  const w = { dir, home: join(dir, 'home'), critic: join(dir, 'critic'), store: join(dir, 'km'), vault: join(dir, 'vault') };
+  const w = { dir, home: join(dir, 'home'), critic: join(dir, 'critic'), store: join(dir, 'km'), vault: join(dir, 'vault'), projects: join(dir, 'projects') };
   for (const d of [w.home, w.store, w.vault]) mkdirSync(d, { recursive: true });
   w.env = { ...ENV, AGENT_MATURITY_HOME: w.home };
   w.km = { store: w.store, vault: w.vault, env: w.env };
@@ -103,12 +105,16 @@ const hookEvents = (w) => {
 const criticLog = (w) => readLines(join(w.critic, 'log.jsonl'));
 const ofType = (w, type) => criticLog(w).filter((e) => e.type === type);
 
-// The owner answers a checkpoint question in a fresh session; the real D1 hook logs the outcome. Returns the logged
-// event and at(offsetMs): the --owner-message pointer "<session>:<time>" offset from the logged time. `before` is
-// text above the ask block in the same assistant message.
+// The owner answers a checkpoint question in a fresh session; the real D1 hook logs the outcome, then the reply is
+// written to the session transcript (<projects>/<project>/<session>.jsonl) with its send time, as Claude Code does.
+// Returns the logged event, the transcript and at(offsetMs): the --owner-message pointer "<session>:<time>" offset
+// from the logged time. `before` is text above the ask block in the same assistant message.
 function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.statement, floor = null, before = 'Đã xong.' } = {}) {
   const session = randomUUID();
-  const transcript = join(w.dir, `${session}.jsonl`);
+  mkdirSync(join(w.projects, 'F--repo'), { recursive: true });
+  const transcript = join(w.projects, 'F--repo', `${session}.jsonl`);
+  const sentAt = Date.now();
+  const stamp = (offsetMs) => new Date(sentAt + offsetMs).toISOString();
   const ask = [
     before,
     '',
@@ -121,10 +127,10 @@ function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.
     ...(floor ? [`- Nhãn an toàn: ${floor} (cần anh xem) · Chủ đề: kiểm thử · Lý do: đụng tới kiểm thử`] : []),
     'Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua',
   ].join('\n');
-  writeFileSync(transcript, [
-    JSON.stringify({ type: 'user', message: { content: 'merge' } }),
-    JSON.stringify({ type: 'assistant', uuid: randomUUID(), message: { content: [{ type: 'text', text: ask }] } }),
-  ].join('\n'));
+  writeFileSync(transcript, `${[
+    JSON.stringify({ type: 'user', timestamp: stamp(-60_000), message: { content: 'merge' } }),
+    JSON.stringify({ type: 'assistant', uuid: randomUUID(), timestamp: stamp(-30_000), message: { content: [{ type: 'text', text: ask }] } }),
+  ].join('\n')}\n`);
   const env = { ...w.env, HOME: fakeUser, USERPROFILE: fakeUser, CLAUDE_CODE_ENTRYPOINT: ep };
   const r = spawnSync(process.execPath, [join(ROOT, 'hooks', 'prompt-signal.mjs')], {
     input: JSON.stringify({ prompt: answer, session_id: session, transcript_path: transcript, cwd: w.dir, hook_event_name: 'UserPromptSubmit' }),
@@ -133,13 +139,19 @@ function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.
     timeout: 15_000,
   });
   assert.equal(r.status, 0);
+  appendFileSync(transcript, `${JSON.stringify({ type: 'user', timestamp: stamp(0), message: { content: answer } })}\n`);
   const event = hookEvents(w).filter((e) => e.type === 'checkpoint_outcome' && e.session === session).at(-1);
   assert.ok(event, 'the hook logged the checkpoint answer');
-  return { session, event, at: (offsetMs = 0) => `${session}:${new Date(Date.parse(event.ts) + offsetMs).toISOString()}` };
+  return { session, event, transcript, at: (offsetMs = 0) => `${session}:${new Date(Date.parse(event.ts) + offsetMs).toISOString()}` };
 }
 
 const door = (w, candidateId, ownerMessage, extra = {}) =>
-  promoteStandard({ candidateId, ownerMessage, criticStore: w.critic, store: w.store, vault: w.vault, env: w.env, ...extra });
+  promoteStandard({ candidateId, ownerMessage, criticStore: w.critic, projectsDir: w.projects, store: w.store, vault: w.vault, env: w.env, ...extra });
+// Appends one line to the hook log, as if the hook had written it.
+function hookLine(w, event) {
+  mkdirSync(join(w.home, 'log'), { recursive: true });
+  appendFileSync(join(w.home, 'log', `events-${event.ts.slice(0, 7)}.jsonl`), `${JSON.stringify(event)}\n`);
+}
 const refusedWith = (code, fn) => assert.throws(fn, (e) => e.code === code, code);
 const exported = (w) => JSON.parse(readFileSync(join(w.home, 'standards.json'), 'utf8'));
 const topicOf = (statement) => `dev-standard/${statementKey(statement).slice(0, 12)}`;
@@ -175,6 +187,7 @@ test('1. ACCEPT + Nâng cấp logged by the hook: one promote-standard command s
     '--candidate', c.id,
     '--owner-message', answer.at(1200),
     '--critic-store', w.critic,
+    '--projects-dir', w.projects,
     '--store', w.store,
     '--vault', w.vault,
   ], { encoding: 'utf8', env: w.env, timeout: 120_000 });
@@ -294,14 +307,8 @@ test('the answer is bound to the exact Đề xuất text and safety label its as
   const c = critique(w);
   critique(w, { id: 'di-narrowed' }, NARROW);
   const scoped = critique(w, SCOPED);
-  const hookLine = (event) => {
-    mkdirSync(join(w.home, 'log'), { recursive: true });
-    const file = join(w.home, 'log', `events-${event.ts.slice(0, 7)}.jsonl`);
-    writeFileSync(file, `${existsSync(file) ? readFileSync(file, 'utf8') : ''}${JSON.stringify(event)}
-`);
-  };
   const legacy = { ts: new Date().toISOString(), session: randomUUID(), ep: 'cli', type: 'checkpoint_outcome', turn: 2, outcome: 'accept', initiated: 'agent' };
-  hookLine(legacy);
+  hookLine(w, legacy);
   const unbound = (pointer, id = c.id) => refusedWith('owner_message_unbound', () => door(w, id, pointer));
 
   // Act + Assert: refused before the gate, so nothing is written and no approval is recorded
@@ -341,6 +348,42 @@ test('only the option word itself approves: a looser Nâng cấp reply is refuse
   nothingStored(w);
   assert.deepEqual(ofType(w, 'promotion_approved'), []);
   assert.equal(door(w, c.id, ownerAnswers(w, 'nang cap!').at()).statement, c.statement);
+});
+
+test('the real transcript must show that answer: a forged log line or an edited, missing or ambiguous transcript is refused (owner_message_transcript_mismatch)', { skip }, () => {
+  // Arrange
+  const w = world();
+  const c = critique(w);
+  const forged = { ts: new Date().toISOString(), session: randomUUID(), ep: 'cli', type: 'checkpoint_outcome', turn: 2, outcome: 'accept', initiated: 'agent', proposalSha256: proposalDigest(c.statement), literalOption: true };
+  hookLine(w, forged); // a log line that passes every log check, with no transcript behind it
+  const edited = (from, to) => {
+    const answer = ownerAnswers(w);
+    writeFileSync(answer.transcript, readFileSync(answer.transcript, 'utf8').replace(from, to));
+    return answer;
+  };
+  const looseReply = edited('"content":"Nâng cấp"}', '"content":"Nâng cấp nhé"}');
+  const otherText = edited(`- Đề xuất: ${c.statement}`, '- Đề xuất: Tóm tắt tiến độ ngắn gọn.');
+  const secondBlock = edited('Đã xong.', `[Checkpoint nâng cấp] Hỏi thêm\\n- Đề xuất: ${c.statement}\\nTrả lời: Nâng cấp`);
+  const laterReply = edited('"content":"Nâng cấp"}', '"content":"x"}\n{"type":"user","timestamp":"2000-01-01T00:00:00.000Z","message":{"content":"Nâng cấp"}}');
+  const gone = ownerAnswers(w);
+  rmSync(gone.transcript);
+  const twin = ownerAnswers(w);
+  mkdirSync(join(w.projects, 'F--other'));
+  writeFileSync(join(w.projects, 'F--other', `${twin.session}.jsonl`), readFileSync(twin.transcript));
+  const mismatch = (pointer) => refusedWith('owner_message_transcript_mismatch', () => door(w, c.id, pointer));
+  const notTest = { ...w.env };
+  delete notTest.AGENT_MATURITY_TEST;
+
+  // Act + Assert: refused before the gate
+  mismatch(`${forged.session}:${forged.ts}`);
+  for (const answer of [looseReply, otherText, secondBlock, laterReply, gone, twin]) mismatch(answer.at());
+  refusedWith('owner_message_transcript_mismatch', () => door(w, c.id, ownerAnswers(w).at(), { projectsDir: join(w.dir, 'empty-projects') }));
+  refusedWith('bad_input', () => promoteStandard({ candidateId: c.id, ownerMessage: ownerAnswers(w).at(), projectsDir: w.projects, env: notTest })); // tests only
+  nothingStored(w);
+  assert.deepEqual(ofType(w, 'promotion_approved'), []);
+
+  // Act + Assert: the untouched transcript passes
+  assert.equal(door(w, c.id, ownerAnswers(w).at()).statement, c.statement);
 });
 
 test('Chỉnh is not approval: an edit answer is refused (owner_message_not_accept) and writes nothing', { skip }, () => {
@@ -487,6 +530,7 @@ test('--supersedes: reworded text replaces an old standard under its topic; the 
     '--candidate', c2.id,
     '--owner-message', answer.at(400),
     '--critic-store', w.critic,
+    '--projects-dir', w.projects,
     '--store', w.store,
     '--vault', w.vault,
     '--supersedes', first.recordId,
@@ -661,7 +705,7 @@ test('preflight: missing KnowledgeMemory CLI, the real ~/.claude under test, and
   refusedWith('refuse_real_store', () => door(w, BASE.id, answer.at(), { criticStore: join(REAL_CLAUDE, 'agent-maturity', 'critic') }));
   const notTest = { ...w.env };
   delete notTest.AGENT_MATURITY_TEST;
-  refusedWith('critic_store_test_only', () => door(w, BASE.id, answer.at(), { env: notTest })); // --critic-store is for tests only
+  refusedWith('critic_store_test_only', () => door(w, BASE.id, answer.at(), { env: notTest, projectsDir: undefined })); // --critic-store is for tests only
   refusedWith('bad_input', () => door(w, 'Not An Id', answer.at()));
   nothingStored(w);
   assert.deepEqual(ofType(w, 'promotion_approved'), []);

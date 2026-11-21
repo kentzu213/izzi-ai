@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { lastAssistantText, lastAssistantTurn } from '../lib/transcript-tail.mjs';
+import { answeredTurn, lastAssistantText, lastAssistantTurn } from '../lib/transcript-tail.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'am-tail-'));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -80,6 +80,34 @@ test('a tail with no complete assistant line returns null', () => {
 test('string message content is read as text', () => {
   const file = write('string.jsonl', [userPrompt('p'), line({ type: 'assistant', uuid: 's1', message: { role: 'assistant', content: 'plain text' } })]);
   assert.equal(lastAssistantText(file), 'plain text');
+});
+
+test('answeredTurn: the one owner prompt at that time (whole file) and the assistant turn right before it', () => {
+  // Arrange
+  const at = (s) => `2026-11-21T10:00:${String(s).padStart(2, '0')}.000Z`;
+  const ms = (s) => Date.parse(at(s));
+  const big = assistant('early', [text('z'.repeat(300_000))]);
+  const file = write('answered.jsonl', [
+    big,
+    userPrompt('merge', { timestamp: at(1) }),
+    assistant('ask-1', [text('Part one.')], { timestamp: at(2) }),
+    line({ type: 'attachment', timestamp: at(3) }),
+    assistant('ask-2', [text('[Checkpoint nâng cấp] ...')], { timestamp: at(4) }),
+    userPrompt('Nâng cấp', { timestamp: at(20) }),
+    userPrompt('<system-reminder>meta</system-reminder>', { isMeta: true, timestamp: at(20) }),
+    assistant('after', [text('Đã lưu.')], { timestamp: at(21) }),
+    userPrompt('one', { timestamp: at(40) }),
+    userPrompt('two', { timestamp: at(42) }),
+    userPrompt('lone', { timestamp: at(55) }),
+  ]);
+
+  // Act + Assert: found 1.5 s off, through the meta line, past the 256 KB tail window
+  assert.deepEqual(answeredTurn(file, ms(20) + 1500, 5000), { prompt: 'Nâng cấp', turn: { text: 'Part one.\n[Checkpoint nâng cấp] ...', id: 'ask-2' } });
+  assert.equal(answeredTurn(file, ms(20) + 5001, 5000), null, 'outside the window');
+  assert.equal(answeredTurn(file, ms(41), 5000), null, 'two prompts in the window');
+  assert.equal(answeredTurn(file, ms(42) + 4000, 1000), null, 'a prompt right after another prompt has no turn before it');
+  assert.equal(answeredTurn(join(dir, 'missing.jsonl'), ms(20), 5000), null);
+  assert.equal(answeredTurn(dir, ms(20), 5000), null);
 });
 
 test('missing file, directory or empty file returns null', () => {

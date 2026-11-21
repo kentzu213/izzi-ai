@@ -119,7 +119,7 @@ refuse it, but a dev standard it promotes is never exported (`not_via_door`); ne
 
     node tools/agent-maturity/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time>
       [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
-      [--supersedes <old standard record id>] [--critic-store <dir> (tests only)]
+      [--supersedes <old standard record id>] [--critic-store <dir> (tests only)] [--projects-dir <dir> (tests only)]
 
 In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
 
@@ -137,8 +137,17 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
    its floor class is not `pass`, `floor` must be that class; otherwise `owner_message_unbound` (also for an answer
    logged before the hook recorded the binding). The hook reads only live ask blocks (not inside a ```/~~~ code fence
    or an HTML comment) and logs no `proposalSha256` when the message holds more than one, so such an answer is
-   `owner_message_unbound` too. Read-only, like the input and CLI checks, so a refusal here writes
-   nothing.
+   `owner_message_unbound` too.
+   **Transcript check.** The door then re-reads the session's real transcript,
+   `~/.claude/projects/*/<sessionId>.jsonl` (exactly one such file; `--projects-dir` / `opts.projectsDir` only with
+   `AGENT_MATURITY_TEST=1`), and re-derives the answer from it: the owner prompt whose `timestamp` is within 5 s of the
+   logged answer must be exactly the option word, and the assistant message right before it (no other prompt between)
+   must hold exactly one live ask block whose "Đề xuất" line hashes to the logged `proposalSha256` (and whose label is
+   the logged `floor`). A missing, unreadable or ambiguous transcript, or any difference, is
+   `owner_message_transcript_mismatch` (fail closed). A reply Claude Code stored with extra content (an attachment,
+   pasted context) does not count as the bare word either: ask again. This raises the bar against a hook-log line
+   written by hand; it is **not** a security boundary against the same OS user, who can edit the transcript and the
+   log alike. Read-only, like the input and CLI checks, so a refusal here writes nothing.
 2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
    two pointers to one logged answer are the same answer: `owner_message_reused` for a second text or candidate), the statement
    the stored verdict allows and the floor label stored with it. Every gate refusal (hard_reject, REJECT, NEED-MORE,

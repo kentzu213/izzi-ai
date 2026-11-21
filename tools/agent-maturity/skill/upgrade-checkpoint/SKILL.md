@@ -76,7 +76,9 @@ owner which policy it would loosen. The owner choosing **Nâng cấp** on a ques
 label, when there is one) IS the approval and the acknowledgement; there is no second approval. Note where the owner
 answered (session id and the time of that message, from the transcript) for `--owner-message` in step 6: every
 standard needs it, `pass` included. `promote-standard` checks it against the hook log (an answer Nâng cấp in that
-session within 5 s of that time, at most 7 days old) and refuses the same answer for a second text or candidate.
+session within 5 s of that time, at most 7 days old), then against the session transcript itself (that reply right
+after this one ask block; `owner_message_transcript_mismatch` otherwise), and refuses the same answer for a second
+text or candidate.
 **Chỉnh is not approval:** a Chỉnh (or Bỏ qua) answer is refused (`owner_message_not_accept`). **Only the option
 word approves:** the owner's reply must be exactly `Nâng cấp` (any case, with or without diacritics, a final `.` or
 `!` allowed); "Nâng cấp nhé", "có", "ok" or "1" is refused (`owner_message_not_literal`), so the `Trả lời:` line
