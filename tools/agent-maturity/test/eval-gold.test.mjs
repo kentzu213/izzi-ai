@@ -1,23 +1,30 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  BASELINE_SCHEMA,
+  baselineExport,
+  classifierVersion,
   clopperPearson,
   evaluate,
   firstPassById,
   formatReport,
   gateVerdict,
   joinRows,
+  METRICS_VERSION,
   reopenedById,
   syntheticCoverage,
 } from '../eval/eval-gold.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../eval/eval-gold.mjs', import.meta.url));
+const CLASSIFY = fileURLToPath(new URL('../lib/classify.mjs', import.meta.url));
+const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'am-eval-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -174,16 +181,102 @@ test('first-pass and reopened count clarify like correction, as decide() does, f
   assert.deepEqual(Object.fromEntries(reopenedById(rows, 'label')), { b: true, d: false });
 });
 
+test('reopened (metrics@1): a correction within the next 3 prompts counts only before the next milestone', () => {
+  const r = (id, ts, gold) => ({ id, sessionId: 'S', ts, order: 0, gold, label: null, tags: [], split: 'test' });
+  const rows = [
+    r('m1', 't01', 'approve_decision'),
+    r('m2', 't02', 'praise'),
+    r('x', 't03', 'correction'),
+    r('m3', 't04', 'approve_decision'),
+    r('n1', 't05', 'none'),
+    r('n2', 't06', 'none'),
+    r('n3', 't07', 'clarify'),
+    r('m4', 't08', 'approve_decision'),
+    r('n4', 't09', 'none'),
+    r('n5', 't10', 'none'),
+    r('n6', 't11', 'none'),
+    r('late', 't12', 'correction'),
+  ];
+  // m1: m2 comes first, so x reopens m2 only. m3: the clarify is its 3rd prompt. m4: the correction is the 4th.
+  assert.deepEqual(Object.fromEntries(reopenedById(rows)), { m1: false, m2: true, m3: true, m4: false });
+  const other = [r('a', 't01', 'approve_decision'), { ...r('b', 't02', 'correction'), sessionId: 'T' }];
+  assert.deepEqual(Object.fromEntries(reopenedById(other)), { a: false });
+});
+
 test('baselines: gold and classifier on the same split, each with first-pass and the reopened estimate', () => {
   const m = run('test').splits.test;
   assert.deepEqual(m.baseline.gold, {
-    prompts: 7, corrections: 1, correctionsPer100: 100 / 7, milestones: 3, firstPass: 2, firstPassRate: 2 / 3, reopened: 1, reopenedRate: 1 / 3,
+    prompts: 7,
+    corrections: 1,
+    correctionsPer100: 100 / 7,
+    correctionOnly: 1,
+    correctionOnlyPer100: 100 / 7,
+    clarify: 0,
+    milestones: 3,
+    firstPass: 2,
+    firstPassRate: 2 / 3,
+    reopened: 1,
+    reopenedRate: 1 / 3,
   });
   assert.deepEqual(m.baseline.classifier, {
-    prompts: 6, corrections: 0, correctionsPer100: 0, milestones: 4, firstPass: 3, firstPassRate: 0.75, reopened: 0, reopenedRate: 0,
+    prompts: 6,
+    corrections: 0,
+    correctionsPer100: 0,
+    correctionOnly: 0,
+    correctionOnlyPer100: 0,
+    clarify: 0,
+    milestones: 4,
+    firstPass: 3,
+    firstPassRate: 0.75,
+    reopened: 0,
+    reopenedRate: 0,
   });
   assert.equal(m.unsure, 1);
   assert.deepEqual({ r: m.counts.resignation, q: m.counts.questionNegation }, { r: 1, q: 1 });
+});
+
+test('corrections per 100 (metrics@1) count correction + clarify; correction-only is kept apart', () => {
+  const prompts = ['a', 'b', 'c', 'd'].map((id, i) => prompt(id, 'test', 'S', `t${i}`));
+  const labels = [label('a', 'correction'), label('b', 'clarify'), label('c', 'none'), label('d', 'none')];
+  const predictions = [pred('a', 'clarify'), pred('b', 'none'), pred('c', 'correction'), pred('d', 'clarify')];
+  const m = evaluate({ prompts, labels, predictions, split: 'test', synthetic: CLEAN_SYNTHETIC }).splits.test.baseline;
+  assert.deepEqual([m.gold.corrections, m.gold.correctionOnly, m.gold.clarify, m.gold.correctionsPer100, m.gold.correctionOnlyPer100], [2, 1, 1, 50, 25]);
+  assert.deepEqual([m.classifier.corrections, m.classifier.correctionOnly, m.classifier.clarify, m.classifier.correctionsPer100], [3, 1, 2, 75]);
+});
+
+test('classifierVersion: first 12 hex of sha256 over classify.mjs with LF line endings', () => {
+  const lf = readFileSync(CLASSIFY, 'utf8').replace(/\r\n/g, '\n');
+  const expected = createHash('sha256').update(lf).digest('hex').slice(0, 12);
+  assert.equal(classifierVersion(), expected);
+  assert.match(classifierVersion(), /^[0-9a-f]{12}$/);
+  const crlf = join(scratch, 'crlf.mjs');
+  const unix = join(scratch, 'lf.mjs');
+  writeFileSync(crlf, 'a\r\nb\r\n');
+  writeFileSync(unix, 'a\nb\n');
+  assert.equal(classifierVersion(crlf), classifierVersion(unix));
+});
+
+test('baseline export: agent-maturity/baseline@1 with metrics@1, classifier version, counts and three rates per instrument', () => {
+  const report = run('test');
+  const b = baselineExport(report, 'test', { ownerReviewed: false });
+  assert.equal(BASELINE_SCHEMA, 'agent-maturity/baseline@1');
+  assert.equal(METRICS_VERSION, 'metrics@1');
+  assert.deepEqual(b, {
+    schema: 'agent-maturity/baseline@1',
+    definitions: 'metrics@1',
+    classifierVersion: classifierVersion(),
+    split: 'test',
+    n: { prompts: { classifier: 6, gold: 7 }, milestones: { classifier: 4, gold: 3 } },
+    instruments: {
+      classifier: { correctionsPer100: 0, firstPassRate: 0.75, reopenedRate: 0 },
+      gold: { correctionsPer100: 100 / 7, firstPassRate: 2 / 3, reopenedRate: 1 / 3 },
+    },
+    ownerReviewed: false,
+  });
+  assert.equal(baselineExport(run('all'), 'all', { ownerReviewed: true }).n.prompts.gold, 9);
+  assert.equal(baselineExport(run('all'), 'all', { ownerReviewed: true }).ownerReviewed, true);
+  assert.equal(report.definitions, 'metrics@1');
+  assert.equal(report.classifierVersion, classifierVersion());
 });
 
 test('gate FAIL lists fail reasons and every provisional reason, with the CI', () => {
@@ -269,9 +362,10 @@ test('text report shows every new section and labels per-rule lines with their s
     /verdict: FAIL \(precision 0\.500, 95% CI 0\.\d{3}-0\.\d{3}/,
     /^fail: /m,
     /^provisional: .*owner-reviewed/m,
-    /baseline \(gold labels\): corrections 14\.3 per 100/,
-    /baseline \(classifier, same split\): corrections 0\.0 per 100/,
-    /reopened within 3 prompts 0\.333 \(1\/3, estimate\)/,
+    /^D0 gold-set eval .*definitions metrics@1, classifier [0-9a-f]{12}/m,
+    /baseline \(gold labels\): corrections \(correction\+clarify\) 14\.3 per 100 prompts \(1\/7\), correction only 14\.3 \(1\/7\)/,
+    /baseline \(classifier, same split\): corrections \(correction\+clarify\) 0\.0 per 100/,
+    /reopened within 3 prompts before the next milestone 0\.333 \(1\/3, estimate\)/,
     /correction: label precision n\/a \(0\/0\), recall 0\.000 \(0\/1\); correction\|clarify axis/,
     /milestone misses: 1 \(<=20 chars 0, multi_intent 1, unsure 1\)/,
     /milestone rules \[test\]: /,
@@ -305,4 +399,25 @@ test('CLI prints the text report, or JSON with --json; --owner-reviewed drops th
   const usage = spawnSync(process.execPath, [SCRIPT, args[0]], { encoding: 'utf8' });
   assert.notEqual(usage.status, 0);
   assert.match(usage.stderr, /usage: eval-gold\.mjs/);
+});
+
+test('CLI --export-baseline writes the baseline JSON outside git and refuses a path inside the repo', () => {
+  const files = { prompts: PROMPTS, labels: LABELS, predictions: PREDICTIONS };
+  for (const [name, rows] of Object.entries(files)) writeFileSync(join(scratch, `${name}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const args = Object.keys(files).map((n) => join(scratch, `${n}.jsonl`));
+  const out = join(scratch, 'export', 'baseline-test.json');
+  const r = spawnSync(process.execPath, [SCRIPT, ...args, '--split', 'test', '--export-baseline', out], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /confusion/);
+  assert.match(r.stderr, /baseline written/);
+  const written = readFileSync(out, 'utf8');
+  assert.doesNotMatch(written, /SECRET/);
+  const b = JSON.parse(written);
+  assert.deepEqual([b.schema, b.definitions, b.split, b.ownerReviewed], ['agent-maturity/baseline@1', 'metrics@1', 'test', false]);
+  assert.equal(b.classifierVersion, classifierVersion());
+  const inside = join(REPO, 'tmp-d0-baseline.json');
+  const refused = spawnSync(process.execPath, [SCRIPT, ...args, '--split', 'test', '--export-baseline', inside], { encoding: 'utf8' });
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /inside the repo/);
+  assert.equal(existsSync(inside), false);
 });

@@ -1,14 +1,24 @@
 // D0: score D1 predictions against the gold labels (docs/izzi-v2/PLAN.md §2.6, §3.2 D0/D2, §4.9 items 3, 6, 7).
 // Aggregate output only: counts, rates, label names, rule ids and prompt ids. Never prompt text, context or notes.
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { classifyPrompt, MILESTONE_LABELS, normalize } from '../lib/classify.mjs';
-import { invokedDirectly, readJsonl, runMain } from './io.mjs';
+import { assertOutsideRepo, invokedDirectly, readJsonl, runMain } from './io.mjs';
 
 export const GOLD_LABELS = ['approve_decision', 'praise', 'confirm', 'flow', 'resignation', 'correction', 'clarify', 'none'];
 export const PREDICTED_LABELS = [...GOLD_LABELS, 'abstain'];
 export const TAGS = ['question', 'negation', 'deferral', 'completion_context', 'multi_intent'];
+// Shared with D5 (metrics/README.md). metrics@1: corrections per 100 = (correction + clarify) per 100 owner prompts;
+// first-pass = milestones with no correction/clarify since the previous milestone of the session; reopened = a
+// milestone followed by a correction/clarify within the next REOPEN_WINDOW owner prompts of the same session, before
+// the next milestone (an estimate). Change the version whenever one of these definitions changes.
+export const METRICS_VERSION = 'metrics@1';
+export const BASELINE_SCHEMA = 'agent-maturity/baseline@1';
+const CLASSIFY_FILE = fileURLToPath(new URL('../lib/classify.mjs', import.meta.url));
 const CRITICAL_TAGS = ['question', 'negation', 'deferral'];
 // decide() counts both as a correction signal (PLAN §4.3 step 2), so the first-pass walks do too.
 const CORRECTION_SIGNALS = ['correction', 'clarify'];
@@ -22,6 +32,13 @@ const SPLIT_TAG = { dev: 'dev', test: 'test', overall: 'dev+test' };
 const ratio = (a, b) => (b === 0 ? null : a / b);
 const isMilestone = (label) => MILESTONE_LABELS.has(label);
 const hasTag = (row, tags) => row.tags.some((t) => tags.includes(t));
+
+// Version of the D1 classifier that labelled a baseline: first 12 hex of sha256 over classify.mjs with LF line
+// endings, so a CRLF checkout (core.autocrlf) and the git blob give the same value. D5 computes it the same way.
+export function classifierVersion(file = CLASSIFY_FILE) {
+  const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  return createHash('sha256').update(text).digest('hex').slice(0, 12);
+}
 
 function readLabels(labels) {
   const byId = new Map();
@@ -138,15 +155,17 @@ export function firstPassById(rows, field = 'gold') {
   return result;
 }
 
-// Reverse metric estimate (§4.9 item 6): milestone id -> true when one of the next REOPEN_WINDOW labeled
-// prompts of the same session is a correction or clarify.
+// Reverse metric estimate (§4.9 item 6, metrics@1): milestone id -> true when one of the next REOPEN_WINDOW
+// labeled prompts of the same session is a correction or clarify, counting only prompts before the next milestone.
 export function reopenedById(rows, field = 'gold') {
   const result = new Map();
   for (const session of sessionsOf(rows)) {
     session.forEach((r, i) => {
       if (!isMilestone(r[field])) return;
-      const next = session.slice(i + 1, i + 1 + REOPEN_WINDOW);
-      result.set(r.id, next.some((n) => CORRECTION_SIGNALS.includes(n[field])));
+      const window = session.slice(i + 1, i + 1 + REOPEN_WINDOW);
+      const nextMilestone = window.findIndex((n) => isMilestone(n[field]));
+      const before = nextMilestone === -1 ? window : window.slice(0, nextMilestone);
+      result.set(r.id, before.some((n) => CORRECTION_SIGNALS.includes(n[field])));
     });
   }
   return result;
@@ -219,16 +238,22 @@ function missesOf(scored) {
 }
 
 // field 'gold' = baseline by gold labels; 'label' = the same numbers measured by the classifier (D6 compares like with like).
+// corrections = correction + clarify (metrics@1); correctionOnly is the narrower count, shown apart.
 function baselineOf(rows, walk, field) {
   const seen = rows.filter((r) => r[field] !== null);
-  const corrections = seen.filter((r) => r[field] === 'correction').length;
+  const per100 = (n) => (seen.length === 0 ? null : (n * 100) / seen.length);
+  const correctionOnly = seen.filter((r) => r[field] === 'correction').length;
+  const clarify = seen.filter((r) => r[field] === 'clarify').length;
   const milestones = seen.filter((r) => isMilestone(r[field]));
   const passed = milestones.filter((r) => walk.firstPass.get(r.id) === true).length;
   const reopened = milestones.filter((r) => walk.reopened.get(r.id) === true).length;
   return {
     prompts: seen.length,
-    corrections,
-    correctionsPer100: seen.length === 0 ? null : (corrections * 100) / seen.length,
+    corrections: correctionOnly + clarify,
+    correctionsPer100: per100(correctionOnly + clarify),
+    correctionOnly,
+    correctionOnlyPer100: per100(correctionOnly),
+    clarify,
     milestones: milestones.length,
     firstPass: passed,
     firstPassRate: ratio(passed, milestones.length),
@@ -336,10 +361,26 @@ export function evaluate({ prompts, labels, predictions, split = 'all', syntheti
   const rowsOf = (name) => (name === 'overall' ? rows : rows.filter((r) => r.split === name));
   const splits = Object.fromEntries(sections.map((name) => [name, splitMetrics(rowsOf(name), walks)]));
   const { summary, duplicatedIds } = leakageOf(prompts);
-  const report = { coverage, splits, synthetic, leakage: summary };
+  const report = { definitions: METRICS_VERSION, classifierVersion: classifierVersion(), coverage, splits, synthetic, leakage: summary };
   if (!splits.test) return report;
   const testUnique = splitMetrics(rows.filter((r) => r.split === 'test' && !duplicatedIds.has(r.id)), walks);
   return { ...report, testUnique, gate: gateVerdict(splits.test, synthetic, { ownerReviewed }) };
+}
+
+// The baseline D5 reads (metrics/README.md): aggregate numbers of one split, for both instruments.
+export function baselineExport(report, split, { ownerReviewed = false } = {}) {
+  const section = report.splits[split === 'all' ? 'overall' : split];
+  const { classifier, gold } = section.baseline;
+  const rates = (b) => ({ correctionsPer100: b.correctionsPer100, firstPassRate: b.firstPassRate, reopenedRate: b.reopenedRate });
+  return {
+    schema: BASELINE_SCHEMA,
+    definitions: report.definitions,
+    classifierVersion: report.classifierVersion,
+    split,
+    n: { prompts: { classifier: classifier.prompts, gold: gold.prompts }, milestones: { classifier: classifier.milestones, gold: gold.milestones } },
+    instruments: { classifier: rates(classifier), gold: rates(gold) },
+    ownerReviewed,
+  };
 }
 
 const SHORT = { approve_decision: 'appr', praise: 'prai', confirm: 'conf', flow: 'flow', resignation: 'resi', correction: 'corr', clarify: 'clar', none: 'none', abstain: 'abst' };
@@ -350,9 +391,10 @@ const formatCorrection = (c) => `${formatAxis('label', c.label)}; ${formatAxis('
 const formatMilestone = (ms) => `precision ${fmt(ms.precision)} (${ms.tp}/${ms.tp + ms.fp}, 95% CI ${fmtCi(ms.ci)}), recall ${fmt(ms.recall)} (${ms.tp}/${ms.tp + ms.fn})`;
 
 function formatBaseline(title, b, unit) {
-  return `baseline (${title}): corrections ${per100(b.correctionsPer100)} per 100 prompts (${b.corrections}/${b.prompts}); `
+  return `baseline (${title}): corrections (correction+clarify) ${per100(b.correctionsPer100)} per 100 prompts (${b.corrections}/${b.prompts}), `
+    + `correction only ${per100(b.correctionOnlyPer100)} (${b.correctionOnly}/${b.prompts}); `
     + `first-pass approval ${fmt(b.firstPassRate)} (${b.firstPass}/${b.milestones} ${unit}); `
-    + `reopened within ${REOPEN_WINDOW} prompts ${fmt(b.reopenedRate)} (${b.reopened}/${b.milestones}, estimate)`;
+    + `reopened within ${REOPEN_WINDOW} prompts before the next milestone ${fmt(b.reopenedRate)} (${b.reopened}/${b.milestones}, estimate)`;
 }
 
 function formatSplit(name, m) {
@@ -391,7 +433,7 @@ export function formatReport(report) {
   const c = report.coverage;
   const s = report.synthetic;
   const out = [
-    'D0 gold-set eval (aggregate only; no prompt text)',
+    `D0 gold-set eval (aggregate only; no prompt text); definitions ${report.definitions}, classifier ${report.classifierVersion}`,
     `coverage: prompts ${c.prompts}, labeled ${c.labeled}, unlabeled ${c.unlabeled}, label ids not in prompts ${c.unknownLabelIds}, duplicate labels ${c.duplicateLabels}, labeled without prediction ${c.missingPredictions}`,
     ...Object.entries(report.splits).map(([name, m]) => formatSplit(name, m)),
     ...formatLeakage(report),
@@ -411,15 +453,31 @@ export function formatReport(report) {
   return `${out.join('\n')}\n`;
 }
 
+function writeBaseline(file, baseline) {
+  assertOutsideRepo(file);
+  mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(baseline, null, 2)}\n`);
+  process.stderr.write(`baseline written: ${file}\n`);
+}
+
 function main(argv) {
-  const options = { split: { type: 'string', default: 'all' }, json: { type: 'boolean', default: false }, 'owner-reviewed': { type: 'boolean', default: false } };
+  const options = {
+    split: { type: 'string', default: 'all' },
+    json: { type: 'boolean', default: false },
+    'owner-reviewed': { type: 'boolean', default: false },
+    'export-baseline': { type: 'string' },
+  };
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options });
   if (positionals.length !== 3) {
-    throw new Error('usage: eval-gold.mjs <prompts.jsonl> <labels.jsonl> <predictions.jsonl> [--split dev|test|all] [--json] [--owner-reviewed]');
+    throw new Error('usage: eval-gold.mjs <prompts.jsonl> <labels.jsonl> <predictions.jsonl> [--split dev|test|all] [--json] [--owner-reviewed] [--export-baseline <file>]');
   }
+  const exportFile = values['export-baseline'];
+  if (exportFile !== undefined) assertOutsideRepo(exportFile);
   const [prompts, labels, predictions] = positionals.map(readJsonl);
-  const report = evaluate({ prompts, labels, predictions, split: values.split, ownerReviewed: values['owner-reviewed'] });
+  const ownerReviewed = values['owner-reviewed'];
+  const report = evaluate({ prompts, labels, predictions, split: values.split, ownerReviewed });
   process.stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
+  if (exportFile !== undefined) writeBaseline(exportFile, baselineExport(report, values.split, { ownerReviewed }));
 }
 
 if (invokedDirectly(import.meta.filename)) runMain(main);
