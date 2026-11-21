@@ -7,15 +7,14 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { refresh } from '../standards/refresh.mjs';
-import { capture, claimPromoteGate, cliAvailable, promote, userSource } from '../standards/store-cli.mjs';
+import { cliAvailable } from '../standards/store-cli.mjs';
+import { doorStandard } from './fixtures/door-standard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
-// These tests exercise the store, not the door: they hold the gate token promote-standard.mjs normally holds.
-const gate = claimPromoteGate();
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-refresh-')));
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
@@ -28,7 +27,7 @@ let n = 0;
 function setup() {
   n += 1;
   const dir = join(scratch, `r${n}`);
-  const s = { store: join(dir, 'store'), vault: join(dir, 'vault'), out: join(dir, 'home', 'standards.json'), projectsDir: join(dir, 'projects'), env: ENV };
+  const s = { store: join(dir, 'store'), vault: join(dir, 'vault'), out: join(dir, 'home', 'standards.json'), projectsDir: join(dir, 'projects'), criticStore: join(dir, 'critic'), env: ENV };
   for (const d of [s.store, s.vault, join(s.projectsDir, 'F--repo', 'memory')]) mkdirSync(d, { recursive: true });
   writeFileSync(join(s.projectsDir, 'F--repo', 'memory', 'run-real-tests.md'), NOTE);
   return s;
@@ -36,8 +35,7 @@ function setup() {
 
 test('refresh re-exports the active standards and imports feedback notes as candidates', { skip }, () => {
   const s = setup();
-  const std = capture({ topic: 'verify', title: 'Chuẩn verify', summary: 'Kèm lệnh test và mã thoát.', source: userSource('sess-r', '2026-11-21T01:00:00Z') }, s);
-  promote(std.id, 'user_instruction', { ...s, gate });
+  const std = doorStandard('verify', 'Kèm lệnh test và mã thoát.', 'sess-r', s);
   const r = refresh(s);
   assert.equal(r.code, 0, JSON.stringify(r));
   assert.equal(r.export.standards, 1);
@@ -51,7 +49,7 @@ test('refresh re-exports the active standards and imports feedback notes as cand
 
 test('refresh command line prints both summaries and exits 0', { skip }, () => {
   const s = setup();
-  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'refresh.mjs'), '--store', s.store, '--vault', s.vault, '--out', s.out, '--projects-dir', s.projectsDir], {
+  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'refresh.mjs'), '--store', s.store, '--vault', s.vault, '--out', s.out, '--projects-dir', s.projectsDir, '--critic-store', s.criticStore], {
     encoding: 'utf8', env: ENV, timeout: 120_000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);

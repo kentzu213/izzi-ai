@@ -156,8 +156,8 @@ instructions. When a standard and those conflict, the governing instructions win
      input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final across
      the store: a new candidate id with the same statement (ignoring case, spacing and punctuation) is refused.
   8. Never promote a dev standard any other way: `store-cli.mjs promote` refuses `dev-standard/` records
-     (`promote_requires_gate`), and the raw KnowledgeMemory CLI `promote` on such a record is a back door the CLI
-     itself cannot refuse.
+     (`promote_requires_gate`), and a record promoted any other way (the raw KnowledgeMemory CLI included) is never
+     exported to a session (`not_via_door`): only the door's own records, logged as `standard_promoted`, are.
   9. The same statement approved again supersedes the old standard automatically (history is kept). A new standard
      with other wording that replaces an old one: promote the new one, then `retract` the old one with a reason
      naming the new record id. To drop a standard: `retract` with a reason.

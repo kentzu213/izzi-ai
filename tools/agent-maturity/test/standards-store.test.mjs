@@ -15,7 +15,6 @@ import {
   StoreCliError,
   buildExport,
   capture,
-  claimPromoteGate,
   cliAvailable,
   exportActive,
   get,
@@ -23,10 +22,10 @@ import {
   promote,
   pythonEnv,
   retract,
-  runCli,
   supersede,
   userSource,
 } from '../standards/store-cli.mjs';
+import { doorCandidateId, doorEntry, doorSource, doorStandard, doorTopic, rawCli } from './fixtures/door-standard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
@@ -36,8 +35,6 @@ const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
-// These tests exercise the store, not the door: they hold the gate token promote-standard.mjs normally holds.
-const gate = claimPromoteGate();
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 // sha256 only: mtime is left out because another session may touch the real store while these tests run.
@@ -72,7 +69,7 @@ function newStore() {
   const dir = join(scratch, `s${n}`);
   mkdirSync(join(dir, 'store'), { recursive: true });
   mkdirSync(join(dir, 'vault'), { recursive: true });
-  return { store: join(dir, 'store'), vault: join(dir, 'vault'), out: join(dir, 'home', 'standards.json'), env: ENV };
+  return { store: join(dir, 'store'), vault: join(dir, 'vault'), out: join(dir, 'home', 'standards.json'), criticStore: join(dir, 'critic'), env: ENV };
 }
 
 const candidate = (topic, summary, session, extra = {}) => ({
@@ -86,20 +83,19 @@ const ids = (list) => list.map((s) => s.id);
 
 test('capture → promote → export → supersede → export on a temp store', { skip }, (t) => {
   const s = newStore();
-  const first = capture(candidate('verify-before-done', 'Báo xong phải kèm lệnh test và mã thoát.', 'sess-1'), s);
+  const first = capture(doorEntry('verify-before-done', 'Báo xong phải kèm lệnh test và mã thoát.', 'sess-1'), s);
   assert.equal(first.state, 'candidate');
   assert.equal(first.scope, 'user');
-  assert.equal(first.topic_key, 'dev-standard/verify-before-done');
+  assert.equal(first.topic_key, `dev-standard/${doorTopic('verify-before-done')}`);
   assert.equal(exportActive(s).standards.length, 0, 'a candidate is not exported');
 
-  assert.equal(promote(first.id, 'user_instruction', { ...s, gate }).state, 'active');
+  assert.equal(doorStandard('verify-before-done', 'Báo xong phải kèm lệnh test và mã thoát.', 'sess-1', s).id, first.id);
   const e1 = exportActive(s);
   assert.deepEqual(ids(e1.standards), [first.id]);
-  assert.equal(e1.standards[0].topic, 'verify-before-done');
+  assert.equal(e1.standards[0].topic, doorTopic('verify-before-done'));
   assert.deepEqual(JSON.parse(readFileSync(s.out, 'utf8')), e1, 'the file holds what was returned');
 
-  const second = capture(candidate('verify-before-done', 'Báo xong phải kèm lệnh test, mã thoát và log.', 'sess-2'), s);
-  promote(second.id, 'user_instruction', { ...s, gate });
+  const second = doorStandard('verify-before-done', 'Báo xong phải kèm lệnh test, mã thoát và log.', 'sess-2', s);
   const clash = exportActive(s);
   assert.deepEqual(ids(clash.standards), [], 'two active standards on one topic are both held back');
   assert.deepEqual(clash.skipped.map((k) => k.reason), ['conflict', 'conflict']);
@@ -121,7 +117,7 @@ test('project scope from a worktree path lands on the main checkout project', { 
   const s = newStore();
   const info = checkoutInfo(REPO_ROOT);
   assert.ok(info.root, 'the repo is a git checkout');
-  const rec = capture(candidate('repo-only', 'Chạy test agent-maturity trước khi mở PR.', 'sess-3', { scope: 'project', projectPath: join(REPO_ROOT, 'tools') }), s);
+  const rec = capture(doorEntry('repo-only', 'Chạy test agent-maturity trước khi mở PR.', 'sess-3', { scope: 'project', projectPath: join(REPO_ROOT, 'tools') }), s);
   const projects = listProjects(s);
   assert.equal(projects.length, 1);
   assert.ok(samePath(projects[0].root, info.root), `${projects[0].root} vs ${info.root}`);
@@ -132,9 +128,8 @@ test('project scope from a worktree path lands on the main checkout project', { 
   assert.equal(again.project_id, rec.project_id);
   assert.equal(listProjects(s).length, 1, 'the main checkout is registered once');
 
-  promote(rec.id, 'user_instruction', { ...s, gate });
-  const userStd = capture(candidate('all-projects', 'Áp cho mọi dự án.', 'sess-3'), s);
-  promote(userStd.id, 'user_instruction', { ...s, gate });
+  assert.equal(doorStandard('repo-only', 'Chạy test agent-maturity trước khi mở PR.', 'sess-3', s, { scope: 'project', projectPath: join(REPO_ROOT, 'tools') }).id, rec.id);
+  doorStandard('all-projects', 'Áp cho mọi dự án.', 'sess-3', s);
   const e = exportActive(s);
   assert.deepEqual(e.projects.map((p) => p.id), [rec.project_id]);
   assert.equal(buildContext(e, scratch).includes('Chuẩn repo-only'), false, 'another folder does not see the project standard');
@@ -168,16 +163,21 @@ test('records outside the dev-standard topic are never exported', { skip }, () =
     scope: 'user', kind: 'fact', topic_key: 'some-other-memory', title: 'Not a standard', summary: 'Other knowledge.',
     source: { type: 'user', uri: 'claude-session://x/2026-11-21' }, author: 'root', evidence: 'direct', confidence: 0.9,
   }));
-  const other = runCli(['capture', '--file', file], s);
-  runCli(['promote', other.id, '--basis', 'user_instruction'], s);
+  const other = rawCli(['capture', '--file', file], s);
+  rawCli(['promote', other.id, '--basis', 'user_instruction', '--reviewer', 'root'], s);
   assert.deepEqual(exportActive(s).standards, []);
 });
 
+// A door-made record as the store lists it, and the door's standard_promoted event for it.
+const doorRec = (id, extra = {}) => ({
+  id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${doorTopic(id)}`, kind: 'procedure', title: id, summary: id,
+  basis: 'user_instruction', source: doorSource('sess-x', doorCandidateId(id)),
+  review_after: '2099-01-01T00:00:00Z', source_current: true, expired: false, conflicts: [], ...extra,
+});
+const promotedFor = (names) => names.map((id) => ({ type: 'standard_promoted', candidateId: doorCandidateId(id), recordId: id }));
+
 test('buildExport holds back expired, changed-source, conflicting and other-scope records with a reason', () => {
-  const rec = (id, extra = {}) => ({
-    id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${id}`, kind: 'procedure', title: id, summary: id,
-    review_after: '2099-01-01T00:00:00Z', source_current: true, expired: false, conflicts: [], ...extra,
-  });
+  const rec = doorRec;
   const out = buildExport({
     projects: [{ id: 'p1', root: 'C:/p1', title: 'P1' }, { id: 'p2', root: 'C:/p2', title: 'P2' }],
     records: [
@@ -190,17 +190,48 @@ test('buildExport holds back expired, changed-source, conflicting and other-scop
       rec('role', { scope: 'role' }),
       rec('foreign', { topic_key: 'other' }),
     ],
-  }, new Date('2026-11-21T00:00:00Z'));
+  }, new Date('2026-11-21T00:00:00Z'), promotedFor(['ok', 'proj', 'cand', 'old', 'changed', 'clash', 'role', 'foreign']));
   assert.deepEqual(ids(out.standards), ['ok', 'proj']);
   assert.deepEqual(out.projects, [{ id: 'p1', root: 'C:/p1' }]);
   assert.deepEqual(out.skipped, [
-    { id: 'old', topic: 'old', reason: 'review_due' },
-    { id: 'changed', topic: 'changed', reason: 'source_changed' },
-    { id: 'clash', topic: 'clash', reason: 'conflict' },
-    { id: 'role', topic: 'role', reason: 'unsupported_scope' },
+    { id: 'old', topic: doorTopic('old'), reason: 'review_due' },
+    { id: 'changed', topic: doorTopic('changed'), reason: 'source_changed' },
+    { id: 'clash', topic: doorTopic('clash'), reason: 'conflict' },
+    { id: 'role', topic: doorTopic('role'), reason: 'unsupported_scope' },
   ]);
   assert.equal(out.schema, 'agent-maturity/standards@1');
   assert.equal(out.exported_at, '2026-11-21T00:00:00.000Z');
+});
+
+test('buildExport passes on only what the door made: door topic, user_instruction, door source and its standard_promoted event', () => {
+  // Arrange
+  const rec = doorRec;
+  const plainSource = userSource('sess-x', '2026-11-21T01:00:00Z');
+  const records = [
+    rec('door'),
+    rec('no-event'),
+    rec('other-record-event'),
+    rec('other-candidate-event'),
+    rec('named-topic', { topic_key: 'dev-standard/named-topic' }),
+    rec('import', { topic_key: `dev-standard/import/${doorTopic('import')}` }),
+    rec('artifact-basis', { basis: 'verified_artifact' }),
+    rec('artifact-source', { source: { ...doorSource('sess-x', doorCandidateId('artifact-source')), type: 'artifact' } }),
+    rec('plain-source', { source: plainSource }),
+    rec('extra-query', { source: { ...plainSource, uri: `${doorSource('sess-x', doorCandidateId('extra-query')).uri}&x=1` } }),
+  ];
+  const promoted = [
+    ...promotedFor(['door', 'named-topic', 'import', 'artifact-basis', 'artifact-source', 'plain-source', 'extra-query']),
+    { type: 'standard_promoted', candidateId: doorCandidateId('other-record-event'), recordId: 'door' },
+    { type: 'standard_promoted', candidateId: doorCandidateId('door'), recordId: 'other-candidate-event' },
+  ];
+
+  // Act
+  const out = buildExport({ projects: [], records }, new Date('2026-11-21T00:00:00Z'), promoted);
+
+  // Assert
+  assert.deepEqual(ids(out.standards), ['door']);
+  assert.deepEqual(out.skipped.map((k) => [k.id, k.reason]), records.slice(1).map((r) => [r.id, 'not_via_door']));
+  assert.deepEqual(ids(buildExport({ projects: [], records }, new Date('2026-11-21T00:00:00Z')).standards), [], 'no log, nothing passes');
 });
 
 test('AGENT_MATURITY_TEST=1 refuses the real store, vault and ~/.claude export', () => {
@@ -229,8 +260,8 @@ test('CLI rejections surface as StoreCliError without payload text', { skip }, (
 
 test('the command line refuses to promote a dev standard and re-exports after other promotes', { skip }, () => {
   const s = newStore();
-  const rec = capture(candidate('cli-flow', 'Dùng đường dẫn tuyệt đối trong worktree.', 'sess-6'), s);
-  const cli = (...args) => spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), ...args, '--store', s.store, '--vault', s.vault, '--out', s.out], {
+  const rec = capture(doorEntry('cli-flow', 'Dùng đường dẫn tuyệt đối trong worktree.', 'sess-6'), s);
+  const cli = (...args) => spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), ...args, '--store', s.store, '--vault', s.vault, '--out', s.out, '--critic-store', s.criticStore], {
     encoding: 'utf8', env: ENV, timeout: 60_000,
   });
   const refused = cli('promote', rec.id, '--basis', 'user_instruction');
@@ -242,7 +273,7 @@ test('the command line refuses to promote a dev standard and re-exports after ot
     scope: 'user', kind: 'fact', topic_key: 'cli-other-memory', title: 'Not a standard', summary: 'Other knowledge.',
     source: { type: 'user', uri: 'claude-session://x/2026-11-21' }, author: 'root', evidence: 'direct', confidence: 0.9,
   }));
-  const other = runCli(['capture', '--file', file], s);
+  const other = rawCli(['capture', '--file', file], s);
   const r = cli('promote', other.id, '--basis', 'user_instruction');
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const printed = JSON.parse(r.stdout);
@@ -254,13 +285,10 @@ test('the command line refuses to promote a dev standard and re-exports after ot
 });
 
 test('buildExport holds back a record whose review_after has passed, even when the store did not flag it', () => {
-  const rec = (id, reviewAfter) => ({
-    id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${id}`, kind: 'procedure', title: id, summary: id,
-    review_after: reviewAfter, source_current: true, expired: false, conflicts: [],
-  });
-  const out = buildExport({ projects: [], records: [rec('ok', '2026-12-01T00:00:00Z'), rec('due', '2026-11-20T00:00:00Z'), rec('none', null)] }, new Date('2026-11-21T00:00:00Z'));
+  const rec = (id, reviewAfter) => doorRec(id, { review_after: reviewAfter });
+  const out = buildExport({ projects: [], records: [rec('ok', '2026-12-01T00:00:00Z'), rec('due', '2026-11-20T00:00:00Z'), rec('none', null)] }, new Date('2026-11-21T00:00:00Z'), promotedFor(['ok', 'due', 'none']));
   assert.deepEqual(ids(out.standards), ['ok']);
-  assert.deepEqual(out.skipped, [{ id: 'due', topic: 'due', reason: 'review_due' }, { id: 'none', topic: 'none', reason: 'review_due' }]);
+  assert.deepEqual(out.skipped, [{ id: 'due', topic: doorTopic('due'), reason: 'review_due' }, { id: 'none', topic: doorTopic('none'), reason: 'review_due' }]);
 });
 
 test('pythonEnv drops PYTHONPATH, PYTHONHOME and PYTHONSTARTUP in any letter case and keeps UTF-8 output', () => {

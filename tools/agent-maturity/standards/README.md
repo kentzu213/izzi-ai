@@ -8,7 +8,7 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 | File | Role |
 |---|---|
 | `promote-standard.mjs` | The single door for a dev standard: owner answer verified in the D1 hook log, D4 promote gate, then capture, promote, supersede, export, log. Root only. |
-| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. Refuses to promote a `dev-standard/` record without the gate token (`promote_requires_gate`). |
+| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. `promote` refuses a `dev-standard/` record (`promote_requires_gate`); the export passes on only door-made standards (`not_via_door`). |
 | `project-root.mjs` | Folder -> main git checkout (a worktree counts as the repo it came from); registered-project lookup. |
 | `inject.mjs` | Picks the standards for a session folder and renders the injected block (≤1200 characters). |
 | `import-feedback.mjs` | Imports auto-memory notes of `type: feedback` as candidates. Never promotes, never edits a note. |
@@ -44,12 +44,20 @@ Subagents never write the store; they return proposals to root.
 
 All dev standards use `topic_key` `dev-standard/<topic>`. Other KnowledgeMemory records are never exported.
 
+**The export is the boundary.** Nothing in one Node process can stop another caller from promoting a record (a fresh
+import of `store-cli.mjs`, `promoteApproved` called outside the door, the raw KnowledgeMemory CLI), so the export
+decides what reaches a session: an active `dev-standard/` record is passed on only when `promote-standard` made
+it: topic `dev-standard/<12 hex>`, basis `user_instruction`, a `user` source in the door's format
+(`claude-session://<session>/<time>?candidate=<id>&verdict=c<n>.<12 hex>`) and a `standard_promoted` event in the
+critic log (`opts.criticStore`, default `<AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/critic`) naming that
+record and that candidate. Anything else is listed in `skipped` as `not_via_door`.
+
 ## JS API (`store-cli.mjs`)
 
 Every function is synchronous, returns the parsed KnowledgeMemory record (without `projection_sync`) and throws
 `StoreCliError` with `code` in `bad_input | cli_unavailable | cli_failed | bad_output | refuse_real_store |
 import_not_promotable | promote_requires_gate`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
-`{ store, vault, out, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
+`{ store, vault, out, criticStore, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
 both are always passed to the CLI explicitly.
 
 Python runs isolated: `python -I -B -X utf8` with the CLI's own folder as working folder, `PYTHONIOENCODING=utf-8`,
@@ -57,7 +65,7 @@ and `PYTHONPATH`, `PYTHONHOME`, `PYTHONSTARTUP` never passed on (`pythonEnv`). `
 `sys.path`, so the CLI is started through a short bootstrap that adds exactly its own folder (from the CLI path).
 
 ```js
-import { capture, promote, supersede, retract, get, exportActive, userSource } from './store-cli.mjs';
+import { capture, promote, promoteApproved, supersede, retract, get, exportActive, userSource } from './store-cli.mjs';
 
 userSource(sessionId, atIso?)            // -> { type: 'user', uri: 'claude-session://<session>/<time>' } (no message text)
 capture(candidate, opts?)                // -> record, state 'candidate'
@@ -66,14 +74,16 @@ capture(candidate, opts?)                // -> record, state 'candidate'
   // The store dedupes by content: the same candidate again returns the existing record in its current state.
 promote(id, basis, opts?)                // basis: 'user_instruction' (user source) | 'verified_artifact' (file sha matches)
   // Refuses with import_not_promotable a record from the importer (topic import/..., author agent-maturity-import),
-  // and with promote_requires_gate any other dev-standard/ record unless opts.gate is the token from claimPromoteGate().
-claimPromoteGate()                       // the gate token, handed out once per process; promote-standard.mjs claims it on load
+  // and with promote_requires_gate any other dev-standard/ record.
+promoteApproved(id, opts?)               // the door's promote step (dev-standard/ only, basis user_instruction); only
+  // promote-standard.mjs calls it: a record it promotes for anyone else is never exported (not_via_door)
 listActive(topicKey, opts?)              // active records on exactly this dev-standard/ topic (read-only)
 supersede(oldId, newId, reason, opts?)   // both active, same scope/project/topic; old -> 'superseded'
 retract(id, reason, opts?)               // -> 'retracted'
 get(id, opts?)                           // -> record (any state)
 resolveProject(projectPath, opts?)       // -> { id, root } of the main checkout, registering it if needed
-exportActive(opts?)                      // writes opts.out (default <AGENT_MATURITY_HOME|~/.claude/agent-maturity>/standards.json)
+exportActive(opts?)                      // writes opts.out (default <AGENT_MATURITY_HOME|~/.claude/agent-maturity>/standards.json),
+  // door-made standards only (checked against the critic log in opts.criticStore)
 ```
 
 Store limits enforced by the CLI: `title` ≤160, `summary` ≤1200, `topic_key` ≤120 characters; payloads with an email
@@ -92,11 +102,12 @@ answer time>?candidate=<candidate id>&verdict=c<critique>.<12 hex of the verdict
     node tools/agent-maturity/standards/store-cli.mjs retract <id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs get <id>
     node tools/agent-maturity/standards/store-cli.mjs export
+      [--store <dir>] [--vault <dir>] [--out <file>] [--critic-store <dir>]   # on every command
       [--store <dir>] [--vault <dir>] [--out <file>]
 
 Prints one JSON object `{ result, export }`; promote, supersede and retract re-export automatically. Exit 1 on error.
-The command line never holds the gate token: `promote` on a `dev-standard/` record exits 1 with
-`promote_requires_gate`. The raw KnowledgeMemory CLI cannot refuse it, so never call it to promote a dev standard.
+`promote` on a `dev-standard/` record exits 1 with `promote_requires_gate`. The raw KnowledgeMemory CLI cannot
+refuse it, but a dev standard it promotes is never exported (`not_via_door`); never call it to promote one.
 
 ## The single door: promote-standard
 
@@ -124,8 +135,9 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
 3. **capture**: topic `dev-standard/<first 12 hex of statementKey(statement)>`, title `<agent> · <taskType>`, summary
    `<statement> Cách kiểm: <check>`, kind (quality_gate is stored as procedure), scope `user` (or `project` with
    `--project` when the candidate's `projects` is `this`; `project_path_required` without it, before the gate).
-4. **promote** (`user_instruction`, with the gate token). 5. **supersede** the other active record on the same topic and
-   scope (the same statement approved again). 6. **exportActive**. 7. **standard_promoted** in the critic store log.
+4. **promote** (`promoteApproved`, basis `user_instruction`). 5. **supersede** the other active record on the same
+   topic and scope (the same statement approved again). 6. **standard_promoted** in the critic store log. 7.
+   **exportActive**, which passes the record on only with that event, so the log comes first.
 
 A failure in steps 3-7 is `store_step_failed` with `step`; capture and promote are idempotent (same content, same
 record), so the same command finishes the job once the cause is fixed.
@@ -161,7 +173,7 @@ real is root's job in D2.
 
 ## Scheduled refresh
 
-    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>]
+    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir>]
 
 The one entry point for the scheduled job (root registers it, daily): `exportActive` first (so a failing import never
 leaves the hook with stale data), then the feedback-note import below. Prints `{ code, export, import }`; exit 1 when
@@ -181,12 +193,12 @@ rejects (sensitive data) are listed under `failed`; notes over 64 KB (size check
 
 **An imported candidate is never promoted.** Its file sha would satisfy `verified_artifact`, but a note an agent wrote
 is not owner approval, so `promote` refuses any record with an `import/` topic or the importer author
-(`import_not_promotable`). When the owner approves one, root:
+(`import_not_promotable`), and the export never passes on an `import/` record (`not_via_door`). When the owner
+approves one, root:
 
-1. captures the owner-approved text with `source: userSource(sessionId, at)` under its own topic (not `import/...`;
-   project scope when it is really about one codebase),
-2. promotes that record with basis `user_instruction`,
-3. retracts the imported candidate with a reason naming the new record id, then re-exports.
+1. writes a checkpoint candidate with the owner-approved text and runs the flow to `promote-standard` (SKILL.md),
+   which stores it under its own door topic,
+2. retracts the imported candidate with a reason naming the new record id, then re-exports.
 
 ## Tests
 

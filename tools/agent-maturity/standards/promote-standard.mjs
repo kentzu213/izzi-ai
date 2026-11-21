@@ -17,8 +17,9 @@
 //      returns (the narrowed text for NARROW), never an argument.
 //   3. capture into KnowledgeMemory: topic dev-standard/<12 hex of statementKey>, source userSource(session, hook
 //      time) plus the candidate and verdict ids, scope from the candidate (user unless projects is 'this').
-//   4. promote with basis user_instruction and the gate token; 5. supersede the active standard on the same topic;
-//   6. exportActive; 7. log standard_promoted in the critic store.
+//   4. promote with basis user_instruction (store-cli promoteApproved); 5. supersede the active standard on the same
+//   topic; 6. log standard_promoted in the critic store; 7. exportActive, which passes a dev standard on only with
+//   that event (not_via_door otherwise), so the log comes first.
 // Everything that can be checked without writing (inputs, the hook log, the KnowledgeMemory CLI) is checked before
 // step 2. A failure after it is store_step_failed naming the step; capture and promote are idempotent (the same
 // content is the same record), so once the cause is fixed the same command finishes the job.
@@ -39,17 +40,15 @@ import { isInside } from './project-root.mjs';
 import {
   TOPIC_PREFIX,
   capture,
-  claimPromoteGate,
   cliAvailable,
   exportActive,
   exportPath,
   listActive,
-  promote,
+  promoteApproved,
   supersede,
   userSource,
 } from './store-cli.mjs';
 
-const GATE = claimPromoteGate();
 export const OWNER_MESSAGE_WINDOW_MS = 5_000;
 // An owner answer approves a promotion for at most this long.
 export const OWNER_ANSWER_MAX_AGE_MS = 7 * 86_400_000;
@@ -241,13 +240,13 @@ function storeStandard({ adapter, gate, candidate, verdict, message, answer, pro
   if (captured.state !== 'candidate' && captured.state !== 'active') {
     fail('store_step_failed', `capture returned a ${captured.state} record (${captured.id}): this exact approval was dropped before; ask the owner again`, 'capture');
   }
-  const record = runStep('promote', done, () => promote(captured.id, 'user_instruction', { ...km, gate: GATE }));
+  const record = runStep('promote', done, () => promoteApproved(captured.id, km));
   const reason = `promote-standard: candidate ${candidate.id} verdict ${verdictRef} approved the same statement again (owner answer ${message.sessionId} ${answer.ts})`;
   const superseded = runStep('supersede', done, () =>
     listActive(topic, km)
       .filter((r) => r.id !== record.id && r.scope === record.scope && (r.project_id ?? null) === (record.project_id ?? null))
       .map((old) => supersede(old.id, record.id, reason, km).id));
-  const exported = runStep('export', done, () => exportActive(km));
+  // The export passes on only records with this event (store-cli.mjs doorMade), so it is logged first.
   runStep('log', done, () => adapter.logEvent({
     type: 'standard_promoted',
     candidateId: candidate.id,
@@ -262,6 +261,7 @@ function storeStandard({ adapter, gate, candidate, verdict, message, answer, pro
     ownerMessage: gate.ownerMessage,
     at: now.toISOString(),
   }));
+  const exported = runStep('export', done, () => exportActive(km));
   return {
     candidateId: candidate.id,
     verdict: gate.verdict,
@@ -284,7 +284,7 @@ export function promoteStandard(opts = {}) {
   const home = resolveHome(env);
   const criticDir = path.resolve(criticStore ?? path.join(home, 'critic'));
   refuseRealHome([home, criticDir], env);
-  const km = { store: opts.store, vault: opts.vault, out: opts.out, env, python: opts.python, cli: opts.cli };
+  const km = { store: opts.store, vault: opts.vault, out: opts.out, criticStore: criticDir, env, python: opts.python, cli: opts.cli };
   const answer = findOwnerAnswer(home, message);
   checkAnswerAge(answer, now);
   if (!cliAvailable(km)) fail('cli_unavailable', 'KnowledgeMemory CLI or bundled Python not found');

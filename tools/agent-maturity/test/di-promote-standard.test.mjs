@@ -16,7 +16,9 @@ import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
 import { OWNER_ANSWER_MAX_AGE_MS, OWNER_MESSAGE_WINDOW_MS, promoteStandard } from '../standards/promote-standard.mjs';
-import { StoreCliError, capture, claimPromoteGate, cliAvailable, get, promote, runCli, userSource } from '../standards/store-cli.mjs';
+import * as storeCli from '../standards/store-cli.mjs';
+import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, userSource } from '../standards/store-cli.mjs';
+import { rawCli } from './fixtures/door-standard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_CLAUDE = join(homedir(), '.claude');
@@ -356,11 +358,10 @@ test('5. promote straight into dev-standard/ is refused (promote_requires_gate);
     scope: 'user', kind: 'fact', topic_key: 'some-other-memory', title: 'Not a standard', summary: 'Other knowledge.',
     source: { type: 'user', uri: 'claude-session://x/2026-11-21' }, author: 'root', evidence: 'direct', confidence: 0.9,
   }));
-  const other = runCli(['capture', '--file', file], w.km);
+  const other = rawCli(['capture', '--file', file], w.km);
   const gateRefused = (e) => e instanceof StoreCliError && e.code === 'promote_requires_gate';
 
   // Act + Assert
-  assert.throws(() => claimPromoteGate(), gateRefused, 'promote-standard already holds the one gate token');
   assert.throws(() => promote(rec.id, 'user_instruction', w.km), gateRefused);
   assert.throws(() => promote(rec.id, 'user_instruction', { ...w.km, gate: Symbol('agent-maturity promote gate') }), gateRefused);
   const cli = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--basis', 'user_instruction', '--store', w.store, '--vault', w.vault, '--out', join(w.home, 'standards.json')], {
@@ -370,6 +371,55 @@ test('5. promote straight into dev-standard/ is refused (promote_requires_gate);
   assert.equal(JSON.parse(cli.stdout).error, 'promote_requires_gate');
   assert.equal(get(rec.id, w.km).state, 'candidate');
   assert.equal(promote(other.id, 'user_instruction', w.km).state, 'active', 'a record outside dev-standard/ needs no gate');
+});
+
+// A dev-standard/ payload shaped like the door's (12 hex topic, a user source in the door's format), for the raw CLI.
+function doorShaped(w, name, uriExtra, extra = {}) {
+  const file = join(w.dir, `${name}.json`);
+  writeFileSync(file, JSON.stringify({
+    scope: 'user', kind: 'preference', topic_key: `dev-standard/${sha(name).slice(0, 12)}`, title: `Chuẩn ${name}`, summary: `Lối tắt ${name}.`,
+    source: { type: 'user', uri: `${userSource(randomUUID(), '2026-11-21T01:00:00Z').uri}${uriExtra}` }, author: 'root', evidence: 'direct', confidence: 0.9,
+    ...extra,
+  }));
+  return rawCli(['capture', '--file', file], w.km);
+}
+
+test('the export is the boundary: a dev standard promoted outside the door is never exported (not_via_door)', { skip }, async () => {
+  // Arrange: one standard through the real door, so its candidate has a standard_promoted event
+  const w = world();
+  const c = critique(w);
+  const stored = door(w, c.id, ownerAnswers(w).at());
+  const fresh = await import('../standards/store-cli.mjs?fresh');
+  const doorUri = `?candidate=${c.id}&verdict=c1.${'a'.repeat(12)}`;
+  const km = { ...w.km, criticStore: w.critic };
+
+  // Act: every other route to an active dev-standard/ record
+  const viaExport = doorShaped(w, 'via-exported-door-function', doorUri);
+  promoteApproved(viaExport.id, km); // the door's exported promote step, called outside the door
+  const viaFresh = doorShaped(w, 'via-fresh-import', doorUri);
+  assert.throws(() => fresh.promote(viaFresh.id, 'user_instruction', km), (err) => err.code === 'promote_requires_gate');
+  fresh.promoteApproved(viaFresh.id, km);
+  const viaRaw = doorShaped(w, 'via-raw-cli', doorUri);
+  rawCli(['promote', viaRaw.id, '--basis', 'user_instruction', '--reviewer', 'root'], km); // what runCli did
+  const imported = doorShaped(w, 'via-import', doorUri, { topic_key: 'dev-standard/import/via-import-0a1b2c3d', author: IMPORT_AUTHOR });
+  rawCli(['promote', imported.id, '--basis', 'user_instruction', '--reviewer', 'root'], km);
+  const forged = doorShaped(w, 'via-forged-log', '');
+  rawCli(['promote', forged.id, '--basis', 'user_instruction', '--reviewer', 'root'], km);
+  for (const rec of [imported, forged]) w.adapter.logEvent({ type: 'standard_promoted', candidateId: c.id, recordId: rec.id });
+  const e = exportActive(km);
+
+  // Assert
+  for (const mod of [storeCli, fresh]) {
+    assert.equal('claimPromoteGate' in mod, false, 'no gate token to claim');
+    assert.equal('runCli' in mod, false, 'no raw CLI runner');
+  }
+  const bypass = [viaExport, viaFresh, viaRaw, imported, forged].map((r) => r.id);
+  for (const id of bypass) assert.equal(get(id, km).state, 'active', 'active in KnowledgeMemory');
+  assert.deepEqual(e.standards.map((x) => x.id), [stored.recordId]);
+  assert.deepEqual(e.skipped.filter((x) => x.reason === 'not_via_door').map((x) => x.id).sort(), [...bypass].sort());
+  const block = sessionStartBlock(w);
+  assert.ok(block.includes(c.statement), block);
+  assert.equal(block.includes('Lối tắt'), false, block);
 });
 
 test('6. the same statement approved again supersedes the old standard; the export keeps only the new one; a rerun is idempotent', { skip }, () => {
