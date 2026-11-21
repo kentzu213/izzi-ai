@@ -70,7 +70,7 @@ Mỗi lần một ứng viên, đặt cuối câu trả lời, theo đúng khung
     - Cách kiểm: <điều kiện kiểm được trước khi giao>
     - Bằng chứng: <lúc trước anh sửa/từ chối gì, ≤15 từ> → <sau đó anh duyệt gì>
     - Loại: sở thích | quy trình | cổng chất lượng · Tra cứu: R0 | R1 | R2
-    Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
+    Trả lời: gõ đúng chữ Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
 
 Ví dụ từ chính phiên hôm nay (chỉ minh hoạ, chưa ghi vào kho, chỉ đúng nếu anh duyệt bản giải thích ở §1):
 
