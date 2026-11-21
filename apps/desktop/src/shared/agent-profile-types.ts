@@ -17,14 +17,22 @@ export interface AgentProfileView {
   pending: AgentProfileVersion | null;
 }
 
+/**
+ * Why background runs stopped on their own: an input already sent came up again, several runs in a row
+ * had no new activity, or a run (any run) got a 402, out of credit. The owner's own click is never paused.
+ */
+export type AgentProfilesPauseReason = 'repeat_input' | 'idle_runs' | 'quota';
+
+export interface AgentProfilesPause {
+  reason: AgentProfilesPauseReason;
+  at: string;
+}
+
 export interface AgentProfilesState {
   profiles: AgentProfileView[];
   lastRunAt: string | null;
-  runsToday: number;
-  maxRunsPerDay: number;
-  /** Model calls today (fallbacks and failures included) against their own cap. */
-  callsToday: number;
-  maxCallsPerDay: number;
+  /** Set while background runs are paused; "Tiếp tục" clears it. */
+  backgroundPause: AgentProfilesPause | null;
 }
 
 /** Bounded failure codes; the renderer maps them to Vietnamese text. */
@@ -32,8 +40,11 @@ export type AgentProfilesError =
   | 'auth'
   | 'busy'
   | 'no_activity'
-  | 'daily_limit'
+  | 'paused'
+  /** The AI server answered 402: out of credit. */
   | 'quota'
+  /** The AI server refused for quota or permission on another status. */
+  | 'refused'
   | 'model_unavailable'
   | 'invalid_output'
   | 'invalid_input'

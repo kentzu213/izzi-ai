@@ -37,7 +37,7 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
   - Lọc lại trên kết quả model trả về. Còn dính thì bỏ cả hồ sơ.
 - Không lấy dữ liệu Chăm sóc khách hoặc inbox làm đầu vào.
 - Ghi MyGraph tối đa 1 lần mỗi ngày cho mỗi tài khoản, và chỉ khi nội dung đổi.
-- Chi phí chắt lọc: tối đa 1 lần gọi model mỗi ngày cho tất cả agent, dùng model rẻ. Bỏ qua khi không có hoạt động mới. Dừng khi máy chủ báo hết credit (402).
+- Chi phí chắt lọc: không có trần gọi cố định theo ngày hay theo tháng (chủ shop chốt ngày 2026-11-21). Chỉ gọi model khi có hoạt động mới, dùng model rẻ, có cầu chì bảo vệ (mục 4). Dừng khi máy chủ báo hết credit (402).
 - Hồ sơ là **dữ liệu, không phải chỉ dẫn**:
   - bọc riêng trong prompt;
   - không đưa vào Content Agent (mọi khẳng định ở đó phải có proof claim);
@@ -77,12 +77,17 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
 
 **Kích hoạt:** S2 chỉ có nút "Cập nhật hồ sơ ngay" trên trang **Memory**, trong mục "Hồ sơ agent". Chưa có lịch tự chạy.
 
-**Giới hạn credit:**
+**Giới hạn credit** (đổi ngày 2026-11-21): chủ shop bỏ trần 3 lần chạy và 6 lần gọi mỗi ngày, và tắt trần tháng. Thay vào đó là gọi theo việc thật, cộng các cầu chì:
 
-- Tối đa 3 lần chạy và 6 lần gọi model mỗi ngày (giờ Việt Nam). Nút "Cập nhật hồ sơ ngay" bị khoá khi hết một trong hai trần.
-  - Mỗi lần gọi được ghi sổ **trước** khi gọi, kể cả lần dự phòng và lần lỗi.
-  - Mỗi lần gọi hết hạn sau 90 giây.
-- Không có hoạt động mới thì không gọi model.
+- Không có hoạt động mới thì gọi model **0 lần**. Nút "Cập nhật hồ sơ ngay" không bao giờ bị khoá vì số lần gọi.
+- Mỗi lúc chỉ chạy một lượt.
+- Đầu vào của mỗi lượt (dấu vân tay) được ghi sổ **trước** khi gọi.
+- Mỗi lần gọi hết hạn sau 90 giây, kể cả khi đường truyền không chịu dừng. Câu trả lời đến sau 90 giây bị bỏ.
+  - Lần gọi hết hạn có thể đã bị tính tiền, nên lượt đó dừng luôn, không gọi model dự phòng.
+  - Mỗi lần gọi mang một Idempotency-Key cố định theo tài khoản, đầu vào và model. Gửi lại cùng đầu vào cho cùng model (ví dụ bạn bấm lại sau lần hết hạn) thì dùng lại khoá đó, để máy chủ nhận ra là gửi lại.
+- **Bộ phát hiện vòng lặp**, chỉ áp cho lượt nền: gặp lại đầu vào đã gửi, hoặc lượt nền thứ 3 liền nhau không có hoạt động mới, thì tạm dừng lượt nền và hiện nút "Tiếp tục". Lần bạn tự bấm "Cập nhật hồ sơ ngay" không bao giờ bị chặn.
+  - S2 chưa có lịch tự chạy, nên bộ phát hiện này và nút "Tiếp tục" chỉ thật sự có tác dụng khi S3 có lịch.
+  - Lượt nền chỉ được gọi từ main. Cửa sổ app chỉ mở được lượt của bạn.
 - Model dùng (chủ shop chọn ngày 2026-11-19):
   - chính: `gpt-6-luna` (GPT-6 Luna, chạy qua codex-lb, giá $0.10 vào / $0.50 ra cho mỗi 1 triệu token);
   - dự phòng một lần: `gpt-4o-mini`. Model này đi qua nhà cung cấp khác (OpenRouter), nên vẫn trả lời được khi pool codex-lb báo hỏng.
@@ -90,6 +95,9 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
 - Không dùng `gpt-5.6-sol`: model này luôn chạy suy luận mức cao, đắt hơn và dễ làm JSON bị cắt.
 - Model "Terra 6.1" không có trong catalog codex-lb; chỉ có `gpt-6.1-sol` và `gpt-5.6-terra`.
 - Lỗi 402 (hết credit) thì dừng ngay, không thử model dự phòng.
+  - Credit dùng chung cho cả tài khoản, nên 402 ở bất kỳ lượt nào, kể cả lần bạn tự bấm, cũng tạm dừng lượt nền cho tới khi bạn bấm "Tiếp tục".
+  - Chỉ mã trạng thái 402 thật mới được báo là hết credit. Lỗi 402 đôi khi đến từ nhà cung cấp model phía sau izzi, nên câu báo nói rõ điều đó.
+  - Máy chủ từ chối vì hạn mức hoặc quyền với mã khác 402 thì báo riêng ("từ chối vì hạn mức hoặc quyền truy cập"), cũng dừng lượt đó và không thử model khác, nhưng không tạm dừng lượt nền.
 - Mỗi lần chạy tối đa 4 agent; agent có việc **chờ lâu nhất** được làm trước, nên không agent nào bị bỏ đói. Agent chưa tới lượt giữ nguyên mốc.
 - Mỗi agent có **mốc riêng**: mốc là thời điểm của hoạt động mới nhất đã đọc. Việc xong trong lúc model đang chạy vẫn được đọc ở lần sau.
 - Model trả kết quả không dùng được (sai JSON, bị cắt, hoặc mọi hồ sơ đều bị loại): lượt đó vẫn tính, và hoạt động đã gửi coi như xong. Như vậy không bao giờ trả tiền hai lần cho cùng một đầu vào.
@@ -107,7 +115,7 @@ Agent tự học từ việc đã làm, giống cách Obsidian/claude-mem ghi l�
 
 - `main/agents/memory/memory-redact`: mẫu SĐT `0`/`84`/`+84`, email, link Zalo, dãy 9 chữ số trở lên, token `sk-`/`izzi-`/JWT/Bearer.
 - `main/agents/memory/agent-profile-digest`: thuần. Gom hoạt động, dựng prompt, kiểm JSON trả về, giới hạn độ dài, lọc lại dữ liệu cá nhân.
-- `main/agents/memory/agent-profile-store`: settings theo tài khoản, đếm lượt theo ngày Việt Nam.
+- `main/agents/memory/agent-profile-store`: settings theo tài khoản, mốc của từng agent, sổ đầu vào đã gửi và trạng thái tạm dừng lượt nền (không còn đếm lượt theo ngày).
 - `main/agents/memory/agent-profile-service`: điều phối. Chạy từng lượt một (không song song), gọi model, lưu bản chờ duyệt.
 - `main/agents/memory/agent-profile-ipc`: chỉ nhận lời gọi từ cửa sổ app tin cậy.
 - `renderer/components/AgentProfilesSection`, cùng `renderer/pages/agent-profiles-flow` cho câu chữ và trạng thái nút.
@@ -200,6 +208,6 @@ Test kèm theo:
 ## 8. Quyết định của chủ shop (2026-11-19: "Duyệt theo đề xuất")
 
 1. Chế độ mặc định của hồ sơ: **Duyệt**.
-2. Model chắt lọc: trần 3 lần mỗi ngày. Lúc duyệt dự kiến dùng `gpt-5.6-sol`. Sau đó chủ shop chọn **GPT-6 Luna** ("Dùng Luna 6 hoặc Terra 6.1", 2026-11-19), nên model chính là `gpt-6-luna`, dự phòng là `gpt-4o-mini` (xem mục 4).
+2. Model chắt lọc: lúc duyệt là trần 3 lần mỗi ngày. Ngày 2026-11-21 chủ shop bỏ trần cố định và tắt trần tháng; giờ chỉ gọi khi có việc thật, có cầu chì (xem mục 4). Lúc duyệt dự kiến dùng `gpt-5.6-sol`. Sau đó chủ shop chọn **GPT-6 Luna** ("Dùng Luna 6 hoặc Terra 6.1", 2026-11-19), nên model chính là `gpt-6-luna`, dự phòng là `gpt-4o-mini` (xem mục 4).
 3. Đầu vào: lịch sử chat persona cộng kết quả marketing.
 4. Thứ tự: phát hành #69 + #70 trước (đã làm, beta.115), rồi mới làm S2.
