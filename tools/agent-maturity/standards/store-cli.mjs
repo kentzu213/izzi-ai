@@ -1,16 +1,23 @@
 // Node wrapper over the Codex KnowledgeMemory CLI (~/.codex/bin/project-memory.py), the single store for dev
 // standards (docs/izzi-v2/PLAN.md §2.4-2.5). Only root calls it, after the owner answers a checkpoint; hooks never do.
 // Every call passes --store and --vault explicitly; with AGENT_MATURITY_TEST=1 the real store, vault and
-// ~/.claude are refused. Usage and the JS API: standards/README.md.
+// ~/.claude are refused. A dev-standard/ record is stored only through standards/promote-standard.mjs (the D4 gate
+// plus the verified owner answer). The boundary is the export, not this module: exportActive passes a dev-standard/
+// record on to sessions only when the door made it (doorMade), so a record promoted any other way (the raw
+// KnowledgeMemory CLI, promoteApproved called outside the door, a fresh import of this module) is held back as
+// not_via_door. promote() and the command line still refuse dev-standard/ records (promote_requires_gate). Usage and
+// the JS API: standards/README.md.
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { ID_RE } from '../critic/candidate.mjs';
+import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { resolveHome, writeFileAtomic } from '../lib/store.mjs';
 import { EXPORT_SCHEMA, isReviewDue } from './inject.mjs';
-import { checkoutInfo, findProject, isInside } from './project-root.mjs';
+import { checkoutInfo, findProject, isInside, samePath } from './project-root.mjs';
 
 export const TOPIC_PREFIX = 'dev-standard/';
 // Records the auto-memory importer captures (topic dev-standard/import/..., this author) are never promoted.
@@ -24,6 +31,10 @@ const CLI_TIMEOUT_MS = 60_000;
 const SCOPES = new Set(['user', 'project']);
 const BASES = new Set(['user_instruction', 'verified_artifact']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// What promote-standard.mjs stores: topic dev-standard/<12 hex>, and a user source naming the owner answer, the
+// candidate and the verdict: claude-session://<session>/<time>?candidate=<id>&verdict=c<n>.<12 hex>.
+const DOOR_TOPIC_RE = /^dev-standard\/[0-9a-f]{12}$/;
+const DOOR_URI_RE = /^claude-session:\/\/[A-Za-z0-9-]{1,128}\/[^?/]+\?candidate=([a-z0-9-]+)&verdict=c\d+\.[0-9a-f]{12}$/;
 
 // The CLI has no list command, so the export reads records through its own core module, read-only.
 const EXPORT_SCRIPT = [
@@ -128,8 +139,9 @@ function spawnPython(t, args) {
   }
 }
 
-// Runs one project-memory.py subcommand against the given store and vault; returns its parsed JSON.
-export function runCli(args, opts) {
+// Runs one project-memory.py subcommand against the given store and vault; returns its parsed JSON. Internal: callers
+// use the named functions below.
+function runCli(args, opts) {
   const t = targets(opts);
   return spawnPython(t, ['-c', RUN_CLI_SCRIPT, path.dirname(t.cli), t.cli, '--store', t.store, '--vault', t.vault, ...args]);
 }
@@ -159,13 +171,20 @@ export function listProjects(opts) {
   return runCli(['projects'], opts);
 }
 
-// A folder (a worktree counts as its main checkout) -> { id, root } of its registered project. An unregistered
-// checkout is registered by its main root, never by the worktree.
-export function resolveProject(projectPath, opts) {
+// Read-only: a folder (a worktree counts as its main checkout) -> { id, root } of its registered project, or null.
+export function lookupProject(projectPath, opts) {
   if (typeof projectPath !== 'string' || projectPath.trim() === '') throw badInput('projectPath is required');
   const info = checkoutInfo(projectPath);
   const hit = findProject(listProjects(opts), info.path, info.root);
-  if (hit) return { id: hit.id, root: hit.root };
+  return hit ? { id: hit.id, root: hit.root } : null;
+}
+
+// A folder -> { id, root } of its registered project. An unregistered checkout is registered by its main root,
+// never by the worktree.
+export function resolveProject(projectPath, opts) {
+  const hit = lookupProject(projectPath, opts);
+  if (hit) return hit;
+  const info = checkoutInfo(projectPath);
   const made = runCli(['project', info.root ?? info.path], opts);
   return { id: made.id, root: made.root };
 }
@@ -212,17 +231,36 @@ export function capture(candidate, opts) {
 export const isImported = (record) => Boolean(record) && (record.author === IMPORT_AUTHOR
   || (typeof record.topic_key === 'string' && record.topic_key.startsWith(`${TOPIC_PREFIX}${IMPORT_TOPIC}`)));
 
-// basis: 'user_instruction' (owner approved this exact text, user source) or 'verified_artifact' (file sha matches).
+const isDevStandard = (record) => Boolean(record) && typeof record.topic_key === 'string' && record.topic_key.startsWith(TOPIC_PREFIX);
+
 // An imported auto-memory note is refused with import_not_promotable even though its file sha would pass the
-// store: root re-captures the owner-approved text with userSource(...) under its own topic, promotes that and
-// retracts the import (standards/README.md).
-export function promote(id, basis, opts) {
+// store: the owner-approved text goes through promote-standard as its own candidate, then root retracts the import
+// (standards/README.md).
+function promotable(id, opts) {
   needId(id);
+  const record = get(id, opts);
+  if (isImported(record)) {
+    throw new StoreCliError('import_not_promotable', 'an imported auto-memory note is never promoted: run the owner-approved text through promote-standard as its own candidate, then retract the import');
+  }
+  return record;
+}
+
+// basis: 'user_instruction' (owner approved this exact text, user source) or 'verified_artifact' (file sha matches).
+// A dev-standard/ record is refused (promote_requires_gate): standards/promote-standard.mjs stores dev standards.
+// Records outside dev-standard/ are unchanged.
+export function promote(id, basis, opts) {
   if (!BASES.has(basis)) throw badInput('basis must be user_instruction or verified_artifact');
-  if (isImported(get(id, opts))) {
-    throw new StoreCliError('import_not_promotable', 'an imported auto-memory note is never promoted: capture the owner-approved text with userSource(...) under its own topic, promote that, then retract the import');
+  if (isDevStandard(promotable(id, opts))) {
+    throw new StoreCliError('promote_requires_gate', 'a dev standard is promoted only through standards/promote-standard.mjs (D4 gate + the owner answer in the hook log)');
   }
   return withoutSync(runCli(['promote', id, `--basis=${basis}`, '--reviewer=root'], opts));
+}
+
+// The door's promote step (basis user_instruction), for dev-standard/ records only. Only promote-standard.mjs calls
+// it, after the gate; anything else it promotes stays out of the export (not_via_door), like a raw CLI promote.
+export function promoteApproved(id, opts) {
+  if (!isDevStandard(promotable(id, opts))) throw badInput(`promoteApproved is for ${TOPIC_PREFIX} records only`);
+  return withoutSync(runCli(['promote', id, '--basis=user_instruction', '--reviewer=root'], opts));
 }
 
 // Both records must be active and on the same scope, project and topic. The old one keeps its history.
@@ -242,15 +280,32 @@ export function get(id, opts) {
   return runCli(['get', id], opts);
 }
 
-// Pure: active dev standards in user or project scope. Records that recall would not use are held back with a reason.
-export function buildExport(raw, now = new Date()) {
+// The candidate id in a door-made source uri, or null.
+export function doorCandidate(r) {
+  const m = r && r.source && r.source.type === 'user' && typeof r.source.uri === 'string' ? DOOR_URI_RE.exec(r.source.uri) : null;
+  return m && ID_RE.test(m[1]) ? m[1] : null;
+}
+
+// True when promote-standard.mjs made this record: a door topic, basis user_instruction, a user source in the door's
+// format, and a standard_promoted event (`promoted`: those of the critic log) naming this record and that candidate.
+export function doorMade(r, promoted) {
+  const candidateId = doorCandidate(r);
+  return DOOR_TOPIC_RE.test(r.topic_key) && r.basis === 'user_instruction' && candidateId !== null
+    && promoted.some((e) => e && e.recordId === r.id && e.candidateId === candidateId);
+}
+
+// Pure: active dev standards in user or project scope that the door made (`promoted`: the critic log's
+// standard_promoted events). Records that recall would not use, or that the door did not make, are held back with a
+// reason.
+export function buildExport(raw, now = new Date(), promoted = []) {
   const standards = [];
   const skipped = [];
   for (const r of Array.isArray(raw && raw.records) ? raw.records : []) {
     if (!r || r.state !== 'active' || typeof r.topic_key !== 'string' || !r.topic_key.startsWith(TOPIC_PREFIX)) continue;
     const topic = r.topic_key.slice(TOPIC_PREFIX.length);
     let reason = null;
-    if (!SCOPES.has(r.scope)) reason = 'unsupported_scope';
+    if (!doorMade(r, promoted)) reason = 'not_via_door';
+    else if (!SCOPES.has(r.scope)) reason = 'unsupported_scope';
     else if (r.source_current === false) reason = 'source_changed';
     else if (r.expired || isReviewDue(r.review_after, now)) reason = 'review_due';
     else if (Array.isArray(r.conflicts) && r.conflicts.length > 0) reason = 'conflict';
@@ -269,19 +324,70 @@ export function exportPath(opts = {}) {
   return path.resolve(opts.out ?? path.join(resolveHome(opts.env ?? process.env), 'standards.json'));
 }
 
-// Writes the active standards to opts.out (default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/standards.json).
-// Run it after every promote, supersede or retract (the command line does this itself).
+// The critic store the door logs to and the export checks door-made standards against: always
+// ~/.claude/agent-maturity/critic under the home folder, whatever AGENT_MATURITY_HOME says. Only tests
+// (AGENT_MATURITY_TEST=1) may name another one: opts.criticStore, default <AGENT_MATURITY_HOME>/critic. Otherwise any
+// other opts.criticStore is refused (critic_store_test_only), so an export cannot be pointed at a forged log.
+export function criticPath(opts = {}) {
+  const env = opts.env ?? process.env;
+  if (env.AGENT_MATURITY_TEST === '1') return path.resolve(opts.criticStore ?? path.join(resolveHome(env), 'critic'));
+  const home = path.join(os.homedir(), '.claude', 'agent-maturity', 'critic');
+  if (opts.criticStore !== undefined && !samePath(opts.criticStore, home)) {
+    throw new StoreCliError('critic_store_test_only', `the critic store is always ${home.replace(/\\/g, '/')}; another one is for tests only (AGENT_MATURITY_TEST=1)`);
+  }
+  return home;
+}
+
+// The door's standard_promoted events for the candidates these records name, read-only (no log: none).
+function doorPromotions(records, opts) {
+  const candidates = new Set(records.map(doorCandidate).filter(Boolean));
+  if (candidates.size === 0) return [];
+  const critic = createJsonAdapter(criticPath(opts));
+  return [...candidates].flatMap((id) => critic.listEvents(id)).filter((e) => e && e.type === 'standard_promoted');
+}
+
+// doorMade checked against the critic log in opts.criticStore (criticPath), whatever the record's state.
+export const isDoorMade = (record, opts) => Boolean(record) && doorMade(record, doorPromotions([record], opts));
+
+// Candidate and active records whose topic_key starts with `prefix`, read-only. A store not created yet (no
+// memory.sqlite3) has none; the read-only reader cannot open it.
+function readRecords(t, prefix) {
+  return fs.existsSync(path.join(t.store, 'memory.sqlite3'))
+    ? spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, prefix])
+    : { projects: [], records: [] };
+}
+
+// Active records on exactly this topic_key, any scope (promote-standard supersedes the old one on its topic).
+export function listActive(topicKey, opts) {
+  if (typeof topicKey !== 'string' || !topicKey.startsWith(TOPIC_PREFIX)) throw badInput(`topicKey must start with ${TOPIC_PREFIX}`);
+  const raw = readRecords(targets(opts), topicKey);
+  return (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active' && r.topic_key === topicKey).map(withoutSync);
+}
+
+// Active dev standards the door made, each with its standard_promoted event: [{ record, event }], read-only.
+export function listDoorActive(opts) {
+  const raw = readRecords(targets(opts), TOPIC_PREFIX);
+  const active = (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active').map(withoutSync);
+  const promoted = doorPromotions(active, opts);
+  return active.flatMap((record) => {
+    const event = promoted.find((e) => e && e.recordId === record.id && e.candidateId === doorCandidate(record));
+    return event && doorMade(record, promoted) ? [{ record, event }] : [];
+  });
+}
+
+// Writes the active standards to opts.out (default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/standards.json),
+// checked against the door's log in the critic store (criticPath, refused before anything is read). Run it after every
+// promote, supersede or retract (the command line does this itself).
 export function exportActive(opts = {}) {
+  criticPath(opts);
   const t = targets(opts);
   const out = exportPath(opts);
   if (t.env.AGENT_MATURITY_TEST === '1' && lands(out, path.join(os.homedir(), '.claude'))) {
     throw new StoreCliError('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing to write the export into the real ~/.claude');
   }
-  // A store not created yet (no memory.sqlite3) has no standards; the read-only reader cannot open it.
-  const raw = fs.existsSync(path.join(t.store, 'memory.sqlite3'))
-    ? spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, TOPIC_PREFIX])
-    : { projects: [], records: [] };
-  const result = buildExport(raw, opts.now ?? new Date());
+  const raw = readRecords(t, TOPIC_PREFIX);
+  const active = (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active');
+  const result = buildExport(raw, opts.now ?? new Date(), doorPromotions(active, opts));
   writeFileAtomic(out, `${JSON.stringify(result, null, 2)}\n`);
   return result;
 }
@@ -295,8 +401,8 @@ const COMMANDS = {
   export: () => null,
 };
 const REEXPORT = new Set(['promote', 'supersede', 'retract', 'export']);
-const FLAGS = new Set(['store', 'vault', 'out', 'file', 'basis', 'reason']);
-const USAGE = 'usage: node store-cli.mjs <capture --file f | promote <id> --basis b | supersede <old> <new> --reason r | retract <id> --reason r | get <id> | export> [--store d] [--vault d] [--out f]';
+const FLAGS = new Set(['store', 'vault', 'out', 'file', 'basis', 'reason', 'critic-store']);
+const USAGE = 'usage: node store-cli.mjs <capture --file f | promote <id> --basis b | supersede <old> <new> --reason r | retract <id> --reason r | get <id> | export> [--store d] [--vault d] [--out f] [--critic-store d]';
 
 function parseCliArgs(argv) {
   const out = { _: [] };
@@ -322,7 +428,7 @@ export function main(argv, env = process.env) {
     const [command, ...rest] = argv;
     if (!Object.hasOwn(COMMANDS, command ?? '')) throw badInput(USAGE);
     const a = parseCliArgs(rest);
-    const opts = { store: a.store, vault: a.vault, out: a.out, env };
+    const opts = { store: a.store, vault: a.vault, out: a.out, criticStore: a['critic-store'], env };
     const result = COMMANDS[command](a, opts);
     const exported = REEXPORT.has(command) ? exportActive(opts) : null;
     const summary = exported ? { file: exportPath(opts).replace(/\\/g, '/'), standards: exported.standards.length, skipped: exported.skipped.length } : null;

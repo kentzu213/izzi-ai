@@ -8,7 +8,8 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { findFeedbackNotes, importFeedbackNotes, noteCandidate, parseNote } from '../standards/import-feedback.mjs';
-import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, retract, runCli, userSource } from '../standards/store-cli.mjs';
+import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, retract, userSource } from '../standards/store-cli.mjs';
+import { doorStandard, doorTopic, rawCli } from './fixtures/door-standard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
@@ -65,9 +66,9 @@ function newStore() {
   const dir = mkdtempSync(join(scratch, 'store-'));
   mkdirSync(join(dir, 'store'));
   mkdirSync(join(dir, 'vault'));
-  return { store: join(dir, 'store'), vault: join(dir, 'vault'), env: ENV };
+  return { store: join(dir, 'store'), vault: join(dir, 'vault'), criticStore: join(dir, 'critic'), env: ENV };
 }
-const events = (s, type) => runCli(['audit'], s).filter((e) => e.type === type);
+const events = (s, type) => rawCli(['audit'], s).filter((e) => e.type === type);
 
 test('parseNote reads nested metadata and top-level type, quoted or not', () => {
   const nested = parseNote(NESTED);
@@ -208,6 +209,7 @@ test('an imported candidate is never promoted, whatever the basis', { skip }, ()
   // verified_artifact would pass the store itself: the note file still matches its sha.
   assert.throws(() => promote(imported.id, 'verified_artifact', s), refused);
   assert.throws(() => promote(imported.id, 'user_instruction', s), refused);
+  assert.throws(() => promoteApproved(imported.id, s), refused);
   assert.equal(get(imported.id, s).state, 'candidate');
   assert.equal(events(s, 'promoted').length, 0);
 });
@@ -216,20 +218,21 @@ test('a record by the importer author is refused under any topic', { skip }, () 
   const s = newStore();
   const rec = capture({ topic: 'not-under-import', title: 'Chuẩn x', summary: 'Nội dung x.', source: userSource('sess-imp', '2026-11-21T01:00:00Z'), author: IMPORT_AUTHOR }, s);
   assert.throws(() => promote(rec.id, 'user_instruction', s), (e) => e.code === 'import_not_promotable');
+  assert.throws(() => promoteApproved(rec.id, s), (e) => e.code === 'import_not_promotable');
   assert.equal(get(rec.id, s).state, 'candidate');
 });
 
-test('documented path: root re-captures the owner-approved text with a user source, promotes it, retracts the import', { skip }, () => {
+test('documented path: the owner-approved text goes through the door under its own topic, then the import is retracted', { skip }, () => {
   const s = newStore();
   const out = join(s.store, '..', 'home', 'standards.json');
   const first = importFeedbackNotes({ projectsDir: makeProjects(), ...s });
   const imported = get(first.captured[0].id, s);
-  const approved = capture({ topic: 'from-feedback-note', title: imported.title, summary: imported.summary, source: userSource('sess-owner', '2026-11-21T02:00:00Z') }, s);
-  assert.equal(promote(approved.id, 'user_instruction', s).state, 'active');
+  const approved = doorStandard('from-feedback-note', imported.summary, 'sess-owner', s, { title: imported.title });
+  assert.equal(approved.state, 'active');
   assert.equal(retract(imported.id, `owner approved it as ${approved.id}`, s).state, 'retracted');
   const e = exportActive({ ...s, out });
   assert.deepEqual(e.standards.map((x) => x.id), [approved.id]);
-  assert.equal(e.standards[0].topic, 'from-feedback-note');
+  assert.equal(e.standards[0].topic, doorTopic('from-feedback-note'));
 });
 
 test('import refuses the real store under AGENT_MATURITY_TEST=1', () => {

@@ -6,9 +6,9 @@ before a standard is injected into every session, so every ambiguity is resolved
 
 **A standard may be stored only after the owner chooses Nâng cấp on its exact text.** The promote gate refuses any
 promotion, `pass` included, without `ownerMessage` (a pointer to where the owner answered), logs that pointer with
-the promotion and refuses the same answer for a second text. The pointer is recorded and reuse-checked, not
-verified: the gate cannot read the transcript, so checking it against the D1 hook outcome log is an integration item
-for D2/D3. The code floor only
+the promotion and refuses the same answer for a second text. The gate cannot read the transcript; the single door
+`standards/promote-standard.mjs` (slice DI) checks the pointer against the D1 hook outcome log before it calls the
+gate (`standards/README.md`). The code floor only
 decides two things: whether the checkpoint question shows a warning label (anything not `pass`), and whether
 `hard_reject` blocks the sentence outright (then even the owner's Nâng cấp cannot store it).
 
@@ -219,7 +219,7 @@ probes (`test/fixtures/d4-floor-root-probes-r4.json`: 16 loosenings, 0 pass; 5 h
 the style and action rules; `critic-floor-every-clause.test.mjs` runs the round-6 probes, the clause split, "xưng"
 and the `disclosure` topic.
 
-## Promote gate (D3 must call it)
+## Promote gate (called by standards/promote-standard.mjs)
 
 `assertPromotable({ adapter, candidateId, ownerApproval })` in `promote-gate.mjs` loads, under the store lock, the
 current candidate, its LAST verdict and the hard-REJECT index itself, and throws `PromotionRefused` (with `code`)
@@ -243,13 +243,14 @@ verdict, floor, statement, ownerMessage }`.
 
 Audit trail: a promotion that clears every check appends, under the same lock, a `promotion_approved` log event
 `{ candidateId, statementKey, floorClass, ownerMessage, at }` (`at` from the optional `now` argument). One checkpoint
-answer approves one text: an `ownerMessage` already logged for a different `statementKey` (same `sessionId` and the
-same `uuid`, case-insensitive, or the same instant in `ts`) is refused with `owner_message_reused`; the same answer
-for the same text again is fine. A uuid-only and a ts-only pointer to the same message cannot be matched here. The
-pointer is recorded and reuse-checked, not verified: the gate cannot read the transcript. Verifying it against the
-D1 hook outcome log (the message exists, is the owner's, and answered Nâng cấp to this exact text) is an integration
-item for D2/D3. Adapters implement `listPromotionApprovals()` for the reuse check. **At integration, D3's `promote` must call it with the store adapter, the candidate
-id and the owner's approval, and promote only the returned `statement`.** D4 does not edit D3 code.
+answer approves one text of one candidate: an `ownerMessage` already logged for a different `statementKey` or a
+different candidate (same `sessionId` and the same `uuid`, case-insensitive, or the same instant in `ts`) is refused
+with `owner_message_reused`; the same answer for the same text of the same candidate again is fine. A uuid-only and a ts-only pointer to the same message cannot be matched here. The
+pointer is recorded and reuse-checked here; `promote-standard` verifies it against the D1 hook outcome log first (an
+answer Nâng cấp of that session within 5 s; Chỉnh is not approval) and passes the hook event's own time, so two pointers to one
+logged answer count as one. The hook log does not record which text the question showed (see Wiring). Adapters
+implement `listPromotionApprovals()` for the reuse check. `promote-standard` calls the gate with this store and
+stores only the returned `statement`.
 
 ## Research tiers
 
@@ -284,19 +285,22 @@ rewrite has a new statement and a new revision and is not affected.
 ## CLI
 
     node tools/agent-maturity/critic/label.mjs <candidate.json>
-    node tools/agent-maturity/critic/brief.mjs <candidate.json> --store <dir>
+    node tools/agent-maturity/critic/brief.mjs <candidate.json> --store <dir> [--repo-root <checkout folder>]
     node tools/agent-maturity/critic/record-verdict.mjs <candidate.json> <verdict.json|reply.md> --store <dir>
 
 Exit codes: 0 ok · 1 invalid input (nothing stored; a refused reply is logged and says whether its one retry is
-left) · 2 usage · 3 blocked by the loop guard, the retry rule or the hard-REJECT index. `--store` is required.
-Until D3 lands, use a temp folder such as `F:/Ai Tools/Codex/Temp/agent-maturity-critic/`.
+left) · 2 usage · 3 blocked by the loop guard, the retry rule or the hard-REJECT index. `--store` is required: the
+critic store is `~/.claude/agent-maturity/critic` (the default of `promote-standard`); tests use temp folders. The brief
+tells socrates which folder the evidence paths are relative to: `--repo-root`, else the working folder (never the
+folder brief.mjs is installed in).
 
-## Integration gap (D2/D3)
+## Wiring (slice DI)
 
-`install.mjs` does not copy `critic/` into the installed runtime yet, so the commands above run only from the
-Starizzi checkout. Copying it, pointing `--store` at the KnowledgeMemory adapter (with `listPromotionApprovals`), calling
-`assertPromotable` from `promote` and verifying `ownerMessage` against the D1 hook outcome log are integration
-items for D2/D3; D4 does not edit `install.mjs`/`uninstall.mjs`.
+`install.mjs` copies `critic/*.mjs` (not `test-corpus/` or `dry-runs/`) into `~/.claude/agent-maturity/bin/critic/`.
+This JSON store stays the critic store; KnowledgeMemory keeps only approved standards, written by
+`standards/promote-standard.mjs` after this gate. Open: the hook's `checkpoint_outcome` event carries no hash of the
+proposal the question showed, so the check proves the owner chose Nâng cấp or Chỉnh in that session at that time, not
+on which text.
 
 ## Dry runs (2026-11-21, real socrates, store `F:/Ai Tools/Codex/Temp/am-critic-store`)
 

@@ -7,7 +7,8 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 
 | File | Role |
 |---|---|
-| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. |
+| `promote-standard.mjs` | The single door for a dev standard: owner answer verified in the D1 hook log, D4 promote gate, then capture, promote, supersede, export, log. Root only. |
+| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. `promote` refuses a `dev-standard/` record (`promote_requires_gate`); the export passes on only door-made standards (`not_via_door`). |
 | `project-root.mjs` | Folder -> main git checkout (a worktree counts as the repo it came from); registered-project lookup. |
 | `inject.mjs` | Picks the standards for a session folder and renders the injected block (≤1200 characters). |
 | `import-feedback.mjs` | Imports auto-memory notes of `type: feedback` as candidates. Never promotes, never edits a note. |
@@ -18,10 +19,13 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 
 1. The owner picks "Nâng cấp" (or "Chỉnh") at a checkpoint. Root calls `capture` -> a **candidate**.
 2. D4 runs the Socrates review on the candidate and keeps its verdict.
-3. Root calls `promote` when the owner approved that exact sentence (ACCEPT unchanged, or the owner OKed the
-   NARROW text). A new standard that contradicts an old one: capture + promote the new one, then
-   `supersede(old, new, reason)`. Dropping a standard: `retract(id, reason)`. History is never erased.
-4. After every promote, supersede or retract, root re-exports (`exportActive`; the command line does this itself).
+3. When the owner approved that exact sentence (ACCEPT unchanged, or the owner's Nâng cấp on the NARROW text), root
+   runs ONE command, `promote-standard` (below). It is the only way a dev standard becomes active: it captures,
+   promotes, supersedes the active standard on the same topic and re-exports. A standard with other wording that
+   replaces an old one: the same command with `--supersedes <old record id>`. Dropping a standard: `retract(id, reason)`. History
+   is never erased.
+4. After every promote, supersede or retract the export is rewritten (`promote-standard` and the command line do it
+   themselves).
    The daily `refresh.mjs` job re-exports too, so the export never goes stale.
 5. The next session in any project, through any entrypoint, gets the block.
 
@@ -40,12 +44,26 @@ Subagents never write the store; they return proposals to root.
 
 All dev standards use `topic_key` `dev-standard/<topic>`. Other KnowledgeMemory records are never exported.
 
+**The export is the boundary.** Nothing in one Node process can stop another caller from promoting a record (a fresh
+import of `store-cli.mjs`, `promoteApproved` called outside the door, the raw KnowledgeMemory CLI), so the export
+decides what reaches a session: an active `dev-standard/` record is passed on only when `promote-standard` made
+it: topic `dev-standard/<12 hex>`, basis `user_instruction`, a `user` source in the door's format
+(`claude-session://<session>/<time>?candidate=<id>&verdict=c<n>.<12 hex>`) and a `standard_promoted` event in the
+critic log naming that record and that candidate. Anything else is listed in `skipped` as `not_via_door`.
+
+**The critic store is fixed.** The export, the scheduled refresh and the door always use the critic store under the
+home folder, `~/.claude/agent-maturity/critic` (also when `AGENT_MATURITY_HOME` is set), so nobody can point an
+export at a forged log. `--critic-store` / `opts.criticStore` is a test-only override: it is honoured only with
+`AGENT_MATURITY_TEST=1` (default then `<AGENT_MATURITY_HOME>/critic`); without it any other folder is refused with
+`critic_store_test_only` before anything is read or written. Run the D4 critic CLI with
+`--store ~/.claude/agent-maturity/critic` so its verdicts land where the door reads them.
+
 ## JS API (`store-cli.mjs`)
 
 Every function is synchronous, returns the parsed KnowledgeMemory record (without `projection_sync`) and throws
 `StoreCliError` with `code` in `bad_input | cli_unavailable | cli_failed | bad_output | refuse_real_store |
-import_not_promotable`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
-`{ store, vault, out, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
+import_not_promotable | promote_requires_gate | critic_store_test_only`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
+`{ store, vault, out, criticStore, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
 both are always passed to the CLI explicitly.
 
 Python runs isolated: `python -I -B -X utf8` with the CLI's own folder as working folder, `PYTHONIOENCODING=utf-8`,
@@ -53,7 +71,7 @@ and `PYTHONPATH`, `PYTHONHOME`, `PYTHONSTARTUP` never passed on (`pythonEnv`). `
 `sys.path`, so the CLI is started through a short bootstrap that adds exactly its own folder (from the CLI path).
 
 ```js
-import { capture, promote, supersede, retract, get, exportActive, userSource } from './store-cli.mjs';
+import { capture, promote, promoteApproved, supersede, retract, get, exportActive, userSource } from './store-cli.mjs';
 
 userSource(sessionId, atIso?)            // -> { type: 'user', uri: 'claude-session://<session>/<time>' } (no message text)
 capture(candidate, opts?)                // -> record, state 'candidate'
@@ -61,32 +79,99 @@ capture(candidate, opts?)                // -> record, state 'candidate'
   //              kind = 'procedure', evidence (default 'direct' for a user source), confidence = 0.9, author = 'root' }
   // The store dedupes by content: the same candidate again returns the existing record in its current state.
 promote(id, basis, opts?)                // basis: 'user_instruction' (user source) | 'verified_artifact' (file sha matches)
-  // Refuses with import_not_promotable a record from the importer (topic import/..., author agent-maturity-import).
+  // Refuses with import_not_promotable a record from the importer (topic import/..., author agent-maturity-import),
+  // and with promote_requires_gate any other dev-standard/ record.
+promoteApproved(id, opts?)               // the door's promote step (dev-standard/ only, basis user_instruction); only
+  // promote-standard.mjs calls it: a record it promotes for anyone else is never exported (not_via_door)
+listActive(topicKey, opts?)              // active records on exactly this dev-standard/ topic (read-only)
 supersede(oldId, newId, reason, opts?)   // both active, same scope/project/topic; old -> 'superseded'
 retract(id, reason, opts?)               // -> 'retracted'
 get(id, opts?)                           // -> record (any state)
 resolveProject(projectPath, opts?)       // -> { id, root } of the main checkout, registering it if needed
-exportActive(opts?)                      // writes opts.out (default <AGENT_MATURITY_HOME|~/.claude/agent-maturity>/standards.json)
+exportActive(opts?)                      // writes opts.out (default <AGENT_MATURITY_HOME|~/.claude/agent-maturity>/standards.json),
+  // door-made standards only (checked against the critic log in ~/.claude/agent-maturity/critic; opts.criticStore
+  // only under AGENT_MATURITY_TEST=1)
 ```
 
 Store limits enforced by the CLI: `title` ≤160, `summary` ≤1200, `topic_key` ≤120 characters; payloads with an email
 address, a token, a key or a 13-19 digit Luhn-valid number (card check; watch long digit runs in paths) are rejected.
 
-For D4's adapter `{ saveCandidate, saveVerdict, loadCandidate }`: `saveCandidate` -> `capture`, `loadCandidate` ->
-`get`. KnowledgeMemory has no verdict field; where verdicts live (D4's JSON file keyed by record id, or a separate
-record linked with a `derived_from` relation) is an open decision for root.
+Two stores, two jobs (root, 21/11): the D4 critic store (`critic/json-adapter.mjs`, default
+`~/.claude/agent-maturity/critic`) keeps candidates, briefs, verdicts and the approvals; KnowledgeMemory keeps only
+the standards finally approved. The source URI of a stored standard names both: `claude-session://<session>/<owner
+answer time>?candidate=<candidate id>&verdict=c<critique>.<12 hex of the verdict sha256>`.
 
 ## Command line
 
     node tools/agent-maturity/standards/store-cli.mjs capture --file candidate.json
-    node tools/agent-maturity/standards/store-cli.mjs promote <id> --basis user_instruction
+    node tools/agent-maturity/standards/store-cli.mjs promote <id> --basis user_instruction   # not for dev-standard/
     node tools/agent-maturity/standards/store-cli.mjs supersede <old-id> <new-id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs retract <id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs get <id>
     node tools/agent-maturity/standards/store-cli.mjs export
-      [--store <dir>] [--vault <dir>] [--out <file>]
+      [--store <dir>] [--vault <dir>] [--out <file>] [--critic-store <dir> (tests only)]   # on every command
 
 Prints one JSON object `{ result, export }`; promote, supersede and retract re-export automatically. Exit 1 on error.
+`promote` on a `dev-standard/` record exits 1 with `promote_requires_gate`. The raw KnowledgeMemory CLI cannot
+refuse it, but a dev standard it promotes is never exported (`not_via_door`); never call it to promote one.
+
+## The single door: promote-standard
+
+    node tools/agent-maturity/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time>
+      [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
+      [--supersedes <old standard record id>] [--critic-store <dir> (tests only)] [--projects-dir <dir> (tests only)]
+
+In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
+
+1. **Owner answer.** `<AGENT_MATURITY_HOME>/log/events-YYYY-MM.jsonl` must hold exactly one `checkpoint_outcome` of
+   that session (the hook logs a safe session id as-is), entrypoint `cli` or `claude-desktop`, and `ts` at most 5 s
+   from the given time; otherwise `owner_message_unverified`, also when there is no hook log (before the hook is
+   installed nothing can be stored) or the pointer is a message uuid (the hook logs none). Only outcome `accept`
+   (Nâng cấp) approves: Chỉnh or Bỏ qua is `owner_message_not_accept`; and only a reply that was exactly the option
+   word (the hook logs `literalOption: true` for `Nâng cấp` in any case, with or without diacritics, a final `.` `!`
+   `…` allowed): a looser yes ("nâng cấp nhé", "có", "1") is `owner_message_not_literal`. The answer is at most 7 days old
+   (`owner_message_stale`) and, for NARROW, later than the recorded verdict (`owner_message_before_verdict`).
+   The answer is bound to the text: the hook logs `proposalSha256` (sha256 of the NFC text on the "Đề xuất" line of
+   the ask block the owner answered), `askId` and `floor` (the label on its "Nhãn an toàn" line), never the text.
+   `proposalSha256` must be the sha256 of the statement the gate will store (the narrowed one for NARROW) and, when
+   its floor class is not `pass`, `floor` must be that class; otherwise `owner_message_unbound` (also for an answer
+   logged before the hook recorded the binding). The hook reads only live ask blocks (not inside a ```/~~~ code fence
+   or an HTML comment) and logs no `proposalSha256` when the message holds more than one, so such an answer is
+   `owner_message_unbound` too.
+   **Transcript check.** The door then re-reads the session's real transcript,
+   `~/.claude/projects/*/<sessionId>.jsonl` (exactly one such file; `--projects-dir` / `opts.projectsDir` only with
+   `AGENT_MATURITY_TEST=1`), and re-derives the answer from it: the owner prompt whose `timestamp` is within 5 s of the
+   logged answer must be exactly the option word, and the assistant message right before it (no other prompt between)
+   must hold exactly one live ask block whose "Đề xuất" line hashes to the logged `proposalSha256` (and whose label is
+   the logged `floor`). A missing, unreadable or ambiguous transcript, or any difference, is
+   `owner_message_transcript_mismatch` (fail closed). A reply Claude Code stored with extra content (an attachment,
+   pasted context) does not count as the bare word either: ask again. This raises the bar against a hook-log line
+   written by hand; it is **not** a security boundary against the same OS user, who can edit the transcript and the
+   log alike. Read-only, like the input and CLI checks, so a refusal here writes nothing.
+2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
+   two pointers to one logged answer are the same answer: `owner_message_reused` for a second text or candidate), the statement
+   the stored verdict allows and the floor label stored with it. Every gate refusal (hard_reject, REJECT, NEED-MORE,
+   floor_changed, ...) stops here. The stored statement is the one the gate returns, never an argument.
+3. **capture**: topic `dev-standard/<first 12 hex of statementKey(statement)>`, title `<agent> · <taskType>`, summary
+   `<statement> Cách kiểm: <check>`, kind (quality_gate is stored as procedure), scope `user` (or `project` with
+   `--project` when the candidate's `projects` is `this`; `project_path_required` without it, before the gate).
+   With `--supersedes <id>` (new wording for an old standard) the topic is the old record's, so KnowledgeMemory
+   accepts the supersede. Before the gate, read-only, the door refuses with `supersedes_invalid` unless the id is in
+   the candidate's `existingStandards` and the record is a standard the door stored (not an import), on the same
+   scope and project, and active (or already superseded by this candidate's own record: a rerun or a later revision).
+   The same text is never active twice and a candidate keeps one standard: an active door-made standard of the same
+   scope and project whose `standard_promoted` event has this `statementKey` or this candidate (an earlier revision)
+   is replaced too, so the record is captured under that standard's topic (KnowledgeMemory supersedes only within one
+   topic). Standards to replace on two topics are refused (`supersedes_invalid` with `--supersedes`,
+   `duplicate_active` without); retract the extra one first. All these checks run before the gate: a refusal writes
+   nothing.
+4. **promote** (`promoteApproved`, basis `user_instruction`). 5. **supersede** the other active records on that topic
+   and scope (the same statement approved again, an earlier revision, or the `--supersedes` record). 6.
+   **standard_promoted** in the critic store log. 7.
+   **exportActive**, which passes the record on only with that event, so the log comes first.
+
+A failure in steps 3-7 is `store_step_failed` with `step`; capture and promote are idempotent (same content, same
+record), so the same command finishes the job once the cause is fixed.
 
 ## Export and injection
 
@@ -119,7 +204,7 @@ real is root's job in D2.
 
 ## Scheduled refresh
 
-    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>]
+    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)]
 
 The one entry point for the scheduled job (root registers it, daily): `exportActive` first (so a failing import never
 leaves the hook with stale data), then the feedback-note import below. Prints `{ code, export, import }`; exit 1 when
@@ -139,12 +224,12 @@ rejects (sensitive data) are listed under `failed`; notes over 64 KB (size check
 
 **An imported candidate is never promoted.** Its file sha would satisfy `verified_artifact`, but a note an agent wrote
 is not owner approval, so `promote` refuses any record with an `import/` topic or the importer author
-(`import_not_promotable`). When the owner approves one, root:
+(`import_not_promotable`), and the export never passes on an `import/` record (`not_via_door`). When the owner
+approves one, root:
 
-1. captures the owner-approved text with `source: userSource(sessionId, at)` under its own topic (not `import/...`;
-   project scope when it is really about one codebase),
-2. promotes that record with basis `user_instruction`,
-3. retracts the imported candidate with a reason naming the new record id, then re-exports.
+1. writes a checkpoint candidate with the owner-approved text and runs the flow to `promote-standard` (SKILL.md),
+   which stores it under its own door topic,
+2. retracts the imported candidate with a reason naming the new record id, then re-exports.
 
 ## Tests
 

@@ -24,11 +24,23 @@ function logQuietly(store, home, events, now) {
   }
 }
 
+// The answered ask block is bound by a safe id, the sha256 of its "Đề xuất" text and its safety label, and the reply
+// by whether it was exactly the option word Nâng cấp; the door (standards/promote-standard.mjs) checks them. No text
+// leaves this function.
 function checkpointAsk(lib, input, cls, prompt) {
-  if (lib.classify.isWrapperPrompt(cls) || typeof input.transcript_path !== 'string') return { ask: null, choice: null };
+  if (lib.classify.isWrapperPrompt(cls) || typeof input.transcript_path !== 'string') return { ask: null, choice: null, literalOption: false };
   const turn = lib.tail.lastAssistantTurn(input.transcript_path);
-  const asked = Boolean(turn) && lib.classify.hasCheckpointAsk(turn.text);
-  return { ask: { asked, id: turn ? turn.id : null }, choice: asked ? lib.classify.classifyCheckpointReply(prompt) : null };
+  const parts = turn ? lib.classify.checkpointAskParts(turn.text) : null;
+  if (!parts) return { ask: { asked: false, id: turn ? turn.id : null }, choice: null, literalOption: false };
+  const askId = lib.store.sessionKey(turn.id);
+  const ask = {
+    asked: true,
+    id: askId,
+    askId,
+    proposalSha256: parts.proposal ? lib.classify.proposalDigest(parts.proposal) : null,
+    floor: parts.floor,
+  };
+  return { ask, choice: lib.classify.classifyCheckpointReply(prompt), literalOption: lib.classify.isLiteralAccept(prompt) };
 }
 
 async function handle(lib, home, now, started) {
@@ -51,13 +63,14 @@ async function handle(lib, home, now, started) {
   }
   if (loaded.status === 'corrupt') preEvents.push({ type: 'error', name: 'CorruptState' });
   const global = decision.normalizeGlobal(globalRead.value);
-  const { ask, choice } = key ? checkpointAsk(lib, input, cls, prompt) : { ask: null, choice: null };
+  const { ask, choice, literalOption } = key ? checkpointAsk(lib, input, cls, prompt) : { ask: null, choice: null, literalOption: false };
 
   const result = decision.decide(loaded.value, global, cls, {
     sessionId: key,
     entrypoint,
     ask,
     choice,
+    literalOption,
     lengthBucket: classify.lengthBucket(fullPrompt),
     nowMs: now.getTime(),
   });

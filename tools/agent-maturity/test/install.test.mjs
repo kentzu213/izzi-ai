@@ -180,6 +180,34 @@ test('install copies runtime files and the marked skill, and the copied hook run
   assert.ok(out.additionalContext.includes('Chạy test thật: Kèm mã thoát.'));
 });
 
+test('install copies the critic and the standards commands (not test-corpus or dry-runs) and they run from bin', () => {
+  // Arrange
+  const { home } = makeHome();
+  const bin = join(home, 'agent-maturity', 'bin');
+  const critic = readdirSync(join(ROOT, 'critic')).filter((f) => f.endsWith('.mjs'));
+
+  // Act
+  const r = install({ claudeHome: home, env: ENV });
+
+  // Assert
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.ok(critic.includes('promote-gate.mjs') && critic.length >= 10, critic.join(','));
+  for (const f of critic) assert.ok(existsSync(join(bin, 'critic', f)), f);
+  assert.deepEqual(readdirSync(join(bin, 'critic')).sort(), [...critic].sort(), 'only the top-level critic modules');
+  for (const f of ['promote-standard.mjs', 'store-cli.mjs', 'refresh.mjs', 'import-feedback.mjs']) assert.ok(existsSync(join(bin, 'standards', f)), f);
+  const env = { ...process.env, ...ENV, AGENT_MATURITY_HOME: join(home, 'agent-maturity') };
+  delete env.AGENT_MATURITY;
+  const label = spawnSync(process.execPath, [join(bin, 'critic', 'label.mjs'), join(ROOT, 'critic', 'dry-runs', readdirSync(join(ROOT, 'critic', 'dry-runs')).find((f) => f.endsWith('.json')))], { encoding: 'utf8', env, timeout: 15_000 });
+  assert.equal(label.status, 0, label.stdout + label.stderr);
+  assert.ok(['pass', 'owner_review_required', 'hard_reject'].includes(JSON.parse(label.stdout).floor));
+  const door = spawnSync(process.execPath, [join(bin, 'standards', 'promote-standard.mjs'), '--candidate', 'some-case', '--owner-message', '0b7c3f52-6a1e-4f0e-9d2a-3c5b8e1f7a90:2026-11-21T10:00:00.000Z'], { encoding: 'utf8', env, timeout: 15_000 });
+  assert.equal(door.status, 1, door.stdout + door.stderr);
+  assert.equal(JSON.parse(door.stdout).error, 'owner_message_unverified', 'the installed door loads and fails closed without a hook log');
+  const u = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(u.code, 0, u.lines.join('\n'));
+  assert.equal(existsSync(bin), false, 'uninstall removes bin/critic and bin/standards');
+});
+
 test('installing twice keeps a single hook group and the first backup', () => {
   const { home, settings } = makeHome();
   install({ claudeHome: home, env: ENV });

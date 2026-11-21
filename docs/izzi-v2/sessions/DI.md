@@ -15,14 +15,34 @@ Một chuẩn chỉ vào kho KnowledgeMemory qua **một cửa duy nhất**, và
   - *KnowledgeMemory* chỉ giữ chuẩn đã được duyệt cuối cùng.
 - **Cửa duy nhất** là `standards/promote-standard.mjs` (CLI + hàm), nhận `--candidate <id> --owner-message <sessionId>:<uuid|ts>`, làm đúng thứ tự:
   1. `assertPromotable({ adapter: sổ phản biện, candidateId, ownerApproval })`. Lấy câu cần lưu từ cổng: câu thu hẹp nếu verdict là NARROW, không bao giờ lấy từ tham số.
-  2. **Đối chiếu tin nhắn duyệt với log của hook D1**: phải có sự kiện trả lời checkpoint của đúng phiên đó, outcome `accept` (Nâng cấp) hoặc `edit` (Chỉnh), lệch thời điểm tối đa ±5 giây, và chưa từng dùng cho câu khác. Không có log hoặc không khớp thì từ chối với mã `owner_message_unverified` (fail closed). Trước D2 hook chưa cài nên chưa lưu được chuẩn nào; đây là điều đúng.
+  2. **Đối chiếu tin nhắn duyệt với log của hook D1**: phải có sự kiện trả lời checkpoint của đúng phiên đó, chỉ outcome `accept` (Nâng cấp) mới là duyệt (`edit`/Chỉnh nghĩa là anh đổi câu nên bị từ chối với mã `owner_message_not_accept`, phải hỏi lại với câu mới), lệch thời điểm tối đa ±5 giây, không quá 7 ngày (`owner_message_stale`), với NARROW phải sau verdict (`owner_message_before_verdict`), và chưa từng dùng cho câu hoặc ứng viên khác. Không có log hoặc không khớp thì từ chối với mã `owner_message_unverified` (fail closed). Trước D2 hook chưa cài nên chưa lưu được chuẩn nào; đây là điều đúng.
   3. `capture` vào KnowledgeMemory: topic `dev-standard/<statementKey ngắn>`, nguồn `userSource(sessionId, ts)`, phạm vi theo ứng viên (mặc định `user`), kèm id ứng viên và id verdict.
   4. `promote(id, 'user_instruction')`.
   5. Nếu có chuẩn cũ cùng chủ đề đang dùng: `supersede` có lý do.
   6. `exportActive` để khối chèn cập nhật ngay.
   7. Ghi sự kiện `standard_promoted` vào sổ phản biện.
   Bước nào lỗi thì dừng và báo rõ, không để kho ở trạng thái lửng.
-- **Khoá cửa sau.** `store-cli.mjs` `promote` từ chối mọi bản ghi topic `dev-standard/` nếu không được gọi từ `promote-standard` (token nội bộ do module cấp, test được), mã lỗi `promote_requires_gate`. Bản ghi không thuộc `dev-standard/` giữ nguyên hành vi.
+- **Khoá cửa sau (bản sửa theo review, 21/11).**
+  - Token JS không phải ranh giới an toàn: reviewer đã đi vòng qua được nó. **Ranh giới thật là file xuất.** `buildExport`/`exportActive` chỉ xuất một bản ghi `dev-standard/` khi đủ cả năm điều kiện:
+    1. topic là topic của cửa;
+    2. basis là `user_instruction`;
+    3. nguồn có loại `user`;
+    4. URI nguồn đúng định dạng `?candidate=…&verdict=c…`;
+    5. sổ phản biện có sự kiện `standard_promoted` cho đúng bản ghi đó.
+  - Thiếu một điều kiện thì bản ghi bị bỏ qua với lý do `not_via_door`.
+  - `promote` thường vẫn từ chối mọi bản ghi `dev-standard/` (`promote_requires_gate`).
+  - `claimPromoteGate` và `runCli` không còn được export ra ngoài.
+- **Gắn lời duyệt với đúng câu (bản sửa theo review).**
+  - Khi anh trả lời một khối hỏi checkpoint, hook D1 ghi lại `askId`, `proposalSha256` (sha256 của nguyên văn dòng "Đề xuất") và nhãn an toàn đang hiển thị.
+  - Cửa đòi hash đó khớp với đúng câu sắp lưu. Với NARROW, câu sắp lưu là câu đã thu hẹp, nên bước show_diff cũng phải là một khối hỏi.
+  - Nếu chuẩn không thuộc nhóm `pass`, nhãn ghi trong log phải khớp với nhãn của chuẩn.
+  - Không khớp thì từ chối với mã `owner_message_unbound`.
+- **`--supersedes <id>`.** Chuẩn mới diễn đạt khác có thể thay chuẩn cũ khi đủ cả ba điều kiện:
+  - id của chuẩn cũ nằm trong `existingStandards` của ứng viên;
+  - chuẩn cũ đang dùng, do cửa tạo ra, cùng phạm vi và cùng dự án;
+  - chuẩn cũ không phải bản ghi import.
+
+  Chuẩn mới được lưu dưới topic của chuẩn cũ.
 - **Cài đặt.** `install.mjs` chép thêm `critic/*.mjs` (trừ test-corpus, dry-runs) và `standards/promote-standard.mjs`, `standards/store-cli.mjs`, `standards/refresh.mjs` vào `~/.claude/agent-maturity/bin/`. SKILL.md trỏ tới đường dẫn đã cài, kèm phương án dự phòng là đường dẫn repo.
 - **SKILL.md:** quy trình sau "Nâng cấp" kết thúc bằng đúng một lệnh `promote-standard`.
 

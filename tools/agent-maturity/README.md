@@ -18,7 +18,9 @@ short note asking the agent to consider one upgrade question at the end of its r
     node tools/agent-maturity/install.mjs --dry-run
     node tools/agent-maturity/install.mjs [--claude-home <dir>] [--settings <file>]
 
-Backs up `settings.json` byte-for-byte, copies the runtime into `<claude-home>/agent-maturity/bin/` and the skill
+Backs up `settings.json` byte-for-byte, copies the runtime (hooks, `critic/*.mjs`, and `standards/promote-standard.mjs`,
+the single door for storing a dev standard, with its store wrapper and the refresh job) into
+`<claude-home>/agent-maturity/bin/` and the skill
 into `<claude-home>/skills/upgrade-checkpoint/`, then adds two hook groups, `UserPromptSubmit` (upgrade checkpoint)
 and `SessionStart` (dev standards, see `standards/README.md`), each with timeout 5 s. Re-running adds only a missing
 group, never a second copy; upgrading an install from before D3 keeps its original backup when `settings.json` was

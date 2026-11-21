@@ -1,5 +1,6 @@
-// Installs the upgrade-checkpoint hook, the SessionStart standards hook and the skill into a Claude Code home
-// (default ~/.claude).
+// Installs the upgrade-checkpoint hook, the SessionStart standards hook, the skill and the commands root runs after a
+// checkpoint (critic/*.mjs, standards/promote-standard.mjs and its store wrapper, the refresh job) into a Claude Code
+// home (default ~/.claude).
 // Usage: node tools/agent-maturity/install.mjs [--claude-home <dir>] [--settings <file>] [--dry-run]
 // See docs/izzi-v2/PLAN.md §4.6 and §4.9 item 5. Also exports the helpers uninstall.mjs uses.
 
@@ -20,6 +21,13 @@ const HOOK_EVENTS = [
 export const HOOK_TIMEOUT_SECONDS = 5;
 export const SKILL_NAME = 'upgrade-checkpoint';
 export const SKILL_MARKER = '.agent-maturity';
+const SOURCE_DIR = import.meta.dirname;
+// The D4 critic modules (critic/*.mjs; not test-corpus/ or dry-runs/), for the checkpoint flow root runs.
+const CRITIC_FILES = fs
+  .readdirSync(path.join(SOURCE_DIR, 'critic'), { withFileTypes: true })
+  .filter((d) => d.isFile() && d.name.endsWith('.mjs'))
+  .map((d) => `critic/${d.name}`)
+  .sort();
 export const RUNTIME_FILES = [
   'lib/classify.mjs',
   'lib/decide.mjs',
@@ -29,8 +37,13 @@ export const RUNTIME_FILES = [
   'hooks/session-start.mjs',
   'standards/inject.mjs',
   'standards/project-root.mjs',
+  // The single door for a dev standard, the store wrapper it uses, and the daily refresh (with the importer it runs).
+  'standards/promote-standard.mjs',
+  'standards/store-cli.mjs',
+  'standards/refresh.mjs',
+  'standards/import-feedback.mjs',
+  ...CRITIC_FILES,
 ];
-const SOURCE_DIR = import.meta.dirname;
 
 export class InstallError extends Error {
   constructor(code, message) {

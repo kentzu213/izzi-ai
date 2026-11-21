@@ -156,6 +156,35 @@ test('all five checkpoint outcomes are recorded', () => {
   assert.ok(outcomes.slice(0, 4).every((o) => o.initiated === 'nudge'));
 });
 
+test('an answered ask block logs its ask id, proposal hash and safety label; malformed values are dropped', () => {
+  // Arrange
+  const sha = 'a'.repeat(64);
+  const bound = { asked: true, id: 'raw id', askId: 'msg-1', proposalSha256: sha, floor: 'owner_review_required' };
+  const junk = { asked: true, id: 'raw id 2', askId: 'has space', proposalSha256: 'Nâng cấp', floor: 'risky' };
+
+  // Act
+  const good = run([{ cls: L.none, ask: bound, choice: 'accept' }]);
+  const bad = run([{ cls: L.none, ask: junk, choice: 'edit' }]);
+
+  // Assert
+  assert.deepEqual(outcomeOf(good.results[0]), {
+    type: 'checkpoint_outcome', turn: 1, outcome: 'accept', initiated: 'agent', askId: 'msg-1', proposalSha256: sha, floor: 'owner_review_required',
+  });
+  assert.deepEqual(outcomeOf(bad.results[0]), { type: 'checkpoint_outcome', turn: 1, outcome: 'edit', initiated: 'agent' });
+});
+
+test('literalOption: true is logged only for an accept whose reply was exactly the option word', () => {
+  // Act
+  const literal = run([{ cls: L.none, ask: ask('a'), choice: 'accept', info: { literalOption: true } }]);
+  const loose = run([{ cls: L.none, ask: ask('b'), choice: 'accept', info: { literalOption: false } }]);
+  const notAccept = run([{ cls: L.none, ask: ask('c'), choice: 'skip', info: { literalOption: true } }]);
+  const truthy = run([{ cls: L.none, ask: ask('d'), choice: 'accept', info: { literalOption: 'yes' } }]);
+
+  // Assert
+  assert.equal(outcomeOf(literal.results[0]).literalOption, true);
+  for (const r of [loose, notAccept, truthy]) assert.equal('literalOption' in outcomeOf(r.results[0]), false);
+});
+
 test('pending lives 5 owner turns, then expires as abstained', () => {
   const { results, state } = run(['correction', 'approve', 'none', 'none', 'none', 'none', 'none']);
   assert.equal(PENDING_TTL_TURNS, 5);

@@ -1,6 +1,8 @@
 // Prompt classifier for the upgrade-checkpoint hook (docs/izzi-v2/PLAN.md §4.2 and §4.9).
 // Pure functions: no I/O, and results never carry the prompt text.
 
+import crypto from 'node:crypto';
+
 export const CHECKPOINT_HEADER = '[Checkpoint nâng cấp]';
 
 const LIMIT = {
@@ -289,20 +291,91 @@ export function isWrapperPrompt(cls) {
   return Boolean(cls) && cls.label === 'abstain' && WRAPPER_RULES.has(cls.ruleId);
 }
 
+// CommonMark fences: at most 3 spaces in, ``` (an info string without backticks) or ~~~; the closing fence uses the
+// same character, at least as many, and nothing after it.
+const FENCE_OPEN = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+const COMMENT_OPEN = /^ {0,3}<!--/;
+
+// Per line, whether markdown shows it as text: false inside a ``` or ~~~ code fence or an HTML comment block (a line
+// starting with "<!--", up to the line holding "-->"), the fence and comment lines included. An unclosed fence or
+// comment runs to the end of the message.
+function liveLines(lines) {
+  let fence = null;
+  let comment = false;
+  return lines.map((line) => {
+    if (fence) {
+      const close = FENCE_CLOSE.exec(line);
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length) fence = null;
+      return false;
+    }
+    if (comment) {
+      comment = !line.includes('-->');
+      return false;
+    }
+    const open = FENCE_OPEN.exec(line);
+    if (open) fence = open[1];
+    else if (COMMENT_OPEN.test(line)) comment = !line.includes('-->');
+    return !open && !COMMENT_OPEN.test(line);
+  });
+}
+
+// The skill's live ask blocks in an assistant message's lines (see liveLines): [header line, "Trả lời:" line] index
+// pairs, in order.
+function askBlocks(lines, live) {
+  const blocks = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!live[i] || !lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
+    const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
+    const answer = lines.slice(i + 1, end).findIndex((l, j) => live[i + 1 + j] && l.trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE));
+    if (answer >= 0) blocks.push([i, i + 1 + answer]);
+  }
+  return blocks;
+}
+
+const messageLines = (text) => text.normalize('NFC').split(/\r?\n/);
+
 // True when an assistant message holds the skill's ask block: a line starting with the header (indent
-// allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence does not count.
+// allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence, a code fence or an HTML
+// comment does not count.
 export function hasCheckpointAsk(text) {
   if (typeof text !== 'string') return false;
-  const lines = text.normalize('NFC').split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
-    const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
-    for (let j = i + 1; j < end; j += 1) {
-      if (lines[j].trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE)) return true;
-    }
-  }
-  return false;
+  const lines = messageLines(text);
+  return askBlocks(lines, liveLines(lines)).length > 0;
 }
+
+// The floor labels a checkpoint question may show (critic/floor.mjs FLOOR_CLASSES).
+export const FLOOR_LABELS = Object.freeze(['pass', 'owner_review_required', 'hard_reject']);
+// "- Đề xuất: <exact text>" and "- Nhãn an toàn: <label> · ..." inside an ask block; a bullet and ** or __ around the
+// field name are allowed.
+const PROPOSAL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Đề xuất[*_]{0,2}\s*:[*_]{0,2}(.*)$/u;
+const LABEL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Nhãn an toàn[^:]*:[*_]{0,2}\s*([a-z_]+)/u;
+const firstMatch = (lines, re) => lines.map((l) => re.exec(l)).find(Boolean) ?? null;
+
+// The one live ask block of an assistant message: { proposal, floor }, where proposal is the exact NFC text of its
+// live "Đề xuất" line (trimmed; null when the block has none) and floor the label of its live "Nhãn an toàn" line
+// (null unless one of FLOOR_LABELS). Blocks inside a code fence or an HTML comment are not read. More than one live
+// block binds nothing: { proposal: null, floor: null }. null when the message holds no live ask block.
+export function checkpointAskParts(text) {
+  if (typeof text !== 'string') return null;
+  const lines = messageLines(text);
+  const live = liveLines(lines);
+  const blocks = askBlocks(lines, live);
+  if (blocks.length === 0) return null;
+  if (blocks.length > 1) return { proposal: null, floor: null };
+  const [[start, end]] = blocks;
+  const body = lines.slice(start + 1, end).filter((_, i) => live[start + 1 + i]);
+  const proposal = firstMatch(body, PROPOSAL_LINE);
+  const label = firstMatch(body, LABEL_LINE);
+  return {
+    proposal: proposal ? proposal[1].trim() || null : null,
+    floor: label && FLOOR_LABELS.includes(label[1]) ? label[1] : null,
+  };
+}
+
+// sha256 (hex) of the NFC form of a proposal. The hook logs it for the ask block the owner answered; the door
+// (standards/promote-standard.mjs) compares it with the text it stores.
+export const proposalDigest = (text) => crypto.createHash('sha256').update(text.normalize('NFC'), 'utf8').digest('hex');
 
 export function lengthBucket(text) {
   const n = typeof text === 'string' ? text.trim().length : 0;
@@ -320,6 +393,14 @@ const SEPARATOR = /^[,.:;!\-–]/u;
 function startsWithWords(tokens, words) {
   const want = tokenize(words);
   return want.length > 0 && want.every((w, i) => tokens[i] === w);
+}
+
+// True only when a checkpoint reply is exactly the option word Nâng cấp: any case, with or without diacritics,
+// surrounding spaces and a final . ! … allowed, nothing else. The door (standards/promote-standard.mjs) promotes only
+// such an answer; a looser accept ("nâng cấp nhé", "có", "1") still counts as accept for the fatigue guard.
+export function isLiteralAccept(text) {
+  if (typeof text !== 'string' || text.length > LIMIT.reply) return false;
+  return stripAccents(normalize(text)) === 'nang cap';
 }
 
 // Reply to a checkpoint question: accept | edit | skip | ignored (PLAN §4.3 step 1, §4.9 item 2).

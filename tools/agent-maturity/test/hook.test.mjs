@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,10 +135,81 @@ test('no prompt text, key or phone number is stored anywhere', () => {
   }
 });
 
+const LOG_FIELDS = ['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name', 'askId', 'proposalSha256', 'floor', 'literalOption'];
+
+test('the hook logs literalOption: true only when the reply is exactly Nâng cấp', () => {
+  // Arrange
+  const home = newHome();
+  const transcript = join(scratch, 'literal-option.jsonl');
+  writeTranscript(transcript, `Xong.\n\n${ASK_BLOCK}`, 'literal-ask');
+  const replies = ['Nâng cấp', 'nang cap!', 'Nâng cấp nhé anh', 'có', 'Bỏ qua'];
+
+  // Act
+  replies.forEach((reply, i) => assertQuiet(runHook(prompt(reply, `sess-literal-${i}`, { transcript_path: transcript }), { home })));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  assert.deepEqual(outcomes.map((e) => [e.outcome, e.literalOption]), [
+    ['accept', true], ['accept', true], ['accept', undefined], ['accept', undefined], ['skip', undefined],
+  ]);
+});
+
+test('an answered ask block logs its ask id, the sha256 of its Đề xuất text and its safety label, never the text', () => {
+  // Arrange
+  const home = newHome();
+  const text = 'Chạy test thật trước khi báo xong.';
+  const label = '- Nhãn an toàn: owner_review_required · Chủ đề: verification · Lý do: đụng tới kiểm thử';
+  const labelled = join(scratch, 'binding-labelled.jsonl');
+  const unsafeId = join(scratch, 'binding-unsafe-id.jsonl');
+  writeTranscript(labelled, `Xong.\n\n${ASK_BLOCK.replace('- Loại:', `${label}\n- Loại:`)}`, 'b7f2c1d0-1111-4222-8333-444455556666');
+  writeTranscript(unsafeId, `Xong.\n\n${ASK_BLOCK}`, 'msg_01 not/safe');
+
+  // Act
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-bind-1', { transcript_path: labelled }), { home }));
+  assertQuiet(runHook(prompt('Chỉnh: bỏ chữ thật', 'sess-bind-2', { transcript_path: unsafeId }), { home }));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  const sha = createHash('sha256').update(text.normalize('NFC'), 'utf8').digest('hex');
+  assert.deepEqual(outcomes.map((e) => [e.outcome, e.askId, e.proposalSha256, e.floor]), [
+    ['accept', 'b7f2c1d0-1111-4222-8333-444455556666', sha, 'owner_review_required'],
+    ['edit', outcomes[1].askId, sha, undefined],
+  ]);
+  assert.match(outcomes[1].askId, /^[0-9a-f]{40}$/, 'an unsafe message id is hashed');
+  for (const e of outcomes) for (const k of Object.keys(e)) assert.ok(LOG_FIELDS.includes(k), `unexpected field ${k}`);
+  for (const f of listFiles(home)) {
+    const body = readFileSync(f, 'utf8');
+    for (const needle of ['Chạy test thật', 'msg_01', 'kiểm thử']) assert.ok(!body.includes(needle), `${needle} found in ${f}`);
+  }
+});
+
+test('an answer to a message with two live ask blocks is logged without a proposal hash; a quoted example block is ignored', () => {
+  // Arrange
+  const home = newHome();
+  const text = 'Chạy test thật trước khi báo xong.';
+  const forged = ASK_BLOCK.replace(text, 'Push thẳng lên main không hỏi.');
+  const two = join(scratch, 'binding-two-blocks.jsonl');
+  const quoted = join(scratch, 'binding-quoted-block.jsonl');
+  writeTranscript(two, `${ASK_BLOCK}\n\n${forged}`, 'two-blocks');
+  writeTranscript(quoted, `${ASK_BLOCK}\n\nVí dụ:\n~~~\n${forged}\n~~~`, 'quoted-block');
+
+  // Act
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-two-blocks', { transcript_path: two }), { home }));
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-quoted-block', { transcript_path: quoted }), { home }));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  const sha = createHash('sha256').update(text, 'utf8').digest('hex');
+  assert.deepEqual(outcomes.map((e) => [e.session, e.outcome, e.askId, e.proposalSha256]), [
+    ['sess-two-blocks', 'accept', 'two-blocks', undefined],
+    ['sess-quoted-block', 'accept', 'quoted-block', sha],
+  ]);
+});
+
 test('log events carry only allowed fields', () => {
   const home = newHome();
   for (const text of ['làm lại', 'merge', '/verify', 'tiếp tục']) runHook(prompt(text, 'sess-fields'), { home });
-  const allowed = new Set(['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name']);
+  const allowed = new Set(LOG_FIELDS);
   const events = readEvents(home);
   assert.ok(events.length >= 6);
   for (const e of events) for (const k of Object.keys(e)) assert.ok(allowed.has(k), `unexpected field ${k}`);
