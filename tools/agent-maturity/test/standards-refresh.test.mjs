@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { refresh } from '../standards/refresh.mjs';
+import { doneEvent, refresh } from '../standards/refresh.mjs';
 import { cliAvailable } from '../standards/store-cli.mjs';
 import { doorStandard } from './fixtures/door-standard.mjs';
 import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
@@ -48,9 +48,10 @@ test('refresh re-exports the active standards and imports feedback notes as cand
   assert.ok(Date.now() - Date.parse(file.exported_at) < 60_000, 'exported_at is fresh');
 });
 
-test('refresh command line prints both summaries and exits 0', { skip }, () => {
+test('refresh command line prints both summaries, exits 0 and logs its result under --log-home', { skip }, () => {
   const s = setup();
-  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'refresh.mjs'), '--store', s.store, '--vault', s.vault, '--out', s.out, '--projects-dir', s.projectsDir, '--critic-store', s.criticStore], {
+  const logHome = mkdtempSync(join(tmpdir(), 'am-refresh-log-'));
+  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'refresh.mjs'), '--store', s.store, '--vault', s.vault, '--out', s.out, '--projects-dir', s.projectsDir, '--critic-store', s.criticStore, '--log-home', logHome], {
     encoding: 'utf8', env: ENV, timeout: 120_000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -58,6 +59,23 @@ test('refresh command line prints both summaries and exits 0', { skip }, () => {
   assert.equal(out.export.standards, 0);
   assert.equal(out.import.captured.length, 1);
   assert.ok(existsSync(s.out));
+  const log = readFileSync(join(logHome, 'log', `events-${new Date().toISOString().slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(log.length, 1);
+  const { ts, ...rest } = log[0];
+  assert.ok(Date.parse(ts) > 0);
+  assert.deepEqual(rest, { type: 'refresh_done', code: 0, standards: 0, export_error: null, captured: 1, failed: 0, import_error: null });
+  rmSync(logHome, { recursive: true, force: true });
+});
+
+test('the refresh_done event carries counts and error codes, never paths or note text', () => {
+  const result = {
+    code: 1,
+    export: { error: 'cli_unavailable' },
+    import: { scanned: 'C:/Users/x/.claude/projects', feedback: 2, captured: [{ file: 'C:/secret/note.md', id: 'a', state: 'candidate' }], failed: [{ file: 'C:/b.md', error: 'x' }], unreadable: [] },
+  };
+  const e = doneEvent(result, new Date('2026-11-21T00:00:00Z'));
+  assert.deepEqual(e, { ts: '2026-11-21T00:00:00.000Z', type: 'refresh_done', code: 1, standards: null, export_error: 'cli_unavailable', captured: 1, failed: 1, import_error: null });
+  assert.ok(!JSON.stringify(e).includes('C:/'));
 });
 
 test('refresh reports a refused store as an error with exit code 1 and writes nothing', () => {

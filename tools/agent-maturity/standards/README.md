@@ -13,7 +13,7 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 | `inject.mjs` | Picks the standards for a session folder and renders the injected block (≤1200 characters). |
 | `import-feedback.mjs` | Imports auto-memory notes of `type: feedback` as candidates. Never promotes, never edits a note. |
 | `refresh.mjs` | The daily refresh's single entry point: export, then import. |
-| `refresh-if-due.mjs` | SessionStart launcher: starts `refresh.mjs` in the background when the export is ≥20 h old (at most one start per 6 h); prints nothing. |
+| `refresh-if-due.mjs` | SessionStart launcher: starts `refresh.mjs` in the background when the export is ≥20 h old (at most one start per 6-hour slot); prints nothing. |
 | `../hooks/session-start.mjs` | The hook. Reads the export; writes only a log line when the export is stale; fails open (exit 0, no output) on any error. |
 
 ## Lifecycle (who does what)
@@ -205,18 +205,21 @@ real is root's job in D2.
 
 ## Daily refresh
 
-    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)]
+    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)] [--log-home <dir>]
 
 The one entry point for the daily refresh: `exportActive` first (so a failing import never
 leaves the hook with stale data), then the feedback-note import below. Prints `{ code, export, import }`; exit 1 when
-the export or the import as a whole failed. Never promotes.
+the export or the import as a whole failed. Never promotes. With `--log-home` it also appends
+`{ ts, type: 'refresh_done', code, standards, export_error, captured, failed, import_error }` (counts and error codes,
+no paths or note text) to that home's event log.
 
-Started by `refresh-if-due.mjs`, a `SessionStart` hook: when `standards.json` is missing or at least 20 hours old and
-no refresh started in the last 6 hours, it touches `.refresh-started`, logs `{ ts, type: 'refresh_started' }`, starts
-`refresh.mjs` as a detached background process (no window) and exits, so no session waits. A refresh that fails
-leaves the old export mtime, so the next session at least 6 hours later tries again. Chosen over an OS scheduler:
-nothing to install outside `~/.claude`, uninstall removes it with the other hooks, and the export only matters when
-a session starts.
+Started by `refresh-if-due.mjs`, a `SessionStart` hook. When `standards.json` is missing or at least 20 hours old, it
+claims the current 6-hour slot by creating `.refresh-started-<slot>` exclusively (so sessions that start together
+launch one refresh), removes older markers, logs `{ ts, type: 'refresh_started' }`, starts `refresh.mjs --log-home
+<home>` as a detached background process (no window, cwd the temp folder) and exits, so no session waits. A refresh
+that fails leaves the old export mtime, so the first session in the next slot tries again. Chosen over an OS
+scheduler: nothing to install outside `~/.claude`, uninstall removes it with the other hooks (`--purge` also removes
+the markers), and the export only matters when a session starts.
 
 ## Importing auto-memory feedback notes
 

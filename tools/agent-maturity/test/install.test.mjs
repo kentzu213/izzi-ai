@@ -8,6 +8,7 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { install } from '../install.mjs';
+import { launchRefresh } from '../standards/refresh-if-due.mjs';
 import { uninstall } from '../uninstall.mjs';
 import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
@@ -360,6 +361,29 @@ test('uninstall keeps state and log unless --purge', () => {
   install({ claudeHome: home, env: ENV });
   uninstall({ claudeHome: home, purge: true, env: ENV });
   assert.equal(existsSync(am), false);
+});
+
+test('--purge also removes the daily refresh markers, so the folder goes', async () => {
+  // Arrange: an install whose SessionStart launcher has claimed a refresh slot (a stub stands in for refresh.mjs).
+  const { home } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const am = join(home, 'agent-maturity');
+  const stubDir = join(scratch, `stub-${Date.now()}`);
+  mkdirSync(stubDir);
+  const stub = join(stubDir, 'stub.mjs');
+  writeFileSync(stub, "import { writeFileSync } from 'node:fs';\nwriteFileSync(new URL('./ran.txt', import.meta.url), 'ran');\n");
+  const env = { ...process.env, ...ENV, AGENT_MATURITY_HOME: am, AGENT_MATURITY_REFRESH_SCRIPT: stub };
+  delete env.AGENT_MATURITY;
+  assert.equal(await launchRefresh(env), 'started');
+  writeFileSync(join(am, '.refresh-started'), 'from the first D2 build');
+  for (let i = 0; i < 200 && !existsSync(join(stubDir, 'ran.txt')); i += 1) await new Promise((r) => setTimeout(r, 50));
+
+  // Act
+  const r = uninstall({ claudeHome: home, purge: true, env: ENV });
+
+  // Assert
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.equal(existsSync(am), false, existsSync(am) ? readdirSync(am).join(',') : '');
 });
 
 test('uninstall never deletes a manifest path outside its own folders', () => {

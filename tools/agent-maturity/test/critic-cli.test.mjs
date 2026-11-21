@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -13,20 +13,24 @@ import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, planCritique } from '../critic/loop-guard.mjs';
 import { selectResearchTier } from '../critic/research-tier.mjs';
 import { VERDICT_LIMITS, classifyCandidateFloor, detectHardReject } from '../critic/verdict.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const CRITIC = fileURLToPath(new URL('../critic/', import.meta.url));
 const DRY_RUNS = join(CRITIC, 'dry-runs');
 const REAL_CLAUDE = join(homedir(), '.claude');
 const REAL_SETTINGS = join(REAL_CLAUDE, 'settings.json');
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-const settingsShaAtStart = existsSync(REAL_SETTINGS) ? sha(readFileSync(REAL_SETTINGS)) : null;
 const realMaturityExisted = existsSync(join(REAL_CLAUDE, 'agent-maturity'));
+const REAL_BEFORE = realHomeSnapshot();
 const scratch = mkdtempSync(join(tmpdir(), 'am-critic-'));
 
+// Since D2, Claude Code and other sessions may rewrite the real settings.json while these tests run, so the check is
+// for a trace of this run (its unique temp folder name), not for unchanged bytes.
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  if (settingsShaAtStart) assert.equal(sha(readFileSync(REAL_SETTINGS)), settingsShaAtStart, 'real settings.json changed');
-  assert.equal(existsSync(join(REAL_CLAUDE, 'agent-maturity')), realMaturityExisted, 'real ~/.claude/agent-maturity touched');
+  if (existsSync(REAL_SETTINGS)) assert.ok(!readFileSync(REAL_SETTINGS, 'utf8').includes(basename(scratch)), 'a test path reached the real settings.json');
+  assert.equal(existsSync(join(REAL_CLAUDE, 'agent-maturity')), realMaturityExisted, 'real ~/.claude/agent-maturity created or removed');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 let n = 0;

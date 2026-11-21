@@ -26,13 +26,20 @@ function liveHome() {
 test('what live sessions write is not a leak', () => {
   // Arrange
   const home = liveHome();
+  writeFileSync(join(home, '.refresh-started-1'), 'old');
+  mkdirSync(join(home, 'critic'));
+  writeFileSync(join(home, 'critic', 'verdicts.json'), '[]');
   const before = realHomeSnapshot(home);
 
-  // Act: a live session adds state, a log line and a new export, and rewrites the global counters.
+  // Act: a live session adds state, a log line and a new export, rewrites the global counters, claims the next
+  // refresh slot, and a live checkpoint records a verdict.
   writeFileSync(join(home, 'state', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.json'), '{}');
   writeFileSync(join(home, 'log', 'events-2026-11.jsonl'), `${JSON.stringify({ ts: 't', session: null, type: 'refresh_started' })}\n`, { flag: 'a' });
   writeFileSync(join(home, 'standards.json'), '{}');
   writeFileSync(join(home, 'global.json'), '{}');
+  writeFileSync(join(home, '.refresh-started-2'), '2026-11-21T00:00:00.000Z');
+  rmSync(join(home, '.refresh-started-1'));
+  writeFileSync(join(home, 'critic', 'verdicts.json'), '[{"v":1}]');
 
   // Assert
   assert.deepEqual(realHomeLeaks(before, home), []);

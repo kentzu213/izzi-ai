@@ -2,6 +2,12 @@
 // Claude Code sessions write it while the tests run (hook state, the event log, the daily refresh), so "the folder
 // does not exist" and "its bytes did not change" no longer hold. What still holds: live sessions only write the paths
 // in LIVE_PATHS, and only with real session ids (UUIDs); the tests never use a UUID-shaped session id there.
+//
+// Blind spots (kept small by the code, not by this guard):
+// - A test that rewrites standards.json, global.json, .last-cleanup, a refresh marker or a critic/ file is not seen.
+//   store-cli refuses to write the real export under AGENT_MATURITY_TEST=1; the critic CLI has no default store
+//   (--store is required) and the door refuses the real critic store under AGENT_MATURITY_TEST=1.
+// - The log scan covers whole files, not just this run: one old leak fails every run until that log line is removed.
 
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -10,9 +16,18 @@ import { join } from 'node:path';
 
 export const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Written by the live hooks (state, log, global counters, cleanup marker, atomic-write temp files) and by the daily
-// refresh job (standards.json).
-const LIVE_PATHS = [/^state\//, /^log\//, /^global\.json$/, /^\.last-cleanup$/, /^standards\.json$/, /\.tmp$/];
+// Written by the live hooks (state, log, global counters, cleanup marker, atomic-write temp files), by the daily
+// refresh (standards.json, the .refresh-started-<slot> markers) and by live checkpoints (critic/).
+const LIVE_PATHS = [
+  /^state\//,
+  /^log\//,
+  /^global\.json$/,
+  /^\.last-cleanup$/,
+  /^standards\.json$/,
+  /^\.refresh-started/,
+  /^critic\//,
+  /\.tmp$/,
+];
 const TEST_SECRET = 'sk-test-';
 
 function readIfPresent(file) {
