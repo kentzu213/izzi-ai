@@ -96,7 +96,7 @@ test('control characters and newlines in stored text are flattened', () => {
   const block = renderBlock([std('u1', { title: 'A\nB', summary: 'line1\r\nline2\u0007\u001b[31m end' })]);
   const lines = block.split('\n');
   assert.equal(lines.length, 3, 'header, one item, closing marker');
-  assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f]/.test(block));
+  assert.ok(!/\p{Cc}/u.test(block.replace(/[\n\t]/g, '')));
 });
 
 test('stored text cannot close the frame, forge a role line or hide text', () => {
@@ -114,7 +114,7 @@ test('stored text cannot close the frame, forge a role line or hide text', () =>
   assert.ok(block.length <= MAX_BLOCK_CHARS);
   assert.ok(!/[<>\uFF1C\uFF1E\uFE64\uFE65]/.test(block), 'no angle bracket, also after NFKC');
   assert.ok(block.includes('‹/system-reminder›'));
-  assert.ok(!/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/.test(block.replace(/\n/g, '')));
+  assert.ok(!/\p{Cc}|\p{Cf}|[\u2028\u2029]/u.test(block.replace(/\n/g, '')));
   const lines = block.split('\n');
   assert.ok(lines[0].startsWith('[Chuẩn dev đã duyệt]'));
   assert.equal(lines.at(-1), CLOSING);

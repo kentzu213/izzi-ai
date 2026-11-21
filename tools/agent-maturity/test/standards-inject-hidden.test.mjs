@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { renderBlock, isStaleExport, CLOSING } from '../standards/inject.mjs';
 
 const standard = (summary) => ({ id: 'a', topic: 't', title: 'Chuẩn', summary, scope: 'user' });
-const HIDDEN = /[\u{E0000}-\u{E007F}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}\u{00AD}]/u;
+const HIDDEN = /\p{Cf}|\p{Variation_Selector}/u;
 
 test('invisible tag characters, variation selectors and soft hyphens never reach the block', () => {
   // Arrange: ASCII smuggling via Unicode tags, a variation selector, a supplementary selector and a soft hyphen.

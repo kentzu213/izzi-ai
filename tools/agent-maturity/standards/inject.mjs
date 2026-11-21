@@ -64,14 +64,14 @@ export function selectStandards(exported, cwd) {
 // neither close nor open a tag. Whitespace (also U+2028/2029) collapses, so an item stays on its "- " line.
 const flatten = (text) => text
   .normalize('NFKC')
-  .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+  .replace(/\p{Cc}+/gu, ' ')
   .replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
   .replace(/</g, '‹')
   .replace(/>/g, '›')
   // Every other format character (\p{Cf}: soft hyphen, Unicode tag characters used for "ASCII smuggling") and
   // variation selectors are dropped too: the owner cannot see them when approving text. [ ] become ⟦ ⟧ so stored
   // text cannot forge the closing marker.
-  .replace(/[\p{Cf}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/gu, '')
+  .replace(/\p{Cf}|\p{Variation_Selector}/gu, '')
   .replace(/\[/g, '⟦')
   .replace(/\]/g, '⟧')
   .replace(/\s+/g, ' ')
