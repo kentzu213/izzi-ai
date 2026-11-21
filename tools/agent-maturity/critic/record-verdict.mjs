@@ -6,7 +6,7 @@
 // On success prints a JSON summary with `decision` (what root does next). Exit 1 = invalid (nothing stored; the
 // refusal is logged and says whether one "fix only the JSON" retry is allowed), 3 = blocked (logged).
 
-import { isObject } from './candidate.mjs';
+import { containsPiiOrSecret, isObject } from './candidate.mjs';
 import {
   CliError,
   EXIT,
@@ -22,14 +22,23 @@ import { assertAdapter, createJsonAdapter } from './json-adapter.mjs';
 import {
   MAX_CRITIQUES,
   MAX_JSON_RETRIES,
+  UNREADABLE_RETRY_VERDICTS,
   canonical,
   inputFingerprint,
   planCritique,
   refusalsOf,
   statementKey,
+  verdictDigest,
 } from './loop-guard.mjs';
 import { selectResearchTier } from './research-tier.mjs';
-import { extractVerdictJson, isFormatOnly, normalizeVerdictName, promotionDecision, validateVerdict } from './verdict.mjs';
+import {
+  extractVerdictJson,
+  isFormatOnly,
+  normalizeVerdictName,
+  promotedFloor,
+  promotionDecision,
+  validateVerdict,
+} from './verdict.mjs';
 
 // The brief for this exact input must have been printed (and stored) for this critique.
 function checkSnapshot(adapter, candidate, plan) {
@@ -47,20 +56,47 @@ function checkSnapshot(adapter, candidate, plan) {
   if (!same) throw new CliError(EXIT.invalid, 'brief_snapshot_mismatch: the stored brief does not match this candidate and critique');
 }
 
+// What a reply said, for the refusal log and the retry rule: the normalized verdict (null when unreadable), the
+// raw verdict field as written (cut to 40 characters) and whether it set hardReject (null when no JSON was read).
+function rawVerdictOf(raw) {
+  if (raw === undefined) return null;
+  if (typeof raw !== 'string') return `<${raw === null ? 'null' : typeof raw}>`;
+  return containsPiiOrSecret(raw) ? '<redacted>' : raw.slice(0, 40);
+}
+
+function replyFacts(extracted) {
+  if (!extracted.ok) return { verdictName: null, rawVerdict: null, hardRejectPresent: null };
+  const { verdict, hardReject } = extracted.value;
+  const hardRejectPresent = hardReject !== undefined && hardReject !== null;
+  return { verdictName: normalizeVerdictName(verdict), rawVerdict: rawVerdictOf(verdict), hardRejectPresent };
+}
+
+// The one retry keeps the first reply's verdict and its hardReject presence; after an unreadable first verdict it
+// may only hold the candidate (REJECT or NEED-MORE-EVIDENCE).
+function retryErrors(first, value, facts) {
+  if (!first) return [];
+  const errors = [];
+  if (first.verdict === null) {
+    if (!UNREADABLE_RETRY_VERDICTS.includes(value.verdict)) errors.push({ code: 'retry_verdict_not_allowed', field: 'verdict' });
+  } else if (value.verdict !== first.verdict) errors.push({ code: 'retry_changed_verdict', field: 'verdict' });
+  if (first.hardRejectPresent !== null && first.hardRejectPresent !== facts.hardRejectPresent) {
+    errors.push({ code: 'retry_changed_hard_reject', field: 'hardReject' });
+  }
+  return errors;
+}
+
 function checkReply(verdictText, candidate, plan) {
   const extracted = extractVerdictJson(verdictText);
-  if (!extracted.ok) return { errors: [{ code: extracted.code, field: '' }], verdictName: null };
-  const verdictName = normalizeVerdictName(extracted.value.verdict);
+  const facts = replyFacts(extracted);
+  if (!extracted.ok) return { errors: [{ code: extracted.code, field: '' }], facts };
   const checked = validateVerdict(extracted.value, { candidate, tier: selectResearchTier(candidate) });
-  if (!checked.ok) return { errors: checked.errors, verdictName };
-  if (plan.retryOf && checked.value.verdict !== plan.retryOf) {
-    return { errors: [{ code: 'retry_changed_verdict', field: 'verdict' }], verdictName };
-  }
-  return { value: checked.value };
+  if (!checked.ok) return { errors: checked.errors, facts };
+  const errors = retryErrors(plan.retryOf, checked.value, facts);
+  return errors.length > 0 ? { errors, facts } : { value: checked.value };
 }
 
 // Logs the refused reply in the loop-guard log and throws exit 1, saying whether the one retry is left.
-function refuse(adapter, { candidate, plan, errors, verdictName, now }) {
+function refuse(adapter, { candidate, plan, errors, facts, now }) {
   const retryable = plan.attempt <= MAX_JSON_RETRIES && isFormatOnly(errors);
   adapter.logEvent({
     type: 'verdict_refused',
@@ -70,7 +106,9 @@ function refuse(adapter, { candidate, plan, errors, verdictName, now }) {
     attempt: plan.attempt,
     retryable,
     codes: errors.map((e) => e.code),
-    verdict: verdictName,
+    verdict: facts.verdictName,
+    rawVerdict: facts.rawVerdict,
+    hardRejectPresent: facts.hardRejectPresent,
     at: now.toISOString(),
   });
   const list = errors.map((e) => `${e.code}(${e.detail ?? e.field})`).join(', ');
@@ -80,9 +118,10 @@ function refuse(adapter, { candidate, plan, errors, verdictName, now }) {
   throw new CliError(EXIT.invalid, `invalid verdict: ${list}; ${next}`);
 }
 
+// The hard-REJECT index is written before the verdict: a crash in between leaves the statement blocked, never a
+// hard-REJECT verdict whose statement is still open to new candidates.
 function store(adapter, { candidate, plan, verdict, now }) {
   adapter.saveCandidate(candidate);
-  adapter.saveVerdict(candidate.id, verdict);
   if (verdict.hardReject) {
     adapter.addHardReject({
       statementKey: statementKey(candidate.statement),
@@ -92,6 +131,7 @@ function store(adapter, { candidate, plan, verdict, now }) {
       at: verdict.recordedAt,
     });
   }
+  adapter.saveVerdict(candidate.id, verdict);
   adapter.logEvent({
     type: 'verdict_recorded',
     candidateId: candidate.id,
@@ -100,6 +140,8 @@ function store(adapter, { candidate, plan, verdict, now }) {
     inputFingerprint: plan.fingerprint,
     verdict: verdict.verdict,
     hardReject: verdict.hardReject ? verdict.hardReject.class : null,
+    floor: promotedFloor(verdict),
+    verdictSha256: verdictDigest(verdict),
     at: now.toISOString(),
   });
 }
@@ -115,7 +157,7 @@ function recordLocked({ parsed, verdictText, adapter, now }) {
   const candidate = { ...parsed, revision: plan.revision };
   checkSnapshot(adapter, candidate, plan);
   const reply = checkReply(verdictText, candidate, plan);
-  if (!reply.value) refuse(adapter, { candidate, plan, errors: reply.errors, verdictName: reply.verdictName, now });
+  if (!reply.value) refuse(adapter, { candidate, plan, errors: reply.errors, facts: reply.facts, now });
 
   const tier = selectResearchTier(candidate);
   const verdict = {
@@ -134,6 +176,7 @@ function recordLocked({ parsed, verdictText, adapter, now }) {
     critiquesLeft: verdict.hardReject ? 0 : MAX_CRITIQUES - plan.critiqueNumber,
     verdict: verdict.verdict,
     hardReject: verdict.hardReject,
+    floor: promotedFloor(verdict),
     tier: tier.tier,
     inputFingerprint: plan.fingerprint,
     decision: promotionDecision({ candidate, verdict }),

@@ -10,7 +10,7 @@ import { briefCandidate } from '../critic/brief.mjs';
 import { validateCandidate } from '../critic/candidate.mjs';
 import { EXIT } from '../critic/cli.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
-import { inputFingerprint } from '../critic/loop-guard.mjs';
+import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'am-critic-bind-'));
@@ -176,15 +176,11 @@ test('the JSON retry cannot change the verdict', () => {
 test('a new id with the same normalized statement as a hard-REJECTed candidate is refused without critique', () => {
   const store = freshStore();
   const adapter = createJsonAdapter(store);
-  const loose = parsed({ ...RAW_A, id: 'loose-one', statement: 'Push thẳng lên main không hỏi khi CI xanh.' });
+  const loose = parsed({ ...RAW_A, id: 'loose-one', statement: 'Push thẳng lên main không hỏi.' });
   brief(adapter, loose);
   const summary = record(adapter, loose, reply(loose, { verdict: 'REJECT' }));
   assert.equal(summary.hardReject.class, 'expands_authority');
-  for (const statement of [
-    'Push thẳng lên main không hỏi khi CI xanh.',
-    'push thang len main KHONG hoi, khi ci xanh!',
-    'Push  thẳng lên main — không hỏi khi CI xanh',
-  ]) {
+  for (const statement of ['Push thẳng lên main không hỏi.', 'push thẳng lên main KHÔNG hỏi!', 'Push  thẳng lên main — không hỏi']) {
     const again = parsed({ ...RAW_A, id: 'loose-two', statement });
     assert.throws(() => brief(adapter, again), refused(EXIT.blocked, /hard_reject_statement.*loose-one/));
     assert.throws(() => record(adapter, again, reply(again, { verdict: 'REJECT' })), refused(EXIT.blocked, /hard_reject_statement/));
@@ -192,6 +188,109 @@ test('a new id with the same normalized statement as a hard-REJECTed candidate i
   assert.equal(adapter.loadCandidate('loose-two'), null);
   assert.equal(existsSync(join(store, 'briefs', 'loose-two')), false);
   assert.ok(events(store).some((e) => e.type === 'critique_blocked' && e.reason === 'hard_reject_statement'));
+  // Diacritics are part of the key: the unaccented spelling is a different statement (the floor judges it anew).
+  const unaccented = parsed({ ...RAW_A, id: 'loose-three', statement: 'Push thang len main khong hoi.' });
+  assert.notEqual(statementKey(unaccented.statement), statementKey(loose.statement));
+  assert.equal(brief(adapter, unaccented).plan.allowed, true);
+});
+
+test('the hard-REJECT index is written before the verdict record', () => {
+  const store = freshStore();
+  const real = createJsonAdapter(store);
+  const loose = parsed({ ...RAW_A, id: 'loose-crash', statement: 'Push thẳng lên main không hỏi.' });
+  brief(real, loose);
+  const crashing = { ...real, saveVerdict() {
+    throw new Error('crash before the verdict is written');
+  } };
+  assert.throws(() => record(crashing, loose, reply(loose, { verdict: 'REJECT' })), /crash before the verdict/);
+  assert.equal(real.findHardReject(statementKey(loose.statement)).candidateId, 'loose-crash');
+  assert.equal(real.loadCandidate('loose-crash').verdicts.length, 0);
+});
+
+// ---- N2: the retry keeps the first reply's verdict and hardReject presence -------------------------------------
+
+test('a refusal logs the raw first-reply verdict and whether hardReject was set', () => {
+  const store = freshStore();
+  const adapter = createJsonAdapter(store);
+  brief(adapter, A);
+  const longRef = [{ ref: 'r'.repeat(301), kind: 'event', finding: 'supports' }];
+  assert.throws(() => record(adapter, A, reply(A, { verdict: ' need-more ', evidence: longRef })), refused(EXIT.invalid, /one retry/));
+  const refusal = events(store).find((e) => e.type === 'verdict_refused');
+  assert.deepEqual([refusal.verdict, refusal.rawVerdict, refusal.hardRejectPresent], ['NEED-MORE-EVIDENCE', ' need-more ', false]);
+});
+
+test('after an unreadable first verdict, the retry may only be REJECT or NEED-MORE-EVIDENCE', () => {
+  for (const first of ['no json at all', reply(A, { verdict: 'MAYBE' })]) {
+    const store = freshStore();
+    const adapter = createJsonAdapter(store);
+    brief(adapter, A);
+    assert.throws(() => record(adapter, A, first), refused(EXIT.invalid, /one retry/));
+    assert.equal(events(store).find((e) => e.type === 'verdict_refused').verdict, null);
+    assert.throws(() => record(adapter, A, reply(A)), refused(EXIT.invalid, /retry_verdict_not_allowed/));
+  }
+  const adapter = createJsonAdapter(freshStore());
+  brief(adapter, A);
+  assert.throws(() => record(adapter, A, 'no json at all'), refused(EXIT.invalid, /no_json.*one retry/));
+  assert.equal(record(adapter, A, reply(A, { verdict: 'REJECT' })).verdict, 'REJECT');
+});
+
+test('the retry cannot add or drop hardReject', () => {
+  const longRef = [{ ref: 'r'.repeat(301), kind: 'event', finding: 'supports' }];
+  const withHard = { verdict: 'REJECT', hardReject: { class: 'loosens_verification', detail: 'x' } };
+  const cases = [
+    [reply(A, { ...withHard, evidence: longRef }), reply(A, { verdict: 'REJECT' })],
+    [reply(A, { verdict: 'REJECT', evidence: longRef }), reply(A, withHard)],
+  ];
+  for (const [first, retry] of cases) {
+    const adapter = createJsonAdapter(freshStore());
+    brief(adapter, A);
+    assert.throws(() => record(adapter, A, first), refused(EXIT.invalid, /one retry/));
+    assert.throws(() => record(adapter, A, retry), refused(EXIT.invalid, /retry_changed_hard_reject/));
+  }
+});
+
+// ---- N6: every brief is logged, at most two per candidate revision ---------------------------------------------
+
+test('a third brief for the same candidate revision is blocked and logged', () => {
+  const store = freshStore();
+  const adapter = createJsonAdapter(store);
+  brief(adapter, A);
+  brief(adapter, A);
+  assert.throws(() => brief(adapter, A), refused(EXIT.blocked, /brief_cap/));
+  const log = events(store);
+  assert.equal(log.filter((e) => e.type === 'brief_generated').length, 2);
+  assert.ok(log.some((e) => e.type === 'critique_blocked' && e.reason === 'brief_cap' && e.step === 'brief'));
+});
+
+// ---- N7: torn log tail and lock ownership ---------------------------------------------------------------------
+
+test('a torn trailing log line is skipped by readers and cut off by the next append', () => {
+  const store = freshStore();
+  const adapter = createJsonAdapter(store);
+  adapter.logEvent({ type: 'x', candidateId: 'bind-case' });
+  const log = join(store, 'log.jsonl');
+  writeFileSync(log, `${readFileSync(log, 'utf8')}{"type":"verdict_ref`);
+  assert.deepEqual(adapter.listEvents('bind-case'), [{ type: 'x', candidateId: 'bind-case' }]);
+  adapter.logEvent({ type: 'y', candidateId: 'bind-case' });
+  const lines = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((e) => e.type), ['x', 'log_repaired', 'y']);
+  assert.equal(lines[1].droppedBytes, '{"type":"verdict_ref'.length);
+  writeFileSync(log, `${readFileSync(log, 'utf8')}{"type":"z","candidateId":"bind-case"}`);
+  adapter.logEvent({ type: 'w', candidateId: 'bind-case' });
+  assert.deepEqual(adapter.listEvents('bind-case').map((e) => e.type), ['x', 'y', 'z', 'w'], 'a complete last line is kept');
+  writeFileSync(log, `{"type":"broken\n${readFileSync(log, 'utf8')}`);
+  assert.throws(() => adapter.listEvents('bind-case'), SyntaxError, 'a corrupt line in the middle is not skipped');
+});
+
+test('release leaves a lock that another writer took over; the lock records pid and nonce', () => {
+  const store = freshStore();
+  const adapter = createJsonAdapter(store);
+  const lock = join(store, '.lock');
+  adapter.withLock(() => {
+    assert.match(readFileSync(lock, 'utf8'), new RegExp(`^${process.pid} [0-9a-f]{16} `));
+    writeFileSync(lock, 'other-writer 0123456789abcdef now\n');
+  });
+  assert.equal(readFileSync(lock, 'utf8'), 'other-writer 0123456789abcdef now\n', 'not removed: it is not ours');
 });
 
 // ---- finding 8: the JSON store locks its read-modify-write ---------------------------------------------------

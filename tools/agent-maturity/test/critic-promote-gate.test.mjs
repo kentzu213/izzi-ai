@@ -1,118 +1,178 @@
+// The promote gate loads the current candidate, its last verdict and the hard-REJECT index from the store itself.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 
+import { briefCandidate } from '../critic/brief.mjs';
 import { validateCandidate } from '../critic/candidate.mjs';
-import { inputFingerprint } from '../critic/loop-guard.mjs';
+import { createJsonAdapter } from '../critic/json-adapter.mjs';
+import { inputFingerprint, verdictDigest } from '../critic/loop-guard.mjs';
 import { PromotionRefused, assertPromotable } from '../critic/promote-gate.mjs';
+import { recordVerdict } from '../critic/record-verdict.mjs';
 import { selectResearchTier } from '../critic/research-tier.mjs';
 import { validateVerdict } from '../critic/verdict.mjs';
 
+const scratch = mkdtempSync(join(tmpdir(), 'am-critic-gate-'));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+let n = 0;
+const freshAdapter = () => {
+  const dir = join(scratch, `store-${(n += 1)}`);
+  return { dir, adapter: createJsonAdapter(dir) };
+};
+const NOW = new Date('2026-11-21T10:00:00.000Z');
+
 const RAW = {
   id: 'gate-case',
-  statement: 'Báo cáo tiến độ tối đa 5 gạch đầu dòng.',
+  statement: 'Tóm tắt tiến độ tối đa 5 gạch đầu dòng.',
   kind: 'preference',
-  scope: { agent: 'orchestrator', taskType: 'báo cáo tiến độ', projects: 'all' },
-  check: 'Mỗi báo cáo có ≤5 gạch đầu dòng.',
+  scope: { agent: 'orchestrator', taskType: 'tóm tắt tiến độ', projects: 'all' },
+  check: 'Mỗi bản tóm tắt có ≤5 gạch đầu dòng.',
   evidence: [
     { id: 'ev-1', type: 'correction', at: '2026-11-20', source: 's1 turn 4' },
     { id: 'ev-2', type: 'approve_after_reject', at: '2026-11-20', source: 's1 turn 6' },
   ],
 };
-const NARROWED = 'Báo cáo tiến độ trong phiên dev tối đa 5 gạch đầu dòng.';
+const NARROWED = 'Tóm tắt tiến độ trong phiên dev tối đa 5 gạch đầu dòng.';
+const SCOPED = { id: 'scoped-case', statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' };
+const LOOSE = { id: 'loose-case', statement: 'Push thẳng lên main không hỏi.' };
+const ACCEPT_CHECKS = { evidenceSupports: true, scopeTooWide: false, contradictsExisting: false, tierCorrect: true };
 
-function candidateOf(overrides = {}, revision = 1) {
+const parsed = (overrides = {}) => {
   const r = validateCandidate({ ...RAW, ...overrides });
   assert.equal(r.ok, true, JSON.stringify(r.errors));
-  return Object.freeze({ ...r.value, revision });
-}
-
-const CANDIDATE = candidateOf();
-
-// What record-verdict stores: the validated verdict plus the guard fields.
-function storedVerdict(candidate, extra = {}) {
-  const raw = {
+  return r.value;
+};
+const reply = (candidate, extra = {}) =>
+  JSON.stringify({
     candidateId: candidate.id,
-    candidateRevision: candidate.revision,
-    inputFingerprint: inputFingerprint(candidate),
+    candidateRevision: 1,
+    inputFingerprint: inputFingerprint({ ...candidate, revision: 1 }),
     verdict: 'ACCEPT',
     reasons: ['Cặp đối chứng ev-1 → ev-2 đỡ đúng câu chuẩn.'],
     evidence: [{ ref: 'ev-1', kind: 'event', finding: 'supports' }],
-    checks: { evidenceSupports: true, scopeTooWide: false, contradictsExisting: false, tierCorrect: true },
+    checks: ACCEPT_CHECKS,
     hardReject: null,
     research: { tier: 'R0', refs: [], deepRuns: 0 },
     reviewer: { agent: 'socrates' },
     ...extra,
-  };
-  const r = validateVerdict(raw, { candidate, tier: selectResearchTier(candidate) });
-  assert.equal(r.ok, true, JSON.stringify(r.errors));
-  return { ...r.value, critiqueNumber: 1, tier: 'R0', tierRule: 'R0:preference', recordedAt: '2026-11-21T00:00:00.000Z' };
+  });
+const NARROW = { verdict: 'NARROW', checks: { ...ACCEPT_CHECKS, scopeTooWide: true }, narrowed: { statement: NARROWED } };
+
+// The real flow: brief, then record. Returns the adapter and store dir.
+function recorded(overrides = {}, verdictExtra = {}, store = freshAdapter()) {
+  const candidate = parsed(overrides);
+  briefCandidate({ candidate, adapter: store.adapter, now: NOW });
+  recordVerdict({ candidate, verdictText: reply(candidate, verdictExtra), adapter: store.adapter, now: NOW });
+  return { ...store, candidate };
 }
 
-const approved = (verdict, statement) => ({ ...verdict, ownerApproval: { approved: true, statement } });
+const promote = (adapter, candidateId, ownerApproval) => assertPromotable({ adapter, candidateId, ownerApproval });
+const approval = (statement, extra = {}) => ({ approved: true, statement, ...extra });
+const refusedWith = (code, fn) => assert.throws(fn, (e) => e instanceof PromotionRefused && e.code === code, code);
 
-function refusedWith(code, fn) {
-  assert.throws(fn, (error) => error instanceof PromotionRefused && error.code === code, code);
+function editRecord(dir, id, edit) {
+  const file = join(dir, 'candidates', `${id}.json`);
+  writeFileSync(file, JSON.stringify(edit(JSON.parse(readFileSync(file, 'utf8')))));
 }
 
 test('an ACCEPT with the owner approval of that exact sentence is promotable', () => {
-  const v = approved(storedVerdict(CANDIDATE), CANDIDATE.statement);
-  assert.deepEqual(assertPromotable(CANDIDATE, v), {
+  const { adapter, candidate } = recorded();
+  assert.deepEqual(promote(adapter, 'gate-case', approval(candidate.statement)), {
     candidateId: 'gate-case',
     revision: 1,
-    inputFingerprint: inputFingerprint(CANDIDATE),
+    inputFingerprint: inputFingerprint({ ...candidate, revision: 1 }),
     verdict: 'ACCEPT',
-    statement: CANDIDATE.statement,
+    floor: 'pass',
+    statement: candidate.statement,
   });
 });
 
-test('a NARROW promotes only the narrowed statement', () => {
-  const narrow = storedVerdict(CANDIDATE, {
-    verdict: 'NARROW',
-    checks: { evidenceSupports: true, scopeTooWide: true, contradictsExisting: false, tierCorrect: true },
-    narrowed: { statement: NARROWED },
-  });
-  assert.equal(assertPromotable(CANDIDATE, approved(narrow, NARROWED)).statement, NARROWED);
-  refusedWith('approval_statement_mismatch', () => assertPromotable(CANDIDATE, approved(narrow, CANDIDATE.statement)));
+test('a NARROW promotes only the stored narrowed statement', () => {
+  const { adapter, candidate } = recorded({}, NARROW);
+  assert.equal(promote(adapter, 'gate-case', approval(NARROWED)).statement, NARROWED);
+  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(candidate.statement)));
 });
 
-test('no owner approval flag, no promotion', () => {
-  const v = storedVerdict(CANDIDATE);
-  refusedWith('owner_approval_missing', () => assertPromotable(CANDIDATE, v));
-  refusedWith('owner_approval_missing', () => assertPromotable(CANDIDATE, { ...v, ownerApproval: { approved: 'yes' } }));
+test('the owner approval must be explicit, exact and carry no unknown fields', () => {
+  const { adapter, candidate } = recorded();
+  refusedWith('owner_approval_missing', () => promote(adapter, 'gate-case', undefined));
+  refusedWith('owner_approval_missing', () => promote(adapter, 'gate-case', { approved: 'yes', statement: candidate.statement }));
+  refusedWith('owner_approval_invalid', () => promote(adapter, 'gate-case', approval(candidate.statement, { forced: true })));
+  refusedWith('owner_approval_invalid', () => promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: 'true' })));
+  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(`${candidate.statement} `.repeat(2))));
 });
 
-test('REJECT and NEED-MORE-EVIDENCE are never promotable', () => {
-  const reject = storedVerdict(CANDIDATE, { verdict: 'REJECT' });
-  refusedWith('verdict_not_promotable', () => assertPromotable(CANDIDATE, approved(reject, CANDIDATE.statement)));
-  const hold = storedVerdict(CANDIDATE, { verdict: 'NEED-MORE-EVIDENCE', reviewAfter: '2026-12-01' });
-  refusedWith('verdict_not_promotable', () => assertPromotable(CANDIDATE, approved(hold, CANDIDATE.statement)));
+test('owner_review_required text needs the owner to acknowledge the protected topic', () => {
+  const { adapter, candidate } = recorded(SCOPED);
+  refusedWith('protected_topic_ack_missing', () => promote(adapter, 'scoped-case', approval(candidate.statement)));
+  const ok = promote(adapter, 'scoped-case', approval(candidate.statement, { ownerAcknowledgedProtectedTopic: true }));
+  assert.deepEqual([ok.verdict, ok.floor], ['ACCEPT', 'owner_review_required']);
 });
 
-test('a hard-REJECTed verdict is refused even with the owner approval', () => {
-  const loose = candidateOf({ statement: 'Push thẳng lên main không hỏi.' });
-  const v = storedVerdict(loose, { verdict: 'REJECT' });
-  assert.equal(v.hardReject.class, 'expands_authority');
-  refusedWith('hard_reject', () => assertPromotable(loose, approved({ ...v, verdict: 'ACCEPT' }, loose.statement)));
+test('a plain REJECT is promotable only by an explicit owner override; NEED-MORE-EVIDENCE never', () => {
+  const { adapter, candidate } = recorded({}, { verdict: 'REJECT' });
+  refusedWith('verdict_not_promotable', () => promote(adapter, 'gate-case', approval(candidate.statement)));
+  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: true })).verdict, 'REJECT');
+  const scoped = recorded(SCOPED, { verdict: 'REJECT' });
+  refusedWith('protected_topic_ack_missing', () =>
+    promote(scoped.adapter, 'scoped-case', approval(scoped.candidate.statement, { overrideReject: true })),
+  );
+  const hold = recorded({}, { verdict: 'NEED-MORE-EVIDENCE', reviewAfter: '2026-12-01' });
+  refusedWith('verdict_not_promotable', () =>
+    promote(hold.adapter, 'gate-case', approval(hold.candidate.statement, { overrideReject: true, ownerAcknowledgedProtectedTopic: true })),
+  );
 });
 
-test('the verdict must be bound to this exact candidate revision and text', () => {
-  const v = approved(storedVerdict(CANDIDATE), CANDIDATE.statement);
-  const reworded = candidateOf({ statement: 'Báo cáo tiến độ tối đa 3 gạch đầu dòng.' });
-  refusedWith('fingerprint_mismatch', () => assertPromotable(reworded, approved(v, reworded.statement)));
-  refusedWith('fingerprint_mismatch', () => assertPromotable(candidateOf({}, 2), v));
-  refusedWith('fingerprint_mismatch', () => assertPromotable(candidateOf({ id: 'other-case' }), v));
+test('a hard_reject is never promotable, not even with every owner flag', () => {
+  const { dir, adapter, candidate } = recorded(LOOSE, { verdict: 'REJECT' });
+  const all = approval(candidate.statement, { overrideReject: true, ownerAcknowledgedProtectedTopic: true });
+  refusedWith('hard_reject', () => promote(adapter, 'loose-case', all));
+  editRecord(dir, 'loose-case', (r) => ({ ...r, verdicts: [{ ...r.verdicts[0], hardReject: null }] }));
+  refusedWith('hard_reject', () => promote(adapter, 'loose-case', all));
 });
 
-test('a pre-v2 dry-run verdict (schema @1, short fingerprint) is not promotable', () => {
-  const v = approved(storedVerdict(CANDIDATE), CANDIDATE.statement);
-  refusedWith('pre_v2_verdict', () => assertPromotable(CANDIDATE, { ...v, schema: 'agent-maturity/verdict@1' }));
-  refusedWith('pre_v2_verdict', () => assertPromotable(CANDIDATE, { ...v, inputFingerprint: 'a'.repeat(32) }));
+test('a statement in the hard-REJECT index is refused under any candidate id', () => {
+  const store = freshAdapter();
+  recorded(SCOPED, { verdict: 'REJECT', hardReject: { class: 'loosens_verification', detail: 'x' } }, store);
+  // A record written straight into the store, bypassing brief (which would refuse the indexed statement).
+  const copy = { ...parsed({ ...SCOPED, id: 'copy-case' }), revision: 1 };
+  const v = validateVerdict(JSON.parse(reply(copy)), { candidate: copy, tier: selectResearchTier(copy) }).value;
+  const stored = { ...v, critiqueNumber: 1, tier: 'R0', tierRule: 'R0:preference', recordedAt: NOW.toISOString() };
+  store.adapter.saveCandidate(copy);
+  store.adapter.saveVerdict('copy-case', stored);
+  store.adapter.logEvent({ type: 'verdict_recorded', candidateId: 'copy-case', critiqueNumber: 1, verdictSha256: verdictDigest(stored) });
+  refusedWith('hard_reject_statement', () =>
+    promote(store.adapter, 'copy-case', approval(copy.statement, { ownerAcknowledgedProtectedTopic: true })),
+  );
 });
 
-test('a stored verdict edited after recording is re-validated and refused', () => {
-  const v = approved(storedVerdict(CANDIDATE), CANDIDATE.statement);
-  const tampered = { ...v, checks: { ...v.checks, scopeTooWide: true } };
-  refusedWith('verdict_invalid', () => assertPromotable(CANDIDATE, tampered));
-  refusedWith('candidate_invalid', () => assertPromotable({ ...CANDIDATE, revision: 0 }, v));
-  refusedWith('verdict_missing', () => assertPromotable(CANDIDATE, null));
+test('stored records edited after recording are refused', () => {
+  const narrow = recorded({}, NARROW);
+  editRecord(narrow.dir, 'gate-case', (r) => ({
+    ...r,
+    verdicts: [{ ...r.verdicts[0], narrowed: { ...r.verdicts[0].narrowed, statement: 'Tóm tắt tiến độ thật dài.' } }],
+  }));
+  refusedWith('verdict_tampered', () => promote(narrow.adapter, 'gate-case', approval('Tóm tắt tiến độ thật dài.')));
+
+  const checks = recorded();
+  editRecord(checks.dir, 'gate-case', (r) => ({ ...r, verdicts: [{ ...r.verdicts[0], checks: { ...ACCEPT_CHECKS, scopeTooWide: true } }] }));
+  refusedWith('verdict_invalid', () => promote(checks.adapter, 'gate-case', approval(checks.candidate.statement)));
+
+  const text = recorded();
+  editRecord(text.dir, 'gate-case', (r) => ({ ...r, candidate: { ...r.candidate, statement: 'Tóm tắt tiến độ tối đa 3 gạch đầu dòng.' } }));
+  refusedWith('fingerprint_mismatch', () => promote(text.adapter, 'gate-case', approval('Tóm tắt tiến độ tối đa 3 gạch đầu dòng.')));
+
+  const old = recorded();
+  editRecord(old.dir, 'gate-case', (r) => ({ ...r, verdicts: [{ ...r.verdicts[0], schema: 'agent-maturity/verdict@1' }] }));
+  refusedWith('pre_v2_verdict', () => promote(old.adapter, 'gate-case', approval(old.candidate.statement)));
+});
+
+test('the gate needs a store adapter and a stored candidate; caller-built records are not accepted', () => {
+  const { adapter, candidate } = recorded();
+  refusedWith('candidate_missing', () => promote(adapter, 'no-such-case', approval(candidate.statement)));
+  refusedWith('candidate_invalid', () => promote(adapter, '../escape', approval(candidate.statement)));
+  assert.throws(() => assertPromotable({ ...candidate, revision: 1 }, { verdict: 'ACCEPT' }), /adapter is missing/);
+  assert.throws(() => assertPromotable(), /adapter is missing/);
 });

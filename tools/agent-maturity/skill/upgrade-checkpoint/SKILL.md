@@ -66,10 +66,11 @@ instructions. When a standard and those conflict, the governing instructions win
      (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is
      `tools/agent-maturity` in the Starizzi checkout; the installed runtime does not copy `critic/` yet.
   3. `node <am>/critic/brief.mjs <candidate.json> --store <dir>` picks the research tier, checks the loop guard and
-     the store-wide hard-REJECT index, prints the standard brief with its `inputFingerprint` and stores a snapshot
-     of exactly what it briefed. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the
-     brief unchanged as the prompt of the `socrates` agent. Never run socrates on a candidate without this brief,
-     and do not edit the candidate file between the brief and step 5 (the verdict is bound to that exact text).
+     the store-wide hard-REJECT index, prints the standard brief with its `inputFingerprint` and the code floor's
+     class, and stores a snapshot of exactly what it briefed. Every brief is logged; a candidate revision gets at
+     most two briefs. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the brief
+     unchanged as the prompt of the `socrates` agent. Never run socrates on a candidate without this brief, and do
+     not edit the candidate file between the brief and step 5 (the verdict is bound to that exact text).
   4. Socrates critiques once and researches only inside the tier's budget:
      - R0 (pure preference, or a procedure that only changes phrasing): no research.
      - R1 (content, ads, claims; pitfalls): one cheap cited lookup (WebSearch, perplexity_search or
@@ -86,19 +87,26 @@ instructions. When a standard and those conflict, the governing instructions win
      stores the verdict with the candidate and prints `decision`. Exit 1 = invalid: nothing is stored and the
      refusal is logged in the loop-guard log. At most ONE retry, and only when the message says
      `one retry allowed` (a format or limit error such as a too-long field or a missing `inputFingerprint`): ask
-     the same socrates run to fix only the JSON, keeping its verdict. Never retry a semantic error
+     the same socrates run to fix only the JSON, keeping its verdict and its hardReject (if its verdict could not
+     be read, the retry may only be REJECT or NEED-MORE-EVIDENCE). Never retry a semantic error
      (`accept_checks_failed`, `research_deep_run_missing`, `hard_reject_floor`, `fingerprint_mismatch` or any
      other `no retry` message), never retry twice, and never re-run brief.mjs to get a fresh socrates run: hold
      the candidate and tell the owner why.
   6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence) ·
-     `show_diff` (NARROW or reworded: show the owner the diff, promote only after OK) · `hold` (NEED-MORE-EVIDENCE:
-     keep it until `reviewAfter`; REJECT: give the reason, the owner may still force approval) · `refuse`
-     (hard-REJECT class below: never promoted, even when forced). Every promote goes through
-     `assertPromotable(candidate, verdict + ownerApproval)` in `<am>/critic/promote-gate.mjs` and promotes only the
-     statement it returns (slice D3 wires this into `promote`).
+     `show_diff` (NARROW or reworded: show the owner the diff, promote only after OK) · `owner_review` (the text
+     touches a protected topic, floor class `owner_review_required`: show the owner socrates' risk explanation;
+     a socrates ACCEPT alone never promotes it) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`;
+     REJECT: give the reason) · `refuse` (hard-REJECT: never promoted). The owner may override
+     `owner_review_required` and a plain REJECT only by explicit approval of the exact text; a hard-REJECT can never
+     be overridden. Every promote goes through
+     `assertPromotable({ adapter, candidateId, ownerApproval })` in `<am>/critic/promote-gate.mjs`, which loads the
+     stored candidate, its last verdict and the hard-REJECT index itself. `ownerApproval` is
+     `{ approved: true, statement: '<exact text>' }`, plus `ownerAcknowledgedProtectedTopic: true` for
+     `owner_review_required` text and `overrideReject: true` to override a plain REJECT. Promote only the statement it
+     returns (slice D3 wires this into `promote`).
   7. Loop guard: per candidate 1 critique + 1 rewrite, and the rewrite gets one re-check (critique 2 needs new
      input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final across
-     the store: a new candidate id with the same statement (ignoring case, diacritics and punctuation) is refused.
+     the store: a new candidate id with the same statement (ignoring case, spacing and punctuation) is refused.
   8. Until slice D3 plugs in the KnowledgeMemory adapter, `--store` is a temp folder (for example
      `F:/Ai Tools/Codex/Temp/agent-maturity-critic/`), never `~/.claude`.
   9. A new standard that contradicts an old one: capture and promote the new one, then `supersede` the old one
@@ -113,8 +121,13 @@ instructions. When a standard and those conflict, the governing instructions win
     "do not mention failed checks");
   - expands authority (for example "deploy, push or send without asking", "skip review or tests", "approve your own
     PR", "use credentials or permissions you were not given").
-  `record-verdict.mjs` also refuses any verdict other than REJECT when the wording plainly matches one of these.
-  Root never promotes it, even when the owner chose Nâng cấp; tell the owner which policy it would loosen. Those
+  A code floor backs this up in three classes: `hard_reject` (a plain, unconditional loosening such as "Bỏ qua
+  test." or "Push without asking."; `record-verdict.mjs` refuses any verdict other than REJECT and the statement is
+  blocked store-wide), `owner_review_required` (it touches tests, review, CI, deploy, push, merge, release,
+  security, secrets, permission, verification, reporting or asking the owner and is not a plain loosening, for
+  example a negated, scoped or conditional rule: only the owner's explicit approval with the protected-topic
+  acknowledgement promotes it) and `pass`.
+  Root never promotes a hard-REJECT, even when the owner chose Nâng cấp; tell the owner which policy it would loosen. Those
   policies change only by editing the governing instructions directly. The owner's live instruction in a session
   still governs that session; only storing it as a standard is refused.
 - When you report "approved the first time" for work, also report the counter-metric: work approved and later

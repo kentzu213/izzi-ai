@@ -4,15 +4,18 @@
 //   loadCandidate(id) -> record | null  { candidate, previous: [...], verdicts: [...] }
 //   saveVerdict(candidateId, verdict)   append one verdict record; the candidate must already be stored
 //   logEvent(event)                     append a guard/audit event (critique_blocked, verdict_refused, ...)
-//   listEvents(candidateId) -> [...]    the events of one candidate, oldest first (the loop guard reads them)
+//   listEvents(candidateId) -> [...]    the events of one candidate, oldest first (the loop guard reads them);
+//                                       one torn trailing log line (an interrupted append) is skipped
 //   saveBrief(snapshot)                 store what brief.mjs printed, keyed by candidate id + inputFingerprint
 //   loadBrief(candidateId, fp) -> snapshot | null
 //   addHardReject(entry)                index a hard-REJECTed statement { statementKey, candidateId, ... }
 //   findHardReject(statementKey) -> entry | null
 //   withLock(fn)                        run fn holding the store's exclusive lock (re-entrant)
 // Layout: <dir>/candidates/<id>.json, <dir>/briefs/<id>/<fp>.json, <dir>/hard-rejects.json, <dir>/log.jsonl,
-// <dir>/.lock. Writes are atomic (temp file + rename) and every read-modify-write holds the lock.
+// <dir>/.lock. Writes are atomic (temp file + rename) and every read-modify-write holds the lock; the lock file
+// carries the writer's pid and a nonce, read back after creating it and checked before removing it.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -47,9 +50,22 @@ export function assertAdapter(adapter) {
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
+const readOrEmpty = (file) => {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
+// The lock file holds "<pid> <nonce> <time>". After creating it, the writer reads it back and owns the lock only if
+// its nonce is there; a stale lock is removed only if it still holds what was judged stale; release removes the
+// file only while it still holds this writer's nonce.
 function createLock(root, { lockWaitMs, lockStaleMs }) {
   const file = path.join(root, '.lock');
+  const tag = `${process.pid} ${crypto.randomBytes(8).toString('hex')} `;
   let depth = 0;
+  const owns = () => readOrEmpty(file).startsWith(tag);
   const isStale = () => {
     try {
       return Date.now() - fs.statSync(file).mtimeMs > lockStaleMs;
@@ -57,23 +73,31 @@ function createLock(root, { lockWaitMs, lockStaleMs }) {
       return false;
     }
   };
+  const clearStale = () => {
+    const seen = readOrEmpty(file);
+    if (isStale() && readOrEmpty(file) === seen) fs.rmSync(file, { force: true });
+  };
   const acquire = () => {
     fs.mkdirSync(root, { recursive: true });
     const deadline = Date.now() + lockWaitMs;
     for (;;) {
       try {
-        fs.writeFileSync(file, `${process.pid} ${new Date().toISOString()}\n`, { flag: 'wx' });
-        return;
+        fs.writeFileSync(file, `${tag}${new Date().toISOString()}\n`, { flag: 'wx' });
+        if (owns()) return;
+        continue;
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
       }
       if (isStale()) {
-        fs.rmSync(file, { force: true });
+        clearStale();
         continue;
       }
       if (Date.now() >= deadline) throw new Error(`critic store is locked (${file}); another write is running`);
       sleep(LOCK_POLL_MS);
     }
+  };
+  const release = () => {
+    if (owns()) fs.rmSync(file, { force: true });
   };
   return function withLock(fn) {
     if (depth > 0) {
@@ -90,9 +114,46 @@ function createLock(root, { lockWaitMs, lockStaleMs }) {
       return fn();
     } finally {
       depth = 0;
-      fs.rmSync(file, { force: true });
+      release();
     }
   };
+}
+
+// A crash mid-append can leave one torn last line (no trailing newline). Readers skip it; the next append first
+// cuts it off (a complete last line that only lacks its newline gets the newline instead), so a torn line never
+// ends up in the middle of the log and no event is glued onto it.
+function dropTornTail(logFile) {
+  let buf;
+  try {
+    buf = fs.readFileSync(logFile);
+  } catch (error) {
+    if (error.code === 'ENOENT') return 0;
+    throw error;
+  }
+  if (buf.length === 0 || buf[buf.length - 1] === 0x0a) return 0;
+  const keep = buf.lastIndexOf(0x0a) + 1;
+  try {
+    JSON.parse(buf.subarray(keep).toString('utf8'));
+    fs.appendFileSync(logFile, '\n');
+    return 0;
+  } catch {
+    fs.truncateSync(logFile, keep);
+    return buf.length - keep;
+  }
+}
+
+function parseLog(content) {
+  const lines = content.split('\n');
+  const torn = content.endsWith('\n') ? null : lines.pop();
+  const events = lines.filter(Boolean).map((line) => JSON.parse(line));
+  if (torn) {
+    try {
+      events.push(JSON.parse(torn));
+    } catch {
+      // a torn trailing line from an interrupted append: skipped
+    }
+  }
+  return events;
 }
 
 export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs = LOCK_STALE_MS } = {}) {
@@ -142,7 +203,11 @@ export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs 
       });
     },
     logEvent(event) {
-      withLock(() => fs.appendFileSync(logFile, `${JSON.stringify(event)}\n`));
+      withLock(() => {
+        const dropped = dropTornTail(logFile);
+        const repair = dropped > 0 ? `${JSON.stringify({ type: 'log_repaired', droppedBytes: dropped, at: new Date().toISOString() })}\n` : '';
+        fs.appendFileSync(logFile, `${repair}${JSON.stringify(event)}\n`);
+      });
     },
     listEvents(candidateId) {
       let content;
@@ -152,11 +217,7 @@ export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs 
         if (error.code === 'ENOENT') return [];
         throw error;
       }
-      return content
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line))
-        .filter((e) => e && e.candidateId === candidateId);
+      return parseLog(content).filter((e) => e && e.candidateId === candidateId);
     },
     saveBrief(snapshot) {
       withLock(() => writeJsonAtomic(briefFile(snapshot.candidateId, snapshot.inputFingerprint), snapshot));

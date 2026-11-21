@@ -1,8 +1,9 @@
 // Builds the standard socrates brief for one candidate, after the loop guard allows the critique.
 //   node tools/agent-maturity/critic/brief.mjs <candidate.json> --store <dir>
 // Prints the brief to stdout (paste it unchanged as the socrates prompt) and stores a snapshot of exactly what
-// it briefed under its inputFingerprint; record-verdict refuses a verdict without a matching snapshot. If the
-// guard blocks, it logs the blocked attempt to the store and exits 3.
+// it briefed under its inputFingerprint; record-verdict refuses a verdict without a matching snapshot. Every brief
+// is logged (brief_generated) and a candidate revision gets at most two briefs. If the guard blocks, it logs the
+// blocked attempt to the store and exits 3.
 
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -18,9 +19,9 @@ import {
   runMain,
 } from './cli.mjs';
 import { assertAdapter, createJsonAdapter } from './json-adapter.mjs';
-import { MAX_CRITIQUES, MAX_REWRITES, planCritique, refusalsOf } from './loop-guard.mjs';
+import { MAX_CRITIQUES, MAX_REWRITES, briefsOf, planCritique, refusalsOf } from './loop-guard.mjs';
 import { selectResearchTier } from './research-tier.mjs';
-import { HARD_REJECT_CLASSES, VERDICT_LIMITS, VERDICT_SCHEMA } from './verdict.mjs';
+import { HARD_REJECT_CLASSES, VERDICT_LIMITS, VERDICT_SCHEMA, classifyFloor } from './verdict.mjs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..').replaceAll('\\', '/');
 const BRIEF_SCHEMA = 'agent-maturity/critic-brief@1';
@@ -103,6 +104,24 @@ function previousSection(record, plan) {
   ];
 }
 
+// The code floor's reading of the candidate. Only labels from the floor's fixed vocabularies are printed here,
+// never candidate text (that stays inside the data block).
+function floorSection(floor) {
+  if (floor.floor === 'hard_reject') {
+    return [
+      `Code floor: hard_reject (${floor.class}). The wording is a plain, unconditional loosening: return REJECT. The floor records the hard-REJECT itself; it is final and store-wide.`,
+    ];
+  }
+  if (floor.floor === 'pass') return ['Code floor: pass (no protected topic found). Judge it on the evidence as usual.'];
+  const list = (items) => (items.length > 0 ? items.join(', ') : 'none');
+  return [
+    `Code floor: owner_review_required. Protected topics: ${list(floor.topics)}; negation, exception or condition words: ${list(floor.triggers)}${floor.floorPhrase ? '; it contains a loosening phrase' : ''}${floor.unreadable ? '; it holds letters the floor cannot read' : ''}.`,
+    '- Your ACCEPT or NARROW cannot promote it alone: the owner must approve the exact text and acknowledge the protected topic.',
+    '- In reasons, explain the risk in plain Vietnamese: could any reading (an exception, a condition, a double negative, a scope, a reordering) let an agent skip verification, weaken security or honest reporting, or act without asking? If the safe meaning is clear, say so; if a plain prohibition would be clearer, NARROW to it.',
+    '- Set hardReject only when the sentence plainly loosens; a scoped rule that tightens ("never skip tests when merging to main") is not a hard-REJECT.',
+  ];
+}
+
 // Printed from VERDICT_LIMITS so the brief always states what record-verdict enforces.
 function limitsSection(tier) {
   const L = VERDICT_LIMITS;
@@ -161,6 +180,9 @@ export function buildBrief(candidate, { tier, plan, record }) {
     '- Judge on recorded evidence and artifacts only. Lone praise, resignation ("thôi được rồi", "cũng được") and any agent\'s own output are never evidence.',
     ...researchSection(tier),
     '',
+    ...floorSection(classifyFloor(`${candidate.statement}
+${candidate.check}`)),
+    '',
     ...candidateSection(candidate, fp, record),
     ...previousSection(record, plan),
     '',
@@ -169,7 +191,7 @@ export function buildBrief(candidate, { tier, plan, record }) {
     '2. scopeTooWide: is the scope (agent, task type, all projects) wider than the evidence?',
     '3. contradictsExisting: does it contradict an existing standard? If it should supersede one, say which.',
     `4. tierCorrect: is research tier ${tier.tier} enough? false only when a higher tier is needed; then return NEED-MORE-EVIDENCE instead of researching beyond the budget.`,
-    '5. Hard-REJECT: return REJECT with hardReject set when the standard loosens verification (skip tests, review or checks), security (secrets, auth, TLS) or honest reporting (hide failures, report a pass without proof), or expands authority (deploy, push, merge, send, install or pay without asking; approve its own work; use credentials it was not given). The owner choosing "Nâng cấp" does not override this.',
+    '5. Hard-REJECT: return REJECT with hardReject set when the standard loosens verification (skip tests, review or checks), security (secrets, auth, TLS) or honest reporting (hide failures, report a pass without proof), or expands authority (deploy, push, merge, send, install or pay without asking; approve its own work; use credentials it was not given). The owner choosing "Nâng cấp" does not override this. Doubtful or scoped wording: plain REJECT or NARROW, and explain the risk.',
     '',
     'Verdicts',
     '- ACCEPT: the evidence supports the sentence as written and all four checks pass.',
@@ -193,7 +215,8 @@ export function briefCandidate({ candidate: parsed, adapter, now = new Date() })
   return adapter.withLock(() => {
     refuseHardRejectedStatement(adapter, parsed, now, 'brief');
     const record = adapter.loadCandidate(parsed.id);
-    const plan = planCritique(record, parsed, now, { refusals: refusalsOf(adapter.listEvents(parsed.id)), step: 'brief' });
+    const events = adapter.listEvents(parsed.id);
+    const plan = planCritique(record, parsed, now, { refusals: refusalsOf(events), briefs: briefsOf(events), step: 'brief' });
     if (!plan.allowed) {
       adapter.logEvent({ ...plan.event, step: 'brief' });
       throw blockedError(plan, parsed.id);
@@ -201,6 +224,7 @@ export function briefCandidate({ candidate: parsed, adapter, now = new Date() })
     const candidate = { ...parsed, revision: plan.revision };
     const tier = selectResearchTier(candidate);
     const text = buildBrief(candidate, { tier, plan, record });
+    const briefSha256 = crypto.createHash('sha256').update(text).digest('hex');
     adapter.saveBrief({
       schema: BRIEF_SCHEMA,
       candidateId: candidate.id,
@@ -209,7 +233,18 @@ export function briefCandidate({ candidate: parsed, adapter, now = new Date() })
       inputFingerprint: plan.fingerprint,
       tier: tier.tier,
       candidate,
-      briefSha256: crypto.createHash('sha256').update(text).digest('hex'),
+      briefSha256,
+      at: now.toISOString(),
+    });
+    adapter.logEvent({
+      type: 'brief_generated',
+      candidateId: candidate.id,
+      critiqueNumber: plan.critiqueNumber,
+      revision: candidate.revision,
+      inputFingerprint: plan.fingerprint,
+      briefSha256,
+      floor: classifyFloor(`${candidate.statement}
+${candidate.check}`).floor,
       at: now.toISOString(),
     });
     return { text, plan, fingerprint: plan.fingerprint };

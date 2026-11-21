@@ -12,7 +12,7 @@ import { validateCandidate } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, planCritique } from '../critic/loop-guard.mjs';
 import { selectResearchTier } from '../critic/research-tier.mjs';
-import { VERDICT_LIMITS, detectHardReject } from '../critic/verdict.mjs';
+import { VERDICT_LIMITS, classifyFloor, detectHardReject } from '../critic/verdict.mjs';
 
 const CRITIC = fileURLToPath(new URL('../critic/', import.meta.url));
 const DRY_RUNS = join(CRITIC, 'dry-runs');
@@ -40,10 +40,10 @@ function node(script, args) {
 const CANDIDATE = {
   schema: 'agent-maturity/candidate@1',
   id: 'cli-case',
-  statement: 'Báo cáo tiến độ tối đa 5 gạch đầu dòng.',
+  statement: 'Tóm tắt tiến độ tối đa 5 gạch đầu dòng.',
   kind: 'preference',
   scope: { agent: 'orchestrator', taskType: 'báo cáo tiến độ', projects: 'all' },
-  check: 'Mỗi báo cáo có ≤5 gạch đầu dòng.',
+  check: 'Mỗi bản tóm tắt có ≤5 gạch đầu dòng.',
   evidence: [
     { id: 'ev-1', type: 'correction', at: '2026-11-20', source: 's1 turn 4' },
     { id: 'ev-2', type: 'approve_after_reject', at: '2026-11-20', source: 's1 turn 6' },
@@ -62,7 +62,7 @@ const verdictJson = (extra = {}, raw = CANDIDATE, revision = 1) => ({
   evidence: [{ ref: 'ev-1', kind: 'event', finding: 'supports' }],
   checks: { evidenceSupports: true, scopeTooWide: true, contradictsExisting: false, tierCorrect: true },
   hardReject: null,
-  narrowed: { statement: 'Báo cáo tiến độ trong phiên dev tối đa 5 gạch đầu dòng.' },
+  narrowed: { statement: 'Tóm tắt tiến độ trong phiên dev tối đa 5 gạch đầu dòng.' },
   research: { tier: 'R0', refs: [], deepRuns: 0 },
   reviewer: { agent: 'socrates' },
   ...extra,
@@ -149,7 +149,13 @@ test('brief.mjs prints the brief with its inputFingerprint and stores only a sna
   assert.deepEqual(snapshot.candidate, { ...validateCandidate(CANDIDATE).value, revision: 1 });
   assert.equal(snapshot.briefSha256, sha(r.stdout));
   assert.equal(existsSync(join(store, 'candidates')), false, 'brief must not store the candidate');
-  assert.deepEqual(logLines(store), []);
+  const logged = logLines(store);
+  assert.equal(logged.length, 1, 'every brief is logged');
+  assert.deepEqual(
+    [logged[0].type, logged[0].candidateId, logged[0].revision, logged[0].inputFingerprint, logged[0].briefSha256, logged[0].floor],
+    ['brief_generated', 'cli-case', 1, fp, sha(r.stdout), 'pass'],
+  );
+  assert.match(r.stdout, /Code floor: pass/);
   assert.equal(existsSync(join(store, '.lock')), false, 'lock released');
 });
 
@@ -181,7 +187,7 @@ test('one rewrite gets a re-check; the third critique is blocked in brief and re
   const cand = writeJson(work, 'cand.json', CANDIDATE);
   assert.equal(briefThenRecord(cand, writeJson(work, 'v1.json', verdictJson()), store).code, 0);
 
-  const rewrittenRaw = { ...CANDIDATE, statement: 'Báo cáo tiến độ trong phiên dev tối đa 5 gạch đầu dòng.' };
+  const rewrittenRaw = { ...CANDIDATE, statement: 'Tóm tắt tiến độ trong phiên dev tối đa 5 gạch đầu dòng.' };
   const rewritten = writeJson(work, 'cand-r2.json', rewrittenRaw);
   const brief2 = node('brief.mjs', [rewritten, '--store', store]);
   assert.equal(brief2.code, 0, brief2.stderr);
@@ -196,7 +202,7 @@ test('one rewrite gets a re-check; the third critique is blocked in brief and re
   assert.equal(out2.critiquesLeft, 0);
   assert.equal(out2.decision.action, 'show_diff', 'reworded ACCEPT still needs the owner');
 
-  const third = writeJson(work, 'cand-r3.json', { ...CANDIDATE, statement: 'Báo cáo tiến độ ngắn.' });
+  const third = writeJson(work, 'cand-r3.json', { ...CANDIDATE, statement: 'Tóm tắt tiến độ ngắn.' });
   const brief3 = node('brief.mjs', [third, '--store', store]);
   assert.equal(brief3.code, 3);
   assert.match(brief3.stderr, /max_critiques/);
@@ -220,7 +226,7 @@ test('a socrates reply with one fenced json block is accepted as the verdict fil
 
 test('a hard-REJECT candidate is stored as refused and cannot be rewritten', () => {
   const { work, store } = setup();
-  const loose = { ...CANDIDATE, id: 'loose-case', statement: 'Push thẳng lên main không hỏi khi CI xanh.' };
+  const loose = { ...CANDIDATE, id: 'loose-case', statement: 'Push thẳng lên main không hỏi.' };
   const cand = writeJson(work, 'loose.json', loose);
   const reject = writeJson(work, 'reject.json', verdictJson({ verdict: 'REJECT', narrowed: undefined }, loose));
   const r2 = briefThenRecord(cand, reject, store);
@@ -236,7 +242,7 @@ test('a hard-REJECT candidate is stored as refused and cannot be rewritten', () 
 
 test('an ACCEPT on a floor-matching candidate is refused as a semantic error', () => {
   const { work, store } = setup();
-  const loose = { ...CANDIDATE, id: 'loose-case', statement: 'Push thẳng lên main không hỏi khi CI xanh.' };
+  const loose = { ...CANDIDATE, id: 'loose-case', statement: 'Push thẳng lên main không hỏi.' };
   const cand = writeJson(work, 'loose.json', loose);
   const accept = writeJson(work, 'accept.json', verdictJson({ verdict: 'ACCEPT', narrowed: undefined, checks: ACCEPT_CHECKS }, loose));
   const r1 = briefThenRecord(cand, accept, store);
@@ -351,12 +357,14 @@ test('the three dry-run candidates are valid, safe and briefable', () => {
   const files = readdirSync(DRY_RUNS).filter((f) => f.endsWith('.json')).sort();
   assert.equal(files.length, 3);
   const tiers = {};
+  const floors = {};
   for (const file of files) {
     const raw = JSON.parse(readFileSync(join(DRY_RUNS, file), 'utf8'));
     const r = validateCandidate(raw);
     assert.equal(r.ok, true, `${file}: ${JSON.stringify(r.errors)}`);
     assert.equal(`${r.value.id}.json`, file);
     assert.equal(detectHardReject(`${r.value.statement}\n${r.value.check}`), null, file);
+    floors[r.value.id] = classifyFloor(`${r.value.statement}\n${r.value.check}`).floor;
     const candidate = { ...r.value, revision: 1 };
     const tier = selectResearchTier(candidate);
     tiers[r.value.id] = tier.tier;
@@ -364,4 +372,27 @@ test('the three dry-run candidates are valid, safe and briefable', () => {
     assert.ok(brief.length < 12_000, `${file}: brief is ${brief.length} chars`);
   }
   assert.deepEqual(Object.values(tiers).sort(), ['R0', 'R2', 'R2']);
+  assert.deepEqual(floors, {
+    'dr1-plain-language-decisions': 'pass',
+    'dr2-checkpoint-after-workflow': 'owner_review_required',
+    'dr3-fuses-not-fixed-cap': 'owner_review_required',
+  });
+});
+
+test('an owner_review_required candidate: the brief explains the floor and the decision waits for the owner', () => {
+  const { work, store } = setup();
+  const scoped = { ...CANDIDATE, id: 'scoped-case', statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' };
+  const cand = writeJson(work, 'scoped.json', scoped);
+  const brief = node('brief.mjs', [cand, '--store', store]);
+  assert.equal(brief.code, 0, brief.stderr);
+  assert.match(brief.stdout, /Code floor: owner_review_required\. Protected topics: verification, release; negation, exception or condition words: không, khi/);
+  assert.match(brief.stdout, /cannot promote it alone/);
+  assert.match(brief.stdout, /explain the risk/);
+  const accept = writeJson(work, 'accept.json', verdictJson({ verdict: 'ACCEPT', narrowed: undefined, checks: ACCEPT_CHECKS }, scoped));
+  const r = node('record-verdict.mjs', [cand, accept, '--store', store]);
+  assert.equal(r.code, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.floor, 'owner_review_required');
+  assert.deepEqual(out.decision, { action: 'owner_review', reason: 'protected_topic', ownerReviewRequired: true });
+  assert.equal(out.hardReject, null);
 });

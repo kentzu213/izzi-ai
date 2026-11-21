@@ -5,16 +5,20 @@
 //   critique 3  always blocked and logged.
 // A hard-REJECT is final: no rewrite, no re-check (a reworded loosening is a new candidate, not a retry).
 // A refused socrates reply gets at most one "fix only the JSON" retry, and only for a format or limit error;
-// a semantic error, or a second refusal, ends the critique.
-// Pure: decides from the stored record and the refusal events; the caller logs `event` and stores the verdict.
+// a semantic error, or a second refusal, ends the critique. The retry keeps the first reply's verdict and whether
+// it set hardReject; when the first verdict could not be read, the retry may only be REJECT or NEED-MORE-EVIDENCE.
+// At most two briefs per candidate revision (each brief is logged), so a brief cannot be re-run to shop for a
+// verdict.
+// Pure: decides from the stored record and the logged events; the caller logs `event` and stores the verdict.
 
 import crypto from 'node:crypto';
-
-import { stripDiacritics } from './candidate.mjs';
 
 export const MAX_CRITIQUES = 2;
 export const MAX_REWRITES = 1;
 export const MAX_JSON_RETRIES = 1;
+export const MAX_BRIEFS_PER_REVISION = 2;
+// A retry after a reply whose verdict could not be read may only hold the candidate.
+export const UNREADABLE_RETRY_VERDICTS = Object.freeze(['REJECT', 'NEED-MORE-EVIDENCE']);
 export const FINGERPRINT_RE = /^[0-9a-f]{64}$/;
 
 // JSON with sorted keys, so fingerprints do not depend on key order.
@@ -59,14 +63,25 @@ export function inputFingerprint(candidate) {
   );
 }
 
-// Store-wide key for "the same statement": NFKC, lower case, no diacritics, punctuation and spacing collapsed.
+// Digest of a stored verdict record; record-verdict logs it and the promote gate checks it.
+export const verdictDigest = (verdict) => sha256(canonical(verdict));
+
+// Store-wide key for "the same statement": NFKC, lower case, punctuation and spacing collapsed. Diacritics are
+// kept: "tắt" (turn off) and "tất" (all) are different words.
 export function statementKey(statement) {
-  const folded = stripDiacritics(String(statement).normalize('NFKC').toLowerCase());
+  const folded = String(statement).normalize('NFKC').toLowerCase();
   return sha256(folded.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
 }
 
-// The verdict_refused events of one candidate, as planCritique reads them.
+// The verdict_refused and brief_generated events of one candidate, as planCritique reads them.
 export const refusalsOf = (events) => events.filter((e) => e && e.type === 'verdict_refused');
+export const briefsOf = (events) => events.filter((e) => e && e.type === 'brief_generated');
+
+// What a refused first reply said, as record-verdict logged it.
+const firstReply = (e) => ({
+  verdict: typeof e.verdict === 'string' ? e.verdict : null,
+  hardRejectPresent: typeof e.hardRejectPresent === 'boolean' ? e.hardRejectPresent : null,
+});
 
 function blocked(candidateId, critiqueNumber, reason, now) {
   return {
@@ -91,10 +106,11 @@ function revisionFor(record, candidate, critiqueNumber, now) {
 }
 
 // record: { candidate, verdicts } as returned by adapter.loadCandidate, or null.
-// refusals: verdict_refused events of this candidate; step: 'brief' (a fresh socrates run) or 'record'.
-// Returns { allowed: true, critiqueNumber, revision, isRewrite, fingerprint, attempt, retryOf } or
-// { allowed: false, reason, critiqueNumber, event }.
-export function planCritique(record, candidate, now = new Date(), { refusals = [], step = 'record' } = {}) {
+// refusals: verdict_refused events of this candidate; briefs: its brief_generated events; step: 'brief' (a fresh
+// socrates run) or 'record'. Returns { allowed: true, critiqueNumber, revision, isRewrite, fingerprint, attempt,
+// retryOf } or { allowed: false, reason, critiqueNumber, event }. retryOf is null on a first attempt, else what the
+// refused first reply said: { verdict (null when unreadable), hardRejectPresent (null when unknown) }.
+export function planCritique(record, candidate, now = new Date(), { refusals = [], briefs = [], step = 'record' } = {}) {
   const verdicts = record?.verdicts ?? [];
   const critiqueNumber = verdicts.length + 1;
   const r = revisionFor(record, candidate, critiqueNumber, now);
@@ -110,6 +126,9 @@ export function planCritique(record, candidate, now = new Date(), { refusals = [
   if (pending.length > 0 && (step === 'brief' || pending[0].inputFingerprint !== fingerprint)) {
     return blocked(candidate.id, critiqueNumber, 'json_retry_pending', now);
   }
+  if (step === 'brief' && briefs.filter((e) => e.revision === r.revision).length >= MAX_BRIEFS_PER_REVISION) {
+    return blocked(candidate.id, critiqueNumber, 'brief_cap', now);
+  }
   return {
     allowed: true,
     critiqueNumber,
@@ -117,6 +136,6 @@ export function planCritique(record, candidate, now = new Date(), { refusals = [
     isRewrite: r.isRewrite,
     fingerprint,
     attempt: pending.length + 1,
-    retryOf: pending.length > 0 ? pending[0].verdict ?? null : null,
+    retryOf: pending.length > 0 ? firstReply(pending[0]) : null,
   };
 }

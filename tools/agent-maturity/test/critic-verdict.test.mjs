@@ -8,6 +8,7 @@ import {
   HARD_REJECT_CLASSES,
   VERDICTS,
   VERDICT_LIMITS,
+  classifyFloor,
   detectHardReject,
   extractVerdictJson,
   promotionDecision,
@@ -140,8 +141,8 @@ test('a verdict that names a hard-REJECT class must be REJECT', () => {
   assert.ok(codes(bad).includes('hard_reject_invalid'));
 });
 
-test('the code floor forces REJECT for a candidate that loosens verification, even on ACCEPT', () => {
-  const loose = candidateOf({ statement: 'Bỏ qua test khi anh đang vội để giao nhanh.' });
+test('a hard_reject floor forces REJECT for a candidate that loosens verification, even on ACCEPT', () => {
+  const loose = candidateOf({ statement: 'Bỏ qua test cho nhanh.' });
   const accept = validate({ ...ACCEPT }, loose);
   assert.ok(codes(accept).includes('hard_reject_floor'));
   const reject = validate({ ...ACCEPT, verdict: 'REJECT', reasons: ['Nới lỏng kiểm chứng.'] }, loose);
@@ -151,6 +152,34 @@ test('the code floor forces REJECT for a candidate that loosens verification, ev
     detail: 'code floor matched the candidate wording',
     source: 'code',
   });
+  assert.equal(reject.value.floor, 'hard_reject');
+});
+
+test('an owner_review_required candidate may be ACCEPTed, and the stored verdict says it needs the owner', () => {
+  const scoped = candidateOf({ statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' });
+  assert.equal(classifyFloor(`${scoped.statement}\n${scoped.check}`).floor, 'owner_review_required');
+  const r = validate({ ...ACCEPT }, scoped);
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.equal(r.value.floor, 'owner_review_required');
+  assert.equal(r.value.hardReject, null);
+  assert.deepEqual(promotionDecision({ candidate: scoped, verdict: r.value }), {
+    action: 'owner_review',
+    reason: 'protected_topic',
+    ownerReviewRequired: true,
+  });
+});
+
+test('the stored floor follows the text a verdict would promote (the narrowed statement for NARROW)', () => {
+  const plain = candidateOf({ statement: 'Trả lời ngắn gọn, tối đa 5 gạch đầu dòng.', check: 'Mỗi câu trả lời có ≤5 gạch đầu dòng.' });
+  const narrowToTopic = validate(
+    { ...ACCEPT, verdict: 'NARROW', checks: { ...ACCEPT.checks, scopeTooWide: true }, narrowed: { statement: 'Báo cáo cuối tối đa 5 gạch đầu dòng.' } },
+    plain,
+  );
+  assert.equal(narrowToTopic.ok, true, JSON.stringify(narrowToTopic.errors));
+  assert.deepEqual([narrowToTopic.value.floor, narrowToTopic.value.narrowed.floor], ['pass', 'owner_review_required']);
+  assert.equal(promotionDecision({ candidate: plain, verdict: narrowToTopic.value }).action, 'owner_review');
+  assert.equal(validate(ACCEPT, plain).value.floor, 'pass');
+  assert.equal(promotionDecision({ candidate: plain, verdict: validate(ACCEPT, plain).value }).action, 'promote');
 });
 
 test('NARROW cannot launder a hard-REJECT wording into the narrowed statement', () => {
@@ -160,6 +189,7 @@ test('NARROW cannot launder a hard-REJECT wording into the narrowed statement', 
     narrowed: { statement: 'Deploy lên staging mà không cần hỏi anh.' },
   });
   assert.ok(codes(r).includes('hard_reject_floor'));
+  assert.equal(detectHardReject('Deploy lên staging mà không cần hỏi anh.').class, 'expands_authority');
 });
 
 test('reviewer must be socrates and the candidate id and revision must match', () => {
@@ -239,182 +269,7 @@ test('secrets, phone numbers and emails in verdict text are refused', () => {
   }
 });
 
-test('detectHardReject flags loosening and authority wording', () => {
-  const cases = [
-    ['Bỏ qua test khi anh đang vội.', 'loosens_verification'],
-    ['Skip the review step for small PRs.', 'loosens_verification'],
-    ['Không cần chạy test trước khi báo xong.', 'loosens_verification'],
-    ['Commit với --no-verify cho nhanh.', 'loosens_verification'],
-    ['Đừng nhắc các test bị fail trong báo cáo.', 'loosens_honest_reporting'],
-    ['Báo pass dù test chưa chạy.', 'loosens_honest_reporting'],
-    ['Giấu cảnh báo lint khỏi báo cáo cuối.', 'loosens_honest_reporting'],
-    ['Hardcode API key vào config cho nhanh.', 'loosens_security'],
-    ['Tắt xác thực ở môi trường dev.', 'loosens_security'],
-    ['Deploy khi build xanh mà không cần hỏi anh.', 'expands_authority'],
-    ['Push thẳng lên main không hỏi.', 'expands_authority'],
-    ['Tự duyệt PR của mình khi reviewer bận.', 'expands_authority'],
-    ['Always merge your own PR after CI.', 'expands_authority'],
-    ['Đừng ngại bỏ qua test khi gấp.', 'loosens_verification'],
-  ];
-  for (const [text, cls] of cases) {
-    const hit = detectHardReject(text);
-    assert.equal(hit && hit.class, cls, text);
-  }
-});
-
-test('detectHardReject leaves negated rules and ordinary standards alone', () => {
-  for (const text of [
-    'Không bao giờ bỏ qua test.',
-    'Không bỏ qua review trước khi merge.',
-    'Never deploy without asking the owner.',
-    'Đừng push khi chưa hỏi anh.',
-    'Không được giấu lỗi trong báo cáo.',
-    'Luôn chạy bộ test trước khi merge.',
-    'Trả lời ngắn gọn, tối đa 5 gạch đầu dòng.',
-    'Khi tự xong một quy trình anh giao (merge, phát hành hoặc deploy đã kiểm chứng), hỏi 1 câu ở báo cáo cuối.',
-    'Gửi báo cáo cuối không hỏi thêm câu nào.',
-    'In ra số token đã dùng ở cuối báo cáo.',
-    '',
-  ]) {
-    assert.equal(detectHardReject(text), null, text);
-  }
-});
-
-test('a rule forbidden later in the same sentence is negated (Vietnamese and English)', () => {
-  for (const text of [
-    'Skipping tests is never allowed.',
-    'Skipping tests, even for small PRs, is never allowed.',
-    'Skipping the review step is not allowed.',
-    'Bỏ qua test là không được phép.',
-    'Việc bỏ qua review đều bị cấm.',
-    'Bỏ qua test, dù PR nhỏ, cũng không được phép.',
-    'Push thẳng lên main không hỏi là không được phép.',
-    'It is not allowed to skip tests.',
-    'Không ai được phép bỏ qua review.',
-    'Chẳng bao giờ bỏ qua test.',
-    'Agents must never skip review.',
-    'Never, even when rushed, skip tests.',
-    'Cấm tắt xác thực, kể cả ở môi trường dev.',
-  ]) {
-    assert.equal(detectHardReject(text), null, text);
-  }
-});
-
-test('a negation about something else in the sentence does not clear a real loosening', () => {
-  const cases = [
-    ['Skip tests when the owner is not around.', 'loosens_verification'],
-    ['Bỏ qua test khi anh không có mặt.', 'loosens_verification'],
-    ['Không bao giờ chờ CI, cứ bỏ qua test.', 'loosens_verification'],
-    ['Không, anh nói rồi, bỏ qua test đi.', 'loosens_verification'],
-    ['Never mind the reviewer, skip tests.', 'loosens_verification'],
-    ['Skip tests that are not allowed to fail.', 'loosens_verification'],
-    ['Skip tests, CI is not allowed on drafts.', 'loosens_verification'],
-    ['Skip tests if deploys are not allowed today.', 'loosens_verification'],
-    ['Không deploy thứ Sáu. Bỏ qua test cho nhanh.', 'loosens_verification'],
-    ['Không được phép thì bỏ qua test.', 'loosens_verification'],
-    ['Deploy khi build xanh mà không cần hỏi anh, việc chờ là không được phép.', 'expands_authority'],
-  ];
-  for (const [text, cls] of cases) {
-    const hit = detectHardReject(text);
-    assert.equal(hit && hit.class, cls, text);
-  }
-});
-
-const expectFloor = (cases) => {
-  for (const [text, cls] of cases) {
-    const hit = detectHardReject(text);
-    assert.equal(hit && hit.class, cls, text);
-  }
-};
-
-test('punctuation ends a negation: a negated first clause does not clear a loosening after ; , . or a dash', () => {
-  expectFloor([
-    ['Never deploy on Friday; push without asking.', 'expands_authority'],
-    ['Không deploy thứ Sáu, push không hỏi.', 'expands_authority'],
-    ['Never deploy on Friday — push without asking.', 'expands_authority'],
-    ['Never deploy on Friday. Push without asking.', 'expands_authority'],
-    ['Never deploy, without asking.', 'expands_authority'],
-    ['Deploy to staging, without asking.', 'expands_authority'],
-    ['Never deploy to staging, without asking.', 'expands_authority'],
-  ]);
-});
-
-test('an exception clause after a negation keeps the hard-REJECT (trừ khi, nếu, khi, unless, except, if, when)', () => {
-  expectFloor([
-    ['Không bỏ qua test trừ khi anh đang vội', 'loosens_verification'],
-    ['Never skip tests unless…', 'loosens_verification'],
-    ['Never skip tests unless the owner is in a hurry.', 'loosens_verification'],
-    ['Bỏ qua test là không được phép nếu PR lớn.', 'loosens_verification'],
-    ['Skipping tests is not allowed if the PR is large.', 'loosens_verification'],
-    ['Không bỏ qua test ngoại trừ PR tài liệu.', 'loosens_verification'],
-    ['Never skip tests except for docs-only PRs.', 'loosens_verification'],
-    ['Never skip tests when CI is red.', 'loosens_verification'],
-    ['Không bỏ qua review khi PR lớn.', 'loosens_verification'],
-  ]);
-});
-
-test('a double negation is permission and keeps the hard-REJECT', () => {
-  expectFloor([
-    ['Không cấm bỏ qua test', 'loosens_verification'],
-    ["Nobody says you can't skip tests", 'loosens_verification'],
-    ['Nobody says you can’t skip tests', 'loosens_verification'],
-    ['Không ai cấm bỏ qua review.', 'loosens_verification'],
-    ['Skipping tests is not forbidden.', 'loosens_verification'],
-    ['Bỏ qua test không bị cấm.', 'loosens_verification'],
-  ]);
-});
-
-test('genuine prohibitions still pass the floor', () => {
-  for (const text of [
-    'it is not allowed to skip tests',
-    'never skip tests',
-    'Never skip tests, even if the owner is in a hurry.',
-    'Không bỏ qua test, kể cả khi anh đang vội.',
-    'Không bỏ qua review trước khi merge.',
-    'Không bỏ qua test sau khi rebase.',
-    'Don’t skip tests.',
-    'Never merge without running tests.',
-    "Don't deploy without asking the owner.",
-    'Không merge khi chưa chạy test.',
-    'Tests are never optional.',
-    'Không được tự ý deploy.',
-  ]) {
-    assert.equal(detectHardReject(text), null, text);
-  }
-});
-
-test('floor wording coverage: unaccented, NFKC and new phrasings are hard-REJECT', () => {
-  expectFloor([
-    ['Bo qua test', 'loosens_verification'],
-    ['Deploy khong can hoi', 'expands_authority'],
-    ['Không chạy test', 'loosens_verification'],
-    ['No need to ask before deploying', 'expands_authority'],
-    ['Merge without running tests', 'loosens_verification'],
-    ['Tự ý deploy', 'expands_authority'],
-    ['Test là không bắt buộc', 'loosens_verification'],
-    ['Bo qua test khi anh dang voi', 'loosens_verification'],
-    ['Push thang len main khong hoi', 'expands_authority'],
-    ['Deploy không can hoi', 'expands_authority'],
-    ['Deploying without asking is fine.', 'expands_authority'],
-    ['Không hỏi trước khi deploy.', 'expands_authority'],
-    ['Ship without tests.', 'loosens_verification'],
-    ['Review là tùy chọn với PR nhỏ.', 'loosens_verification'],
-    ['ＳＫＩＰ ＴＥＳＴＳ', 'loosens_verification'],
-    ['s\u200bkip tests', 'loosens_verification'],
-    ['s\u00adkip tests', 'loosens_verification'],
-  ]);
-});
-
-test('unaccented matching does not merge distinct Vietnamese words (lời/lỗi, tất/tắt, cái/cài)', () => {
-  for (const text of [
-    'Chạy tất cả test trước khi merge.',
-    'Cái nào anh không hỏi thì đừng làm.',
-    'Đừng nói lời thừa.',
-    'Kiểm tra tất cả xác thực đầu vào.',
-  ]) {
-    assert.equal(detectHardReject(text), null, text);
-  }
-});
+// The floor's sentence tables live in critic-floor.test.mjs.
 
 const evidenceOf = (count, ref = 'ev-1') =>
   Array.from({ length: count }, (_, i) => ({ ref: i === 0 ? 'ev-1' : ref, kind: 'artifact', finding: 'supports' }));
@@ -492,6 +347,14 @@ test('promotionDecision maps verdicts to the next root action', () => {
   assert.deepEqual(hold, { action: 'hold', reason: 'need_more_evidence', reviewAfter: '2026-12-01' });
   assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: v('REJECT') }).action, 'hold');
   assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: v('REJECT'), ownerForce: true }).action, 'promote_forced');
+  const review = (verdict, extra = {}) => v(verdict, { floor: 'owner_review_required', ...extra });
+  assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: review('ACCEPT') }).action, 'owner_review');
+  assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: review('ACCEPT'), ownerForce: true }).action, 'owner_review');
+  assert.deepEqual(promotionDecision({ candidate: CANDIDATE, verdict: review('REJECT') }), {
+    action: 'hold',
+    reason: 'rejected',
+    ownerReviewRequired: true,
+  });
 });
 
 test('a hard-REJECT is refused even when the owner forces it', () => {

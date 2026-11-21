@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { validateCandidate } from '../critic/candidate.mjs';
-import { MAX_CRITIQUES, MAX_REWRITES, inputFingerprint, planCritique, statementFingerprint } from '../critic/loop-guard.mjs';
+import {
+  MAX_BRIEFS_PER_REVISION,
+  MAX_CRITIQUES,
+  MAX_REWRITES,
+  UNREADABLE_RETRY_VERDICTS,
+  inputFingerprint,
+  planCritique,
+  statementFingerprint,
+  statementKey,
+} from '../critic/loop-guard.mjs';
 
 const NOW = new Date('2026-11-21T10:00:00.000Z');
 
@@ -174,7 +183,7 @@ test('after a format refusal, record-verdict gets exactly one retry for the same
   const retry = planCritique(null, c, NOW, { refusals, step: 'record' });
   assert.equal(retry.allowed, true);
   assert.equal(retry.attempt, 2);
-  assert.equal(retry.retryOf, 'NARROW');
+  assert.deepEqual(retry.retryOf, { verdict: 'NARROW', hardRejectPresent: null });
   const brief = planCritique(null, c, NOW, { refusals, step: 'brief' });
   assert.deepEqual([brief.allowed, brief.reason], [false, 'json_retry_pending']);
   const otherInput = planCritique(null, cand({ statement: 'Báo cáo tiến độ ngắn.' }), NOW, { refusals, step: 'record' });
@@ -193,6 +202,37 @@ test('a semantic refusal has no retry and ends the critique', () => {
   }
   const later = planCritique(null, c, NOW, { refusals: [refusal(c, { critiqueNumber: 2, retryable: false })] });
   assert.equal(later.allowed, true, 'refusals for another critique number do not count');
+});
+
+test('the retry carries what the refused first reply said: its verdict (or null) and hardReject presence', () => {
+  const c = cand();
+  const plan = (extra) => planCritique(null, c, NOW, { refusals: [refusal(c, extra)], step: 'record' }).retryOf;
+  assert.deepEqual(plan({ verdict: 'REJECT', hardRejectPresent: true }), { verdict: 'REJECT', hardRejectPresent: true });
+  assert.deepEqual(plan({ verdict: null, hardRejectPresent: false }), { verdict: null, hardRejectPresent: false });
+  assert.deepEqual(plan({ verdict: undefined, hardRejectPresent: 'yes' }), { verdict: null, hardRejectPresent: null });
+  assert.equal(planCritique(null, c, NOW).retryOf, null);
+  assert.deepEqual(UNREADABLE_RETRY_VERDICTS, ['REJECT', 'NEED-MORE-EVIDENCE']);
+});
+
+test('at most two briefs per candidate revision; briefs of another revision do not count', () => {
+  assert.equal(MAX_BRIEFS_PER_REVISION, 2);
+  const c = cand();
+  const brief = (revision) => ({ type: 'brief_generated', candidateId: c.id, revision });
+  const once = planCritique(null, c, NOW, { briefs: [brief(1)], step: 'brief' });
+  assert.equal(once.allowed, true);
+  const capped = planCritique(null, c, NOW, { briefs: [brief(1), brief(1)], step: 'brief' });
+  assert.deepEqual([capped.allowed, capped.reason, capped.event.type], [false, 'brief_cap', 'critique_blocked']);
+  assert.equal(planCritique(null, c, NOW, { briefs: [brief(1), brief(1)], step: 'record' }).allowed, true, 'record is not capped');
+  const rewritten = cand({ statement: 'Báo cáo tiến độ trong phiên dev tối đa 5 gạch đầu dòng.' });
+  const r2 = planCritique({ candidate: c, verdicts: [verdictFor(c)] }, rewritten, NOW, { briefs: [brief(1), brief(1)], step: 'brief' });
+  assert.deepEqual([r2.allowed, r2.revision], [true, 2]);
+});
+
+test('statementKey folds case, spacing and punctuation but keeps diacritics', () => {
+  assert.equal(statementKey('Tắt  test!'), statementKey('tắt test'));
+  assert.equal(statementKey('Ｔắt test'), statementKey('tắt test'));
+  assert.notEqual(statementKey('Tắt test.'), statementKey('Tất test.'));
+  assert.notEqual(statementKey('Bỏ qua test.'), statementKey('Bo qua test.'));
 });
 
 test('planCritique does not mutate the record', () => {

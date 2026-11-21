@@ -1,13 +1,16 @@
 // Socrates verdict contract (docs/izzi-v2/PLAN.md §2.4 and §4.9 item 6). Pure functions.
 // - validateVerdict: schema + consistency with the candidate, its research tier and budget; the verdict must echo
-//   the inputFingerprint and candidateRevision the brief printed.
-// - detectHardReject: a code floor for obvious wording that loosens verification, security or honest
-//   reporting, or expands authority. Socrates is the primary judge; the floor only catches what is plain.
+//   the inputFingerprint and candidateRevision the brief printed. A hard_reject floor forces REJECT; the stored
+//   verdict carries the floor class of the text it would promote.
+// - classifyFloor / detectHardReject: the three-way code floor (floor.mjs), re-exported here.
 // - promotionDecision: what root does next; a hard-REJECT is refused even when the owner forces it.
 // - extractVerdictJson: plain JSON or exactly one fenced json block, with no duplicate keys.
 
-import { containsPiiOrSecret, isObject, stripDiacritics, text } from './candidate.mjs';
+import { containsPiiOrSecret, isObject, text } from './candidate.mjs';
+import { classifyFloor, detectHardReject } from './floor.mjs';
 import { inputFingerprint } from './loop-guard.mjs';
+
+export { classifyFloor, detectHardReject };
 
 export const VERDICT_SCHEMA = 'agent-maturity/verdict@2';
 export const VERDICTS = ['ACCEPT', 'NARROW', 'NEED-MORE-EVIDENCE', 'REJECT'];
@@ -63,289 +66,6 @@ export const VERDICT_LIMITS = Object.freeze({
 });
 const LIMIT = VERDICT_LIMITS;
 const MAX_DETAILS = 5;
-
-// ---- hard-REJECT code floor --------------------------------------------------------------------------------
-
-const B = '(?<![\\p{L}\\p{N}_])';
-const E = '(?![\\p{L}\\p{N}_])';
-// A gap token never ends with punctuation, so a gap cannot run across ; , . : or a dash into another clause.
-const TOK = '[^\\s]*[^\\s.,;:!?—–]';
-const GAP = (n) => `(?:${TOK}\\s+){0,${n}}?`;
-const any = (list) => `(?:${list.join('|')})`;
-// Floor phrases: each accented letter also matches its unaccented base letter, so "Bo qua test" and "Deploy
-// khong can hoi" are caught, while distinct accented words stay distinct (lời/lỗi, tất/tắt, cái/cài): full
-// diacritic folding would hard-REJECT "Chạy tất cả test" as "tắt ... test".
-const tolerant = (source) =>
-  Array.from(source, (ch) => {
-    const base = stripDiacritics(ch);
-    return base !== ch && base.length === 1 ? `[${ch}${base}]` : ch;
-  }).join('');
-const anyF = (list) => `(?:${list.map(tolerant).join('|')})`;
-const rx = (source) => new RegExp(source, 'gu');
-
-const SECRET_WORDS = [
-  'secrets?', 'api key', 'api-key', 'apikey', 'private key', 'khoá api', 'khóa api', 'access token', 'api token',
-  'mật khẩu', 'passwords?', 'credentials?',
-];
-const AUTH_VERBS = [
-  'deploy(?:s|ed|ing)?', 'triển khai', 'force-push(?:es|ed|ing)?', 'force push(?:es|ed|ing)?', 'push(?:es|ed|ing)?',
-  'merg(?:e|es|ed|ing)', 'releas(?:e|es|ed|ing)', 'phát hành', 'publish(?:es|ed|ing)?', 'đăng bài', 'đăng lên',
-  'gửi tin nhắn', 'gửi tin', 'gửi email', 'gửi mail', 'nhắn tin', 'send(?:s|ing)? (?:a |the )?(?:messages?|emails?|mails?|dms?)',
-  'sent (?:a |the )?(?:messages?|emails?|mails?|dms?)', 'xoá', 'xóa', 'delet(?:e|es|ed|ing)', 'drop(?:s|ped|ping)?',
-  'thanh toán', 'charg(?:e|es|ed|ing)', 'mua', 'purchas(?:e|es|ed|ing)', 'cài', 'install(?:s|ed|ing)?',
-];
-const ASK_TAILS = [
-  'mà không cần hỏi', 'mà không hỏi', 'không cần hỏi', 'không hỏi', 'khi chưa hỏi', 'chưa hỏi', 'mà không xin phép',
-  'không xin phép', 'không cần duyệt', 'không chờ duyệt', 'chưa được duyệt', 'without asking', 'without approval',
-  'without confirmation', 'without permission', 'without review', 'without the owner',
-];
-const VERIFY_NOUNS = [
-  'tests?', 'testing', 'kiểm thử', 'review', 'reviews', 'kiểm tra', 'verify', 'verification', 'xác minh', 'kiểm chứng',
-  'ci', 'lint', 'typecheck', 'smoke', 'qa',
-];
-// Verbs that a "without running tests" phrase hangs from; the floor match starts at the verb, so "never merge
-// without running tests" is judged by the negator before "merge".
-const WITHOUT_VERBS = [
-  ...AUTH_VERBS, 'commit(?:s|ted|ting)?', 'ship(?:s|ped|ping)?', 'finish(?:es|ed|ing)?', 'report(?:s|ed|ing)?',
-  'mark(?:s|ed|ing)?', 'clos(?:e|es|ed|ing)', 'hand(?:s|ed|ing)? (?:off|over)', 'deliver(?:s|ed|ing)?',
-  'submit(?:s|ted|ting)?', 'approv(?:e|es|ed|ing)', 'say(?:s|ing)?', 'declar(?:e|es|ed|ing)', 'claim(?:s|ed|ing)?',
-  'call(?:s|ed|ing)?', 'land(?:s|ed|ing)?', 'roll(?:s|ed|ing)? out',
-];
-// A gap that may not hold a negator: "tests are never optional" is not "tests are optional".
-const NEG_TOKEN = `${anyF(['không', 'chẳng', 'chưa', 'never', 'not', "isn't", "aren't", 'no'])}${E}`;
-const GAP_NO_NEG = (n) => `(?:(?!${NEG_TOKEN})${TOK}\\s+){0,${n}}?`;
-
-const FLOOR = [
-  {
-    cls: 'expands_authority',
-    // "Deploy to staging, without asking": the tail may follow a comma or dash; that punctuation then sits inside
-    // the match, so no negator can clear it.
-    re: rx(`${B}${anyF(AUTH_VERBS)}${E}\\s*${GAP(4)}(?:(?:${TOK})?[,—–]\\s*)?${anyF(ASK_TAILS)}${E}`),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(
-      `${B}${anyF(['no need to', "don't need to", 'do not need to', "needn't", 'không cần', 'khỏi cần', "don't", 'do not', 'never', 'đừng', 'không'])}\\s+${anyF([
-        'ask(?:ing)?', 'hỏi', 'xin phép', 'confirm(?:ing)?', 'check(?:ing)? with', 'wait(?:ing)? for approval', 'chờ duyệt',
-        'get(?:ting)? approval',
-      ])}${E}\\s*${GAP(3)}${anyF(AUTH_VERBS)}${E}`,
-    ),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(`${B}${anyF(['tự ý', 'tự tiện', 'unilaterally'])}\\s+${GAP(1)}${anyF(AUTH_VERBS)}${E}`),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(
-      `${B}${anyF(['tự duyệt', 'tự approve', 'tự merge', 'self-approve', 'self approve', '(?:approve|merge) (?:your|its|my|their) own'])}${E}`,
-    ),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(
-      `${B}${anyF(['bỏ qua', 'skip', 'bypass', 'vượt', 'tắt', 'disable'])}\\s+${GAP(2)}${anyF([
-        'quyền', 'permissions?', 'xin phép', 'hỏi ý kiến', 'phê duyệt', 'approvals?', 'confirmation', 'human gate',
-        'cổng duyệt',
-      ])}${E}`,
-    ),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(
-      `${B}${anyF(['dùng', 'use', 'sử dụng'])}\\s+${GAP(2)}${anyF(['credentials?', 'tokens?', 'keys?', 'mật khẩu', 'passwords?', 'tài khoản', 'accounts?'])}\\s+${GAP(2)}${anyF(['không được cấp', 'chưa được cấp', 'của người khác', 'của khách', 'not given', 'not granted', 'of someone else'])}`,
-    ),
-  },
-  { cls: 'expands_authority', re: rx('dangerously-skip-permissions|bypasspermissions|--yolo') },
-  {
-    cls: 'loosens_security',
-    re: rx(
-      `${B}${anyF(['hardcode', 'hard-code', 'hard code', 'commit', 'paste', 'dán', 'nhét', 'embed'])}\\s+${GAP(2)}(?:${anyF([...SECRET_WORDS, 'tokens?'])}${E}|\\.env${E})`,
-    ),
-  },
-  { cls: 'loosens_security', re: rx(`${B}${anyF(['in ra', 'print', 'log', 'ghi log'])}\\s+${GAP(2)}${anyF(SECRET_WORDS)}${E}`) },
-  {
-    cls: 'loosens_security',
-    re: rx(
-      `${B}${anyF(['tắt', 'disable', 'turn off', 'bỏ qua', 'skip', 'bypass', 'vô hiệu hoá', 'vô hiệu hóa', 'nới lỏng', 'loosen', 'relax'])}\\s+${GAP(2)}${anyF([
-        'bảo mật', 'security', 'xác thực', 'auth', 'authentication', '2fa', 'mfa', 'tls', 'ssl', 'csrf', 'rate limit',
-        'rate-limit', 'firewall', 'sandbox', 'mã hoá', 'mã hóa', 'encryption', 'quét bảo mật', 'secret scan(?:ning)?',
-      ])}${E}`,
-    ),
-  },
-  { cls: 'loosens_security', re: rx('skiptlsverification|rejectunauthorized\\s*[:=]\\s*false|verify\\s*=\\s*false|chmod\\s+777') },
-  {
-    cls: 'loosens_honest_reporting',
-    re: rx(
-      `${B}${anyF(['không', 'đừng', 'chớ', 'never', "don't", 'do not', 'avoid', 'tránh'])}\\s+(?:${tolerant('cần')}\\s+)?${anyF([
-        'nhắc', 'báo', 'nói', 'ghi', 'nêu', 'kể', 'mention', 'report', 'show', 'hiện', 'list', 'liệt kê',
-      ])}\\s+${GAP(3)}${anyF(['lỗi', 'fail', 'failed', 'failures?', 'thất bại', 'errors?', 'cảnh báo', 'warnings?', 'rủi ro', 'risks?'])}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_honest_reporting',
-    re: rx(
-      `${B}${anyF(['giấu', 'che giấu', 'ẩn', 'hide', 'conceal', 'bury', 'lờ đi', 'omit'])}\\s+${GAP(2)}${anyF([
-        'lỗi', 'fail', 'failed', 'failures?', 'thất bại', 'errors?', 'cảnh báo', 'warnings?', 'kết quả xấu',
-      ])}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_honest_reporting',
-    re: rx(
-      `${B}${anyF(['báo', 'report', 'đánh dấu', 'mark', 'ghi nhận', 'coi'])}\\s+(?:${tolerant('là')}\\s+)?${anyF([
-        'xong', 'done', 'complete', 'completed', 'pass', 'passed', 'thành công', 'success', 'đạt',
-      ])}\\s+${GAP(2)}${anyF(['khi chưa', 'dù', 'mà chưa', 'without', 'before', 'even if', 'even though', 'trước khi', 'although'])}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_verification',
-    re: rx(
-      `${B}${anyF([
-        'bỏ qua', 'skip', 'skipping', 'bypass', 'không cần', 'no need to', "don't need to", 'do not need to', 'lược bỏ',
-        'omit', 'disable', 'tắt',
-      ])}\\s+${GAP(2)}${anyF(VERIFY_NOUNS)}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_verification',
-    re: rx(
-      `${B}${anyF(['không cần', 'khỏi cần', 'no need to', 'không', 'đừng', 'khỏi', 'chẳng', 'never', "don't", 'do not'])}\\s+${anyF([
-        'chạy', 'run', 'running', 'execute', 'thực hiện', 'làm',
-      ])}${E}\\s*${GAP(2)}${anyF([...VERIFY_NOUNS, 'bộ test', 'test suite'])}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_verification',
-    re: rx(
-      `${B}${anyF(WITHOUT_VERBS)}${E}\\s+${GAP(3)}without\\s+(?:${anyF(['running', 'run', 'executing', 'any', 'a', 'the'])}\\s+){0,2}${anyF(VERIFY_NOUNS)}${E}`,
-    ),
-  },
-  {
-    cls: 'loosens_verification',
-    re: rx(
-      `${B}${anyF(VERIFY_NOUNS)}${E}\\s+${GAP_NO_NEG(2)}${anyF([
-        'không bắt buộc', 'không cần thiết', 'không quan trọng', 'tuỳ chọn', 'tùy chọn', 'optional', 'not required',
-        'not mandatory', 'not needed', 'unnecessary',
-      ])}${E}`,
-    ),
-  },
-  { cls: 'loosens_verification', re: rx('--no-verify') },
-];
-
-// Negation is judged inside the sentence that holds the match, with the accented negators only (an unaccented
-// "khong" never clears a match: the floor errs toward REJECT). A match is negated when
-//  - a negator governs it from the left in the same clause: "không bỏ qua test", "it is not allowed to skip
-//    tests", "never, even when rushed, skip tests"; or
-//  - the same sentence goes on to forbid it: "skipping tests is never allowed", "bỏ qua test là không được phép".
-// It is NOT negated (the hard-REJECT stands) when
-//  - punctuation (; , . : or a dash) separates the negator from it, or sits inside the match: a negation ends at
-//    the punctuation ("Never deploy on Friday; push without asking");
-//  - an exception or condition follows it in the sentence (trừ khi, ngoại trừ, nếu, khi, unless, except, if,
-//    when): "Không bỏ qua test trừ khi anh đang vội". Concessive "even if", "kể cả khi" and temporal "trước
-//    khi", "sau khi" are not exceptions;
-//  - the negations cancel: an even number of negators ("Không cấm bỏ qua test", "Nobody says you can't skip
-//    tests", "skipping tests is not forbidden").
-// Only an "even/dù/kể cả ..." aside between commas is skipped. Unclear cases stay refused.
-const LEFT_NEGATORS = [
-  'không bao giờ', 'chẳng bao giờ', 'không được', 'không nên', 'tuyệt đối không', 'nghiêm cấm', 'không ai', 'không',
-  'chẳng', 'đừng bao giờ', 'đừng', 'chớ', 'cấm', 'never', 'do not', "don't", 'must not', "mustn't", 'should not',
-  "shouldn't", 'may not', 'cannot', "can't", 'no one', 'nobody', 'not',
-];
-const COUNTED_NEGATORS = [...LEFT_NEGATORS, "isn't", "aren't", "wasn't", "weren't", "won't", "doesn't", "didn't", 'chưa'];
-const LEFT_FILLERS = [
-  'ever', 'bao giờ', 'tự ý', 'dùng', 'use', 'using', 'chạy', 'run', 'được', 'phép', 'allowed', 'permitted', 'ok',
-  'okay', 'acceptable', 'to', 'be', 'may', 'can', 'should', 'must', 'will',
-];
-const ASIDE = `\\s*,\\s*${any(['even', 'kể cả', 'ngay cả', 'dù', 'dẫu', 'bất kể', 'under', 'in no', 'trong bất kỳ', 'for any'])}${E}[^,]{0,60},`;
-const CLAUSE_WORDS = [
-  'when', 'whenever', 'if', 'unless', 'because', 'since', 'while', 'but', 'and', 'or', 'so', 'then', 'until',
-  'though', 'although', 'that', 'which', 'who', 'where', 'khi', 'nếu', 'trừ', 'vì', 'nhưng', 'và', 'hoặc', 'rồi',
-  'để', 'mà', 'dù', 'tuy', 'nào',
-];
-const COPULAS = [
-  'is', 'are', 'was', 'were', 'be', 'being', 'must', 'should', 'shall', 'will', 'would', 'can', 'may', 'still',
-  'also', 'absolutely', 'strictly', 'là', 'thì', 'đều', 'sẽ', 'vẫn', 'luôn', 'cũng', 'tuyệt đối', 'hoàn toàn',
-];
-const PROHIBITIONS = [
-  `${any(['never', 'not', 'no longer', "isn't", "aren't", "wasn't", "mustn't", "shouldn't", "can't", 'cannot', "won't"])}\\s+(?:${any(['be', 'ever'])}\\s+){0,2}${any(['allowed', 'permitted', 'acceptable', 'accepted', 'tolerated', 'ok', 'okay', 'happen', 'an option'])}`,
-  any(['forbidden', 'prohibited', 'banned', 'off-limits']),
-  `${any(['không bao giờ', 'chẳng bao giờ', 'chưa bao giờ', 'không', 'chẳng'])}\\s+(?:được(?:\\s+${any(['phép', 'chấp nhận', 'cho phép'])})?|${any(['cho phép', 'chấp nhận', 'ổn', 'ok'])})`,
-  '(?:bị\\s+)?(?:nghiêm\\s+)?cấm',
-];
-const EXCEPTIONS = [
-  'trừ khi', 'trừ phi', 'ngoại trừ', 'trừ', 'nếu', '(?<!(?:trước|sau|kể cả|ngay cả|cho đến|đến|tới)\\s)khi', 'unless',
-  'except', 'excepting', 'only if', '(?<!even\\s)if', '(?<!even\\s)when', 'whenever',
-];
-const NEGATED_BEFORE = new RegExp(`${B}${any(LEFT_NEGATORS)}(?:\\s+${any(LEFT_FILLERS)})*\\s*$`, 'u');
-const NEGATED_AFTER = new RegExp(
-  `^(?<gap>(?:${ASIDE})?(?:\\s+(?!${any(CLAUSE_WORDS)}${E})[^\\s,:;—–]+){0,4}?(?:${ASIDE})?\\s+(?:${any(COPULAS)}\\s+){0,2})${any(PROHIBITIONS)}${E}`,
-  'u',
-);
-const NEGATORS_G = new RegExp(`${B}${any(COUNTED_NEGATORS)}${E}`, 'gu');
-const EXCEPTION_AFTER = new RegExp(`${B}${any(EXCEPTIONS)}${E}`, 'u');
-const ASIDE_G = new RegExp(ASIDE, 'gu');
-const SEPARATOR_G = /[.,;:!?](?=\s|$)|[—–]/gu;
-const SEPARATOR_IN_MATCH = /[.,;!?](?=\s)|[—–]/u;
-const SENTENCE_END = /[.!?;](?=\s|$)|\n/gu;
-
-const countNegators = (s) => [...s.matchAll(NEGATORS_G)].length;
-
-function sentenceAround(t, start, end) {
-  let from = 0;
-  let to = t.length;
-  for (const b of t.matchAll(SENTENCE_END)) {
-    if (b.index < start) from = b.index + 1;
-    else if (b.index >= end) {
-      to = b.index;
-      break;
-    }
-  }
-  return { from, to };
-}
-
-// The clause that ends right before the match: asides removed, then the text after the last separator.
-function clauseBefore(t, from, start) {
-  const before = t.slice(from, start).replace(ASIDE_G, ' ');
-  const cuts = [...before.matchAll(SEPARATOR_G)];
-  return cuts.length === 0 ? before : before.slice(cuts[cuts.length - 1].index + 1);
-}
-
-function isNegated(t, start, end) {
-  if (SEPARATOR_IN_MATCH.test(t.slice(start, end))) return false;
-  const { from, to } = sentenceAround(t, start, end);
-  const after = t.slice(end, to);
-  if (EXCEPTION_AFTER.test(after)) return false;
-  const clause = clauseBefore(t, from, start);
-  if (NEGATED_BEFORE.test(clause)) return countNegators(clause) % 2 === 1;
-  const m = NEGATED_AFTER.exec(after);
-  return Boolean(m) && (countNegators(clause) + countNegators(m.groups.gap)) % 2 === 0;
-}
-
-// NFKC, lower case; zero-width, bidi and leftover combining characters removed so they cannot split a word;
-// curly apostrophes made straight; other control and line-separator characters become spaces or line breaks.
-function prepare(input) {
-  return input
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[\p{Cf}\p{M}]/gu, '')
-    .replace(/[‘’ʼ]/g, "'")
-    .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
-    .replace(/[^\S\n]/g, ' ')
-    .replace(/[\p{Cc}]/gu, (c) => (c === '\n' ? '\n' : ' '));
-}
-
-// Returns { class, phrase } for the first non-negated match, or null.
-export function detectHardReject(input) {
-  if (typeof input !== 'string' || input.trim() === '') return null;
-  const t = prepare(input);
-  for (const { cls, re } of FLOOR) {
-    for (const m of t.matchAll(re)) {
-      if (!isNegated(t, m.index, m.index + m[0].length)) return { class: cls, phrase: m[0] };
-    }
-  }
-  return null;
-}
 
 // ---- verdict validation ------------------------------------------------------------------------------------
 
@@ -518,8 +238,8 @@ function semanticErrors(p, candidate, tier) {
   const shapesSentence = p.verdict === 'ACCEPT' || p.verdict === 'NARROW';
 
   if (p.hardReject && p.verdict !== 'REJECT') fail('hard_reject_must_reject', 'hardReject');
-  const floor = detectHardReject(`${candidate.statement}\n${candidate.check}`);
-  if (floor && p.verdict !== 'REJECT') fail('hard_reject_floor', 'verdict');
+  const floor = classifyFloor(`${candidate.statement}\n${candidate.check}`);
+  if (floor.floor === 'hard_reject' && p.verdict !== 'REJECT') fail('hard_reject_floor', 'verdict');
 
   if (p.verdict === 'NARROW') narrowErrors(p, candidate, fail);
   if (p.verdict === 'ACCEPT') {
@@ -546,9 +266,9 @@ export function validateVerdict(raw, { candidate, tier }) {
   const semantic = semanticErrors(p, candidate, tier);
   if (semantic.errors.length > 0) return { ok: false, errors: semantic.errors, value: null };
 
-  const fromFloor = semantic.floor
-    ? { class: semantic.floor.class, detail: 'code floor matched the candidate wording', source: 'code' }
-    : null;
+  const { floor } = semantic;
+  const fromFloor =
+    floor.floor === 'hard_reject' ? { class: floor.class, detail: 'code floor matched the candidate wording', source: 'code' } : null;
   const value = {
     schema: VERDICT_SCHEMA,
     candidateId: candidate.id,
@@ -559,10 +279,13 @@ export function validateVerdict(raw, { candidate, tier }) {
     evidence: p.evidence,
     checks: p.checks,
     hardReject: p.hardReject ?? fromFloor,
+    floor: floor.floor,
     research: p.research,
     reviewer: p.reviewer,
   };
-  if (p.verdict === 'NARROW') value.narrowed = { statement: p.narrowed.value };
+  if (p.verdict === 'NARROW') {
+    value.narrowed = { statement: p.narrowed.value, floor: classifyFloor(`${p.narrowed.value}\n${candidate.check}`).floor };
+  }
   if (p.verdict === 'NEED-MORE-EVIDENCE') value.reviewAfter = p.reviewAfter;
   if (containsPiiOrSecret(JSON.stringify(value))) return { ok: false, errors: [{ code: 'pii_or_secret', field: '' }], value: null };
   return { ok: true, errors: [], value };
@@ -570,8 +293,22 @@ export function validateVerdict(raw, { candidate, tier }) {
 
 // ---- what root does next (PLAN §2.4 step 4) ---------------------------------------------------------------
 
+// The floor class of the text a verdict would promote: the narrowed statement for NARROW, else the candidate's.
+export const promotedFloor = (verdict) => (verdict.verdict === 'NARROW' ? verdict.narrowed?.floor : verdict.floor);
+
+// A hard-REJECT is refused, even when the owner forces it. On owner_review_required text a socrates ACCEPT or
+// NARROW is not enough: the owner approves the exact text and acknowledges the protected topic (assertPromotable
+// checks it). A plain REJECT is held; the owner may still override it by approving the exact text.
 export function promotionDecision({ candidate, verdict, ownerForce = false, ownerApprovedDiff = false }) {
   if (verdict.hardReject) return { action: 'refuse', reason: `hard_reject:${verdict.hardReject.class}` };
+  const decision = verdictDecision({ candidate, verdict, ownerForce, ownerApprovedDiff });
+  if (promotedFloor(verdict) !== 'owner_review_required') return decision;
+  return decision.action === 'hold'
+    ? { ...decision, ownerReviewRequired: true }
+    : { action: 'owner_review', reason: 'protected_topic', ownerReviewRequired: true };
+}
+
+function verdictDecision({ candidate, verdict, ownerForce, ownerApprovedDiff }) {
   switch (verdict.verdict) {
     case 'ACCEPT':
       if (candidate.revision === 1) return { action: 'promote', reason: 'accept_unchanged' };

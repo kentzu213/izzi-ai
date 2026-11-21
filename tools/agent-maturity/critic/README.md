@@ -8,13 +8,15 @@ before a standard is injected into every session, so every ambiguity is resolved
 |---|---|
 | `candidate.mjs` | Candidate schema (`validateCandidate`, `hasContrastPair`, strict `text`). Pure. |
 | `research-tier.mjs` | `selectResearchTier(candidate)`: R0/R1/R2, tools, budget, never-list. Pure. |
-| `verdict.mjs` | `validateVerdict`, `detectHardReject` (code floor), `promotionDecision`, `extractVerdictJson`. Pure. |
-| `loop-guard.mjs` | `planCritique`, `inputFingerprint`, `statementKey`: critique limits and the JSON retry. Pure. |
-| `promote-gate.mjs` | `assertPromotable(candidate, verdictRecord)`: the code-level promote gate. Pure. |
+| `floor.mjs` | `classifyFloor` / `detectHardReject`: the three-way code floor. Pure. |
+| `verdict.mjs` | `validateVerdict`, `promotionDecision`, `extractVerdictJson` (re-exports the floor). Pure. |
+| `loop-guard.mjs` | `planCritique`, `inputFingerprint`, `statementKey`, `verdictDigest`: critique, retry and brief limits. Pure. |
+| `promote-gate.mjs` | `assertPromotable({ adapter, candidateId, ownerApproval })`: the code-level promote gate (reads the store). |
 | `json-adapter.mjs` | Local JSON store for tests and dry runs (locked read-modify-write). |
 | `brief.mjs` | CLI: guard pre-check + the standard socrates brief + the brief snapshot. |
 | `record-verdict.mjs` | CLI: bind + validate + store a verdict, enforce guard, retry rule and floor, print the next action. |
 | `dry-runs/` | Three candidates from recorded owner decisions (20–21/11) for the real socrates runs. |
+| `test-corpus/` | `floor-corpus.json` (265 synthetic sentences with expectations) and `compare-floor.mjs`. |
 
 ## Verdict binding
 
@@ -41,8 +43,12 @@ Every method is required (`ADAPTER_METHODS`); `brief` and `record-verdict` refus
     findHardReject(statementKey)        // -> entry | null
     withLock(fn)                        // run fn under the store's exclusive lock (re-entrant)
 
-The JSON adapter locks with `<store>/.lock` (exclusive create; a lock older than 30 s is stale and taken over;
-waits up to 5 s, then fails "store is locked"). `brief` and `record-verdict` hold the lock for their whole
+The JSON adapter locks with `<store>/.lock` (exclusive create of "<pid> <nonce> <time>", read back to confirm the
+nonce; a lock older than 30 s is stale and removed only if it still holds what was judged stale; release removes
+the file only while it holds this writer's nonce; waits up to 5 s, then fails "store is locked"). `listEvents`
+skips one torn trailing log line (an interrupted append); the next `logEvent` cuts it off and logs
+`log_repaired`, so a torn line never lands mid-log. `record-verdict` writes the hard-REJECT index before the
+verdict record (a crash in between leaves the statement blocked). `brief` and `record-verdict` hold the lock for their whole
 read-check-write. `candidate.revision` is set by the loop guard (1 = the sentence the owner approved; 2 = the one
 rewrite). Each stored verdict carries `inputFingerprint`, `critiqueNumber`, `tier`, `tierRule`, `recordedAt`.
 
@@ -64,7 +70,8 @@ tokens, phone numbers and emails are refused. The brief prints the candidate as 
 `NEED-MORE` is read as NEED-MORE-EVIDENCE), `reasons` (1–5), `evidence` [{ ref, kind, finding: supports |
 contradicts | insufficient }], `checks` { evidenceSupports, scopeTooWide, contradictsExisting, tierCorrect },
 `hardReject` (null or { class, detail }), `narrowed.statement` (NARROW only), `research` { tier, refs, deepRuns },
-`reviewAfter` (NEED-MORE-EVIDENCE only), `reviewer.agent = socrates`. The reply holds exactly one json block
+`reviewAfter` (NEED-MORE-EVIDENCE only), `reviewer.agent = socrates`. The stored verdict also carries `floor` (the
+floor class of the candidate text) and, for NARROW, `narrowed.floor` (of the narrowed statement + check). The reply holds exactly one json block
 (plain JSON, or one fenced block); a second block (`multiple_json_blocks`) or a repeated key at any depth
 (`duplicate_keys`) is refused. Text values follow the candidate text rules.
 
@@ -83,57 +90,61 @@ item and the limit, for example `evidence_invalid(evidence[4].ref length 322 > 3
 A refused reply is logged as `verdict_refused` in the loop-guard log (`log.jsonl`) with its attempt number and
 whether it may be retried. At most ONE "fix only the JSON" retry, and only when every error is a format or
 limit error (`FORMAT_ERROR_CODES`: unreadable JSON, a second block, repeated keys, a field over its limit or of
-the wrong shape, a missing `inputFingerprint` or `candidateRevision`). The retry must keep the same verdict
-(`retry_changed_verdict`). Semantic errors (`accept_checks_failed`, `research_deep_run_missing`,
+the wrong shape, a missing `inputFingerprint` or `candidateRevision`). Each refusal logs the normalized verdict, the
+raw `verdict` field as written (`rawVerdict`, ≤40 characters) and whether `hardReject` was set
+(`hardRejectPresent`). The retry must keep the same verdict (`retry_changed_verdict`) and the same hardReject
+presence (`retry_changed_hard_reject`); when the first verdict could not be read (no JSON, or an unknown name),
+the retry may only be REJECT or NEED-MORE-EVIDENCE (`retry_verdict_not_allowed`). Semantic errors (`accept_checks_failed`, `research_deep_run_missing`,
 `hard_reject_floor`, `fingerprint_mismatch`, ...) get no retry, and a second refusal ends the critique: both
 block further replies and briefs for that critique (`reply_refused_final`, `json_retry_used`); while a retry is
 pending, `brief.mjs` is blocked (`json_retry_pending`) so the retry cannot become a fresh socrates run.
 
-## Hard-REJECT floor
+## Code floor (three-way)
 
-`detectHardReject` matches plain wording (Vietnamese or English) that loosens verification, security or honest
-reporting, or expands authority. A match forces REJECT; a match in `narrowed.statement` is refused too. Text is
-NFKC-normalized, lower-cased, with zero-width, bidi and leftover combining characters removed. Each accented
-letter in a floor phrase also matches its unaccented base letter, so "Bo qua test" and "Deploy khong can hoi"
-match; full diacritic folding is not used because it merges distinct words (lời/lỗi, tất/tắt, cái/cài) and would
-hard-REJECT "Chạy tất cả test" as "tắt ... test". Phrasings include skip/bypass/không cần + tests or review,
-"Không chạy test", "Merge/Ship/Mark done ... without running tests", "Test là không bắt buộc" / "tests are
-optional", deploy/push/merge/... + without asking (also after a comma), "No need to ask before deploying",
-"Không hỏi trước khi deploy", "Tự ý deploy".
+`classifyFloor(statement + "\n" + check)` in `floor.mjs` returns one of three classes. Text is NFKC-normalized,
+lower-cased, with zero-width, bidi and leftover combining characters removed, Cyrillic/Greek look-alikes folded
+("Skiр tests"), whitespace collapsed ("Bỏ  qua test") and runs of single letters joined ("s k i p tests"). Each
+accented letter in a floor word also matches its unaccented base ("Bo qua test"), while distinct accented words stay
+distinct (lời/lỗi, tất/tắt, cái/cài).
 
-Negation is judged inside the sentence, with accented negators only (an unaccented "khong" never clears a
-match). A negator governing the phrase from the left in the same clause ("không bỏ qua test", "it is not allowed
-to skip tests", "never, even when rushed, skip tests") or a prohibition later in the sentence ("skipping tests is
-never allowed", "bỏ qua test là không được phép") clears it, except when:
+| Class | When | Effect |
+|---|---|---|
+| `hard_reject` | A floor phrase (skip/bypass/không cần + tests or review, deploy/push/merge/... + without asking, "Không hỏi trước khi deploy", "Tự ý deploy", hardcode/print a secret, disable auth, hide failures, ...) whose every other word, in the statement or in the check, is on the NEUTRAL list (articles, addressees such as anh/the owner, targets such as main/staging, intensifiers, copulas, "before"/"trước khi"). Examples: "Bỏ qua test.", "Push without asking.", "Không cần hỏi anh trước khi push lên main." | Forces REJECT; recorded as a hard-REJECT; final, store-wide, never promotable, not even by the owner. |
+| `owner_review_required` | The text touches a protected topic (tests, review, CI, deploy, push, merge, release/phát hành, security/bảo mật, secrets, permission/quyền, verification/kiểm chứng/kiểm tra, reporting/báo cáo, asking the owner/hỏi), holds a floor phrase, or holds letters the floor cannot read, and is not a sure loosening: any negator, exception or condition (không, đừng, cấm, never, no, not, n't, unless, except, trừ khi, ngoại trừ, if, when, khi, nếu, only, chỉ, nobody, ...) or any other word off the NEUTRAL list. Examples: "Never skip tests when merging to main", "Unless the owner is in a hurry, never skip tests.", "Tests can be skipped". | A socrates ACCEPT or NARROW alone never promotes it: the owner approves the exact text with `ownerAcknowledgedProtectedTopic: true`. The brief prints the topics and trigger words and asks socrates to explain the risk. Not final, not store-indexed. |
+| `pass` | No protected topic, no floor phrase, nothing unreadable. | Normal flow. |
 
-- punctuation (`;` `,` `.` `:` or a dash) separates the negator from the phrase or sits inside the match: a
-  negation ends at the punctuation ("Never deploy on Friday; push without asking", "Không deploy thứ Sáu, push
-  không hỏi");
-- an exception or condition follows in the sentence (trừ khi, ngoại trừ, nếu, khi, unless, except, if, when):
-  "Không bỏ qua test trừ khi anh đang vội", "Bỏ qua test là không được phép nếu PR lớn". Concessive "even if",
-  "kể cả khi" and temporal "trước khi", "sau khi" are not exceptions;
-- the negations cancel (an even number of negators): "Không cấm bỏ qua test", "Nobody says you can't skip
-  tests", "Skipping tests is not forbidden".
-
-The floor errs toward REJECT: write one rule per sentence, with diacritics, as a plain prohibition ("Không bỏ
-qua test trước khi merge", "Never merge without running tests"). Socrates stays the primary judge.
+Negation never clears a phrase: a negated, scoped or reordered rule goes to the owner instead of being judged by
+more regexes, so rewording can at most move a sentence from `hard_reject` to `owner_review_required`, never to
+`pass`. Topics are also read after undoing digit look-alikes ("Sk1p t3sts"). The brief and the CLI print only
+labels from the fixed vocabularies outside the data block, never candidate text.
 
 A hard-REJECT is final across the store: `record-verdict` indexes the statement's `statementKey` (NFKC, lower
-case, no diacritics, punctuation and spacing collapsed); `brief` and `record-verdict` refuse any candidate, under
-any id, with the same key, without a critique (`hard_reject_statement`, exit 3). `promotionDecision` returns
-`refuse` for any hard-REJECT, even when the owner forces it.
+case, punctuation and spacing collapsed; diacritics kept, since "tắt" and "tất" differ); `brief` and
+`record-verdict` refuse any candidate, under any id, with the same key, without a critique
+(`hard_reject_statement`, exit 3). `promotionDecision` returns `refuse` for any hard-REJECT, even when the owner
+forces it, and `owner_review` (with `ownerReviewRequired: true`) for ACCEPT/NARROW on owner_review_required text.
+
+Floor corpus: `node tools/agent-maturity/critic/test-corpus/compare-floor.mjs --before d0edfc8` runs the 265
+synthetic sentences through the current floor and the round-2 binary floor (materialized from git into a temp
+folder) and prints counts per class and every sentence that misses its expectation. Round 3: before hard-REJECT
+133 / pass 132; after hard_reject 45 / owner_review_required 203 / pass 17; the 47 conditional or reworded
+loosenings that passed before and the 9 scoped legitimate rules that were hard-REJECTed before are all
+owner_review_required now; 0 misses. `critic-floor.test.mjs` checks the same expectations.
 
 ## Promote gate (D3 must call it)
 
-`assertPromotable(candidate, verdictRecord)` in `promote-gate.mjs` throws `PromotionRefused` (with `code`) unless:
-the verdict is a v2 record (`verdict@2`, 64-hex `inputFingerprint`) bound to this exact candidate (id, revision,
-fingerprint); it re-validates against the candidate today; it is ACCEPT, or NARROW (then the narrowed statement is
-what gets promoted); it carries no hard-REJECT and the floor does not match the promoted text; and
-`verdictRecord.ownerApproval` is `{ approved: true, statement }` with exactly that statement. It returns
-`{ candidateId, revision, inputFingerprint, verdict, statement }`. **At integration, D3's `promote` must call it
-with the current stored candidate and its last verdict plus the owner's approval, promote only the returned
-`statement`, and also refuse a statement whose `statementKey` is in the hard-REJECT index.** D4 does not edit
-D3 code.
+`assertPromotable({ adapter, candidateId, ownerApproval })` in `promote-gate.mjs` loads, under the store lock, the
+current candidate, its LAST verdict and the hard-REJECT index itself, and throws `PromotionRefused` (with `code`)
+unless: the candidate re-validates as stored; the verdict is a v2 record bound to it (id, revision, fingerprint),
+re-validates today and matches the `verdictSha256` that `record-verdict` logged (`verdict_tampered` otherwise); the
+re-validated verdict has no hard-REJECT; the promoted text is not `hard_reject` and neither it nor the candidate
+statement is in the hard-REJECT index; and `ownerApproval` is `{ approved: true, statement }` with exactly the
+promoted text and no unknown keys. The promoted text is the candidate statement (ACCEPT), only the stored narrowed
+statement (NARROW), or the candidate statement of a plain REJECT the owner overrides with `overrideReject: true`.
+`owner_review_required` text also needs `ownerAcknowledgedProtectedTopic: true`. NEED-MORE-EVIDENCE is never
+promotable; `hard_reject` never, whatever flags are set. It returns `{ candidateId, revision, inputFingerprint,
+verdict, floor, statement }`. **At integration, D3's `promote` must call it with the store adapter, the candidate
+id and the owner's approval, and promote only the returned `statement`.** D4 does not edit D3 code.
 
 ## Research tiers
 
@@ -157,7 +168,8 @@ never lowers what the wording shows). The brief prints the tier's full never-lis
 Per candidate: 1 critique + 1 rewrite, and the rewrite gets one re-check. Critique 2 needs new input since
 critique 1 (a rewrite, research or evidence), otherwise `same_input`. Critique 3 is always blocked
 (`max_critiques`). A hard-REJECT is final (`hard_reject_final`, and store-wide as above). A record whose last
-verdict has no v2 fingerprint cannot be continued (`pre_v2_record`). Blocked attempts are logged and exit 3.
+verdict has no v2 fingerprint cannot be continued (`pre_v2_record`). Every brief is logged (`brief_generated`) and a
+candidate revision gets at most two briefs (`brief_cap`). Blocked attempts are logged and exit 3.
 
 ## CLI
 
@@ -187,6 +199,8 @@ from `promote` are integration items for D2/D3; D4 does not edit `install.mjs`/`
   flow only: `assertPromotable` refuses them (`pre_v2_verdict`) and the loop guard will not continue them
   (`pre_v2_record`). A real promotion needs a fresh v2 critique under a new store or id.
 - All three verdicts are stored with their candidate (`decision.action = show_diff`); none hit a hard-REJECT.
+  Under the three-way floor dr1 is `pass` and dr2, dr3 are `owner_review_required` (they touch merge, deploy,
+  tests and reporting), so a fresh v2 promotion of dr2 or dr3 would also need the owner's acknowledgement.
 - Loop guard: repeating dr2 with the same input was blocked with exit 3 (`same_input`) and logged.
 - Defect found and fixed: dr3 was first refused with `evidence_invalid(evidence)`: 11 evidence items (limit was
   10) and a 122-character transcript path (ref limit was 120), limits the brief never stated. The brief now
