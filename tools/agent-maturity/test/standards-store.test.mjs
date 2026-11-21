@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +20,7 @@ import {
   get,
   listProjects,
   promote,
+  pythonEnv,
   retract,
   runCli,
   supersede,
@@ -36,11 +37,12 @@ delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+// sha256 only: mtime is left out because another session may touch the real store while these tests run.
 function realStoreDigest() {
   const files = {};
   for (const f of ['memory.sqlite3', 'memory.sqlite3-wal', 'memory.sqlite3-shm']) {
     const p = join(DEFAULT_STORE, f);
-    files[f] = existsSync(p) ? `${sha(readFileSync(p))} ${statSync(p).mtimeMs}` : null;
+    files[f] = existsSync(p) ? sha(readFileSync(p)) : null;
   }
   const h = createHash('sha256');
   if (existsSync(DEFAULT_VAULT)) {
@@ -235,6 +237,73 @@ test('the command line re-exports after promote and prints a summary', { skip },
   assert.deepEqual(ids(JSON.parse(readFileSync(s.out, 'utf8')).standards), [rec.id]);
   const bad = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--store', s.store, '--vault', s.vault, '--out', s.out], { encoding: 'utf8', env: ENV, timeout: 60_000 });
   assert.equal(bad.status, 1);
+});
+
+test('buildExport holds back a record whose review_after has passed, even when the store did not flag it', () => {
+  const rec = (id, reviewAfter) => ({
+    id, state: 'active', scope: 'user', project_id: null, topic_key: `dev-standard/${id}`, kind: 'procedure', title: id, summary: id,
+    review_after: reviewAfter, source_current: true, expired: false, conflicts: [],
+  });
+  const out = buildExport({ projects: [], records: [rec('ok', '2026-12-01T00:00:00Z'), rec('due', '2026-11-20T00:00:00Z'), rec('none', null)] }, new Date('2026-11-21T00:00:00Z'));
+  assert.deepEqual(ids(out.standards), ['ok']);
+  assert.deepEqual(out.skipped, [{ id: 'due', topic: 'due', reason: 'review_due' }, { id: 'none', topic: 'none', reason: 'review_due' }]);
+});
+
+test('pythonEnv drops PYTHONPATH, PYTHONHOME and PYTHONSTARTUP in any letter case and keeps UTF-8 output', () => {
+  const env = pythonEnv({ PATH: 'p', PYTHONPATH: 'a', PythonHome: 'b', pythonstartup: 'c', PYTHONIOENCODING: 'latin-1', OTHER: 'o' });
+  assert.deepEqual(env, { PATH: 'p', OTHER: 'o', PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' });
+});
+
+test('the CLI runs isolated: planted modules on PYTHONPATH or in the caller folder never load', { skip }, () => {
+  const s = newStore();
+  const planted = join(scratch, `planted-${n}`);
+  mkdirSync(planted);
+  const marker = join(scratch, `planted-ran-${n}.txt`);
+  const code = `open(${JSON.stringify(marker)}, "w").write("ran")\nraise SystemExit(97)\n`;
+  for (const m of ['argparse.py', 'json.py', 'memory_store.py', 'runpy.py']) writeFileSync(join(planted, m), code);
+  const env = { ...ENV, PYTHONPATH: planted, PYTHONHOME: join(planted, 'no-such-home'), PYTHONSTARTUP: join(planted, 'json.py') };
+  const previous = process.cwd();
+  process.chdir(planted);
+  try {
+    const rec = capture(candidate('isolated-python', 'Chạy CLI ở chế độ cô lập.', 'sess-7'), { ...s, env });
+    assert.equal(rec.state, 'candidate');
+    assert.equal(exportActive({ ...s, env }).standards.length, 0);
+  } finally {
+    process.chdir(previous);
+  }
+  assert.equal(existsSync(marker), false, 'no planted module ran');
+});
+
+test('the real-store guard sees through junctions and 8.3 names, also for paths not created yet', { skip: !existsSync(DEFAULT_STORE) && 'no real store on this machine' }, () => {
+  const tmp = newStore();
+  // A missing Python makes any call that slips past the guard fail before it can touch a store.
+  const noPython = join(scratch, 'no-python.exe');
+  const refused = (e) => e instanceof StoreCliError && e.code === 'refuse_real_store';
+  const codexLink = join(scratch, `codex-link-${n}`);
+  const storeLink = join(scratch, `store-link-${n}`);
+  symlinkSync(dirname(DEFAULT_STORE), codexLink, 'junction');
+  symlinkSync(DEFAULT_STORE, storeLink, 'junction');
+  try {
+    assert.throws(() => capture(candidate('x', 'y', 'z'), { store: storeLink, vault: tmp.vault, python: noPython, env: ENV }), refused);
+    assert.throws(() => exportActive({ store: join(codexLink, 'KnowledgeMemory'), vault: tmp.vault, out: tmp.out, python: noPython, env: ENV }), refused);
+    assert.throws(() => exportActive({ store: tmp.store, vault: join(codexLink, 'KnowledgeVault'), out: tmp.out, python: noPython, env: ENV }), refused);
+    assert.throws(() => listProjects({ store: join(codexLink, 'KnowledgeMemory', 'not-created-yet'), vault: tmp.vault, python: noPython, env: ENV }), refused);
+  } finally {
+    unlinkSync(codexLink);
+    unlinkSync(storeLink);
+  }
+  const homeLink = join(scratch, `home-link-${n}`);
+  symlinkSync(join(homedir(), '.claude'), homeLink, 'junction');
+  try {
+    assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, out: join(homeLink, 'agent-maturity-guard-test', 'standards.json'), python: noPython, env: ENV }), refused);
+  } finally {
+    unlinkSync(homeLink);
+  }
+  // os.tmpdir() may be an 8.3 path (C:\Users\ABCDEF~1\...); its home part then names the real home another way.
+  const shortHome = join(tmpdir(), '..', '..', '..');
+  if (!samePath(shortHome, homedir()) && samePath(realpathSync.native(shortHome), homedir())) {
+    assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, out: join(shortHome, '.claude', 'agent-maturity-guard-test', 'standards.json'), python: noPython, env: ENV }), refused);
+  }
 });
 
 test('the real KnowledgeMemory store and vault are unchanged by these tests', (t) => {

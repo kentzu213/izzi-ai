@@ -236,14 +236,22 @@ function writeBackup(settingsFile, bytes, stamp) {
 function applyInstall(t, current, next, files, previous, opts) {
   for (const f of files) writeFileAtomic(f.to, f.content ?? fs.readFileSync(f.from));
   let backup = previous ? previous.backup : null;
+  let shaBefore = previous ? previous.settingsShaBefore : current.sha;
   let shaAfter = previous ? previous.settingsShaAfter : current.sha;
   if (next) {
-    backup = writeBackup(t.settings, current.bytes, stampOf(opts.now ?? new Date()));
+    // Settings untouched since the previous install (a D1 -> D3 upgrade): its backup still holds the state before
+    // any agent-maturity hook, so it is kept. Otherwise the current bytes are backed up and their sha recorded.
+    const keep = Boolean(previous && previous.backup && current.sha === previous.settingsShaAfter && fs.existsSync(previous.backup));
+    const fresh = keep ? null : writeBackup(t.settings, current.bytes, stampOf(opts.now ?? new Date()));
+    if (fresh) {
+      backup = fresh;
+      shaBefore = current.sha;
+    }
     const text = serializeLike(next, current.text);
     try {
       writeChecked(t.settings, text, current.sha, opts.beforeRename);
     } catch (error) {
-      fs.rmSync(backup, { force: true });
+      if (fresh) fs.rmSync(fresh, { force: true });
       throw error;
     }
     shaAfter = sha256(Buffer.from(text, 'utf8'));
@@ -254,8 +262,7 @@ function applyInstall(t, current, next, files, previous, opts) {
     claudeHome: toSlash(t.home),
     settingsPath: toSlash(t.settings),
     backup: backup ? toSlash(backup) : null,
-    // A new backup holds the current bytes, so its sha replaces the one from an earlier install.
-    settingsShaBefore: previous && !next ? previous.settingsShaBefore : current.sha,
+    settingsShaBefore: shaBefore,
     settingsShaAfter: shaAfter,
     hookCommand: hookCommand(t.home),
     sessionHookCommand: sessionHookCommand(t.home),

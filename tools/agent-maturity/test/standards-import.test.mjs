@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { findFeedbackNotes, importFeedbackNotes, noteCandidate, parseNote } from '../standards/import-feedback.mjs';
-import { cliAvailable, get, runCli } from '../standards/store-cli.mjs';
+import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, retract, runCli, userSource } from '../standards/store-cli.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
@@ -95,7 +95,8 @@ test('noteCandidate makes a user-scope candidate with an artifact source and bou
   const [note] = findFeedbackNotes(makeProjects()).filter((n) => n.name === 'verify-before-done');
   const c = noteCandidate({ ...note, body: 'x '.repeat(2000) });
   assert.equal(c.scope, 'user');
-  assert.equal(c.topic, 'import/verify-before-done');
+  assert.match(c.topic, /^import\/verify-before-done-[0-9a-f]{8}$/);
+  assert.equal(c.author, IMPORT_AUTHOR);
   assert.equal(c.source.type, 'artifact');
   assert.equal(c.source.sha256, sha(note.file));
   assert.ok(!c.source.uri.includes('\\'));
@@ -142,6 +143,93 @@ test('the command line prints a summary', { skip }, () => {
   const out = JSON.parse(r.stdout);
   assert.equal(out.feedback, 3);
   assert.equal(out.captured.length, 2);
+});
+
+test('topics are an ASCII slug plus a short hash of the note path, so non-ASCII names never collide', () => {
+  const base = { description: 'd', body: 'b', sha: 'a'.repeat(64) };
+  const vi = noteCandidate({ ...base, file: 'C:/p/memory/quy-tac.md', name: 'Quy tắc kiểm thử đầy đủ' });
+  const ja1 = noteCandidate({ ...base, file: 'C:/p/memory/kensho.md', name: '検証ルール' });
+  const ja2 = noteCandidate({ ...base, file: 'C:/p/memory/haibi.md', name: '配備ルール' });
+  assert.match(vi.topic, /^import\/quy-tac-kiem-thu-day-du-[0-9a-f]{8}$/);
+  assert.match(ja1.topic, /^import\/note-[0-9a-f]{8}$/);
+  assert.match(ja2.topic, /^import\/note-[0-9a-f]{8}$/);
+  assert.notEqual(ja1.topic, ja2.topic);
+  for (const c of [vi, ja1, ja2]) assert.ok(/^[\x21-\x7e]+$/.test(c.topic) && c.topic.length <= 120 - 'dev-standard/'.length, c.topic);
+  assert.equal(noteCandidate({ ...base, file: 'C:/p/memory/kensho.md', name: '検証ルール' }).topic, ja1.topic, 'stable for one note');
+});
+
+test('a locked or unreadable note is skipped and counted, never fatal', (t) => {
+  const dir = makeProjects();
+  const locked = join(dir, 'F--repo-a', 'memory', 'locked.md');
+  writeFileSync(locked, TOP);
+  const realOpen = fs.openSync;
+  t.mock.method(fs, 'openSync', (file, ...rest) => {
+    if (String(file) === locked) throw Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' });
+    return realOpen(file, ...rest);
+  });
+  const notes = findFeedbackNotes(dir);
+  assert.deepEqual(notes.filter((x) => x.unreadable).map((x) => [x.file, x.unreadable]), [[locked, 'EBUSY']]);
+  assert.deepEqual(notes.filter((x) => !x.unreadable).map((x) => x.name).sort(), ['deploy-base-check', 'leaky', 'verify-before-done']);
+});
+
+test('note size is checked with stat before any read', (t) => {
+  const dir = mkdtempSync(join(scratch, 'big-'));
+  mkdirSync(join(dir, 'F--repo', 'memory'), { recursive: true });
+  writeFileSync(join(dir, 'F--repo', 'memory', 'huge.md'), `${TOP}${'x'.repeat(70 * 1024)}`);
+  const readSync = t.mock.method(fs, 'readSync');
+  const readFile = t.mock.method(fs, 'readFileSync');
+  const notes = findFeedbackNotes(dir);
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].tooLarge, true);
+  assert.equal(readSync.mock.callCount() + readFile.mock.callCount(), 0, 'the oversized note was never read');
+});
+
+test('import counts an unreadable note and still captures the others', { skip }, (t) => {
+  const dir = makeProjects();
+  const locked = join(dir, 'F--repo-b', 'memory', 'locked.md');
+  writeFileSync(locked, TOP.replace('deploy-base-check', 'locked-note'));
+  const realOpen = fs.openSync;
+  t.mock.method(fs, 'openSync', (file, ...rest) => {
+    if (String(file) === locked) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+    return realOpen(file, ...rest);
+  });
+  const r = importFeedbackNotes({ projectsDir: dir, ...newStore() });
+  assert.equal(r.error, undefined);
+  assert.deepEqual(r.unreadable, [{ file: locked.replace(/\\/g, '/'), error: 'EPERM' }]);
+  assert.equal(r.feedback, 3);
+  assert.equal(r.captured.length, 2);
+});
+
+test('an imported candidate is never promoted, whatever the basis', { skip }, () => {
+  const s = newStore();
+  const first = importFeedbackNotes({ projectsDir: makeProjects(), ...s });
+  const imported = first.captured[0];
+  const refused = (e) => e instanceof StoreCliError && e.code === 'import_not_promotable';
+  // verified_artifact would pass the store itself: the note file still matches its sha.
+  assert.throws(() => promote(imported.id, 'verified_artifact', s), refused);
+  assert.throws(() => promote(imported.id, 'user_instruction', s), refused);
+  assert.equal(get(imported.id, s).state, 'candidate');
+  assert.equal(events(s, 'promoted').length, 0);
+});
+
+test('a record by the importer author is refused under any topic', { skip }, () => {
+  const s = newStore();
+  const rec = capture({ topic: 'not-under-import', title: 'Chuẩn x', summary: 'Nội dung x.', source: userSource('sess-imp', '2026-11-21T01:00:00Z'), author: IMPORT_AUTHOR }, s);
+  assert.throws(() => promote(rec.id, 'user_instruction', s), (e) => e.code === 'import_not_promotable');
+  assert.equal(get(rec.id, s).state, 'candidate');
+});
+
+test('documented path: root re-captures the owner-approved text with a user source, promotes it, retracts the import', { skip }, () => {
+  const s = newStore();
+  const out = join(s.store, '..', 'home', 'standards.json');
+  const first = importFeedbackNotes({ projectsDir: makeProjects(), ...s });
+  const imported = get(first.captured[0].id, s);
+  const approved = capture({ topic: 'from-feedback-note', title: imported.title, summary: imported.summary, source: userSource('sess-owner', '2026-11-21T02:00:00Z') }, s);
+  assert.equal(promote(approved.id, 'user_instruction', s).state, 'active');
+  assert.equal(retract(imported.id, `owner approved it as ${approved.id}`, s).state, 'retracted');
+  const e = exportActive({ ...s, out });
+  assert.deepEqual(e.standards.map((x) => x.id), [approved.id]);
+  assert.equal(e.standards[0].topic, 'from-feedback-note');
 });
 
 test('import refuses the real store under AGENT_MATURITY_TEST=1', () => {

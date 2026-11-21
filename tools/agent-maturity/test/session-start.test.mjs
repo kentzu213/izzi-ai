@@ -32,7 +32,7 @@ mkdirSync(elsewhere, { recursive: true });
 const std = (id, extra = {}) => ({ id, scope: 'user', project_id: null, topic: `t-${id}`, kind: 'procedure', title: `Title ${id}`, summary: `Summary ${id}.`, review_after: '2099-01-01T00:00:00Z', ...extra });
 const EXPORT = {
   schema: 'agent-maturity/standards@1',
-  exported_at: '2026-11-21T00:00:00Z',
+  exported_at: new Date().toISOString(),
   standards: [std('u1'), std('a1', { scope: 'project', project_id: 'pa' }), std('z1', { scope: 'project', project_id: 'pz' })],
   projects: [{ id: 'pa', root: projA }, { id: 'pz', root: join(scratch, 'proj-z') }],
   skipped: [],
@@ -150,4 +150,45 @@ test('AGENT_MATURITY=off or config enabled:false turns the hook off', () => {
   const home = newHome(EXPORT);
   writeFileSync(join(home, 'config.json'), JSON.stringify({ enabled: false }));
   assertSilent(runHook(start(projA), { home }));
+});
+
+// Owner decision 21/11: every agent in every project keeps improving, so all entrypoints get the block.
+test('injects for every entrypoint (cli, desktop, sdk, -p); AGENT_MATURITY=off still turns it off for each', () => {
+  for (const entrypoint of ['cli', 'claude-desktop', 'sdk-ts', 'sdk-py', 'sdk-cli', '']) {
+    const env = { CLAUDE_CODE_ENTRYPOINT: entrypoint };
+    assert.ok(context(runHook(start(projA), { home: newHome(EXPORT), env })).includes('Title u1'), entrypoint);
+    assertSilent(runHook(start(projA), { home: newHome(EXPORT), env: { ...env, AGENT_MATURITY: 'off' } }));
+  }
+});
+
+const DAY_MS = 86_400_000;
+const logLines = (home) => {
+  const dir = join(home, 'log');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)));
+};
+
+test('an export older than 7 days is not injected; one log line says why', () => {
+  const exportedAt = new Date(Date.now() - 8 * DAY_MS).toISOString();
+  const home = newHome({ ...EXPORT, exported_at: exportedAt });
+  assertSilent(runHook(start(projA), { home }));
+  const lines = logLines(home);
+  assert.equal(lines.length, 1, JSON.stringify(lines));
+  assert.equal(lines[0].type, 'standards_export_stale');
+  assert.equal(lines[0].exported_at, exportedAt);
+  assert.equal(lines[0].max_age_days, 7);
+  assert.ok(!JSON.stringify(lines[0]).includes('Title'), 'the log holds no standard text');
+});
+
+test('an export 6 days old is still injected and nothing is logged', () => {
+  const home = newHome({ ...EXPORT, exported_at: new Date(Date.now() - 6 * DAY_MS).toISOString() });
+  assert.ok(context(runHook(start(projA), { home })).includes('Title u1'));
+  assert.deepEqual(logLines(home), []);
+});
+
+test('standards past review_after are not injected', () => {
+  const data = { ...EXPORT, standards: [std('u1'), std('old', { review_after: new Date(Date.now() - DAY_MS).toISOString() })] };
+  const ctx = context(runHook(start(projA), { home: newHome(data) }));
+  assert.ok(ctx.includes('Title u1'));
+  assert.ok(!ctx.includes('Title old'));
 });

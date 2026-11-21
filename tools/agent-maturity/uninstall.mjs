@@ -1,7 +1,8 @@
 // Removes the upgrade-checkpoint hook and skill from a Claude Code home (default ~/.claude).
 // Usage: node tools/agent-maturity/uninstall.mjs [--claude-home <dir>] [--settings <file>] [--dry-run] [--purge]
-// If settings.json is unchanged since install it is restored byte-for-byte from the backup; otherwise only
-// the agent-maturity hook groups (UserPromptSubmit, SessionStart) are removed and every other change is kept.
+// If settings.json is unchanged since install and the backup holds no agent-maturity hook, it is restored
+// byte-for-byte from the backup; otherwise only the agent-maturity hook groups (UserPromptSubmit, SessionStart)
+// are removed and every other change is kept.
 // State, log and the standards.json export stay unless --purge.
 
 import fs from 'node:fs';
@@ -24,6 +25,16 @@ import {
   writeChecked,
 } from './install.mjs';
 
+// A backup taken over an earlier install (D1 before D3, or a group left behind) would bring our hook back,
+// pointing at files uninstall deletes; such a backup, or one that does not parse, is never restored.
+function backupIsClean(data) {
+  try {
+    return withoutHookGroup(JSON.parse(data.toString('utf8').replace(/^\uFEFF/, ''))).removed === 0;
+  } catch {
+    return false;
+  }
+}
+
 function planSettings(t, manifest) {
   if (!fs.existsSync(t.settings)) return { mode: 'none', current: null, data: null, lines: ['no settings.json found'] };
   const current = readSettings(t.settings);
@@ -31,10 +42,13 @@ function planSettings(t, manifest) {
   const lines = [];
   if (backup && manifest.settingsShaAfter === current.sha && fs.existsSync(backup)) {
     const data = fs.readFileSync(backup);
-    if (sha256(data) === manifest.settingsShaBefore) {
+    if (sha256(data) !== manifest.settingsShaBefore) {
+      lines.push(`backup ${toSlash(backup)} does not match the sha recorded at install; not restoring from it`);
+    } else if (!backupIsClean(data)) {
+      lines.push(`backup ${toSlash(backup)} holds an agent-maturity hook (or does not parse); not restoring from it`);
+    } else {
       return { mode: 'restore', current, data, lines: [`restore ${toSlash(t.settings)} byte-for-byte from ${toSlash(backup)}`] };
     }
-    lines.push(`backup ${toSlash(backup)} does not match the sha recorded at install; not restoring from it`);
   }
   const { settings: next, removed } = withoutHookGroup(current.value);
   if (removed === 0) return { mode: 'none', current, data: null, lines: [...lines, 'no agent-maturity hook in settings.json'] };

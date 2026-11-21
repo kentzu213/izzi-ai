@@ -9,10 +9,13 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { resolveHome, writeFileAtomic } from '../lib/store.mjs';
-import { EXPORT_SCHEMA } from './inject.mjs';
+import { EXPORT_SCHEMA, isReviewDue } from './inject.mjs';
 import { checkoutInfo, findProject, isInside } from './project-root.mjs';
 
 export const TOPIC_PREFIX = 'dev-standard/';
+// Records the auto-memory importer captures (topic dev-standard/import/..., this author) are never promoted.
+export const IMPORT_TOPIC = 'import/';
+export const IMPORT_AUTHOR = 'agent-maturity-import';
 export const DEFAULT_STORE = 'F:/Ai Tools/Codex/KnowledgeMemory';
 export const DEFAULT_VAULT = 'F:/Ai Tools/Codex/KnowledgeVault';
 export const DEFAULT_PYTHON = path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'python', 'python.exe');
@@ -31,6 +34,17 @@ const EXPORT_SCRIPT = [
   'records = [r for r in store.records() if r["topic_key"].startswith(sys.argv[3])]',
   'print(json.dumps({"projects": store.projects(), "records": records}, ensure_ascii=False))',
 ].join('\n');
+// Python runs isolated (-I: no PYTHON* variables, no user site, no script or current folder on sys.path), without
+// bytecode files (-B) and with UTF-8 stdio (-X utf8). -I drops the CLI's own folder, which it needs for its
+// memory_store import, so the CLI is started through this bootstrap that adds exactly that folder.
+const PYTHON_FLAGS = ['-I', '-B', '-X', 'utf8'];
+const RUN_CLI_SCRIPT = [
+  'import runpy, sys',
+  'sys.path.insert(0, sys.argv[1])',
+  'sys.argv = sys.argv[2:]',
+  'runpy.run_path(sys.argv[0], run_name="__main__")',
+].join('\n');
+const DROPPED_ENV = new Set(['PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP']);
 
 export class StoreCliError extends Error {
   constructor(code, message) {
@@ -42,6 +56,26 @@ export class StoreCliError extends Error {
 
 const badInput = (message) => new StoreCliError('bad_input', message);
 
+// The real location of p (junctions, symlinks, 8.3 names and subst drives resolved), also when p does not exist
+// yet: the nearest existing parent is resolved and the rest appended.
+function realPath(p) {
+  let current = path.resolve(p);
+  const rest = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(p);
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+// Inside `parent` as written or once both are resolved to their real location.
+const lands = (p, parent) => isInside(p, parent) || isInside(realPath(p), realPath(parent));
+
 function targets(opts = {}) {
   const env = opts.env ?? process.env;
   const t = {
@@ -51,10 +85,16 @@ function targets(opts = {}) {
     cli: opts.cli ?? DEFAULT_CLI,
     env,
   };
-  if (env.AGENT_MATURITY_TEST === '1' && (isInside(t.store, DEFAULT_STORE) || isInside(t.vault, DEFAULT_VAULT))) {
+  if (env.AGENT_MATURITY_TEST === '1' && (lands(t.store, DEFAULT_STORE) || lands(t.vault, DEFAULT_VAULT))) {
     throw new StoreCliError('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing the real KnowledgeMemory store or vault');
   }
   return t;
+}
+
+// The child environment: PYTHONPATH, PYTHONHOME and PYTHONSTARTUP (any letter case) are never passed on.
+export function pythonEnv(env) {
+  const kept = Object.entries(env ?? {}).filter(([key]) => !DROPPED_ENV.has(key.toUpperCase()) && key.toUpperCase() !== 'PYTHONIOENCODING');
+  return { ...Object.fromEntries(kept), PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' };
 }
 
 export const cliAvailable = (opts = {}) => fs.existsSync(opts.python ?? DEFAULT_PYTHON) && fs.existsSync(opts.cli ?? DEFAULT_CLI);
@@ -71,12 +111,13 @@ function errorType(stderr) {
 
 function spawnPython(t, args) {
   if (!fs.existsSync(t.python) || !fs.existsSync(t.cli)) throw new StoreCliError('cli_unavailable', 'KnowledgeMemory CLI or bundled Python not found');
-  const r = spawnSync(t.python, args, {
+  const r = spawnSync(t.python, [...PYTHON_FLAGS, ...args], {
+    cwd: path.dirname(t.cli),
     encoding: 'utf8',
     timeout: CLI_TIMEOUT_MS,
     windowsHide: true,
     maxBuffer: 32 * 1024 * 1024,
-    env: { ...t.env, PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' },
+    env: pythonEnv(t.env),
   });
   if (r.error) throw new StoreCliError('cli_failed', `could not run the KnowledgeMemory CLI (${r.error.code ?? r.error.name})`);
   if (r.status !== 0) throw new StoreCliError('cli_failed', `KnowledgeMemory rejected the call (${errorType(r.stderr)})`);
@@ -90,7 +131,7 @@ function spawnPython(t, args) {
 // Runs one project-memory.py subcommand against the given store and vault; returns its parsed JSON.
 export function runCli(args, opts) {
   const t = targets(opts);
-  return spawnPython(t, [t.cli, '--store', t.store, '--vault', t.vault, ...args]);
+  return spawnPython(t, ['-c', RUN_CLI_SCRIPT, path.dirname(t.cli), t.cli, '--store', t.store, '--vault', t.vault, ...args]);
 }
 
 const withoutSync = ({ projection_sync: _sync, ...record }) => record;
@@ -168,10 +209,19 @@ export function capture(candidate, opts) {
   }
 }
 
+export const isImported = (record) => Boolean(record) && (record.author === IMPORT_AUTHOR
+  || (typeof record.topic_key === 'string' && record.topic_key.startsWith(`${TOPIC_PREFIX}${IMPORT_TOPIC}`)));
+
 // basis: 'user_instruction' (owner approved this exact text, user source) or 'verified_artifact' (file sha matches).
+// An imported auto-memory note is refused with import_not_promotable even though its file sha would pass the
+// store: root re-captures the owner-approved text with userSource(...) under its own topic, promotes that and
+// retracts the import (standards/README.md).
 export function promote(id, basis, opts) {
   needId(id);
   if (!BASES.has(basis)) throw badInput('basis must be user_instruction or verified_artifact');
+  if (isImported(get(id, opts))) {
+    throw new StoreCliError('import_not_promotable', 'an imported auto-memory note is never promoted: capture the owner-approved text with userSource(...) under its own topic, promote that, then retract the import');
+  }
   return withoutSync(runCli(['promote', id, `--basis=${basis}`, '--reviewer=root'], opts));
 }
 
@@ -202,7 +252,7 @@ export function buildExport(raw, now = new Date()) {
     let reason = null;
     if (!SCOPES.has(r.scope)) reason = 'unsupported_scope';
     else if (r.source_current === false) reason = 'source_changed';
-    else if (r.expired) reason = 'review_due';
+    else if (r.expired || isReviewDue(r.review_after, now)) reason = 'review_due';
     else if (Array.isArray(r.conflicts) && r.conflicts.length > 0) reason = 'conflict';
     if (reason) {
       skipped.push({ id: r.id, topic, reason });
@@ -224,10 +274,14 @@ export function exportPath(opts = {}) {
 export function exportActive(opts = {}) {
   const t = targets(opts);
   const out = exportPath(opts);
-  if (t.env.AGENT_MATURITY_TEST === '1' && isInside(out, path.join(os.homedir(), '.claude'))) {
+  if (t.env.AGENT_MATURITY_TEST === '1' && lands(out, path.join(os.homedir(), '.claude'))) {
     throw new StoreCliError('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing to write the export into the real ~/.claude');
   }
-  const result = buildExport(spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, TOPIC_PREFIX]), opts.now ?? new Date());
+  // A store not created yet (no memory.sqlite3) has no standards; the read-only reader cannot open it.
+  const raw = fs.existsSync(path.join(t.store, 'memory.sqlite3'))
+    ? spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, TOPIC_PREFIX])
+    : { projects: [], records: [] };
+  const result = buildExport(raw, opts.now ?? new Date());
   writeFileAtomic(out, `${JSON.stringify(result, null, 2)}\n`);
   return result;
 }

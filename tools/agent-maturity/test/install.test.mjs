@@ -166,7 +166,8 @@ test('install copies runtime files and the marked skill, and the copied hook run
 
   writeFileSync(join(home, 'agent-maturity', 'standards.json'), JSON.stringify({
     schema: 'agent-maturity/standards@1',
-    standards: [{ id: 'u1', scope: 'user', project_id: null, topic: 'tests', title: 'Chạy test thật', summary: 'Kèm mã thoát.' }],
+    exported_at: new Date().toISOString(),
+    standards: [{ id: 'u1', scope: 'user', project_id: null, topic: 'tests', title: 'Chạy test thật', summary: 'Kèm mã thoát.', review_after: '2099-01-01T00:00:00Z' }],
     projects: [],
   }));
   const s = spawnSync(process.execPath, [join(home, 'agent-maturity', 'bin', 'hooks', 'session-start.mjs')], {
@@ -341,11 +342,10 @@ test('uninstall never restores from a backup whose sha differs from the one reco
   assert.deepEqual(readSettings(settings), ORIGINAL);
 });
 
-test('re-adding the hook after it was removed records the new backup sha, so uninstall restores that state', () => {
+test('re-adding the hooks after they were removed records the new backup sha, so uninstall restores that state', () => {
   const { home, settings } = makeHome();
   install({ claudeHome: home, env: ENV });
-  const withoutOurs = readSettings(settings);
-  withoutOurs.hooks.UserPromptSubmit = withoutOurs.hooks.UserPromptSubmit.filter((g) => !isOurs(g));
+  const withoutOurs = stripOurs(readSettings(settings));
   withoutOurs.theme = 'between-installs';
   writeFileSync(settings, `${JSON.stringify(withoutOurs, null, 2)}\n`);
   const beforeSecond = readFileSync(settings);
@@ -357,4 +357,68 @@ test('re-adding the hook after it was removed records the new backup sha, so uni
   const u = uninstall({ claudeHome: home, env: ENV });
   assert.equal(u.mode, 'restore', u.lines.join('\n'));
   assert.deepEqual(readFileSync(settings), beforeSecond);
+});
+
+// What the D1 installer (before D3) left behind: only the UserPromptSubmit group, a byte-for-byte backup of the
+// original settings and a v1 manifest without sessionHookCommand.
+function d1Install(home, settings, originalBytes) {
+  const slash = (p) => p.replace(/\\/g, '/');
+  const d1 = readSettings(settings);
+  d1.hooks.UserPromptSubmit = [...d1.hooks.UserPromptSubmit, { hooks: [{ type: 'command', command: ourCommand(home), timeout: 5 }] }];
+  const text = `${JSON.stringify(d1, null, 2)}\n`;
+  const backup = join(home, 'settings.json.bak-20261119-100000-agent-maturity');
+  writeFileSync(backup, originalBytes);
+  writeFileSync(settings, text);
+  const bin = join(home, 'agent-maturity', 'bin');
+  const files = ['lib/classify.mjs', 'lib/decide.mjs', 'lib/store.mjs', 'lib/transcript-tail.mjs', 'hooks/prompt-signal.mjs'].map((rel) => join(bin, rel));
+  for (const f of files) {
+    mkdirSync(join(f, '..'), { recursive: true });
+    writeFileSync(f, '// d1\n');
+  }
+  writeFileSync(join(home, 'agent-maturity', 'install-manifest.json'), `${JSON.stringify({
+    v: 1,
+    installedAt: '2026-11-19T10:00:00.000Z',
+    claudeHome: slash(home),
+    settingsPath: slash(settings),
+    backup: slash(backup),
+    settingsShaBefore: sha(originalBytes),
+    settingsShaAfter: sha(Buffer.from(text, 'utf8')),
+    hookCommand: ourCommand(home),
+    files: files.map(slash),
+  }, null, 2)}\n`);
+}
+const hasAgentMaturityHook = (settings) => JSON.stringify(settings).includes('agent-maturity/bin/hooks/');
+
+test('upgrade D1 -> D3 then uninstall leaves no agent-maturity hook and keeps every other hook', () => {
+  const { home, settings, bytes } = makeHome();
+  d1Install(home, settings, bytes);
+  const r = install({ claudeHome: home, env: ENV, now: new Date(Date.now() + 5_000) });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.equal(readSettings(settings).hooks.SessionStart.filter(isOurSession).length, 1);
+  assert.equal(backupsIn(home).length, 1, 'settings unchanged since D1: the original backup is reused, no new one');
+  const u = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(u.code, 0, u.lines.join('\n'));
+  assert.equal(u.mode, 'restore', u.lines.join('\n'));
+  assert.equal(hasAgentMaturityHook(readSettings(settings)), false, 'no dangling prompt-signal.mjs entry');
+  assert.deepEqual(readSettings(settings), ORIGINAL);
+  assert.deepEqual(readFileSync(settings), bytes);
+});
+
+test('upgrade after settings changed since D1: a backup that holds our hook is never restored', () => {
+  const { home, settings, bytes } = makeHome();
+  d1Install(home, settings, bytes);
+  const edited = readSettings(settings);
+  edited.theme = 'dark';
+  writeFileSync(settings, `${JSON.stringify(edited, null, 2)}\n`);
+  const r = install({ claudeHome: home, env: ENV, now: new Date(Date.now() + 5_000) });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  const manifest = JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8'));
+  assert.ok(readFileSync(manifest.backup, 'utf8').includes('prompt-signal.mjs'), 'the new backup holds the D1 hook');
+  const u = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(u.code, 0, u.lines.join('\n'));
+  assert.equal(u.mode, 'remove-group', u.lines.join('\n'));
+  assert.ok(u.lines.some((l) => /backup .* holds an agent-maturity hook/i.test(l)), u.lines.join('\n'));
+  const after = readSettings(settings);
+  assert.equal(hasAgentMaturityHook(after), false);
+  assert.deepEqual(after, { ...ORIGINAL, theme: 'dark' });
 });
