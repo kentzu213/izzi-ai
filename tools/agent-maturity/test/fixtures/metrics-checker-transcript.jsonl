@@ -1,0 +1,11 @@
+{"type":"user","uuid":"u-start","timestamp":"2026-11-12T08:59:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":"xem giúp màn hình đăng nhập"}}
+{"type":"assistant","uuid":"a-1","timestamp":"2026-11-12T08:59:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Đã sửa xong."}]}}
+{"type":"user","uuid":"u-corr-1","timestamp":"2026-11-12T09:00:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":[{"type":"text","text":"vẫn chưa được, chạy test lại rồi báo mã thoát"}]}}
+{"type":"user","uuid":"u-tool","timestamp":"2026-11-12T09:00:10.000Z","cwd":"F:/proj-a","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"làm lại"}]}}
+{"type":"user","uuid":"u-side","isSidechain":true,"timestamp":"2026-11-12T09:00:20.000Z","cwd":"F:/proj-a","message":{"role":"user","content":"làm lại"}}
+{"type":"user","uuid":"u-meta","isMeta":true,"timestamp":"2026-11-12T09:00:30.000Z","cwd":"F:/proj-a","message":{"role":"user","content":"làm lại"}}
+{"type":"user","uuid":"u-corr-2","timestamp":"2026-11-12T09:01:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":"không phải, nút đăng nhập sai màu rồi"}}
+{"type":"user","uuid":"u-clar","timestamp":"2026-11-12T09:02:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":"chưa hiểu, giải thích lại phần gradient tím"}}
+{"type":"user","uuid":"u-praise","timestamp":"2026-11-12T09:03:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":"được rồi"}}
+{"type":"user","uuid":"u-wrap","timestamp":"2026-11-12T09:04:00.000Z","cwd":"F:/proj-a","sessionId":"sess-x","message":{"role":"user","content":"<command-message>x</command-message>"}}
+{bad

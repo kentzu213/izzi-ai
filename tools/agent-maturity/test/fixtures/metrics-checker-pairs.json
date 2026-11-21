@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "note": "Synthetic standards and corrections for the checker harness tests. No real prompt text.",
+  "standards": [
+    {
+      "id": "std-real-tests",
+      "scope": "user",
+      "state": "active",
+      "created_at": "2026-11-01T00:00:00Z",
+      "title": "Chạy test thật trước khi báo xong",
+      "summary": "Báo cáo phải kèm lệnh test và mã thoát",
+      "topic_key": "real-test-before-done",
+      "keywords": ["chạy test", "mã thoát"]
+    },
+    {
+      "id": "std-live-sha",
+      "scope": "project",
+      "project_root": "F:/proj-a",
+      "state": "active",
+      "created_at": "2026-11-01T00:00:00Z",
+      "title": "Kiểm sha backend đang chạy trước khi deploy",
+      "summary": "So tag live trên VPS với nhánh định deploy",
+      "topic_key": "check-live-sha-before-deploy",
+      "keywords": ["kiểm sha"]
+    },
+    {
+      "id": "std-no-purple",
+      "scope": "user",
+      "state": "candidate",
+      "created_at": "2026-11-05T00:00:00Z",
+      "title": "Không dùng màu tím gradient cho giao diện",
+      "summary": "Giao diện dùng token màu của design system",
+      "keywords": ["màu tím"]
+    },
+    {
+      "id": "std-ask-merge-old",
+      "scope": "user",
+      "state": "superseded",
+      "created_at": "2026-11-01T00:00:00Z",
+      "title": "Luôn hỏi trước khi merge",
+      "keywords": ["merge"]
+    },
+    {
+      "id": "std-commit-later",
+      "scope": "user",
+      "state": "active",
+      "created_at": "2026-11-20T00:00:00Z",
+      "title": "Viết commit message theo conventional commits",
+      "keywords": ["conventional commits"]
+    }
+  ],
+  "pairs": [
+    { "id": "p01", "standard": "std-real-tests", "repeat": true,
+      "correction": { "text": "sai rồi, chưa chạy test mà đã báo xong", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p02", "standard": "std-real-tests", "repeat": true,
+      "correction": { "text": "báo cáo thiếu mã thoát của lệnh test", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p03", "standard": "std-real-tests", "repeat": false,
+      "correction": { "text": "nút này sai màu rồi", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p04", "standard": "std-live-sha", "repeat": true,
+      "correction": { "text": "không phải, phải kiểm sha bản đang chạy rồi mới deploy", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p05", "standard": "std-live-sha", "repeat": false,
+      "correction": { "text": "không phải, phải kiểm sha bản đang chạy rồi mới deploy", "project_root": "F:/proj-b", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p06", "standard": "std-live-sha", "repeat": true,
+      "correction": { "text": "deploy đè bản live rồi, kiểm tag trước", "project_root": "F:/proj-a/apps/web", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p07", "standard": "std-no-purple", "repeat": true,
+      "correction": { "text": "lại dùng gradient tím nữa rồi", "project_root": "F:/proj-b", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p08", "standard": "std-no-purple", "repeat": false,
+      "correction": { "text": "màu chữ trên nút giao diện bị mờ", "project_root": "F:/proj-b", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p09", "standard": "std-real-tests", "repeat": true,
+      "correction": { "text": "kết quả chưa kiểm chứng thì đừng nói là xong", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p10", "standard": "std-ask-merge-old", "repeat": false,
+      "correction": { "text": "sao lại merge mà không hỏi", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p11", "standard": "std-commit-later", "repeat": false,
+      "correction": { "text": "commit message phải theo conventional commits", "project_root": "F:/proj-a", "at": "2026-11-12T08:00:00Z" } },
+    { "id": "p12", "standard": "std-real-tests", "repeat": true,
+      "correction": { "transcript": "metrics-checker-transcript.jsonl", "uuid": "u-corr-1" } },
+    { "id": "p13", "standard": "std-real-tests", "repeat": true,
+      "correction": { "transcript": "metrics-checker-transcript.jsonl", "uuid": "u-missing" } }
+  ]
+}
