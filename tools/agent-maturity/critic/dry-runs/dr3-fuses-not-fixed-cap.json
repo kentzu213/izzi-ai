@@ -1,0 +1,50 @@
+{
+  "schema": "agent-maturity/candidate@1",
+  "id": "dr3-fuses-not-fixed-cap",
+  "statement": "Gọi model nền chỉ khi có việc mới, kèm cầu chì (402 thì dừng, không gọi model dự phòng; timeout 90 giây; chặn vòng lặp); không đặt trần số lần gọi cố định; không chặn lần anh bấm.",
+  "kind": "procedure",
+  "scope": { "agent": "builder/root", "taskType": "thiết kế lần gọi model chạy nền", "projects": "all" },
+  "check": "Thiết kế có test cho: 402 thì dừng, không gọi dự phòng; timeout 90 giây; một lượt mỗi lúc; không có hoạt động mới thì 0 lần gọi; vòng lặp thì dừng; lần anh bấm không bị chặn.",
+  "evidence": [
+    {
+      "id": "plan-1.2-s2-daily-cap",
+      "type": "decision",
+      "at": "2026-11-19",
+      "source": "docs/izzi-v2/PLAN.md:25 (§1.2 'Vì sao từng có luật 1 lần/ngày')",
+      "note": "owner approved the S2 proposal of 1 background call per day on 19/11 ('Duyệt theo đề xuất')"
+    },
+    {
+      "id": "plan-2.3-budget-unclear",
+      "type": "correction",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md:80 (§2.3 example, Bằng chứng line)",
+      "note": "owner said 'ko hiểu lắm' about the budget; §1.2 re-explained it"
+    },
+    {
+      "id": "plan-0-d5-fuses",
+      "type": "approve_after_reject",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md §0 item (5) and §1.2 items 1-2",
+      "note": "owner decided: drop the fixed model-call cap, use call-on-real-work plus fuses instead"
+    },
+    {
+      "id": "plan-5-monthly-cap-off",
+      "type": "decision",
+      "at": "2026-11-21",
+      "source": "docs/izzi-v2/PLAN.md §5 'Đã chốt' item 1 and §1.2 item 2",
+      "note": "monthly spend cap off while only the owner uses it; revisit when other customers use it"
+    }
+  ],
+  "flags": { "changesWorkflow": true },
+  "existingStandards": [
+    {
+      "id": "research-6-cost-rule",
+      "statement": "docs/izzi-v2/AGENT-MATURITY-RESEARCH.md:199 (§6 hard rules kept from S1-S4): 1 model call per day for every agent; stop on 402; MyGraph write at most once per day."
+    },
+    {
+      "id": "plan-1.2-mygraph-write",
+      "statement": "docs/izzi-v2/PLAN.md:32 (§1.2 item 3): keep the MyGraph write rule separately: write only when the content fingerprint changes, at most once per day per account."
+    }
+  ],
+  "research": { "refs": [] }
+}

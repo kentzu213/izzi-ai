@@ -61,19 +61,36 @@ instructions. When a standard and those conflict, the governing instructions win
 - **Nâng cấp:**
   1. **Root only** captures the candidate (commands below). A subagent never writes the store; it returns the
      proposal (claim, scope, check, evidence, source = session id + time) to root.
-  2. Socrates reviews once against the evidence and existing standards on the same topic: does the evidence support
-     the sentence, is the scope too wide, does it contradict an active standard, is the research tier right?
-     Verdict: ACCEPT / NARROW / NEED-MORE / REJECT.
-  3. Research tier: R0 (preference) none; R1 (content, ads, claims) 1–2 sources; R2 (process change, or touches law
-     or security) deep research, then Socrates again. At most 1 critique + 1 rewrite per candidate.
-  4. ACCEPT with the sentence unchanged: root promotes (the owner approved that exact sentence). NARROW or changed
-     wording: show the owner the diff and promote only after OK. NEED-MORE: keep the candidate, set a review date.
-     REJECT: keep the candidate and give the reason; the owner may still force approval, except a standard in the
-     hard-REJECT class below, which root never promotes.
-  5. A new standard that contradicts an old one: capture and promote the new one, then `supersede` the old one
+  2. Root writes the candidate file (schema in `<am>/critic/README.md`, examples in `<am>/critic/dry-runs/`): id,
+     the approved sentence, kind, scope, check, evidence ids oldest first with where each is recorded, flags
+     (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is
+     `tools/agent-maturity` in the Starizzi checkout; the installed runtime does not copy `critic/` yet.
+  3. `node <am>/critic/brief.mjs <candidate.json> --store <dir>` picks the research tier, checks the loop guard and
+     prints the standard brief. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the brief
+     unchanged as the prompt of the `socrates` agent. Never run socrates on a candidate without this brief.
+  4. Socrates critiques once and researches only inside the tier's budget:
+     - R0 (pure preference, or a procedure that only changes phrasing): no research.
+     - R1 (content, ads, claims; pitfalls): one cheap cited lookup (WebSearch, perplexity_search or
+       perplexity_ask), at most 2 sources.
+     - R2 (process that changes the way of working, or law or security): one deep run (perplexity_research, or
+       firecrawl_search plus at most 3 scrapes), at most 5 sources; ACCEPT or NARROW needs that deep run.
+     - Owner-private content: no external research at any tier. ChatGPT web: never.
+  5. Save socrates' reply to a file and run
+     `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <dir>`. It validates the verdict
+     (exit 1 = invalid: ask socrates to fix only the JSON; nothing is stored and it does not count), applies the
+     hard-REJECT floor and the loop guard, stores the verdict with the candidate and prints `decision`.
+  6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence) ·
+     `show_diff` (NARROW or reworded: show the owner the diff, promote only after OK) · `hold` (NEED-MORE-EVIDENCE:
+     keep it until `reviewAfter`; REJECT: give the reason, the owner may still force approval) · `refuse`
+     (hard-REJECT class below: never promoted, even when forced).
+  7. Loop guard: per candidate 1 critique + 1 rewrite, and the rewrite gets one re-check (critique 2 needs new
+     input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final.
+  8. Until slice D3 plugs in the KnowledgeMemory adapter, `--store` is a temp folder (for example
+     `F:/Ai Tools/Codex/Temp/agent-maturity-critic/`), never `~/.claude`.
+  9. A new standard that contradicts an old one: capture and promote the new one, then `supersede` the old one
      (history is kept). To drop a standard: `retract` with a reason.
-  6. After every promote, supersede or retract, re-export the active standards for later sessions (slice D3; until
-     D3 exists, say so in the report).
+  10. After every promote, supersede or retract, re-export the active standards for later sessions (slice D3;
+      until D3 exists, say so in the report).
 
 ## Not a yes-machine
 
@@ -82,6 +99,7 @@ instructions. When a standard and those conflict, the governing instructions win
     "do not mention failed checks");
   - expands authority (for example "deploy, push or send without asking", "skip review or tests", "approve your own
     PR", "use credentials or permissions you were not given").
+  `record-verdict.mjs` also refuses any verdict other than REJECT when the wording plainly matches one of these.
   Root never promotes it, even when the owner chose Nâng cấp; tell the owner which policy it would loosen. Those
   policies change only by editing the governing instructions directly. The owner's live instruction in a session
   still governs that session; only storing it as a standard is refused.

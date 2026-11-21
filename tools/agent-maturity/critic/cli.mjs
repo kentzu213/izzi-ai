@@ -1,0 +1,76 @@
+// Shared helpers for the critic CLIs (brief.mjs, record-verdict.mjs).
+// Exit codes: 0 ok · 1 invalid input · 2 usage · 3 blocked by the loop guard (do not run socrates).
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { validateCandidate } from './candidate.mjs';
+
+export const EXIT = Object.freeze({ ok: 0, invalid: 1, usage: 2, blocked: 3 });
+
+export class CliError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.exitCode = code;
+  }
+}
+
+// <positional...> --store <dir>; --store is required so nothing ever lands in a default location.
+export function parseCliArgs(argv, positionalNames) {
+  const positional = [];
+  let store = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--store') {
+      store = argv[i + 1];
+      i += 1;
+    } else if (argv[i].startsWith('--')) {
+      throw new CliError(EXIT.usage, `unknown option ${argv[i]}`);
+    } else {
+      positional.push(argv[i]);
+    }
+  }
+  if (positional.length !== positionalNames.length || !store) {
+    throw new CliError(EXIT.usage, `usage: ${positionalNames.map((n) => `<${n}>`).join(' ')} --store <dir>`);
+  }
+  return { positional, store: path.resolve(store) };
+}
+
+// Files saved by Windows editors may start with a UTF-8 BOM; drop it.
+export function readTextFile(file, label) {
+  try {
+    const content = fs.readFileSync(file, 'utf8');
+    return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+  } catch (error) {
+    throw new CliError(EXIT.invalid, `cannot read ${label} ${file}: ${error.code ?? error.message}`);
+  }
+}
+
+export function readCandidateFile(file) {
+  let raw;
+  try {
+    raw = JSON.parse(readTextFile(file, 'candidate'));
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw new CliError(EXIT.invalid, `candidate ${file} is not valid JSON`);
+  }
+  const r = validateCandidate(raw);
+  if (!r.ok) throw new CliError(EXIT.invalid, `invalid candidate: ${r.errors.map((e) => e.code).join(', ')}`);
+  return r.value;
+}
+
+export function runMain(main, argv) {
+  try {
+    process.exitCode = main(argv) ?? EXIT.ok;
+  } catch (error) {
+    if (error instanceof CliError) {
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = error.exitCode;
+      return;
+    }
+    process.stderr.write(`unexpected error: ${error && error.message}\n`);
+    process.exitCode = EXIT.invalid;
+  }
+}
+
+export const invokedDirectly = (filename) =>
+  Boolean(process.argv[1]) && path.resolve(process.argv[1]).toLowerCase() === filename.toLowerCase();
