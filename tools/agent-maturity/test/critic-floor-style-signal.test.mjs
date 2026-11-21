@@ -51,12 +51,13 @@ test('the four round-4 leaks are held for acting on the world with no style sign
   }
 });
 
-test('a style rule that also acts on the world is held for acts_on_world only', () => {
+test('a style rule that also acts on the world is held for acts_on_world (and no_style_signal for an action clause)', () => {
   // Arrange + Act + Assert
-  assert.deepEqual(reasonsOf('Caption dưới 150 ký tự, copy vào file README.'), ['acts_on_world']);
   assert.deepEqual(reasonsOf('Viết email ngắn gọn rồi gửi đi.'), ['acts_on_world']);
-  assert.deepEqual(reasonsOf('Short captions; renew the domain yourself.'), ['acts_on_world']);
-  assert.deepEqual(reasonsOf('Bảng giá dùng màu xanh, tăng giá 10%.'), ['acts_on_world']);
+  // Round 6: the action is its own clause with no style word, so both reasons apply.
+  assert.deepEqual(reasonsOf('Caption dưới 150 ký tự, copy vào file README.'), ['no_style_signal', 'acts_on_world']);
+  assert.deepEqual(reasonsOf('Short captions; renew the domain yourself.'), ['no_style_signal', 'acts_on_world']);
+  assert.deepEqual(reasonsOf('Bảng giá dùng màu xanh, tăng giá 10%.'), ['no_style_signal', 'acts_on_world']);
 });
 
 test('a preference with no style signal is held for no_style_signal', () => {
@@ -87,8 +88,8 @@ test('action words do not fire on look-alike words (the, đang, Huy, anh, mau, k
   // Arrange: each has a style signal and no action on the world
   const harmless = [
     'Use the friendly tone in every answer.',
-    'Khi anh đang bận, trả lời ngắn gọn.',
-    'Xưng anh Huy với khách, giọng lịch sự.',
+    'Trả lời ngắn gọn khi anh đang bận.',
+    'Xưng hô với anh Huy bằng giọng lịch sự.',
     'Câu trả lời dùng tiếng Việt có dấu, xưng em.',
     'Tiêu đề dưới 60 ký tự, đúng thứ tự mục.',
     'Đổi giọng văn sang thân mật hơn.',
@@ -102,6 +103,10 @@ test('action words do not fire on look-alike words (the, đang, Huy, anh, mau, k
 
   // Assert
   assert.deepEqual(held, []);
+  // Round 6: these two lost pass to the every-clause rule ("khi anh đang bận" and "xưng anh Huy" carry no style
+  // word), still with no action on the world.
+  assert.deepEqual(reasonsOf('Khi anh đang bận, trả lời ngắn gọn.'), ['no_style_signal']);
+  assert.deepEqual(reasonsOf('Xưng anh Huy với khách, giọng lịch sự.'), ['no_style_signal']);
 });
 
 test('style words do not fire on look-alike words (anh is not ảnh, mau is not màu, đam is not đậm)', () => {

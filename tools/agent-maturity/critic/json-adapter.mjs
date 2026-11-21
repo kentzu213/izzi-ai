@@ -7,6 +7,8 @@
 //   listEvents(candidateId) -> [...]    the events of one candidate, oldest first (the loop guard reads them);
 //                                       one torn trailing log line (an interrupted append) is skipped
 //   listBriefsForStatement(key) -> [...] the brief_generated events with this statementKey under ANY candidate id
+//   listPromotionApprovals() -> [...]   the promotion_approved events of the whole store, oldest first (the promote
+//                                       gate refuses one owner answer for two texts)
 //   saveBrief(snapshot)                 store what brief.mjs printed, keyed by candidate id + inputFingerprint
 //   loadBrief(candidateId, fp) -> snapshot | null
 //   addHardReject(entry)                index a hard-REJECTed statement { statementKey, candidateId, ... }
@@ -38,6 +40,7 @@ export const ADAPTER_METHODS = Object.freeze([
   'logEvent',
   'listEvents',
   'listBriefsForStatement',
+  'listPromotionApprovals',
   'saveBrief',
   'loadBrief',
   'addHardReject',
@@ -250,6 +253,9 @@ export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs 
     },
     listBriefsForStatement(statementKey) {
       return readLog().filter((e) => e && e.type === 'brief_generated' && e.statementKey === statementKey);
+    },
+    listPromotionApprovals() {
+      return readLog().filter((e) => e && e.type === 'promotion_approved');
     },
     saveBrief(snapshot) {
       withLock(() => writeJsonAtomic(briefFile(snapshot.candidateId, snapshot.inputFingerprint), snapshot));

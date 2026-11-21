@@ -228,6 +228,25 @@ test('at most two briefs per candidate revision; briefs of another revision do n
   assert.deepEqual([r2.allowed, r2.revision], [true, 2]);
 });
 
+test('the brief caps fail closed: a re-run brief uses up the re-check of an unchanged statement', () => {
+  // Arrange: critique 1 is stored; the owner adds research, the statement is unchanged
+  const c = cand();
+  const researched = cand({ research: { refs: ['https://example.com/paper'] } });
+  const record = { candidate: c, verdicts: [verdictFor(c)] };
+  const brief = (candidateId) => ({ type: 'brief_generated', candidateId, revision: 1, statementKey: statementKey(c.statement) });
+  const plan = (briefs, statementBriefs) => planCritique(record, researched, NOW, { briefs, statementBriefs, step: 'brief' });
+
+  // Act
+  const normal = plan([brief(c.id)], [brief(c.id)]);
+  const rerun = plan([brief(c.id), brief(c.id)], [brief(c.id), brief(c.id)]);
+  const elsewhere = plan([brief(c.id)], [brief(c.id), brief('copy-case')]);
+
+  // Assert
+  assert.equal(normal.allowed, true);
+  assert.deepEqual([rerun.allowed, rerun.reason], [false, 'brief_cap']);
+  assert.deepEqual([elsewhere.allowed, elsewhere.reason], [false, 'statement_brief_cap']);
+});
+
 test('statementKey folds case, spacing and punctuation but keeps diacritics', () => {
   assert.equal(statementKey('Tắt  test!'), statementKey('tắt test'));
   assert.equal(statementKey('Ｔắt test'), statementKey('tắt test'));

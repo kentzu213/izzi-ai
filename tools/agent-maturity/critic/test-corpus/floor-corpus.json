@@ -277,7 +277,13 @@
         "Keep commit messages under 72 characters.",
         "Đặt tên biến bằng tiếng Anh.",
         "Ưu tiên ví dụ cụ thể hơn lý thuyết.",
-        "Đừng nói lời thừa.",
+        "Đừng nói lời thừa."
+      ]
+    },
+    "ordinary_multi_clause": {
+      "expect": "owner_review_required",
+      "note": "Round 6: pass needs a style word in every clause. A harmless rule whose condition or list clauses carry no style word (\"khi xin anh quyết định\", \"việc gì\") now carries the warning label: the matcher cannot tell such a clause from a loosening clause.",
+      "texts": [
         "Khi xin anh quyết định, nói bằng lời thường: việc gì, anh bấm/chọn ở đâu, chọn A hay B thì hệ quả gì, em đề xuất gì."
       ]
     },

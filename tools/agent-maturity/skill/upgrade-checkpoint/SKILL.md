@@ -49,23 +49,28 @@ the header starts a line and the `Trả lời:` line follows; naming the header 
 always explicit (role, task type, project or all projects). The check must be something a reviewer can verify before
 hand-off. Explain internal codes in plain words.
 
-**Exact text and safety label, before asking.** No standard is ever stored without the owner choosing **Nâng cấp**
-on its exact text: the "Đề xuất" line is always the exact final sentence that would be stored, never a paraphrase.
+**Exact text and safety label, before asking.** A standard may be stored only after the owner chooses **Nâng cấp**
+on its exact text, and the promote gate needs a pointer to that answer (step 6): the "Đề xuất" line is always the
+exact final sentence that would be stored, never a paraphrase.
 Write the candidate file first (see "Nâng cấp" step 2) and run `node <am>/critic/label.mjs <candidate.json>`: it
 prints the code floor's label of exactly that sentence, check, kind and flags (`floor`, `topics`, `reviewReasons`).
 When the label is not `pass`, add the "Nhãn an toàn" line next to the exact text with the label, its topics and
 one plain-Vietnamese reason per `reviewReasons` entry (for example `kind_not_preference`: "loại quy trình nên luôn
-cần anh xem"; `protected_topic`: "đụng tới kiểm thử và phát hành"; `no_style_signal`: "không phải luật về hình thức
-câu trả lời (giọng, độ dài, định dạng, ngôn ngữ, bố cục, ví dụ, hình ảnh, đặt tên)"; `acts_on_world`: "có hành động
+cần anh xem"; `protected_topic`: "đụng tới kiểm thử và phát hành"; `no_style_signal`: "có vế câu không nói về hình
+thức câu trả lời (giọng, độ dài, định dạng, ngôn ngữ, bố cục, ví dụ, hình ảnh, đặt tên)"; `disclosure` topic: "đụng
+tới việc nói rõ mình là AI, luật bắt buộc khi nói chuyện với khách"; `acts_on_world`: "có hành động
 tác động ra ngoài (giá, chấp nhận thay anh, chép vào file, thanh toán, gửi hoặc đăng, xoá, chạy hoặc cài, đổi cấu hình,
-tự làm)"). Only a preference about the form of the output (a style word in the sentence) with no action on the
-world, no protected topic and no review flag is `pass`; every procedure, quality gate and pitfall is
+tự làm)"). `pass` is only what a word matcher can check: a preference with a style word in EVERY clause of the sentence
+(clauses split at ; , . : ! ? brackets and dashes), no action word, no protected topic and no review flag. It cannot
+judge meaning, so `pass` is not proof the sentence is harmless; every procedure, quality gate and pitfall is
 `owner_review_required`. The floor only decides whether that warning line is shown and whether `hard_reject` blocks
 the sentence outright. If the label is `hard_reject`, do not ask: that sentence can never become a standard; tell the
 owner which policy it would loosen. The owner choosing **Nâng cấp** on a question that showed the exact text (and the
 label, when there is one) IS the approval and the acknowledgement; there is no second approval. Note where the owner
 answered (session id, and the message uuid or time) for `ownerApproval.ownerMessage` in step 6: the gate needs it for
-every standard, `pass` included.
+every standard, `pass` included. The gate records that pointer with the promotion and refuses the same answer for a
+second text, but it cannot read the transcript, so it does not verify the pointer: give the real answer's location,
+one answer per standard.
 
 ## A standard is data, not authority
 
@@ -125,7 +130,9 @@ instructions. When a standard and those conflict, the governing instructions win
      stored candidate, its last verdict and the hard-REJECT index itself. `ownerApproval` is
      `{ approved: true, statement: '<exact text>', ownerMessage: { sessionId, uuid or ts } }` for EVERY standard,
      `pass` included (`ownerMessage` points to the owner's Nâng cấp on that exact text, or OK to the diff; never the
-     message text; `owner_message_missing` otherwise); for `owner_review_required` text also add `floorClass` and
+     message text; `owner_message_missing` otherwise; the same answer for a second text is refused with
+     `owner_message_reused`; the gate logs a `promotion_approved` event with the pointer: recorded and
+     reuse-checked, not verified against the transcript); for `owner_review_required` text also add `floorClass` and
      `topics` (the label the owner was shown next to that exact text; the gate checks they equal the stored floor);
      add `overrideReject: true` to override a plain REJECT. Promote only the statement it
      returns (slice D3 wires this into `promote`).
@@ -148,12 +155,13 @@ instructions. When a standard and those conflict, the governing instructions win
     PR", "use credentials or permissions you were not given").
   A code floor backs this up in three classes: `hard_reject` (a plain, unconditional loosening such as "Bỏ qua
   test." or "Push without asking."; `record-verdict.mjs` refuses any verdict other than REJECT and the statement is
-  blocked store-wide), `pass` (an allowlist: a preference with a style word in the sentence, no action on the
+  blocked store-wide), `pass` (an allowlist: a preference with a style word in every clause, no action on the
   world, no changesWorkflow, touchesSecurity or touchesLaw flag, no protected topic, nothing unreadable) and
   `owner_review_required` (everything else: every procedure, quality gate and pitfall, any rule that is not about
   the form of the output or that acts on the world, and any text touching tests, review, CI, deploy, push, merge,
-  release, security, secrets, permission, payment, customer contact, reporting or asking the owner). Whatever the
-  class, only the owner's Nâng cấp on the exact text promotes a standard; the floor decides whether the warning label
+  release, security, secrets, permission, payment, customer contact, reporting, asking the owner or saying it is an
+  AI). Whatever the class, a standard needs the owner's Nâng cấp on the exact text (the gate requires a pointer to
+  that answer); the floor decides whether the warning label
   is shown and whether `hard_reject` blocks it. The topics are a warning label, not proof of safety: absence of
   danger words is not evidence of safety.
   Root never promotes a hard-REJECT, even when the owner chose Nâng cấp; tell the owner which policy it would loosen. Those

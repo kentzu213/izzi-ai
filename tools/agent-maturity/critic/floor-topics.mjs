@@ -1,6 +1,7 @@
 // Vocabulary of the code floor (floor.mjs): protected topics, STYLE signals and ACTIONS on the world. Topics are
 // LABELS for the owner's warning, not the safety boundary: pass is an allowlist (a preference with a style signal in
-// its statement, no action on the world and no review flag), and a topic hit only keeps a preference out of pass. The
+// every clause of its statement, no action on the world and no review flag), and a topic hit only keeps a preference
+// out of pass. The
 // checkpoint question shows the label next to the exact text whenever the floor is not pass.
 //
 // Each topic lists its words by what they need to count:
@@ -67,13 +68,16 @@ export const CONTEXT = Object.freeze({
 });
 
 // STYLE signals: words about the form of the agent's own output (tone, length, format, language, structure,
-// examples, visuals of produced content, naming and commit-message style). pass needs one in the statement. They are
-// matched exactly as written, never accent-folded or de-leeted: a positive signal must not be read into a text
-// ("anh" is not "ảnh", "mau" is not "màu").
+// examples, visuals of produced content, naming and commit-message style). pass needs one in every clause of the
+// statement (floor.mjs). They are matched exactly as written, never accent-folded or de-leeted: a positive signal must
+// not be read into a text ("anh" is not "ảnh", "mau" is not "màu").
+// "xưng" alone is not one: "xưng là nhân viên thật", "xưng anh Huy" claim an identity. Only "xưng hô" (the form of
+// address) and a clause that is nothing but a pronoun choice ("xưng em", "xưng em với anh") count.
+const PRONOUN_CHOICE = 'xưng (?:em|anh|chị|mình|tôi|tớ)(?: với (?:anh|chị|em|bạn|khách(?: hàng)?|quý khách|mọi người))?$';
 export const STYLE = Object.freeze([
   // tone
-  'tones?', 'giọng', 'giọng văn', 'giọng điệu', 'văn phong', 'xưng hô', 'xưng', 'thân thiện', 'lịch sự', 'trang trọng',
-  'thân mật', 'gần gũi', 'hài hước', 'friendly', 'polite', 'formal', 'informal', 'casual',
+  'tones?', 'giọng', 'giọng văn', 'giọng điệu', 'văn phong', 'xưng hô', PRONOUN_CHOICE, 'thân thiện', 'lịch sự',
+  'trang trọng', 'thân mật', 'gần gũi', 'hài hước', 'friendly', 'polite', 'formal', 'informal', 'casual',
   // length and wording
   'length', 'độ dài', 'ngắn gọn', 'ngắn(?! hạn)', 'gọn', 'súc tích', 'dài dòng', 'rườm rà', 'lời thừa', 'từ thừa', 'concise(?:ly)?',
   'verbose', 'brevity', 'ký tự', 'kí tự', 'characters?', 'chars?', '\\d+ từ', 'từ ngữ', 'dùng từ', 'words?', 'wording',
@@ -243,6 +247,16 @@ export const TOPICS = Object.freeze({
       `kệ${CLAUSE_END}`, 'ignor(?:e|es|ed|ing)', 'disabl(?:e|es|ed|ing)', 'turn(?:s|ed|ing)? off', '(?<!(?:tóm|viết) )tắt',
       'không cần', 'ko cần', 'k cần', 'khỏi cần', 'chẳng cần', '(?<!ra )khỏi', 'no need', "don't need", "needn't",
       "don't bother", 'comment(?:s|ed|ing)? out',
+    ],
+  },
+  // Whether the agent says it is automated: Luật 134/2025/QH15 Điều 11.1 requires an AI talking to customers to say so,
+  // so any rule about it ("đừng nói mình là AI", "xưng là nhân viên thật", or a tightening) goes to the owner. "ai" is
+  // also Vietnamese for "who"; it is read as AI anyway, which only sends the text to the owner.
+  disclosure: {
+    always: [
+      'ai', 'a\\.i\\.?', 'trí tuệ nhân tạo', 'artificial intelligence', 'bots?', 'chatbots?', 'robots?', 'người máy',
+      'trợ lý ảo', 'virtual assistants?', 'tự động', 'automat(?:ed|ic|ically|ion)', 'người thật', 'nhân viên thật',
+      'real (?:person|people|humans?)', 'humans?', 'disclos(?:e|es|ed|ing|ure)', 'công bố', 'tiết lộ',
     ],
   },
 });

@@ -20,6 +20,12 @@
 // owner_review_required text also needs floorClass and topics equal to the floor stored with the verdict, which must
 // still be the floor of that text today (a label given with a pass text must match too). NEED-MORE-EVIDENCE is never
 // promotable; hard_reject never.
+// Audit trail: a promotion that clears every check appends, under the store lock, a promotion_approved event
+// { candidateId, statementKey, floorClass, ownerMessage, at } and returns ownerMessage with the statement. One
+// checkpoint answer approves one text: an ownerMessage already logged for a different statementKey (same session and
+// the same uuid or the same instant) is refused (owner_message_reused). The pointer is RECORDED and REUSE-CHECKED
+// here, not verified: the gate cannot read the transcript. Checking it against the D1 hook outcome log (the message
+// exists, is the owner's, and answered Nâng cấp to this exact text) is an integration item for D2/D3.
 // Throws PromotionRefused with a code, or returns what may be promoted.
 
 import { isObject, text, validateCandidate } from './candidate.mjs';
@@ -145,6 +151,24 @@ function checkOwnerMessage(approval) {
   }
 }
 
+// Two pointers name the same answer when they share the session and the message uuid or its instant.
+const instant = (ts) => {
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) ? ms : ts;
+};
+function sameAnswer(a, b) {
+  if (!isObject(a) || !isObject(b) || a.sessionId !== b.sessionId) return false;
+  const uuid = typeof a.uuid === 'string' && typeof b.uuid === 'string' && a.uuid.toLowerCase() === b.uuid.toLowerCase();
+  const ts = typeof a.ts === 'string' && typeof b.ts === 'string' && instant(a.ts) === instant(b.ts);
+  return uuid || ts;
+}
+
+// One checkpoint answer approves one text.
+function checkMessageUnused(adapter, ownerMessage, key) {
+  const reused = adapter.listPromotionApprovals().find((e) => e.statementKey !== key && sameAnswer(e.ownerMessage, ownerMessage));
+  if (reused) refuse('owner_message_reused', `this owner answer already approved another text (candidate ${reused.candidateId})`);
+}
+
 function checkIndex(adapter, statements) {
   for (const statement of statements) {
     const hit = adapter.findHardReject(statementKey(statement));
@@ -152,7 +176,7 @@ function checkIndex(adapter, statements) {
   }
 }
 
-function assertLocked(adapter, candidateId, approval) {
+function assertLocked(adapter, candidateId, approval, now) {
   const { candidate, verdicts } = loadRecord(adapter, candidateId);
   checkCandidate(candidate, candidateId);
   const verdict = checkVerdict(candidate, verdicts.at(-1));
@@ -172,6 +196,17 @@ function assertLocked(adapter, candidateId, approval) {
   checkStoredFloor(verdicts.at(-1), floor);
   checkFloorAck(approval, floor);
   checkOwnerMessage(approval);
+  const key = statementKey(statement);
+  checkMessageUnused(adapter, approval.ownerMessage, key);
+  const ownerMessage = { ...approval.ownerMessage };
+  adapter.logEvent({
+    type: 'promotion_approved',
+    candidateId: candidate.id,
+    statementKey: key,
+    floorClass: floor.floor,
+    ownerMessage,
+    at: now.toISOString(),
+  });
   return {
     candidateId: candidate.id,
     revision: candidate.revision,
@@ -179,10 +214,11 @@ function assertLocked(adapter, candidateId, approval) {
     verdict: verdict.verdict,
     floor: floor.floor,
     statement,
+    ownerMessage,
   };
 }
 
-export function assertPromotable({ adapter, candidateId, ownerApproval } = {}) {
+export function assertPromotable({ adapter, candidateId, ownerApproval, now = new Date() } = {}) {
   assertAdapter(adapter);
-  return adapter.withLock(() => assertLocked(adapter, candidateId, ownerApproval));
+  return adapter.withLock(() => assertLocked(adapter, candidateId, ownerApproval, now));
 }

@@ -156,6 +156,7 @@ test('brief.mjs prints the brief with its inputFingerprint and stores only a sna
     ['brief_generated', 'cli-case', 1, fp, sha(r.stdout), 'pass'],
   );
   assert.match(r.stdout, /Code floor: pass/);
+  assert.match(r.stdout, /a style word in every clause, no action word\. The matcher cannot judge meaning; judge it yourself/);
   assert.equal(existsSync(join(store, '.lock')), false, 'lock released');
 });
 
