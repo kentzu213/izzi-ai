@@ -2,7 +2,7 @@
 
 Kế hoạch ở `PLAN.md`; báo cáo nghiên cứu ở `AGENT-MATURITY-RESEARCH.md`. Nhánh epic: `feature/izzi-v2-agent-maturity`.
 
-Cập nhật lần cuối: 2026-11-20, root. Trạng thái kế hoạch: anh đã chốt 6 quyết định ngày 20/11; `PLAN.md` §5 còn 4 câu hỏi nhỏ.
+Cập nhật lần cuối: 2026-11-21, root. Trạng thái kế hoạch: anh đã chốt 6 quyết định ngày 20/11; `PLAN.md` §5 còn 4 câu hỏi nhỏ.
 
 ## Cách đọc
 
@@ -27,7 +27,7 @@ Cập nhật lần cuối: 2026-11-20, root. Trạng thái kế hoạch: anh đ�
 | Slice | Nhánh | PR | Phiên Claude Code | Trạng thái | Xong khi | Bằng chứng | Review độc lập | Anh nghiệm thu |
 |---|---|---|---|---|---|---|---|---|
 | D0 | `izzi-v2/d0-gold-set` | — | — | chưa làm | ≥200 câu có nhãn, chia dev/test; anh đã xem lại các câu duyệt, khen, cam chịu và không chắc; có baseline | — | — | — |
-| D1 | `izzi-v2/d1-checkpoint-hook` | [#74](https://github.com/kentzu213/izzi-ai/pull/74) | subagent builder trong phiên root `38d4ca41` (20/11) | **chờ anh nghiệm thu** | `pnpm run test:agent-maturity` xanh; lỗi nghiêm trọng = 0; chưa đụng `~/.claude` thật (PLAN §4.8) | root chạy lại: 93/93 test; thăm dò giấu 46 câu, 0 lỗi nghiêm trọng; 20 câu thăm dò riêng của root 0 lỗi (sau e884744); settings.json thật không đổi | socrates (spec) ACCEPT-WITH-FIXES; reviewer APPROVE-WITH-FIXES, đã sửa ở 9a8fe0c + e884744 | — |
+| D1 | `izzi-v2/d1-checkpoint-hook` | [#74](https://github.com/kentzu213/izzi-ai/pull/74) | subagent builder trong phiên root `38d4ca41` (20/11) | **xong** | `pnpm run test:agent-maturity` xanh; lỗi nghiêm trọng = 0; chưa đụng `~/.claude` thật (PLAN §4.8) | merge `03b794c` vào nhánh epic (21/11); CI PR xanh macOS + Windows; root chạy lại sau merge: 93/93 test, thăm dò giấu 46 câu 0 lỗi nghiêm trọng; settings.json thật không đổi | socrates (spec) ACCEPT-WITH-FIXES; reviewer APPROVE-WITH-FIXES, đã sửa ở 9a8fe0c + e884744 | ok (21/11) |
 | D2 | `izzi-v2/d2-live-install` | — | — | chưa làm | Đạt cổng D0 (precision ≥0,9; cam chịu bị tính là duyệt = 0); hook chạy trong phiên thật; 0 câu lệnh bị chặn; chạy 7 ngày | — | — | — |
 | D3 | `izzi-v2/d3-standards-store` | — | — | chưa làm | Vòng capture → promote → export → supersede chạy trên kho tạm; khối chèn ≤1200 ký tự; kho thật không đổi | — | — | — |
 | D4 | `izzi-v2/d4-critic-research` | — | — | chưa làm | 3 lần chạy thử có verdict; lần phản biện thứ 3 bị chặn | — | — | — |

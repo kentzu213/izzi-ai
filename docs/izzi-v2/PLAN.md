@@ -28,7 +28,7 @@ Từ viết tắt: **S1–S4** là 4 bước bộ nhớ agent trong app izzi đ�
 
 **Đề xuất: bỏ trần cố định, chuyển sang "có việc mới gọi" kèm cầu chì.**
 1. Chỉ gọi khi có việc thật: hoạt động mới, ứng viên cần phản biện, hoặc anh bấm "Tra cứu thêm". Không có việc thì 0 lần gọi. Cùng một đầu vào không trả tiền hai lần (giữ luật S2).
-2. Cầu chì: gặp 402 thì dừng ngay, không thử model dự phòng, báo anh · mỗi lần gọi hết hạn sau 90 giây, mỗi lúc một lượt (như S2) · mỗi ứng viên tối đa 1 lần phản biện + 1 lần viết lại; R1 ≤2 nguồn, R2 ≤1 lần chạy sâu · **bộ phát hiện vòng lặp** thay cho trần theo giờ: cùng một fingerprint đầu vào bị gọi lại, hoặc N lần gọi liền nhau mà không có hoạt động mới, thì tạm dừng và báo. Bộ này chỉ áp cho lần gọi nền, không bao giờ chặn lần gọi do anh bấm, và có nút "Tiếp tục" · tuỳ chọn: trần chi tiêu theo tháng do anh đặt, hiện trong app, cảnh báo khi đã dùng 4/5 trần, dừng khi chạm trần.
+2. Cầu chì: gặp 402 thì dừng ngay, không thử model dự phòng, báo anh · mỗi lần gọi hết hạn sau 90 giây, mỗi lúc một lượt (như S2) · mỗi ứng viên tối đa 1 lần phản biện + 1 lần viết lại; R1 ≤2 nguồn, R2 ≤1 lần chạy sâu · **bộ phát hiện vòng lặp** thay cho trần theo giờ: cùng một fingerprint đầu vào bị gọi lại, hoặc N lần gọi liền nhau mà không có hoạt động mới, thì tạm dừng và báo. Bộ này chỉ áp cho lần gọi nền, không bao giờ chặn lần gọi do anh bấm, và có nút "Tiếp tục" · trần chi tiêu theo tháng: **tắt** (anh chốt 21/11: hiện chỉ anh dùng). Khi có khách hàng khác dùng thì xét lại.
 3. **Giữ riêng** luật ghi MyGraph: chỉ ghi khi fingerprint nội dung đổi, tối đa 1 lần/ngày/tài khoản. Điều kiện kết thúc: khi quota Supabase hết bị hạn chế, hoặc khi đồng bộ không còn tải lại toàn bộ danh sách mỗi lần ETag đổi.
 
 Vì sao an toàn: giá niêm yết `gpt-6-luna` là $0,10 vào / $0,50 ra cho 1 triệu token (`MYGRAPH-AGENT-MEMORY.md` §4). 100 lần gọi/ngày, mỗi lần 20 nghìn token vào và 2 nghìn ra, tốn khoảng $0,30/ngày [suy luận: giá niêm yết, chưa phải giá credit izzi; model phản biện khác họ có giá khác]. Rủi ro thật là vòng lặp và 402, không phải giá mỗi lần gọi; cầu chì nhắm đúng hai rủi ro đó. Đổi code sản phẩm là slice **PB** (§3.3); phát hành cần anh OK như mọi bản desktop.
@@ -105,7 +105,7 @@ Quan hệ với các kho khác:
 - **Claude auto-memory** (`~/.claude/projects/<thư mục dự án>/memory/`) giữ việc đang giữ: trạng thái phát hành, sự cố, bẫy kỹ thuật. **Không ghi chuẩn vào đây**, để không có hai nguồn sự thật. Thêm nữa, mỗi worktree có thư mục dự án riêng và không có `memory/` [kiểm 2 worktree], nên phiên trong worktree slice nhiều khả năng không thấy MEMORY.md chính [suy luận]. Ghi chú cũ mang tính chuẩn (ví dụ "kiểm sha backend đang chạy trước khi deploy") được đưa vào kho làm ứng viên ở D3; anh duyệt từng cái.
 - **Phiên Claude đọc chuẩn** qua SessionStart hook (D3): đọc bản xuất `~/.claude/agent-maturity/standards.json`, chọn chuẩn đang dùng của phạm vi user và của dự án hiện tại (worktree quy về dự án gốc), chèn ≤1200 ký tự.
 - **Phiên Codex** đọc thẳng bằng `recall` như hiện nay.
-- **Phạm vi:** chuẩn học trong worktree slice ghi cho dự án gốc (id ở trên) hoặc phạm vi user, không ghi cho worktree, vì kho coi mỗi worktree là một dự án khác.
+- **Phạm vi (anh chốt 21/11: áp cho mọi dự án):** chuẩn mặc định ghi ở phạm vi **user**, để mọi dự án anh đang làm đều được nâng cấp liên tục, kể cả chuẩn quy trình kỹ thuật. Chỉ ghi phạm vi project khi chuẩn rõ ràng gắn với một codebase (nhắc file, lệnh hay hạ tầng riêng của dự án đó); khi đó ghi cho dự án gốc, không ghi cho worktree, vì kho coi mỗi worktree là một dự án khác. Hook đã cài ở cấp user nên chạy ở mọi dự án.
 
 ### 2.6 Đo
 
@@ -297,7 +297,11 @@ Nội dung nhắc bằng tiếng Anh cho model, tối đa 700 ký tự, không c
 
 ## 5. Câu hỏi còn mở cho anh
 
-1. Trần chi tiêu theo tháng trong sản phẩm (§1.2): bật mặc định ở mức bao nhiêu, hay để tắt?
-2. Tập vàng D0: anh đồng ý để root gắn nhãn, anh chỉ xem lại 30–50 câu dễ sai?
-3. Phạm vi chuẩn học từ phiên dev: em đề xuất chuẩn giao tiếp áp cho mọi dự án, chuẩn quy trình kỹ thuật chỉ áp cho Starizzi trong lúc pilot. Anh đồng ý không?
+Đã chốt ngày 21/11:
+1. Trần chi tiêu theo tháng: **tắt** (chỉ anh dùng).
+2. Tập vàng D0: root gắn nhãn, anh chỉ xem lại 30–50 câu dễ sai: **đồng ý**.
+3. Phạm vi: **mọi dự án**, cả chuẩn giao tiếp lẫn chuẩn quy trình kỹ thuật (§2.5).
+4. PR D1 (#74): anh nghiệm thu "ok", đã merge vào nhánh epic.
+
+Còn mở:
 4. D-track chỉ đổi `tools/`, không đổi byte sản phẩm. Cho lên `main` sớm (không phát hành), hay đợi cùng nhánh epic? (nối với câu 6 của báo cáo)
