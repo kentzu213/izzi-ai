@@ -6,21 +6,30 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { evaluate, firstPassById, formatReport, gateVerdict, joinRows, syntheticCoverage } from '../eval/eval-gold.mjs';
+import {
+  clopperPearson,
+  evaluate,
+  firstPassById,
+  formatReport,
+  gateVerdict,
+  joinRows,
+  reopenedById,
+  syntheticCoverage,
+} from '../eval/eval-gold.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../eval/eval-gold.mjs', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'am-eval-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 // Synthetic gold set. Texts and notes are markers that must never reach the report.
-const prompt = (id, split, sessionId, ts) => ({ id, split, sessionId, project: 'p', ts, len: 9, text: `SECRET-TEXT-${id}`, context: 'SECRET-CTX' });
+const prompt = (id, split, sessionId, ts, len = 9) => ({ id, split, sessionId, project: 'p', ts, len, text: `SECRET-TEXT-${id}`, context: 'SECRET-CTX' });
 const PROMPTS = [
   prompt('d1', 'dev', 'S1', 't01'),
   prompt('t1', 'test', 'S1', 't02'),
   prompt('t2', 'test', 'S1', 't03'),
   prompt('t3', 'test', 'S1', 't04'),
   prompt('d2', 'dev', 'S1', 't05'),
-  prompt('t4', 'test', 'S2', 't01'),
+  prompt('t4', 'test', 'S2', 't01', 30),
   prompt('t5', 'test', 'S2', 't02'),
   prompt('t6', 'test', 'S2', 't03'),
   prompt('t8', 'test', 'S2', 't04'),
@@ -33,7 +42,7 @@ const LABELS = [
   label('t2', 'praise'),
   label('t3', 'resignation'),
   label('d2', 'none', { tags: ['question'] }),
-  label('t4', 'approve_decision', { unsure: true }),
+  label('t4', 'approve_decision', { unsure: true, tags: ['multi_intent'] }),
   label('t5', 'flow', { tags: ['negation'] }),
   label('t6', 'correction', { tags: ['deferral'] }),
   label('t8', 'none'),
@@ -52,7 +61,8 @@ const PREDICTIONS = [
   pred('u1', 'none', 'none'),
 ];
 const CLEAN_SYNTHETIC = { probes: 76, resignation: 27, questionNegation: 45, other: 4, critical: 0 };
-const run = (split) => evaluate({ prompts: PROMPTS, labels: LABELS, predictions: PREDICTIONS, split, synthetic: CLEAN_SYNTHETIC });
+const run = (split, extra = {}) => evaluate({ prompts: PROMPTS, labels: LABELS, predictions: PREDICTIONS, split, synthetic: CLEAN_SYNTHETIC, ...extra });
+const near = (actual, expected, tol = 1e-4) => assert.ok(Math.abs(actual - expected) < tol, `${actual} != ${expected}`);
 
 test('joinRows reports coverage: unlabeled, unknown label ids, missing predictions', () => {
   const { rows, coverage } = joinRows(PROMPTS, LABELS, PREDICTIONS);
@@ -84,11 +94,35 @@ test('confusion matrix counts gold x predicted, with abstain as a predicted colu
   assert.equal(Object.keys(m.confusion).includes('abstain'), false);
 });
 
-test('milestone axis precision and recall treat approve_decision and praise as one class', () => {
+test('milestone axis precision and recall treat approve_decision and praise as one class, with a 95% CI', () => {
   const m = run('test').splits.test;
-  assert.deepEqual(m.milestone, { tp: 2, fp: 2, fn: 1, precision: 0.5, recall: 2 / 3 });
+  assert.deepEqual({ tp: m.milestone.tp, fp: m.milestone.fp, fn: m.milestone.fn }, { tp: 2, fp: 2, fn: 1 });
+  assert.equal(m.milestone.precision, 0.5);
+  assert.equal(m.milestone.recall, 2 / 3);
+  assert.deepEqual(m.milestone.ci, clopperPearson(2, 4));
   assert.equal(m.perLabel.correction.recall, 0);
   assert.equal(m.perLabel.flow.precision, 1);
+});
+
+test('Clopper-Pearson 95% interval matches reference values', () => {
+  const all = clopperPearson(13, 13);
+  near(all.lower, 0.025 ** (1 / 13));
+  assert.equal(all.upper, 1);
+  const half = clopperPearson(5, 10);
+  near(half.lower, 0.187086);
+  near(half.upper, 0.812914);
+  const none = clopperPearson(0, 10);
+  assert.equal(none.lower, 0);
+  near(none.upper, 1 - 0.025 ** (1 / 10));
+  assert.equal(clopperPearson(0, 0), null);
+});
+
+test('correction precision and recall: the label alone and the correction|clarify axis decide() counts', () => {
+  const overall = run('all').splits.overall.correction;
+  assert.deepEqual(overall.label, { tp: 1, predicted: 1, gold: 2, precision: 1, recall: 0.5 });
+  assert.deepEqual(overall.axis, { tp: 1, predicted: 1, gold: 2, precision: 1, recall: 0.5 });
+  const test_ = run('test').splits.test.correction;
+  assert.deepEqual(test_.label, { tp: 0, predicted: 0, gold: 1, precision: null, recall: 0 });
 });
 
 test('critical errors: predicted milestone on resignation, question, negation or deferral; ids only', () => {
@@ -108,43 +142,110 @@ test('per-rule precision covers milestone rules only', () => {
   ]);
 });
 
+test('milestone misses are profiled by length, multi_intent and unsure', () => {
+  assert.deepEqual(run('test').splits.test.misses, { count: 1, short: 0, multiIntent: 1, unsure: 1 });
+  const shortPrompts = PROMPTS.map((p) => (p.id === 't4' ? { ...p, len: 20 } : p));
+  const m = evaluate({ prompts: shortPrompts, labels: LABELS, predictions: PREDICTIONS, split: 'test', synthetic: CLEAN_SYNTHETIC });
+  assert.equal(m.splits.test.misses.short, 1);
+});
+
 test('first-pass approval walks each session in ts order across both splits', () => {
   const { rows } = joinRows(PROMPTS, LABELS, PREDICTIONS);
   const shuffled = [...rows].reverse();
   assert.deepEqual(Object.fromEntries(firstPassById(shuffled)), { t1: false, t2: true, t4: true });
+  assert.deepEqual(Object.fromEntries(firstPassById(shuffled, 'label')), { t1: false, t2: true, t3: true, d2: true, t6: true });
 });
 
-test('baseline: corrections per 100 labeled prompts and first-pass approval rate from gold', () => {
+test('first-pass and reopened count clarify like correction, as decide() does, for gold and predicted labels', () => {
+  const r = (id, ts, gold, lbl) => ({ id, sessionId: 'S', ts, order: 0, gold, label: lbl, tags: [], split: 'test' });
+  const rows = [
+    r('a', 't1', 'clarify', 'none'),
+    r('b', 't2', 'approve_decision', 'approve_decision'),
+    r('c', 't3', 'none', 'clarify'),
+    r('d', 't4', 'praise', 'praise'),
+    r('e', 't5', 'none', 'none'),
+    r('f', 't6', 'none', 'none'),
+    r('g', 't7', 'none', 'none'),
+    r('h', 't8', 'clarify', 'correction'),
+  ];
+  assert.deepEqual(Object.fromEntries(firstPassById(rows)), { b: false, d: true });
+  assert.deepEqual(Object.fromEntries(firstPassById(rows, 'label')), { b: true, d: false });
+  assert.deepEqual(Object.fromEntries(reopenedById(rows)), { b: false, d: false });
+  assert.deepEqual(Object.fromEntries(reopenedById(rows, 'label')), { b: true, d: false });
+});
+
+test('baselines: gold and classifier on the same split, each with first-pass and the reopened estimate', () => {
   const m = run('test').splits.test;
-  assert.deepEqual(m.baseline, { prompts: 7, corrections: 1, correctionsPer100: 100 / 7, milestones: 3, firstPass: 2, firstPassRate: 2 / 3 });
+  assert.deepEqual(m.baseline.gold, {
+    prompts: 7, corrections: 1, correctionsPer100: 100 / 7, milestones: 3, firstPass: 2, firstPassRate: 2 / 3, reopened: 1, reopenedRate: 1 / 3,
+  });
+  assert.deepEqual(m.baseline.classifier, {
+    prompts: 6, corrections: 0, correctionsPer100: 0, milestones: 4, firstPass: 3, firstPassRate: 0.75, reopened: 0, reopenedRate: 0,
+  });
   assert.equal(m.unsure, 1);
   assert.deepEqual({ r: m.counts.resignation, q: m.counts.questionNegation }, { r: 1, q: 1 });
 });
 
-test('gate fails on low precision, critical errors and missing predictions; warns on sparse classes', () => {
+test('gate FAIL lists fail reasons and every provisional reason, with the CI', () => {
   const { gate } = run('all');
-  assert.equal(gate.pass, false);
+  assert.equal(gate.verdict, 'FAIL');
   assert.equal(gate.reasons.length, 3);
   assert.match(gate.reasons.join('\n'), /precision 0\.500 < 0\.9/);
   assert.match(gate.reasons.join('\n'), /critical errors on test: 2/);
   assert.match(gate.reasons.join('\n'), /without a prediction: 1/);
-  assert.equal(gate.warnings.length, 2);
-  assert.match(gate.warnings[0], /resignation.*1 .*synthetic.*27/);
-  assert.match(gate.warnings[1], /question\/negation.*1 .*synthetic.*45/);
+  assert.equal(gate.provisional.length, 4);
+  assert.match(gate.provisional[0], /resignation.*1 .*synthetic.*27/);
+  assert.match(gate.provisional[1], /question\/negation.*1 .*synthetic.*45/);
+  assert.match(gate.provisional[2], /lower bound .* < 0\.9 \(2\/4\)/);
+  assert.match(gate.provisional[3], /owner-reviewed/);
+  assert.deepEqual(gate.ci, clopperPearson(2, 4));
 });
 
-test('gate passes at precision >= 0.9 with zero critical errors, and fails on synthetic critical errors', () => {
-  const metrics = {
-    counts: { labeled: 40, scored: 40, resignation: 20, questionNegation: 20 },
-    milestone: { tp: 9, fp: 1, fn: 3, precision: 0.9, recall: 0.75 },
-    critical: { count: 0, byReason: {}, ids: [] },
-  };
-  assert.deepEqual(gateVerdict(metrics, CLEAN_SYNTHETIC), { pass: true, precision: 0.9, recall: 0.75, critical: 0, reasons: [], warnings: [] });
-  const bad = gateVerdict(metrics, { ...CLEAN_SYNTHETIC, critical: 1 });
-  assert.equal(bad.pass, false);
+const metricsOf = (tp, fp, extra = {}) => ({
+  counts: { labeled: 80, scored: 80, resignation: 20, questionNegation: 20 },
+  milestone: { tp, fp, fn: 3, precision: tp + fp === 0 ? null : tp / (tp + fp), recall: 0.75 },
+  critical: { count: 0, byReason: {}, ids: [] },
+  ...extra,
+});
+
+test('gate PASS needs precision and its CI lower bound >= 0.9, >= 20 cases per class and owner review', () => {
+  const pass = gateVerdict(metricsOf(40, 0), CLEAN_SYNTHETIC, { ownerReviewed: true });
+  assert.equal(pass.verdict, 'PASS');
+  assert.deepEqual({ reasons: pass.reasons, provisional: pass.provisional }, { reasons: [], provisional: [] });
+  assert.ok(pass.ci.lower >= 0.9);
+  const unreviewed = gateVerdict(metricsOf(40, 0), CLEAN_SYNTHETIC);
+  assert.equal(unreviewed.verdict, 'PROVISIONAL');
+  assert.equal(unreviewed.provisional.length, 1);
+  const narrow = gateVerdict(metricsOf(9, 1), CLEAN_SYNTHETIC, { ownerReviewed: true });
+  assert.equal(narrow.verdict, 'PROVISIONAL');
+  assert.match(narrow.provisional[0], /lower bound 0\.555 < 0\.9 \(9\/10\)/);
+  const sparse = gateVerdict(metricsOf(40, 0, { counts: { labeled: 80, scored: 80, resignation: 19, questionNegation: 20 } }), CLEAN_SYNTHETIC, { ownerReviewed: true });
+  assert.equal(sparse.verdict, 'PROVISIONAL');
+});
+
+test('gate FAIL on precision < 0.9, synthetic critical errors or no predicted milestone', () => {
+  assert.equal(gateVerdict(metricsOf(17, 3), CLEAN_SYNTHETIC, { ownerReviewed: true }).verdict, 'FAIL');
+  const bad = gateVerdict(metricsOf(40, 0), { ...CLEAN_SYNTHETIC, critical: 1 }, { ownerReviewed: true });
+  assert.equal(bad.verdict, 'FAIL');
   assert.match(bad.reasons[0], /synthetic held-out critical errors: 1/);
-  const none = gateVerdict({ ...metrics, milestone: { tp: 0, fp: 0, fn: 3, precision: null, recall: 0 } }, CLEAN_SYNTHETIC);
+  const none = gateVerdict(metricsOf(0, 0), CLEAN_SYNTHETIC, { ownerReviewed: true });
+  assert.equal(none.verdict, 'FAIL');
   assert.match(none.reasons[0], /no predicted milestones/);
+  assert.equal(none.ci, null);
+});
+
+test('holdout leakage: shared sessions, test text that also occurs in dev, and test-unique metrics', () => {
+  const plain = run('test');
+  assert.deepEqual(plain.leakage, { sessions: 2, sharedSessions: 1, testPrompts: 8, testInSharedSessions: 3, testDuplicatedInDev: 0 });
+  assert.equal(plain.testUnique.counts.labeled, 7);
+  const prompts = PROMPTS.map((p) => (p.id === 't2' ? { ...p, text: '  secret-text-D1 ' } : p));
+  const leaky = evaluate({ prompts, labels: LABELS, predictions: PREDICTIONS, split: 'test', synthetic: CLEAN_SYNTHETIC });
+  assert.equal(leaky.leakage.testDuplicatedInDev, 1);
+  const u = leaky.testUnique;
+  assert.equal(u.counts.labeled, 6);
+  assert.deepEqual({ tp: u.milestone.tp, fp: u.milestone.fp, fn: u.milestone.fn }, { tp: 1, fp: 2, fn: 1 });
+  assert.equal(u.critical.count, 2);
+  assert.equal(run('dev').testUnique, undefined);
 });
 
 test('--split selects sections; the gate only appears when the test split is shown', () => {
@@ -162,13 +263,30 @@ test('synthetic coverage from the D1 fixtures has >= 20 cases per critical class
   assert.equal(s.critical, 0);
 });
 
+test('text report shows every new section and labels per-rule lines with their split', () => {
+  const out = formatReport(run('all'));
+  for (const marker of [
+    /verdict: FAIL \(precision 0\.500, 95% CI 0\.\d{3}-0\.\d{3}/,
+    /^fail: /m,
+    /^provisional: .*owner-reviewed/m,
+    /baseline \(gold labels\): corrections 14\.3 per 100/,
+    /baseline \(classifier, same split\): corrections 0\.0 per 100/,
+    /reopened within 3 prompts 0\.333 \(1\/3, estimate\)/,
+    /correction: label precision n\/a \(0\/0\), recall 0\.000 \(0\/1\); correction\|clarify axis/,
+    /milestone misses: 1 \(<=20 chars 0, multi_intent 1, unsure 1\)/,
+    /milestone rules \[test\]: /,
+    /milestone rules \[dev\+test\]: /,
+    /holdout leakage: sessions 2, in both splits 1/,
+    /test-unique \(labeled 7\): milestone precision 0\.500/,
+  ]) assert.match(out, marker);
+});
+
 test('text and JSON reports never contain prompt text, context or notes', () => {
   const report = run('all');
   for (const out of [formatReport(report), JSON.stringify(report)]) assert.doesNotMatch(out, /SECRET/);
-  assert.match(formatReport(report), /verdict: FAIL/);
 });
 
-test('CLI prints the text report, or JSON with --json', () => {
+test('CLI prints the text report, or JSON with --json; --owner-reviewed drops that reason', () => {
   const files = { prompts: PROMPTS, labels: LABELS, predictions: PREDICTIONS };
   for (const [name, rows] of Object.entries(files)) writeFileSync(join(scratch, `${name}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   const args = ['prompts', 'labels', 'predictions'].map((n) => join(scratch, `${n}.jsonl`));
@@ -178,7 +296,12 @@ test('CLI prints the text report, or JSON with --json', () => {
   assert.doesNotMatch(text.stdout, /SECRET/);
   const json = spawnSync(process.execPath, [SCRIPT, ...args, '--split', 'test', '--json'], { encoding: 'utf8' });
   assert.equal(json.status, 0, json.stderr);
-  assert.equal(JSON.parse(json.stdout).gate.pass, false);
+  const gate = JSON.parse(json.stdout).gate;
+  assert.equal(gate.verdict, 'FAIL');
+  assert.ok(gate.provisional.some((p) => /owner-reviewed/.test(p)));
+  const reviewed = spawnSync(process.execPath, [SCRIPT, ...args, '--split', 'test', '--json', '--owner-reviewed'], { encoding: 'utf8' });
+  assert.equal(reviewed.status, 0, reviewed.stderr);
+  assert.ok(!JSON.parse(reviewed.stdout).gate.provisional.some((p) => /owner-reviewed/.test(p)));
   const usage = spawnSync(process.execPath, [SCRIPT, args[0]], { encoding: 'utf8' });
   assert.notEqual(usage.status, 0);
   assert.match(usage.stderr, /usage: eval-gold\.mjs/);

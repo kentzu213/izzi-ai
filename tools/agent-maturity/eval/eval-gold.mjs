@@ -1,17 +1,23 @@
-// D0: score D1 predictions against the gold labels (docs/izzi-v2/PLAN.md §2.6, §3.2 D0/D2, §4.9 item 7).
+// D0: score D1 predictions against the gold labels (docs/izzi-v2/PLAN.md §2.6, §3.2 D0/D2, §4.9 items 3, 6, 7).
 // Aggregate output only: counts, rates, label names, rule ids and prompt ids. Never prompt text, context or notes.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
-import { classifyPrompt, MILESTONE_LABELS } from '../lib/classify.mjs';
+import { classifyPrompt, MILESTONE_LABELS, normalize } from '../lib/classify.mjs';
 import { invokedDirectly, readJsonl, runMain } from './io.mjs';
 
 export const GOLD_LABELS = ['approve_decision', 'praise', 'confirm', 'flow', 'resignation', 'correction', 'clarify', 'none'];
 export const PREDICTED_LABELS = [...GOLD_LABELS, 'abstain'];
 export const TAGS = ['question', 'negation', 'deferral', 'completion_context', 'multi_intent'];
 const CRITICAL_TAGS = ['question', 'negation', 'deferral'];
-const GATE = { minPrecision: 0.9, minClassCases: 20 };
+// decide() counts both as a correction signal (PLAN §4.3 step 2), so the first-pass walks do too.
+const CORRECTION_SIGNALS = ['correction', 'clarify'];
+const GATE = { minPrecision: 0.9, minClassCases: 20, confidence: 0.95 };
+const REOPEN_WINDOW = 3; // owner prompts after a milestone that can reopen it (§4.9 item 6, an estimate)
+const SHORT_MISS = 20; // characters
+const BISECT_STEPS = 60;
 const SECTIONS = { all: ['dev', 'test', 'overall'], dev: ['dev'], test: ['test'] };
+const SPLIT_TAG = { dev: 'dev', test: 'test', overall: 'dev+test' };
 
 const ratio = (a, b) => (b === 0 ? null : a / b);
 const isMilestone = (label) => MILESTONE_LABELS.has(label);
@@ -51,7 +57,8 @@ export function joinRows(prompts, labels, predictions) {
     const g = gold.byId.get(p.id);
     if (!g) return;
     const pr = predicted.get(p.id);
-    rows.push({ id: p.id, split: p.split, sessionId: p.sessionId, ts: p.ts, order, ...g, label: pr?.label ?? null, ruleId: pr?.ruleId ?? null });
+    const len = p.len ?? String(p.text ?? '').length;
+    rows.push({ id: p.id, split: p.split, sessionId: p.sessionId, ts: p.ts, order, len, ...g, label: pr?.label ?? null, ruleId: pr?.ruleId ?? null });
   });
   const coverage = {
     prompts: prompts.length,
@@ -71,18 +78,58 @@ export function criticalReasons(row) {
   return reasons.concat(CRITICAL_TAGS.filter((t) => row.tags.includes(t)));
 }
 
-// Gold milestone id -> true when no gold correction came since the previous gold milestone (or session start).
-// Sessions span both splits, so this runs over every labeled row before rows are split.
-export function firstPassById(rows) {
+// P(X <= k) for X ~ Binomial(n, p), summed in log space so a large n does not underflow the first term.
+function binomCdf(k, n, p) {
+  if (k < 0) return 0;
+  if (k >= n || p <= 0) return 1;
+  if (p >= 1) return 0;
+  const step = Math.log(p) - Math.log1p(-p);
+  let logTerm = n * Math.log1p(-p);
+  let sum = Math.exp(logTerm);
+  for (let i = 1; i <= k; i += 1) {
+    logTerm += Math.log((n - i + 1) / i) + step;
+    sum += Math.exp(logTerm);
+  }
+  return Math.min(1, sum);
+}
+
+// Smallest p in [0, 1] where holds(p) is true; holds must switch once from false to true as p grows.
+function bisect(holds) {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < BISECT_STEPS; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (holds(mid)) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Exact (Clopper-Pearson) two-sided interval for x successes in n trials; null when n is 0.
+export function clopperPearson(x, n, confidence = GATE.confidence) {
+  if (n === 0) return null;
+  const tail = (1 - confidence) / 2;
+  const lower = x === 0 ? 0 : bisect((p) => 1 - binomCdf(x - 1, n, p) >= tail);
+  const upper = x === n ? 1 : bisect((p) => binomCdf(x, n, p) <= tail);
+  return { lower, upper };
+}
+
+// Sessions span both splits, so the walks below run over every labeled row before rows are split.
+function sessionsOf(rows) {
   const sessions = new Map();
   for (const r of rows) sessions.set(r.sessionId, [...(sessions.get(r.sessionId) ?? []), r]);
+  return [...sessions.values()].map((s) => [...s].sort((a, b) => String(a.ts).localeCompare(String(b.ts)) || a.order - b.order));
+}
+
+// Milestone id -> true when no correction or clarify came since the previous milestone (or session start).
+// field 'gold' walks the gold labels, 'label' the classifier's predictions.
+export function firstPassById(rows, field = 'gold') {
   const result = new Map();
-  for (const session of sessions.values()) {
-    session.sort((a, b) => String(a.ts).localeCompare(String(b.ts)) || a.order - b.order);
+  for (const session of sessionsOf(rows)) {
     let corrections = 0;
     for (const r of session) {
-      if (r.gold === 'correction') corrections += 1;
-      else if (isMilestone(r.gold)) {
+      if (CORRECTION_SIGNALS.includes(r[field])) corrections += 1;
+      else if (isMilestone(r[field])) {
         result.set(r.id, corrections === 0);
         corrections = 0;
       }
@@ -90,6 +137,22 @@ export function firstPassById(rows) {
   }
   return result;
 }
+
+// Reverse metric estimate (§4.9 item 6): milestone id -> true when one of the next REOPEN_WINDOW labeled
+// prompts of the same session is a correction or clarify.
+export function reopenedById(rows, field = 'gold') {
+  const result = new Map();
+  for (const session of sessionsOf(rows)) {
+    session.forEach((r, i) => {
+      if (!isMilestone(r[field])) return;
+      const next = session.slice(i + 1, i + 1 + REOPEN_WINDOW);
+      result.set(r.id, next.some((n) => CORRECTION_SIGNALS.includes(n[field])));
+    });
+  }
+  return result;
+}
+
+const walksOf = (rows) => Object.fromEntries(['gold', 'label'].map((f) => [f, { firstPass: firstPassById(rows, f), reopened: reopenedById(rows, f) }]));
 
 function confusionOf(scored) {
   const confusion = Object.fromEntries(GOLD_LABELS.map((g) => [g, Object.fromEntries(PREDICTED_LABELS.map((p) => [p, 0]))]));
@@ -110,7 +173,15 @@ function milestoneOf(scored) {
   const tp = scored.filter((r) => isMilestone(r.label) && isMilestone(r.gold)).length;
   const fp = scored.filter((r) => isMilestone(r.label) && !isMilestone(r.gold)).length;
   const fn = scored.filter((r) => !isMilestone(r.label) && isMilestone(r.gold)).length;
-  return { tp, fp, fn, precision: ratio(tp, tp + fp), recall: ratio(tp, tp + fn) };
+  return { tp, fp, fn, precision: ratio(tp, tp + fp), recall: ratio(tp, tp + fn), ci: clopperPearson(tp, tp + fp) };
+}
+
+// One class made of the given labels, on both the gold and the predicted side.
+function axisOf(scored, labels) {
+  const tp = scored.filter((r) => labels.includes(r.label) && labels.includes(r.gold)).length;
+  const predicted = scored.filter((r) => labels.includes(r.label)).length;
+  const gold = scored.filter((r) => labels.includes(r.gold)).length;
+  return { tp, predicted, gold, precision: ratio(tp, predicted), recall: ratio(tp, gold) };
 }
 
 function criticalOf(scored) {
@@ -136,21 +207,37 @@ function milestoneRulesOf(scored) {
     .map(([ruleId, s]) => ({ ruleId, ...s, precision: ratio(s.correct, s.predicted) }));
 }
 
-function baselineOf(rows, firstPass) {
-  const corrections = rows.filter((r) => r.gold === 'correction').length;
-  const milestones = rows.filter((r) => isMilestone(r.gold));
-  const passed = milestones.filter((r) => firstPass.get(r.id) === true).length;
+// Gold milestones the classifier did not call a milestone, profiled without text.
+function missesOf(scored) {
+  const misses = scored.filter((r) => isMilestone(r.gold) && !isMilestone(r.label));
   return {
-    prompts: rows.length,
-    corrections,
-    correctionsPer100: rows.length === 0 ? null : (corrections * 100) / rows.length,
-    milestones: milestones.length,
-    firstPass: passed,
-    firstPassRate: ratio(passed, milestones.length),
+    count: misses.length,
+    short: misses.filter((r) => r.len <= SHORT_MISS).length,
+    multiIntent: misses.filter((r) => r.tags.includes('multi_intent')).length,
+    unsure: misses.filter((r) => r.unsure).length,
   };
 }
 
-export function splitMetrics(rows, firstPass) {
+// field 'gold' = baseline by gold labels; 'label' = the same numbers measured by the classifier (D6 compares like with like).
+function baselineOf(rows, walk, field) {
+  const seen = rows.filter((r) => r[field] !== null);
+  const corrections = seen.filter((r) => r[field] === 'correction').length;
+  const milestones = seen.filter((r) => isMilestone(r[field]));
+  const passed = milestones.filter((r) => walk.firstPass.get(r.id) === true).length;
+  const reopened = milestones.filter((r) => walk.reopened.get(r.id) === true).length;
+  return {
+    prompts: seen.length,
+    corrections,
+    correctionsPer100: seen.length === 0 ? null : (corrections * 100) / seen.length,
+    milestones: milestones.length,
+    firstPass: passed,
+    firstPassRate: ratio(passed, milestones.length),
+    reopened,
+    reopenedRate: ratio(reopened, milestones.length),
+  };
+}
+
+export function splitMetrics(rows, walks) {
   const scored = rows.filter((r) => r.label !== null);
   const confusion = confusionOf(scored);
   return {
@@ -163,11 +250,32 @@ export function splitMetrics(rows, firstPass) {
     confusion,
     perLabel: perLabelOf(confusion),
     milestone: milestoneOf(scored),
+    correction: { label: axisOf(scored, ['correction']), axis: axisOf(scored, CORRECTION_SIGNALS) },
     critical: criticalOf(scored),
     milestoneRules: milestoneRulesOf(scored),
+    misses: missesOf(scored),
     unsure: rows.filter((r) => r.unsure).length,
-    baseline: baselineOf(rows, firstPass),
+    baseline: { gold: baselineOf(rows, walks.gold, 'gold'), classifier: baselineOf(rows, walks.label, 'label') },
   };
+}
+
+// Holdout leakage: sessions with prompts in both splits, and test prompts whose normalised text also occurs in dev.
+function leakageOf(prompts) {
+  const splitsBySession = new Map();
+  for (const p of prompts) splitsBySession.set(p.sessionId, new Set([...(splitsBySession.get(p.sessionId) ?? []), p.split]));
+  const shared = new Set([...splitsBySession].filter(([, s]) => s.has('dev') && s.has('test')).map(([id]) => id));
+  const textKey = (p) => normalize(String(p.text ?? ''));
+  const devTexts = new Set(prompts.filter((p) => p.split === 'dev').map(textKey));
+  const test = prompts.filter((p) => p.split === 'test');
+  const duplicatedIds = new Set(test.filter((p) => devTexts.has(textKey(p))).map((p) => p.id));
+  const summary = {
+    sessions: splitsBySession.size,
+    sharedSessions: shared.size,
+    testPrompts: test.length,
+    testInSharedSessions: test.filter((p) => shared.has(p.sessionId)).length,
+    testDuplicatedInDev: duplicatedIds.size,
+  };
+  return { summary, duplicatedIds };
 }
 
 // Real data has few resignation and question/negation cases, so the D1 synthetic fixtures are scored too.
@@ -189,10 +297,13 @@ export function syntheticCoverage() {
 }
 
 const fmt = (x) => (x === null ? 'n/a' : x.toFixed(3));
+const fmtCi = (ci) => (ci === null ? 'n/a' : `${fmt(ci.lower)}-${fmt(ci.upper)}`);
 
-// PLAN D2 gate on the test split: milestone precision >= 0.9, zero critical errors.
-export function gateVerdict(test, synthetic) {
+// PLAN D2 gate on the test split. FAIL: precision < 0.9 or any critical error. PROVISIONAL: the numbers pass but
+// cannot be trusted yet (sparse critical classes, a CI lower bound under 0.9, gold labels not owner-reviewed).
+export function gateVerdict(test, synthetic, { ownerReviewed = false } = {}) {
   const { milestone, critical, counts } = test;
+  const ci = clopperPearson(milestone.tp, milestone.tp + milestone.fp);
   const reasons = [];
   if (milestone.precision === null) reasons.push('no predicted milestones on test: precision undefined');
   else if (milestone.precision < GATE.minPrecision) {
@@ -202,30 +313,47 @@ export function gateVerdict(test, synthetic) {
   if (synthetic.critical > 0) reasons.push(`synthetic held-out critical errors: ${synthetic.critical}`);
   const missing = counts.labeled - counts.scored;
   if (missing > 0) reasons.push(`labeled test items without a prediction: ${missing}`);
-  const warnings = [];
+  const provisional = [];
   if (counts.resignation < GATE.minClassCases) {
-    warnings.push(`test resignation cases: ${counts.resignation} (< ${GATE.minClassCases}); synthetic fixtures cover ${synthetic.resignation} (critical ${synthetic.critical})`);
+    provisional.push(`test resignation cases: ${counts.resignation} (< ${GATE.minClassCases}); synthetic fixtures cover ${synthetic.resignation} (critical ${synthetic.critical}), a stand-in only if the owner accepts it`);
   }
   if (counts.questionNegation < GATE.minClassCases) {
-    warnings.push(`test question/negation cases: ${counts.questionNegation} (< ${GATE.minClassCases}); synthetic fixtures cover ${synthetic.questionNegation} (critical ${synthetic.critical})`);
+    provisional.push(`test question/negation cases: ${counts.questionNegation} (< ${GATE.minClassCases}); synthetic fixtures cover ${synthetic.questionNegation} (critical ${synthetic.critical})`);
   }
-  return { pass: reasons.length === 0, precision: milestone.precision, recall: milestone.recall, critical: critical.count, reasons, warnings };
+  if (ci !== null && ci.lower < GATE.minPrecision) {
+    provisional.push(`test milestone precision 95% Clopper-Pearson lower bound ${fmt(ci.lower)} < ${GATE.minPrecision} (${milestone.tp}/${milestone.tp + milestone.fp})`);
+  }
+  if (!ownerReviewed) provisional.push("gold labels not owner-reviewed (rerun with --owner-reviewed after the owner's review)");
+  const verdict = reasons.length > 0 ? 'FAIL' : provisional.length > 0 ? 'PROVISIONAL' : 'PASS';
+  return { verdict, precision: milestone.precision, ci, recall: milestone.recall, critical: critical.count, reasons, provisional };
 }
 
-export function evaluate({ prompts, labels, predictions, split = 'all', synthetic = syntheticCoverage() }) {
+export function evaluate({ prompts, labels, predictions, split = 'all', synthetic = syntheticCoverage(), ownerReviewed = false }) {
   const sections = SECTIONS[split];
   if (!sections) throw new Error('--split must be dev, test or all');
   const { rows, coverage } = joinRows(prompts, labels, predictions);
-  const firstPass = firstPassById(rows);
+  const walks = walksOf(rows);
   const rowsOf = (name) => (name === 'overall' ? rows : rows.filter((r) => r.split === name));
-  const splits = Object.fromEntries(sections.map((name) => [name, splitMetrics(rowsOf(name), firstPass)]));
-  const report = { coverage, splits, synthetic };
-  if (splits.test) report.gate = gateVerdict(splits.test, synthetic);
-  return report;
+  const splits = Object.fromEntries(sections.map((name) => [name, splitMetrics(rowsOf(name), walks)]));
+  const { summary, duplicatedIds } = leakageOf(prompts);
+  const report = { coverage, splits, synthetic, leakage: summary };
+  if (!splits.test) return report;
+  const testUnique = splitMetrics(rows.filter((r) => r.split === 'test' && !duplicatedIds.has(r.id)), walks);
+  return { ...report, testUnique, gate: gateVerdict(splits.test, synthetic, { ownerReviewed }) };
 }
 
 const SHORT = { approve_decision: 'appr', praise: 'prai', confirm: 'conf', flow: 'flow', resignation: 'resi', correction: 'corr', clarify: 'clar', none: 'none', abstain: 'abst' };
 const pad = (s, n) => String(s).padStart(n);
+const per100 = (x) => (x === null ? 'n/a' : x.toFixed(1));
+const formatAxis = (name, a) => `${name} precision ${fmt(a.precision)} (${a.tp}/${a.predicted}), recall ${fmt(a.recall)} (${a.tp}/${a.gold})`;
+const formatCorrection = (c) => `${formatAxis('label', c.label)}; ${formatAxis('correction|clarify axis', c.axis)}`;
+const formatMilestone = (ms) => `precision ${fmt(ms.precision)} (${ms.tp}/${ms.tp + ms.fp}, 95% CI ${fmtCi(ms.ci)}), recall ${fmt(ms.recall)} (${ms.tp}/${ms.tp + ms.fn})`;
+
+function formatBaseline(title, b, unit) {
+  return `baseline (${title}): corrections ${per100(b.correctionsPer100)} per 100 prompts (${b.corrections}/${b.prompts}); `
+    + `first-pass approval ${fmt(b.firstPassRate)} (${b.firstPass}/${b.milestones} ${unit}); `
+    + `reopened within ${REOPEN_WINDOW} prompts ${fmt(b.reopenedRate)} (${b.reopened}/${b.milestones}, estimate)`;
+}
 
 function formatSplit(name, m) {
   const lines = [`== ${name} (labeled ${m.counts.labeled}, scored ${m.counts.scored}) ==`, 'confusion (rows = gold, columns = predicted)'];
@@ -233,15 +361,30 @@ function formatSplit(name, m) {
   for (const g of GOLD_LABELS) lines.push(`${g.padEnd(17)}${PREDICTED_LABELS.map((p) => pad(m.confusion[g][p], 5)).join('')}`);
   lines.push(`${'label'.padEnd(17)} gold  pred   prec    rec`);
   for (const [l, s] of Object.entries(m.perLabel)) lines.push(`${l.padEnd(17)}${pad(s.gold, 5)}${pad(s.predicted, 6)}${pad(fmt(s.precision), 7)}${pad(fmt(s.recall), 7)}`);
-  const ms = m.milestone;
-  lines.push(`milestone (approve_decision|praise): precision ${fmt(ms.precision)} (${ms.tp}/${ms.tp + ms.fp}), recall ${fmt(ms.recall)} (${ms.tp}/${ms.tp + ms.fn})`);
+  lines.push(`milestone (approve_decision|praise): ${formatMilestone(m.milestone)}`);
+  lines.push(`correction: ${formatCorrection(m.correction)}`);
   const why = Object.entries(m.critical.byReason).map(([k, v]) => `${k} ${v}`).join(', ');
   lines.push(`critical errors: ${m.critical.count} (${why})${m.critical.count ? ` ids: ${m.critical.ids.join(', ')}` : ''}`);
-  lines.push(`milestone rules: ${m.milestoneRules.map((r) => `${r.ruleId} ${r.correct}/${r.predicted}`).join('; ') || 'none'}`);
-  const b = m.baseline;
-  lines.push(`baseline: corrections ${b.correctionsPer100 === null ? 'n/a' : b.correctionsPer100.toFixed(1)} per 100 prompts (${b.corrections}/${b.prompts}); first-pass approval ${fmt(b.firstPassRate)} (${b.firstPass}/${b.milestones} gold milestones)`);
+  const mi = m.misses;
+  lines.push(`milestone misses: ${mi.count} (<=${SHORT_MISS} chars ${mi.short}, multi_intent ${mi.multiIntent}, unsure ${mi.unsure})`);
+  lines.push(`milestone rules [${SPLIT_TAG[name]}]: ${m.milestoneRules.map((r) => `${r.ruleId} ${r.correct}/${r.predicted}`).join('; ') || 'none'}`);
+  lines.push(formatBaseline('gold labels', m.baseline.gold, 'gold milestones'));
+  lines.push(formatBaseline('classifier, same split', m.baseline.classifier, 'predicted milestones'));
   lines.push(`unsure: ${m.unsure}; critical classes: resignation ${m.counts.resignation}, question/negation ${m.counts.questionNegation}`);
   return lines.join('\n');
+}
+
+function formatLeakage(report) {
+  const l = report.leakage;
+  const out = [
+    `holdout leakage: sessions ${l.sessions}, in both splits ${l.sharedSessions} (test prompts in shared sessions ${l.testInSharedSessions}/${l.testPrompts}); `
+      + `test prompts whose normalised text also occurs in dev: ${l.testDuplicatedInDev}/${l.testPrompts}`,
+  ];
+  const u = report.testUnique;
+  if (u) {
+    out.push(`test-unique (labeled ${u.counts.labeled}): milestone ${formatMilestone(u.milestone)}; critical ${u.critical.count}; correction ${formatAxis('label', u.correction.label)}`);
+  }
+  return out;
 }
 
 export function formatReport(report) {
@@ -251,21 +394,31 @@ export function formatReport(report) {
     'D0 gold-set eval (aggregate only; no prompt text)',
     `coverage: prompts ${c.prompts}, labeled ${c.labeled}, unlabeled ${c.unlabeled}, label ids not in prompts ${c.unknownLabelIds}, duplicate labels ${c.duplicateLabels}, labeled without prediction ${c.missingPredictions}`,
     ...Object.entries(report.splits).map(([name, m]) => formatSplit(name, m)),
+    ...formatLeakage(report),
     `synthetic D1 fixtures: ${s.probes} probes (resignation ${s.resignation}, question/negation ${s.questionNegation}, other ${s.other}), critical ${s.critical}`,
+    'note: D6 compares like with like: the classifier baseline against classifier-measured pilot numbers, the gold baseline only against a gold-labelled pilot sample',
   ];
   if (report.gate) {
     const g = report.gate;
-    out.push('== gate (PLAN D2, test split) ==', `verdict: ${g.pass ? 'PASS' : 'FAIL'} (precision ${fmt(g.precision)}, recall ${fmt(g.recall)}, critical ${g.critical})`);
-    out.push(...g.reasons.map((r) => `- ${r}`), ...g.warnings.map((w) => `warning: ${w}`));
+    out.push(
+      '== gate (PLAN D2, test split) ==',
+      `verdict: ${g.verdict} (precision ${fmt(g.precision)}, 95% CI ${fmtCi(g.ci)}, recall ${fmt(g.recall)}, critical ${g.critical})`,
+      `correction (PLAN 4.9 item 3): ${formatCorrection(report.splits.test.correction)}`,
+      ...g.reasons.map((r) => `fail: ${r}`),
+      ...g.provisional.map((p) => `provisional: ${p}`),
+    );
   }
   return `${out.join('\n')}\n`;
 }
 
 function main(argv) {
-  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: { split: { type: 'string', default: 'all' }, json: { type: 'boolean', default: false } } });
-  if (positionals.length !== 3) throw new Error('usage: eval-gold.mjs <prompts.jsonl> <labels.jsonl> <predictions.jsonl> [--split dev|test|all] [--json]');
+  const options = { split: { type: 'string', default: 'all' }, json: { type: 'boolean', default: false }, 'owner-reviewed': { type: 'boolean', default: false } };
+  const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options });
+  if (positionals.length !== 3) {
+    throw new Error('usage: eval-gold.mjs <prompts.jsonl> <labels.jsonl> <predictions.jsonl> [--split dev|test|all] [--json] [--owner-reviewed]');
+  }
   const [prompts, labels, predictions] = positionals.map(readJsonl);
-  const report = evaluate({ prompts, labels, predictions, split: values.split });
+  const report = evaluate({ prompts, labels, predictions, split: values.split, ownerReviewed: values['owner-reviewed'] });
   process.stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report));
 }
 

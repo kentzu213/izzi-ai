@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { extractPrompts, splitOf } from '../eval/extract-prompts.mjs';
+import { extractPrompts, maskSecrets, splitOf } from '../eval/extract-prompts.mjs';
 
 // Synthetic transcripts only: no line here comes from a real session.
 const SCRIPT = fileURLToPath(new URL('../eval/extract-prompts.mjs', import.meta.url));
@@ -146,4 +146,42 @@ test('CLI refuses an output folder inside the repo', () => {
   const run = spawnSync(process.execPath, [SCRIPT, root, join(REPO, 'tmp-d0-out')], { encoding: 'utf8' });
   assert.notEqual(run.status, 0);
   assert.match(run.stderr, /inside the repo/);
+});
+
+// Fake secrets are built at runtime so no key-shaped literal sits in the repo.
+const FAKE_SK = `sk-proj-${'x'.repeat(24)}`;
+const FAKE_IZZI = `izzi-${'A1'.repeat(12)}`;
+const FAKE_JWT = `eyJ${'a'.repeat(10)}.${'b'.repeat(10)}.${'c'.repeat(10)}`;
+
+test('maskSecrets hides keys, bearer tokens, JWTs and Vietnamese phone numbers', () => {
+  assert.equal(maskSecrets(`nhập key ${FAKE_SK} rồi chạy`), 'nhập key [REDACTED_KEY] rồi chạy');
+  assert.equal(maskSecrets(`key ${FAKE_IZZI}`), 'key [REDACTED_KEY]');
+  assert.equal(maskSecrets('Authorization: Bearer abc.def-ghi_123456'), 'Authorization: Bearer [REDACTED_TOKEN]');
+  assert.equal(maskSecrets(`token=${FAKE_JWT}`), 'token=[REDACTED_JWT]');
+  for (const phone of ['0912345678', '+84 912 345 678', '84912345678', '090.123.4567', '028 3823 4567']) {
+    assert.equal(maskSecrets(`gọi ${phone} nhé`), 'gọi [REDACTED_PHONE] nhé', phone);
+  }
+});
+
+test('maskSecrets leaves ordinary words, versions, dates and ids alone', () => {
+  for (const text of ['izzi-agent-maturity-epic', 'pip install sk-learn', 'v1.14.0-beta.90', 'PR #75 ngày 20261121', 'số 1234567890', 'không có gì']) {
+    assert.equal(maskSecrets(text), text);
+  }
+});
+
+test('extraction masks text and context but keeps the id from the raw text', () => {
+  const raw = 'gọi 0912345678 nhé';
+  const root = makeRoot({
+    p: {
+      'file-session.jsonl': [
+        assistant('dùng Bearer abcdefgh12345678 để gọi'),
+        user({ timestamp: 't5', message: { content: raw } }),
+      ],
+    },
+  });
+  const [record] = extractPrompts(root);
+  assert.equal(record.id, sha12(`file-session:t5|${raw}`));
+  assert.equal(record.text, 'gọi [REDACTED_PHONE] nhé');
+  assert.equal(record.len, record.text.length);
+  assert.equal(record.context, 'dùng Bearer [REDACTED_TOKEN] để gọi');
 });

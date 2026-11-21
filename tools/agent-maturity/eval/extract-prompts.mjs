@@ -1,7 +1,8 @@
 // D0: extract the owner's typed Claude Code prompts (all projects) into a private prompts.jsonl.
 // Version-controlled port of root's extract-d0.mjs: same filters, dedupe, ids and splits.
 // id = first 12 hex of sha256(sessionId + ':' + (uuid || timestamp|text)); split = dev/test by the id's first byte.
-// The output holds real prompt text, so it must be written outside the repo.
+// The output holds real prompt text, so it must be written outside the repo. Obvious keys, tokens and
+// Vietnamese phone numbers are masked in text and context (PLAN §3.2); ids and dedupe use the raw text.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +15,18 @@ const CONTEXT_CHARS = 300;
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 export const splitOf = (id) => (parseInt(id.slice(0, 2), 16) % 2 === 0 ? 'dev' : 'test');
+
+// Order matters: whole tokens first, phone numbers last.
+const MASKS = [
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, 'Bearer [REDACTED_TOKEN]'],
+  [/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*/g, '[REDACTED_JWT]'],
+  [/(?<![\w-])sk-[A-Za-z0-9_-]{16,}/g, '[REDACTED_KEY]'],
+  [/(?<![\w-])izzi-[A-Za-z0-9]{20,}/g, '[REDACTED_KEY]'],
+  // 0 / 84 / +84, then a mobile (3,5,7,8,9 + 8 digits) or landline (2 + 9 digits), single . - or space between digits.
+  [/(?<![\w+])(?:\+84|84|0)[ .-]?(?:[35789](?:[ .-]?\d){8}|2(?:[ .-]?\d){9})(?!\w)/g, '[REDACTED_PHONE]'],
+];
+
+export const maskSecrets = (text) => MASKS.reduce((s, [re, to]) => s.replace(re, to), text);
 
 function userTexts(message) {
   const c = message && message.content;
@@ -59,15 +72,16 @@ function readSession(file, project, sessionFile, seen, records) {
       seen.add(dedupe);
       if (o.uuid) seen.add(o.uuid);
       const id = sha(`${sessionId}:${o.uuid || dedupe}`).slice(0, 12);
+      const masked = maskSecrets(text);
       records.push({
         id,
         split: splitOf(id),
         sessionId,
         project,
         ts: o.timestamp || null,
-        len: text.length,
-        text,
-        context: lastAssistant.slice(-CONTEXT_CHARS),
+        len: masked.length,
+        text: masked,
+        context: maskSecrets(lastAssistant).slice(-CONTEXT_CHARS),
       });
     }
   }

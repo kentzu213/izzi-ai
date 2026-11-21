@@ -9,21 +9,25 @@ import { criticalReasons, joinRows } from './eval-gold.mjs';
 import { assertOutsideRepo, invokedDirectly, readJsonl, runMain } from './io.mjs';
 
 const TEXT_LIMIT = 200;
-const KEY_GOLD = new Set(['approve_decision', 'praise', 'resignation']);
-const GROUPS = {
-  A: 'lỗi nghiêm trọng (máy tính là duyệt/khen nhưng nhãn vàng là cam chịu, câu hỏi, phủ định hoặc hoãn)',
-  B: 'máy và nhãn vàng lệch nhau ở trục mốc hoàn tất (duyệt/khen)',
-  C: 'nhãn vàng là duyệt, khen hoặc cam chịu',
-  D: 'người gắn nhãn không chắc',
+const CAP = { hits: 15, unsureCorrection: 8 };
+const TITLES = {
+  hits: 'máy đoán là mốc hoàn tất (duyệt/khen) trên tập test: anh xác nhận để đo precision',
+  resignation: 'nhãn vàng là cam chịu',
+  unsureCorrection: 'nhãn vàng là sửa nhưng người gắn nhãn không chắc',
+  missed: 'nhãn vàng là duyệt/khen nhưng máy không bắt',
 };
-const zeroCounts = () => Object.fromEntries(Object.keys(GROUPS).map((g) => [g, 0]));
 
-function priorityOf(row) {
-  if (criticalReasons(row).length > 0) return 'A';
-  if (row.label !== null && MILESTONE_LABELS.has(row.gold) !== MILESTONE_LABELS.has(row.label)) return 'B';
-  if (KEY_GOLD.has(row.gold)) return 'C';
-  return row.unsure ? 'D' : null;
-}
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const testFirst = (a, b) => (a.split === b.split ? byId(a, b) : a.split === 'test' ? -1 : 1);
+const criticalFirst = (a, b) => (criticalReasons(b).length > 0) - (criticalReasons(a).length > 0) || byId(a, b);
+
+// Buckets in fill order (Socrates D0 fix 5): each item lands in the first bucket that takes it.
+const BUCKETS = [
+  { name: 'hits', match: (r) => r.split === 'test' && MILESTONE_LABELS.has(r.label), order: criticalFirst, cap: CAP.hits },
+  { name: 'resignation', match: (r) => r.gold === 'resignation', order: testFirst, cap: Infinity },
+  { name: 'unsureCorrection', match: (r) => r.gold === 'correction' && r.unsure, order: testFirst, cap: CAP.unsureCorrection },
+  { name: 'missed', match: (r) => MILESTONE_LABELS.has(r.gold) && !MILESTONE_LABELS.has(r.label), order: testFirst, cap: Infinity },
+];
 
 function trimText(text) {
   const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -35,20 +39,24 @@ export function selectReview({ prompts, labels, predictions, max = 50 }) {
   const { rows } = joinRows(prompts, labels, predictions);
   const textById = new Map(prompts.map((p) => [p.id, p.text]));
   const noteById = new Map(labels.map((l) => [l.id, typeof l.note === 'string' ? l.note : '']));
-  const ranked = rows
-    .map((r) => ({ row: r, priority: priorityOf(r) }))
-    .filter((x) => x.priority !== null)
-    .sort((a, b) => (a.priority === b.priority ? (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : 0) : a.priority < b.priority ? -1 : 1));
-  const candidates = zeroCounts();
-  const omitted = zeroCounts();
-  ranked.forEach((x, i) => {
-    candidates[x.priority] += 1;
-    if (i >= max) omitted[x.priority] += 1;
-  });
-  const items = ranked.slice(0, max).map(({ row, priority }, i) => ({
+  const taken = new Set();
+  const picked = [];
+  const pools = {};
+  for (const { name, match, order, cap } of BUCKETS) {
+    const pool = rows.filter((r) => !taken.has(r.id) && match(r)).sort(order);
+    const chosen = pool.slice(0, Math.max(0, Math.min(cap, max - picked.length)));
+    for (const row of chosen) {
+      taken.add(row.id);
+      picked.push({ row, bucket: name });
+    }
+    pools[name] = pool;
+  }
+  const candidates = Object.fromEntries(BUCKETS.map(({ name }) => [name, pools[name].length]));
+  const omitted = Object.fromEntries(BUCKETS.map(({ name }) => [name, pools[name].filter((r) => !taken.has(r.id)).length]));
+  const items = picked.map(({ row, bucket }, i) => ({
     n: i + 1,
     id: row.id,
-    priority,
+    bucket,
     text: trimText(textById.get(row.id)),
     gold: row.gold,
     tags: row.tags,
@@ -80,13 +88,12 @@ function formatItem(item) {
 
 export function formatReview(selection, { generatedAt = new Date().toISOString() } = {}) {
   const { items, candidates, omitted, max } = selection;
-  const total = Object.values(candidates).reduce((a, b) => a + b, 0);
-  const left = Object.entries(omitted).filter(([, v]) => v > 0).map(([g, v]) => `nhóm ${g}: ${v}`);
+  const counts = (m) => BUCKETS.map(({ name }, i) => `nhóm ${i + 1}: ${m[name]}`).join(', ');
   const out = [
     '# D0: các câu anh cần xem lại',
     '',
     `Tệp riêng tư, không đưa vào repo. Tạo lúc ${generatedAt}.`,
-    `Chọn ${items.length} / ${total} câu ứng viên (giới hạn ${max}).${left.length ? ` Chưa đưa vào: ${left.join(', ')}.` : ''}`,
+    `Chọn ${items.length} câu (giới hạn ${max}). Ứng viên: ${counts(candidates)}. Chưa đưa vào: ${counts(omitted)}.`,
     '',
     '## Cách trả lời',
     '',
@@ -99,11 +106,10 @@ export function formatReview(selection, { generatedAt = new Date().toISOString()
     '`resignation` (cam chịu), `correction` (sửa), `clarify` (hỏi lại cho rõ), `none` (khác). Có thể ghi thêm lý do sau dấu `--`.',
     '',
   ];
-  for (const [group, title] of Object.entries(GROUPS)) {
-    const inGroup = items.filter((i) => i.priority === group);
-    if (inGroup.length === 0) continue;
-    out.push(`## Nhóm ${group}: ${title}`, '', ...inGroup.map(formatItem));
-  }
+  BUCKETS.forEach(({ name }, i) => {
+    const inBucket = items.filter((item) => item.bucket === name);
+    if (inBucket.length > 0) out.push(`## Nhóm ${i + 1}: ${TITLES[name]}`, '', ...inBucket.map(formatItem));
+  });
   return out.join('\n');
 }
 

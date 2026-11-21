@@ -24,11 +24,17 @@ export function writeJsonl(file, rows) {
   fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 }
 
-// Real prompt text must never land in the repo: outputs that can hold it are refused there.
+// Real prompt text must never land in a repo: outputs that can hold it are refused in this repo and in
+// any other git work tree (a folder or a parent with a `.git` folder or worktree file), created or not.
 export function assertOutsideRepo(target, repoRoot = REPO_ROOT) {
-  const rel = path.relative(repoRoot, path.resolve(target));
+  const resolved = path.resolve(target);
+  const rel = path.relative(repoRoot, resolved);
   if (rel === '' || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel))) {
     throw new Error(`refusing to write inside the repo: ${target}`);
+  }
+  for (let dir = resolved; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, '.git'))) throw new Error(`refusing to write inside a git work tree: ${target}`);
+    if (path.dirname(dir) === dir) return;
   }
 }
 
