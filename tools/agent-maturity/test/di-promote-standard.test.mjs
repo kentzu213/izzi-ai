@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -70,11 +70,11 @@ const LOOSE = { id: 'di-loose', statement: 'Push thẳng lên main không hỏi.
 const ACCEPT_CHECKS = { evidenceSupports: true, scopeTooWide: false, contradictsExisting: false, tierCorrect: true };
 const NARROW = { verdict: 'NARROW', checks: { ...ACCEPT_CHECKS, scopeTooWide: true }, narrowed: { statement: NARROWED } };
 
-const reply = (candidate, extra = {}) =>
+const reply = (candidate, extra = {}, revision = 1) =>
   JSON.stringify({
     candidateId: candidate.id,
-    candidateRevision: 1,
-    inputFingerprint: inputFingerprint({ ...candidate, revision: 1 }),
+    candidateRevision: revision,
+    inputFingerprint: inputFingerprint({ ...candidate, revision }),
     verdict: 'ACCEPT',
     reasons: ['Cặp đối chứng ev-1 → ev-2 đỡ đúng câu chuẩn.'],
     evidence: [{ ref: 'ev-1', kind: 'event', finding: 'supports' }],
@@ -85,12 +85,13 @@ const reply = (candidate, extra = {}) =>
     ...extra,
   });
 
-// The real D4 flow: brief, then record the socrates verdict.
-function critique(w, overrides = {}, verdictExtra = {}) {
+// The real D4 flow: brief, then record the socrates verdict. A rewritten statement of a stored candidate is its next
+// revision.
+function critique(w, overrides = {}, verdictExtra = {}, revision = 1) {
   const r = validateCandidate({ ...BASE, ...overrides });
   assert.equal(r.ok, true, JSON.stringify(r.errors));
   briefCandidate({ candidate: r.value, adapter: w.adapter });
-  recordVerdict({ candidate: r.value, verdictText: reply(r.value, verdictExtra), adapter: w.adapter });
+  recordVerdict({ candidate: r.value, verdictText: reply(r.value, verdictExtra, revision), adapter: w.adapter });
   return r.value;
 }
 
@@ -509,6 +510,55 @@ test('the same text is never active twice: a fresh approval of a text active und
   assert.deepEqual(exported(w).standards.map((s) => s.id), [fresh.recordId]);
   const block = sessionStartBlock(w);
   assert.equal(block.split(reworded(4)).length - 1, 1, 'the text is injected once');
+});
+
+// The bytes of every file in the KnowledgeMemory store folder.
+const storeBytes = (w) => readdirSync(w.store, { recursive: true })
+  .map((f) => join(w.store, String(f)))
+  .filter((f) => existsSync(f) && !statSync(f).isDirectory())
+  .sort()
+  .map((f) => `${f}:${sha(readFileSync(f))}`)
+  .join('\n');
+
+test('a later revision of a candidate supersedes the standard of its earlier revision, with or without --supersedes', { skip }, () => {
+  // Arrange: candidate di-rev stored at revision 1; di-reworded replaced BASE with --supersedes at revision 1
+  const w = world();
+  const first = door(w, critique(w).id, ownerAnswers(w).at());
+  const listed = { existingStandards: [{ id: first.recordId, statement: BASE.statement }] };
+  const r1 = door(w, critique(w, { id: 'di-reworded', statement: reworded(3), ...listed }).id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(3) }).at(), { supersedes: first.recordId });
+  const plain1 = door(w, critique(w, { id: 'di-rev', statement: reworded(8) }).id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(8) }).at());
+  critique(w, { id: 'di-reworded', statement: reworded(5), ...listed }, {}, 2);
+  critique(w, { id: 'di-rev', statement: reworded(6) }, {}, 2);
+
+  // Act
+  const r2 = door(w, 'di-reworded', ownerAnswers(w, 'Nâng cấp', { statement: reworded(5) }).at(), { supersedes: first.recordId });
+  const plain2 = door(w, 'di-rev', ownerAnswers(w, 'Nâng cấp', { statement: reworded(6) }).at());
+
+  // Assert
+  assert.equal(r2.topic, first.topic);
+  assert.deepEqual(r2.superseded, [r1.recordId]);
+  assert.equal(get(r1.recordId, w.km).superseded_by, r2.recordId);
+  assert.equal(get(first.recordId, w.km).superseded_by, r1.recordId, 'history is kept');
+  assert.equal(plain2.topic, plain1.topic, 'captured under the earlier revision\'s topic');
+  assert.deepEqual(plain2.superseded, [plain1.recordId]);
+  assert.deepEqual(exported(w).standards.map((s) => s.id).sort(), [r2.recordId, plain2.recordId].sort());
+});
+
+test('a --supersedes that cannot be done is refused before the gate: nothing reaches KnowledgeMemory', { skip }, () => {
+  // Arrange: BASE and another text stored; a candidate rewords BASE into exactly that other, already active text
+  const w = world();
+  const first = door(w, critique(w).id, ownerAnswers(w).at());
+  const other = door(w, critique(w, { id: 'di-other-text', statement: reworded(7) }).id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(7) }).at());
+  const c = critique(w, { id: 'di-sup-dup', statement: reworded(7), existingStandards: [{ id: first.recordId, statement: BASE.statement }] });
+  const at = ownerAnswers(w, 'Nâng cấp', { statement: reworded(7) }).at();
+  const before = { bytes: storeBytes(w), approvals: ofType(w, 'promotion_approved').length, exported: exported(w) };
+
+  // Act + Assert
+  assert.throws(() => door(w, c.id, at, { supersedes: first.recordId }), (e) => e.code === 'supersedes_invalid' && e.message.includes(other.recordId) && !e.step);
+  assert.equal(storeBytes(w), before.bytes, 'no capture');
+  assert.equal(ofType(w, 'promotion_approved').length, before.approvals, 'refused before the gate');
+  assert.deepEqual(exported(w), before.exported);
+  assert.equal(get(first.recordId, w.km).state, 'active');
 });
 
 test('--supersedes is refused before the gate unless it names an active, door-made standard of the same scope the candidate lists', { skip }, () => {

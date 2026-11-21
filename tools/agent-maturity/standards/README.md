@@ -139,9 +139,16 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
    With `--supersedes <id>` (new wording for an old standard) the topic is the old record's, so KnowledgeMemory
    accepts the supersede. Before the gate, read-only, the door refuses with `supersedes_invalid` unless the id is in
    the candidate's `existingStandards` and the record is a standard the door stored (not an import), on the same
-   scope and project, and active (or already superseded by this candidate's own record: a rerun, which is done).
-4. **promote** (`promoteApproved`, basis `user_instruction`). 5. **supersede** the other active record on the same
-   topic and scope (the same statement approved again, or the `--supersedes` record). 6. **standard_promoted** in the critic store log. 7.
+   scope and project, and active (or already superseded by this candidate's own record: a rerun or a later revision).
+   The same text is never active twice and a candidate keeps one standard: an active door-made standard of the same
+   scope and project whose `standard_promoted` event has this `statementKey` or this candidate (an earlier revision)
+   is replaced too, so the record is captured under that standard's topic (KnowledgeMemory supersedes only within one
+   topic). Standards to replace on two topics are refused (`supersedes_invalid` with `--supersedes`,
+   `duplicate_active` without); retract the extra one first. All these checks run before the gate: a refusal writes
+   nothing.
+4. **promote** (`promoteApproved`, basis `user_instruction`). 5. **supersede** the other active records on that topic
+   and scope (the same statement approved again, an earlier revision, or the `--supersedes` record). 6.
+   **standard_promoted** in the critic store log. 7.
    **exportActive**, which passes the record on only with that event, so the log comes first.
 
 A failure in steps 3-7 is `store_step_failed` with `step`; capture and promote are idempotent (same content, same

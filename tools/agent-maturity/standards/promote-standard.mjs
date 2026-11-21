@@ -14,18 +14,20 @@
 //      be that class (hard_reject is refused by the gate whatever was shown). Read-only too.
 //   1c. --supersedes <standardId>, new wording for an old standard (supersedes_invalid): the id is in the candidate's
 //      existingStandards, and that record is a standard this door stored (not an import) on the same scope and
-//      project, active or already superseded by this candidate's own record (a rerun). Read-only too. The new record
-//      is then captured under the OLD record's topic, so KnowledgeMemory supersede accepts it.
-//   1d. The same text is never active twice: an active door-made standard of the same scope and project whose
-//      standard_promoted event has this statementKey is replaced too, so the new record is captured under its topic
-//      (KnowledgeMemory supersedes only within one topic). Records to replace on two topics are refused
-//      (supersedes_invalid with --supersedes, duplicate_active without). Read-only too.
+//      project, active or already superseded by this candidate's own record (a rerun or a later revision). Read-only
+//      too. The new record is then captured under the OLD record's topic, so KnowledgeMemory supersede accepts it.
+//   1d. The same text is never active twice, and a candidate has one standard: an active door-made standard of the
+//      same scope and project whose standard_promoted event has this statementKey or this candidate (an earlier
+//      revision) is replaced too, so the new record is captured under its topic (KnowledgeMemory supersedes only
+//      within one topic). Records to replace on two topics are refused (supersedes_invalid with --supersedes,
+//      duplicate_active without). Read-only too: every supersede check is done here, before anything is written.
 //   2. assertPromotable (D4 gate) on the critic store, with the hook event's own time as ownerMessage, so one logged
 //      answer approves one text of one candidate (owner_message_reused). The statement stored is the one the gate
 //      returns (the narrowed text for NARROW), never an argument.
-//   3. capture into KnowledgeMemory: topic dev-standard/<12 hex of statementKey> (or the topic from 1c/1d), source userSource(session, hook
-//      time) plus the candidate and verdict ids, scope from the candidate (user unless projects is 'this').
-//   4. promote with basis user_instruction (store-cli promoteApproved); 5. supersede the active standard on the same
+//   3. capture into KnowledgeMemory: topic dev-standard/<12 hex of statementKey> (or the topic from 1c/1d), source
+//      userSource(session, hook time) plus the candidate and verdict ids, scope from the candidate (user unless
+//      projects is 'this').
+//   4. promote with basis user_instruction (store-cli promoteApproved); 5. supersede the active standards on that
 //   topic; 6. log standard_promoted in the critic store; 7. exportActive, which passes a dev standard on only with
 //   that event (not_via_door otherwise), so the log comes first.
 // Everything that can be checked without writing (inputs, the hook log, the KnowledgeMemory CLI) is checked before
@@ -212,10 +214,11 @@ function checkSupersedes(candidate, oldId, scope, projectId, km) {
   return old;
 }
 
-// Read-only, before the gate: the topic the new record is captured under. Step 5 supersedes every active standard on
-// that topic in the record's scope, so each one it replaces must be there: the --supersedes record and any active
-// door-made standard whose standard_promoted event has the same statementKey (the same text is never active twice,
-// whatever its topic). Returns { old, topic }; topic is null when the statement is not text (the gate refuses it).
+// Read-only, before the gate (every supersede check is here, so a refusal writes nothing): the topic the new record
+// is captured under. Step 5 supersedes every active standard on that topic in the record's scope, so each one it
+// replaces must be there: the --supersedes record, any active door-made standard whose standard_promoted event has
+// the same statementKey (the same text is never active twice, whatever its topic) and any of an earlier revision of
+// this candidate. Returns { old, topic }; topic is null when the statement is not text (the gate refuses it).
 function planTopic({ candidate, statement, supersedes, projectPath, km }) {
   const stored = text(statement, GATE_STATEMENT_MAX);
   if (!stored.ok) return { old: null, topic: null };
@@ -224,7 +227,8 @@ function planTopic({ candidate, statement, supersedes, projectPath, km }) {
   const projectId = scope === 'project' ? (lookupProject(projectPath, km)?.id ?? null) : null;
   const old = supersedes ? checkSupersedes(candidate, supersedes, scope, projectId, km) : null;
   const replaced = listDoorActive(km)
-    .filter(({ record, event }) => record.scope === scope && (record.project_id ?? null) === projectId && event.statementKey === key)
+    .filter(({ record, event }) => record.scope === scope && (record.project_id ?? null) === projectId
+      && (event.statementKey === key || event.candidateId === candidate.id))
     .map(({ record }) => record);
   const topics = [...new Set([...(old ? [old.topic_key] : []), ...replaced.map((r) => r.topic_key)])];
   if (topics.length > 1) {
@@ -296,9 +300,6 @@ function storeStandard({ adapter, gate, candidate, verdict, old, topic, message,
   const captured = runStep('capture', done, () => capture(entry, km));
   if (captured.state !== 'candidate' && captured.state !== 'active') {
     fail('store_step_failed', `capture returned a ${captured.state} record (${captured.id}): this exact approval was dropped before; ask the owner again`, 'capture');
-  }
-  if (old && old.state !== 'active' && old.superseded_by !== captured.id) {
-    fail('supersedes_invalid', `--supersedes ${old.id}: it was already superseded by ${old.superseded_by}, not by this approval`);
   }
   const record = runStep('promote', done, () => promoteApproved(captured.id, km));
   const what = old ? `replaced standard ${old.id} with new wording` : 'approved the same statement again';
