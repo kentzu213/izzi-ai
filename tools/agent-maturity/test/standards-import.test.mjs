@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import fs, { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -10,15 +10,16 @@ import { fileURLToPath } from 'node:url';
 import { findFeedbackNotes, importFeedbackNotes, noteCandidate, parseNote } from '../standards/import-feedback.mjs';
 import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, retract, userSource } from '../standards/store-cli.mjs';
 import { doorStandard, doorTopic, rawCli } from './fixtures/door-standard.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
+const REAL_BEFORE = realHomeSnapshot();
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-import-')));
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 const NESTED = [

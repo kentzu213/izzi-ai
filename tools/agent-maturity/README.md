@@ -21,8 +21,10 @@ short note asking the agent to consider one upgrade question at the end of its r
 Backs up `settings.json` byte-for-byte, copies the runtime (hooks, `critic/*.mjs`, and `standards/promote-standard.mjs`,
 the single door for storing a dev standard, with its store wrapper and the refresh job) into
 `<claude-home>/agent-maturity/bin/` and the skill
-into `<claude-home>/skills/upgrade-checkpoint/`, then adds two hook groups, `UserPromptSubmit` (upgrade checkpoint)
-and `SessionStart` (dev standards, see `standards/README.md`), each with timeout 5 s. Re-running adds only a missing
+into `<claude-home>/skills/upgrade-checkpoint/`, then adds three hook groups, each with timeout 5 s:
+`UserPromptSubmit` (upgrade checkpoint), `SessionStart` (dev standards, see `standards/README.md`) and a second
+`SessionStart` group, `standards/refresh-if-due.mjs`, which starts the daily refresh in the background when the
+standards export is a day old (no OS scheduler, nothing outside `<claude-home>`). Re-running adds only a missing
 group, never a second copy; upgrading an install from before D3 keeps its original backup when `settings.json` was
 not changed since. It stops if `settings.json` changes while it runs.
 
@@ -42,4 +44,6 @@ agent-maturity hook; otherwise removes only these two hook groups and keeps the 
 
     pnpm run test:agent-maturity
 
-Tests use temp folders only and assert that the real `~/.claude/agent-maturity` does not exist afterwards.
+Tests use temp folders only. Since D2 the real `~/.claude/agent-maturity` exists and live sessions write it during a
+test run, so the tests check that they left no trace there (`test/real-home-guard.mjs`): no changed file outside
+the paths live sessions write, and no state or log entry for an id that is not a real session id.

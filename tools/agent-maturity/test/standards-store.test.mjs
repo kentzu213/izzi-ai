@@ -28,12 +28,13 @@ import {
   userSource,
 } from '../standards/store-cli.mjs';
 import { doorCandidateId, doorEntry, doorSource, doorStandard, doorTopic, rawCli } from './fixtures/door-standard.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const STARIZZI_ROOT = 'F:\\Ai Tools\\Tool Starizzi - B2C - Openclaw';
 const STARIZZI_ID = '2a906db6-a103-5375-b672-ad090f686c7e';
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
+const REAL_BEFORE = realHomeSnapshot();
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
@@ -86,7 +87,7 @@ const realAtStart = realStoreDigest();
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-store-')));
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 let n = 0;

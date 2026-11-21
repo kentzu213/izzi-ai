@@ -1,6 +1,6 @@
 // Installs the upgrade-checkpoint hook, the SessionStart standards hook, the skill and the commands root runs after a
-// checkpoint (critic/*.mjs, standards/promote-standard.mjs and its store wrapper, the refresh job) into a Claude Code
-// home (default ~/.claude).
+// checkpoint (critic/*.mjs, standards/promote-standard.mjs and its store wrapper, the daily refresh and its
+// SessionStart launcher) into a Claude Code home (default ~/.claude).
 // Usage: node tools/agent-maturity/install.mjs [--claude-home <dir>] [--settings <file>] [--dry-run]
 // See docs/izzi-v2/PLAN.md §4.6 and §4.9 item 5. Also exports the helpers uninstall.mjs uses.
 
@@ -13,11 +13,15 @@ import { tmpPathFor, writeFileAtomic } from './lib/store.mjs';
 
 export const HOOK_MARKER = 'agent-maturity/bin/hooks/prompt-signal.mjs';
 export const SESSION_HOOK_MARKER = 'agent-maturity/bin/hooks/session-start.mjs';
-// One group per event: the D1 prompt hook and the D3 standards hook (no matcher, so it also runs on resume/compact).
+export const REFRESH_HOOK_MARKER = 'agent-maturity/bin/standards/refresh-if-due.mjs';
+// One group per hook: the D1 prompt hook, the D3 standards hook and the D2 daily refresh launcher (no matcher, so the
+// SessionStart ones also run on resume/compact).
 const HOOK_EVENTS = [
   { event: 'UserPromptSubmit', marker: HOOK_MARKER },
   { event: 'SessionStart', marker: SESSION_HOOK_MARKER },
+  { event: 'SessionStart', marker: REFRESH_HOOK_MARKER },
 ];
+const HOOK_EVENT_NAMES = [...new Set(HOOK_EVENTS.map(({ event }) => event))];
 export const HOOK_TIMEOUT_SECONDS = 5;
 export const SKILL_NAME = 'upgrade-checkpoint';
 export const SKILL_MARKER = '.agent-maturity';
@@ -37,10 +41,12 @@ export const RUNTIME_FILES = [
   'hooks/session-start.mjs',
   'standards/inject.mjs',
   'standards/project-root.mjs',
-  // The single door for a dev standard, the store wrapper it uses, and the daily refresh (with the importer it runs).
+  // The single door for a dev standard, the store wrapper it uses, and the daily refresh (with the importer it runs)
+  // plus the SessionStart launcher that starts it.
   'standards/promote-standard.mjs',
   'standards/store-cli.mjs',
   'standards/refresh.mjs',
+  'standards/refresh-if-due.mjs',
   'standards/import-feedback.mjs',
   ...CRITIC_FILES,
 ];
@@ -115,7 +121,7 @@ export function readSettings(file) {
   }
   const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
   const hooks = isObject(value) ? value.hooks : undefined;
-  const badList = isObject(hooks) && HOOK_EVENTS.some(({ event }) => hooks[event] !== undefined && !Array.isArray(hooks[event]));
+  const badList = isObject(hooks) && HOOK_EVENT_NAMES.some((event) => hooks[event] !== undefined && !Array.isArray(hooks[event]));
   if (!isObject(value) || (hooks !== undefined && !isObject(hooks)) || badList) {
     throw new InstallError('settings_invalid', `${toSlash(file)} has an unexpected shape; nothing was written`);
   }
@@ -125,11 +131,12 @@ export function readSettings(file) {
 const commandFor = (home, marker) => `node "${toSlash(home)}/${marker}"`;
 export const hookCommand = (home) => commandFor(home, HOOK_MARKER);
 export const sessionHookCommand = (home) => commandFor(home, SESSION_HOOK_MARKER);
+export const refreshHookCommand = (home) => commandFor(home, REFRESH_HOOK_MARKER);
 const hasMarker = (h, marker) => Boolean(h) && typeof h.command === 'string' && toSlash(h.command).includes(marker);
 export const isOurHook = (h) => HOOK_EVENTS.some(({ marker }) => hasMarker(h, marker));
 const groupHas = (g, marker) => Boolean(g) && Array.isArray(g.hooks) && g.hooks.some((h) => hasMarker(h, marker));
 
-// Adds each missing agent-maturity group; returns the events it added (none when all are registered).
+// Adds each missing agent-maturity group; returns the { event, marker } pairs it added (none when all are registered).
 export function withHookGroups(settings, home) {
   let hooks = settings.hooks ?? {};
   const added = [];
@@ -138,7 +145,7 @@ export function withHookGroups(settings, home) {
     if (list.some((g) => groupHas(g, marker))) continue;
     const group = { hooks: [{ type: 'command', command: commandFor(home, marker), timeout: HOOK_TIMEOUT_SECONDS }] };
     hooks = { ...hooks, [event]: [...list, group] };
-    added.push(event);
+    added.push({ event, marker });
   }
   return added.length > 0 ? { settings: { ...settings, hooks }, added } : { settings, added };
 }
@@ -163,7 +170,7 @@ export function withoutHookGroup(settings) {
   if (!hooks) return { settings, removed: 0 };
   let removed = 0;
   const nextHooks = { ...hooks };
-  for (const { event } of HOOK_EVENTS) {
+  for (const event of HOOK_EVENT_NAMES) {
     if (!Array.isArray(hooks[event])) continue;
     const r = withoutOurs(hooks[event]);
     if (r.removed === 0) continue;
@@ -279,6 +286,7 @@ function applyInstall(t, current, next, files, previous, opts) {
     settingsShaAfter: shaAfter,
     hookCommand: hookCommand(t.home),
     sessionHookCommand: sessionHookCommand(t.home),
+    refreshHookCommand: refreshHookCommand(t.home),
     files: files.map((f) => toSlash(f.to)),
   };
   writeFileAtomic(manifestPath(t), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -296,8 +304,7 @@ export function install(opts = {}) {
     }
     const { settings: next, added } = withHookGroups(current.value, t.home);
     const files = plannedFiles(t);
-    const commands = { UserPromptSubmit: hookCommand(t.home), SessionStart: sessionHookCommand(t.home) };
-    for (const event of added) lines.push(`add ${event} hook: ${commands[event]}`);
+    for (const { event, marker } of added) lines.push(`add ${event} hook: ${commandFor(t.home, marker)}`);
     if (added.length === 0) lines.push('hooks already registered; settings.json unchanged');
     else lines.push(`back up ${toSlash(t.settings)} byte-for-byte first`);
     for (const f of files) lines.push(`write ${toSlash(f.to)}`);

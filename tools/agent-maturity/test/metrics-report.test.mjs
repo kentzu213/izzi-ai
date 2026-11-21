@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { classifierVersion } from '../metrics/baseline.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPORT = join(ROOT, 'report.mjs');
@@ -15,7 +15,6 @@ const HOOK = join(ROOT, 'hooks', 'prompt-signal.mjs');
 const FIXTURES = join(ROOT, 'test', 'fixtures');
 const EVENTS = join(FIXTURES, 'metrics-events.jsonl');
 const BASELINE = join(FIXTURES, 'metrics-baseline.json');
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 function listFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { recursive: true }).map((p) => join(dir, String(p))).filter((p) => statSync(p).isFile()).sort();
@@ -24,14 +23,12 @@ const scratch = mkdtempSync(join(tmpdir(), 'am-report-'));
 const fakeUserHome = join(scratch, 'user-home');
 mkdirSync(fakeUserHome);
 
-// After D2 installs the hook the real home exists; the tests must leave it exactly as it was.
-const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
-const realSnapshot = () => (existsSync(REAL_MATURITY_HOME) ? listFiles(REAL_MATURITY_HOME).map((f) => [f, statSync(f).mtimeMs, sha(f)]) : null);
-const REAL_BEFORE = realSnapshot();
+// After D2 the real home exists and live sessions write it; these tests must leave no trace there (real-home-guard.mjs).
+const REAL_BEFORE = realHomeSnapshot();
 
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.deepEqual(realSnapshot(), REAL_BEFORE, 'real ~/.claude/agent-maturity changed');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 function cleanEnv(extra) {

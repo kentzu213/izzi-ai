@@ -9,20 +9,26 @@ import { fileURLToPath } from 'node:url';
 
 import { install } from '../install.mjs';
 import { uninstall } from '../uninstall.mjs';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_CLAUDE = join(homedir(), '.claude');
 const REAL_SETTINGS = join(REAL_CLAUDE, 'settings.json');
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
-const realSettingsShaAtStart = existsSync(REAL_SETTINGS) ? sha(readFileSync(REAL_SETTINGS)) : null;
+// Since D2 the real home holds an install and live sessions (or Claude Code itself) may rewrite settings.json
+// while these tests run, so the checks look for traces of these tests, not for unchanged bytes.
+const REAL_SKILL = join(REAL_CLAUDE, 'skills', 'upgrade-checkpoint');
+const skillSnapshot = () => (existsSync(REAL_SKILL) ? readdirSync(REAL_SKILL).sort().map((f) => [f, sha(readFileSync(join(REAL_SKILL, f)))]) : null);
+const REAL_SKILL_BEFORE = skillSnapshot();
+const REAL_BEFORE = realHomeSnapshot();
 const scratch = mkdtempSync(join(tmpdir(), 'am-install-'));
 const ENV = { AGENT_MATURITY_TEST: '1' };
 
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(join(REAL_CLAUDE, 'agent-maturity')), false, 'real ~/.claude/agent-maturity must not exist');
-  assert.equal(existsSync(join(REAL_CLAUDE, 'skills', 'upgrade-checkpoint')), false, 'real skill dir must not exist');
-  if (realSettingsShaAtStart) assert.equal(sha(readFileSync(REAL_SETTINGS)), realSettingsShaAtStart, 'real settings.json changed');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
+  assert.deepEqual(skillSnapshot(), REAL_SKILL_BEFORE, 'a test changed the real upgrade-checkpoint skill');
+  if (existsSync(REAL_SETTINGS)) assert.ok(!readFileSync(REAL_SETTINGS, 'utf8').includes('am-install-'), 'a test hook reached the real settings.json');
 });
 
 const ORIGINAL = {
@@ -57,13 +63,15 @@ const ourCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/b
 const isOurs = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/hooks/prompt-signal.mjs'));
 const ourSessionCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/bin/hooks/session-start.mjs"`;
 const isOurSession = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/hooks/session-start.mjs'));
+const ourRefreshCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/bin/standards/refresh-if-due.mjs"`;
+const isOurRefresh = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/standards/refresh-if-due.mjs'));
 const readSettings = (file) => JSON.parse(readFileSync(file, 'utf8'));
-// Settings with both agent-maturity groups taken out; an event list left empty is dropped.
+// Settings with every agent-maturity group taken out; an event list left empty is dropped.
 function stripOurs(settings) {
   const hooks = { ...settings.hooks };
   for (const [event, mine] of [['UserPromptSubmit', isOurs], ['SessionStart', isOurSession]]) {
     if (!hooks[event]) continue;
-    hooks[event] = hooks[event].filter((g) => !mine(g));
+    hooks[event] = hooks[event].filter((g) => !mine(g) && !isOurRefresh(g));
     if (hooks[event].length === 0) delete hooks[event];
   }
   return { ...settings, hooks };
@@ -81,7 +89,16 @@ test('install backs up settings byte-for-byte and keeps every other hook', () =>
   const ours = next.hooks.UserPromptSubmit.filter(isOurs);
   assert.equal(ours.length, 1);
   assert.equal(next.hooks.SessionStart.filter(isOurSession).length, 1);
+  assert.equal(next.hooks.SessionStart.filter(isOurRefresh).length, 1);
   assert.deepEqual(stripOurs(next), ORIGINAL);
+});
+
+test('the installed refresh launcher is its own SessionStart group: / paths, timeout 5, no matcher, no onFailure', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const group = readSettings(settings).hooks.SessionStart.find(isOurRefresh);
+  assert.deepEqual(group, { hooks: [{ type: 'command', command: ourRefreshCommand(home), timeout: 5 }] });
+  assert.ok(existsSync(join(home, 'agent-maturity', 'bin', 'standards', 'refresh-if-due.mjs')));
 });
 
 test('the installed SessionStart entry uses / paths, timeout 5, no matcher and no onFailure', () => {
@@ -216,6 +233,7 @@ test('installing twice keeps a single hook group and the first backup', () => {
   assert.equal(r.code, 0);
   assert.equal(readSettings(settings).hooks.UserPromptSubmit.filter(isOurs).length, 1);
   assert.equal(readSettings(settings).hooks.SessionStart.filter(isOurSession).length, 1);
+  assert.equal(readSettings(settings).hooks.SessionStart.filter(isOurRefresh).length, 1);
   assert.equal(backupsIn(home).length, 1);
   assert.equal(JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8')).backup, JSON.parse(firstManifest).backup);
 });

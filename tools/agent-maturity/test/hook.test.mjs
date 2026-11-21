@@ -2,21 +2,22 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { realHomeLeaks, realHomeSnapshot } from './real-home-guard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const HOOK = join(ROOT, 'hooks', 'prompt-signal.mjs');
-const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
+const REAL_BEFORE = realHomeSnapshot();
 const scratch = mkdtempSync(join(tmpdir(), 'am-hook-'));
 const fakeUserHome = join(scratch, 'user-home');
 mkdirSync(fakeUserHome);
 
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
-  assert.equal(existsSync(REAL_MATURITY_HOME), false, 'real ~/.claude/agent-maturity must not exist');
+  assert.deepEqual(realHomeLeaks(REAL_BEFORE), [], 'a test wrote into the real ~/.claude/agent-maturity');
 });
 
 let homeCounter = 0;
