@@ -4,7 +4,8 @@
 //   R0  pure preference, or a procedure that only changes phrasing: no research.
 //   R1  content or marketing claim, or a pitfall: one cheap cited lookup, at most 2 sources.
 //   R2  process that changes the way of working, or anything touching law or security: one deep run.
-// The keyword guesses only raise a tier; explicit flags on the candidate win over them.
+// Flags and keyword guesses can only raise a tier: a flag set to true adds its rule; a flag set to false never
+// cancels what the wording shows.
 
 export const BUDGETS = Object.freeze({
   R0: Object.freeze({ maxSources: 0, maxDeepRuns: 0, maxToolCalls: 0 }),
@@ -67,7 +68,14 @@ const RESEARCH_TOOL_NAMES = [
   'mcp__firecrawl__firecrawl_developer_search',
   'mcp__firecrawl__firecrawl_gov_search',
   'mcp__firecrawl__firecrawl_research_search_papers',
+  'mcp__firecrawl__firecrawl_research_read_paper',
 ];
+
+// Only R2 web research may read a paper found by firecrawl_research_search_papers.
+const READ_PAPER_NEVER = {
+  tool: 'mcp__firecrawl__firecrawl_research_read_paper',
+  why: 'paper reading belongs to an R2 deep run only',
+};
 
 export const TOOL_FALLBACK_RULE =
   'If a tool returns 401, 402 or 403, switch to the next allowed tool; never retry the same paid tool.';
@@ -78,6 +86,7 @@ export const NEVER_TOOLS = Object.freeze([
   { tool: 'mcp__firecrawl__people_company_search', why: 'paid person/company data; not evidence for a standard' },
   { tool: 'mcp__firecrawl__people_company_enrich', why: 'paid contact data; not evidence for a standard' },
   { tool: 'mcp__firecrawl__alexandria_library_read', why: 'paid provider data; not evidence for a standard' },
+  { tool: 'mcp__firecrawl__jobs_search', why: 'paid job-posting data; not evidence for a standard' },
   { tool: 'mcp__firecrawl__firecrawl_save_skill', why: 'writes to the account; the critic is read-only' },
   { tool: 'mcp__composio__*', why: 'acts in third-party apps; the critic is read-only' },
   { tool: 'mcp__posthog__exec (write verbs)', why: 'changes production analytics; the critic is read-only' },
@@ -117,7 +126,7 @@ const MARKETING_RE = words([
 
 const PROCESS_KINDS = new Set(['procedure', 'quality_gate', 'pitfall']);
 
-const flagOr = (flag, guess) => (typeof flag === 'boolean' ? flag : guess);
+const flagOr = (flag, guess) => flag === true || guess;
 
 function applicableReasons(candidate) {
   const statement = candidate.statement.normalize('NFC').toLowerCase();
@@ -152,7 +161,7 @@ function neverFor(tier, external) {
   if (external === 'local-only') {
     return [...never, ...RESEARCH_TOOL_NAMES.map((tool) => ({ tool, why: 'owner-private content: no external research' }))];
   }
-  return never;
+  return tier === 'R2' ? never : [...never, { ...READ_PAPER_NEVER }];
 }
 
 export function selectResearchTier(candidate) {

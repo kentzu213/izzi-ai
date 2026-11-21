@@ -1,12 +1,15 @@
 // Socrates verdict contract (docs/izzi-v2/PLAN.md §2.4 and §4.9 item 6). Pure functions.
-// - validateVerdict: schema + consistency with the candidate, its research tier and budget.
+// - validateVerdict: schema + consistency with the candidate, its research tier and budget; the verdict must echo
+//   the inputFingerprint and candidateRevision the brief printed.
 // - detectHardReject: a code floor for obvious wording that loosens verification, security or honest
 //   reporting, or expands authority. Socrates is the primary judge; the floor only catches what is plain.
 // - promotionDecision: what root does next; a hard-REJECT is refused even when the owner forces it.
+// - extractVerdictJson: plain JSON or exactly one fenced json block, with no duplicate keys.
 
-import { containsPiiOrSecret, isObject, text } from './candidate.mjs';
+import { containsPiiOrSecret, isObject, stripDiacritics, text } from './candidate.mjs';
+import { inputFingerprint } from './loop-guard.mjs';
 
-export const VERDICT_SCHEMA = 'agent-maturity/verdict@1';
+export const VERDICT_SCHEMA = 'agent-maturity/verdict@2';
 export const VERDICTS = ['ACCEPT', 'NARROW', 'NEED-MORE-EVIDENCE', 'REJECT'];
 export const HARD_REJECT_CLASSES = [
   'loosens_verification',
@@ -17,6 +20,28 @@ export const HARD_REJECT_CLASSES = [
 export const EVIDENCE_KINDS = ['event', 'contrast_pair', 'artifact', 'standard', 'source'];
 export const FINDINGS = ['supports', 'contradicts', 'insufficient'];
 export const CHECK_KEYS = ['evidenceSupports', 'scopeTooWide', 'contradictsExisting', 'tierCorrect'];
+
+// A refused reply may get one "fix only the JSON" retry only when every error is one of these: the reply could
+// not be read, or a field broke its shape or a limit. Every other code is a semantic error: no retry.
+export const FORMAT_ERROR_CODES = Object.freeze([
+  'no_json',
+  'json_invalid',
+  'multiple_json_blocks',
+  'duplicate_keys',
+  'not_object',
+  'schema_invalid',
+  'verdict_invalid',
+  'reasons_invalid',
+  'evidence_invalid',
+  'checks_invalid',
+  'hard_reject_invalid',
+  'research_invalid',
+  'reviewer_invalid',
+  'narrowed_invalid',
+  'fingerprint_missing',
+  'revision_missing',
+]);
+export const isFormatOnly = (errors) => errors.length > 0 && errors.every((e) => FORMAT_ERROR_CODES.includes(e.code));
 
 const ALIASES = { 'NEED-MORE': 'NEED-MORE-EVIDENCE', NEED_MORE_EVIDENCE: 'NEED-MORE-EVIDENCE' };
 const TIER_RANK = { R0: 0, R1: 1, R2: 2 };
@@ -43,42 +68,83 @@ const MAX_DETAILS = 5;
 
 const B = '(?<![\\p{L}\\p{N}_])';
 const E = '(?![\\p{L}\\p{N}_])';
-const GAP = (n) => `(?:\\S+\\s+){0,${n}}?`;
+// A gap token never ends with punctuation, so a gap cannot run across ; , . : or a dash into another clause.
+const TOK = '[^\\s]*[^\\s.,;:!?—–]';
+const GAP = (n) => `(?:${TOK}\\s+){0,${n}}?`;
 const any = (list) => `(?:${list.join('|')})`;
+// Floor phrases: each accented letter also matches its unaccented base letter, so "Bo qua test" and "Deploy
+// khong can hoi" are caught, while distinct accented words stay distinct (lời/lỗi, tất/tắt, cái/cài): full
+// diacritic folding would hard-REJECT "Chạy tất cả test" as "tắt ... test".
+const tolerant = (source) =>
+  Array.from(source, (ch) => {
+    const base = stripDiacritics(ch);
+    return base !== ch && base.length === 1 ? `[${ch}${base}]` : ch;
+  }).join('');
+const anyF = (list) => `(?:${list.map(tolerant).join('|')})`;
 const rx = (source) => new RegExp(source, 'gu');
 
 const SECRET_WORDS = [
   'secrets?', 'api key', 'api-key', 'apikey', 'private key', 'khoá api', 'khóa api', 'access token', 'api token',
   'mật khẩu', 'passwords?', 'credentials?',
 ];
+const AUTH_VERBS = [
+  'deploy(?:s|ed|ing)?', 'triển khai', 'force-push(?:es|ed|ing)?', 'force push(?:es|ed|ing)?', 'push(?:es|ed|ing)?',
+  'merg(?:e|es|ed|ing)', 'releas(?:e|es|ed|ing)', 'phát hành', 'publish(?:es|ed|ing)?', 'đăng bài', 'đăng lên',
+  'gửi tin nhắn', 'gửi tin', 'gửi email', 'gửi mail', 'nhắn tin', 'send(?:s|ing)? (?:a |the )?(?:messages?|emails?|mails?|dms?)',
+  'sent (?:a |the )?(?:messages?|emails?|mails?|dms?)', 'xoá', 'xóa', 'delet(?:e|es|ed|ing)', 'drop(?:s|ped|ping)?',
+  'thanh toán', 'charg(?:e|es|ed|ing)', 'mua', 'purchas(?:e|es|ed|ing)', 'cài', 'install(?:s|ed|ing)?',
+];
+const ASK_TAILS = [
+  'mà không cần hỏi', 'mà không hỏi', 'không cần hỏi', 'không hỏi', 'khi chưa hỏi', 'chưa hỏi', 'mà không xin phép',
+  'không xin phép', 'không cần duyệt', 'không chờ duyệt', 'chưa được duyệt', 'without asking', 'without approval',
+  'without confirmation', 'without permission', 'without review', 'without the owner',
+];
+const VERIFY_NOUNS = [
+  'tests?', 'testing', 'kiểm thử', 'review', 'reviews', 'kiểm tra', 'verify', 'verification', 'xác minh', 'kiểm chứng',
+  'ci', 'lint', 'typecheck', 'smoke', 'qa',
+];
+// Verbs that a "without running tests" phrase hangs from; the floor match starts at the verb, so "never merge
+// without running tests" is judged by the negator before "merge".
+const WITHOUT_VERBS = [
+  ...AUTH_VERBS, 'commit(?:s|ted|ting)?', 'ship(?:s|ped|ping)?', 'finish(?:es|ed|ing)?', 'report(?:s|ed|ing)?',
+  'mark(?:s|ed|ing)?', 'clos(?:e|es|ed|ing)', 'hand(?:s|ed|ing)? (?:off|over)', 'deliver(?:s|ed|ing)?',
+  'submit(?:s|ted|ting)?', 'approv(?:e|es|ed|ing)', 'say(?:s|ing)?', 'declar(?:e|es|ed|ing)', 'claim(?:s|ed|ing)?',
+  'call(?:s|ed|ing)?', 'land(?:s|ed|ing)?', 'roll(?:s|ed|ing)? out',
+];
+// A gap that may not hold a negator: "tests are never optional" is not "tests are optional".
+const NEG_TOKEN = `${anyF(['không', 'chẳng', 'chưa', 'never', 'not', "isn't", "aren't", 'no'])}${E}`;
+const GAP_NO_NEG = (n) => `(?:(?!${NEG_TOKEN})${TOK}\\s+){0,${n}}?`;
 
 const FLOOR = [
   {
     cls: 'expands_authority',
+    // "Deploy to staging, without asking": the tail may follow a comma or dash; that punctuation then sits inside
+    // the match, so no negator can clear it.
+    re: rx(`${B}${anyF(AUTH_VERBS)}${E}\\s*${GAP(4)}(?:(?:${TOK})?[,—–]\\s*)?${anyF(ASK_TAILS)}${E}`),
+  },
+  {
+    cls: 'expands_authority',
     re: rx(
-      `${B}${any([
-        'deploy', 'triển khai', 'push', 'force-push', 'force push', 'merge', 'release', 'phát hành', 'publish',
-        'đăng bài', 'đăng lên', 'gửi tin nhắn', 'gửi tin', 'gửi email', 'gửi mail', 'nhắn tin',
-        'send (?:a |the )?(?:messages?|emails?|mails?|dms?)', 'xoá', 'xóa', 'delete', 'drop', 'thanh toán', 'charge',
-        'mua', 'purchase', 'cài', 'install',
-      ])}${E}\\s*${GAP(4)}${any([
-        'mà không cần hỏi', 'mà không hỏi', 'không cần hỏi', 'không hỏi', 'khi chưa hỏi', 'chưa hỏi',
-        'mà không xin phép', 'không xin phép', 'không cần duyệt', 'không chờ duyệt', 'chưa được duyệt',
-        'without asking', 'without approval', 'without confirmation', 'without permission', 'without review',
-        'without the owner',
-      ])}${E}`,
+      `${B}${anyF(['no need to', "don't need to", 'do not need to', "needn't", 'không cần', 'khỏi cần', "don't", 'do not', 'never', 'đừng', 'không'])}\\s+${anyF([
+        'ask(?:ing)?', 'hỏi', 'xin phép', 'confirm(?:ing)?', 'check(?:ing)? with', 'wait(?:ing)? for approval', 'chờ duyệt',
+        'get(?:ting)? approval',
+      ])}${E}\\s*${GAP(3)}${anyF(AUTH_VERBS)}${E}`,
+    ),
+  },
+  {
+    cls: 'expands_authority',
+    re: rx(`${B}${anyF(['tự ý', 'tự tiện', 'unilaterally'])}\\s+${GAP(1)}${anyF(AUTH_VERBS)}${E}`),
+  },
+  {
+    cls: 'expands_authority',
+    re: rx(
+      `${B}${anyF(['tự duyệt', 'tự approve', 'tự merge', 'self-approve', 'self approve', '(?:approve|merge) (?:your|its|my|their) own'])}${E}`,
     ),
   },
   {
     cls: 'expands_authority',
     re: rx(
-      `${B}${any(['tự duyệt', 'tự approve', 'tự merge', 'self-approve', 'self approve', '(?:approve|merge) (?:your|its|my|their) own'])}${E}`,
-    ),
-  },
-  {
-    cls: 'expands_authority',
-    re: rx(
-      `${B}${any(['bỏ qua', 'skip', 'bypass', 'vượt', 'tắt', 'disable'])}\\s+${GAP(2)}${any([
+      `${B}${anyF(['bỏ qua', 'skip', 'bypass', 'vượt', 'tắt', 'disable'])}\\s+${GAP(2)}${anyF([
         'quyền', 'permissions?', 'xin phép', 'hỏi ý kiến', 'phê duyệt', 'approvals?', 'confirmation', 'human gate',
         'cổng duyệt',
       ])}${E}`,
@@ -87,21 +153,21 @@ const FLOOR = [
   {
     cls: 'expands_authority',
     re: rx(
-      `${B}${any(['dùng', 'use', 'sử dụng'])}\\s+${GAP(2)}${any(['credentials?', 'tokens?', 'keys?', 'mật khẩu', 'passwords?', 'tài khoản', 'accounts?'])}\\s+${GAP(2)}${any(['không được cấp', 'chưa được cấp', 'của người khác', 'của khách', 'not given', 'not granted', 'of someone else'])}`,
+      `${B}${anyF(['dùng', 'use', 'sử dụng'])}\\s+${GAP(2)}${anyF(['credentials?', 'tokens?', 'keys?', 'mật khẩu', 'passwords?', 'tài khoản', 'accounts?'])}\\s+${GAP(2)}${anyF(['không được cấp', 'chưa được cấp', 'của người khác', 'của khách', 'not given', 'not granted', 'of someone else'])}`,
     ),
   },
   { cls: 'expands_authority', re: rx('dangerously-skip-permissions|bypasspermissions|--yolo') },
   {
     cls: 'loosens_security',
     re: rx(
-      `${B}${any(['hardcode', 'hard-code', 'hard code', 'commit', 'paste', 'dán', 'nhét', 'embed'])}\\s+${GAP(2)}(?:${any([...SECRET_WORDS, 'tokens?'])}${E}|\\.env${E})`,
+      `${B}${anyF(['hardcode', 'hard-code', 'hard code', 'commit', 'paste', 'dán', 'nhét', 'embed'])}\\s+${GAP(2)}(?:${anyF([...SECRET_WORDS, 'tokens?'])}${E}|\\.env${E})`,
     ),
   },
-  { cls: 'loosens_security', re: rx(`${B}${any(['in ra', 'print', 'log', 'ghi log'])}\\s+${GAP(2)}${any(SECRET_WORDS)}${E}`) },
+  { cls: 'loosens_security', re: rx(`${B}${anyF(['in ra', 'print', 'log', 'ghi log'])}\\s+${GAP(2)}${anyF(SECRET_WORDS)}${E}`) },
   {
     cls: 'loosens_security',
     re: rx(
-      `${B}${any(['tắt', 'disable', 'turn off', 'bỏ qua', 'skip', 'bypass', 'vô hiệu hoá', 'vô hiệu hóa', 'nới lỏng', 'loosen', 'relax'])}\\s+${GAP(2)}${any([
+      `${B}${anyF(['tắt', 'disable', 'turn off', 'bỏ qua', 'skip', 'bypass', 'vô hiệu hoá', 'vô hiệu hóa', 'nới lỏng', 'loosen', 'relax'])}\\s+${GAP(2)}${anyF([
         'bảo mật', 'security', 'xác thực', 'auth', 'authentication', '2fa', 'mfa', 'tls', 'ssl', 'csrf', 'rate limit',
         'rate-limit', 'firewall', 'sandbox', 'mã hoá', 'mã hóa', 'encryption', 'quét bảo mật', 'secret scan(?:ning)?',
       ])}${E}`,
@@ -111,15 +177,15 @@ const FLOOR = [
   {
     cls: 'loosens_honest_reporting',
     re: rx(
-      `${B}${any(['không', 'đừng', 'chớ', 'never', "don't", 'do not', 'avoid', 'tránh'])}\\s+(?:cần\\s+)?${any([
+      `${B}${anyF(['không', 'đừng', 'chớ', 'never', "don't", 'do not', 'avoid', 'tránh'])}\\s+(?:${tolerant('cần')}\\s+)?${anyF([
         'nhắc', 'báo', 'nói', 'ghi', 'nêu', 'kể', 'mention', 'report', 'show', 'hiện', 'list', 'liệt kê',
-      ])}(?:\\s+\\S+){0,3}?\\s+${any(['lỗi', 'fail', 'failed', 'failures?', 'thất bại', 'errors?', 'cảnh báo', 'warnings?', 'rủi ro', 'risks?'])}${E}`,
+      ])}\\s+${GAP(3)}${anyF(['lỗi', 'fail', 'failed', 'failures?', 'thất bại', 'errors?', 'cảnh báo', 'warnings?', 'rủi ro', 'risks?'])}${E}`,
     ),
   },
   {
     cls: 'loosens_honest_reporting',
     re: rx(
-      `${B}${any(['giấu', 'che giấu', 'ẩn', 'hide', 'conceal', 'bury', 'lờ đi', 'omit'])}\\s+${GAP(2)}${any([
+      `${B}${anyF(['giấu', 'che giấu', 'ẩn', 'hide', 'conceal', 'bury', 'lờ đi', 'omit'])}\\s+${GAP(2)}${anyF([
         'lỗi', 'fail', 'failed', 'failures?', 'thất bại', 'errors?', 'cảnh báo', 'warnings?', 'kết quả xấu',
       ])}${E}`,
     ),
@@ -127,40 +193,66 @@ const FLOOR = [
   {
     cls: 'loosens_honest_reporting',
     re: rx(
-      `${B}${any(['báo', 'report', 'đánh dấu', 'mark', 'ghi nhận', 'coi'])}\\s+(?:là\\s+)?${any([
+      `${B}${anyF(['báo', 'report', 'đánh dấu', 'mark', 'ghi nhận', 'coi'])}\\s+(?:${tolerant('là')}\\s+)?${anyF([
         'xong', 'done', 'complete', 'completed', 'pass', 'passed', 'thành công', 'success', 'đạt',
-      ])}(?:\\s+\\S+){0,2}?\\s+${any(['khi chưa', 'dù', 'mà chưa', 'without', 'before', 'even if', 'even though', 'trước khi', 'although'])}${E}`,
+      ])}\\s+${GAP(2)}${anyF(['khi chưa', 'dù', 'mà chưa', 'without', 'before', 'even if', 'even though', 'trước khi', 'although'])}${E}`,
     ),
   },
   {
     cls: 'loosens_verification',
     re: rx(
-      `${B}${any([
+      `${B}${anyF([
         'bỏ qua', 'skip', 'skipping', 'bypass', 'không cần', 'no need to', "don't need to", 'do not need to', 'lược bỏ',
         'omit', 'disable', 'tắt',
-      ])}\\s+${GAP(2)}${any([
-        'tests?', 'testing', 'kiểm thử', 'review', 'reviews', 'kiểm tra', 'verify', 'verification', 'xác minh',
-        'kiểm chứng', 'ci', 'lint', 'typecheck', 'smoke', 'qa',
+      ])}\\s+${GAP(2)}${anyF(VERIFY_NOUNS)}${E}`,
+    ),
+  },
+  {
+    cls: 'loosens_verification',
+    re: rx(
+      `${B}${anyF(['không cần', 'khỏi cần', 'no need to', 'không', 'đừng', 'khỏi', 'chẳng', 'never', "don't", 'do not'])}\\s+${anyF([
+        'chạy', 'run', 'running', 'execute', 'thực hiện', 'làm',
+      ])}${E}\\s*${GAP(2)}${anyF([...VERIFY_NOUNS, 'bộ test', 'test suite'])}${E}`,
+    ),
+  },
+  {
+    cls: 'loosens_verification',
+    re: rx(
+      `${B}${anyF(WITHOUT_VERBS)}${E}\\s+${GAP(3)}without\\s+(?:${anyF(['running', 'run', 'executing', 'any', 'a', 'the'])}\\s+){0,2}${anyF(VERIFY_NOUNS)}${E}`,
+    ),
+  },
+  {
+    cls: 'loosens_verification',
+    re: rx(
+      `${B}${anyF(VERIFY_NOUNS)}${E}\\s+${GAP_NO_NEG(2)}${anyF([
+        'không bắt buộc', 'không cần thiết', 'không quan trọng', 'tuỳ chọn', 'tùy chọn', 'optional', 'not required',
+        'not mandatory', 'not needed', 'unnecessary',
       ])}${E}`,
     ),
   },
   { cls: 'loosens_verification', re: rx('--no-verify') },
 ];
 
-// Negation is judged inside the sentence that holds the match. A match is negated when
-//  - a negator governs it from the left: "không bỏ qua test", "it is not allowed to skip tests",
-//    "never, even when rushed, skip tests"; or
-//  - the same sentence goes on to forbid it: "skipping tests is never allowed", "bỏ qua test là không được
-//    phép", "việc bỏ qua review đều bị cấm".
-// A negation about something else does not clear it: "skip tests when the owner is not around", "không bao giờ
-// chờ CI, cứ bỏ qua test", "đừng ngại bỏ qua test" stay hard-REJECT. A clause word (when, if, that, khi, nếu,
-// và...) or a bare comma between the phrase and the prohibition breaks the link; only an "even/dù/kể cả ..."
-// aside between commas is skipped. Unclear cases stay refused: the floor errs toward REJECT.
+// Negation is judged inside the sentence that holds the match, with the accented negators only (an unaccented
+// "khong" never clears a match: the floor errs toward REJECT). A match is negated when
+//  - a negator governs it from the left in the same clause: "không bỏ qua test", "it is not allowed to skip
+//    tests", "never, even when rushed, skip tests"; or
+//  - the same sentence goes on to forbid it: "skipping tests is never allowed", "bỏ qua test là không được phép".
+// It is NOT negated (the hard-REJECT stands) when
+//  - punctuation (; , . : or a dash) separates the negator from it, or sits inside the match: a negation ends at
+//    the punctuation ("Never deploy on Friday; push without asking");
+//  - an exception or condition follows it in the sentence (trừ khi, ngoại trừ, nếu, khi, unless, except, if,
+//    when): "Không bỏ qua test trừ khi anh đang vội". Concessive "even if", "kể cả khi" and temporal "trước
+//    khi", "sau khi" are not exceptions;
+//  - the negations cancel: an even number of negators ("Không cấm bỏ qua test", "Nobody says you can't skip
+//    tests", "skipping tests is not forbidden").
+// Only an "even/dù/kể cả ..." aside between commas is skipped. Unclear cases stay refused.
 const LEFT_NEGATORS = [
   'không bao giờ', 'chẳng bao giờ', 'không được', 'không nên', 'tuyệt đối không', 'nghiêm cấm', 'không ai', 'không',
   'chẳng', 'đừng bao giờ', 'đừng', 'chớ', 'cấm', 'never', 'do not', "don't", 'must not', "mustn't", 'should not',
   "shouldn't", 'may not', 'cannot', "can't", 'no one', 'nobody', 'not',
 ];
+const COUNTED_NEGATORS = [...LEFT_NEGATORS, "isn't", "aren't", "wasn't", "weren't", "won't", "doesn't", "didn't", 'chưa'];
 const LEFT_FILLERS = [
   'ever', 'bao giờ', 'tự ý', 'dùng', 'use', 'using', 'chạy', 'run', 'được', 'phép', 'allowed', 'permitted', 'ok',
   'okay', 'acceptable', 'to', 'be', 'may', 'can', 'should', 'must', 'will',
@@ -181,33 +273,75 @@ const PROHIBITIONS = [
   `${any(['không bao giờ', 'chẳng bao giờ', 'chưa bao giờ', 'không', 'chẳng'])}\\s+(?:được(?:\\s+${any(['phép', 'chấp nhận', 'cho phép'])})?|${any(['cho phép', 'chấp nhận', 'ổn', 'ok'])})`,
   '(?:bị\\s+)?(?:nghiêm\\s+)?cấm',
 ];
-const NEGATED_BEFORE = new RegExp(`${B}${any(LEFT_NEGATORS)}(?:\\s+${any(LEFT_FILLERS)})*(?:${ASIDE})?\\s*$`, 'u');
+const EXCEPTIONS = [
+  'trừ khi', 'trừ phi', 'ngoại trừ', 'trừ', 'nếu', '(?<!(?:trước|sau|kể cả|ngay cả|cho đến|đến|tới)\\s)khi', 'unless',
+  'except', 'excepting', 'only if', '(?<!even\\s)if', '(?<!even\\s)when', 'whenever',
+];
+const NEGATED_BEFORE = new RegExp(`${B}${any(LEFT_NEGATORS)}(?:\\s+${any(LEFT_FILLERS)})*\\s*$`, 'u');
 const NEGATED_AFTER = new RegExp(
-  `^(?:${ASIDE})?(?:\\s+(?!${any(CLAUSE_WORDS)}${E})[^\\s,:]+){0,4}?(?:${ASIDE})?\\s+(?:${any(COPULAS)}\\s+){0,2}${any(PROHIBITIONS)}${E}`,
+  `^(?<gap>(?:${ASIDE})?(?:\\s+(?!${any(CLAUSE_WORDS)}${E})[^\\s,:;—–]+){0,4}?(?:${ASIDE})?\\s+(?:${any(COPULAS)}\\s+){0,2})${any(PROHIBITIONS)}${E}`,
   'u',
 );
+const NEGATORS_G = new RegExp(`${B}${any(COUNTED_NEGATORS)}${E}`, 'gu');
+const EXCEPTION_AFTER = new RegExp(`${B}${any(EXCEPTIONS)}${E}`, 'u');
+const ASIDE_G = new RegExp(ASIDE, 'gu');
+const SEPARATOR_G = /[.,;:!?](?=\s|$)|[—–]/gu;
+const SEPARATOR_IN_MATCH = /[.,;!?](?=\s)|[—–]/u;
 const SENTENCE_END = /[.!?;](?=\s|$)|\n/gu;
 
-function isNegated(textLower, start, end) {
+const countNegators = (s) => [...s.matchAll(NEGATORS_G)].length;
+
+function sentenceAround(t, start, end) {
   let from = 0;
-  let to = textLower.length;
-  for (const b of textLower.matchAll(SENTENCE_END)) {
+  let to = t.length;
+  for (const b of t.matchAll(SENTENCE_END)) {
     if (b.index < start) from = b.index + 1;
     else if (b.index >= end) {
       to = b.index;
       break;
     }
   }
-  return NEGATED_BEFORE.test(textLower.slice(from, start)) || NEGATED_AFTER.test(textLower.slice(end, to));
+  return { from, to };
+}
+
+// The clause that ends right before the match: asides removed, then the text after the last separator.
+function clauseBefore(t, from, start) {
+  const before = t.slice(from, start).replace(ASIDE_G, ' ');
+  const cuts = [...before.matchAll(SEPARATOR_G)];
+  return cuts.length === 0 ? before : before.slice(cuts[cuts.length - 1].index + 1);
+}
+
+function isNegated(t, start, end) {
+  if (SEPARATOR_IN_MATCH.test(t.slice(start, end))) return false;
+  const { from, to } = sentenceAround(t, start, end);
+  const after = t.slice(end, to);
+  if (EXCEPTION_AFTER.test(after)) return false;
+  const clause = clauseBefore(t, from, start);
+  if (NEGATED_BEFORE.test(clause)) return countNegators(clause) % 2 === 1;
+  const m = NEGATED_AFTER.exec(after);
+  return Boolean(m) && (countNegators(clause) + countNegators(m.groups.gap)) % 2 === 0;
+}
+
+// NFKC, lower case; zero-width, bidi and leftover combining characters removed so they cannot split a word;
+// curly apostrophes made straight; other control and line-separator characters become spaces or line breaks.
+function prepare(input) {
+  return input
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\p{Cf}\p{M}]/gu, '')
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
+    .replace(/[^\S\n]/g, ' ')
+    .replace(/[\p{Cc}]/gu, (c) => (c === '\n' ? '\n' : ' '));
 }
 
 // Returns { class, phrase } for the first non-negated match, or null.
 export function detectHardReject(input) {
   if (typeof input !== 'string' || input.trim() === '') return null;
-  const textLower = input.normalize('NFC').toLowerCase();
+  const t = prepare(input);
   for (const { cls, re } of FLOOR) {
-    for (const m of textLower.matchAll(re)) {
-      if (!isNegated(textLower, m.index, m.index + m[0].length)) return { class: cls, phrase: m[0] };
+    for (const m of t.matchAll(re)) {
+      if (!isNegated(t, m.index, m.index + m[0].length)) return { class: cls, phrase: m[0] };
     }
   }
   return null;
@@ -224,9 +358,10 @@ function textOf(value, max, label, { optional = false } = {}) {
   const t = text(value, max, { optional });
   if (t.ok) return t;
   if (value === undefined) return bad(`${label} missing`);
-  if (typeof value !== 'string') return bad(`${label} is not text`);
-  const length = value.normalize('NFC').trim().length;
-  return bad(length === 0 ? `${label} is empty` : `${label} length ${length} > ${max}`);
+  if (t.reason === 'type') return bad(`${label} is not text`);
+  if (t.reason === 'unsafe') return bad(`${label} has a control, format or line-break character`);
+  if (t.reason === 'empty') return bad(`${label} is empty`);
+  return bad(`${label} length ${t.length} > ${max}`);
 }
 
 function listOf(raw, max, label, checkItem, { allowEmpty = false } = {}) {
@@ -294,7 +429,14 @@ function reviewerOf(raw) {
   return { ok: true, value: model.value === undefined ? { agent: 'socrates' } : { agent: 'socrates', model: model.value } };
 }
 
-function normalizeVerdictName(raw) {
+function narrowedOf(raw) {
+  const statement = isObject(raw) ? raw.statement : undefined;
+  const missing = statement === undefined || (typeof statement === 'string' && statement.trim() === '');
+  if (missing) return { ...bad('narrowed.statement missing'), missing: true };
+  return textOf(statement, LIMIT.narrowed, 'narrowed.statement');
+}
+
+export function normalizeVerdictName(raw) {
   if (typeof raw !== 'string') return null;
   const upper = raw.trim().toUpperCase();
   const name = ALIASES[upper] ?? upper;
@@ -310,6 +452,15 @@ function collector() {
   return { errors, fail };
 }
 
+// The verdict must name the exact text the brief showed: candidate id, revision and inputFingerprint.
+function bindingErrors(raw, candidate, fail) {
+  if (raw.candidateId !== candidate.id) fail('candidate_mismatch', 'candidateId');
+  if (raw.candidateRevision === undefined) fail('revision_missing', 'candidateRevision');
+  else if (raw.candidateRevision !== candidate.revision) fail('revision_mismatch', 'candidateRevision');
+  if (raw.inputFingerprint === undefined) fail('fingerprint_missing', 'inputFingerprint');
+  else if (raw.inputFingerprint !== inputFingerprint(candidate)) fail('fingerprint_mismatch', 'inputFingerprint');
+}
+
 // Structural pass: { errors, parts }.
 function parse(raw, candidate) {
   const { errors, fail } = collector();
@@ -318,10 +469,7 @@ function parse(raw, candidate) {
     return r.value;
   };
   if (raw.schema !== undefined && raw.schema !== VERDICT_SCHEMA) fail('schema_invalid', 'schema');
-  if (raw.candidateId !== candidate.id) fail('candidate_mismatch', 'candidateId');
-  if (raw.candidateRevision !== undefined && raw.candidateRevision !== candidate.revision) {
-    fail('revision_mismatch', 'candidateRevision');
-  }
+  bindingErrors(raw, candidate, fail);
   const verdict = normalizeVerdictName(raw.verdict);
   if (!verdict) fail('verdict_invalid', 'verdict');
   const reasonText = (r, label) => textOf(r, LIMIT.reason, label);
@@ -331,9 +479,7 @@ function parse(raw, candidate) {
   const hardReject = check('hard_reject_invalid', 'hardReject', hardRejectOf(raw.hardReject));
   const research = check('research_invalid', 'research', researchOf(raw.research));
   const reviewer = check('reviewer_invalid', 'reviewer', reviewerOf(raw.reviewer));
-  const narrowed = isObject(raw.narrowed)
-    ? textOf(raw.narrowed.statement, LIMIT.narrowed, 'narrowed.statement')
-    : bad('narrowed.statement missing');
+  const narrowed = narrowedOf(raw.narrowed);
   const reviewAfter = typeof raw.reviewAfter === 'string' && DAY_RE.test(raw.reviewAfter) ? raw.reviewAfter : null;
   return {
     errors,
@@ -341,32 +487,15 @@ function parse(raw, candidate) {
   };
 }
 
-function semanticErrors(p, candidate, tier) {
-  const { errors, fail } = collector();
+function narrowErrors(p, candidate, fail) {
+  if (!p.narrowed.ok) fail(p.narrowed.missing ? 'narrow_needs_statement' : 'narrowed_invalid', 'narrowed', p.narrowed.details);
+  else if (p.narrowed.value === candidate.statement) {
+    fail('narrow_needs_statement', 'narrowed', ['narrowed.statement equals the candidate statement']);
+  } else if (detectHardReject(p.narrowed.value)) fail('hard_reject_floor', 'narrowed');
+}
+
+function researchErrors(p, tier, fail) {
   const shapesSentence = p.verdict === 'ACCEPT' || p.verdict === 'NARROW';
-
-  if (p.hardReject && p.verdict !== 'REJECT') fail('hard_reject_must_reject', 'hardReject');
-  const floor = detectHardReject(`${candidate.statement}\n${candidate.check}`);
-  if (floor && p.verdict !== 'REJECT') fail('hard_reject_floor', 'verdict');
-
-  if (p.verdict === 'NARROW') {
-    if (!p.narrowed.ok) fail('narrow_needs_statement', 'narrowed', p.narrowed.details);
-    else if (p.narrowed.value === candidate.statement) {
-      fail('narrow_needs_statement', 'narrowed', ['narrowed.statement equals the candidate statement']);
-    } else if (detectHardReject(p.narrowed.value)) fail('hard_reject_floor', 'narrowed');
-  }
-  if (p.verdict === 'ACCEPT') {
-    const c = p.checks;
-    if (!c.evidenceSupports || c.scopeTooWide || c.contradictsExisting || !c.tierCorrect) fail('accept_checks_failed', 'checks');
-  }
-  if (shapesSentence) {
-    const ids = new Set(candidate.evidence.map((e) => e.id));
-    if (!p.evidence.some((e) => e.finding === 'supports' && ids.has(e.ref))) {
-      fail(`${p.verdict.toLowerCase()}_needs_candidate_evidence`, 'evidence');
-    }
-  }
-  if (p.verdict === 'NEED-MORE-EVIDENCE' && !p.reviewAfter) fail('need_more_needs_review_date', 'reviewAfter');
-
   const r = p.research;
   if (shapesSentence && TIER_RANK[r.tier] < TIER_RANK[tier.tier]) fail('research_tier_below_required', 'research');
   const { maxSources, maxDeepRuns } = tier.budget;
@@ -382,6 +511,29 @@ function semanticErrors(p, candidate, tier) {
   if (shapesSentence && tier.tier === 'R2' && tier.external === 'allowed' && r.deepRuns < 1) {
     fail('research_deep_run_missing', 'research');
   }
+}
+
+function semanticErrors(p, candidate, tier) {
+  const { errors, fail } = collector();
+  const shapesSentence = p.verdict === 'ACCEPT' || p.verdict === 'NARROW';
+
+  if (p.hardReject && p.verdict !== 'REJECT') fail('hard_reject_must_reject', 'hardReject');
+  const floor = detectHardReject(`${candidate.statement}\n${candidate.check}`);
+  if (floor && p.verdict !== 'REJECT') fail('hard_reject_floor', 'verdict');
+
+  if (p.verdict === 'NARROW') narrowErrors(p, candidate, fail);
+  if (p.verdict === 'ACCEPT') {
+    const c = p.checks;
+    if (!c.evidenceSupports || c.scopeTooWide || c.contradictsExisting || !c.tierCorrect) fail('accept_checks_failed', 'checks');
+  }
+  if (shapesSentence) {
+    const ids = new Set(candidate.evidence.map((e) => e.id));
+    if (!p.evidence.some((e) => e.finding === 'supports' && ids.has(e.ref))) {
+      fail(`${p.verdict.toLowerCase()}_needs_candidate_evidence`, 'evidence');
+    }
+  }
+  if (p.verdict === 'NEED-MORE-EVIDENCE' && !p.reviewAfter) fail('need_more_needs_review_date', 'reviewAfter');
+  researchErrors(p, tier, fail);
   return { errors, floor };
 }
 
@@ -401,6 +553,7 @@ export function validateVerdict(raw, { candidate, tier }) {
     schema: VERDICT_SCHEMA,
     candidateId: candidate.id,
     candidateRevision: candidate.revision,
+    inputFingerprint: raw.inputFingerprint,
     verdict: p.verdict,
     reasons: p.reasons,
     evidence: p.evidence,
@@ -436,21 +589,55 @@ export function promotionDecision({ candidate, verdict, ownerForce = false, owne
   }
 }
 
-// A verdict file is plain JSON or a socrates reply ending with a fenced json block (the last one wins).
+// ---- reading the reply ---------------------------------------------------------------------------------------
+
+// True when some object in valid JSON text repeats a key (JSON.parse would silently keep the last one).
+function hasDuplicateKeys(source) {
+  const stack = [];
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '"') {
+      let j = i + 1;
+      while (source[j] !== '"') j += source[j] === '\\' ? 2 : 1;
+      const top = stack[stack.length - 1];
+      if (top && top.keys && top.expectKey) {
+        const key = JSON.parse(source.slice(i, j + 1));
+        if (top.keys.has(key)) return true;
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = j;
+    } else if (ch === '{') stack.push({ keys: new Set(), expectKey: true });
+    else if (ch === '[') stack.push({ keys: null });
+    else if (ch === '}' || ch === ']') stack.pop();
+    else if (ch === ',' && stack.length > 0 && stack[stack.length - 1].keys) stack[stack.length - 1].expectKey = true;
+  }
+  return false;
+}
+
+function parseObject(source) {
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    return { ok: false, code: 'json_invalid' };
+  }
+  if (!isObject(value)) return { ok: false, code: 'json_invalid' };
+  return hasDuplicateKeys(source) ? { ok: false, code: 'duplicate_keys' } : { ok: true, value };
+}
+
+// A verdict file is plain JSON or a socrates reply holding exactly one fenced json block (a fenced block whose
+// language is json or whose body starts with "{"). Returns { ok: true, value } or { ok: false, code }.
 export function extractVerdictJson(input) {
   const trimmed = typeof input === 'string' ? input.replace(BOM_AT_START, '').trim() : '';
-  const tryParse = (s) => {
-    try {
-      const v = JSON.parse(s);
-      return isObject(v) ? v : null;
-    } catch {
-      return null;
-    }
-  };
   if (trimmed.startsWith('{')) {
-    const whole = tryParse(trimmed);
-    if (whole) return whole;
+    const whole = parseObject(trimmed);
+    if (whole.ok || whole.code === 'duplicate_keys') return whole;
   }
-  const blocks = [...trimmed.matchAll(/```json[^\S\n]*\n([\s\S]*?)```/gi)];
-  return blocks.length > 0 ? tryParse(blocks[blocks.length - 1][1]) : null;
+  const blocks = [...trimmed.matchAll(/```([^\n`]*)\n([\s\S]*?)```/g)].filter(
+    ([, lang, body]) => lang.trim().toLowerCase() === 'json' || body.trim().startsWith('{'),
+  );
+  if (blocks.length > 1) return { ok: false, code: 'multiple_json_blocks' };
+  if (blocks.length === 0) return { ok: false, code: trimmed.startsWith('{') ? 'json_invalid' : 'no_json' };
+  return parseObject(blocks[0][2]);
 }

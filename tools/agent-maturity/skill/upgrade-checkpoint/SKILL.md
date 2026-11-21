@@ -66,8 +66,10 @@ instructions. When a standard and those conflict, the governing instructions win
      (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is
      `tools/agent-maturity` in the Starizzi checkout; the installed runtime does not copy `critic/` yet.
   3. `node <am>/critic/brief.mjs <candidate.json> --store <dir>` picks the research tier, checks the loop guard and
-     prints the standard brief. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the brief
-     unchanged as the prompt of the `socrates` agent. Never run socrates on a candidate without this brief.
+     the store-wide hard-REJECT index, prints the standard brief with its `inputFingerprint` and stores a snapshot
+     of exactly what it briefed. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the
+     brief unchanged as the prompt of the `socrates` agent. Never run socrates on a candidate without this brief,
+     and do not edit the candidate file between the brief and step 5 (the verdict is bound to that exact text).
   4. Socrates critiques once and researches only inside the tier's budget:
      - R0 (pure preference, or a procedure that only changes phrasing): no research.
      - R1 (content, ads, claims; pitfalls): one cheap cited lookup (WebSearch, perplexity_search or
@@ -78,15 +80,25 @@ instructions. When a standard and those conflict, the governing instructions win
      - A tool that returns 401, 402 or 403: switch to the next allowed tool; never retry the same paid tool.
      - Owner-private content: no external research at any tier. ChatGPT web: never.
   5. Save socrates' reply to a file and run
-     `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <dir>`. It validates the verdict
-     (exit 1 = invalid: ask socrates to fix only the JSON; nothing is stored and it does not count), applies the
-     hard-REJECT floor and the loop guard, stores the verdict with the candidate and prints `decision`.
+     `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <dir>`. The reply must hold exactly one
+     json block, without repeated keys, echoing `candidateId`, `candidateRevision` and `inputFingerprint` from the
+     brief. It checks the brief snapshot, validates the verdict, applies the hard-REJECT floor and the loop guard,
+     stores the verdict with the candidate and prints `decision`. Exit 1 = invalid: nothing is stored and the
+     refusal is logged in the loop-guard log. At most ONE retry, and only when the message says
+     `one retry allowed` (a format or limit error such as a too-long field or a missing `inputFingerprint`): ask
+     the same socrates run to fix only the JSON, keeping its verdict. Never retry a semantic error
+     (`accept_checks_failed`, `research_deep_run_missing`, `hard_reject_floor`, `fingerprint_mismatch` or any
+     other `no retry` message), never retry twice, and never re-run brief.mjs to get a fresh socrates run: hold
+     the candidate and tell the owner why.
   6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence) ·
      `show_diff` (NARROW or reworded: show the owner the diff, promote only after OK) · `hold` (NEED-MORE-EVIDENCE:
      keep it until `reviewAfter`; REJECT: give the reason, the owner may still force approval) · `refuse`
-     (hard-REJECT class below: never promoted, even when forced).
+     (hard-REJECT class below: never promoted, even when forced). Every promote goes through
+     `assertPromotable(candidate, verdict + ownerApproval)` in `<am>/critic/promote-gate.mjs` and promotes only the
+     statement it returns (slice D3 wires this into `promote`).
   7. Loop guard: per candidate 1 critique + 1 rewrite, and the rewrite gets one re-check (critique 2 needs new
-     input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final.
+     input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final across
+     the store: a new candidate id with the same statement (ignoring case, diacritics and punctuation) is refused.
   8. Until slice D3 plugs in the KnowledgeMemory adapter, `--store` is a temp folder (for example
      `F:/Ai Tools/Codex/Temp/agent-maturity-critic/`), never `~/.claude`.
   9. A new standard that contradicts an old one: capture and promote the new one, then `supersede` the old one

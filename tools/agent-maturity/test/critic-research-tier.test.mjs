@@ -66,6 +66,7 @@ test('a pitfall without workflow impact is R1', () => {
 });
 
 test('a procedure that changes the way of working is R2 with one deep run', () => {
+  assert.equal(tierOf({ kind: 'procedure', statement: 'Giao việc cho subagent bằng brief ngắn.' }).tier, 'R2');
   const t = tierOf({ kind: 'procedure', statement: 'Vẽ sơ đồ trước rồi mới giao việc cho subagent.' });
   assert.equal(t.tier, 'R2');
   assert.equal(t.ruleId, 'R2:process');
@@ -95,12 +96,27 @@ test('tiers with web research carry the 401/402/403 fallback rule; R0 and owner-
   assert.equal(tierOf({ kind: 'procedure', statement: 'Giao việc cho subagent.', flags: { ownerPrivate: true } }).fallback, null);
 });
 
-test('an explicit changesWorkflow flag wins over the keyword guess', () => {
+test('a flag can raise the tier but a false flag never lowers it below the keyword guess', () => {
   assert.equal(tierOf({ kind: 'procedure', statement: 'Hỏi một câu thôi.', flags: { changesWorkflow: true } }).tier, 'R2');
-  assert.equal(
-    tierOf({ kind: 'procedure', statement: 'Giao việc cho subagent bằng brief ngắn.', flags: { changesWorkflow: false } }).tier,
-    'R0',
-  );
+  const cases = [
+    [{ kind: 'procedure', statement: 'Giao việc cho subagent bằng brief ngắn.', flags: { changesWorkflow: false } }, 'R2'],
+    [{ statement: 'Không dán API key vào prompt.', flags: { touchesSecurity: false } }, 'R2'],
+    [{ statement: 'Ghi rõ là AI trả lời theo Luật 134/2025.', flags: { touchesLaw: false } }, 'R2'],
+    [{ kind: 'quality_gate', statement: 'Bài quảng cáo chỉ nêu số liệu có nguồn.', flags: { contentClaim: false } }, 'R1'],
+  ];
+  for (const [overrides, tier] of cases) assert.equal(tierOf(overrides).tier, tier, overrides.statement);
+});
+
+test('jobs_search is never allowed; research_read_paper is never allowed outside R2 web research', () => {
+  const r0 = tierOf({});
+  const r1 = tierOf({ flags: { contentClaim: true } });
+  const r2 = tierOf({ kind: 'procedure', statement: 'Vẽ sơ đồ trước rồi mới giao việc cho subagent.' });
+  const priv = tierOf({ kind: 'procedure', statement: 'Giao việc cho subagent.', flags: { ownerPrivate: true } });
+  for (const t of [r0, r1, r2, priv]) assert.ok(neverNames(t).includes('mcp__firecrawl__jobs_search'), t.tier);
+  for (const t of [r0, r1, priv]) {
+    assert.ok(neverNames(t).includes('mcp__firecrawl__firecrawl_research_read_paper'), `${t.tier} ${t.external}`);
+  }
+  assert.ok(!neverNames(r2).includes('mcp__firecrawl__firecrawl_research_read_paper'));
 });
 
 test('law or security always means R2, whatever the kind', () => {

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { validateCandidate } from './candidate.mjs';
+import { statementKey } from './loop-guard.mjs';
 
 export const EXIT = Object.freeze({ ok: 0, invalid: 1, usage: 2, blocked: 3 });
 
@@ -13,6 +14,29 @@ export class CliError extends Error {
     super(message);
     this.exitCode = code;
   }
+}
+
+// A hard-REJECT is final across the store: any candidate (any id) whose normalized statement matches a
+// hard-REJECTed one is refused before a critique. Logs the block and throws exit 3.
+export function refuseHardRejectedStatement(adapter, candidate, now, step) {
+  const hit = adapter.findHardReject(statementKey(candidate.statement));
+  if (!hit) return;
+  adapter.logEvent({
+    type: 'critique_blocked',
+    candidateId: candidate.id,
+    reason: 'hard_reject_statement',
+    matchedCandidateId: hit.candidateId,
+    step,
+    at: now.toISOString(),
+  });
+  throw new CliError(
+    EXIT.blocked,
+    `hard_reject_statement: ${candidate.id} has the statement of hard-REJECTed candidate ${hit.candidateId} (${hit.class}); not critiqued`,
+  );
+}
+
+export function blockedError(plan, candidateId) {
+  return new CliError(EXIT.blocked, `critique ${plan.critiqueNumber} blocked for ${candidateId}: ${plan.reason}`);
 }
 
 // <positional...> --store <dir>; --store is required so nothing ever lands in a default location.

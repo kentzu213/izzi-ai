@@ -27,11 +27,22 @@ export const containsPiiOrSecret = (text) => typeof text === 'string' && PII_OR_
 
 export const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+// Characters that could break out of the brief's data block or hide a word from the hard-REJECT floor: control
+// and format characters (newlines, zero-width, bidi), line/paragraph separators, and combining marks still left
+// after NFKC (Vietnamese composes fully, so a leftover mark is never needed).
+const UNSAFE_TEXT = /[\p{C}\p{Zl}\p{Zp}\p{M}]/u;
+
+export const stripDiacritics = (s) => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+
+// { ok, value } or { ok: false, reason: 'type' | 'unsafe' | 'empty' | 'length', length? }. Text is NFKC-normalized.
 export function text(value, max, { optional = false } = {}) {
   if (value === undefined && optional) return { ok: true, value: undefined };
-  if (typeof value !== 'string') return { ok: false };
-  const trimmed = value.normalize('NFC').trim();
-  return trimmed.length > 0 && trimmed.length <= max ? { ok: true, value: trimmed } : { ok: false };
+  if (typeof value !== 'string') return { ok: false, reason: 'type' };
+  const normalized = value.normalize('NFKC');
+  if (UNSAFE_TEXT.test(normalized)) return { ok: false, reason: 'unsafe' };
+  const trimmed = normalized.trim();
+  if (trimmed.length === 0) return { ok: false, reason: 'empty' };
+  return trimmed.length <= max ? { ok: true, value: trimmed } : { ok: false, reason: 'length', length: trimmed.length };
 }
 
 function evidenceItem(raw) {

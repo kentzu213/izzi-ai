@@ -114,9 +114,9 @@ test('a candidate edited before its first critique stays revision 1', () => {
   assert.equal(p.isRewrite, false);
 });
 
-test('fingerprints ignore key and evidence order, and follow the statement', () => {
+test('fingerprints ignore key order and follow the statement', () => {
   const a = cand();
-  const b = cand({ evidence: [...BASE.evidence].reverse(), scope: { projects: 'all', taskType: 'báo cáo tiến độ', agent: 'orchestrator' } });
+  const b = cand({ scope: { projects: 'all', taskType: 'báo cáo tiến độ', agent: 'orchestrator' } });
   assert.equal(statementFingerprint(a), statementFingerprint(b));
   assert.equal(inputFingerprint(a), inputFingerprint(b));
   const c = cand({ statement: 'Khác.' });
@@ -124,6 +124,75 @@ test('fingerprints ignore key and evidence order, and follow the statement', () 
   const d = cand({ evidence: [...BASE.evidence, { id: 'ev-3', type: 'outcome', at: '2026-11-21', source: 's2' }] });
   assert.equal(statementFingerprint(a), statementFingerprint(d));
   assert.notEqual(inputFingerprint(a), inputFingerprint(d));
+});
+
+test('inputFingerprint is a full sha256 over everything the brief shows, including the revision', () => {
+  const a = cand();
+  assert.match(inputFingerprint(a), /^[0-9a-f]{64}$/);
+  const ev = BASE.evidence;
+  const changed = [
+    cand({}, 2),
+    cand({ statement: 'Báo cáo tiến độ tối đa 3 gạch đầu dòng.' }),
+    cand({ kind: 'procedure' }),
+    cand({ scope: { ...BASE.scope, projects: 'this' } }),
+    cand({ scope: { ...BASE.scope, agent: 'builder' } }),
+    cand({ check: 'Mỗi báo cáo có ≤3 gạch đầu dòng.' }),
+    cand({ evidence: [{ ...ev[0], note: 'anh sửa lại' }, ev[1]] }),
+    cand({ evidence: [{ ...ev[0], source: 's9' }, ev[1]] }),
+    cand({ evidence: [...ev].reverse() }),
+    cand({ existingStandards: [{ id: 'std-1', statement: 'Một chuẩn cũ.' }] }),
+    cand({ research: { refs: ['https://example.com/a'] } }),
+    cand({ flags: { ownerPrivate: true } }),
+  ];
+  for (const other of changed) assert.notEqual(inputFingerprint(other), inputFingerprint(a), JSON.stringify(other));
+  assert.throws(() => inputFingerprint({ ...a, revision: undefined }), /revision/);
+});
+
+test('a record from before fingerprint binding (pre-v2) cannot be continued', () => {
+  const c = cand();
+  const legacy = { ...verdictFor(c), inputFingerprint: 'a'.repeat(32) };
+  for (const next of [c, cand({ statement: 'Báo cáo tiến độ ngắn.' })]) {
+    const p = planCritique({ candidate: c, verdicts: [legacy] }, next, NOW);
+    assert.equal(p.allowed, false);
+    assert.equal(p.reason, 'pre_v2_record');
+  }
+});
+
+const refusal = (candidate, extra = {}) => ({
+  type: 'verdict_refused',
+  candidateId: candidate.id,
+  critiqueNumber: 1,
+  inputFingerprint: inputFingerprint(candidate),
+  retryable: true,
+  verdict: 'NARROW',
+  ...extra,
+});
+
+test('after a format refusal, record-verdict gets exactly one retry for the same input and brief is blocked', () => {
+  const c = cand();
+  const refusals = [refusal(c)];
+  const retry = planCritique(null, c, NOW, { refusals, step: 'record' });
+  assert.equal(retry.allowed, true);
+  assert.equal(retry.attempt, 2);
+  assert.equal(retry.retryOf, 'NARROW');
+  const brief = planCritique(null, c, NOW, { refusals, step: 'brief' });
+  assert.deepEqual([brief.allowed, brief.reason], [false, 'json_retry_pending']);
+  const otherInput = planCritique(null, cand({ statement: 'Báo cáo tiến độ ngắn.' }), NOW, { refusals, step: 'record' });
+  assert.deepEqual([otherInput.allowed, otherInput.reason], [false, 'json_retry_pending']);
+  const twice = planCritique(null, c, NOW, { refusals: [refusal(c), refusal(c)], step: 'record' });
+  assert.deepEqual([twice.allowed, twice.reason], [false, 'json_retry_used']);
+  assert.equal(planCritique(null, c, NOW).attempt, 1);
+});
+
+test('a semantic refusal has no retry and ends the critique', () => {
+  const c = cand();
+  for (const step of ['record', 'brief']) {
+    const p = planCritique(null, c, NOW, { refusals: [refusal(c, { retryable: false })], step });
+    assert.deepEqual([p.allowed, p.reason], [false, 'reply_refused_final']);
+    assert.equal(p.event.type, 'critique_blocked');
+  }
+  const later = planCritique(null, c, NOW, { refusals: [refusal(c, { critiqueNumber: 2, retryable: false })] });
+  assert.equal(later.allowed, true, 'refusals for another critique number do not count');
 });
 
 test('planCritique does not mutate the record', () => {
