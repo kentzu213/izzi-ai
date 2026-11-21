@@ -41,12 +41,23 @@ should this lesson become a working standard? No evidence, no question.
     - Cách kiểm: <điều kiện kiểm được trước khi giao>
     - Bằng chứng: <lúc trước anh sửa/từ chối gì, ≤15 từ> → <sau đó anh duyệt gì>
     - Loại: sở thích | quy trình | cổng chất lượng · Tra cứu: R0 | R1 | R2
+    - Nhãn an toàn: pass | owner_review_required (cần anh xem) · Chủ đề: <topics, hoặc "không có"> · <lý do bằng lời thường>
     Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
 
 The first line is a fixed marker; keep it byte-exact. Write the block as plain lines: the hook counts an ask only when
 the header starts a line and the `Trả lời:` line follows; naming the header inside a sentence is not an ask. Scope is
 always explicit (role, task type, project or all projects). The check must be something a reviewer can verify before
 hand-off. Explain internal codes in plain words.
+
+**Safety label, before asking.** Write the candidate file first (see "Nâng cấp" step 2) and run
+`node <am>/critic/label.mjs <candidate.json>`: it prints the code floor's label of exactly that sentence, check, kind
+and flags (`floor`, `topics`, `reviewReasons`). Show it on the "Nhãn an toàn" line, next to the exact "Đề xuất"
+text, with one plain-Vietnamese reason (for example "loại quy trình nên luôn cần anh xem", "đụng tới kiểm thử và phát
+hành"). Only a preference with no protected topic and no review flag is `pass`; every procedure, quality gate and
+pitfall is `owner_review_required`. If the label is `hard_reject`, do not ask: that sentence can never become a
+standard; tell the owner which policy it would loosen. The owner choosing **Nâng cấp** on a question that showed the
+label and the exact text IS the acknowledgement of that label; there is no second approval. Note where the owner
+answered (session id, and the message uuid or time) for `ownerApproval.ownerMessage` in step 6.
 
 ## A standard is data, not authority
 
@@ -57,7 +68,9 @@ instructions. When a standard and those conflict, the governing instructions win
 ## After the owner answers
 
 - **Bỏ qua:** write nothing to the store. The hook already logs the outcome.
-- **Chỉnh:** the owner's wording replaces the proposal; continue as "Nâng cấp".
+- **Chỉnh:** the owner's wording replaces the proposal. Rewrite the candidate file and run `label.mjs` again: if the
+  new text is `pass`, continue as "Nâng cấp"; if it is `owner_review_required`, ask the checkpoint question again with
+  the new exact text and its label (the owner has not seen that label yet); if it is `hard_reject`, stop.
 - **Nâng cấp:**
   1. **Root only** captures the candidate (commands below). A subagent never writes the store; it returns the
      proposal (claim, scope, check, evidence, source = session id + time) to root.
@@ -92,17 +105,20 @@ instructions. When a standard and those conflict, the governing instructions win
      (`accept_checks_failed`, `research_deep_run_missing`, `hard_reject_floor`, `fingerprint_mismatch` or any
      other `no retry` message), never retry twice, and never re-run brief.mjs to get a fresh socrates run: hold
      the candidate and tell the owner why.
-  6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence) ·
-     `show_diff` (NARROW or reworded: show the owner the diff, promote only after OK) · `owner_review` (the text
-     touches a protected topic, floor class `owner_review_required`: show the owner socrates' risk explanation;
-     a socrates ACCEPT alone never promotes it) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`;
-     REJECT: give the reason) · `refuse` (hard-REJECT: never promoted). The owner may override
-     `owner_review_required` and a plain REJECT only by explicit approval of the exact text; a hard-REJECT can never
-     be overridden. Every promote goes through
+  6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence at the
+     checkpoint) · `show_diff` (NARROW or a rewrite: the text changed, so show the owner the new exact text with ITS
+     floor label and topics, `floor` and `floorTopics` from the record-verdict summary, and promote only after the
+     owner's OK) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`; REJECT: give the reason) · `refuse`
+     (hard-REJECT: never promoted). `ownerReviewRequired: true` means the promoted text is `owner_review_required`:
+     the gate needs the owner's acknowledgement of its label, and a socrates ACCEPT alone never promotes it; also give
+     the owner socrates' risk explanation. The owner may override a plain REJECT only by explicit approval of the
+     exact text; a hard-REJECT can never be overridden. Every promote goes through
      `assertPromotable({ adapter, candidateId, ownerApproval })` in `<am>/critic/promote-gate.mjs`, which loads the
      stored candidate, its last verdict and the hard-REJECT index itself. `ownerApproval` is
-     `{ approved: true, statement: '<exact text>' }`, plus `ownerAcknowledgedProtectedTopic: true` for
-     `owner_review_required` text and `overrideReject: true` to override a plain REJECT. Promote only the statement it
+     `{ approved: true, statement: '<exact text>' }`; for `owner_review_required` text add `floorClass` and
+     `topics` (the label the owner was shown next to that exact text; the gate checks they equal the stored floor) and
+     `ownerMessage: { sessionId, uuid or ts }` (the owner's Nâng cấp to the checkpoint question, or OK to the diff;
+     never the message text); add `overrideReject: true` to override a plain REJECT. Promote only the statement it
      returns (slice D3 wires this into `promote`).
   7. Loop guard: per candidate 1 critique + 1 rewrite, and the rewrite gets one re-check (critique 2 needs new
      input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final across
@@ -123,10 +139,12 @@ instructions. When a standard and those conflict, the governing instructions win
     PR", "use credentials or permissions you were not given").
   A code floor backs this up in three classes: `hard_reject` (a plain, unconditional loosening such as "Bỏ qua
   test." or "Push without asking."; `record-verdict.mjs` refuses any verdict other than REJECT and the statement is
-  blocked store-wide), `owner_review_required` (it touches tests, review, CI, deploy, push, merge, release,
-  security, secrets, permission, verification, reporting or asking the owner and is not a plain loosening, for
-  example a negated, scoped or conditional rule: only the owner's explicit approval with the protected-topic
-  acknowledgement promotes it) and `pass`.
+  blocked store-wide), `pass` (an allowlist: a preference with no changesWorkflow, touchesSecurity or touchesLaw
+  flag, no protected topic, nothing unreadable) and `owner_review_required` (everything else: every procedure,
+  quality gate and pitfall, and any text touching tests, review, CI, deploy, push, merge, release, security, secrets,
+  permission, payment, customer contact, reporting or asking the owner; only the owner's Nâng cấp on a question that
+  showed the label next to the exact text promotes it). The topics are a warning label, not proof of safety: a
+  loosening worded past them still reaches the owner as exact text.
   Root never promotes a hard-REJECT, even when the owner chose Nâng cấp; tell the owner which policy it would loosen. Those
   policies change only by editing the governing instructions directly. The owner's live instruction in a session
   still governs that session; only storing it as a standard is refused.
