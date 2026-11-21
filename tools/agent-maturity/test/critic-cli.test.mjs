@@ -12,7 +12,7 @@ import { validateCandidate } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, planCritique } from '../critic/loop-guard.mjs';
 import { selectResearchTier } from '../critic/research-tier.mjs';
-import { VERDICT_LIMITS, classifyFloor, detectHardReject } from '../critic/verdict.mjs';
+import { VERDICT_LIMITS, classifyCandidateFloor, detectHardReject } from '../critic/verdict.mjs';
 
 const CRITIC = fileURLToPath(new URL('../critic/', import.meta.url));
 const DRY_RUNS = join(CRITIC, 'dry-runs');
@@ -353,6 +353,34 @@ test('record-verdict names the item and the limit an invalid verdict broke', () 
   assert.equal(existsSync(join(store, 'candidates')), false);
 });
 
+test('label.mjs prints the floor label of a candidate for the checkpoint question and writes nothing', () => {
+  // Arrange
+  const { work } = setup();
+  const files = {
+    plain: writeJson(work, 'plain.json', CANDIDATE),
+    scoped: writeJson(work, 'scoped.json', { ...CANDIDATE, statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' }),
+    procedure: writeJson(work, 'procedure.json', { ...CANDIDATE, kind: 'procedure' }),
+    loose: writeJson(work, 'loose.json', { ...CANDIDATE, statement: 'Push without asking.' }),
+  };
+
+  // Act
+  const out = Object.fromEntries(Object.entries(files).map(([k, f]) => [k, node('label.mjs', [f])]));
+
+  // Assert
+  for (const r of Object.values(out)) assert.equal(r.code, 0, r.stderr);
+  const label = (k) => JSON.parse(out[k].stdout);
+  assert.deepEqual(label('plain'), { floor: 'pass', topics: [], reviewReasons: [] });
+  assert.deepEqual(label('scoped'), {
+    floor: 'owner_review_required',
+    topics: ['verification', 'release', 'loosening'],
+    reviewReasons: ['protected_topic', 'floor_phrase'],
+  });
+  assert.deepEqual(label('procedure'), { floor: 'owner_review_required', topics: [], reviewReasons: ['kind_not_preference'] });
+  assert.deepEqual([label('loose').floor, label('loose').class], ['hard_reject', 'expands_authority']);
+  assert.equal(node('label.mjs', []).code, 2);
+  assert.deepEqual(readdirSync(work).sort(), ['loose.json', 'plain.json', 'procedure.json', 'scoped.json']);
+});
+
 test('the three dry-run candidates are valid, safe and briefable', () => {
   const files = readdirSync(DRY_RUNS).filter((f) => f.endsWith('.json')).sort();
   assert.equal(files.length, 3);
@@ -364,7 +392,7 @@ test('the three dry-run candidates are valid, safe and briefable', () => {
     assert.equal(r.ok, true, `${file}: ${JSON.stringify(r.errors)}`);
     assert.equal(`${r.value.id}.json`, file);
     assert.equal(detectHardReject(`${r.value.statement}\n${r.value.check}`), null, file);
-    floors[r.value.id] = classifyFloor(`${r.value.statement}\n${r.value.check}`).floor;
+    floors[r.value.id] = classifyCandidateFloor(r.value).floor;
     const candidate = { ...r.value, revision: 1 };
     const tier = selectResearchTier(candidate);
     tiers[r.value.id] = tier.tier;
@@ -372,27 +400,30 @@ test('the three dry-run candidates are valid, safe and briefable', () => {
     assert.ok(brief.length < 12_000, `${file}: brief is ${brief.length} chars`);
   }
   assert.deepEqual(Object.values(tiers).sort(), ['R0', 'R2', 'R2']);
+  // dr1 is a procedure: off the pass allowlist since D4 round 4, whatever its wording.
   assert.deepEqual(floors, {
-    'dr1-plain-language-decisions': 'pass',
+    'dr1-plain-language-decisions': 'owner_review_required',
     'dr2-checkpoint-after-workflow': 'owner_review_required',
     'dr3-fuses-not-fixed-cap': 'owner_review_required',
   });
 });
 
-test('an owner_review_required candidate: the brief explains the floor and the decision waits for the owner', () => {
+test('an owner_review_required candidate: the brief explains the floor and the decision needs the owner acknowledgement', () => {
   const { work, store } = setup();
   const scoped = { ...CANDIDATE, id: 'scoped-case', statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' };
   const cand = writeJson(work, 'scoped.json', scoped);
   const brief = node('brief.mjs', [cand, '--store', store]);
   assert.equal(brief.code, 0, brief.stderr);
-  assert.match(brief.stdout, /Code floor: owner_review_required\. Protected topics: verification, release; negation, exception or condition words: không, khi/);
-  assert.match(brief.stdout, /cannot promote it alone/);
+  assert.match(brief.stdout, /Code floor: owner_review_required\. Protected topics: verification, release, loosening; negation, exception or condition words: không, khi/);
+  assert.match(brief.stdout, /Off the pass allowlist because: protected_topic, floor_phrase\./);
+  assert.match(brief.stdout, /cannot promote it alone: the owner must have seen this floor label and topics next to the exact text/);
   assert.match(brief.stdout, /explain the risk/);
   const accept = writeJson(work, 'accept.json', verdictJson({ verdict: 'ACCEPT', narrowed: undefined, checks: ACCEPT_CHECKS }, scoped));
   const r = node('record-verdict.mjs', [cand, accept, '--store', store]);
   assert.equal(r.code, 0, r.stderr);
   const out = JSON.parse(r.stdout);
   assert.equal(out.floor, 'owner_review_required');
-  assert.deepEqual(out.decision, { action: 'owner_review', reason: 'protected_topic', ownerReviewRequired: true });
+  assert.deepEqual(out.floorTopics, ['verification', 'release', 'loosening']);
+  assert.deepEqual(out.decision, { action: 'promote', reason: 'accept_unchanged', ownerReviewRequired: true });
   assert.equal(out.hardReject, null);
 });

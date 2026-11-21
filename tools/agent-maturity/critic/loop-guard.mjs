@@ -7,8 +7,8 @@
 // A refused socrates reply gets at most one "fix only the JSON" retry, and only for a format or limit error;
 // a semantic error, or a second refusal, ends the critique. The retry keeps the first reply's verdict and whether
 // it set hardReject; when the first verdict could not be read, the retry may only be REJECT or NEED-MORE-EVIDENCE.
-// At most two briefs per candidate revision (each brief is logged), so a brief cannot be re-run to shop for a
-// verdict.
+// At most two briefs per candidate revision and two per statement store-wide (each brief is logged with its
+// statementKey; a new candidate id does not reset the count), so a brief cannot be re-run to shop for a verdict.
 // Pure: decides from the stored record and the logged events; the caller logs `event` and stores the verdict.
 
 import crypto from 'node:crypto';
@@ -106,11 +106,11 @@ function revisionFor(record, candidate, critiqueNumber, now) {
 }
 
 // record: { candidate, verdicts } as returned by adapter.loadCandidate, or null.
-// refusals: verdict_refused events of this candidate; briefs: its brief_generated events; step: 'brief' (a fresh
-// socrates run) or 'record'. Returns { allowed: true, critiqueNumber, revision, isRewrite, fingerprint, attempt,
+// refusals: verdict_refused events of this candidate; briefs: its brief_generated events; statementBriefs: the
+// brief_generated events of this statement under any id; step: 'brief' (a fresh socrates run) or 'record'. Returns { allowed: true, critiqueNumber, revision, isRewrite, fingerprint, attempt,
 // retryOf } or { allowed: false, reason, critiqueNumber, event }. retryOf is null on a first attempt, else what the
 // refused first reply said: { verdict (null when unreadable), hardRejectPresent (null when unknown) }.
-export function planCritique(record, candidate, now = new Date(), { refusals = [], briefs = [], step = 'record' } = {}) {
+export function planCritique(record, candidate, now = new Date(), { refusals = [], briefs = [], statementBriefs = [], step = 'record' } = {}) {
   const verdicts = record?.verdicts ?? [];
   const critiqueNumber = verdicts.length + 1;
   const r = revisionFor(record, candidate, critiqueNumber, now);
@@ -128,6 +128,9 @@ export function planCritique(record, candidate, now = new Date(), { refusals = [
   }
   if (step === 'brief' && briefs.filter((e) => e.revision === r.revision).length >= MAX_BRIEFS_PER_REVISION) {
     return blocked(candidate.id, critiqueNumber, 'brief_cap', now);
+  }
+  if (step === 'brief' && statementBriefs.length >= MAX_BRIEFS_PER_REVISION) {
+    return blocked(candidate.id, critiqueNumber, 'statement_brief_cap', now);
   }
   return {
     allowed: true,

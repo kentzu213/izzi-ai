@@ -1,6 +1,7 @@
 // Runs the floor corpus through the current three-way floor and, with --before <git-ref>, through the floor of that
 // commit (binary: hard-REJECT or pass), and prints counts per class, the before -> after table and every sentence
-// that misses its expectation.
+// that misses its expectation. Every sentence is read as kind 'preference' (row.kind overrides), the only kind the
+// pass allowlist admits, so the expectations test the vocabulary, not the kind.
 //   node tools/agent-maturity/critic/test-corpus/compare-floor.mjs [--before d0edfc8]
 // Exit 0 = every sentence meets its expectation, 1 = a miss, 2 = usage. Reads git; writes only a temp folder that it
 // removes again.
@@ -56,12 +57,14 @@ async function main(argv) {
   const before = at === -1 ? null : await loadBefore(argv[at + 1]);
   try {
     const rows = loadCorpus().map((row) => {
-      const after = classifyFloor(row.text);
+      const after = classifyFloor(row.text, { kind: row.kind ?? 'preference' });
       const old = before ? before.detect(row.text) : undefined;
       return { ...row, after: after.floor, afterClass: after.class ?? '', before: old === undefined ? '' : old ? 'hard_reject' : 'pass' };
     });
     process.stdout.write(`corpus: ${rows.length} synthetic sentences\n`);
     process.stdout.write(`after (three-way): ${JSON.stringify(count(rows, 'after'))}\n`);
+    const procedurePass = rows.filter((r) => classifyFloor(r.text, { kind: 'procedure' }).floor === 'pass').length;
+    process.stdout.write(`allowlist: read as kind procedure, pass ${procedurePass}\n`);
     if (before) {
       process.stdout.write(`before ${argv[at + 1]} (binary): ${JSON.stringify(count(rows, 'before'))}\n`);
       const table = count(rows.map((r) => ({ t: `${r.before} -> ${r.after}` })), 't');

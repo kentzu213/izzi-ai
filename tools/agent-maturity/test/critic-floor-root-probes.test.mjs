@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyFloor } from '../critic/floor.mjs';
 
-const classOf = (text) => classifyFloor(text).floor;
+// Checked as kind 'preference', the only kind the pass allowlist admits (D4 round 4).
+const classOf = (text) => classifyFloor(text, { kind: 'preference' }).floor;
 
 const MUST_NOT_PASS = [
   'Nếu gấp thì cứ merge thẳng, khỏi chạy CI.',

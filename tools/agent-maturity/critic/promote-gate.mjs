@@ -4,8 +4,10 @@
 //   assertPromotable({ adapter, candidateId, ownerApproval })
 //     adapter        the critic store adapter; the gate loads the CURRENT candidate, its LAST verdict and the
 //                    store-wide hard-REJECT index itself, so a caller cannot hand it a different record
-//     ownerApproval  { approved: true, statement: '<exact text>', ownerAcknowledgedProtectedTopic?: true,
-//                      overrideReject?: true }; no other keys
+//     ownerApproval  { approved: true, statement: '<exact text>', floorClass?, topics?, ownerMessage?,
+//                      overrideReject?: true }; no other keys. floorClass / topics are the floor label the owner
+//                      was shown next to that exact text; ownerMessage { sessionId, uuid and/or ts } points to the
+//                      owner's answer (Nâng cấp to the checkpoint question, or the OK to a NARROW or rewrite diff).
 //
 // Promotable only when: the stored candidate re-validates as stored; its last verdict is a v2 record bound to it
 // (id, revision, inputFingerprint), re-validates against it today and matches the digest record-verdict logged (a
@@ -13,15 +15,17 @@
 // statementKey (and the candidate's) is not in the hard-REJECT index; the owner approved exactly that text. The
 // promoted text is the candidate statement for ACCEPT, only the stored narrowed statement for NARROW, and the
 // candidate statement for a plain REJECT the owner overrides (overrideReject: true). owner_review_required text
-// also needs ownerAcknowledgedProtectedTopic: true. NEED-MORE-EVIDENCE is never promotable; hard_reject never.
+// also needs the acknowledgement: floorClass, topics and ownerMessage, with floorClass and topics equal to the floor
+// stored with the verdict, which must still be the floor of that text today (a label given with a pass text must
+// match too). NEED-MORE-EVIDENCE is never promotable; hard_reject never.
 // Throws PromotionRefused with a code, or returns what may be promoted.
 
 import { isObject, text, validateCandidate } from './candidate.mjs';
-import { classifyFloor } from './floor.mjs';
+import { FLOOR_CLASSES, TOPIC_NAMES, classifyCandidateFloor } from './floor.mjs';
 import { assertAdapter } from './json-adapter.mjs';
 import { FINGERPRINT_RE, canonical, inputFingerprint, statementKey, verdictDigest } from './loop-guard.mjs';
 import { selectResearchTier } from './research-tier.mjs';
-import { VERDICT_SCHEMA, validateVerdict } from './verdict.mjs';
+import { VERDICT_SCHEMA, promotedFloor, promotedTopics, validateVerdict } from './verdict.mjs';
 
 export class PromotionRefused extends Error {
   constructor(code, message) {
@@ -34,7 +38,11 @@ const refuse = (code, message) => {
   throw new PromotionRefused(code, message);
 };
 
-const APPROVAL_KEYS = new Set(['approved', 'statement', 'ownerAcknowledgedProtectedTopic', 'overrideReject']);
+const APPROVAL_KEYS = new Set(['approved', 'statement', 'floorClass', 'topics', 'ownerMessage', 'overrideReject']);
+const MESSAGE_KEYS = new Set(['sessionId', 'uuid', 'ts']);
+const SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function loadRecord(adapter, candidateId) {
   let record;
@@ -84,13 +92,47 @@ function checkRecorded(adapter, candidateId, v) {
   }
 }
 
+// { sessionId, uuid and/or ts }: where the owner's answer is, never its text.
+function messageOk(m) {
+  if (!isObject(m) || !Object.keys(m).every((k) => MESSAGE_KEYS.has(k))) return false;
+  if (typeof m.sessionId !== 'string' || !SESSION_RE.test(m.sessionId) || !('uuid' in m || 'ts' in m)) return false;
+  return (!('uuid' in m) || (typeof m.uuid === 'string' && UUID_RE.test(m.uuid))) && (!('ts' in m) || (typeof m.ts === 'string' && TS_RE.test(m.ts)));
+}
+
 function checkApproval(approval) {
   if (!isObject(approval) || approval.approved !== true || typeof approval.statement !== 'string') {
     refuse('owner_approval_missing', 'the owner has not approved the statement to promote');
   }
-  const extra = Object.keys(approval).filter((k) => !APPROVAL_KEYS.has(k));
-  const flags = ['ownerAcknowledgedProtectedTopic', 'overrideReject'].filter((k) => k in approval && typeof approval[k] !== 'boolean');
-  if (extra.length > 0 || flags.length > 0) refuse('owner_approval_invalid', `unexpected or non-boolean fields: ${[...extra, ...flags].join(', ')}`);
+  const bad = [
+    ...Object.keys(approval).filter((k) => !APPROVAL_KEYS.has(k)),
+    ...('overrideReject' in approval && typeof approval.overrideReject !== 'boolean' ? ['overrideReject'] : []),
+    ...('floorClass' in approval && !FLOOR_CLASSES.includes(approval.floorClass) ? ['floorClass'] : []),
+    ...('topics' in approval && !(Array.isArray(approval.topics) && approval.topics.every((t) => TOPIC_NAMES.includes(t))) ? ['topics'] : []),
+    ...('ownerMessage' in approval && !messageOk(approval.ownerMessage) ? ['ownerMessage'] : []),
+  ];
+  if (bad.length > 0) refuse('owner_approval_invalid', `unexpected or malformed fields: ${bad.join(', ')}`);
+}
+
+const sameTopics = (a, b) => [...a].sort().join(',') === [...b].sort().join(',');
+
+// The floor stored with the verdict must still be the floor of the promoted text today: the label the owner was
+// shown came from it.
+function checkStoredFloor(stored, floor) {
+  const topics = promotedTopics(stored);
+  if (promotedFloor(stored) !== floor.floor || topics === null || !sameTopics(topics, floor.topics)) {
+    refuse('floor_changed', 'the floor label stored with the verdict is not the floor of this text today; ask the owner again');
+  }
+}
+
+// owner_review_required needs the owner's acknowledgement of this label; any label given must match the text.
+function checkFloorAck(approval, floor) {
+  const given = ['floorClass', 'topics', 'ownerMessage'].filter((k) => k in approval);
+  if (floor.floor === 'owner_review_required' && given.length < 3) {
+    refuse('floor_ack_missing', `owner_review_required (${floor.topics.join(', ') || floor.reviewReasons.join(', ')}): the owner must have seen this label and topics next to the exact text`);
+  }
+  const mismatch =
+    ('floorClass' in approval && approval.floorClass !== floor.floor) || ('topics' in approval && !sameTopics(approval.topics, floor.topics));
+  if (mismatch) refuse('floor_ack_mismatch', 'the owner acknowledged a different floor label or topics than this text has');
 }
 
 function checkIndex(adapter, statements) {
@@ -106,7 +148,7 @@ function assertLocked(adapter, candidateId, approval) {
   const verdict = checkVerdict(candidate, verdicts.at(-1));
   checkRecorded(adapter, candidateId, verdicts.at(-1));
   const statement = verdict.verdict === 'NARROW' ? verdict.narrowed.statement : candidate.statement;
-  const floor = classifyFloor(`${statement}\n${candidate.check}`);
+  const floor = classifyCandidateFloor(candidate, statement);
   if (floor.floor === 'hard_reject') refuse('hard_reject', 'the promoted text is a hard_reject loosening');
   checkIndex(adapter, [...new Set([statement, candidate.statement])]);
   checkApproval(approval);
@@ -117,9 +159,8 @@ function assertLocked(adapter, candidateId, approval) {
   if (verdict.verdict === 'REJECT' && approval.overrideReject !== true) {
     refuse('verdict_not_promotable', 'verdict REJECT; only an explicit owner override (overrideReject) promotes it');
   }
-  if (floor.floor === 'owner_review_required' && approval.ownerAcknowledgedProtectedTopic !== true) {
-    refuse('protected_topic_ack_missing', `owner_review_required (${floor.topics.join(', ') || 'unreadable'}); the owner must acknowledge the protected topic`);
-  }
+  checkStoredFloor(verdicts.at(-1), floor);
+  checkFloorAck(approval, floor);
   return {
     candidateId: candidate.id,
     revision: candidate.revision,

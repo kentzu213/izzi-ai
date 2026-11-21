@@ -2,18 +2,23 @@
 //   hard_reject            a plain, unconditional loosening the matcher is sure of: a floor phrase whose every
 //                          other word is on the NEUTRAL list ("Bỏ qua test.", "Push without asking.", "Không cần hỏi
 //                          anh trước khi push lên main."). Final, store-wide, never promotable.
-//   owner_review_required  touches a protected topic (tests, review, CI, deploy, push, merge, release, security,
-//                          secrets, permission, verification, reporting, asking the owner) or holds a floor phrase,
-//                          and is not a sure loosening: a negator, exception or condition, any word off the NEUTRAL
-//                          list, or text the matcher cannot read. Never promoted on a socrates ACCEPT alone.
-//   pass                   no protected topic, no floor phrase, nothing the matcher cannot read.
-// Negation never clears anything: a negated or scoped rule ("Never skip tests when merging to main") goes to the
-// owner instead of being judged by more regexes. Reordering a sentence can at most move it from hard_reject to
-// owner_review_required, never to pass.
+//   pass                   an ALLOWLIST: kind 'preference', no changesWorkflow / touchesSecurity / touchesLaw flag,
+//                          no protected topic, no floor phrase and nothing the matcher cannot read.
+//   owner_review_required  everything else. Never promoted on a socrates ACCEPT alone: the owner must have seen this
+//                          label and its topics next to the exact text (the checkpoint question, or the diff of a
+//                          NARROW) and chosen Nâng cấp.
+// The topic vocabulary (floor-topics.mjs) is a label for that warning, not the safety boundary: a lexical matcher
+// cannot read every rewording ("Tes ts are overrated" names no topic), so a preference that slips past it still
+// reaches the owner as exact text, and anything that is not a preference never passes. Negation never clears a
+// phrase: a negated or scoped rule goes to the owner instead of being judged by more regexes.
 
 import { stripDiacritics } from './candidate.mjs';
+import { CONTEXT, TOPICS, TOPIC_NAMES, VIETNAMESE_ASCII } from './floor-topics.mjs';
 
+export { TOPIC_NAMES };
 export const FLOOR_CLASSES = Object.freeze(['hard_reject', 'owner_review_required', 'pass']);
+// Candidate flags that always need the owner, whatever the wording.
+export const REVIEW_FLAGS = Object.freeze(['changesWorkflow', 'touchesSecurity', 'touchesLaw']);
 
 const B = '(?<![\\p{L}\\p{N}_])';
 const E = '(?![\\p{L}\\p{N}_])';
@@ -186,42 +191,36 @@ const NEUTRAL_RE = word(NEUTRAL);
 
 // ---- protected topics and uncertainty words (reported to socrates and the owner) ------------------------------
 
-const TOPICS = {
-  verification: [
-    'tests?', 'testing', 'tested', 'kiểm thử', 'bộ test', 'test suite', 'reviews?', 'reviewed', 'reviewing',
-    'reviewers?', 'kiểm tra', 'kiểm chứng', 'xác minh', 'verif(?:y|ies|ied|ying|ication)', 'ci', 'lint(?:s|ing|er)?',
-    'type-?check(?:s|ing)?', 'smoke', 'qa', 'e2e',
-  ],
-  release: [
-    'deploy(?:s|ed|ing|ment|ments)?', 'triển khai', 'push(?:es|ed|ing)?', 'force-push(?:es|ed|ing)?', 'merg(?:e|es|ed|ing)',
-    'releas(?:e|es|ed|ing)', 'phát hành', 'publish(?:es|ed|ing)?',
-    // Committing straight to a protected branch is a release path too (root probes, D4 round 3). The branch words
-    // carry it; "commit" alone is left out so commit-message style rules still pass.
-    'main', 'master', 'production', 'prod', 'nhánh chính', 'hotfix(?:es)?',
-  ],
-  security: [
-    'security', 'bảo mật', 'auth', 'oauth', 'authentication', 'xác thực', '2fa', 'mfa', 'tls', 'ssl', 'csrf',
-    'encryption', 'mã hoá', 'mã hóa', 'firewall', 'sandbox', 'rate limit', 'rate-limit',
-  ],
-  secrets: [
-    'secrets?', 'api key', 'api-key', 'apikey', 'private key', 'khoá api', 'khóa api', 'tokens?', 'credentials?',
-    'passwords?', 'mật khẩu', '\\.env',
-  ],
-  permission: [
-    'permissions?', 'quyền', 'xin phép', 'approv(?:e|es|ed|ing|al|als)', 'phê duyệt', 'chờ duyệt', 'tự duyệt',
-    'được duyệt', 'sign-?off', 'human gate', 'cổng duyệt', 'tự ý', 'delet(?:e|es|ed|ing|ion)', 'xoá', 'xóa',
-    'install(?:s|ed|ing)?', 'cài đặt', 'thanh toán', 'payments?', 'purchas(?:e|es|ed|ing)', 'gửi email', 'gửi mail',
-    'gửi tin', 'nhắn tin', 'send(?:s|ing)? (?:a |the )?(?:messages?|emails?|mails?|dms?)',
-    'dangerously-skip-permissions', 'bypasspermissions', '--yolo', '--no-verify',
-  ],
-  asking_owner: ['hỏi', 'ask(?:s|ed|ing)?', 'confirm(?:s|ed|ing|ation)?'],
-  reporting: [
-    'báo cáo', 'reports?', 'reported', 'reporting', 'fail(?:s|ed|ing)?', 'failures?', 'thất bại', 'cảnh báo', 'warnings?',
-    // Telling the owner about errors (root probes, D4 round 3): "khỏi cần báo anh", "đừng làm phiền anh về bug".
-    'báo anh', 'báo lại', 'thông báo', 'nói với anh', 'làm phiền anh', 'lỗi', 'errors?', 'bugs?', 'sự cố', 'incidents?',
-  ],
+const has = (re, t) => {
+  re.lastIndex = 0;
+  const hit = re.test(t);
+  re.lastIndex = 0;
+  return hit;
 };
-const TOPIC_RES = Object.entries(TOPICS).map(([topic, list]) => [topic, word(list)]);
+
+// A word list read in four forms of the text: as written, with digit look-alikes undone ("t3sts"), and, for English
+// (ASCII) words only, both again with diacritics stripped ("Skip tést"). Vietnamese words are never stripped:
+// stripping merges lời/lỗi and tất/tắt.
+const isEnglish = (w) => /^[\x00-\x7f]*$/.test(w) && !VIETNAMESE_ASCII.includes(w);
+function matcher(list) {
+  const all = word(list);
+  const english = list.filter(isEnglish);
+  const bare = english.length > 0 ? word(english) : null;
+  return (v) => has(all, v.text) || has(all, v.leet) || (bare !== null && (has(bare, v.bare) || has(bare, v.bareLeet)));
+}
+const CONTEXT_MATCHERS = Object.entries(CONTEXT).map(([group, list]) => [group, matcher(list)]);
+const TOPIC_MATCHERS = Object.entries(TOPICS).map(([topic, groups]) => [
+  topic,
+  Object.entries(groups).map(([group, list]) => [group, matcher(list)]),
+]);
+
+// A topic counts when one of its "always" words appears, or one of its context-bound words appears next to a word
+// of that context group (floor-topics.mjs). Any negation, exception or condition trigger is also an action context.
+function topicsOf(v, triggers) {
+  const context = { always: true, ...Object.fromEntries(CONTEXT_MATCHERS.map(([group, m]) => [group, m(v)])) };
+  context.action ||= triggers.length > 0;
+  return TOPIC_MATCHERS.filter(([, groups]) => groups.some(([group, m]) => context[group] && m(v))).map(([topic]) => topic);
+}
 
 const TRIGGERS = [
   'không', 'chẳng', 'chả', 'chưa', 'đừng', 'chớ', 'cấm', 'khỏi', 'trừ khi', 'trừ phi', 'ngoại trừ', 'trừ', 'nếu',
@@ -253,23 +252,42 @@ const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLES).join('')}]`, 'gu')
 // ("s k i p tests", "t.e.s.t.s"), are read as one word.
 const LETTER_RUN = /(?<![\p{L}\p{N}])\p{L}(?:[ .\-_*·/]\p{L}(?![\p{L}\p{N}])){2,}/gu;
 const LETTER_RUN_SEPARATORS = /[ .\-_*·/]/g;
-const NON_LATIN_LETTER = /(?=\p{L})\P{Script=Latin}/u;
 const LEET = { 0: 'o', 1: 'i', 3: 'e', 4: 'a', 5: 's', 7: 't', '@': 'a', $: 's' };
+// Underscores and other connector punctuation ("_Push_", "NODE_TLS_REJECT", "Push‿without") and markdown emphasis or
+// code markers ("**test**", "`test`", "~~CI~~") are read as spaces.
+const MARKUP = /[\p{Pc}*`~]/gu;
 
-// NFKC, lower case, invisible and combining characters removed, look-alikes folded, curly apostrophes straight,
-// whitespace collapsed (line breaks kept: they separate the statement from its check).
-export function prepareFloorText(input) {
-  return String(input)
+// Letters the floor can read are ASCII and the Vietnamese alphabet. A text is unreadable (it never passes) when it holds
+// any other letter (small capitals "ᴛᴇsᴛ", "tȩst", other scripts left after folding look-alikes), a pictograph, a digit
+// outside 0-9, or a symbol inside a word ("sk!p", "t*sts", "pu$h").
+const VIETNAMESE_LETTERS = 'àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ';
+const UNREADABLE = [
+  new RegExp(`[^\\P{L}a-z${VIETNAMESE_LETTERS}]`, 'u'),
+  /\p{Extended_Pictographic}/u,
+  /[^\P{N}0-9]/u,
+  /\p{L}[^\p{L}\p{N}\s\p{Pd}\p{Pc}'.,/&:;+#@]+\p{L}/u,
+];
+
+// NFKC, lower case, invisible and combining characters removed, Cyrillic/Greek look-alikes folded, curly apostrophes
+// straight, line breaks kept (they separate the statement from its check).
+const foldText = (input) =>
+  String(input)
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\p{Cf}\p{M}]/gu, '')
     .replace(CONFUSABLE_RE, (c) => CONFUSABLES[c])
-    .replace(/[‘’ʼ`´]/g, "'")
+    .replace(/[‘’ʼ´]/g, "'")
     .replace(/[\p{Zl}\p{Zp}]/gu, '\n')
-    .replace(/\p{Cc}/gu, (c) => (c === '\n' ? '\n' : ' '))
+    .replace(/\p{Cc}/gu, (c) => (c === '\n' ? '\n' : ' '));
+
+// Markup read as spaces, whitespace collapsed, runs of single letters joined.
+const finishText = (folded) =>
+  folded
+    .replace(MARKUP, ' ')
     .replace(/[^\S\n]+/g, ' ')
     .replace(LETTER_RUN, (run) => run.replace(LETTER_RUN_SEPARATORS, ''));
-}
+
+export const prepareFloorText = (input) => finishText(foldText(input));
 
 // "t3sts", "pu$h": digits and symbols inside a word read as letters, for topic detection only.
 const deLeet = (t) =>
@@ -303,33 +321,43 @@ function sureLoosening(field) {
   return hit && onlyNeutral(hit.free) ? { class: hit.class, phrase: hit.phrase } : null;
 }
 
-const has = (re, t) => {
-  re.lastIndex = 0;
-  const hit = re.test(t);
-  re.lastIndex = 0;
-  return hit;
-};
+// Why a text is off the pass allowlist, as fixed labels (empty for pass).
+function reviewReasonsOf({ kind, flags }, { topics, floorPhrase, unreadable }) {
+  return [
+    ...(kind === 'preference' ? [] : ['kind_not_preference']),
+    ...REVIEW_FLAGS.filter((f) => flags?.[f] === true).map((f) => `flag_${f}`),
+    ...(topics.length > 0 ? ['protected_topic'] : []),
+    ...(floorPhrase ? ['floor_phrase'] : []),
+    ...(unreadable ? ['unreadable'] : []),
+  ];
+}
 
-// input: the statement, or "statement\ncheck". Each line is judged on its own for hard_reject; topics and
-// uncertainty words are read across the whole text.
-// Returns { floor, class?, phrase?, topics: [...], triggers: [...], floorPhrase, unreadable }; topics and
-// triggers are labels from the fixed vocabularies above, never candidate text.
-export function classifyFloor(input) {
-  const t = typeof input === 'string' ? prepareFloorText(input) : '';
-  const topicsIn = (s) => TOPIC_RES.filter(([, re]) => has(re, s)).map(([topic]) => topic);
-  const topics = [...new Set([...topicsIn(t), ...topicsIn(deLeet(t))])];
+// input: the statement, or "statement\ncheck"; options: the candidate's { kind, flags } (no kind = not a
+// preference, so never pass). Each line is judged on its own for hard_reject; topics and uncertainty words are read
+// across the whole text.
+// Returns { floor, class?, phrase?, topics, triggers, floorPhrase, unreadable, reviewReasons }; topics, triggers and
+// reviewReasons are labels from the fixed vocabularies, never candidate text.
+export function classifyFloor(input, options = {}) {
+  const folded = typeof input === 'string' ? foldText(input) : '';
+  const t = finishText(folded);
+  const unreadable = UNREADABLE.some((re) => re.test(folded));
   const triggerSet = TRIGGER_RES[stripDiacritics(t) === t ? 'unaccented' : 'accented'];
   const triggers = triggerSet.filter(([, re]) => has(re, t)).map(([label]) => label);
-  const unreadable = NON_LATIN_LETTER.test(t);
+  const bare = stripDiacritics(t);
+  const topics = topicsOf({ text: t, leet: deLeet(t), bare, bareLeet: deLeet(bare) }, triggers);
   const floorPhrase = floorMatches(t) !== null;
-  const facts = { topics, triggers, floorPhrase, unreadable };
+  const reviewReasons = reviewReasonsOf(options ?? {}, { topics, floorPhrase, unreadable });
+  const facts = { topics, triggers, floorPhrase, unreadable, reviewReasons };
   for (const field of t.split('\n')) {
     const sure = field.trim() === '' ? null : sureLoosening(field);
     if (sure) return { floor: 'hard_reject', ...sure, ...facts };
   }
-  const touched = topics.length > 0 || unreadable || floorPhrase;
-  return { floor: touched ? 'owner_review_required' : 'pass', ...facts };
+  return { floor: reviewReasons.length > 0 ? 'owner_review_required' : 'pass', ...facts };
 }
+
+// The floor of a candidate's statement (or a narrowed statement in its place) with its check, kind and flags.
+export const classifyCandidateFloor = (candidate, statement = candidate.statement) =>
+  classifyFloor(`${statement}\n${candidate.check}`, { kind: candidate.kind, flags: candidate.flags });
 
 // The hard_reject part of the floor: { class, phrase } or null.
 export function detectHardReject(input) {

@@ -1,16 +1,16 @@
 // Socrates verdict contract (docs/izzi-v2/PLAN.md §2.4 and §4.9 item 6). Pure functions.
 // - validateVerdict: schema + consistency with the candidate, its research tier and budget; the verdict must echo
 //   the inputFingerprint and candidateRevision the brief printed. A hard_reject floor forces REJECT; the stored
-//   verdict carries the floor class of the text it would promote.
-// - classifyFloor / detectHardReject: the three-way code floor (floor.mjs), re-exported here.
+//   verdict carries the floor class and topics of the text it would promote (with the candidate's kind and flags).
+// - classifyFloor / classifyCandidateFloor / detectHardReject: the three-way code floor (floor.mjs), re-exported here.
 // - promotionDecision: what root does next; a hard-REJECT is refused even when the owner forces it.
 // - extractVerdictJson: plain JSON or exactly one fenced json block, with no duplicate keys.
 
 import { containsPiiOrSecret, isObject, text } from './candidate.mjs';
-import { classifyFloor, detectHardReject } from './floor.mjs';
+import { classifyCandidateFloor, classifyFloor, detectHardReject } from './floor.mjs';
 import { inputFingerprint } from './loop-guard.mjs';
 
-export { classifyFloor, detectHardReject };
+export { classifyCandidateFloor, classifyFloor, detectHardReject };
 
 export const VERDICT_SCHEMA = 'agent-maturity/verdict@2';
 export const VERDICTS = ['ACCEPT', 'NARROW', 'NEED-MORE-EVIDENCE', 'REJECT'];
@@ -238,7 +238,7 @@ function semanticErrors(p, candidate, tier) {
   const shapesSentence = p.verdict === 'ACCEPT' || p.verdict === 'NARROW';
 
   if (p.hardReject && p.verdict !== 'REJECT') fail('hard_reject_must_reject', 'hardReject');
-  const floor = classifyFloor(`${candidate.statement}\n${candidate.check}`);
+  const floor = classifyCandidateFloor(candidate);
   if (floor.floor === 'hard_reject' && p.verdict !== 'REJECT') fail('hard_reject_floor', 'verdict');
 
   if (p.verdict === 'NARROW') narrowErrors(p, candidate, fail);
@@ -280,11 +280,13 @@ export function validateVerdict(raw, { candidate, tier }) {
     checks: p.checks,
     hardReject: p.hardReject ?? fromFloor,
     floor: floor.floor,
+    floorTopics: floor.topics,
     research: p.research,
     reviewer: p.reviewer,
   };
   if (p.verdict === 'NARROW') {
-    value.narrowed = { statement: p.narrowed.value, floor: classifyFloor(`${p.narrowed.value}\n${candidate.check}`).floor };
+    const narrowedFloor = classifyCandidateFloor(candidate, p.narrowed.value);
+    value.narrowed = { statement: p.narrowed.value, floor: narrowedFloor.floor, floorTopics: narrowedFloor.topics };
   }
   if (p.verdict === 'NEED-MORE-EVIDENCE') value.reviewAfter = p.reviewAfter;
   if (containsPiiOrSecret(JSON.stringify(value))) return { ok: false, errors: [{ code: 'pii_or_secret', field: '' }], value: null };
@@ -295,17 +297,19 @@ export function validateVerdict(raw, { candidate, tier }) {
 
 // The floor class of the text a verdict would promote: the narrowed statement for NARROW, else the candidate's.
 export const promotedFloor = (verdict) => (verdict.verdict === 'NARROW' ? verdict.narrowed?.floor : verdict.floor);
+// Its topics, as stored with the verdict (null on a record written before topics were stored).
+export const promotedTopics = (verdict) =>
+  (verdict.verdict === 'NARROW' ? verdict.narrowed?.floorTopics : verdict.floorTopics) ?? null;
 
 // A hard-REJECT is refused, even when the owner forces it. On owner_review_required text a socrates ACCEPT or
-// NARROW is not enough: the owner approves the exact text and acknowledges the protected topic (assertPromotable
-// checks it). A plain REJECT is held; the owner may still override it by approving the exact text.
+// NARROW alone is not enough: the decision carries ownerReviewRequired, and assertPromotable needs the owner's
+// acknowledgement (the checkpoint answer to a question that showed the floor label and topics next to the exact
+// text; for a NARROW or a rewrite, the OK to the diff that showed the new text and its label). A plain REJECT is
+// held; the owner may still override it by approving the exact text.
 export function promotionDecision({ candidate, verdict, ownerForce = false, ownerApprovedDiff = false }) {
   if (verdict.hardReject) return { action: 'refuse', reason: `hard_reject:${verdict.hardReject.class}` };
   const decision = verdictDecision({ candidate, verdict, ownerForce, ownerApprovedDiff });
-  if (promotedFloor(verdict) !== 'owner_review_required') return decision;
-  return decision.action === 'hold'
-    ? { ...decision, ownerReviewRequired: true }
-    : { action: 'owner_review', reason: 'protected_topic', ownerReviewRequired: true };
+  return promotedFloor(verdict) === 'owner_review_required' ? { ...decision, ownerReviewRequired: true } : decision;
 }
 
 function verdictDecision({ candidate, verdict, ownerForce, ownerApprovedDiff }) {

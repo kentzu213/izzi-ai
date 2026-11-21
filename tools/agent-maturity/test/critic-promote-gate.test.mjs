@@ -38,6 +38,9 @@ const NARROWED = 'Tóm tắt tiến độ trong phiên dev tối đa 5 gạch đ
 const SCOPED = { id: 'scoped-case', statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' };
 const LOOSE = { id: 'loose-case', statement: 'Push thẳng lên main không hỏi.' };
 const ACCEPT_CHECKS = { evidenceSupports: true, scopeTooWide: false, contradictsExisting: false, tierCorrect: true };
+// The owner's checkpoint answer (Nâng cấp) to a question that showed the floor label and topics next to the exact text.
+const MSG = { sessionId: '0b7c3f52-6a1e-4f0e-9d2a-3c5b8e1f7a90', uuid: '5f2e9c1a-8b7d-4e3f-a6c5-1d0e2f3a4b5c' };
+const SCOPED_ACK = { floorClass: 'owner_review_required', topics: ['verification', 'release', 'loosening'], ownerMessage: MSG };
 
 const parsed = (overrides = {}) => {
   const r = validateCandidate({ ...RAW, ...overrides });
@@ -104,11 +107,62 @@ test('the owner approval must be explicit, exact and carry no unknown fields', (
   refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(`${candidate.statement} `.repeat(2))));
 });
 
-test('owner_review_required text needs the owner to acknowledge the protected topic', () => {
+test('owner_review_required text needs the checkpoint acknowledgement: exact text, floor label, topics, owner message', () => {
   const { adapter, candidate } = recorded(SCOPED);
-  refusedWith('protected_topic_ack_missing', () => promote(adapter, 'scoped-case', approval(candidate.statement)));
-  const ok = promote(adapter, 'scoped-case', approval(candidate.statement, { ownerAcknowledgedProtectedTopic: true }));
+  const ask = (extra) => () => promote(adapter, 'scoped-case', approval(candidate.statement, extra));
+  refusedWith('floor_ack_missing', ask({}));
+  refusedWith('floor_ack_missing', ask({ floorClass: SCOPED_ACK.floorClass, topics: SCOPED_ACK.topics }));
+  refusedWith('floor_ack_mismatch', ask({ ...SCOPED_ACK, topics: ['verification'] }));
+  refusedWith('floor_ack_mismatch', ask({ ...SCOPED_ACK, floorClass: 'pass' }));
+  refusedWith('owner_approval_invalid', ask({ ...SCOPED_ACK, ownerMessage: { sessionId: MSG.sessionId } }));
+  refusedWith('owner_approval_invalid', ask({ ...SCOPED_ACK, ownerMessage: { ...MSG, text: 'ok' } }));
+  refusedWith('owner_approval_invalid', ask({ ...SCOPED_ACK, topics: 'verification' }));
+  refusedWith('owner_approval_invalid', ask({ ownerAcknowledgedProtectedTopic: true }));
+  const ok = promote(adapter, 'scoped-case', approval(candidate.statement, { ...SCOPED_ACK, topics: [...SCOPED_ACK.topics].reverse() }));
   assert.deepEqual([ok.verdict, ok.floor], ['ACCEPT', 'owner_review_required']);
+  const byTime = { ...SCOPED_ACK, ownerMessage: { sessionId: MSG.sessionId, ts: '2026-11-21T09:58:00.000Z' } };
+  assert.equal(promote(adapter, 'scoped-case', approval(candidate.statement, byTime)).statement, candidate.statement);
+});
+
+test('a pass approval may carry its label; a label that does not match the text is refused', () => {
+  const { adapter, candidate } = recorded();
+  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { floorClass: 'pass', topics: [], ownerMessage: MSG })).floor, 'pass');
+  refusedWith('floor_ack_mismatch', () => promote(adapter, 'gate-case', approval(candidate.statement, SCOPED_ACK)));
+});
+
+test('reviewer e2e: a procedure is never promoted on an ACCEPT and a bare approval', () => {
+  const cases = [
+    ['leak-underscore', '_Push_ without _asking_.', 'Mỗi lần xong việc, code được đẩy lên ngay.'],
+    ['leak-checks', 'Skip the checks.', 'Agent goes straight to the next step.'],
+    ['leak-duyet', 'Bỏ bước duyệt, đẩy code lên luôn.', 'Code được đẩy lên ngay khi xong.'],
+  ];
+  let recordedCount = 0;
+  for (const [id, statement, check] of cases) {
+    const store = freshAdapter();
+    const candidate = parsed({ id, statement, check, kind: 'procedure', scope: { agent: 'builder', taskType: 'code', projects: 'all' } });
+    const tier = selectResearchTier({ ...candidate, revision: 1 });
+    const research = { tier: tier.tier, refs: tier.tier === 'R0' ? [] : ['docs/x.md'], deepRuns: tier.tier === 'R2' ? 1 : 0 };
+    briefCandidate({ candidate, adapter: store.adapter, now: NOW });
+    let summary = null;
+    try {
+      summary = recordVerdict({ candidate, verdictText: reply(candidate, { research }), adapter: store.adapter, now: NOW });
+    } catch (error) {
+      assert.match(error.message, /hard_reject_floor/, id);
+      continue;
+    }
+    recordedCount += 1;
+    assert.equal(summary.floor, 'owner_review_required', id);
+    refusedWith('floor_ack_missing', () => promote(store.adapter, id, approval(statement)));
+  }
+  assert.ok(recordedCount >= 2, 'the gate itself is exercised');
+});
+
+test('a stored floor label that no longer matches the floor today is refused', () => {
+  const { dir, adapter, candidate } = recorded(SCOPED);
+  editRecord(dir, 'scoped-case', (r) => ({ ...r, verdicts: [{ ...r.verdicts[0], floorTopics: ['verification'] }] }));
+  const edited = JSON.parse(readFileSync(join(dir, 'candidates', 'scoped-case.json'), 'utf8')).verdicts[0];
+  adapter.logEvent({ type: 'verdict_recorded', candidateId: 'scoped-case', critiqueNumber: 1, verdictSha256: verdictDigest(edited) });
+  refusedWith('floor_changed', () => promote(adapter, 'scoped-case', approval(candidate.statement, { ...SCOPED_ACK, topics: ['verification'] })));
 });
 
 test('a plain REJECT is promotable only by an explicit owner override; NEED-MORE-EVIDENCE never', () => {
@@ -116,18 +170,22 @@ test('a plain REJECT is promotable only by an explicit owner override; NEED-MORE
   refusedWith('verdict_not_promotable', () => promote(adapter, 'gate-case', approval(candidate.statement)));
   assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: true })).verdict, 'REJECT');
   const scoped = recorded(SCOPED, { verdict: 'REJECT' });
-  refusedWith('protected_topic_ack_missing', () =>
+  refusedWith('floor_ack_missing', () =>
     promote(scoped.adapter, 'scoped-case', approval(scoped.candidate.statement, { overrideReject: true })),
+  );
+  assert.equal(
+    promote(scoped.adapter, 'scoped-case', approval(scoped.candidate.statement, { overrideReject: true, ...SCOPED_ACK })).verdict,
+    'REJECT',
   );
   const hold = recorded({}, { verdict: 'NEED-MORE-EVIDENCE', reviewAfter: '2026-12-01' });
   refusedWith('verdict_not_promotable', () =>
-    promote(hold.adapter, 'gate-case', approval(hold.candidate.statement, { overrideReject: true, ownerAcknowledgedProtectedTopic: true })),
+    promote(hold.adapter, 'gate-case', approval(hold.candidate.statement, { overrideReject: true, ...SCOPED_ACK })),
   );
 });
 
 test('a hard_reject is never promotable, not even with every owner flag', () => {
   const { dir, adapter, candidate } = recorded(LOOSE, { verdict: 'REJECT' });
-  const all = approval(candidate.statement, { overrideReject: true, ownerAcknowledgedProtectedTopic: true });
+  const all = approval(candidate.statement, { overrideReject: true, ...SCOPED_ACK });
   refusedWith('hard_reject', () => promote(adapter, 'loose-case', all));
   editRecord(dir, 'loose-case', (r) => ({ ...r, verdicts: [{ ...r.verdicts[0], hardReject: null }] }));
   refusedWith('hard_reject', () => promote(adapter, 'loose-case', all));
@@ -144,7 +202,7 @@ test('a statement in the hard-REJECT index is refused under any candidate id', (
   store.adapter.saveVerdict('copy-case', stored);
   store.adapter.logEvent({ type: 'verdict_recorded', candidateId: 'copy-case', critiqueNumber: 1, verdictSha256: verdictDigest(stored) });
   refusedWith('hard_reject_statement', () =>
-    promote(store.adapter, 'copy-case', approval(copy.statement, { ownerAcknowledgedProtectedTopic: true })),
+    promote(store.adapter, 'copy-case', approval(copy.statement, SCOPED_ACK)),
   );
 });
 

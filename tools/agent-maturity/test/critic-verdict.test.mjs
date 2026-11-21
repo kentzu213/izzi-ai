@@ -8,6 +8,7 @@ import {
   HARD_REJECT_CLASSES,
   VERDICTS,
   VERDICT_LIMITS,
+  classifyCandidateFloor,
   classifyFloor,
   detectHardReject,
   extractVerdictJson,
@@ -157,27 +158,37 @@ test('a hard_reject floor forces REJECT for a candidate that loosens verificatio
 
 test('an owner_review_required candidate may be ACCEPTed, and the stored verdict says it needs the owner', () => {
   const scoped = candidateOf({ statement: 'Không bỏ qua test khi merge lên main.', check: 'Mỗi lần merge lên main có test xanh.' });
-  assert.equal(classifyFloor(`${scoped.statement}\n${scoped.check}`).floor, 'owner_review_required');
+  assert.equal(classifyCandidateFloor(scoped).floor, 'owner_review_required');
   const r = validate({ ...ACCEPT }, scoped);
   assert.equal(r.ok, true, JSON.stringify(r.errors));
   assert.equal(r.value.floor, 'owner_review_required');
+  assert.deepEqual(r.value.floorTopics, ['verification', 'release', 'loosening']);
   assert.equal(r.value.hardReject, null);
+  // The acknowledgement is folded into the checkpoint: the decision says the gate needs it, no second ask.
   assert.deepEqual(promotionDecision({ candidate: scoped, verdict: r.value }), {
-    action: 'owner_review',
-    reason: 'protected_topic',
+    action: 'promote',
+    reason: 'accept_unchanged',
     ownerReviewRequired: true,
   });
+  const procedure = candidateOf({ kind: 'procedure', statement: 'Viết câu ngắn gọn hơn.', check: 'Mỗi câu dưới 20 từ.' });
+  assert.equal(classifyFloor(`${procedure.statement}\n${procedure.check}`, { kind: 'preference' }).floor, 'pass');
+  assert.deepEqual(classifyCandidateFloor(procedure).reviewReasons, ['kind_not_preference']);
 });
 
 test('the stored floor follows the text a verdict would promote (the narrowed statement for NARROW)', () => {
   const plain = candidateOf({ statement: 'Trả lời ngắn gọn, tối đa 5 gạch đầu dòng.', check: 'Mỗi câu trả lời có ≤5 gạch đầu dòng.' });
   const narrowToTopic = validate(
-    { ...ACCEPT, verdict: 'NARROW', checks: { ...ACCEPT.checks, scopeTooWide: true }, narrowed: { statement: 'Báo cáo cuối tối đa 5 gạch đầu dòng.' } },
+    { ...ACCEPT, verdict: 'NARROW', checks: { ...ACCEPT.checks, scopeTooWide: true }, narrowed: { statement: 'Trước khi merge, trả lời tối đa 5 gạch đầu dòng.' } },
     plain,
   );
   assert.equal(narrowToTopic.ok, true, JSON.stringify(narrowToTopic.errors));
   assert.deepEqual([narrowToTopic.value.floor, narrowToTopic.value.narrowed.floor], ['pass', 'owner_review_required']);
-  assert.equal(promotionDecision({ candidate: plain, verdict: narrowToTopic.value }).action, 'owner_review');
+  assert.deepEqual([narrowToTopic.value.floorTopics, narrowToTopic.value.narrowed.floorTopics], [[], ['release']]);
+  assert.deepEqual(promotionDecision({ candidate: plain, verdict: narrowToTopic.value }), {
+    action: 'show_diff',
+    reason: 'narrowed',
+    ownerReviewRequired: true,
+  });
   assert.equal(validate(ACCEPT, plain).value.floor, 'pass');
   assert.equal(promotionDecision({ candidate: plain, verdict: validate(ACCEPT, plain).value }).action, 'promote');
 });
@@ -348,8 +359,13 @@ test('promotionDecision maps verdicts to the next root action', () => {
   assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: v('REJECT') }).action, 'hold');
   assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: v('REJECT'), ownerForce: true }).action, 'promote_forced');
   const review = (verdict, extra = {}) => v(verdict, { floor: 'owner_review_required', ...extra });
-  assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: review('ACCEPT') }).action, 'owner_review');
-  assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: review('ACCEPT'), ownerForce: true }).action, 'owner_review');
+  assert.deepEqual(promotionDecision({ candidate: CANDIDATE, verdict: review('ACCEPT') }), {
+    action: 'promote',
+    reason: 'accept_unchanged',
+    ownerReviewRequired: true,
+  });
+  assert.equal(promotionDecision({ candidate: reworded, verdict: review('ACCEPT') }).action, 'show_diff');
+  assert.equal(promotionDecision({ candidate: CANDIDATE, verdict: review('REJECT'), ownerForce: true }).ownerReviewRequired, true);
   assert.deepEqual(promotionDecision({ candidate: CANDIDATE, verdict: review('REJECT') }), {
     action: 'hold',
     reason: 'rejected',

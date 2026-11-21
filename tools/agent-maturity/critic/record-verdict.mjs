@@ -36,6 +36,7 @@ import {
   isFormatOnly,
   normalizeVerdictName,
   promotedFloor,
+  promotedTopics,
   promotionDecision,
   validateVerdict,
 } from './verdict.mjs';
@@ -177,6 +178,7 @@ function recordLocked({ parsed, verdictText, adapter, now }) {
     verdict: verdict.verdict,
     hardReject: verdict.hardReject,
     floor: promotedFloor(verdict),
+    floorTopics: promotedTopics(verdict),
     tier: tier.tier,
     inputFingerprint: plan.fingerprint,
     decision: promotionDecision({ candidate, verdict }),

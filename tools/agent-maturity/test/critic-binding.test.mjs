@@ -1,7 +1,7 @@
 // Verdict binding (inputFingerprint + brief snapshot), the one JSON retry, the store-wide hard-REJECT index and
 // the store lock, through the in-process brief and record functions.
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -9,7 +9,7 @@ import { after, test } from 'node:test';
 import { briefCandidate } from '../critic/brief.mjs';
 import { validateCandidate } from '../critic/candidate.mjs';
 import { EXIT } from '../critic/cli.mjs';
-import { createJsonAdapter } from '../critic/json-adapter.mjs';
+import { clearStaleLock, createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
 
@@ -262,6 +262,24 @@ test('a third brief for the same candidate revision is blocked and logged', () =
   assert.ok(log.some((e) => e.type === 'critique_blocked' && e.reason === 'brief_cap' && e.step === 'brief'));
 });
 
+test('the brief cap also holds per statement: a new candidate id does not reset it', () => {
+  // Arrange
+  const store = freshStore();
+  const adapter = createJsonAdapter(store);
+  brief(adapter, A);
+  brief(adapter, A);
+
+  // Act + Assert: the same statement under new ids (case and spacing do not matter) gets no third brief
+  for (const raw of [{ ...RAW_A, id: 'bind-case-copy' }, { ...RAW_A, id: 'bind-case-upper', statement: `  ${RAW_A.statement.toUpperCase()}` }]) {
+    assert.throws(() => brief(adapter, parsed(raw)), refused(EXIT.blocked, /statement_brief_cap/), raw.id);
+  }
+  assert.equal(brief(adapter, parsed({ ...RAW_A, id: 'bind-case-other', statement: B.statement })).plan.critiqueNumber, 1);
+  const log = events(store);
+  assert.ok(log.filter((e) => e.type === 'brief_generated').every((e) => e.statementKey === statementKey(e.candidateId === 'bind-case-other' ? B.statement : A.statement)));
+  assert.ok(log.some((e) => e.type === 'critique_blocked' && e.reason === 'statement_brief_cap' && e.candidateId === 'bind-case-copy'));
+  assert.equal(adapter.listBriefsForStatement(statementKey(A.statement)).length, 2);
+});
+
 // ---- N7: torn log tail and lock ownership ---------------------------------------------------------------------
 
 test('a torn trailing log line is skipped by readers and cut off by the next append', () => {
@@ -309,6 +327,33 @@ test('a fresh lock held by another writer blocks a store write; a stale lock is 
   adapter.logEvent({ type: 'x', candidateId: 'bind-case' });
   assert.equal(events(store).length, 1);
   assert.equal(existsSync(lock), false, 'lock released after the write');
+});
+
+test('a stale lock is removed through a tombstone; a lock replaced after the stale check is put back', () => {
+  // Arrange
+  const store = freshStore();
+  mkdirSync(store, { recursive: true });
+  const lock = join(store, '.lock');
+  const old = new Date(Date.now() - 120_000);
+  const judged = 'dead-writer 0123456789abcdef then\n';
+
+  // Act + Assert: the stale lock that was judged is removed
+  writeFileSync(lock, judged);
+  utimesSync(lock, old, old);
+  assert.equal(clearStaleLock(lock, judged, 30_000), true);
+  assert.equal(existsSync(lock), false);
+
+  // another writer replaced it after the stale check: its lock is put back, never deleted
+  writeFileSync(lock, 'new-writer fedcba9876543210 now\n');
+  utimesSync(lock, old, old);
+  assert.equal(clearStaleLock(lock, judged, 30_000), false);
+  assert.equal(readFileSync(lock, 'utf8'), 'new-writer fedcba9876543210 now\n');
+
+  // a fresh lock is never touched
+  writeFileSync(lock, 'live-writer 00112233445566aa now\n');
+  assert.equal(clearStaleLock(lock, 'live-writer 00112233445566aa now\n', 30_000), false);
+  assert.equal(readFileSync(lock, 'utf8'), 'live-writer 00112233445566aa now\n');
+  assert.deepEqual(readdirSync(store).filter((f) => f.includes('.stale-')), [], 'no tombstone left behind');
 });
 
 test('the lock is re-entrant inside one adapter and released after an error', () => {

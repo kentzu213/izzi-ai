@@ -6,6 +6,7 @@
 //   logEvent(event)                     append a guard/audit event (critique_blocked, verdict_refused, ...)
 //   listEvents(candidateId) -> [...]    the events of one candidate, oldest first (the loop guard reads them);
 //                                       one torn trailing log line (an interrupted append) is skipped
+//   listBriefsForStatement(key) -> [...] the brief_generated events with this statementKey under ANY candidate id
 //   saveBrief(snapshot)                 store what brief.mjs printed, keyed by candidate id + inputFingerprint
 //   loadBrief(candidateId, fp) -> snapshot | null
 //   addHardReject(entry)                index a hard-REJECTed statement { statementKey, candidateId, ... }
@@ -13,7 +14,8 @@
 //   withLock(fn)                        run fn holding the store's exclusive lock (re-entrant)
 // Layout: <dir>/candidates/<id>.json, <dir>/briefs/<id>/<fp>.json, <dir>/hard-rejects.json, <dir>/log.jsonl,
 // <dir>/.lock. Writes are atomic (temp file + rename) and every read-modify-write holds the lock; the lock file
-// carries the writer's pid and a nonce, read back after creating it and checked before removing it.
+// carries the writer's pid and a nonce, read back after creating it and checked before removing it. A stale lock is
+// first renamed to a unique tombstone (atomic: one writer wins), then deleted only if it is still the stale lock.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -35,6 +37,7 @@ export const ADAPTER_METHODS = Object.freeze([
   'saveVerdict',
   'logEvent',
   'listEvents',
+  'listBriefsForStatement',
   'saveBrief',
   'loadBrief',
   'addHardReject',
@@ -58,25 +61,47 @@ const readOrEmpty = (file) => {
   }
 };
 
+const isStale = (file, staleMs) => {
+  try {
+    return Date.now() - fs.statSync(file).mtimeMs > staleMs;
+  } catch {
+    return false;
+  }
+};
+
+// Removes a stale lock without a check-then-delete race: the lock file is renamed to a unique tombstone (atomic, so
+// only one writer takes it), and the tombstone is deleted only if it still is the stale lock that was judged (same
+// content, still stale). If another writer replaced the lock in between, its fresh lock is put back (exclusive
+// copy: never over a newer lock). Returns true when the stale lock was removed.
+export function clearStaleLock(file, seen, staleMs) {
+  if (!isStale(file, staleMs)) return false;
+  const tomb = `${file}.stale-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
+  try {
+    fs.renameSync(file, tomb);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+  const stillStale = readOrEmpty(tomb) === seen && isStale(tomb, staleMs);
+  if (!stillStale) {
+    try {
+      fs.copyFileSync(tomb, file, fs.constants.COPYFILE_EXCL);
+    } catch {
+      // a third writer created a lock in between; theirs stands
+    }
+  }
+  fs.rmSync(tomb, { force: true });
+  return stillStale;
+}
+
 // The lock file holds "<pid> <nonce> <time>". After creating it, the writer reads it back and owns the lock only if
-// its nonce is there; a stale lock is removed only if it still holds what was judged stale; release removes the
-// file only while it still holds this writer's nonce.
+// its nonce is there; a stale lock goes through clearStaleLock; release removes the file only while it still holds
+// this writer's nonce.
 function createLock(root, { lockWaitMs, lockStaleMs }) {
   const file = path.join(root, '.lock');
   const tag = `${process.pid} ${crypto.randomBytes(8).toString('hex')} `;
   let depth = 0;
   const owns = () => readOrEmpty(file).startsWith(tag);
-  const isStale = () => {
-    try {
-      return Date.now() - fs.statSync(file).mtimeMs > lockStaleMs;
-    } catch {
-      return false;
-    }
-  };
-  const clearStale = () => {
-    const seen = readOrEmpty(file);
-    if (isStale() && readOrEmpty(file) === seen) fs.rmSync(file, { force: true });
-  };
   const acquire = () => {
     fs.mkdirSync(root, { recursive: true });
     const deadline = Date.now() + lockWaitMs;
@@ -88,8 +113,9 @@ function createLock(root, { lockWaitMs, lockStaleMs }) {
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
       }
-      if (isStale()) {
-        clearStale();
+      const seen = readOrEmpty(file);
+      if (isStale(file, lockStaleMs)) {
+        clearStaleLock(file, seen, lockStaleMs);
         continue;
       }
       if (Date.now() >= deadline) throw new Error(`critic store is locked (${file}); another write is running`);
@@ -179,6 +205,16 @@ export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs 
   };
   const read = (id) => readOrNull(fileFor(id), `record for ${id}`);
   const readIndex = () => readOrNull(indexFile, 'hard-REJECT index')?.entries ?? [];
+  const readLog = () => {
+    let content;
+    try {
+      content = fs.readFileSync(logFile, 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+    return parseLog(content);
+  };
 
   return {
     withLock,
@@ -210,14 +246,10 @@ export function createJsonAdapter(dir, { lockWaitMs = LOCK_WAIT_MS, lockStaleMs 
       });
     },
     listEvents(candidateId) {
-      let content;
-      try {
-        content = fs.readFileSync(logFile, 'utf8');
-      } catch (error) {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-      }
-      return parseLog(content).filter((e) => e && e.candidateId === candidateId);
+      return readLog().filter((e) => e && e.candidateId === candidateId);
+    },
+    listBriefsForStatement(statementKey) {
+      return readLog().filter((e) => e && e.type === 'brief_generated' && e.statementKey === statementKey);
     },
     saveBrief(snapshot) {
       withLock(() => writeJsonAtomic(briefFile(snapshot.candidateId, snapshot.inputFingerprint), snapshot));
