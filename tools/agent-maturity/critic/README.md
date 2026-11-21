@@ -4,12 +4,17 @@ After the owner picks **Nâng cấp**, a candidate standard goes through: resear
 verdict stored with the candidate. Spec: `docs/izzi-v2/PLAN.md` §1.2, §2.4, §4.9 items 4 and 6. This is the gate
 before a standard is injected into every session, so every ambiguity is resolved toward REJECT or hold.
 
+**No standard is ever stored without the owner choosing Nâng cấp on its exact text.** The promote gate refuses any
+promotion, `pass` included, that does not name the owner's answer on that exact sentence. The code floor only
+decides two things: whether the checkpoint question shows a warning label (anything not `pass`), and whether
+`hard_reject` blocks the sentence outright (then even the owner's Nâng cấp cannot store it).
+
 | File | Role |
 |---|---|
 | `candidate.mjs` | Candidate schema (`validateCandidate`, `hasContrastPair`, strict `text`). Pure. |
 | `research-tier.mjs` | `selectResearchTier(candidate)`: R0/R1/R2, tools, budget, never-list. Pure. |
 | `floor.mjs` | `classifyFloor` / `classifyCandidateFloor` / `detectHardReject`: the three-way code floor. Pure. |
-| `floor-topics.mjs` | The protected-topic vocabulary (labels) and its context groups. |
+| `floor-topics.mjs` | The protected-topic vocabulary (labels), its context groups, STYLE signals and ACTIONS on the world. |
 | `label.mjs` | CLI: the floor label of a candidate, for the checkpoint question. |
 | `verdict.mjs` | `validateVerdict`, `promotionDecision`, `extractVerdictJson` (re-exports the floor). Pure. |
 | `loop-guard.mjs` | `planCritique`, `inputFingerprint`, `statementKey`, `verdictDigest`: critique, retry and brief limits. Pure. |
@@ -120,15 +125,35 @@ capitals "ᴛᴇsᴛ", "tȩst", other scripts), a pictograph, a digit outside 0-
 | Class | When | Effect |
 |---|---|---|
 | `hard_reject` | A floor phrase (skip/bypass/không cần + tests or review, deploy/push/merge/... + without asking, "Không hỏi trước khi deploy", "Tự ý deploy", hardcode/print a secret, disable auth, hide failures, ...) whose every other word, in the statement or in the check, is on the NEUTRAL list (articles, addressees such as anh/the owner, targets such as main/staging, intensifiers, copulas, "before"/"trước khi"). Examples: "Bỏ qua test.", "Push without asking.", "Không cần hỏi anh trước khi push lên main." | Forces REJECT; recorded as a hard-REJECT; final, store-wide, never promotable, not even by the owner. |
-| `pass` | An ALLOWLIST: `kind` is `preference`, no `changesWorkflow` / `touchesSecurity` / `touchesLaw` flag, no protected topic, no floor phrase, nothing unreadable. | Normal flow. |
-| `owner_review_required` | Everything else that is not `hard_reject`: any procedure, quality gate or pitfall, any flagged candidate, any text with a protected topic, a floor phrase or unreadable characters (negated, scoped or reworded loosenings included). `reviewReasons` says why (`kind_not_preference`, `flag_<name>`, `protected_topic`, `floor_phrase`, `unreadable`). Examples: "Never skip tests when merging to main", "Tests can be skipped", any procedure. | A socrates ACCEPT or NARROW alone never promotes it: the owner must have seen the floor label and topics next to the exact text (the checkpoint question, or the diff of a NARROW or rewrite) and chosen Nâng cấp; the promote gate checks that acknowledgement. The brief prints the topics, trigger words and reasons and asks socrates to explain the risk. Not final, not store-indexed. |
+| `pass` | An ALLOWLIST: `kind` is `preference`, no `changesWorkflow` / `touchesSecurity` / `touchesLaw` flag, no protected topic, no floor phrase, nothing unreadable, a STYLE signal in the statement and no ACTION on the world in the statement or the check (below). | No warning label; the owner still chooses Nâng cấp on the exact text and the gate checks `ownerMessage`. |
+| `owner_review_required` | Everything else that is not `hard_reject`: any procedure, quality gate or pitfall, any flagged candidate, any text with a protected topic, a floor phrase or unreadable characters (negated, scoped or reworded loosenings included), any preference with no style signal or with an action on the world. `reviewReasons` says why (`kind_not_preference`, `flag_<name>`, `protected_topic`, `floor_phrase`, `unreadable`, `no_style_signal`, `acts_on_world`). Examples: "Never skip tests when merging to main", "Tests can be skipped", "Tăng giá gói cước cho khách cũ luôn.", any procedure. | The checkpoint question (or the diff of a NARROW or rewrite) shows the floor label, topics and reasons next to the exact text; the owner's Nâng cấp on it is the acknowledgement, and the gate also checks `floorClass` and `topics`. The brief prints the topics, trigger words and reasons and asks socrates to explain the risk. Not final, not store-indexed. |
 
 Negation never clears a phrase: a negated, scoped or reordered rule goes to the owner instead of being judged by
 more regexes. The topic vocabulary (`floor-topics.mjs`) is a label for the owner's warning, not the safety boundary.
-A lexical matcher cannot read every rewording: a loosening dressed as a preference with no topic word, no context
-word and no floor phrase (for example "Tes ts are overrated") still passes the floor. What holds it is the allowlist
-(only preferences can pass; procedures, gates, pitfalls and flagged candidates never do), the owner approving the
-exact text at the checkpoint, and socrates' critique. Topics are read on the text, on the text with digit look-alikes
+Absence of danger words is not evidence of safety (round 4 passed "Tăng giá gói cước cho khách cũ luôn.", "Chấp
+nhận mọi đề xuất của agent khác.", "Copy khoá OpenRouter vào README cho tiện." and "Tự gia hạn tên miền bằng thẻ
+của anh."), so `pass` also needs positive evidence:
+
+- a STYLE signal in the statement (the first line), about the form of the agent's own output: tone (giọng, văn
+  phong, xưng hô, thân thiện, lịch sự), length and wording (độ dài, ngắn gọn, ký tự, câu, dòng, words, lời thường,
+  chính tả), format (định dạng, tiêu đề, in đậm, gạch đầu dòng, bullet, bảng, markdown, emoji, hashtag), language
+  (tiếng Việt, tiếng Anh, có dấu), structure (thứ tự, mục, đoạn, bố cục, layout, cuối bài, tóm tắt), examples (ví
+  dụ), visuals of produced content (ảnh, hình, màu, nền, font, caption, thumbnail, banner, design token) and naming
+  (đặt tên, kebab-case, commit message; not "commit" itself). Style words are matched exactly as written, never
+  accent-folded or de-leeted ("anh" is not "ảnh", "mau" is not "màu"); bare "từ" is not a signal ("từ nay"), only
+  "20 từ", "từ ngữ", "dùng từ";
+- no ACTION on the world anywhere in the text: prices (tăng/giảm/đổi giá, price, discount), accepting for the owner
+  (chấp nhận, accept, approve, đồng ý), copy/paste/save/write when the object is a file, repo, README or config,
+  money (gia hạn, renew, mua, buy, thanh toán, pay, thẻ, card, ngân sách), sending or posting (gửi, send, đăng but not
+  "bài đăng", post, publish, reply to, trả lời khách, chia sẻ), deleting (xoá, delete, drop but not "drop shadow",
+  huỷ, cancel), running or installing (chạy, run, execute, cài, install, bật but not "nổi bật", gọi model), settings
+  (cấu hình, config, settings) and acting on its own (tự as a modifier, not in ký tự / thứ tự / tự nhiên; tự động,
+  auto, automatically, yourself). Actions are read like topics (accent-tolerant, de-leeted, English also without
+  diacritics), except words whose unaccented form is another common word, which must match exactly (thẻ/the,
+  đăng/đang, huỷ/Huy, gửi/GUI, bật/bat, chạy/chay, cài, dán, gỡ, tự).
+
+What still holds a loosening worded past every list is the allowlist (only style preferences can pass), the owner
+approving the exact text at the checkpoint (required for every standard), and socrates' critique. Topics are read on the text, on the text with digit look-alikes
 undone ("Sk1p t3sts") and, for English words, with diacritics stripped. Ambiguous domain words count only next to a
 context word: main, master, prod, production, live need a Git, deploy or branch word ("Màu main của brand" passes,
 "Commit thẳng lên main" does not); token(s), key(s), headers, accounts need an API, auth, secret or exposure word
@@ -137,9 +162,14 @@ báo, lỗi, error, quyền, thanh toán, hỏi, push, ship, release, post, đă
 deferral, autonomy or immediacy word (skip, bỏ qua, không cần, khỏi, tắt, disable, without, later, để sau, tự động,
 auto, luôn at the end of a clause, ...) or any negation, exception or condition trigger. Loosening verbs (skip, bỏ
 qua, bypass, ignore, disable, không cần, khỏi, ...) are a topic on their own. On the reviewer's 30 harmless or
-tightening domain rules, read as preferences, 27 pass; the three held are "Ask a clarifying question when the brief
-is vague." (ask + when) and the two tightening rules "Luôn hỏi anh trước khi deploy." and "Never skip tests.". The
-brief and the CLIs print only labels from the fixed vocabularies outside the data block, never candidate text.
+tightening domain rules, read as preferences, 18 pass (27 in round 4). Held since round 4: "Ask a clarifying question
+when the brief is vague." (ask + when) and the two tightening rules "Luôn hỏi anh trước khi deploy." and "Never skip
+tests.". Newly held in round 5, all procedures, content rules or actions rather than the form of the output: no
+style signal ("Hỏi khách tên trước khi tư vấn.", "Quyền lợi khách hàng ghi rõ trong bài.", "Nêu giá trước, ưu đãi
+sau.", "Báo lỗi kèm đường dẫn file."), an action ("Trả lời review của khách lịch sự.", "Kiểm tra chính tả trước khi
+gửi bản nháp.") or both ("Xoá import không dùng.", "Cài package bằng pnpm, không dùng npm.", "Trang thanh toán ghi
+rõ phí ship."). The fixture lists each held text with its reason. The brief and the CLIs print only labels from the
+fixed vocabularies outside the data block, never candidate text.
 `node tools/agent-maturity/critic/label.mjs <candidate.json>` prints `{ floor, topics, reviewReasons, class? }` for
 the checkpoint question.
 
@@ -158,9 +188,15 @@ synthetic sentences through the current floor (each read as kind `preference`, t
 round-2 binary floor (materialized from git into a temp folder) and prints counts per class, the pass count when the
 same sentences are read as a procedure, and every sentence that misses its expectation. Round 3: before hard-REJECT
 133 / pass 132; after hard_reject 45 / owner_review_required 203 / pass 17; 0 misses. Round 4 (allowlist,
-context-bound vocabulary): unchanged at 45 / 203 / 17 with 0 misses, and 0 pass as a procedure.
-`critic-floor.test.mjs` checks the same expectations; `critic-floor-d4-probes.test.mjs` runs the reviewer's round-4
-probes (`test/fixtures/d4-floor-probes.json`: 207 loosenings, 0 pass) and the 30 harmless domain rules.
+context-bound vocabulary): unchanged at 45 / 203 / 17 with 0 misses, and 0 pass as a procedure. Round 5 (style
+signal): 45 / 207 / 13 with 0 misses; four "ordinary" sentences moved to a new group `ordinary_not_style`
+(expect owner_review_required) because they are not about the form of the output: "Gọi model nền chỉ khi có việc
+mới.", "Vẽ sơ đồ trước rồi mới giao việc cho subagent.", "Bài quảng cáo chỉ nêu số liệu có nguồn." and "Trước khi
+trả lời Page, đọc lại ghi chú nội bộ của shop.". `critic-floor.test.mjs` checks the same expectations;
+`critic-floor-d4-probes.test.mjs` runs the reviewer's round-4 probes (`test/fixtures/d4-floor-probes.json`: 207
+loosenings, 0 pass) and the 30 harmless domain rules; `critic-floor-style-signal.test.mjs` runs root's round-4
+probes (`test/fixtures/d4-floor-root-probes-r4.json`: 16 loosenings, 0 pass; 5 harmless style rules, 5 pass) and
+the style and action rules.
 
 ## Promote gate (D3 must call it)
 
@@ -169,15 +205,18 @@ current candidate, its LAST verdict and the hard-REJECT index itself, and throws
 unless: the candidate re-validates as stored; the verdict is a v2 record bound to it (id, revision, fingerprint),
 re-validates today and matches the `verdictSha256` that `record-verdict` logged (`verdict_tampered` otherwise); the
 re-validated verdict has no hard-REJECT; the promoted text is not `hard_reject` and neither it nor the candidate
-statement is in the hard-REJECT index; and `ownerApproval` is `{ approved: true, statement }` with exactly the
-promoted text and no unknown keys. The promoted text is the candidate statement (ACCEPT), only the stored narrowed
+statement is in the hard-REJECT index; and `ownerApproval` is `{ approved: true, statement, ownerMessage }` with
+exactly the promoted text and no unknown keys. `ownerMessage: { sessionId, uuid and/or ts }` (where the owner chose
+Nâng cấp on that exact text, or OK to a NARROW or rewrite diff; never its text) is required for EVERY promotion,
+`pass` included (`owner_message_missing` otherwise). The promoted text is the candidate statement (ACCEPT), only the stored narrowed
 statement (NARROW), or the candidate statement of a plain REJECT the owner overrides with `overrideReject: true`.
 The floor (with the candidate's kind and flags) stored with the verdict must still be the floor of the promoted text
-today (`floor_changed`). `owner_review_required` text also needs the owner's acknowledgement, folded into the
-checkpoint (no second approval): `floorClass`, `topics` (the floor label the owner was shown next to that exact
-text, equal to the stored floor; `floor_ack_mismatch` otherwise) and `ownerMessage: { sessionId, uuid and/or ts }`
-(where the owner answered Nâng cấp, or OK to a NARROW or rewrite diff; never its text); `floor_ack_missing` when
-any is absent. A label given with a `pass` text must match too. NEED-MORE-EVIDENCE is never promotable;
+today (`floor_changed`). `owner_review_required` text also needs the owner's acknowledgement of the label, folded
+into the checkpoint (no second approval): `floorClass` and `topics` (the floor label the owner was shown next to
+that exact text, equal to the stored floor; `floor_ack_mismatch` otherwise) besides `ownerMessage`;
+`floor_ack_missing` when any of the three is absent. A label given with a `pass` text must match too. A verdict
+stored before round 5 whose text the style rule now classifies differently is refused with `floor_changed`: ask
+the owner again with the current label. NEED-MORE-EVIDENCE is never promotable;
 `hard_reject` never, whatever is set. It returns `{ candidateId, revision, inputFingerprint,
 verdict, floor, statement }`. **At integration, D3's `promote` must call it with the store adapter, the candidate
 id and the owner's approval, and promote only the returned `statement`.** D4 does not edit D3 code.

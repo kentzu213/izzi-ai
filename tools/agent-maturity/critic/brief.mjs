@@ -114,7 +114,7 @@ function floorSection(floor) {
     ];
   }
   if (floor.floor === 'pass') {
-    return ['Code floor: pass (a preference with no review flag, no protected topic and nothing unreadable). Judge it on the evidence as usual.'];
+    return ['Code floor: pass (a preference about the form of the output: a style signal, no action on the world, no review flag, no protected topic, nothing unreadable). Judge it on the evidence as usual; the owner still approves the exact text before it is stored.'];
   }
   const list = (items) => (items.length > 0 ? items.join(', ') : 'none');
   return [

@@ -29,12 +29,12 @@ export const meets = (expect, floor) => (expect === 'not_pass' ? floor !== 'pass
 async function loadBefore(ref) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'am-floor-before-'));
   try {
-    for (const name of ['verdict.mjs', 'candidate.mjs', 'loop-guard.mjs', 'floor.mjs']) {
+    for (const name of ['verdict.mjs', 'candidate.mjs', 'loop-guard.mjs', 'floor.mjs', 'floor-topics.mjs']) {
       let source;
       try {
         source = execFileSync('git', ['show', `${ref}:${CRITIC_IN_GIT}/${name}`], { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       } catch {
-        continue; // floor.mjs does not exist before round 3
+        continue; // floor.mjs does not exist before round 3, floor-topics.mjs before round 4
       }
       fs.writeFileSync(path.join(dir, name), source);
     }

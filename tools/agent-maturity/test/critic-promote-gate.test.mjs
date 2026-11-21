@@ -41,6 +41,7 @@ const ACCEPT_CHECKS = { evidenceSupports: true, scopeTooWide: false, contradicts
 // The owner's checkpoint answer (Nâng cấp) to a question that showed the floor label and topics next to the exact text.
 const MSG = { sessionId: '0b7c3f52-6a1e-4f0e-9d2a-3c5b8e1f7a90', uuid: '5f2e9c1a-8b7d-4e3f-a6c5-1d0e2f3a4b5c' };
 const SCOPED_ACK = { floorClass: 'owner_review_required', topics: ['verification', 'release', 'loosening'], ownerMessage: MSG };
+const OWNER = { ownerMessage: MSG };
 
 const parsed = (overrides = {}) => {
   const r = validateCandidate({ ...RAW, ...overrides });
@@ -82,7 +83,7 @@ function editRecord(dir, id, edit) {
 
 test('an ACCEPT with the owner approval of that exact sentence is promotable', () => {
   const { adapter, candidate } = recorded();
-  assert.deepEqual(promote(adapter, 'gate-case', approval(candidate.statement)), {
+  assert.deepEqual(promote(adapter, 'gate-case', approval(candidate.statement, OWNER)), {
     candidateId: 'gate-case',
     revision: 1,
     inputFingerprint: inputFingerprint({ ...candidate, revision: 1 }),
@@ -94,8 +95,8 @@ test('an ACCEPT with the owner approval of that exact sentence is promotable', (
 
 test('a NARROW promotes only the stored narrowed statement', () => {
   const { adapter, candidate } = recorded({}, NARROW);
-  assert.equal(promote(adapter, 'gate-case', approval(NARROWED)).statement, NARROWED);
-  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(candidate.statement)));
+  assert.equal(promote(adapter, 'gate-case', approval(NARROWED, OWNER)).statement, NARROWED);
+  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(candidate.statement, OWNER)));
 });
 
 test('the owner approval must be explicit, exact and carry no unknown fields', () => {
@@ -104,7 +105,22 @@ test('the owner approval must be explicit, exact and carry no unknown fields', (
   refusedWith('owner_approval_missing', () => promote(adapter, 'gate-case', { approved: 'yes', statement: candidate.statement }));
   refusedWith('owner_approval_invalid', () => promote(adapter, 'gate-case', approval(candidate.statement, { forced: true })));
   refusedWith('owner_approval_invalid', () => promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: 'true' })));
-  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(`${candidate.statement} `.repeat(2))));
+  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(`${candidate.statement} `.repeat(2), OWNER)));
+});
+
+test('every promotion needs the owner message, pass included: no standard is stored without Nâng cấp on its exact text', () => {
+  // Arrange
+  const { adapter, candidate } = recorded();
+  const ask = (extra) => () => promote(adapter, 'gate-case', approval(candidate.statement, extra));
+
+  // Act + Assert
+  refusedWith('owner_message_missing', ask({}));
+  refusedWith('owner_message_missing', ask({ floorClass: 'pass', topics: [] }));
+  refusedWith('owner_approval_invalid', ask({ ownerMessage: { sessionId: MSG.sessionId } }));
+  refusedWith('owner_approval_invalid', ask({ ownerMessage: { ...MSG, text: 'Nâng cấp' } }));
+  refusedWith('approval_statement_mismatch', () => promote(adapter, 'gate-case', approval(candidate.statement.slice(0, -1), OWNER)));
+  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, OWNER)).floor, 'pass');
+  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { ownerMessage: { sessionId: MSG.sessionId, ts: '2026-11-21T09:58:00Z' } })).floor, 'pass');
 });
 
 test('owner_review_required text needs the checkpoint acknowledgement: exact text, floor label, topics, owner message', () => {
@@ -167,8 +183,8 @@ test('a stored floor label that no longer matches the floor today is refused', (
 
 test('a plain REJECT is promotable only by an explicit owner override; NEED-MORE-EVIDENCE never', () => {
   const { adapter, candidate } = recorded({}, { verdict: 'REJECT' });
-  refusedWith('verdict_not_promotable', () => promote(adapter, 'gate-case', approval(candidate.statement)));
-  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: true })).verdict, 'REJECT');
+  refusedWith('verdict_not_promotable', () => promote(adapter, 'gate-case', approval(candidate.statement, OWNER)));
+  assert.equal(promote(adapter, 'gate-case', approval(candidate.statement, { overrideReject: true, ...OWNER })).verdict, 'REJECT');
   const scoped = recorded(SCOPED, { verdict: 'REJECT' });
   refusedWith('floor_ack_missing', () =>
     promote(scoped.adapter, 'scoped-case', approval(scoped.candidate.statement, { overrideReject: true })),

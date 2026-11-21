@@ -1,6 +1,7 @@
-// Protected-topic vocabulary of the code floor (floor.mjs). These are LABELS for the owner's warning, not the safety
-// boundary: pass is an allowlist (a preference with no review flag), and a topic hit only keeps a preference out of
-// pass. The checkpoint question shows the topics next to the exact text.
+// Vocabulary of the code floor (floor.mjs): protected topics, STYLE signals and ACTIONS on the world. Topics are
+// LABELS for the owner's warning, not the safety boundary: pass is an allowlist (a preference with a style signal in
+// its statement, no action on the world and no review flag), and a topic hit only keeps a preference out of pass. The
+// checkpoint question shows the label next to the exact text whenever the floor is not pass.
 //
 // Each topic lists its words by what they need to count:
 //   always  counts on its own ("deploy", "CI", "hoàn tiền", "skip")
@@ -18,7 +19,11 @@
 const CLAUSE_END = '(?=\\s*(?:[.,;:!?)\\n]|$))';
 const LATER_VI = `sau${CLAUSE_END}`;
 
-export const VIETNAMESE_ASCII = Object.freeze(['ngay', 'ko', LATER_VI]);
+export const VIETNAMESE_ASCII = Object.freeze(['ngay', 'ko', LATER_VI, 'mua']);
+
+// A word whose accented letters must match exactly: its unaccented form is another common word ("thẻ"/the,
+// "đăng"/đang, "huỷ"/Huy, "gửi"/GUI, "bật"/bat, "chạy"/chay).
+const exact = (w) => Array.from(w, (ch) => (ch.codePointAt(0) > 0x7f ? `\\u{${ch.codePointAt(0).toString(16)}}` : ch)).join('');
 
 export const CONTEXT = Object.freeze({
   git: [
@@ -51,6 +56,90 @@ export const CONTEXT = Object.freeze({
     'liberally', 'directly', 'straight', 'right away', 'immediately', 'thẳng', 'ngay', `luôn${CLAUSE_END}`, 'cứ',
     'assum(?:e|es|ed|ing)', 'mặc định', 'feel free', 'go ahead', 'false', 'tất cả user', 'toàn bộ user', 'mọi user',
     'all users', 'everyone', 'tất cả khách', 'toàn bộ khách', 'email list',
+  ],
+  // Objects that make copy / paste / save / write an action on the world (ACTIONS.file).
+  file: [
+    'files?', 'tệp', 'thư mục', 'folders?', 'director(?:y|ies)', 'repo(?:s|sitory|sitories)?', 'readme', 'config(?:s|uration)?',
+    'cấu hình', '\\.env', 'env', 'code', 'codebase', 'mã nguồn', 'source', 'docs?', 'tài liệu', 'json', 'yaml', 'yml', 'notion',
+    'sheets?', 'drive', 'wiki', 'databases?', 'db', 'disk', 'ổ đĩa', 'clipboard', 'servers?', 'vps', 'cloud', 'github', 'gist',
+    '[\\p{L}\\p{N}_-]+\\.(?:md|json|ya?ml|txt|ts|tsx|js|mjs|cjs|env|toml|ini|cfg)',
+  ],
+});
+
+// STYLE signals: words about the form of the agent's own output (tone, length, format, language, structure,
+// examples, visuals of produced content, naming and commit-message style). pass needs one in the statement. They are
+// matched exactly as written, never accent-folded or de-leeted: a positive signal must not be read into a text
+// ("anh" is not "ảnh", "mau" is not "màu").
+export const STYLE = Object.freeze([
+  // tone
+  'tones?', 'giọng', 'giọng văn', 'giọng điệu', 'văn phong', 'xưng hô', 'xưng', 'thân thiện', 'lịch sự', 'trang trọng',
+  'thân mật', 'gần gũi', 'hài hước', 'friendly', 'polite', 'formal', 'informal', 'casual',
+  // length and wording
+  'length', 'độ dài', 'ngắn gọn', 'ngắn(?! hạn)', 'gọn', 'súc tích', 'dài dòng', 'rườm rà', 'lời thừa', 'từ thừa', 'concise(?:ly)?',
+  'verbose', 'brevity', 'ký tự', 'kí tự', 'characters?', 'chars?', '\\d+ từ', 'từ ngữ', 'dùng từ', 'words?', 'wording',
+  'phrasing', 'câu', 'sentences?', 'dòng(?! tiền| lệnh| sản phẩm)', 'lines?', 'chính tả', 'spelling', 'ngữ pháp', 'grammar',
+  'dấu câu', 'punctuation', 'diễn đạt', 'cách viết', 'lời thường', 'plain (?:words|language|english)', 'style', 'phong cách',
+  // format
+  'format(?:s|ted|ting)?', 'định dạng', 'tiêu đề', 'titles?', 'headings?', 'subject lines?', 'in đậm', 'chữ đậm', 'tô đậm',
+  'in nghiêng', 'bold', 'italics?', 'gạch đầu dòng', 'bullets?', 'bullet points?', 'bảng', 'tables?', 'markdown', 'emojis?',
+  'icons?', 'hashtags?', 'viết hoa', 'in hoa', 'chữ hoa', 'uppercase', 'lowercase', 'code blocks?', 'khối code',
+  // language
+  'language', 'ngôn ngữ', 'tiếng việt', 'tiếng anh', 'có dấu', 'không dấu', 'english', 'vietnamese', 'song ngữ', 'bilingual',
+  'thuật ngữ', 'jargon', 'tiếng lóng', 'slang',
+  // structure
+  'structure', 'cấu trúc', 'thứ tự', 'mục(?! tiêu| đích)', 'sections?', '(?<!giai |công )đoạn', 'paragraphs?', 'bố cục', 'layout',
+  'mở bài', 'kết bài', 'intro', 'outro', 'kết luận', '(?:đầu|cuối|giữa) (?:mỗi )?(?:bài|câu|đoạn|mục|trang|email|tin)', 'tóm tắt',
+  'summar(?:y|ies|ize|ise)',
+  // examples
+  'ví dụ', 'examples?', 'minh hoạ', 'minh họa',
+  // visuals of produced content
+  'ảnh(?! hưởng)', 'hình ảnh', '(?<!(?:cấu|mô|địa|tình|điển) )hình', 'màu', 'màu sắc', '(?<!(?:model|mô hình) )nền(?! tảng| móng)',
+  'fonts?', 'phông', 'phông chữ', 'cỡ chữ', 'kiểu chữ', 'typography', 'captions?', 'thumbnails?', 'banners?', 'design tokens?',
+  'colou?rs?', 'images?', 'photos?', 'pictures?', 'visuals?', 'watermark', 'palette',
+  // naming and commit-message style (not "commit" itself)
+  'đặt tên', 'tên (?:biến|hàm|file|tệp|nhánh|thư mục|class|component)', 'naming', '(?:kebab|camel|snake|pascal)[ -]?case',
+  'commit messages?', 'conventional commits?',
+]);
+
+// Actions on the world: a rule naming one never passes, whatever its style words. Read like topics (accent-tolerant,
+// de-leeted, English words also without diacritics). "file" words count only next to a CONTEXT.file object.
+export const ACTIONS = Object.freeze({
+  always: [
+    // prices
+    'tăng giá', 'giảm giá', 'hạ giá', 'nâng giá', 'đổi giá', 'chỉnh giá', 'điều chỉnh giá', 'sửa giá', 'đặt giá', 'báo giá',
+    'pric(?:e|es|ed|ing)', 'repric(?:e|es|ed|ing)', 'discount(?:s|ed|ing)?', 'coupons?',
+    // accepting for the owner
+    'chấp nhận', 'accept(?:s|ed|ing)?', 'approv(?:e|es|ed|ing|al|als)', 'đồng ý', 'agre(?:e|es|ed) to',
+    // money
+    'gia hạn', 'renew(?:s|ed|al|als|ing)?', 'mua', 'buy(?:s|ing)?', 'bought', 'purchas(?:e|es|ed|ing)', 'thanh toán',
+    'pay(?:s|ing|ment|ments)?', 'paid', exact('thẻ'), 'cards?', 'trả tiền', 'chuyển khoản', 'chuyển tiền', 'nạp', 'top ?-?up',
+    'subscrib(?:e|es|ed|ing)', 'ngân sách', 'budgets?', 'spend(?:s|ing)?', 'spent', 'hoá đơn', 'hóa đơn', 'invoices?', 'billing',
+    // sending, posting, replying to people
+    exact('gửi'), 'send(?:s|ing)?', 'sent', `(?<!bài )${exact('đăng')}`, 'post(?:s|ed|ing)?(?!-mortem)', 'publish(?:es|ed|ing)?',
+    'xuất bản', 'lên bài', 'lên lịch', 'hẹn giờ', 'schedul(?:e|es|ed|ing)', 'repl(?:y|ies|ied|ying) to', 'respond(?:s|ed|ing)? to',
+    'trả lời khách', 'trả lời (?:review|bình luận|comment|inbox|tin nhắn|page|fanpage|email|mail)', 'phản hồi khách',
+    'phản hồi (?:review|bình luận|comment|inbox|tin nhắn)', 'nhắn tin', 'nhắn khách', 'chia sẻ', 'shar(?:e|es|ed|ing)',
+    'tweet(?:s|ed|ing)?', 'comment(?:s|ed|ing)? on', 'gọi điện', 'log ?in', 'sign ?(?:in|up)',
+    // deleting
+    'xoá', 'xóa', 'delet(?:e|es|ed|ing|ion)', 'drop(?:s|ped|ping)?(?! shadows?)', 'purg(?:e|es|ed|ing)', 'wip(?:e|es|ed|ing)',
+    exact('huỷ'), exact('hủy'), 'cancel(?:s|led|ling|ed|ing)?', exact('gỡ'),
+    // running, installing, switching on
+    exact('chạy'), 'run(?:s|ning)?(?!-on)', 'execut(?:e|es|ed|ing|ion)', 'thực thi', exact('cài'), 'install(?:s|ed|ing|ation)?',
+    'invok(?:e|es|ed|ing)', 'trigger(?:s|ed|ing)?', 'kích hoạt', 'activat(?:e|es|ed|ing)', `(?<!nổi )${exact('bật')}`,
+    'enabl(?:e|es|ed|ing)', 'turn(?:s|ed|ing)? on', 'khởi động', 'restart(?:s|ed|ing)?', 'reboot(?:s|ed|ing)?',
+    'gọi (?:model|mô hình|api|llm|agent)', 'call(?:s|ed|ing)? (?:the )?(?:api|apis|endpoints?|models?|customers?)', 'tải lên',
+    'tải về', 'tải xuống', 'upload(?:s|ed|ing)?', 'download(?:s|ed|ing)?', 'xuất file', 'export(?:s|ed|ing)?',
+    // settings
+    'cấu hình', 'config(?:s|ure|ures|ured|uring|uration|urations)?', 'settings?', 'thiết lập',
+    // acting on its own
+    `(?<!(?:ký|kí|thứ|tương|trật|tuần|văn) )${exact('tự')}(?! (?:nhiên|tin|do|nguyện|giác|hào|sự|truyện|điển|tại))`, 'tự động',
+    'auto', 'automatic(?:ally)?', 'automat(?:e|es|ed|ing|ion)', 'yourself', 'on (?:your|its) own', 'tự mình', 'unattended',
+  ],
+  file: [
+    'copy', 'cop(?:ies|ied|ying)', 'chép', 'sao chép', exact('dán'), 'paste[sd]?', 'pasting', 'lưu(?! ý)', 'sav(?:e|es|ed|ing)',
+    'stor(?:e|es|ed|ing)', 'ghi vào', 'ghi đè', 'ghi ra', 'ghi lên', 'writ(?:e|es|ing) (?:it |them )?(?:to|into|in)',
+    'wrote (?:to|into|in)', 'overwrit(?:e|es|ing|ten)', 'thêm vào', 'đưa vào', 'nhét vào', 'add(?:s|ed|ing)? (?:it |them )?(?:to|into)',
+    'put(?:s|ting)? (?:it |them )?in(?:to)?', 'commit(?:s|ted|ting)?', 'push(?:es|ed|ing)?',
   ],
 });
 

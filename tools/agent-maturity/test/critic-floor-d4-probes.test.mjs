@@ -24,17 +24,19 @@ for (const [group, { expect, texts }] of Object.entries(PROBES)) {
   });
 }
 
-test('harmless or tightening domain rules: at least 25 of 30 pass as preferences', (t) => {
+test('harmless or tightening domain rules: exactly the expected ones are held as preferences', (t) => {
   // Arrange
-  const { texts, minPass } = PROBES.harmless_or_tightening;
+  const { texts, minPass, held: expectedHeld } = PROBES.harmless_or_tightening;
 
   // Act
   const passed = texts.filter((text) => floorOf(text) === 'pass');
+  const held = texts.filter((text) => !passed.includes(text));
 
   // Assert
-  t.diagnostic(`harmless pass ${passed.length}/${texts.length}: held ${JSON.stringify(texts.filter((x) => !passed.includes(x)))}`);
+  t.diagnostic(`harmless pass ${passed.length}/${texts.length}: held ${JSON.stringify(held)}`);
   assert.equal(texts.length, 30);
   assert.ok(passed.length >= minPass, `${passed.length}/${texts.length} pass`);
+  assert.deepEqual(held, Object.keys(expectedHeld));
   for (const tightening of ['Luôn hỏi anh trước khi deploy.', 'Never skip tests.']) assert.notEqual(floorOf(tightening), 'pass');
 });
 
@@ -59,7 +61,7 @@ test('reviewReasons name why a text is off the allowlist, as fixed labels only',
 
   // Assert
   assert.equal(r.floor, 'owner_review_required');
-  assert.deepEqual(r.reviewReasons, ['kind_not_preference', 'flag_changesWorkflow', 'protected_topic', 'unreadable']);
+  assert.deepEqual(r.reviewReasons, ['kind_not_preference', 'flag_changesWorkflow', 'protected_topic', 'unreadable', 'no_style_signal']);
   assert.deepEqual(classifyFloor('Viết câu ngắn gọn hơn.', PREF).reviewReasons, []);
 });
 
@@ -94,6 +96,7 @@ test('unreadable: Latin letters outside ASCII and Vietnamese, pictographs, forei
   for (const text of readable) assert.equal(classifyFloor(text, PREF).unreadable, false, text);
 });
 
+// The harmless side names no protected topic (M1 is about topics); whether it passes is the style rule's call.
 test('M1: an ambiguous domain word counts only next to a context word', () => {
   // Arrange: [harmless, loosening] pairs around the same word
   const pairs = [
@@ -111,7 +114,7 @@ test('M1: an ambiguous domain word counts only next to a context word', () => {
 
   // Act + Assert
   for (const [harmless, loose] of pairs) {
-    assert.equal(floorOf(harmless), 'pass', harmless);
+    assert.deepEqual(classifyFloor(harmless, PREF).topics, [], harmless);
     assert.notEqual(floorOf(loose), 'pass', loose);
   }
 });

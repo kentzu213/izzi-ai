@@ -4,20 +4,22 @@
 //   assertPromotable({ adapter, candidateId, ownerApproval })
 //     adapter        the critic store adapter; the gate loads the CURRENT candidate, its LAST verdict and the
 //                    store-wide hard-REJECT index itself, so a caller cannot hand it a different record
-//     ownerApproval  { approved: true, statement: '<exact text>', floorClass?, topics?, ownerMessage?,
-//                      overrideReject?: true }; no other keys. floorClass / topics are the floor label the owner
-//                      was shown next to that exact text; ownerMessage { sessionId, uuid and/or ts } points to the
-//                      owner's answer (Nâng cấp to the checkpoint question, or the OK to a NARROW or rewrite diff).
+//     ownerApproval  { approved: true, statement: '<exact text>', ownerMessage, floorClass?, topics?,
+//                      overrideReject?: true }; no other keys. ownerMessage { sessionId, uuid and/or ts } points to
+//                      the owner's answer (Nâng cấp to the checkpoint question that showed this exact text, or the OK
+//                      to a NARROW or rewrite diff) and is required for EVERY promotion, pass included; floorClass /
+//                      topics are the floor label the owner was shown next to that exact text.
 //
 // Promotable only when: the stored candidate re-validates as stored; its last verdict is a v2 record bound to it
 // (id, revision, inputFingerprint), re-validates against it today and matches the digest record-verdict logged (a
 // stored verdict edited after recording is refused); the re-validated verdict carries no hard-REJECT; the promoted text is not hard_reject and its
-// statementKey (and the candidate's) is not in the hard-REJECT index; the owner approved exactly that text. The
-// promoted text is the candidate statement for ACCEPT, only the stored narrowed statement for NARROW, and the
-// candidate statement for a plain REJECT the owner overrides (overrideReject: true). owner_review_required text
-// also needs the acknowledgement: floorClass, topics and ownerMessage, with floorClass and topics equal to the floor
-// stored with the verdict, which must still be the floor of that text today (a label given with a pass text must
-// match too). NEED-MORE-EVIDENCE is never promotable; hard_reject never.
+// statementKey (and the candidate's) is not in the hard-REJECT index; the owner approved exactly that text, with
+// ownerMessage pointing to that answer (whatever the floor class: no standard is stored without the owner choosing
+// Nâng cấp on its exact text). The promoted text is the candidate statement for ACCEPT, only the stored narrowed
+// statement for NARROW, and the candidate statement for a plain REJECT the owner overrides (overrideReject: true).
+// owner_review_required text also needs floorClass and topics equal to the floor stored with the verdict, which must
+// still be the floor of that text today (a label given with a pass text must match too). NEED-MORE-EVIDENCE is never
+// promotable; hard_reject never.
 // Throws PromotionRefused with a code, or returns what may be promoted.
 
 import { isObject, text, validateCandidate } from './candidate.mjs';
@@ -135,6 +137,13 @@ function checkFloorAck(approval, floor) {
   if (mismatch) refuse('floor_ack_mismatch', 'the owner acknowledged a different floor label or topics than this text has');
 }
 
+// Every promotion, pass included, points to the owner's answer (Nâng cấp on the exact text, or OK to its diff).
+function checkOwnerMessage(approval) {
+  if (!('ownerMessage' in approval)) {
+    refuse('owner_message_missing', 'no standard is stored without the owner choosing Nâng cấp on its exact text: give ownerMessage { sessionId, uuid or ts }');
+  }
+}
+
 function checkIndex(adapter, statements) {
   for (const statement of statements) {
     const hit = adapter.findHardReject(statementKey(statement));
@@ -161,6 +170,7 @@ function assertLocked(adapter, candidateId, approval) {
   }
   checkStoredFloor(verdicts.at(-1), floor);
   checkFloorAck(approval, floor);
+  checkOwnerMessage(approval);
   return {
     candidateId: candidate.id,
     revision: candidate.revision,

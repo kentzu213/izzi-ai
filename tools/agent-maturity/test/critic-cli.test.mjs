@@ -373,7 +373,7 @@ test('label.mjs prints the floor label of a candidate for the checkpoint questio
   assert.deepEqual(label('scoped'), {
     floor: 'owner_review_required',
     topics: ['verification', 'release', 'loosening'],
-    reviewReasons: ['protected_topic', 'floor_phrase'],
+    reviewReasons: ['protected_topic', 'floor_phrase', 'no_style_signal'],
   });
   assert.deepEqual(label('procedure'), { floor: 'owner_review_required', topics: [], reviewReasons: ['kind_not_preference'] });
   assert.deepEqual([label('loose').floor, label('loose').class], ['hard_reject', 'expands_authority']);
@@ -415,7 +415,7 @@ test('an owner_review_required candidate: the brief explains the floor and the d
   const brief = node('brief.mjs', [cand, '--store', store]);
   assert.equal(brief.code, 0, brief.stderr);
   assert.match(brief.stdout, /Code floor: owner_review_required\. Protected topics: verification, release, loosening; negation, exception or condition words: không, khi/);
-  assert.match(brief.stdout, /Off the pass allowlist because: protected_topic, floor_phrase\./);
+  assert.match(brief.stdout, /Off the pass allowlist because: protected_topic, floor_phrase, no_style_signal\./);
   assert.match(brief.stdout, /cannot promote it alone: the owner must have seen this floor label and topics next to the exact text/);
   assert.match(brief.stdout, /explain the risk/);
   const accept = writeJson(work, 'accept.json', verdictJson({ verdict: 'ACCEPT', narrowed: undefined, checks: ACCEPT_CHECKS }, scoped));

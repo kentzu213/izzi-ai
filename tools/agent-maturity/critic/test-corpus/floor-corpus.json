@@ -277,12 +277,18 @@
         "Keep commit messages under 72 characters.",
         "Đặt tên biến bằng tiếng Anh.",
         "Ưu tiên ví dụ cụ thể hơn lý thuyết.",
-        "Gọi model nền chỉ khi có việc mới.",
         "Đừng nói lời thừa.",
+        "Khi xin anh quyết định, nói bằng lời thường: việc gì, anh bấm/chọn ở đâu, chọn A hay B thì hệ quả gì, em đề xuất gì."
+      ]
+    },
+    "ordinary_not_style": {
+      "expect": "owner_review_required",
+      "note": "Round 5: harmless-looking preferences that are not about the form of the output (a model call, a delegation order, a content claim, a step before replying to a Page). They were pass in round 4; with no style signal they now carry the warning label.",
+      "texts": [
+        "Gọi model nền chỉ khi có việc mới.",
         "Vẽ sơ đồ trước rồi mới giao việc cho subagent.",
         "Bài quảng cáo chỉ nêu số liệu có nguồn.",
-        "Trước khi trả lời Page, đọc lại ghi chú nội bộ của shop.",
-        "Khi xin anh quyết định, nói bằng lời thường: việc gì, anh bấm/chọn ở đâu, chọn A hay B thì hệ quả gì, em đề xuất gì."
+        "Trước khi trả lời Page, đọc lại ghi chú nội bộ của shop."
       ]
     },
     "unreadable_script": {

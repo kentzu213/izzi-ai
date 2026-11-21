@@ -3,17 +3,22 @@
 //                          other word is on the NEUTRAL list ("Bỏ qua test.", "Push without asking.", "Không cần hỏi
 //                          anh trước khi push lên main."). Final, store-wide, never promotable.
 //   pass                   an ALLOWLIST: kind 'preference', no changesWorkflow / touchesSecurity / touchesLaw flag,
-//                          no protected topic, no floor phrase and nothing the matcher cannot read.
-//   owner_review_required  everything else. Never promoted on a socrates ACCEPT alone: the owner must have seen this
-//                          label and its topics next to the exact text (the checkpoint question, or the diff of a
-//                          NARROW) and chosen Nâng cấp.
+//                          no protected topic, no floor phrase, nothing the matcher cannot read, a STYLE signal in the
+//                          statement (the form of the agent's own output: tone, length, format, language, structure,
+//                          examples, visuals, naming) and no ACTION on the world (prices, accepting, copying into a
+//                          file, paying, sending or posting, deleting, running or installing, settings, acting on
+//                          its own) in the statement or the check.
+//   owner_review_required  everything else. The checkpoint question shows this label and its reasons next to the
+//                          exact text.
+// Whatever the class, no standard is stored without the owner choosing Nâng cấp on its exact text (promote-gate.mjs):
+// the floor only decides whether a warning label is shown and whether hard_reject blocks the text outright.
 // The topic vocabulary (floor-topics.mjs) is a label for that warning, not the safety boundary: a lexical matcher
-// cannot read every rewording ("Tes ts are overrated" names no topic), so a preference that slips past it still
-// reaches the owner as exact text, and anything that is not a preference never passes. Negation never clears a
-// phrase: a negated or scoped rule goes to the owner instead of being judged by more regexes.
+// cannot read every rewording ("Tes ts are overrated" names no topic), and absence of danger words is not evidence of
+// safety, so pass also needs positive evidence that the rule is about style. Negation never clears a phrase: a negated
+// or scoped rule goes to the owner instead of being judged by more regexes.
 
 import { stripDiacritics } from './candidate.mjs';
-import { CONTEXT, TOPICS, TOPIC_NAMES, VIETNAMESE_ASCII } from './floor-topics.mjs';
+import { ACTIONS, CONTEXT, STYLE, TOPICS, TOPIC_NAMES, VIETNAMESE_ASCII } from './floor-topics.mjs';
 
 export { TOPIC_NAMES };
 export const FLOOR_CLASSES = Object.freeze(['hard_reject', 'owner_review_required', 'pass']);
@@ -213,14 +218,23 @@ const TOPIC_MATCHERS = Object.entries(TOPICS).map(([topic, groups]) => [
   topic,
   Object.entries(groups).map(([group, list]) => [group, matcher(list)]),
 ]);
+const ACTION_MATCHERS = Object.entries(ACTIONS).map(([group, list]) => [group, matcher(list)]);
+// Style words are matched exactly as written: no accent folding, no digit look-alikes (a positive signal).
+const STYLE_RE = new RegExp(`${B}(?:${longestFirst(STYLE).join('|')})${E}`, 'gu');
 
-// A topic counts when one of its "always" words appears, or one of its context-bound words appears next to a word
-// of that context group (floor-topics.mjs). Any negation, exception or condition trigger is also an action context.
-function topicsOf(v, triggers) {
+// Which context groups (floor-topics.mjs) the text holds. Any negation, exception or condition trigger is also an
+// action context.
+function contextsOf(v, triggers) {
   const context = { always: true, ...Object.fromEntries(CONTEXT_MATCHERS.map(([group, m]) => [group, m(v)])) };
   context.action ||= triggers.length > 0;
-  return TOPIC_MATCHERS.filter(([, groups]) => groups.some(([group, m]) => context[group] && m(v))).map(([topic]) => topic);
+  return context;
 }
+
+// A topic (or an action) counts when one of its "always" words appears, or one of its context-bound words appears
+// next to a word of that context group.
+const topicsOf = (v, context) =>
+  TOPIC_MATCHERS.filter(([, groups]) => groups.some(([group, m]) => context[group] && m(v))).map(([topic]) => topic);
+const actsOnWorld = (v, context) => ACTION_MATCHERS.some(([group, m]) => context[group] && m(v));
 
 const TRIGGERS = [
   'không', 'chẳng', 'chả', 'chưa', 'đừng', 'chớ', 'cấm', 'khỏi', 'trừ khi', 'trừ phi', 'ngoại trừ', 'trừ', 'nếu',
@@ -322,19 +336,27 @@ function sureLoosening(field) {
 }
 
 // Why a text is off the pass allowlist, as fixed labels (empty for pass).
-function reviewReasonsOf({ kind, flags }, { topics, floorPhrase, unreadable }) {
+function reviewReasonsOf({ kind, flags }, { topics, floorPhrase, unreadable, styleSignal, acting }) {
   return [
     ...(kind === 'preference' ? [] : ['kind_not_preference']),
     ...REVIEW_FLAGS.filter((f) => flags?.[f] === true).map((f) => `flag_${f}`),
     ...(topics.length > 0 ? ['protected_topic'] : []),
     ...(floorPhrase ? ['floor_phrase'] : []),
     ...(unreadable ? ['unreadable'] : []),
+    ...(styleSignal ? [] : ['no_style_signal']),
+    ...(acting ? ['acts_on_world'] : []),
   ];
 }
 
+// The text in the four forms the vocabularies are read in.
+const viewsOf = (t) => {
+  const bare = stripDiacritics(t);
+  return { text: t, leet: deLeet(t), bare, bareLeet: deLeet(bare) };
+};
+
 // input: the statement, or "statement\ncheck"; options: the candidate's { kind, flags } (no kind = not a
-// preference, so never pass). Each line is judged on its own for hard_reject; topics and uncertainty words are read
-// across the whole text.
+// preference, so never pass). Each line is judged on its own for hard_reject; topics, actions and uncertainty words
+// are read across the whole text, the style signal only in the statement (the first line).
 // Returns { floor, class?, phrase?, topics, triggers, floorPhrase, unreadable, reviewReasons }; topics, triggers and
 // reviewReasons are labels from the fixed vocabularies, never candidate text.
 export function classifyFloor(input, options = {}) {
@@ -343,10 +365,13 @@ export function classifyFloor(input, options = {}) {
   const unreadable = UNREADABLE.some((re) => re.test(folded));
   const triggerSet = TRIGGER_RES[stripDiacritics(t) === t ? 'unaccented' : 'accented'];
   const triggers = triggerSet.filter(([, re]) => has(re, t)).map(([label]) => label);
-  const bare = stripDiacritics(t);
-  const topics = topicsOf({ text: t, leet: deLeet(t), bare, bareLeet: deLeet(bare) }, triggers);
+  const v = viewsOf(t);
+  const context = contextsOf(v, triggers);
+  const topics = topicsOf(v, context);
   const floorPhrase = floorMatches(t) !== null;
-  const reviewReasons = reviewReasonsOf(options ?? {}, { topics, floorPhrase, unreadable });
+  const styleSignal = has(STYLE_RE, t.split('\n')[0]);
+  const acting = actsOnWorld(v, context);
+  const reviewReasons = reviewReasonsOf(options ?? {}, { topics, floorPhrase, unreadable, styleSignal, acting });
   const facts = { topics, triggers, floorPhrase, unreadable, reviewReasons };
   for (const field of t.split('\n')) {
     const sure = field.trim() === '' ? null : sureLoosening(field);
