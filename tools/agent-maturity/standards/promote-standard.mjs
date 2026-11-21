@@ -1,7 +1,7 @@
 // The single door for storing a dev standard (docs/izzi-v2/sessions/DI.md). Root runs it once, after the owner chose
 // Nâng cấp at a checkpoint on the exact text it stores and the D4 critic recorded a verdict:
 //   node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time of the owner answer>
-//     [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <dir>]
+//     [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <dir>] [--supersedes <standardId>]
 // In this order, stopping at the first failure:
 //   1. Verify the owner answer against the D1 hook log (<AGENT_MATURITY_HOME>/log): exactly one checkpoint_outcome
 //      event of that session from an interactive entrypoint, at most ±5 s from the given time
@@ -12,6 +12,10 @@
 //      "Đề xuất" line of the ask block the owner answered; it must be the sha256 of the statement the gate will store
 //      (the narrowed text for NARROW), and when that text's floor class is not pass, the label the block showed must
 //      be that class (hard_reject is refused by the gate whatever was shown). Read-only too.
+//   1c. --supersedes <standardId>, new wording for an old standard (supersedes_invalid): the id is in the candidate's
+//      existingStandards, and that record is a standard this door stored (not an import) on the same scope and
+//      project, active or already superseded by this candidate's own record (a rerun). Read-only too. The new record
+//      is then captured under the OLD record's topic, so KnowledgeMemory supersede accepts it.
 //   2. assertPromotable (D4 gate) on the critic store, with the hook event's own time as ownerMessage, so one logged
 //      answer approves one text of one candidate (owner_message_reused). The statement stored is the one the gate
 //      returns (the narrowed text for NARROW), never an argument.
@@ -41,9 +45,14 @@ import {
   TOPIC_PREFIX,
   capture,
   cliAvailable,
+  doorCandidate,
   exportActive,
   exportPath,
+  get,
+  isDoorMade,
+  isImported,
   listActive,
+  lookupProject,
   promoteApproved,
   supersede,
   userSource,
@@ -177,9 +186,32 @@ function checkAnswerBound(answer, statement, floorClass) {
   }
 }
 
+// --supersedes: the owner approved new wording for an old standard. Returns the old record, or refuses
+// (supersedes_invalid). On a rerun the old record is already superseded by this candidate's own door-made record.
+function checkSupersedes(candidate, oldId, projectPath, km) {
+  const refuse = (why) => fail('supersedes_invalid', `--supersedes ${oldId}: ${why}`);
+  const read = (id) => {
+    try {
+      return get(id, km);
+    } catch (error) {
+      return refuse(`record ${id} cannot be read (${error.code ?? error.name}: ${error.message})`);
+    }
+  };
+  if (!(candidate.existingStandards ?? []).some((e) => e.id === oldId)) refuse('the candidate does not list it in existingStandards');
+  const old = read(oldId);
+  if (isImported(old) || !isDoorMade(old, km)) refuse('it is not a standard promote-standard stored');
+  const scope = candidate.scope.projects === 'this' ? 'project' : 'user';
+  const projectId = scope === 'project' ? (lookupProject(projectPath, km)?.id ?? null) : null;
+  if (old.scope !== scope || (old.project_id ?? null) !== projectId) refuse('it is on another scope or project than this candidate');
+  if (old.state === 'active') return old;
+  const by = old.state === 'superseded' && old.superseded_by ? read(old.superseded_by) : null;
+  if (!by || doorCandidate(by) !== candidate.id || !isDoorMade(by, km)) refuse(`it is ${old.state}, not active`);
+  return old;
+}
+
 // Under the critic store lock: the approval names what the stored verdict allows (the narrowed text for NARROW) and
 // the floor label stored with it; the gate re-derives and checks every one of them and returns what may be stored.
-function gateLocked(adapter, candidateId, answer, ownerMessage, projectPath, now) {
+function gateLocked({ adapter, candidateId, answer, ownerMessage, projectPath, supersedes, km, now }) {
   const record = adapter.loadCandidate(candidateId);
   const last = record && Array.isArray(record.verdicts) ? record.verdicts.at(-1) : undefined;
   const candidate = record && isObject(record.candidate) ? record.candidate : null;
@@ -191,6 +223,7 @@ function gateLocked(adapter, candidateId, answer, ownerMessage, projectPath, now
   const topics = isObject(last) ? promotedTopics(last) : null;
   const statement = isObject(last) && last.verdict === 'NARROW' ? last.narrowed?.statement : candidate?.statement;
   checkAnswerBound(answer, statement, floorClass);
+  const old = supersedes && candidate ? checkSupersedes(candidate, supersedes, projectPath, km) : null;
   const ownerApproval = {
     approved: true,
     statement,
@@ -199,7 +232,7 @@ function gateLocked(adapter, candidateId, answer, ownerMessage, projectPath, now
     ...(Array.isArray(topics) ? { topics } : {}),
   };
   const gate = assertPromotable({ adapter, candidateId, ownerApproval, now });
-  return { gate, candidate, verdict: last };
+  return { gate, candidate, verdict: last, old };
 }
 
 const titleOf = (scope) => {
@@ -219,9 +252,9 @@ function runStep(name, done, fn) {
   }
 }
 
-function storeStandard({ adapter, gate, candidate, verdict, message, answer, projectPath, km, now }) {
+function storeStandard({ adapter, gate, candidate, verdict, old, message, answer, projectPath, km, now }) {
   const key = statementKey(gate.statement);
-  const topic = `${TOPIC_PREFIX}${key.slice(0, TOPIC_HASH_CHARS)}`;
+  const topic = old ? old.topic_key : `${TOPIC_PREFIX}${key.slice(0, TOPIC_HASH_CHARS)}`;
   const verdictSha256 = verdictDigest(verdict);
   const verdictRef = `c${verdict.critiqueNumber}.${verdictSha256.slice(0, 12)}`;
   const base = userSource(message.sessionId, answer.ts);
@@ -240,8 +273,12 @@ function storeStandard({ adapter, gate, candidate, verdict, message, answer, pro
   if (captured.state !== 'candidate' && captured.state !== 'active') {
     fail('store_step_failed', `capture returned a ${captured.state} record (${captured.id}): this exact approval was dropped before; ask the owner again`, 'capture');
   }
+  if (old && old.state !== 'active' && old.superseded_by !== captured.id) {
+    fail('supersedes_invalid', `--supersedes ${old.id}: it was already superseded by ${old.superseded_by}, not by this approval`);
+  }
   const record = runStep('promote', done, () => promoteApproved(captured.id, km));
-  const reason = `promote-standard: candidate ${candidate.id} verdict ${verdictRef} approved the same statement again (owner answer ${message.sessionId} ${answer.ts})`;
+  const what = old ? `replaced standard ${old.id} with new wording` : 'approved the same statement again';
+  const reason = `promote-standard: candidate ${candidate.id} verdict ${verdictRef} ${what} (owner answer ${message.sessionId} ${answer.ts})`;
   const superseded = runStep('supersede', done, () =>
     listActive(topic, km)
       .filter((r) => r.id !== record.id && r.scope === record.scope && (r.project_id ?? null) === (record.project_id ?? null))
@@ -258,6 +295,7 @@ function storeStandard({ adapter, gate, candidate, verdict, message, answer, pro
     topic,
     scope: record.scope,
     superseded,
+    ...(old ? { supersedes: old.id } : {}),
     ownerMessage: gate.ownerMessage,
     at: now.toISOString(),
   }));
@@ -275,11 +313,12 @@ function storeStandard({ adapter, gate, candidate, verdict, message, answer, pro
   };
 }
 
-// opts: { candidateId, ownerMessage, criticStore?, store?, vault?, out?, projectPath?, env?, python?, cli?, now? }.
-// Returns what was stored; throws an error with `code` (and `step` after the gate).
+// opts: { candidateId, ownerMessage, criticStore?, store?, vault?, out?, projectPath?, supersedes?, env?, python?,
+// cli?, now? }. Returns what was stored; throws an error with `code` (and `step` after the gate).
 export function promoteStandard(opts = {}) {
-  const { candidateId, ownerMessage, criticStore, projectPath, env = process.env, now = new Date() } = opts;
+  const { candidateId, ownerMessage, criticStore, projectPath, supersedes, env = process.env, now = new Date() } = opts;
   if (typeof candidateId !== 'string' || !ID_RE.test(candidateId)) fail('bad_input', '--candidate must be a candidate id');
+  if (supersedes !== undefined && !(typeof supersedes === 'string' && UUID_RE.test(supersedes))) fail('bad_input', '--supersedes must be a standard record id');
   const message = parseOwnerMessage(ownerMessage);
   const home = resolveHome(env);
   const criticDir = path.resolve(criticStore ?? path.join(home, 'critic'));
@@ -291,8 +330,9 @@ export function promoteStandard(opts = {}) {
   if (!fs.existsSync(criticDir)) fail('candidate_missing', 'no critic store at that folder');
   const adapter = createJsonAdapter(criticDir);
   const ownerPointer = { sessionId: message.sessionId, ts: answer.ts };
-  const { gate, candidate, verdict } = adapter.withLock(() => gateLocked(adapter, candidateId, answer, ownerPointer, projectPath, now));
-  return storeStandard({ adapter, gate, candidate, verdict, message, answer, projectPath, km, now });
+  const { gate, candidate, verdict, old } = adapter.withLock(() =>
+    gateLocked({ adapter, candidateId, answer, ownerMessage: ownerPointer, projectPath, supersedes, km, now }));
+  return storeStandard({ adapter, gate, candidate, verdict, old, message, answer, projectPath, km, now });
 }
 
 const FLAGS = {
@@ -303,8 +343,9 @@ const FLAGS = {
   '--vault': 'vault',
   '--out': 'out',
   '--project': 'projectPath',
+  '--supersedes': 'supersedes',
 };
-const USAGE = 'usage: node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time> [--critic-store d] [--store d] [--vault d] [--out f] [--project d]';
+const USAGE = 'usage: node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time> [--critic-store d] [--store d] [--vault d] [--out f] [--project d] [--supersedes <standardId>]';
 
 function parseArgs(argv) {
   const opts = {};

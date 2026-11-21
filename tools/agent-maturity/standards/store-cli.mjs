@@ -33,7 +33,7 @@ const BASES = new Set(['user_instruction', 'verified_artifact']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // What promote-standard.mjs stores: topic dev-standard/<12 hex>, and a user source naming the owner answer, the
 // candidate and the verdict: claude-session://<session>/<time>?candidate=<id>&verdict=c<n>.<12 hex>.
-export const DOOR_TOPIC_RE = /^dev-standard\/[0-9a-f]{12}$/;
+const DOOR_TOPIC_RE = /^dev-standard\/[0-9a-f]{12}$/;
 const DOOR_URI_RE = /^claude-session:\/\/[A-Za-z0-9-]{1,128}\/[^?/]+\?candidate=([a-z0-9-]+)&verdict=c\d+\.[0-9a-f]{12}$/;
 
 // The CLI has no list command, so the export reads records through its own core module, read-only.
@@ -171,13 +171,20 @@ export function listProjects(opts) {
   return runCli(['projects'], opts);
 }
 
-// A folder (a worktree counts as its main checkout) -> { id, root } of its registered project. An unregistered
-// checkout is registered by its main root, never by the worktree.
-export function resolveProject(projectPath, opts) {
+// Read-only: a folder (a worktree counts as its main checkout) -> { id, root } of its registered project, or null.
+export function lookupProject(projectPath, opts) {
   if (typeof projectPath !== 'string' || projectPath.trim() === '') throw badInput('projectPath is required');
   const info = checkoutInfo(projectPath);
   const hit = findProject(listProjects(opts), info.path, info.root);
-  if (hit) return { id: hit.id, root: hit.root };
+  return hit ? { id: hit.id, root: hit.root } : null;
+}
+
+// A folder -> { id, root } of its registered project. An unregistered checkout is registered by its main root,
+// never by the worktree.
+export function resolveProject(projectPath, opts) {
+  const hit = lookupProject(projectPath, opts);
+  if (hit) return hit;
+  const info = checkoutInfo(projectPath);
   const made = runCli(['project', info.root ?? info.path], opts);
   return { id: made.id, root: made.root };
 }
@@ -274,7 +281,7 @@ export function get(id, opts) {
 }
 
 // The candidate id in a door-made source uri, or null.
-function doorCandidate(r) {
+export function doorCandidate(r) {
   const m = r && r.source && r.source.type === 'user' && typeof r.source.uri === 'string' ? DOOR_URI_RE.exec(r.source.uri) : null;
   return m && ID_RE.test(m[1]) ? m[1] : null;
 }
@@ -322,14 +329,16 @@ export function criticPath(opts = {}) {
   return path.resolve(opts.criticStore ?? path.join(resolveHome(opts.env ?? process.env), 'critic'));
 }
 
-// The door's standard_promoted events for the candidates the active records name, read-only (no log: none).
-function doorPromotions(raw, opts) {
-  const records = Array.isArray(raw.records) ? raw.records : [];
-  const candidates = new Set(records.filter((r) => r && r.state === 'active').map(doorCandidate).filter(Boolean));
+// The door's standard_promoted events for the candidates these records name, read-only (no log: none).
+function doorPromotions(records, opts) {
+  const candidates = new Set(records.map(doorCandidate).filter(Boolean));
   if (candidates.size === 0) return [];
   const critic = createJsonAdapter(criticPath(opts));
   return [...candidates].flatMap((id) => critic.listEvents(id)).filter((e) => e && e.type === 'standard_promoted');
 }
+
+// doorMade checked against the critic log in opts.criticStore (criticPath), whatever the record's state.
+export const isDoorMade = (record, opts) => Boolean(record) && doorMade(record, doorPromotions([record], opts));
 
 // Candidate and active records whose topic_key starts with `prefix`, read-only. A store not created yet (no
 // memory.sqlite3) has none; the read-only reader cannot open it.
@@ -356,7 +365,8 @@ export function exportActive(opts = {}) {
     throw new StoreCliError('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing to write the export into the real ~/.claude');
   }
   const raw = readRecords(t, TOPIC_PREFIX);
-  const result = buildExport(raw, opts.now ?? new Date(), doorPromotions(raw, opts));
+  const active = (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active');
+  const result = buildExport(raw, opts.now ?? new Date(), doorPromotions(active, opts));
   writeFileAtomic(out, `${JSON.stringify(result, null, 2)}\n`);
   return result;
 }

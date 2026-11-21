@@ -22,7 +22,7 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 3. When the owner approved that exact sentence (ACCEPT unchanged, or the owner's Nâng cấp on the NARROW text), root
    runs ONE command, `promote-standard` (below). It is the only way a dev standard becomes active: it captures,
    promotes, supersedes the active standard on the same topic and re-exports. A standard with other wording that
-   replaces an old one: `retract(old, reason naming the new id)`. Dropping a standard: `retract(id, reason)`. History
+   replaces an old one: the same command with `--supersedes <old record id>`. Dropping a standard: `retract(id, reason)`. History
    is never erased.
 4. After every promote, supersede or retract the export is rewritten (`promote-standard` and the command line do it
    themselves).
@@ -113,6 +113,7 @@ refuse it, but a dev standard it promotes is never exported (`not_via_door`); ne
 
     node tools/agent-maturity/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time>
       [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
+      [--supersedes <old standard record id>]
 
 In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
 
@@ -135,8 +136,12 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
 3. **capture**: topic `dev-standard/<first 12 hex of statementKey(statement)>`, title `<agent> · <taskType>`, summary
    `<statement> Cách kiểm: <check>`, kind (quality_gate is stored as procedure), scope `user` (or `project` with
    `--project` when the candidate's `projects` is `this`; `project_path_required` without it, before the gate).
+   With `--supersedes <id>` (new wording for an old standard) the topic is the old record's, so KnowledgeMemory
+   accepts the supersede. Before the gate, read-only, the door refuses with `supersedes_invalid` unless the id is in
+   the candidate's `existingStandards` and the record is a standard the door stored (not an import), on the same
+   scope and project, and active (or already superseded by this candidate's own record: a rerun, which is done).
 4. **promote** (`promoteApproved`, basis `user_instruction`). 5. **supersede** the other active record on the same
-   topic and scope (the same statement approved again). 6. **standard_promoted** in the critic store log. 7.
+   topic and scope (the same statement approved again, or the `--supersedes` record). 6. **standard_promoted** in the critic store log. 7.
    **exportActive**, which passes the record on only with that event, so the log comes first.
 
 A failure in steps 3-7 is `store_step_failed` with `step`; capture and promote are idempotent (same content, same

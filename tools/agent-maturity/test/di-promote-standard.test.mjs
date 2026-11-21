@@ -17,7 +17,7 @@ import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
 import { OWNER_ANSWER_MAX_AGE_MS, OWNER_MESSAGE_WINDOW_MS, promoteStandard } from '../standards/promote-standard.mjs';
 import * as storeCli from '../standards/store-cli.mjs';
-import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, userSource } from '../standards/store-cli.mjs';
+import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, promoteApproved, retract, userSource } from '../standards/store-cli.mjs';
 import { rawCli } from './fixtures/door-standard.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -447,6 +447,81 @@ test('6. the same statement approved again supersedes the old standard; the expo
   assert.deepEqual(exported(w).standards.map((s) => s.id), [next.recordId]);
   const block = sessionStartBlock(w);
   assert.equal(block.split(c1.statement).length - 1, 1, 'the statement is injected once');
+});
+
+// The same kind of sentence as BASE (a pass floor), worded differently.
+const reworded = (n) => `Tóm tắt tiến độ tối đa ${n} gạch đầu dòng.`;
+
+test('--supersedes: reworded text replaces an old standard under its topic; the export keeps only the new one; a rerun is done', { skip }, () => {
+  // Arrange
+  const w = world();
+  const first = door(w, critique(w).id, ownerAnswers(w).at());
+  const c2 = critique(w, { id: 'di-reworded', statement: reworded(3), existingStandards: [{ id: first.recordId, statement: BASE.statement }] });
+  const answer = ownerAnswers(w, 'Nâng cấp', { statement: reworded(3) });
+
+  // Act: the function, then the same approval again through the command line
+  const next = door(w, c2.id, answer.at(), { supersedes: first.recordId });
+  const rerun = spawnSync(process.execPath, [
+    join(ROOT, 'standards', 'promote-standard.mjs'),
+    '--candidate', c2.id,
+    '--owner-message', answer.at(400),
+    '--critic-store', w.critic,
+    '--store', w.store,
+    '--vault', w.vault,
+    '--supersedes', first.recordId,
+  ], { encoding: 'utf8', env: w.env, timeout: 120_000 });
+
+  // Assert
+  assert.equal(next.statement, reworded(3));
+  assert.equal(next.topic, first.topic, 'captured under the old topic');
+  assert.notEqual(next.topic, topicOf(reworded(3)));
+  assert.deepEqual(next.superseded, [first.recordId]);
+  const old = get(first.recordId, w.km);
+  assert.equal(old.state, 'superseded', 'history is kept');
+  assert.equal(old.superseded_by, next.recordId);
+  assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
+  const again = JSON.parse(rerun.stdout).result;
+  assert.equal(again.recordId, next.recordId, 'same content, same record');
+  assert.deepEqual(again.superseded, [], 'already superseded by this record: done');
+  assert.deepEqual(exported(w).standards.map((x) => x.id), [next.recordId]);
+  const block = sessionStartBlock(w);
+  assert.ok(block.includes(reworded(3)), block);
+  assert.equal(block.includes(BASE.statement), false, block);
+  assert.deepEqual(ofType(w, 'standard_promoted').map((e) => e.supersedes), [undefined, first.recordId, first.recordId]);
+});
+
+test('--supersedes is refused before the gate unless it names an active, door-made standard of the same scope the candidate lists', { skip }, () => {
+  // Arrange: a door-made standard, a retracted door-made one, a raw-CLI one and an import
+  const w = world();
+  const first = door(w, critique(w).id, ownerAnswers(w).at());
+  const retired = door(w, critique(w, { id: 'di-retired', statement: reworded(9) }).id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(9) }).at());
+  retract(retired.recordId, 'owner dropped it', w.km);
+  const raw = doorShaped(w, 'raw-old', '');
+  rawCli(['promote', raw.id, '--basis', 'user_instruction', '--reviewer', 'root'], w.km);
+  const imported = doorShaped(w, 'import-old', '', { topic_key: 'dev-standard/import/import-old-0a1b2c3d', author: IMPORT_AUTHOR });
+  const listing = (id, n, extra = {}) => {
+    const c = critique(w, { id: `di-sup-${n}`, statement: reworded(n), existingStandards: [{ id, statement: 'Chuẩn cũ.' }], ...extra });
+    return { id: c.id, at: ownerAnswers(w, 'Nâng cấp', { statement: reworded(n) }).at() };
+  };
+  const cases = [
+    [listing(retired.recordId, 2), retired.recordId, {}, /it is retracted, not active/],
+    [listing(raw.id, 4), raw.id, {}, /not a standard promote-standard stored/],
+    [listing(imported.id, 6), imported.id, {}, /not a standard promote-standard stored/],
+    [listing(first.recordId, 7, { scope: { ...BASE.scope, projects: 'this' } }), first.recordId, { projectPath: w.dir }, /another scope or project/],
+    [listing(retired.recordId, 8), first.recordId, {}, /does not list it in existingStandards/],
+  ];
+  const approvals = ofType(w, 'promotion_approved').length;
+  const exportBefore = exported(w).standards.map((x) => x.id);
+
+  // Act + Assert
+  for (const [c, supersedes, extra, why] of cases) {
+    assert.throws(() => door(w, c.id, c.at, { supersedes, ...extra }), (e) => e.code === 'supersedes_invalid' && why.test(e.message), String(why));
+  }
+  refusedWith('bad_input', () => door(w, cases[0][0].id, cases[0][0].at, { supersedes: 'not-a-record-id' }));
+  assert.equal(ofType(w, 'promotion_approved').length, approvals, 'refused before the gate');
+  assert.equal(ofType(w, 'standard_promoted').length, 2);
+  assert.equal(get(first.recordId, w.km).state, 'active');
+  assert.deepEqual(exported(w).standards.map((x) => x.id), exportBefore);
 });
 
 test('a failing store step stops there and names it; nothing is half-written', { skip }, (t) => {

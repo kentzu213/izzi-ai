@@ -159,8 +159,11 @@ instructions. When a standard and those conflict, the governing instructions win
      (`promote_requires_gate`), and a record promoted any other way (the raw KnowledgeMemory CLI included) is never
      exported to a session (`not_via_door`): only the door's own records, logged as `standard_promoted`, are.
   9. The same statement approved again supersedes the old standard automatically (history is kept). A new standard
-     with other wording that replaces an old one: promote the new one, then `retract` the old one with a reason
-     naming the new record id. To drop a standard: `retract` with a reason.
+     with other wording that replaces an old one: list the old record (id from `recall`) in the candidate's
+     `existingStandards` and add `--supersedes <old record id>` to the step 6 command; the new text is stored under
+     the old standard's topic and supersedes it (`supersedes_invalid`, before the gate, when the old record is not in
+     `existingStandards`, not a standard this door stored, on another scope or project, or no longer active). To
+     drop a standard: `retract` with a reason.
   10. `promote-standard` re-exports by itself, and so does the `store-cli.mjs retract` command line, so the next
       session gets the current standards.
 
