@@ -1,0 +1,7 @@
+{
+  "source": "synthetic test baseline (shape of docs/izzi-v2/D0-REPORT.md)",
+  "instruments": {
+    "classifier": { "firstPassRate": 0.5, "correctionsPer100": 2.5 },
+    "gold": { "firstPassRate": 0.817, "correctionsPer100": 14.3 }
+  }
+}
