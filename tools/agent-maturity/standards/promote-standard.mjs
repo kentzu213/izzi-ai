@@ -1,14 +1,16 @@
 // The single door for storing a dev standard (docs/izzi-v2/sessions/DI.md). Root runs it once, after the owner chose
-// Nâng cấp (or Chỉnh) at a checkpoint and the D4 critic recorded a verdict:
+// Nâng cấp at a checkpoint on the exact text it stores and the D4 critic recorded a verdict:
 //   node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time of the owner answer>
 //     [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <dir>]
 // In this order, stopping at the first failure:
 //   1. Verify the owner answer against the D1 hook log (<AGENT_MATURITY_HOME>/log): exactly one checkpoint_outcome
-//      event of that session, outcome accept (Nâng cấp) or edit (Chỉnh), from an interactive entrypoint, at most
-//      ±5 s from the given time. Read-only, so a refused pointer writes nothing (owner_message_unverified).
+//      event of that session from an interactive entrypoint, at most ±5 s from the given time
+//      (owner_message_unverified), with outcome accept: only Nâng cấp approves, Chỉnh or Bỏ qua is
+//      owner_message_not_accept. The answer is at most 7 days old (owner_message_stale), and for NARROW later than
+//      the recorded verdict (owner_message_before_verdict). Read-only, so a refused pointer writes nothing.
 //   2. assertPromotable (D4 gate) on the critic store, with the hook event's own time as ownerMessage, so one logged
-//      answer approves one text (owner_message_reused). The statement stored is the one the gate returns (the
-//      narrowed text for NARROW), never an argument.
+//      answer approves one text of one candidate (owner_message_reused). The statement stored is the one the gate
+//      returns (the narrowed text for NARROW), never an argument.
 //   3. capture into KnowledgeMemory: topic dev-standard/<12 hex of statementKey>, source userSource(session, hook
 //      time) plus the candidate and verdict ids, scope from the candidate (user unless projects is 'this').
 //   4. promote with basis user_instruction and the gate token; 5. supersede the active standard on the same topic;
@@ -44,7 +46,13 @@ import {
 
 const GATE = claimPromoteGate();
 export const OWNER_MESSAGE_WINDOW_MS = 5_000;
-export const APPROVING_OUTCOMES = Object.freeze(['accept', 'edit']);
+// An owner answer approves a promotion for at most this long.
+export const OWNER_ANSWER_MAX_AGE_MS = 7 * 86_400_000;
+// Only Nâng cấp approves. Chỉnh (edit) means the owner changed the text: ask again with the new exact text.
+export const APPROVING_OUTCOMES = Object.freeze(['accept']);
+// The outcomes the hook logs for an answer to an ask block (abstained is no answer).
+const ANSWER_OUTCOMES = new Set(['accept', 'edit', 'skip', 'ignored']);
+const OUTCOME_WORDS = { edit: 'Chỉnh', skip: 'Bỏ qua', ignored: 'không chọn' };
 // 12 hex characters: never 13 digits in a row, so the store's card-number check cannot trip on a topic.
 const TOPIC_HASH_CHARS = 12;
 const TITLE_MAX = 160;
@@ -102,28 +110,51 @@ function hookEvents(home, atMs) {
   return events;
 }
 
-// The one hook event that records the owner choosing Nâng cấp or Chỉnh in that session around that time.
+// The one hook event that records the owner answering an ask block in that session around that time; only
+// Nâng cấp approves (owner_message_not_accept otherwise).
 export function findOwnerAnswer(home, message) {
   const at = Date.parse(message.ts);
   const matches = hookEvents(home, at).filter((e) =>
     isObject(e)
     && e.type === 'checkpoint_outcome'
     && e.session === message.sessionId
-    && APPROVING_OUTCOMES.includes(e.outcome)
+    && ANSWER_OUTCOMES.has(e.outcome)
     && NUDGE_ENTRYPOINTS.has(e.ep)
     && typeof e.ts === 'string'
     && Math.abs(Date.parse(e.ts) - at) <= OWNER_MESSAGE_WINDOW_MS);
   if (matches.length === 0) {
-    fail('owner_message_unverified', 'no Nâng cấp or Chỉnh answer of that session within 5 s of that time in the hook log (an interactive session with the hook installed)');
+    fail('owner_message_unverified', 'no checkpoint answer of that session within 5 s of that time in the hook log (an interactive session with the hook installed)');
   }
   if (matches.length > 1) fail('owner_message_unverified', 'more than one checkpoint answer of that session within 5 s; give the exact time');
-  return matches[0];
+  const [answer] = matches;
+  if (!APPROVING_OUTCOMES.includes(answer.outcome)) {
+    fail('owner_message_not_accept', `that answer was ${OUTCOME_WORDS[answer.outcome]}, not Nâng cấp: only Nâng cấp on the exact text approves (after Chỉnh, ask again with the new text)`);
+  }
+  return answer;
 }
 
 function refuseRealHome(dirs, env) {
   if (env.AGENT_MATURITY_TEST !== '1') return;
   const real = path.join(os.homedir(), '.claude');
   if (dirs.some((d) => isInside(d, real))) fail('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing the real ~/.claude');
+}
+
+function checkAnswerAge(answer, now) {
+  if (now.getTime() - Date.parse(answer.ts) > OWNER_ANSWER_MAX_AGE_MS) {
+    fail('owner_message_stale', 'that owner answer is more than 7 days old: ask the checkpoint question again');
+  }
+}
+
+// A NARROW text was shown to the owner only after socrates gave it: the answer must come after the recorded verdict.
+function checkAnsweredAfterVerdict(adapter, candidateId, verdict, ownerMessage) {
+  if (!isObject(verdict) || verdict.verdict !== 'NARROW') return;
+  const recorded = adapter
+    .listEvents(candidateId)
+    .filter((e) => e.type === 'verdict_recorded' && e.critiqueNumber === verdict.critiqueNumber)
+    .at(-1);
+  if (recorded && !(Date.parse(ownerMessage.ts) > Date.parse(recorded.at))) {
+    fail('owner_message_before_verdict', 'that answer came before socrates narrowed the text: ask again with the narrowed text');
+  }
 }
 
 // Under the critic store lock: the approval names what the stored verdict allows (the narrowed text for NARROW) and
@@ -135,6 +166,7 @@ function gateLocked(adapter, candidateId, ownerMessage, projectPath, now) {
   if (candidate && isObject(candidate.scope) && candidate.scope.projects === 'this' && !projectPath) {
     fail('project_path_required', 'this candidate is for one project: pass --project <checkout folder>');
   }
+  checkAnsweredAfterVerdict(adapter, candidateId, last, ownerMessage);
   const floorClass = isObject(last) ? promotedFloor(last) : undefined;
   const topics = isObject(last) ? promotedTopics(last) : null;
   const ownerApproval = {
@@ -231,6 +263,7 @@ export function promoteStandard(opts = {}) {
   refuseRealHome([home, criticDir], env);
   const km = { store: opts.store, vault: opts.vault, out: opts.out, env, python: opts.python, cli: opts.cli };
   const answer = findOwnerAnswer(home, message);
+  checkAnswerAge(answer, now);
   if (!cliAvailable(km)) fail('cli_unavailable', 'KnowledgeMemory CLI or bundled Python not found');
   if (!fs.existsSync(criticDir)) fail('candidate_missing', 'no critic store at that folder');
   const adapter = createJsonAdapter(criticDir);

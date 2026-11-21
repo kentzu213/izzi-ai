@@ -106,12 +106,14 @@ The command line never holds the gate token: `promote` on a `dev-standard/` reco
 In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
 
 1. **Owner answer.** `<AGENT_MATURITY_HOME>/log/events-YYYY-MM.jsonl` must hold exactly one `checkpoint_outcome` of
-   that session (the hook logs a safe session id as-is) with outcome `accept` (Nâng cấp) or `edit` (Chỉnh), entrypoint
-   `cli` or `claude-desktop`, and `ts` at most 5 s from the given time; otherwise `owner_message_unverified`, also
-   when there is no hook log (before the hook is installed nothing can be stored) or the pointer is a message uuid
-   (the hook logs none). Read-only, like the input and CLI checks, so a refusal here writes nothing.
+   that session (the hook logs a safe session id as-is), entrypoint `cli` or `claude-desktop`, and `ts` at most 5 s
+   from the given time; otherwise `owner_message_unverified`, also when there is no hook log (before the hook is
+   installed nothing can be stored) or the pointer is a message uuid (the hook logs none). Only outcome `accept`
+   (Nâng cấp) approves: Chỉnh or Bỏ qua is `owner_message_not_accept`. The answer is at most 7 days old
+   (`owner_message_stale`) and, for NARROW, later than the recorded verdict (`owner_message_before_verdict`).
+   Read-only, like the input and CLI checks, so a refusal here writes nothing.
 2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
-   two pointers to one logged answer are the same answer: `owner_message_reused` for a second text), the statement
+   two pointers to one logged answer are the same answer: `owner_message_reused` for a second text or candidate), the statement
    the stored verdict allows and the floor label stored with it. Every gate refusal (hard_reject, REJECT, NEED-MORE,
    floor_changed, ...) stops here. The stored statement is the one the gate returns, never an argument.
 3. **capture**: topic `dev-standard/<first 12 hex of statementKey(statement)>`, title `<agent> · <taskType>`, summary

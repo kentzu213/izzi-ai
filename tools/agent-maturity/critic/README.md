@@ -243,11 +243,11 @@ verdict, floor, statement, ownerMessage }`.
 
 Audit trail: a promotion that clears every check appends, under the same lock, a `promotion_approved` log event
 `{ candidateId, statementKey, floorClass, ownerMessage, at }` (`at` from the optional `now` argument). One checkpoint
-answer approves one text: an `ownerMessage` already logged for a different `statementKey` (same `sessionId` and the
-same `uuid`, case-insensitive, or the same instant in `ts`) is refused with `owner_message_reused`; the same answer
-for the same text again is fine. A uuid-only and a ts-only pointer to the same message cannot be matched here. The
+answer approves one text of one candidate: an `ownerMessage` already logged for a different `statementKey` or a
+different candidate (same `sessionId` and the same `uuid`, case-insensitive, or the same instant in `ts`) is refused
+with `owner_message_reused`; the same answer for the same text of the same candidate again is fine. A uuid-only and a ts-only pointer to the same message cannot be matched here. The
 pointer is recorded and reuse-checked here; `promote-standard` verifies it against the D1 hook outcome log first (an
-answer Nâng cấp or Chỉnh of that session within 5 s) and passes the hook event's own time, so two pointers to one
+answer Nâng cấp of that session within 5 s; Chỉnh is not approval) and passes the hook event's own time, so two pointers to one
 logged answer count as one. The hook log does not record which text the question showed (see Wiring). Adapters
 implement `listPromotionApprovals()` for the reuse check. `promote-standard` calls the gate with this store and
 stores only the returned `statement`.

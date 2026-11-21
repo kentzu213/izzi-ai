@@ -298,6 +298,20 @@ test('one checkpoint answer approves one text: the same owner message for anothe
   assert.equal(promote(store.adapter, 'other-case', approval(other.candidate.statement, { ownerMessage: { ...MSG, sessionId: 'other-session' } })).floor, 'pass');
 });
 
+test('one checkpoint answer approves one candidate: the same owner message for another candidate with the same text is refused', () => {
+  // Arrange
+  const store = freshAdapter();
+  const first = recorded({}, {}, store);
+  const twin = recorded({ id: 'twin-case' }, {}, store);
+  promote(store.adapter, 'gate-case', approval(first.candidate.statement, OWNER));
+
+  // Act + Assert
+  assert.equal(twin.candidate.statement, first.candidate.statement);
+  refusedWith('owner_message_reused', () => promote(store.adapter, 'twin-case', approval(twin.candidate.statement, OWNER)));
+  assert.equal(promotions(store.adapter, 'twin-case').length, 0, 'a refused reuse logs nothing');
+  assert.equal(promote(store.adapter, 'gate-case', approval(first.candidate.statement, OWNER)).candidateId, 'gate-case', 'the same candidate again is fine');
+});
+
 test('reviewer round-6 e2e: a style clause no longer carries a loosening clause to a pass promotion', () => {
   // Arrange
   const cases = [

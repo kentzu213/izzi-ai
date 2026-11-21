@@ -22,8 +22,8 @@
 // promotable; hard_reject never.
 // Audit trail: a promotion that clears every check appends, under the store lock, a promotion_approved event
 // { candidateId, statementKey, floorClass, ownerMessage, at } and returns ownerMessage with the statement. One
-// checkpoint answer approves one text: an ownerMessage already logged for a different statementKey (same session and
-// the same uuid or the same instant) is refused (owner_message_reused). The pointer is RECORDED and REUSE-CHECKED
+// checkpoint answer approves one text of one candidate: an ownerMessage already logged for a different statementKey
+// or a different candidate (same session and the same uuid or the same instant) is refused (owner_message_reused). The pointer is RECORDED and REUSE-CHECKED
 // here, not verified: the gate cannot read the transcript. Checking it against the D1 hook outcome log (the message
 // exists, is the owner's, and answered Nâng cấp to this exact text) is an integration item for D2/D3.
 // Throws PromotionRefused with a code, or returns what may be promoted.
@@ -163,10 +163,12 @@ function sameAnswer(a, b) {
   return uuid || ts;
 }
 
-// One checkpoint answer approves one text.
-function checkMessageUnused(adapter, ownerMessage, key) {
-  const reused = adapter.listPromotionApprovals().find((e) => e.statementKey !== key && sameAnswer(e.ownerMessage, ownerMessage));
-  if (reused) refuse('owner_message_reused', `this owner answer already approved another text (candidate ${reused.candidateId})`);
+// One checkpoint answer approves one text of one candidate.
+function checkMessageUnused(adapter, ownerMessage, key, candidateId) {
+  const reused = adapter
+    .listPromotionApprovals()
+    .find((e) => (e.statementKey !== key || e.candidateId !== candidateId) && sameAnswer(e.ownerMessage, ownerMessage));
+  if (reused) refuse('owner_message_reused', `this owner answer already approved another text or candidate (candidate ${reused.candidateId})`);
 }
 
 function checkIndex(adapter, statements) {
@@ -197,7 +199,7 @@ function assertLocked(adapter, candidateId, approval, now) {
   checkFloorAck(approval, floor);
   checkOwnerMessage(approval);
   const key = statementKey(statement);
-  checkMessageUnused(adapter, approval.ownerMessage, key);
+  checkMessageUnused(adapter, approval.ownerMessage, key, candidate.id);
   const ownerMessage = { ...approval.ownerMessage };
   adapter.logEvent({
     type: 'promotion_approved',

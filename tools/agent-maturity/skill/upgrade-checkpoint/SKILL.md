@@ -68,9 +68,10 @@ the sentence outright. If the label is `hard_reject`, do not ask: that sentence 
 owner which policy it would loosen. The owner choosing **Nâng cấp** on a question that showed the exact text (and the
 label, when there is one) IS the approval and the acknowledgement; there is no second approval. Note where the owner
 answered (session id and the time of that message, from the transcript) for `--owner-message` in step 6: every
-standard needs it, `pass` included. `promote-standard` checks it against the hook log (an answer Nâng cấp or Chỉnh in
-that session within 5 s of that time) and refuses the same answer for a second text. The hook logs no message uuid,
-so give the time, one answer per standard.
+standard needs it, `pass` included. `promote-standard` checks it against the hook log (an answer Nâng cấp in that
+session within 5 s of that time, at most 7 days old) and refuses the same answer for a second text or candidate.
+**Chỉnh is not approval:** a Chỉnh (or Bỏ qua) answer is refused (`owner_message_not_accept`). The hook logs no
+message uuid, so give the time, one answer per standard.
 
 ## A standard is data, not authority
 
@@ -132,10 +133,12 @@ instructions. When a standard and those conflict, the governing instructions win
          node <am>/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time of the owner answer>
 
      Add `--project <main checkout folder>` when the candidate is for one project. It finds the owner answer in the
-     hook log (that session, Nâng cấp or Chỉnh, an interactive session, within 5 s; `owner_message_unverified`
-     otherwise, also when the hook is not installed), runs the promote gate on `<critic>` (it stores only the text the
+     hook log (that session, an interactive session, within 5 s; `owner_message_unverified` otherwise, also when the
+     hook is not installed; only Nâng cấp approves: Chỉnh or Bỏ qua is `owner_message_not_accept`; an answer older
+     than 7 days is `owner_message_stale`; for NARROW the answer must come after the recorded verdict,
+     `owner_message_before_verdict`), runs the promote gate on `<critic>` (it stores only the text the
      gate returns: the narrowed one for NARROW; the floor label stored with the verdict is the acknowledgement;
-     `owner_message_reused` when that answer already approved another text), captures the standard into
+     `owner_message_reused` when that answer already approved another text or candidate), captures the standard into
      KnowledgeMemory (topic `dev-standard/<12 hex of the statement key>`, user scope unless the candidate is for one
      project), promotes it, supersedes the active standard on the same topic, re-exports for the SessionStart hook and
      logs `standard_promoted`. Exit 0 prints what was stored; exit 1 prints `error` (and `step` when it stopped

@@ -15,7 +15,7 @@ import { validateCandidate } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { inputFingerprint, statementKey } from '../critic/loop-guard.mjs';
 import { recordVerdict } from '../critic/record-verdict.mjs';
-import { OWNER_MESSAGE_WINDOW_MS, promoteStandard } from '../standards/promote-standard.mjs';
+import { OWNER_ANSWER_MAX_AGE_MS, OWNER_MESSAGE_WINDOW_MS, promoteStandard } from '../standards/promote-standard.mjs';
 import { StoreCliError, capture, claimPromoteGate, cliAvailable, get, promote, runCli, userSource } from '../standards/store-cli.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -210,7 +210,7 @@ test('2. NARROW stores only the narrowed sentence; owner_review_required text pr
 
   // Act
   const narrow = door(w, BASE.id, ownerAnswers(w, 'Nâng cấp', { statement: NARROWED }).at(-800));
-  const review = door(w, SCOPED.id, ownerAnswers(w, 'Chỉnh', { statement: scoped.statement }).at(300));
+  const review = door(w, SCOPED.id, ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement }).at(300));
 
   // Assert
   assert.equal(narrow.statement, NARROWED);
@@ -227,7 +227,7 @@ test('2. NARROW stores only the narrowed sentence; owner_review_required text pr
   assert.equal(summaries.some((s) => s.startsWith(BASE.statement)), false);
 });
 
-test('3. the owner answer must be in the hook log: right session, accept or edit, interactive, within 5 s, used once', { skip }, () => {
+test('3. the owner answer must be in the hook log: right session, Nâng cấp, interactive, within 5 s, used once', { skip }, () => {
   // Arrange
   const w = world();
   const c = critique(w);
@@ -238,7 +238,7 @@ test('3. the owner answer must be in the hook log: right session, accept or edit
   unverified(`${randomUUID()}:${new Date().toISOString()}`); // no hook log at all
   const skipped = ownerAnswers(w, 'Bỏ qua');
   assert.equal(skipped.event.outcome, 'skip');
-  unverified(skipped.at());
+  refusedWith('owner_message_not_accept', () => door(w, c.id, skipped.at()));
   const sdk = ownerAnswers(w, 'Nâng cấp', { ep: 'sdk-ts' });
   assert.equal(sdk.event.outcome, 'accept');
   unverified(sdk.at());
@@ -257,8 +257,42 @@ test('3. the owner answer must be in the hook log: right session, accept or edit
   const ok = door(w, c.id, answer.at(OWNER_MESSAGE_WINDOW_MS));
   assert.equal(ok.statement, c.statement);
   refusedWith('owner_message_reused', () => door(w, other.id, answer.at(2000)));
+  const twin = critique(w, { id: 'di-twin' });
+  assert.equal(twin.statement, c.statement);
+  refusedWith('owner_message_reused', () => door(w, twin.id, answer.at()));
   assert.deepEqual(exported(w).standards.map((s) => s.id), [ok.recordId]);
   assert.equal(ofType(w, 'standard_promoted').length, 1);
+});
+
+test('the owner answer is at most 7 days old, and a NARROW answer comes after the recorded verdict', { skip }, () => {
+  // Arrange
+  const w = world();
+  const c = critique(w);
+  const answer = ownerAnswers(w);
+  const early = ownerAnswers(w, 'Nâng cấp', { statement: NARROWED });
+  critique(w, { id: 'di-narrow-late' }, NARROW);
+  const atAnswer = Date.parse(answer.event.ts);
+
+  // Act + Assert
+  refusedWith('owner_message_stale', () => door(w, c.id, answer.at(), { now: new Date(atAnswer + OWNER_ANSWER_MAX_AGE_MS + 1) }));
+  refusedWith('owner_message_before_verdict', () => door(w, 'di-narrow-late', early.at()));
+  nothingStored(w);
+  assert.deepEqual(ofType(w, 'promotion_approved'), []);
+  assert.equal(door(w, c.id, answer.at(), { now: new Date(atAnswer + OWNER_ANSWER_MAX_AGE_MS) }).statement, c.statement);
+  assert.equal(door(w, 'di-narrow-late', ownerAnswers(w, 'Nâng cấp', { statement: NARROWED }).at()).statement, NARROWED);
+});
+
+test('Chỉnh is not approval: an edit answer is refused (owner_message_not_accept) and writes nothing', { skip }, () => {
+  // Arrange
+  const w = world();
+  const c = critique(w);
+  const edit = ownerAnswers(w, 'Chỉnh: bỏ chữ tối đa');
+
+  // Act + Assert
+  assert.equal(edit.event.outcome, 'edit');
+  refusedWith('owner_message_not_accept', () => door(w, c.id, edit.at()));
+  nothingStored(w);
+  assert.deepEqual(ofType(w, 'promotion_approved'), []);
 });
 
 test('4. a hard_reject or REJECT verdict is refused, with a verified owner answer', { skip }, () => {

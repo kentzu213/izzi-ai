@@ -15,7 +15,7 @@ Một chuẩn chỉ vào kho KnowledgeMemory qua **một cửa duy nhất**, và
   - *KnowledgeMemory* chỉ giữ chuẩn đã được duyệt cuối cùng.
 - **Cửa duy nhất** là `standards/promote-standard.mjs` (CLI + hàm), nhận `--candidate <id> --owner-message <sessionId>:<uuid|ts>`, làm đúng thứ tự:
   1. `assertPromotable({ adapter: sổ phản biện, candidateId, ownerApproval })`. Lấy câu cần lưu từ cổng: câu thu hẹp nếu verdict là NARROW, không bao giờ lấy từ tham số.
-  2. **Đối chiếu tin nhắn duyệt với log của hook D1**: phải có sự kiện trả lời checkpoint của đúng phiên đó, outcome `accept` (Nâng cấp) hoặc `edit` (Chỉnh), lệch thời điểm tối đa ±5 giây, và chưa từng dùng cho câu khác. Không có log hoặc không khớp thì từ chối với mã `owner_message_unverified` (fail closed). Trước D2 hook chưa cài nên chưa lưu được chuẩn nào; đây là điều đúng.
+  2. **Đối chiếu tin nhắn duyệt với log của hook D1**: phải có sự kiện trả lời checkpoint của đúng phiên đó, chỉ outcome `accept` (Nâng cấp) mới là duyệt (`edit`/Chỉnh nghĩa là anh đổi câu nên bị từ chối với mã `owner_message_not_accept`, phải hỏi lại với câu mới), lệch thời điểm tối đa ±5 giây, không quá 7 ngày (`owner_message_stale`), với NARROW phải sau verdict (`owner_message_before_verdict`), và chưa từng dùng cho câu hoặc ứng viên khác. Không có log hoặc không khớp thì từ chối với mã `owner_message_unverified` (fail closed). Trước D2 hook chưa cài nên chưa lưu được chuẩn nào; đây là điều đúng.
   3. `capture` vào KnowledgeMemory: topic `dev-standard/<statementKey ngắn>`, nguồn `userSource(sessionId, ts)`, phạm vi theo ứng viên (mặc định `user`), kèm id ứng viên và id verdict.
   4. `promote(id, 'user_instruction')`.
   5. Nếu có chuẩn cũ cùng chủ đề đang dùng: `supersede` có lý do.
