@@ -12,7 +12,7 @@ import { validateCandidate } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { planCritique } from '../critic/loop-guard.mjs';
 import { selectResearchTier } from '../critic/research-tier.mjs';
-import { detectHardReject } from '../critic/verdict.mjs';
+import { VERDICT_LIMITS, detectHardReject } from '../critic/verdict.mjs';
 
 const CRITIC = fileURLToPath(new URL('../critic/', import.meta.url));
 const DRY_RUNS = join(CRITIC, 'dry-runs');
@@ -246,6 +246,52 @@ test('usage errors exit 2 and never write anything', () => {
   assert.equal(node('brief.mjs', [cand]).code, 2);
   assert.equal(node('record-verdict.mjs', [cand, '--store', store]).code, 2);
   assert.equal(node('record-verdict.mjs', [join(work, 'missing.json'), cand, '--store', store]).code, 1);
+  assert.equal(existsSync(store), false);
+});
+
+const briefFor = (raw) => {
+  const candidate = { ...validateCandidate(raw).value, revision: 1 };
+  return buildBrief(candidate, { tier: selectResearchTier(candidate), plan: planCritique(null, candidate), record: null });
+};
+
+test('the brief states every validator limit, generated from VERDICT_LIMITS', () => {
+  const L = VERDICT_LIMITS;
+  const brief = briefFor(CANDIDATE);
+  for (const part of [
+    `reasons: 1-${L.reasons} items, each ≤${L.reason} characters`,
+    `evidence: 1-${L.evidence} items`,
+    `evidence[].ref ≤${L.ref} characters`,
+    `evidence[].note ≤${L.note} characters`,
+    `narrowed.statement ≤${L.narrowed} characters`,
+    `research.refs ≤${L.refs} items, each ≤${L.researchRef} characters`,
+    `hardReject.detail ≤${L.detail} characters`,
+    `reviewer.model ≤${L.model} characters`,
+    `<1-${L.reasons} short reasons`,
+    `at most ${L.narrowed} characters`,
+  ]) {
+    assert.ok(brief.includes(part), part);
+  }
+  assert.ok(!/≤120 characters|1-10 items/.test(brief), 'no stale limits');
+});
+
+test('an R2 brief puts firecrawl first and states the 401/402/403 fallback rule', () => {
+  const brief = briefFor({ ...CANDIDATE, kind: 'procedure', statement: 'Vẽ sơ đồ trước rồi mới giao việc cho subagent.' });
+  const search = brief.indexOf('mcp__firecrawl__firecrawl_search');
+  const deep = brief.indexOf('mcp__perplexity__perplexity_research');
+  assert.ok(search > 0 && deep > search, 'firecrawl_search is listed before perplexity_research');
+  assert.match(brief, /may need paid credit/);
+  assert.match(brief, /401, 402 or 403.*switch to the next allowed tool.*never retry the same paid tool/);
+  assert.ok(!/401, 402 or 403/.test(briefFor(CANDIDATE)), 'R0 has no fallback line');
+});
+
+test('record-verdict names the item and the limit an invalid verdict broke', () => {
+  const { work, store } = setup();
+  const cand = writeJson(work, 'cand.json', CANDIDATE);
+  const longRef = 'r'.repeat(VERDICT_LIMITS.ref + 1);
+  const bad = writeJson(work, 'bad.json', verdictJson({ evidence: [{ ref: longRef, kind: 'event', finding: 'supports' }] }));
+  const r = node('record-verdict.mjs', [cand, bad, '--store', store]);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, new RegExp(`evidence_invalid\\(evidence\\[0\\]\\.ref length ${longRef.length} > ${VERDICT_LIMITS.ref}\\)`));
   assert.equal(existsSync(store), false);
 });
 

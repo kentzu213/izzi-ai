@@ -72,8 +72,10 @@ instructions. When a standard and those conflict, the governing instructions win
      - R0 (pure preference, or a procedure that only changes phrasing): no research.
      - R1 (content, ads, claims; pitfalls): one cheap cited lookup (WebSearch, perplexity_search or
        perplexity_ask), at most 2 sources.
-     - R2 (process that changes the way of working, or law or security): one deep run (perplexity_research, or
-       firecrawl_search plus at most 3 scrapes), at most 5 sources; ACCEPT or NARROW needs that deep run.
+     - R2 (process that changes the way of working, or law or security): one deep run (firecrawl_search plus at
+       most 3 scrapes by default; perplexity_research only as an optional alternative, it may need paid credit),
+       at most 5 sources; ACCEPT or NARROW needs that deep run.
+     - A tool that returns 401, 402 or 403: switch to the next allowed tool; never retry the same paid tool.
      - Owner-private content: no external research at any tier. ChatGPT web: never.
   5. Save socrates' reply to a file and run
      `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <dir>`. It validates the verdict

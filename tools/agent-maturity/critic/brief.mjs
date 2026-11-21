@@ -10,7 +10,7 @@ import { CliError, EXIT, invokedDirectly, parseCliArgs, readCandidateFile, runMa
 import { createJsonAdapter } from './json-adapter.mjs';
 import { MAX_CRITIQUES, MAX_REWRITES, planCritique } from './loop-guard.mjs';
 import { NEVER_TOOLS, selectResearchTier } from './research-tier.mjs';
-import { HARD_REJECT_CLASSES, VERDICT_SCHEMA } from './verdict.mjs';
+import { HARD_REJECT_CLASSES, VERDICT_LIMITS, VERDICT_SCHEMA } from './verdict.mjs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..').replaceAll('\\', '/');
 
@@ -20,8 +20,9 @@ function researchSection(tier) {
     `- Research tier ${tier.tier} (${tier.ruleId}${others.length ? `; also ${others.join(', ')}` : ''}): ${tier.description}`,
   ];
   if (tier.tools.length > 0) {
-    lines.push('  Allowed tools, cheapest first:', ...tier.tools.map((t) => `  - ${t.tool}: ${t.use}`));
+    lines.push('  Allowed tools, in the order to try them:', ...tier.tools.map((t) => `  - ${t.tool}: ${t.use}`));
   }
+  if (tier.fallback) lines.push(`  ${tier.fallback}`);
   const b = tier.budget;
   lines.push(`  Budget: at most ${b.maxSources} sources, ${b.maxDeepRuns} deep run, ${b.maxToolCalls} research tool calls.`);
   if (tier.tier === 'R0') lines.push('  No research tools at all for this candidate.');
@@ -68,13 +69,27 @@ function previousSection(record, plan) {
   ];
 }
 
+// Printed from VERDICT_LIMITS so the brief always states what record-verdict enforces.
+function limitsSection(tier) {
+  const L = VERDICT_LIMITS;
+  const b = tier.budget;
+  return [
+    'Limits (record-verdict refuses the whole reply if one is exceeded; characters counted after trimming):',
+    `- reasons: 1-${L.reasons} items, each ≤${L.reason} characters`,
+    `- evidence: 1-${L.evidence} items; evidence[].ref ≤${L.ref} characters; evidence[].note ≤${L.note} characters`,
+    `- narrowed.statement ≤${L.narrowed} characters`,
+    `- research.refs ≤${L.refs} items, each ≤${L.researchRef} characters, and inside this tier's budget (≤${b.maxSources} sources, ≤${b.maxDeepRuns} deep run)`,
+    `- hardReject.detail ≤${L.detail} characters; reviewer.model ≤${L.model} characters`,
+  ];
+}
+
 function outputTemplate(candidate, tier) {
   const template = {
     schema: VERDICT_SCHEMA,
     candidateId: candidate.id,
     candidateRevision: candidate.revision,
     verdict: 'ACCEPT | NARROW | NEED-MORE-EVIDENCE | REJECT',
-    reasons: ['<1-5 short reasons in plain Vietnamese>'],
+    reasons: [`<1-${VERDICT_LIMITS.reasons} short reasons in plain Vietnamese>`],
     evidence: [
       {
         ref: '<candidate evidence id or a file path you checked>',
@@ -85,7 +100,7 @@ function outputTemplate(candidate, tier) {
     ],
     checks: { evidenceSupports: true, scopeTooWide: false, contradictsExisting: false, tierCorrect: true },
     hardReject: null,
-    narrowed: { statement: '<only for NARROW, at most 200 characters>' },
+    narrowed: { statement: `<only for NARROW, at most ${VERDICT_LIMITS.narrowed} characters>` },
     research: { tier: tier.tier, refs: [], deepRuns: 0 },
     reviewAfter: '<only for NEED-MORE-EVIDENCE, YYYY-MM-DD>',
     reviewer: { agent: 'socrates', model: '<your model id>' },
@@ -121,7 +136,7 @@ export function buildBrief(candidate, { tier, plan, record }) {
     '',
     'Verdicts',
     '- ACCEPT: the evidence supports the sentence as written and all four checks pass.',
-    '- NARROW: the evidence supports a narrower sentence; give narrowed.statement (at most 200 characters).',
+    `- NARROW: the evidence supports a narrower sentence; give narrowed.statement (at most ${VERDICT_LIMITS.narrowed} characters).`,
     '- NEED-MORE-EVIDENCE: not enough evidence yet; give reviewAfter (YYYY-MM-DD) and say what would settle it.',
     '- REJECT: wrong, unsupported or harmful; say why.',
     '',
@@ -129,6 +144,7 @@ export function buildBrief(candidate, { tier, plan, record }) {
     'Write a short review, then end with exactly one fenced json block in this shape. Keep candidateId and candidateRevision. evidence[].ref is a candidate evidence id or a file path you checked; research.refs lists the sources you used (http(s) URLs, or file:<path> for local sources). Drop narrowed and reviewAfter when they do not apply.',
     ...outputTemplate(candidate, tier),
     `hardReject, when set: { "class": "${HARD_REJECT_CLASSES.join(' | ')}", "detail": "<why>" }`,
+    ...limitsSection(tier),
     '',
   ].join('\n');
 }

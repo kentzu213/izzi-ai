@@ -24,7 +24,8 @@ export function recordVerdict({ candidate: parsed, verdictText, adapter, now = n
   if (!raw) throw new CliError(EXIT.invalid, 'no verdict JSON found (plain JSON, or a fenced json block at the end)');
   const checked = validateVerdict(raw, { candidate, tier });
   if (!checked.ok) {
-    throw new CliError(EXIT.invalid, `invalid verdict: ${checked.errors.map((e) => `${e.code}(${e.field})`).join(', ')}`);
+    const list = checked.errors.map((e) => `${e.code}(${e.detail ?? e.field})`).join(', ');
+    throw new CliError(EXIT.invalid, `invalid verdict: ${list}`);
   }
 
   const verdict = {

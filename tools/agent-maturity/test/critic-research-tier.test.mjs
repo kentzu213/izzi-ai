@@ -69,10 +69,30 @@ test('a procedure that changes the way of working is R2 with one deep run', () =
   const t = tierOf({ kind: 'procedure', statement: 'Vẽ sơ đồ trước rồi mới giao việc cho subagent.' });
   assert.equal(t.tier, 'R2');
   assert.equal(t.ruleId, 'R2:process');
-  assert.deepEqual(toolNames(t).slice(0, 2), ['mcp__perplexity__perplexity_research', 'mcp__firecrawl__firecrawl_search']);
-  assert.ok(toolNames(t).includes('mcp__firecrawl__firecrawl_scrape'));
+  assert.deepEqual(toolNames(t).slice(0, 2), ['mcp__firecrawl__firecrawl_search', 'mcp__firecrawl__firecrawl_scrape']);
+  assert.match(t.tools[0].use, /default deep run/);
+  assert.match(t.tools[1].use, /at most 3/);
   assert.deepEqual(t.budget, { maxSources: 5, maxDeepRuns: 1, maxToolCalls: 8 });
   assert.equal(t.socrates, 'once, after the research');
+});
+
+test('perplexity_research is only an optional R2 alternative that may need paid credit', () => {
+  const t = tierOf({ kind: 'procedure', statement: 'Vẽ sơ đồ trước rồi mới giao việc cho subagent.' });
+  const names = toolNames(t);
+  const at = names.indexOf('mcp__perplexity__perplexity_research');
+  assert.ok(at > names.indexOf('mcp__firecrawl__firecrawl_scrape'), 'listed after the default deep run');
+  assert.match(t.tools[at].use, /optional/);
+  assert.match(t.tools[at].use, /may need paid credit/);
+});
+
+test('tiers with web research carry the 401/402/403 fallback rule; R0 and owner-private do not', () => {
+  for (const t of [tierOf({ flags: { contentClaim: true } }), tierOf({ flags: { touchesLaw: true } })]) {
+    assert.match(t.fallback, /401, 402 or 403/);
+    assert.match(t.fallback, /switch to the next allowed tool/);
+    assert.match(t.fallback, /never retry the same paid tool/);
+  }
+  assert.equal(tierOf({}).fallback, null);
+  assert.equal(tierOf({ kind: 'procedure', statement: 'Giao việc cho subagent.', flags: { ownerPrivate: true } }).fallback, null);
 });
 
 test('an explicit changesWorkflow flag wins over the keyword guess', () => {

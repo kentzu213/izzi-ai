@@ -28,10 +28,15 @@ const R1_TOOLS = [
   { tool: 'mcp__firecrawl__firecrawl_scrape', use: 'one page whose content is the evidence (JS-heavy site)' },
 ];
 
+// Default deep run = firecrawl_search + at most 3 scrapes. perplexity_research returned 403 in dry run 2 (it
+// needs paid credit), so it is only an optional alternative.
 const R2_TOOLS = [
-  { tool: 'mcp__perplexity__perplexity_research', use: 'one deep multi-source report (slow, costly): this is the deep run' },
-  { tool: 'mcp__firecrawl__firecrawl_search', use: 'or: search, then scrape the top 1-3 hits: this is the deep run' },
-  { tool: 'mcp__firecrawl__firecrawl_scrape', use: 'read the chosen pages' },
+  { tool: 'mcp__firecrawl__firecrawl_search', use: 'the default deep run: search, then scrape the top 1-3 hits' },
+  { tool: 'mcp__firecrawl__firecrawl_scrape', use: 'read the chosen pages, at most 3 for the deep run' },
+  {
+    tool: 'mcp__perplexity__perplexity_research',
+    use: 'optional alternative deep run instead of the firecrawl pair (slow; may need paid credit)',
+  },
   { tool: 'mcp__firecrawl__firecrawl_developer_search', use: 'engineering process: docs, GitHub issues and PRs' },
   { tool: 'mcp__firecrawl__firecrawl_research_search_papers', use: 'papers on agent memory, feedback and sycophancy' },
   { tool: 'mcp__perplexity__perplexity_reason', use: 'weigh trade-offs found in the sources' },
@@ -63,6 +68,9 @@ const RESEARCH_TOOL_NAMES = [
   'mcp__firecrawl__firecrawl_gov_search',
   'mcp__firecrawl__firecrawl_research_search_papers',
 ];
+
+export const TOOL_FALLBACK_RULE =
+  'If a tool returns 401, 402 or 403, switch to the next allowed tool; never retry the same paid tool.';
 
 export const NEVER_TOOLS = Object.freeze([
   { tool: 'ChatGPT web', why: 'opt-in only when the owner asks for it in that task; never for a critic review' },
@@ -160,6 +168,7 @@ export function selectResearchTier(candidate) {
     external,
     description: DESCRIPTION[tier],
     tools: toolsFor(tier, external, ordered),
+    fallback: external === 'allowed' ? TOOL_FALLBACK_RULE : null,
     budget: { ...BUDGETS[tier] },
     never: neverFor(tier, external),
     socrates: tier === 'R0' ? 'once' : 'once, after the research',
