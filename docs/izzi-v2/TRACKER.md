@@ -41,7 +41,7 @@ Cập nhật lần cuối: 2026-11-21, root. Trạng thái kế hoạch: anh đ�
 |---|---|---|---|---|---|---|---|---|
 | P-1 | — (không code) | — | — | chưa làm | Anh bấm Dùng ≥1 hồ sơ; có 3 lượt chat trước/sau; 0 lộ dữ liệu; 0 câu trả lời hỏng | — | — | — |
 | P0 | `izzi-v2/p0-product-gold` | — | — | chưa làm | Đếm đủ 5 loại sự kiện; precision ≥0,9 trên tập giữ riêng; cam chịu bị tính là duyệt = 0 | — | — | — |
-| PB | `izzi-v2/pb-budget-fuses` | — | subagent builder trong phiên root `38d4ca41` (21/11), worktree `F:/Ai Tools/_wt-izzi-v2-pb` | **đang làm** | Bỏ trần 3/6; có test cho từng cầu chì (402, 90 giây, một lượt mỗi lúc, không có việc thì 0 gọi, phát hiện vòng lặp, lần anh bấm không bị chặn) | — | — | — |
+| PB | `izzi-v2/pb-budget-fuses` | [#76](https://github.com/kentzu213/izzi-ai/pull/76) | subagent builder trong phiên root `38d4ca41` (21/11), worktree `F:/Ai Tools/_wt-izzi-v2-pb` | **chờ anh nghiệm thu** (không phát hành) | Bỏ trần 3/6; có test cho từng cầu chì (402, 90 giây, một lượt mỗi lúc, không có việc thì 0 gọi, phát hiện vòng lặp, lần anh bấm không bị chặn) | 0d26f5f: vitest 140/140; tsc main 0; bỏ trần 3/6; 402 dừng + tạm dừng chạy nền; 90 s không dự phòng; Idempotency-Key theo tài khoản+đầu vào+model; còn rủi ro: lỗi mạng sau khi máy chủ nhận vẫn thử dự phòng | reviewer APPROVE-WITH-FIXES (1 MEDIUM trả tiền 2 lần sau timeout + 5 LOW), đã sửa ở 0d26f5f, root kiểm lại | — |
 | P2 | `izzi-v2/p2-itemized-store` | — | — | chưa làm | 0 mục mất qua 10 lần chạy; khối chèn ≤1000 ký tự | — | — | — |
 | P1 | `izzi-v2/p1-feedback-ledger` | — | — | chưa làm | Đủ 5 loại sự kiện, có vai trò người duyệt; lọc PII 100% | — | — | — |
 | P3 | `izzi-v2/p3-candidates-critic` | — | — | chưa làm | Mọi ứng viên có cặp đối chứng và verdict | — | — | — |
