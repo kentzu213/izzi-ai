@@ -22,10 +22,15 @@ export function isReviewDue(reviewAfter, now = new Date()) {
   return Number.isNaN(t) || t <= now.getTime();
 }
 
-// True when the export has no readable exported_at or is older than MAX_EXPORT_AGE_DAYS.
+// Clock skew tolerated before an exported_at in the future is treated as untrustworthy.
+const MAX_CLOCK_SKEW_MS = 10 * 60_000;
+
+// True when the export has no readable exported_at, is older than MAX_EXPORT_AGE_DAYS, or claims a future time.
 export function isStaleExport(value, now = new Date()) {
   const t = value && typeof value.exported_at === 'string' ? Date.parse(value.exported_at) : Number.NaN;
-  return Number.isNaN(t) || now.getTime() - t > MAX_EXPORT_AGE_DAYS * DAY_MS;
+  if (Number.isNaN(t)) return true;
+  const age = now.getTime() - t;
+  return age > MAX_EXPORT_AGE_DAYS * DAY_MS || age < -MAX_CLOCK_SKEW_MS;
 }
 
 function validStandard(s, now) {
@@ -63,6 +68,12 @@ const flatten = (text) => text
   .replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
   .replace(/</g, '‹')
   .replace(/>/g, '›')
+  // Every other format character (\p{Cf}: soft hyphen, Unicode tag characters used for "ASCII smuggling") and
+  // variation selectors are dropped too: the owner cannot see them when approving text. [ ] become ⟦ ⟧ so stored
+  // text cannot forge the closing marker.
+  .replace(/[\p{Cf}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/gu, '')
+  .replace(/\[/g, '⟦')
+  .replace(/\]/g, '⟧')
   .replace(/\s+/g, ' ')
   .trim();
 
