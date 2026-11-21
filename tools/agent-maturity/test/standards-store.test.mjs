@@ -15,6 +15,7 @@ import {
   StoreCliError,
   buildExport,
   capture,
+  claimPromoteGate,
   cliAvailable,
   exportActive,
   get,
@@ -35,6 +36,8 @@ const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
+// These tests exercise the store, not the door: they hold the gate token promote-standard.mjs normally holds.
+const gate = claimPromoteGate();
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 // sha256 only: mtime is left out because another session may touch the real store while these tests run.
@@ -89,14 +92,14 @@ test('capture → promote → export → supersede → export on a temp store', 
   assert.equal(first.topic_key, 'dev-standard/verify-before-done');
   assert.equal(exportActive(s).standards.length, 0, 'a candidate is not exported');
 
-  assert.equal(promote(first.id, 'user_instruction', s).state, 'active');
+  assert.equal(promote(first.id, 'user_instruction', { ...s, gate }).state, 'active');
   const e1 = exportActive(s);
   assert.deepEqual(ids(e1.standards), [first.id]);
   assert.equal(e1.standards[0].topic, 'verify-before-done');
   assert.deepEqual(JSON.parse(readFileSync(s.out, 'utf8')), e1, 'the file holds what was returned');
 
   const second = capture(candidate('verify-before-done', 'Báo xong phải kèm lệnh test, mã thoát và log.', 'sess-2'), s);
-  promote(second.id, 'user_instruction', s);
+  promote(second.id, 'user_instruction', { ...s, gate });
   const clash = exportActive(s);
   assert.deepEqual(ids(clash.standards), [], 'two active standards on one topic are both held back');
   assert.deepEqual(clash.skipped.map((k) => k.reason), ['conflict', 'conflict']);
@@ -129,9 +132,9 @@ test('project scope from a worktree path lands on the main checkout project', { 
   assert.equal(again.project_id, rec.project_id);
   assert.equal(listProjects(s).length, 1, 'the main checkout is registered once');
 
-  promote(rec.id, 'user_instruction', s);
+  promote(rec.id, 'user_instruction', { ...s, gate });
   const userStd = capture(candidate('all-projects', 'Áp cho mọi dự án.', 'sess-3'), s);
-  promote(userStd.id, 'user_instruction', s);
+  promote(userStd.id, 'user_instruction', { ...s, gate });
   const e = exportActive(s);
   assert.deepEqual(e.projects.map((p) => p.id), [rec.project_id]);
   assert.equal(buildContext(e, scratch).includes('Chuẩn repo-only'), false, 'another folder does not see the project standard');
@@ -224,17 +227,28 @@ test('CLI rejections surface as StoreCliError without payload text', { skip }, (
   assert.throws(() => promote('11111111-1111-1111-1111-111111111111', 'user_instruction', s), (e) => e.code === 'cli_failed');
 });
 
-test('the command line re-exports after promote and prints a summary', { skip }, () => {
+test('the command line refuses to promote a dev standard and re-exports after other promotes', { skip }, () => {
   const s = newStore();
   const rec = capture(candidate('cli-flow', 'Dùng đường dẫn tuyệt đối trong worktree.', 'sess-6'), s);
-  const r = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--basis', 'user_instruction', '--store', s.store, '--vault', s.vault, '--out', s.out], {
+  const cli = (...args) => spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), ...args, '--store', s.store, '--vault', s.vault, '--out', s.out], {
     encoding: 'utf8', env: ENV, timeout: 60_000,
   });
+  const refused = cli('promote', rec.id, '--basis', 'user_instruction');
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.equal(JSON.parse(refused.stdout).error, 'promote_requires_gate');
+  assert.equal(get(rec.id, s).state, 'candidate');
+  const file = join(scratch, `cli-other-${n}.json`);
+  writeFileSync(file, JSON.stringify({
+    scope: 'user', kind: 'fact', topic_key: 'cli-other-memory', title: 'Not a standard', summary: 'Other knowledge.',
+    source: { type: 'user', uri: 'claude-session://x/2026-11-21' }, author: 'root', evidence: 'direct', confidence: 0.9,
+  }));
+  const other = runCli(['capture', '--file', file], s);
+  const r = cli('promote', other.id, '--basis', 'user_instruction');
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const printed = JSON.parse(r.stdout);
   assert.equal(printed.result.state, 'active');
-  assert.equal(printed.export.standards, 1);
-  assert.deepEqual(ids(JSON.parse(readFileSync(s.out, 'utf8')).standards), [rec.id]);
+  assert.equal(printed.export.standards, 0);
+  assert.ok(existsSync(s.out), 'the command line re-exported');
   const bad = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'promote', rec.id, '--store', s.store, '--vault', s.vault, '--out', s.out], { encoding: 'utf8', env: ENV, timeout: 60_000 });
   assert.equal(bad.status, 1);
 });

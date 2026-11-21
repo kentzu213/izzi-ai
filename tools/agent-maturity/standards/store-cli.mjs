@@ -1,7 +1,9 @@
 // Node wrapper over the Codex KnowledgeMemory CLI (~/.codex/bin/project-memory.py), the single store for dev
 // standards (docs/izzi-v2/PLAN.md §2.4-2.5). Only root calls it, after the owner answers a checkpoint; hooks never do.
 // Every call passes --store and --vault explicitly; with AGENT_MATURITY_TEST=1 the real store, vault and
-// ~/.claude are refused. Usage and the JS API: standards/README.md.
+// ~/.claude are refused. A dev-standard/ record is promoted only through standards/promote-standard.mjs (the D4
+// gate plus the verified owner answer): promote() refuses it without the gate token (promote_requires_gate), and the
+// command line never has that token. Usage and the JS API: standards/README.md.
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -55,6 +57,16 @@ export class StoreCliError extends Error {
 }
 
 const badInput = (message) => new StoreCliError('bad_input', message);
+
+// The one token that lets promote() activate a dev-standard/ record. promote-standard.mjs claims it when it loads;
+// it is handed out once per process, so nothing loaded beside promote-standard can claim it after that.
+const PROMOTE_GATE = Symbol('agent-maturity promote gate');
+let gateClaimed = false;
+export function claimPromoteGate() {
+  if (gateClaimed) throw new StoreCliError('promote_requires_gate', 'the promote gate token is already held (standards/promote-standard.mjs)');
+  gateClaimed = true;
+  return PROMOTE_GATE;
+}
 
 // The real location of p (junctions, symlinks, 8.3 names and subst drives resolved), also when p does not exist
 // yet: the nearest existing parent is resolved and the rest appended.
@@ -215,12 +227,17 @@ export const isImported = (record) => Boolean(record) && (record.author === IMPO
 // basis: 'user_instruction' (owner approved this exact text, user source) or 'verified_artifact' (file sha matches).
 // An imported auto-memory note is refused with import_not_promotable even though its file sha would pass the
 // store: root re-captures the owner-approved text with userSource(...) under its own topic, promotes that and
-// retracts the import (standards/README.md).
+// retracts the import (standards/README.md). Any other dev-standard/ record needs opts.gate, the token only
+// promote-standard.mjs holds (promote_requires_gate otherwise); records outside dev-standard/ are unchanged.
 export function promote(id, basis, opts) {
   needId(id);
   if (!BASES.has(basis)) throw badInput('basis must be user_instruction or verified_artifact');
-  if (isImported(get(id, opts))) {
+  const record = get(id, opts);
+  if (isImported(record)) {
     throw new StoreCliError('import_not_promotable', 'an imported auto-memory note is never promoted: capture the owner-approved text with userSource(...) under its own topic, promote that, then retract the import');
+  }
+  if (String(record && record.topic_key).startsWith(TOPIC_PREFIX) && opts?.gate !== PROMOTE_GATE) {
+    throw new StoreCliError('promote_requires_gate', 'a dev standard is promoted only through standards/promote-standard.mjs (D4 gate + the owner answer in the hook log)');
   }
   return withoutSync(runCli(['promote', id, `--basis=${basis}`, '--reviewer=root'], opts));
 }
@@ -269,6 +286,21 @@ export function exportPath(opts = {}) {
   return path.resolve(opts.out ?? path.join(resolveHome(opts.env ?? process.env), 'standards.json'));
 }
 
+// Candidate and active records whose topic_key starts with `prefix`, read-only. A store not created yet (no
+// memory.sqlite3) has none; the read-only reader cannot open it.
+function readRecords(t, prefix) {
+  return fs.existsSync(path.join(t.store, 'memory.sqlite3'))
+    ? spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, prefix])
+    : { projects: [], records: [] };
+}
+
+// Active records on exactly this topic_key, any scope (promote-standard supersedes the old one on its topic).
+export function listActive(topicKey, opts) {
+  if (typeof topicKey !== 'string' || !topicKey.startsWith(TOPIC_PREFIX)) throw badInput(`topicKey must start with ${TOPIC_PREFIX}`);
+  const raw = readRecords(targets(opts), topicKey);
+  return (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active' && r.topic_key === topicKey).map(withoutSync);
+}
+
 // Writes the active standards to opts.out (default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/standards.json).
 // Run it after every promote, supersede or retract (the command line does this itself).
 export function exportActive(opts = {}) {
@@ -277,10 +309,7 @@ export function exportActive(opts = {}) {
   if (t.env.AGENT_MATURITY_TEST === '1' && lands(out, path.join(os.homedir(), '.claude'))) {
     throw new StoreCliError('refuse_real_store', 'AGENT_MATURITY_TEST=1: refusing to write the export into the real ~/.claude');
   }
-  // A store not created yet (no memory.sqlite3) has no standards; the read-only reader cannot open it.
-  const raw = fs.existsSync(path.join(t.store, 'memory.sqlite3'))
-    ? spawnPython(t, ['-c', EXPORT_SCRIPT, path.dirname(t.cli), t.store, TOPIC_PREFIX])
-    : { projects: [], records: [] };
+  const raw = readRecords(t, TOPIC_PREFIX);
   const result = buildExport(raw, opts.now ?? new Date());
   writeFileAtomic(out, `${JSON.stringify(result, null, 2)}\n`);
   return result;

@@ -8,7 +8,10 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { findFeedbackNotes, importFeedbackNotes, noteCandidate, parseNote } from '../standards/import-feedback.mjs';
-import { IMPORT_AUTHOR, StoreCliError, capture, cliAvailable, exportActive, get, promote, retract, runCli, userSource } from '../standards/store-cli.mjs';
+import { IMPORT_AUTHOR, StoreCliError, capture, claimPromoteGate, cliAvailable, exportActive, get, promote, retract, runCli, userSource } from '../standards/store-cli.mjs';
+
+// These tests exercise the store, not the door: they hold the gate token promote-standard.mjs normally holds.
+const gate = claimPromoteGate();
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
@@ -206,8 +209,8 @@ test('an imported candidate is never promoted, whatever the basis', { skip }, ()
   const imported = first.captured[0];
   const refused = (e) => e instanceof StoreCliError && e.code === 'import_not_promotable';
   // verified_artifact would pass the store itself: the note file still matches its sha.
-  assert.throws(() => promote(imported.id, 'verified_artifact', s), refused);
-  assert.throws(() => promote(imported.id, 'user_instruction', s), refused);
+  assert.throws(() => promote(imported.id, 'verified_artifact', { ...s, gate }), refused);
+  assert.throws(() => promote(imported.id, 'user_instruction', { ...s, gate }), refused);
   assert.equal(get(imported.id, s).state, 'candidate');
   assert.equal(events(s, 'promoted').length, 0);
 });
@@ -215,7 +218,7 @@ test('an imported candidate is never promoted, whatever the basis', { skip }, ()
 test('a record by the importer author is refused under any topic', { skip }, () => {
   const s = newStore();
   const rec = capture({ topic: 'not-under-import', title: 'Chuẩn x', summary: 'Nội dung x.', source: userSource('sess-imp', '2026-11-21T01:00:00Z'), author: IMPORT_AUTHOR }, s);
-  assert.throws(() => promote(rec.id, 'user_instruction', s), (e) => e.code === 'import_not_promotable');
+  assert.throws(() => promote(rec.id, 'user_instruction', { ...s, gate }), (e) => e.code === 'import_not_promotable');
   assert.equal(get(rec.id, s).state, 'candidate');
 });
 
@@ -225,7 +228,7 @@ test('documented path: root re-captures the owner-approved text with a user sour
   const first = importFeedbackNotes({ projectsDir: makeProjects(), ...s });
   const imported = get(first.captured[0].id, s);
   const approved = capture({ topic: 'from-feedback-note', title: imported.title, summary: imported.summary, source: userSource('sess-owner', '2026-11-21T02:00:00Z') }, s);
-  assert.equal(promote(approved.id, 'user_instruction', s).state, 'active');
+  assert.equal(promote(approved.id, 'user_instruction', { ...s, gate }).state, 'active');
   assert.equal(retract(imported.id, `owner approved it as ${approved.id}`, s).state, 'retracted');
   const e = exportActive({ ...s, out });
   assert.deepEqual(e.standards.map((x) => x.id), [approved.id]);

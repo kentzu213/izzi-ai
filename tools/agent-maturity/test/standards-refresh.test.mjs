@@ -7,13 +7,15 @@ import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { refresh } from '../standards/refresh.mjs';
-import { capture, cliAvailable, promote, userSource } from '../standards/store-cli.mjs';
+import { capture, claimPromoteGate, cliAvailable, promote, userSource } from '../standards/store-cli.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REAL_MATURITY_HOME = join(homedir(), '.claude', 'agent-maturity');
 const ENV = { ...process.env, AGENT_MATURITY_TEST: '1' };
 delete ENV.AGENT_MATURITY_HOME;
 const skip = !cliAvailable() && 'KnowledgeMemory CLI or bundled Python not found';
+// These tests exercise the store, not the door: they hold the gate token promote-standard.mjs normally holds.
+const gate = claimPromoteGate();
 const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), 'am-refresh-')));
 after(() => {
   rmSync(scratch, { recursive: true, force: true });
@@ -35,7 +37,7 @@ function setup() {
 test('refresh re-exports the active standards and imports feedback notes as candidates', { skip }, () => {
   const s = setup();
   const std = capture({ topic: 'verify', title: 'Chuẩn verify', summary: 'Kèm lệnh test và mã thoát.', source: userSource('sess-r', '2026-11-21T01:00:00Z') }, s);
-  promote(std.id, 'user_instruction', s);
+  promote(std.id, 'user_instruction', { ...s, gate });
   const r = refresh(s);
   assert.equal(r.code, 0, JSON.stringify(r));
   assert.equal(r.export.standards, 1);

@@ -93,7 +93,7 @@ export function uninstall(opts = {}) {
 
     if (settingsPlan.data !== null) writeChecked(t.settings, settingsPlan.data, settingsPlan.current.sha, opts.beforeRename);
     for (const f of files) fs.rmSync(f, { force: true });
-    for (const dir of [path.join(t.maturity, 'bin', 'lib'), path.join(t.maturity, 'bin', 'hooks'), path.join(t.maturity, 'bin', 'standards'), path.join(t.maturity, 'bin'), t.skillDir]) removeEmptyDir(dir);
+    for (const dir of [...['lib', 'hooks', 'standards', 'critic'].map((d) => path.join(t.maturity, 'bin', d)), path.join(t.maturity, 'bin'), t.skillDir]) removeEmptyDir(dir);
     fs.rmSync(manifestPath(t), { force: true });
     if (opts.purge) {
       for (const dir of ['state', 'log']) fs.rmSync(path.join(t.maturity, dir), { recursive: true, force: true });
