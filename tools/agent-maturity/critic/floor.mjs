@@ -195,6 +195,9 @@ const TOPICS = {
   release: [
     'deploy(?:s|ed|ing|ment|ments)?', 'triển khai', 'push(?:es|ed|ing)?', 'force-push(?:es|ed|ing)?', 'merg(?:e|es|ed|ing)',
     'releas(?:e|es|ed|ing)', 'phát hành', 'publish(?:es|ed|ing)?',
+    // Committing straight to a protected branch is a release path too (root probes, D4 round 3). The branch words
+    // carry it; "commit" alone is left out so commit-message style rules still pass.
+    'main', 'master', 'production', 'prod', 'nhánh chính', 'hotfix(?:es)?',
   ],
   security: [
     'security', 'bảo mật', 'auth', 'oauth', 'authentication', 'xác thực', '2fa', 'mfa', 'tls', 'ssl', 'csrf',
@@ -212,7 +215,11 @@ const TOPICS = {
     'dangerously-skip-permissions', 'bypasspermissions', '--yolo', '--no-verify',
   ],
   asking_owner: ['hỏi', 'ask(?:s|ed|ing)?', 'confirm(?:s|ed|ing|ation)?'],
-  reporting: ['báo cáo', 'reports?', 'reported', 'reporting', 'fail(?:s|ed|ing)?', 'failures?', 'thất bại', 'cảnh báo', 'warnings?'],
+  reporting: [
+    'báo cáo', 'reports?', 'reported', 'reporting', 'fail(?:s|ed|ing)?', 'failures?', 'thất bại', 'cảnh báo', 'warnings?',
+    // Telling the owner about errors (root probes, D4 round 3): "khỏi cần báo anh", "đừng làm phiền anh về bug".
+    'báo anh', 'báo lại', 'thông báo', 'nói với anh', 'làm phiền anh', 'lỗi', 'errors?', 'bugs?', 'sự cố', 'incidents?',
+  ],
 };
 const TOPIC_RES = Object.entries(TOPICS).map(([topic, list]) => [topic, word(list)]);
 
