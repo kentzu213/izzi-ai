@@ -62,17 +62,19 @@ describe('registerAgentProfileIpc', () => {
     expect(service.refresh).toHaveBeenCalledWith();
   });
 
-  it('refuses calls from anything but the trusted app window', async () => {
+  it('refuses every call from anything but the trusted app window, "Tiếp tục" included', async () => {
     // Arrange
     const service = fakeService();
     registerAgentProfileIpc(service as unknown as AgentProfileService);
     trusted.mockReturnValue(false);
+    const channels = ['get', 'refresh', 'approve', 'discard', 'forget', 'resume'];
 
     // Act
-    const result = await handlers.get('agentProfiles:refresh')!({});
+    const results = await Promise.all(channels.map((name) => handlers.get(`agentProfiles:${name}`)!({}, { agentId: 'socrates' })));
 
     // Assert
-    expect(result).toEqual({ ok: false, error: 'auth' });
-    expect(service.refresh).not.toHaveBeenCalled();
+    expect(results).toEqual(Array(channels.length).fill({ ok: false, error: 'auth' }));
+    expect(service.resume).not.toHaveBeenCalled();
+    for (const method of Object.values(service)) expect(method).not.toHaveBeenCalled();
   });
 });

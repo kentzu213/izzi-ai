@@ -19,7 +19,7 @@ export interface AgentProfileView {
 
 /**
  * Why background runs stopped on their own: an input already sent came up again, several runs in a row
- * had no new activity, or the account ran out of credit (402). The owner's own click is never paused.
+ * had no new activity, or a run (any run) got a 402, out of credit. The owner's own click is never paused.
  */
 export type AgentProfilesPauseReason = 'repeat_input' | 'idle_runs' | 'quota';
 
@@ -41,7 +41,10 @@ export type AgentProfilesError =
   | 'busy'
   | 'no_activity'
   | 'paused'
+  /** The AI server answered 402: out of credit. */
   | 'quota'
+  /** The AI server refused for quota or permission on another status. */
+  | 'refused'
   | 'model_unavailable'
   | 'invalid_output'
   | 'invalid_input'

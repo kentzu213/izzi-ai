@@ -199,8 +199,9 @@ describe('AgentProfileService.refresh', () => {
     expect(results.every((result) => result.ok)).toBe(true);
   });
 
-  it('[1] lets the owner retry a failed run as often as needed: failed calls use up nothing', async () => {
-    // Arrange
+  it('[1] lets the owner retry a failed run with no daily limit, and each resend reuses its Idempotency-Key', async () => {
+    // Arrange: a failed call may still be billed, so a resend of the same input to the same model carries
+    // the same key, and the gateway can recognise it.
     const chat = vi.fn().mockResolvedValue(UNAVAILABLE);
     const { service } = setup({ chat });
 
@@ -211,6 +212,34 @@ describe('AgentProfileService.refresh', () => {
     // Assert
     expect(chat).toHaveBeenCalledTimes(10);
     expect(results).toEqual(Array(5).fill({ ok: false, error: 'model_unavailable' }));
+    const keysFor = (model: string) => [...new Set(chat.mock.calls.filter((call) => call[0].model === model).map((call) => call[2]))];
+    const primary = keysFor(AGENT_PROFILE_MODEL);
+    const fallback = keysFor(AGENT_PROFILE_FALLBACK_MODEL);
+    expect(primary).toHaveLength(1);
+    expect(fallback).toHaveLength(1);
+    expect(primary[0]).not.toBe(fallback[0]);
+    expect(primary[0]).toMatch(/^[\x21-\x7e]{1,128}$/);
+  });
+
+  it('[1] gives a new input, or the same input from another account, its own Idempotency-Key', async () => {
+    // Arrange
+    const first = setup({ marketing: async () => null, chat: async () => reply([]) });
+    const otherAccount = setup({ owner: () => 'user-2', marketing: async () => null, chat: async () => reply([]) });
+
+    // Act
+    await first.service.refresh();
+    first.advance(HOUR);
+    first.sessions.push(chatSession('việc mới', NOW + 30 * 60_000));
+    await first.service.refresh();
+    await otherAccount.service.refresh();
+
+    // Assert
+    const [sent, resent] = first.chat.mock.calls;
+    const [other] = otherAccount.chat.mock.calls;
+    expect(resent[0].message).not.toBe(sent[0].message);
+    expect(resent[2]).not.toBe(sent[2]);
+    expect(other[0].message).toBe(sent[0].message);
+    expect(other[2]).not.toBe(sent[2]);
   });
 
   it('[6] has no monthly cap: a run a day with new activity for 31 days is never refused', async () => {
@@ -247,21 +276,41 @@ describe('AgentProfileService.refresh', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('[3] stops on a 402 answer at once, with no fallback call, and leaves the activity for later', async () => {
+  it('[3] stops on a 402 answer at once, with no fallback call, pauses background runs too, and leaves the activity for later', async () => {
     // Arrange
     const chat = vi.fn().mockResolvedValue({ reply: '', error: 'http 402: insufficient balance' });
     const { service, store } = setup({ chat });
 
     // Act
     const result = await service.refresh();
+    const background = await service.refresh('background');
 
     // Assert
     expect(result).toEqual({ ok: false, error: 'quota' });
+    expect(background).toEqual({ ok: false, error: 'paused' });
     expect(chat).toHaveBeenCalledTimes(1);
     expect(chat.mock.calls[0][0].model).toBe(AGENT_PROFILE_MODEL);
     expect(store.load('user-1').watermarks).toEqual({});
-    // The owner sees the 402 right away; no background pause is set for something the owner did.
-    expect(pauseOf(service.getState())).toBeNull();
+    // Credit is account-wide: the owner's 402 also holds background runs until "Tiếp tục".
+    expect(pauseOf(service.getState())).toEqual({ reason: 'quota', at: at(NOW) });
+  });
+
+  it('[3] reports out of credit only for a real 402 status; quota words on another status are a refusal', async () => {
+    // Arrange
+    const refused = setup({ chat: vi.fn().mockResolvedValue({ reply: '', error: 'http 429: insufficient_quota: You exceeded your current quota' }) });
+    const mentions402 = setup({ chat: vi.fn().mockResolvedValue({ reply: '', error: 'http 500: upstream 402 Payment Required' }) });
+
+    // Act
+    const refusedResult = await refused.service.refresh();
+    const mentions402Result = await mentions402.service.refresh();
+
+    // Assert
+    expect(refusedResult).toEqual({ ok: false, error: 'refused' });
+    expect(refused.chat).toHaveBeenCalledTimes(1);
+    expect(pauseOf(refused.service.getState())).toBeNull();
+    expect(mentions402Result).toEqual({ ok: false, error: 'model_unavailable' });
+    expect(mentions402.chat).toHaveBeenCalledTimes(2);
+    expect(pauseOf(mentions402.service.getState())).toBeNull();
   });
 
   it('[3] a background run that meets 402 stops background runs until "Tiếp tục"; the owner can still run', async () => {
@@ -286,16 +335,16 @@ describe('AgentProfileService.refresh', () => {
     expect(pauseOf(owner)).toEqual({ reason: 'quota', at: at(NOW) });
   });
 
-  it('[4] gives up on a call after 90 s, then tries the fallback once with its own 90 s', async () => {
+  it('[4] gives up on a call after 90 s and ends the run there: it may be billed, so no fallback model', async () => {
     vi.useFakeTimers();
     try {
       // Arrange: a server that never answers and ignores the abort.
       const signals: AbortSignal[] = [];
-      const chat = vi.fn((_payload: unknown, signal: AbortSignal) => {
+      const chat = vi.fn((_payload: Parameters<AgentProfileChat>[0], signal: AbortSignal) => {
         signals.push(signal);
         return new Promise<never>(() => {});
       });
-      const { service } = setup({ chat });
+      const { service, store } = setup({ chat });
 
       // Act
       const run = service.refresh();
@@ -304,17 +353,44 @@ describe('AgentProfileService.refresh', () => {
       await vi.advanceTimersByTimeAsync(89_999);
       const abortedBefore = signals[0].aborted;
       await vi.advanceTimersByTimeAsync(1);
-      const abortedAt90s = signals[0].aborted;
-      const callsAfterFirstTimeout = chat.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(90_000);
+      const result = await run;
+      chat.mockResolvedValueOnce(BOTH as never);
+      const retry = await service.refresh();
 
       // Assert
       expect(startedCalls).toBe(1);
       expect(abortedBefore).toBe(false);
-      expect(abortedAt90s).toBe(true);
-      expect(callsAfterFirstTimeout).toBe(2);
-      expect(await run).toEqual({ ok: false, error: 'model_unavailable' });
-      expect(signals[1].aborted).toBe(true);
+      expect(signals[0].aborted).toBe(true);
+      expect(result).toEqual({ ok: false, error: 'model_unavailable' });
+      // The owner's next click resends the same input to the same model under the same key.
+      expect(chat).toHaveBeenCalledTimes(2);
+      expect(chat.mock.calls.map((call) => call[0])).toEqual([chat.mock.calls[0][0], chat.mock.calls[0][0]]);
+      expect(chat.mock.calls[1][0].model).toBe(AGENT_PROFILE_MODEL);
+      expect((chat.mock.calls[1] as unknown[])[2]).toBe((chat.mock.calls[0] as unknown[])[2]);
+      expect(retry.ok).toBe(true);
+      expect(store.load('user-1').lastRunAt).toBe(at(NOW));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('[4] discards a valid answer that only arrives at 120 s, after the 90 s deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      // Arrange: the server answers well, but late.
+      const chat = vi.fn(() => new Promise<typeof BOTH>((resolve) => { setTimeout(() => resolve(BOTH), 120_000); }));
+      const { service, store } = setup({ chat });
+
+      // Act
+      const run = service.refresh();
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+
+      // Assert
+      expect(result).toEqual({ ok: false, error: 'model_unavailable' });
+      expect(chat).toHaveBeenCalledTimes(1);
+      expect(store.load('user-1').agents).toEqual({});
+      expect(store.load('user-1').lastRunAt).toBeNull();
     } finally {
       vi.useRealTimers();
     }

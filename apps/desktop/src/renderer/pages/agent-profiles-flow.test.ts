@@ -17,7 +17,7 @@ const PAUSED_AT = '2026-11-21T01:00:00.000Z';
 describe('agentProfilesErrorText', () => {
   it('has a Vietnamese message for every error code', () => {
     const codes: AgentProfilesError[] = [
-      'auth', 'busy', 'no_activity', 'paused', 'quota', 'model_unavailable', 'invalid_output', 'invalid_input', 'not_found', 'storage',
+      'auth', 'busy', 'no_activity', 'paused', 'quota', 'refused', 'model_unavailable', 'invalid_output', 'invalid_input', 'not_found', 'storage',
     ];
     for (const code of codes) {
       expect(agentProfilesErrorText(code).length).toBeGreaterThan(10);
@@ -26,11 +26,20 @@ describe('agentProfilesErrorText', () => {
     expect(agentProfilesErrorText('paused')).toContain('Tiếp tục');
   });
 
-  it('[3] says plainly that a 402 stopped the run and no other model was tried', () => {
+  it('[3] says plainly that a 402 stopped the run and no other model was tried, and where a 402 may come from', () => {
     const text = agentProfilesErrorText('quota');
     expect(text).toContain('402');
     expect(text).toContain('không thử model khác');
     expect(text).toContain('Nạp thêm credit');
+    expect(text).toContain('nhà cung cấp model');
+  });
+
+  it('[3] never calls a refusal on another status a 402 or an empty balance', () => {
+    const text = agentProfilesErrorText('refused');
+    expect(text).not.toContain('402');
+    expect(text).not.toContain('hết credit');
+    expect(text).toContain('hạn mức');
+    expect(text).toContain('quyền');
   });
 });
 
@@ -63,6 +72,7 @@ describe('backgroundPauseNotice', () => {
     }
     expect(new Set(texts).size).toBe(3);
     expect(texts[2]).toContain('402');
+    expect(texts[2]).toContain('nhà cung cấp model');
   });
 });
 

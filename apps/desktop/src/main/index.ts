@@ -674,8 +674,8 @@ function setupIPC() {
     currentOwnerId: () => authManager.getCurrentUser()?.id ?? null,
     readChatSessions: (ownerId) => dbManager.getUserData(gatewaySessionScope(ownerId)),
     readMarketingSnapshot: () => customerMarketingService.getSnapshot(),
-    // Direct, tool-free call with a timeout: never recorded as an agent session.
-    chat: (payload, signal) => izziAgent.chat(payload, undefined, { signal }),
+    // Direct, tool-free call with a timeout and a stable Idempotency-Key: never recorded as an agent session.
+    chat: (payload, signal, idempotencyKey) => izziAgent.chat(payload, undefined, { signal, idempotencyKey }),
     log: (message) => console.warn('[AgentProfiles]', message),
   });
   // S4: a persona chat carries that persona's approved profile as a data block (never Hermes).

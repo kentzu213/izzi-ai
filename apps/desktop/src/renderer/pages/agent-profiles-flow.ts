@@ -15,7 +15,8 @@ const ERROR_TEXT: Record<AgentProfilesError, string> = {
   busy: 'Đang chắt lọc hồ sơ, chờ một chút rồi xem lại.',
   no_activity: 'Chưa có hoạt động mới kể từ lần cập nhật trước, nên không cần gọi AI.',
   paused: 'Cập nhật tự động đang tạm dừng. Bấm "Tiếp tục" để chạy lại.',
-  quota: 'Tài khoản izzi đã hết credit (lỗi 402), nên izzi dừng ngay và không thử model khác. Nạp thêm credit rồi cập nhật lại.',
+  quota: 'Máy chủ AI báo hết credit (lỗi 402), nên izzi dừng ngay và không thử model khác. Thường là tài khoản izzi hết credit: Nạp thêm credit rồi cập nhật lại. Lỗi 402 đôi khi đến từ nhà cung cấp model phía sau izzi; nếu tài khoản vẫn còn credit, thử lại sau.',
+  refused: 'Máy chủ AI từ chối yêu cầu vì hạn mức hoặc quyền truy cập, nên izzi dừng lượt này và không thử model khác. Thử lại sau, hoặc kiểm tra gói và quyền của tài khoản izzi.',
   model_unavailable: 'Máy chủ AI đang bận hoặc không trả lời. Thử lại sau ít phút.',
   invalid_output: 'AI trả về kết quả không dùng được nên lần này bỏ qua. Lần sau chỉ đọc hoạt động mới.',
   invalid_input: 'Yêu cầu không hợp lệ. Tải lại trang rồi thử lại.',
@@ -43,7 +44,7 @@ export function refreshButtonState(state: AgentProfilesState | null, running: bo
 const PAUSE_TEXT: Record<AgentProfilesPauseReason, string> = {
   repeat_input: 'Cập nhật tự động đã tạm dừng vì sắp gửi lại cho AI đúng dữ liệu đã gửi trước đó.',
   idle_runs: 'Cập nhật tự động đã tạm dừng vì nhiều lần gọi AI liền nhau mà không có hoạt động mới.',
-  quota: 'Cập nhật tự động đã dừng vì tài khoản izzi hết credit (lỗi 402). Nạp thêm credit trước khi chạy lại.',
+  quota: 'Cập nhật tự động đã dừng vì máy chủ AI báo hết credit (lỗi 402). Thường là tài khoản izzi hết credit, đôi khi là nhà cung cấp model phía sau izzi. Kiểm tra credit trước khi chạy lại.',
 };
 
 /** Why background runs are paused, or null when they are not; the owner resumes them with "Tiếp tục". */
