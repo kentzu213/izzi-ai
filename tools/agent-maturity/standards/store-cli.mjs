@@ -355,6 +355,17 @@ export function listActive(topicKey, opts) {
   return (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active' && r.topic_key === topicKey).map(withoutSync);
 }
 
+// Active dev standards the door made, each with its standard_promoted event: [{ record, event }], read-only.
+export function listDoorActive(opts) {
+  const raw = readRecords(targets(opts), TOPIC_PREFIX);
+  const active = (Array.isArray(raw.records) ? raw.records : []).filter((r) => r && r.state === 'active').map(withoutSync);
+  const promoted = doorPromotions(active, opts);
+  return active.flatMap((record) => {
+    const event = promoted.find((e) => e && e.recordId === record.id && e.candidateId === doorCandidate(record));
+    return event && doorMade(record, promoted) ? [{ record, event }] : [];
+  });
+}
+
 // Writes the active standards to opts.out (default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/standards.json),
 // checked against the door's log in the critic store (criticPath). Run it after every promote, supersede or retract
 // (the command line does this itself).

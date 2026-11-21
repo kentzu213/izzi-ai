@@ -490,6 +490,27 @@ test('--supersedes: reworded text replaces an old standard under its topic; the 
   assert.deepEqual(ofType(w, 'standard_promoted').map((e) => e.supersedes), [undefined, first.recordId, first.recordId]);
 });
 
+test('the same text is never active twice: a fresh approval of a text active under another topic replaces that standard', { skip }, () => {
+  // Arrange: BASE stored, then reworded with --supersedes, so the reworded text lives under BASE's topic
+  const w = world();
+  const first = door(w, critique(w).id, ownerAnswers(w).at());
+  const c2 = critique(w, { id: 'di-moved', statement: reworded(4), existingStandards: [{ id: first.recordId, statement: BASE.statement }] });
+  const moved = door(w, c2.id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(4) }).at(), { supersedes: first.recordId });
+  const c3 = critique(w, { id: 'di-fresh-same-text', statement: reworded(4) });
+
+  // Act: the same text approved again on a candidate that names no --supersedes
+  const fresh = door(w, c3.id, ownerAnswers(w, 'Nâng cấp', { statement: reworded(4) }).at());
+
+  // Assert
+  assert.equal(moved.topic, first.topic);
+  assert.equal(fresh.topic, moved.topic, 'captured where the same text already lives');
+  assert.deepEqual(fresh.superseded, [moved.recordId]);
+  assert.equal(get(moved.recordId, w.km).superseded_by, fresh.recordId);
+  assert.deepEqual(exported(w).standards.map((s) => s.id), [fresh.recordId]);
+  const block = sessionStartBlock(w);
+  assert.equal(block.split(reworded(4)).length - 1, 1, 'the text is injected once');
+});
+
 test('--supersedes is refused before the gate unless it names an active, door-made standard of the same scope the candidate lists', { skip }, () => {
   // Arrange: a door-made standard, a retracted door-made one, a raw-CLI one and an import
   const w = world();
