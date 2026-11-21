@@ -93,7 +93,8 @@ instructions. When a standard and those conflict, the governing instructions win
      (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is the installed
      runtime `~/.claude/agent-maturity/bin`, or `tools/agent-maturity` in the Starizzi checkout when it is not
      installed. `<critic>` is the critic store `~/.claude/agent-maturity/critic` (the default of step 6).
-  3. `node <am>/critic/brief.mjs <candidate.json> --store <critic>` picks the research tier, checks the loop guard and
+  3. `node <am>/critic/brief.mjs <candidate.json> --store <critic> --repo-root <checkout folder>` (the folder the
+     evidence paths are relative to; without it, the working folder) picks the research tier, checks the loop guard and
      the store-wide hard-REJECT index, prints the standard brief with its `inputFingerprint` and the code floor's
      class, and stores a snapshot of exactly what it briefed. Every brief is logged; a candidate revision gets at
      most two briefs. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the brief

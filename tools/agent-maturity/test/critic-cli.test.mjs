@@ -253,6 +253,33 @@ test('an ACCEPT on a floor-matching candidate is refused as a semantic error', (
   assert.equal(createJsonAdapter(store).loadCandidate('loose-case'), null);
 });
 
+test('brief.mjs tells socrates the evidence root it was given (--repo-root) or its working folder, never its own install folder', () => {
+  // Arrange
+  const slash = (p) => p.replaceAll('\\', '/');
+  const installRoot = slash(join(CRITIC, '..', '..', '..')).replace(/\/$/, '');
+  const given = setup();
+  const fromCwd = setup();
+  const repoRoot = join(given.work, 'checkout');
+  mkdirSync(repoRoot);
+
+  // Act
+  const r1 = node('brief.mjs', [writeJson(given.work, 'cand.json', CANDIDATE), '--store', given.store, '--repo-root', repoRoot]);
+  const r2 = spawnSync(process.execPath, [join(CRITIC, 'brief.mjs'), writeJson(fromCwd.work, 'cand.json', CANDIDATE), '--store', fromCwd.store], {
+    encoding: 'utf8',
+    cwd: fromCwd.work,
+  });
+
+  // Assert
+  assert.equal(r1.code, 0, r1.stderr);
+  const rootLine = (out) => out.split('\n').find((l) => l.includes('relative to'));
+  assert.ok(r1.stdout.includes(`File paths are relative to ${slash(repoRoot)}.`), rootLine(r1.stdout));
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.ok(r2.stdout.includes(`File paths are relative to ${slash(fromCwd.work)}.`), rootLine(r2.stdout));
+  assert.equal(r2.stdout.includes(installRoot), false, 'not the folder brief.mjs runs from');
+  assert.equal(node('brief.mjs', [writeJson(given.work, 'cand2.json', CANDIDATE), '--store', given.store, '--repo-root']).code, 2);
+  assert.equal(node('record-verdict.mjs', [writeJson(given.work, 'v.json', {}), writeJson(given.work, 'c.json', CANDIDATE), '--store', given.store, '--repo-root', repoRoot]).code, 2);
+});
+
 test('a candidate file saved with a UTF-8 BOM is read normally', () => {
   const { work, store } = setup();
   const cand = join(work, 'bom.json');

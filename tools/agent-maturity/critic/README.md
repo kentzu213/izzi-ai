@@ -285,12 +285,14 @@ rewrite has a new statement and a new revision and is not affected.
 ## CLI
 
     node tools/agent-maturity/critic/label.mjs <candidate.json>
-    node tools/agent-maturity/critic/brief.mjs <candidate.json> --store <dir>
+    node tools/agent-maturity/critic/brief.mjs <candidate.json> --store <dir> [--repo-root <checkout folder>]
     node tools/agent-maturity/critic/record-verdict.mjs <candidate.json> <verdict.json|reply.md> --store <dir>
 
 Exit codes: 0 ok · 1 invalid input (nothing stored; a refused reply is logged and says whether its one retry is
 left) · 2 usage · 3 blocked by the loop guard, the retry rule or the hard-REJECT index. `--store` is required: the
-critic store is `~/.claude/agent-maturity/critic` (the default of `promote-standard`); tests use temp folders.
+critic store is `~/.claude/agent-maturity/critic` (the default of `promote-standard`); tests use temp folders. The brief
+tells socrates which folder the evidence paths are relative to: `--repo-root`, else the working folder (never the
+folder brief.mjs is installed in).
 
 ## Wiring (slice DI)
 

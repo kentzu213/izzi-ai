@@ -39,13 +39,22 @@ export function blockedError(plan, candidateId) {
   return new CliError(EXIT.blocked, `critique ${plan.critiqueNumber} blocked for ${candidateId}: ${plan.reason}`);
 }
 
-// <positional...> --store <dir>; --store is required so nothing ever lands in a default location.
-export function parseCliArgs(argv, positionalNames) {
+// <positional...> --store <dir> [<option> <dir> for each name in optionNames]; --store is required so nothing ever
+// lands in a default location. Returns { positional, store, options: { '<option>': value } }.
+export function parseCliArgs(argv, positionalNames, optionNames = []) {
+  const usage = () =>
+    new CliError(EXIT.usage, `usage: ${[...positionalNames.map((n) => `<${n}>`), '--store <dir>', ...optionNames.map((o) => `[${o} <dir>]`)].join(' ')}`);
   const positional = [];
+  const options = {};
   let store = null;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--store') {
       store = argv[i + 1];
+      i += 1;
+    } else if (optionNames.includes(argv[i])) {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--')) throw usage();
+      options[argv[i]] = value;
       i += 1;
     } else if (argv[i].startsWith('--')) {
       throw new CliError(EXIT.usage, `unknown option ${argv[i]}`);
@@ -53,10 +62,8 @@ export function parseCliArgs(argv, positionalNames) {
       positional.push(argv[i]);
     }
   }
-  if (positional.length !== positionalNames.length || !store) {
-    throw new CliError(EXIT.usage, `usage: ${positionalNames.map((n) => `<${n}>`).join(' ')} --store <dir>`);
-  }
-  return { positional, store: path.resolve(store) };
+  if (positional.length !== positionalNames.length || !store) throw usage();
+  return { positional, store: path.resolve(store), options };
 }
 
 // Files saved by Windows editors may start with a UTF-8 BOM; drop it.
