@@ -7,7 +7,8 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 
 | File | Role |
 |---|---|
-| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. |
+| `promote-standard.mjs` | The single door for a dev standard: owner answer verified in the D1 hook log, D4 promote gate, then capture, promote, supersede, export, log. Root only. |
+| `store-cli.mjs` | JS API and command line over the KnowledgeMemory CLI. Root only; hooks never call it. Refuses to promote a `dev-standard/` record without the gate token (`promote_requires_gate`). |
 | `project-root.mjs` | Folder -> main git checkout (a worktree counts as the repo it came from); registered-project lookup. |
 | `inject.mjs` | Picks the standards for a session folder and renders the injected block (≤1200 characters). |
 | `import-feedback.mjs` | Imports auto-memory notes of `type: feedback` as candidates. Never promotes, never edits a note. |
@@ -18,10 +19,13 @@ by a `SessionStart` hook. Spec: `docs/izzi-v2/PLAN.md` §2.4-2.5, `docs/izzi-v2/
 
 1. The owner picks "Nâng cấp" (or "Chỉnh") at a checkpoint. Root calls `capture` -> a **candidate**.
 2. D4 runs the Socrates review on the candidate and keeps its verdict.
-3. Root calls `promote` when the owner approved that exact sentence (ACCEPT unchanged, or the owner OKed the
-   NARROW text). A new standard that contradicts an old one: capture + promote the new one, then
-   `supersede(old, new, reason)`. Dropping a standard: `retract(id, reason)`. History is never erased.
-4. After every promote, supersede or retract, root re-exports (`exportActive`; the command line does this itself).
+3. When the owner approved that exact sentence (ACCEPT unchanged, or the owner's Nâng cấp on the NARROW text), root
+   runs ONE command, `promote-standard` (below). It is the only way a dev standard becomes active: it captures,
+   promotes, supersedes the active standard on the same topic and re-exports. A standard with other wording that
+   replaces an old one: `retract(old, reason naming the new id)`. Dropping a standard: `retract(id, reason)`. History
+   is never erased.
+4. After every promote, supersede or retract the export is rewritten (`promote-standard` and the command line do it
+   themselves).
    The daily `refresh.mjs` job re-exports too, so the export never goes stale.
 5. The next session in any project, through any entrypoint, gets the block.
 
@@ -44,7 +48,7 @@ All dev standards use `topic_key` `dev-standard/<topic>`. Other KnowledgeMemory 
 
 Every function is synchronous, returns the parsed KnowledgeMemory record (without `projection_sync`) and throws
 `StoreCliError` with `code` in `bad_input | cli_unavailable | cli_failed | bad_output | refuse_real_store |
-import_not_promotable`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
+import_not_promotable | promote_requires_gate`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
 `{ store, vault, out, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
 both are always passed to the CLI explicitly.
 
@@ -61,7 +65,10 @@ capture(candidate, opts?)                // -> record, state 'candidate'
   //              kind = 'procedure', evidence (default 'direct' for a user source), confidence = 0.9, author = 'root' }
   // The store dedupes by content: the same candidate again returns the existing record in its current state.
 promote(id, basis, opts?)                // basis: 'user_instruction' (user source) | 'verified_artifact' (file sha matches)
-  // Refuses with import_not_promotable a record from the importer (topic import/..., author agent-maturity-import).
+  // Refuses with import_not_promotable a record from the importer (topic import/..., author agent-maturity-import),
+  // and with promote_requires_gate any other dev-standard/ record unless opts.gate is the token from claimPromoteGate().
+claimPromoteGate()                       // the gate token, handed out once per process; promote-standard.mjs claims it on load
+listActive(topicKey, opts?)              // active records on exactly this dev-standard/ topic (read-only)
 supersede(oldId, newId, reason, opts?)   // both active, same scope/project/topic; old -> 'superseded'
 retract(id, reason, opts?)               // -> 'retracted'
 get(id, opts?)                           // -> record (any state)
@@ -72,14 +79,15 @@ exportActive(opts?)                      // writes opts.out (default <AGENT_MATU
 Store limits enforced by the CLI: `title` ≤160, `summary` ≤1200, `topic_key` ≤120 characters; payloads with an email
 address, a token, a key or a 13-19 digit Luhn-valid number (card check; watch long digit runs in paths) are rejected.
 
-For D4's adapter `{ saveCandidate, saveVerdict, loadCandidate }`: `saveCandidate` -> `capture`, `loadCandidate` ->
-`get`. KnowledgeMemory has no verdict field; where verdicts live (D4's JSON file keyed by record id, or a separate
-record linked with a `derived_from` relation) is an open decision for root.
+Two stores, two jobs (root, 21/11): the D4 critic store (`critic/json-adapter.mjs`, default
+`~/.claude/agent-maturity/critic`) keeps candidates, briefs, verdicts and the approvals; KnowledgeMemory keeps only
+the standards finally approved. The source URI of a stored standard names both: `claude-session://<session>/<owner
+answer time>?candidate=<candidate id>&verdict=c<critique>.<12 hex of the verdict sha256>`.
 
 ## Command line
 
     node tools/agent-maturity/standards/store-cli.mjs capture --file candidate.json
-    node tools/agent-maturity/standards/store-cli.mjs promote <id> --basis user_instruction
+    node tools/agent-maturity/standards/store-cli.mjs promote <id> --basis user_instruction   # not for dev-standard/
     node tools/agent-maturity/standards/store-cli.mjs supersede <old-id> <new-id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs retract <id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs get <id>
@@ -87,6 +95,33 @@ record linked with a `derived_from` relation) is an open decision for root.
       [--store <dir>] [--vault <dir>] [--out <file>]
 
 Prints one JSON object `{ result, export }`; promote, supersede and retract re-export automatically. Exit 1 on error.
+The command line never holds the gate token: `promote` on a `dev-standard/` record exits 1 with
+`promote_requires_gate`. The raw KnowledgeMemory CLI cannot refuse it, so never call it to promote a dev standard.
+
+## The single door: promote-standard
+
+    node tools/agent-maturity/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time>
+      [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
+
+In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
+
+1. **Owner answer.** `<AGENT_MATURITY_HOME>/log/events-YYYY-MM.jsonl` must hold exactly one `checkpoint_outcome` of
+   that session (the hook logs a safe session id as-is) with outcome `accept` (Nâng cấp) or `edit` (Chỉnh), entrypoint
+   `cli` or `claude-desktop`, and `ts` at most 5 s from the given time; otherwise `owner_message_unverified`, also
+   when there is no hook log (before the hook is installed nothing can be stored) or the pointer is a message uuid
+   (the hook logs none). Read-only, like the input and CLI checks, so a refusal here writes nothing.
+2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
+   two pointers to one logged answer are the same answer: `owner_message_reused` for a second text), the statement
+   the stored verdict allows and the floor label stored with it. Every gate refusal (hard_reject, REJECT, NEED-MORE,
+   floor_changed, ...) stops here. The stored statement is the one the gate returns, never an argument.
+3. **capture**: topic `dev-standard/<first 12 hex of statementKey(statement)>`, title `<agent> · <taskType>`, summary
+   `<statement> Cách kiểm: <check>`, kind (quality_gate is stored as procedure), scope `user` (or `project` with
+   `--project` when the candidate's `projects` is `this`; `project_path_required` without it, before the gate).
+4. **promote** (`user_instruction`, with the gate token). 5. **supersede** the other active record on the same topic and
+   scope (the same statement approved again). 6. **exportActive**. 7. **standard_promoted** in the critic store log.
+
+A failure in steps 3-7 is `store_step_failed` with `step`; capture and promote are idempotent (same content, same
+record), so the same command finishes the job once the cause is fixed.
 
 ## Export and injection
 

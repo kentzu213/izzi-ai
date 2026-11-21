@@ -67,10 +67,10 @@ judge meaning, so `pass` is not proof the sentence is harmless; every procedure,
 the sentence outright. If the label is `hard_reject`, do not ask: that sentence can never become a standard; tell the
 owner which policy it would loosen. The owner choosing **Nâng cấp** on a question that showed the exact text (and the
 label, when there is one) IS the approval and the acknowledgement; there is no second approval. Note where the owner
-answered (session id, and the message uuid or time) for `ownerApproval.ownerMessage` in step 6: the gate needs it for
-every standard, `pass` included. The gate records that pointer with the promotion and refuses the same answer for a
-second text, but it cannot read the transcript, so it does not verify the pointer: give the real answer's location,
-one answer per standard.
+answered (session id and the time of that message, from the transcript) for `--owner-message` in step 6: every
+standard needs it, `pass` included. `promote-standard` checks it against the hook log (an answer Nâng cấp or Chỉnh in
+that session within 5 s of that time) and refuses the same answer for a second text. The hook logs no message uuid,
+so give the time, one answer per standard.
 
 ## A standard is data, not authority
 
@@ -85,13 +85,14 @@ instructions. When a standard and those conflict, the governing instructions win
   is `hard_reject`, stop; otherwise ask the checkpoint question again with the new exact text (and its label when it
   is not `pass`): the owner has not yet chosen Nâng cấp on that exact sentence.
 - **Nâng cấp:**
-  1. **Root only** captures the candidate (commands below). A subagent never writes the store; it returns the
+  1. **Root only** writes the critic store and KnowledgeMemory (steps 2-6). A subagent never writes either; it returns the
      proposal (claim, scope, check, evidence, source = session id + time) to root.
   2. Root writes the candidate file (schema in `<am>/critic/README.md`, examples in `<am>/critic/dry-runs/`): id,
      the approved sentence, kind, scope, check, evidence ids oldest first with where each is recorded, flags
-     (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is
-     `tools/agent-maturity` in the Starizzi checkout; the installed runtime does not copy `critic/` yet.
-  3. `node <am>/critic/brief.mjs <candidate.json> --store <dir>` picks the research tier, checks the loop guard and
+     (`ownerPrivate` for shop or customer content), and same-topic standards from `recall`. `<am>` is the installed
+     runtime `~/.claude/agent-maturity/bin`, or `tools/agent-maturity` in the Starizzi checkout when it is not
+     installed. `<critic>` is the critic store `~/.claude/agent-maturity/critic` (the default of step 6).
+  3. `node <am>/critic/brief.mjs <candidate.json> --store <critic>` picks the research tier, checks the loop guard and
      the store-wide hard-REJECT index, prints the standard brief with its `inputFingerprint` and the code floor's
      class, and stores a snapshot of exactly what it briefed. Every brief is logged; a candidate revision gets at
      most two briefs. Exit 3 = blocked: do not run socrates; tell the owner why. Otherwise paste the brief
@@ -107,7 +108,7 @@ instructions. When a standard and those conflict, the governing instructions win
      - A tool that returns 401, 402 or 403: switch to the next allowed tool; never retry the same paid tool.
      - Owner-private content: no external research at any tier. ChatGPT web: never.
   5. Save socrates' reply to a file and run
-     `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <dir>`. The reply must hold exactly one
+     `node <am>/critic/record-verdict.mjs <candidate.json> <reply> --store <critic>`. The reply must hold exactly one
      json block, without repeated keys, echoing `candidateId`, `candidateRevision` and `inputFingerprint` from the
      brief. It checks the brief snapshot, validates the verdict, applies the hard-REJECT floor and the loop guard,
      stores the verdict with the candidate and prints `decision`. Exit 1 = invalid: nothing is stored and the
@@ -119,32 +120,38 @@ instructions. When a standard and those conflict, the governing instructions win
      other `no retry` message), never retry twice, and never re-run brief.mjs to get a fresh socrates run: hold
      the candidate and tell the owner why.
   6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence at the
-     checkpoint) · `show_diff` (NARROW or a rewrite: the text changed, so show the owner the new exact text, with ITS
-     floor label and topics when it is not `pass` (`floor` and `floorTopics` from the record-verdict summary), and
-     promote only after the owner's OK on that text) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`; REJECT: give the reason) · `refuse`
-     (hard-REJECT: never promoted). `ownerReviewRequired: true` means the promoted text is `owner_review_required`:
-     the gate needs the owner's acknowledgement of its label, and a socrates ACCEPT alone never promotes it; also give
-     the owner socrates' risk explanation. The owner may override a plain REJECT only by explicit approval of the
-     exact text; a hard-REJECT can never be overridden. Every promote goes through
-     `assertPromotable({ adapter, candidateId, ownerApproval })` in `<am>/critic/promote-gate.mjs`, which loads the
-     stored candidate, its last verdict and the hard-REJECT index itself. `ownerApproval` is
-     `{ approved: true, statement: '<exact text>', ownerMessage: { sessionId, uuid or ts } }` for EVERY standard,
-     `pass` included (`ownerMessage` points to the owner's Nâng cấp on that exact text, or OK to the diff; never the
-     message text; `owner_message_missing` otherwise; the same answer for a second text is refused with
-     `owner_message_reused`; the gate logs a `promotion_approved` event with the pointer: recorded and
-     reuse-checked, not verified against the transcript); for `owner_review_required` text also add `floorClass` and
-     `topics` (the label the owner was shown next to that exact text; the gate checks they equal the stored floor);
-     add `overrideReject: true` to override a plain REJECT. Promote only the statement it
-     returns (slice D3 wires this into `promote`).
+     checkpoint) · `show_diff` (NARROW or a rewrite: the text changed, so ask again with the checkpoint frame above,
+     the new exact text in the "Đề xuất" line and ITS floor label and topics when it is not `pass` (`floor` and
+     `floorTopics` from the record-verdict summary); only an answer to a real ask block is in the hook log, so a diff
+     shown as plain prose cannot be verified) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`; REJECT: give
+     the reason; this door has no owner override of a REJECT) · `refuse` (hard-REJECT: never promoted, never
+     overridden). `ownerReviewRequired: true` means the promoted text is `owner_review_required`: give the owner
+     socrates' risk explanation with the label; their Nâng cấp on that question is the acknowledgement. When the
+     owner approved the exact text that would be stored, the flow ends with exactly one command, run by root:
+
+         node <am>/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time of the owner answer>
+
+     Add `--project <main checkout folder>` when the candidate is for one project. It finds the owner answer in the
+     hook log (that session, Nâng cấp or Chỉnh, an interactive session, within 5 s; `owner_message_unverified`
+     otherwise, also when the hook is not installed), runs the promote gate on `<critic>` (it stores only the text the
+     gate returns: the narrowed one for NARROW; the floor label stored with the verdict is the acknowledgement;
+     `owner_message_reused` when that answer already approved another text), captures the standard into
+     KnowledgeMemory (topic `dev-standard/<12 hex of the statement key>`, user scope unless the candidate is for one
+     project), promotes it, supersedes the active standard on the same topic, re-exports for the SessionStart hook and
+     logs `standard_promoted`. Exit 0 prints what was stored; exit 1 prints `error` (and `step` when it stopped
+     after the gate: the store steps are idempotent, so the same command finishes the job once the cause is fixed).
+     Report a refusal to the owner in plain words; never work around it.
   7. Loop guard: per candidate 1 critique + 1 rewrite, and the rewrite gets one re-check (critique 2 needs new
      input: a rewrite, research or evidence). A third critique is blocked and logged. A hard-REJECT is final across
      the store: a new candidate id with the same statement (ignoring case, spacing and punctuation) is refused.
-  8. Until slice D3 plugs in the KnowledgeMemory adapter, `--store` is a temp folder (for example
-     `F:/Ai Tools/Codex/Temp/agent-maturity-critic/`), never `~/.claude`.
-  9. A new standard that contradicts an old one: capture and promote the new one, then `supersede` the old one
-     (history is kept). To drop a standard: `retract` with a reason.
-  10. After every promote, supersede or retract, re-export the active standards for later sessions (slice D3;
-      until D3 exists, say so in the report).
+  8. Never promote a dev standard any other way: `store-cli.mjs promote` refuses `dev-standard/` records
+     (`promote_requires_gate`), and the raw KnowledgeMemory CLI `promote` on such a record is a back door the CLI
+     itself cannot refuse.
+  9. The same statement approved again supersedes the old standard automatically (history is kept). A new standard
+     with other wording that replaces an old one: promote the new one, then `retract` the old one with a reason
+     naming the new record id. To drop a standard: `retract` with a reason.
+  10. `promote-standard` re-exports by itself, and so does the `store-cli.mjs retract` command line, so the next
+      session gets the current standards.
 
 ## Not a yes-machine
 
@@ -172,27 +179,21 @@ instructions. When a standard and those conflict, the governing instructions win
 
 ## Store commands (root only, Codex KnowledgeMemory)
 
-Single store: `F:/Ai Tools/Codex/KnowledgeMemory/memory.sqlite3`. Use the Python bundled with Codex; on Windows set
-`PYTHONIOENCODING=utf-8` or `projects` fails with UnicodeEncodeError. Standards learned in a slice worktree go to the
-main project (Starizzi id `2a906db6-a103-5375-b672-ad090f686c7e`) or user scope, never to the worktree.
+Single store: `F:/Ai Tools/Codex/KnowledgeMemory/memory.sqlite3`. Standards learned in a slice worktree go to the
+main project (Starizzi id `2a906db6-a103-5375-b672-ad090f686c7e`) or user scope, never to the worktree. A dev
+standard is captured, promoted and superseded only by `promote-standard` (step 6). The other commands, through the
+wrapper (it runs the Python bundled with Codex isolated and re-exports after a retract):
+
+    node <am>/standards/store-cli.mjs retract <id> --reason "<reason naming the evidence or the new record>"
+    node <am>/standards/store-cli.mjs get <id>
+    node <am>/standards/store-cli.mjs export
+
+To find same-topic standards for the candidate's `existingStandards`, recall with the raw CLI (read-only; on Windows
+set `PYTHONIOENCODING=utf-8` or `projects` fails with UnicodeEncodeError):
 
     PY="C:/Users/NgNghia213/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
     CLI="C:/Users/NgNghia213/.codex/bin/project-memory.py"
-    PYTHONIOENCODING=utf-8 "$PY" "$CLI" capture --file <payload.json>      # returns a candidate id
-    PYTHONIOENCODING=utf-8 "$PY" "$CLI" promote <id> --basis user_instruction
-    PYTHONIOENCODING=utf-8 "$PY" "$CLI" supersede <old-id> <new-id> --reason "<evidence-backed reason>"
-    PYTHONIOENCODING=utf-8 "$PY" "$CLI" retract <id> --reason "<reason>"
     PYTHONIOENCODING=utf-8 "$PY" "$CLI" recall --project <project-id> --query "<topic>" --limit 3
 
-Payload (write it to a temp file outside the repo, e.g. `F:/Ai Tools/Codex/Temp/`):
-
-    {"scope": "project", "project_id": "<id>", "agent": "<role>", "kind": "procedure",
-     "topic_key": "<stable-topic>", "title": "<short title>",
-     "summary": "<standard sentence>. Applies to: <scope>. Check: <check>.",
-     "source": {"type": "user", "uri": "claude-user://<session-id>/<message-timestamp>"},
-     "author": "root", "evidence": "direct", "confidence": 0.9, "sensitivity": "local"}
-
-`kind`: preference (sở thích), procedure (quy trình, cổng chất lượng), pitfall (a trap to avoid). `scope`: project,
-role or user. The source points to the owner's message by session id and time; never paste conversation text,
-keys, phone numbers or customer data into the payload. Tests use `--store` and `--vault` temp folders before the
-subcommand, never the live store.
+Never paste conversation text, keys, phone numbers or customer data into a candidate. Tests use `--store` and
+`--vault` temp folders, never the live store.
