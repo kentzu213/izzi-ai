@@ -2,6 +2,7 @@
 // SessionStart hook never sees an export older than MAX_EXPORT_AGE_DAYS (inject.mjs) and review-due standards drop
 // out, then import new auto-memory feedback notes as candidates. Never promotes.
 // Usage: node tools/agent-maturity/standards/refresh.mjs [--store d] [--vault d] [--out f] [--projects-dir d] [--critic-store d]
+// --critic-store is honoured only with AGENT_MATURITY_TEST=1 (store-cli criticPath): the export reads ~/.claude/agent-maturity/critic.
 
 import path from 'node:path';
 

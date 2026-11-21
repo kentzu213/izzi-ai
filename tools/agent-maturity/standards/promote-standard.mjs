@@ -1,7 +1,8 @@
 // The single door for storing a dev standard (docs/izzi-v2/sessions/DI.md). Root runs it once, after the owner chose
 // Nâng cấp at a checkpoint on the exact text it stores and the D4 critic recorded a verdict:
 //   node promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time of the owner answer>
-//     [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <dir>] [--supersedes <standardId>]
+//     [--store <dir>] [--vault <dir>] [--out <file>] [--project <dir>] [--supersedes <standardId>]
+//     [--critic-store <dir>: tests only, with AGENT_MATURITY_TEST=1; otherwise always ~/.claude/agent-maturity/critic]
 // In this order, stopping at the first failure:
 //   1. Verify the owner answer against the D1 hook log (<AGENT_MATURITY_HOME>/log): exactly one checkpoint_outcome
 //      event of that session from an interactive entrypoint, at most ±5 s from the given time
@@ -51,6 +52,7 @@ import {
   TOPIC_PREFIX,
   capture,
   cliAvailable,
+  criticPath,
   doorCandidate,
   exportActive,
   exportPath,
@@ -346,7 +348,8 @@ export function promoteStandard(opts = {}) {
   if (supersedes !== undefined && !(typeof supersedes === 'string' && UUID_RE.test(supersedes))) fail('bad_input', '--supersedes must be a standard record id');
   const message = parseOwnerMessage(ownerMessage);
   const home = resolveHome(env);
-  const criticDir = path.resolve(criticStore ?? path.join(home, 'critic'));
+  // The export reads only this critic store (store-cli criticPath): --critic-store is for tests only.
+  const criticDir = criticPath({ criticStore, env });
   refuseRealHome([home, criticDir], env);
   const km = { store: opts.store, vault: opts.vault, out: opts.out, criticStore: criticDir, env, python: opts.python, cli: opts.cli };
   const answer = findOwnerAnswer(home, message);

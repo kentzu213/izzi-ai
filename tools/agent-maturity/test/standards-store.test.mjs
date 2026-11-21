@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { buildContext } from '../standards/inject.mjs';
 import { checkoutInfo, samePath } from '../standards/project-root.mjs';
 import {
+  DEFAULT_CLI,
+  DEFAULT_PYTHON,
   DEFAULT_STORE,
   DEFAULT_VAULT,
   StoreCliError,
@@ -346,6 +348,51 @@ test('the real-store guard sees through junctions and 8.3 names, also for paths 
   if (!samePath(shortHome, homedir()) && samePath(realpathSync.native(shortHome), homedir())) {
     assert.throws(() => exportActive({ store: tmp.store, vault: tmp.vault, out: join(shortHome, '.claude', 'agent-maturity-guard-test', 'standards.json'), python: noPython, env: ENV }), refused);
   }
+});
+
+// exportActive in a child process WITHOUT AGENT_MATURITY_TEST, with a fake home (os.homedir()) and explicit temp
+// store, vault, out, Python and CLI: prints { standards, skipped } or { error }.
+const EXPORT_CHILD = [
+  'const [mod, opts] = [await import(process.argv[1]), JSON.parse(process.argv[2])];',
+  'try { const r = mod.exportActive({ ...opts, env: process.env }); console.log(JSON.stringify({ standards: r.standards.map((x) => x.id), skipped: r.skipped.map((x) => [x.id, x.reason]) })); }',
+  'catch (e) { console.log(JSON.stringify({ error: e.code ?? e.name })); }',
+].join('\n');
+
+test('without AGENT_MATURITY_TEST the export trusts only the critic store under the home folder', { skip }, () => {
+  // Arrange: a door-shaped standard whose standard_promoted event sits in a critic store outside the home folder
+  const s = newStore();
+  const std = doorStandard('home-critic', 'Ghi mã thoát của lệnh test.', 'sess-home', s);
+  const dir = dirname(s.store);
+  const fakeUser = join(dir, 'user');
+  const homeCritic = join(fakeUser, '.claude', 'agent-maturity', 'critic');
+  const customHome = join(dir, 'custom-home');
+  mkdirSync(join(customHome, 'critic'), { recursive: true });
+  writeFileSync(join(customHome, 'critic', 'log.jsonl'), readFileSync(join(s.criticStore, 'log.jsonl')));
+  const env = { ...process.env, HOME: fakeUser, USERPROFILE: fakeUser, AGENT_MATURITY_HOME: customHome };
+  delete env.AGENT_MATURITY_TEST;
+  const storeCli = new URL('../standards/store-cli.mjs', import.meta.url).href;
+  const base = { store: s.store, vault: s.vault, out: s.out, python: DEFAULT_PYTHON, cli: DEFAULT_CLI };
+  const run = (opts) => {
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', EXPORT_CHILD, storeCli, JSON.stringify(opts)], { encoding: 'utf8', env, timeout: 60_000 });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  const cliExport = spawnSync(process.execPath, [join(ROOT, 'standards', 'store-cli.mjs'), 'export', '--store', s.store, '--vault', s.vault, '--out', s.out, '--critic-store', s.criticStore], { encoding: 'utf8', env, timeout: 60_000 });
+  const refreshed = spawnSync(process.execPath, [join(ROOT, 'standards', 'refresh.mjs'), '--store', s.store, '--vault', s.vault, '--out', s.out, '--projects-dir', join(dir, 'no-projects'), '--critic-store', s.criticStore], { encoding: 'utf8', env, timeout: 60_000 });
+
+  // Act + Assert: --critic-store is refused before anything is read or written, AGENT_MATURITY_HOME/critic is ignored
+  assert.deepEqual(run({ ...base, criticStore: s.criticStore }), { error: 'critic_store_test_only' });
+  assert.equal(cliExport.status, 1, cliExport.stdout + cliExport.stderr);
+  assert.equal(JSON.parse(cliExport.stdout).error, 'critic_store_test_only');
+  assert.equal(JSON.parse(refreshed.stdout).export.error, 'critic_store_test_only');
+  assert.equal(existsSync(s.out), false, 'nothing exported');
+  assert.deepEqual(run(base), { standards: [], skipped: [[std.id, 'not_via_door']] });
+
+  // Act + Assert: the same event under <home>/.claude/agent-maturity/critic is the one the export reads
+  mkdirSync(homeCritic, { recursive: true });
+  writeFileSync(join(homeCritic, 'log.jsonl'), readFileSync(join(s.criticStore, 'log.jsonl')));
+  assert.deepEqual(run(base), { standards: [std.id], skipped: [] });
+  assert.deepEqual(run({ ...base, criticStore: homeCritic }), { standards: [std.id], skipped: [] }, 'naming the home store is allowed');
 });
 
 test('the real KnowledgeMemory store and vault are unchanged by these tests', (t) => {

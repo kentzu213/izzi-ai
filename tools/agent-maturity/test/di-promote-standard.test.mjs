@@ -644,6 +644,9 @@ test('preflight: missing KnowledgeMemory CLI, the real ~/.claude under test, and
   // Act + Assert
   refusedWith('cli_unavailable', () => door(w, BASE.id, answer.at(), { python: join(scratch, 'no-python.exe') }));
   refusedWith('refuse_real_store', () => door(w, BASE.id, answer.at(), { criticStore: join(REAL_CLAUDE, 'agent-maturity', 'critic') }));
+  const notTest = { ...w.env };
+  delete notTest.AGENT_MATURITY_TEST;
+  refusedWith('critic_store_test_only', () => door(w, BASE.id, answer.at(), { env: notTest })); // --critic-store is for tests only
   refusedWith('bad_input', () => door(w, 'Not An Id', answer.at()));
   nothingStored(w);
   assert.deepEqual(ofType(w, 'promotion_approved'), []);

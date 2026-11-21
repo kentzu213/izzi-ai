@@ -49,14 +49,20 @@ import of `store-cli.mjs`, `promoteApproved` called outside the door, the raw Kn
 decides what reaches a session: an active `dev-standard/` record is passed on only when `promote-standard` made
 it: topic `dev-standard/<12 hex>`, basis `user_instruction`, a `user` source in the door's format
 (`claude-session://<session>/<time>?candidate=<id>&verdict=c<n>.<12 hex>`) and a `standard_promoted` event in the
-critic log (`opts.criticStore`, default `<AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/critic`) naming that
-record and that candidate. Anything else is listed in `skipped` as `not_via_door`.
+critic log naming that record and that candidate. Anything else is listed in `skipped` as `not_via_door`.
+
+**The critic store is fixed.** The export, the scheduled refresh and the door always use the critic store under the
+home folder, `~/.claude/agent-maturity/critic` (also when `AGENT_MATURITY_HOME` is set), so nobody can point an
+export at a forged log. `--critic-store` / `opts.criticStore` is a test-only override: it is honoured only with
+`AGENT_MATURITY_TEST=1` (default then `<AGENT_MATURITY_HOME>/critic`); without it any other folder is refused with
+`critic_store_test_only` before anything is read or written. Run the D4 critic CLI with
+`--store ~/.claude/agent-maturity/critic` so its verdicts land where the door reads them.
 
 ## JS API (`store-cli.mjs`)
 
 Every function is synchronous, returns the parsed KnowledgeMemory record (without `projection_sync`) and throws
 `StoreCliError` with `code` in `bad_input | cli_unavailable | cli_failed | bad_output | refuse_real_store |
-import_not_promotable | promote_requires_gate`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
+import_not_promotable | promote_requires_gate | critic_store_test_only`. Error messages carry only the CLI exception type, never payload text. `opts` is optional:
 `{ store, vault, out, criticStore, env, python, cli }`; `store`/`vault` default to the real KnowledgeMemory and KnowledgeVault, and
 both are always passed to the CLI explicitly.
 
@@ -83,7 +89,8 @@ retract(id, reason, opts?)               // -> 'retracted'
 get(id, opts?)                           // -> record (any state)
 resolveProject(projectPath, opts?)       // -> { id, root } of the main checkout, registering it if needed
 exportActive(opts?)                      // writes opts.out (default <AGENT_MATURITY_HOME|~/.claude/agent-maturity>/standards.json),
-  // door-made standards only (checked against the critic log in opts.criticStore)
+  // door-made standards only (checked against the critic log in ~/.claude/agent-maturity/critic; opts.criticStore
+  // only under AGENT_MATURITY_TEST=1)
 ```
 
 Store limits enforced by the CLI: `title` ≤160, `summary` ≤1200, `topic_key` ≤120 characters; payloads with an email
@@ -102,8 +109,7 @@ answer time>?candidate=<candidate id>&verdict=c<critique>.<12 hex of the verdict
     node tools/agent-maturity/standards/store-cli.mjs retract <id> --reason "<why>"
     node tools/agent-maturity/standards/store-cli.mjs get <id>
     node tools/agent-maturity/standards/store-cli.mjs export
-      [--store <dir>] [--vault <dir>] [--out <file>] [--critic-store <dir>]   # on every command
-      [--store <dir>] [--vault <dir>] [--out <file>]
+      [--store <dir>] [--vault <dir>] [--out <file>] [--critic-store <dir> (tests only)]   # on every command
 
 Prints one JSON object `{ result, export }`; promote, supersede and retract re-export automatically. Exit 1 on error.
 `promote` on a `dev-standard/` record exits 1 with `promote_requires_gate`. The raw KnowledgeMemory CLI cannot
@@ -112,8 +118,8 @@ refuse it, but a dev standard it promotes is never exported (`not_via_door`); ne
 ## The single door: promote-standard
 
     node tools/agent-maturity/standards/promote-standard.mjs --candidate <id> --owner-message <sessionId>:<ISO time>
-      [--critic-store <dir>] [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
-      [--supersedes <old standard record id>]
+      [--store <dir>] [--vault <dir>] [--out <file>] [--project <main checkout>]
+      [--supersedes <old standard record id>] [--critic-store <dir> (tests only)]
 
 In this order, stopping at the first failure (exit 1, `{ error, step?, message }`; exit 2 usage):
 
@@ -187,7 +193,7 @@ real is root's job in D2.
 
 ## Scheduled refresh
 
-    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir>]
+    node tools/agent-maturity/standards/refresh.mjs [--store <dir>] [--vault <dir>] [--out <file>] [--projects-dir <dir>] [--critic-store <dir> (tests only)]
 
 The one entry point for the scheduled job (root registers it, daily): `exportActive` first (so a failing import never
 leaves the hook with stale data), then the feedback-note import below. Prints `{ code, export, import }`; exit 1 when

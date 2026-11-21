@@ -17,7 +17,7 @@ import { ID_RE } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { resolveHome, writeFileAtomic } from '../lib/store.mjs';
 import { EXPORT_SCHEMA, isReviewDue } from './inject.mjs';
-import { checkoutInfo, findProject, isInside } from './project-root.mjs';
+import { checkoutInfo, findProject, isInside, samePath } from './project-root.mjs';
 
 export const TOPIC_PREFIX = 'dev-standard/';
 // Records the auto-memory importer captures (topic dev-standard/import/..., this author) are never promoted.
@@ -324,9 +324,18 @@ export function exportPath(opts = {}) {
   return path.resolve(opts.out ?? path.join(resolveHome(opts.env ?? process.env), 'standards.json'));
 }
 
-// The critic store the door logs to: opts.criticStore, default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/critic.
+// The critic store the door logs to and the export checks door-made standards against: always
+// ~/.claude/agent-maturity/critic under the home folder, whatever AGENT_MATURITY_HOME says. Only tests
+// (AGENT_MATURITY_TEST=1) may name another one: opts.criticStore, default <AGENT_MATURITY_HOME>/critic. Otherwise any
+// other opts.criticStore is refused (critic_store_test_only), so an export cannot be pointed at a forged log.
 export function criticPath(opts = {}) {
-  return path.resolve(opts.criticStore ?? path.join(resolveHome(opts.env ?? process.env), 'critic'));
+  const env = opts.env ?? process.env;
+  if (env.AGENT_MATURITY_TEST === '1') return path.resolve(opts.criticStore ?? path.join(resolveHome(env), 'critic'));
+  const home = path.join(os.homedir(), '.claude', 'agent-maturity', 'critic');
+  if (opts.criticStore !== undefined && !samePath(opts.criticStore, home)) {
+    throw new StoreCliError('critic_store_test_only', `the critic store is always ${home.replace(/\\/g, '/')}; another one is for tests only (AGENT_MATURITY_TEST=1)`);
+  }
+  return home;
 }
 
 // The door's standard_promoted events for the candidates these records name, read-only (no log: none).
@@ -367,9 +376,10 @@ export function listDoorActive(opts) {
 }
 
 // Writes the active standards to opts.out (default <AGENT_MATURITY_HOME or ~/.claude/agent-maturity>/standards.json),
-// checked against the door's log in the critic store (criticPath). Run it after every promote, supersede or retract
-// (the command line does this itself).
+// checked against the door's log in the critic store (criticPath, refused before anything is read). Run it after every
+// promote, supersede or retract (the command line does this itself).
 export function exportActive(opts = {}) {
+  criticPath(opts);
   const t = targets(opts);
   const out = exportPath(opts);
   if (t.env.AGENT_MATURITY_TEST === '1' && lands(out, path.join(os.homedir(), '.claude'))) {
