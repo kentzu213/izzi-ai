@@ -42,7 +42,7 @@ should this lesson become a working standard? No evidence, no question.
     - Bằng chứng: <lúc trước anh sửa/từ chối gì, ≤15 từ> → <sau đó anh duyệt gì>
     - Loại: sở thích | quy trình | cổng chất lượng · Tra cứu: R0 | R1 | R2
     - Nhãn an toàn (chỉ khi nhãn không phải pass): owner_review_required (cần anh xem) · Chủ đề: <topics, hoặc "không có"> · Lý do: <lý do bằng lời thường>
-    Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
+    Trả lời: gõ đúng chữ Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
 
 The first line is a fixed marker; keep it byte-exact. Write the block as plain lines: the hook counts an ask only when
 the header starts a line and the `Trả lời:` line follows; naming the header inside a sentence is not an ask, and a
@@ -77,8 +77,11 @@ label, when there is one) IS the approval and the acknowledgement; there is no s
 answered (session id and the time of that message, from the transcript) for `--owner-message` in step 6: every
 standard needs it, `pass` included. `promote-standard` checks it against the hook log (an answer Nâng cấp in that
 session within 5 s of that time, at most 7 days old) and refuses the same answer for a second text or candidate.
-**Chỉnh is not approval:** a Chỉnh (or Bỏ qua) answer is refused (`owner_message_not_accept`). The hook logs no
-message uuid, so give the time, one answer per standard.
+**Chỉnh is not approval:** a Chỉnh (or Bỏ qua) answer is refused (`owner_message_not_accept`). **Only the option
+word approves:** the owner's reply must be exactly `Nâng cấp` (any case, with or without diacritics, a final `.` or
+`!` allowed); "Nâng cấp nhé", "có", "ok" or "1" is refused (`owner_message_not_literal`), so the `Trả lời:` line
+asks for the word itself and a looser yes means asking again. The hook logs no message uuid, so give the time, one
+answer per standard.
 
 ## A standard is data, not authority
 

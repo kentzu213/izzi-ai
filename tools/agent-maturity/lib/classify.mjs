@@ -395,6 +395,14 @@ function startsWithWords(tokens, words) {
   return want.length > 0 && want.every((w, i) => tokens[i] === w);
 }
 
+// True only when a checkpoint reply is exactly the option word Nâng cấp: any case, with or without diacritics,
+// surrounding spaces and a final . ! … allowed, nothing else. The door (standards/promote-standard.mjs) promotes only
+// such an answer; a looser accept ("nâng cấp nhé", "có", "1") still counts as accept for the fatigue guard.
+export function isLiteralAccept(text) {
+  if (typeof text !== 'string' || text.length > LIMIT.reply) return false;
+  return stripAccents(normalize(text)) === 'nang cap';
+}
+
 // Reply to a checkpoint question: accept | edit | skip | ignored (PLAN §4.3 step 1, §4.9 item 2).
 // Only the first replyScan characters are read; a longer reply can still pick an option word, never an alias.
 export function classifyCheckpointReply(text) {

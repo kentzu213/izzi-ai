@@ -305,7 +305,8 @@ test('the answer is bound to the exact Đề xuất text and safety label its as
   const unbound = (pointer, id = c.id) => refusedWith('owner_message_unbound', () => door(w, id, pointer));
 
   // Act + Assert: refused before the gate, so nothing is written and no approval is recorded
-  unbound(`${legacy.session}:${legacy.ts}`); // logged before the hook bound answers: no proposalSha256
+  // logged before the hook bound answers: no literalOption, no proposalSha256
+  refusedWith('owner_message_not_literal', () => door(w, c.id, `${legacy.session}:${legacy.ts}`));
   unbound(ownerAnswers(w, 'Nâng cấp', { statement: 'Tóm tắt tiến độ ngắn gọn.' }).at()); // a paraphrase
   unbound(ownerAnswers(w, 'Nâng cấp', { statement: `"${c.statement}"` }).at()); // quoted
   unbound(ownerAnswers(w).at(), 'di-narrowed'); // the candidate text, not the narrowed one
@@ -326,6 +327,20 @@ test('the answer is bound to the exact Đề xuất text and safety label its as
   const labelled = ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement, floor: 'owner_review_required' });
   assert.equal(labelled.event.floor, 'owner_review_required');
   assert.equal(door(w, scoped.id, labelled.at()).floor, 'owner_review_required');
+});
+
+test('only the option word itself approves: a looser Nâng cấp reply is refused (owner_message_not_literal) and writes nothing', { skip }, () => {
+  // Arrange
+  const w = world();
+  const c = critique(w);
+  const loose = ownerAnswers(w, 'Nâng cấp nhé anh');
+
+  // Act + Assert
+  assert.equal(loose.event.outcome, 'accept', 'the hook still counts it as accept');
+  refusedWith('owner_message_not_literal', () => door(w, c.id, loose.at()));
+  nothingStored(w);
+  assert.deepEqual(ofType(w, 'promotion_approved'), []);
+  assert.equal(door(w, c.id, ownerAnswers(w, 'nang cap!').at()).statement, c.statement);
 });
 
 test('Chỉnh is not approval: an edit answer is refused (owner_message_not_accept) and writes nothing', { skip }, () => {

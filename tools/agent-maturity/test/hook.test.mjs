@@ -135,7 +135,24 @@ test('no prompt text, key or phone number is stored anywhere', () => {
   }
 });
 
-const LOG_FIELDS = ['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name', 'askId', 'proposalSha256', 'floor'];
+const LOG_FIELDS = ['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name', 'askId', 'proposalSha256', 'floor', 'literalOption'];
+
+test('the hook logs literalOption: true only when the reply is exactly Nâng cấp', () => {
+  // Arrange
+  const home = newHome();
+  const transcript = join(scratch, 'literal-option.jsonl');
+  writeTranscript(transcript, `Xong.\n\n${ASK_BLOCK}`, 'literal-ask');
+  const replies = ['Nâng cấp', 'nang cap!', 'Nâng cấp nhé anh', 'có', 'Bỏ qua'];
+
+  // Act
+  replies.forEach((reply, i) => assertQuiet(runHook(prompt(reply, `sess-literal-${i}`, { transcript_path: transcript }), { home })));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  assert.deepEqual(outcomes.map((e) => [e.outcome, e.literalOption]), [
+    ['accept', true], ['accept', true], ['accept', undefined], ['accept', undefined], ['skip', undefined],
+  ]);
+});
 
 test('an answered ask block logs its ask id, the sha256 of its Đề xuất text and its safety label, never the text', () => {
   // Arrange

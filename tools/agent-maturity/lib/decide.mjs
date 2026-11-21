@@ -150,7 +150,9 @@ export function decide(state, global, cls, info = {}) {
   if (asked) {
     const outcome = CHOICES.has(info.choice) ? info.choice : 'ignored';
     outcomes.push(outcome);
-    events.push({ type: 'checkpoint_outcome', turn, outcome, initiated: s.pending ? 'nudge' : 'agent', ...askBinding(info.ask) });
+    // literalOption: the reply was exactly the option word Nâng cấp (classify isLiteralAccept); only then can it promote.
+    const literal = outcome === 'accept' && info.literalOption === true ? { literalOption: true } : {};
+    events.push({ type: 'checkpoint_outcome', turn, outcome, initiated: s.pending ? 'nudge' : 'agent', ...askBinding(info.ask), ...literal });
     s = { ...s, asks: s.asks + 1, lastAskTurn: turn - 1, lastAskId: askId, pending: null, correctionsSinceCheckpoint: 0 };
   } else if (s.pending && turn - s.pending.turn >= PENDING_TTL_TURNS) {
     outcomes.push('abstained');

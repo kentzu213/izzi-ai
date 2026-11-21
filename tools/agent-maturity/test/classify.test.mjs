@@ -8,6 +8,7 @@ import {
   classifyCheckpointReply,
   classifyPrompt,
   hasCheckpointAsk,
+  isLiteralAccept,
   isWrapperPrompt,
   lengthBucket,
   proposalDigest,
@@ -168,6 +169,15 @@ test('checkpoint reply: option words are accepted at any length', () => {
   assert.equal(classifyCheckpointReply('Bỏ qua'), 'skip');
   assert.equal(classifyCheckpointReply('bo qua'), 'skip');
   assert.equal(classifyCheckpointReply('- Bỏ qua.'), 'skip');
+});
+
+test('isLiteralAccept: only the option word Nâng cấp itself, any case, with or without diacritics, optional final . ! …', () => {
+  for (const reply of ['Nâng cấp', 'nâng cấp', 'NÂNG CẤP', 'nang cap', 'Nang Cap', ' Nâng cấp. ', 'Nâng cấp!', 'nâng cấp…', 'Nâng  cấp', 'Nâng cấp'.normalize('NFD')]) {
+    assert.equal(isLiteralAccept(reply), true, reply);
+  }
+  for (const reply of ['Nâng cấp nhé', 'nâng cấp đi em', 'có, nâng cấp đi', 'Nâng cấp?', '**Nâng cấp**', '"Nâng cấp"', '- Nâng cấp', 'đồng ý', 'có', '1', 'ok', 'Nâng', '', `Nâng cấp${'.'.repeat(200_000)}x`, undefined]) {
+    assert.equal(isLiteralAccept(reply), false, String(reply).slice(0, 40));
+  }
 });
 
 test('checkpoint reply: short aliases count only when they stand alone and the reply is <=40 chars', () => {

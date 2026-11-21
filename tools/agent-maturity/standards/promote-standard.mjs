@@ -7,8 +7,10 @@
 //   1. Verify the owner answer against the D1 hook log (<AGENT_MATURITY_HOME>/log): exactly one checkpoint_outcome
 //      event of that session from an interactive entrypoint, at most ±5 s from the given time
 //      (owner_message_unverified), with outcome accept: only Nâng cấp approves, Chỉnh or Bỏ qua is
-//      owner_message_not_accept. The answer is at most 7 days old (owner_message_stale), and for NARROW later than
-//      the recorded verdict (owner_message_before_verdict). Read-only, so a refused pointer writes nothing.
+//      owner_message_not_accept, and only a reply that was exactly the option word (the hook logged literalOption:
+//      true) promotes, otherwise owner_message_not_literal. The answer is at most 7 days old (owner_message_stale),
+//      and for NARROW later than the recorded verdict (owner_message_before_verdict). Read-only, so a refused pointer
+//      writes nothing.
 //   1b. Bind the answer to the text (owner_message_unbound): the hook logged proposalSha256, the sha256 of the NFC
 //      "Đề xuất" line of the ask block the owner answered; it must be the sha256 of the statement the gate will store
 //      (the narrowed text for NARROW), and when that text's floor class is not pass, the label the block showed must
@@ -153,6 +155,9 @@ export function findOwnerAnswer(home, message) {
   const [answer] = matches;
   if (!APPROVING_OUTCOMES.includes(answer.outcome)) {
     fail('owner_message_not_accept', `that answer was ${OUTCOME_WORDS[answer.outcome]}, not Nâng cấp: only Nâng cấp on the exact text approves (after Chỉnh, ask again with the new text)`);
+  }
+  if (answer.literalOption !== true) {
+    fail('owner_message_not_literal', 'that answer was not exactly the option word Nâng cấp (a looser yes such as "nâng cấp nhé", "có" or "1" does not promote): ask again and have the owner reply with only Nâng cấp');
   }
   return answer;
 }

@@ -173,6 +173,18 @@ test('an answered ask block logs its ask id, proposal hash and safety label; mal
   assert.deepEqual(outcomeOf(bad.results[0]), { type: 'checkpoint_outcome', turn: 1, outcome: 'edit', initiated: 'agent' });
 });
 
+test('literalOption: true is logged only for an accept whose reply was exactly the option word', () => {
+  // Act
+  const literal = run([{ cls: L.none, ask: ask('a'), choice: 'accept', info: { literalOption: true } }]);
+  const loose = run([{ cls: L.none, ask: ask('b'), choice: 'accept', info: { literalOption: false } }]);
+  const notAccept = run([{ cls: L.none, ask: ask('c'), choice: 'skip', info: { literalOption: true } }]);
+  const truthy = run([{ cls: L.none, ask: ask('d'), choice: 'accept', info: { literalOption: 'yes' } }]);
+
+  // Assert
+  assert.equal(outcomeOf(literal.results[0]).literalOption, true);
+  for (const r of [loose, notAccept, truthy]) assert.equal('literalOption' in outcomeOf(r.results[0]), false);
+});
+
 test('pending lives 5 owner turns, then expires as abstained', () => {
   const { results, state } = run(['correction', 'approve', 'none', 'none', 'none', 'none', 'none']);
   assert.equal(PENDING_TTL_TURNS, 5);

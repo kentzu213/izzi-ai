@@ -127,7 +127,9 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
    that session (the hook logs a safe session id as-is), entrypoint `cli` or `claude-desktop`, and `ts` at most 5 s
    from the given time; otherwise `owner_message_unverified`, also when there is no hook log (before the hook is
    installed nothing can be stored) or the pointer is a message uuid (the hook logs none). Only outcome `accept`
-   (Nâng cấp) approves: Chỉnh or Bỏ qua is `owner_message_not_accept`. The answer is at most 7 days old
+   (Nâng cấp) approves: Chỉnh or Bỏ qua is `owner_message_not_accept`; and only a reply that was exactly the option
+   word (the hook logs `literalOption: true` for `Nâng cấp` in any case, with or without diacritics, a final `.` `!`
+   `…` allowed): a looser yes ("nâng cấp nhé", "có", "1") is `owner_message_not_literal`. The answer is at most 7 days old
    (`owner_message_stale`) and, for NARROW, later than the recorded verdict (`owner_message_before_verdict`).
    The answer is bound to the text: the hook logs `proposalSha256` (sha256 of the NFC text on the "Đề xuất" line of
    the ask block the owner answered), `askId` and `floor` (the label on its "Nhãn an toàn" line), never the text.
