@@ -1,0 +1,54 @@
+{
+  "schema": "agent-maturity/candidate@1",
+  "id": "dr2-checkpoint-after-workflow",
+  "statement": "Khi tự xong một quy trình anh giao (merge, phát hành hoặc deploy đã kiểm chứng) và có lần anh sửa trước đó hậu thuẫn, hỏi đúng 1 câu checkpoint nâng cấp ở báo cáo cuối.",
+  "kind": "procedure",
+  "scope": { "agent": "mọi agent (root đặt câu hỏi)", "taskType": "báo cáo cuối của quy trình được giao", "projects": "all" },
+  "check": "Câu hỏi chỉ có ở báo cáo cuối của quy trình đã kiểm chứng, có ≥1 lần anh sửa làm bằng chứng, và được tính vào trần 3 lần hỏi mỗi phiên.",
+  "evidence": [
+    {
+      "id": "plan-0-d3",
+      "type": "decision",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md §0 item (3)",
+      "note": "owner: after work he accepts, the agent proactively asks whether to upgrade the way of working"
+    },
+    {
+      "id": "plan-2.1-workflow-gap",
+      "type": "outcome",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md:53 (§2.1, last paragraph)",
+      "note": "the D1 hook does not catch a workflow the agent finishes without an owner prompt; D2 measures how often"
+    },
+    {
+      "id": "plan-4.9-item-4",
+      "type": "decision",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md:280 (§4.9 item 4)",
+      "note": "socrates review fix: the skill may ask once after a delegated workflow finishes, backed by an earlier correction; counts toward the cap"
+    },
+    {
+      "id": "plan-5-d1-accepted",
+      "type": "approve",
+      "at": "2026-11-21",
+      "source": "docs/izzi-v2/PLAN.md:304 (§5 'Đã chốt' item 4)",
+      "note": "owner accepted PR #74 (D1, skill includes this rule) with 'ok'; merged into the epic branch"
+    }
+  ],
+  "flags": { "changesWorkflow": true },
+  "existingStandards": [
+    {
+      "id": "skill-hard-rule-1-end-only",
+      "statement": "SKILL.md:21 rule 1: one candidate, at the end; never ask mid-task; if work continues in a later turn, ask in that work's final report."
+    },
+    {
+      "id": "skill-hard-rule-2-evidence",
+      "statement": "SKILL.md:23 rule 2: evidence or silence; strong evidence = in-session contrast pair; weak evidence at most once per session."
+    },
+    {
+      "id": "skill-hard-rule-4-limits",
+      "statement": "SKILL.md:28 rule 4: at most 1 ask per task, at most 3 per session including self-started asks; strict mode after 6 of 10 asks skipped."
+    }
+  ],
+  "research": { "refs": [] }
+}

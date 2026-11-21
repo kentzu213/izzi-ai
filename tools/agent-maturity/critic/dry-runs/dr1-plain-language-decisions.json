@@ -1,0 +1,50 @@
+{
+  "schema": "agent-maturity/candidate@1",
+  "id": "dr1-plain-language-decisions",
+  "statement": "Khi xin anh quyết định, nói bằng lời thường: việc gì, anh bấm/chọn ở đâu, chọn A hay B thì hệ quả gì, em đề xuất gì.",
+  "kind": "procedure",
+  "scope": { "agent": "orchestrator/root", "taskType": "câu hỏi xin quyết định của anh", "projects": "all" },
+  "check": "Mỗi câu xin quyết định có đủ 4 ý (việc gì, chọn ở đâu, hệ quả A/B, đề xuất); mã nội bộ (V-1, S4) luôn kèm giải thích bằng lời thường.",
+  "evidence": [
+    {
+      "id": "plan-2.3-v1-unclear",
+      "type": "correction",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md:80 (§2.3 example, Bằng chứng line) and §1.1",
+      "note": "owner said 'chưa hiểu… nói rõ hơn' about V-1"
+    },
+    {
+      "id": "plan-2.3-budget-unclear",
+      "type": "correction",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md:80 (§2.3 example, Bằng chứng line) and §1.2",
+      "note": "owner said 'ko hiểu lắm' about the model-call budget"
+    },
+    {
+      "id": "plan-0-d4-d5-decided",
+      "type": "approve_after_reject",
+      "at": "2026-11-20",
+      "source": "docs/izzi-v2/PLAN.md §0 items (4) and (5)",
+      "note": "after the plain re-explanations in §1.1 and §1.2 the owner decided both questions"
+    },
+    {
+      "id": "plan-5-answers-2111",
+      "type": "decision",
+      "at": "2026-11-21",
+      "source": "docs/izzi-v2/PLAN.md §5 'Đã chốt ngày 21/11'",
+      "note": "owner answered the remaining open questions framed the same way"
+    }
+  ],
+  "flags": { "changesWorkflow": false },
+  "existingStandards": [
+    {
+      "id": "skill-upgrade-checkpoint-plain-codes",
+      "statement": "tools/agent-maturity/skill/upgrade-checkpoint/SKILL.md:49: Explain internal codes in plain words (applies to the checkpoint question only)."
+    },
+    {
+      "id": "claude-md-think-before-coding",
+      "statement": "~/.claude/CLAUDE.md §1: if multiple interpretations exist, present them; if something is unclear, stop, name what is confusing and ask."
+    }
+  ],
+  "research": { "refs": [] }
+}
