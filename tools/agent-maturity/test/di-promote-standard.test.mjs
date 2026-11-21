@@ -104,12 +104,13 @@ const criticLog = (w) => readLines(join(w.critic, 'log.jsonl'));
 const ofType = (w, type) => criticLog(w).filter((e) => e.type === type);
 
 // The owner answers a checkpoint question in a fresh session; the real D1 hook logs the outcome. Returns the logged
-// event and at(offsetMs): the --owner-message pointer "<session>:<time>" offset from the logged time.
-function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.statement, floor = null } = {}) {
+// event and at(offsetMs): the --owner-message pointer "<session>:<time>" offset from the logged time. `before` is
+// text above the ask block in the same assistant message.
+function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.statement, floor = null, before = 'Đã xong.' } = {}) {
   const session = randomUUID();
   const transcript = join(w.dir, `${session}.jsonl`);
   const ask = [
-    'Đã xong.',
+    before,
     '',
     '[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?',
     `- Đề xuất: ${statement}`,
@@ -310,6 +311,10 @@ test('the answer is bound to the exact Đề xuất text and safety label its as
   unbound(ownerAnswers(w).at(), 'di-narrowed'); // the candidate text, not the narrowed one
   unbound(ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement }).at(), scoped.id); // label not shown
   unbound(ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement, floor: 'pass' }).at(), scoped.id); // wrong label
+  const otherBlock = `[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?\n- Đề xuất: ${c.statement}\nTrả lời: Nâng cấp / Chỉnh / Bỏ qua`;
+  const twoBlocks = ownerAnswers(w, 'Nâng cấp', { before: otherBlock });
+  assert.equal(twoBlocks.event.proposalSha256, undefined, 'two live ask blocks: no proposal hash');
+  unbound(twoBlocks.at()); // the same text twice still binds nothing
   nothingStored(w);
   assert.deepEqual(ofType(w, 'promotion_approved'), []);
 

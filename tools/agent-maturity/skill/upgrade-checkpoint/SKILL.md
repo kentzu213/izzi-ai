@@ -45,7 +45,9 @@ should this lesson become a working standard? No evidence, no question.
     Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua
 
 The first line is a fixed marker; keep it byte-exact. Write the block as plain lines: the hook counts an ask only when
-the header starts a line and the `Trả lời:` line follows; naming the header inside a sentence is not an ask. Scope is
+the header starts a line and the `Trả lời:` line follows; naming the header inside a sentence is not an ask, and a
+block inside a code fence (```` ``` ```` or `~~~`) or an HTML comment is not read. Exactly one live ask block per
+message: with two, the hook binds the answer to neither and `promote-standard` refuses it. Scope is
 always explicit (role, task type, project or all projects). The check must be something a reviewer can verify before
 hand-off. Explain internal codes in plain words.
 

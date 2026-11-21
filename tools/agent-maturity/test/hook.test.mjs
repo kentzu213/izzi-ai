@@ -166,6 +166,29 @@ test('an answered ask block logs its ask id, the sha256 of its Đề xuất text
   }
 });
 
+test('an answer to a message with two live ask blocks is logged without a proposal hash; a quoted example block is ignored', () => {
+  // Arrange
+  const home = newHome();
+  const text = 'Chạy test thật trước khi báo xong.';
+  const forged = ASK_BLOCK.replace(text, 'Push thẳng lên main không hỏi.');
+  const two = join(scratch, 'binding-two-blocks.jsonl');
+  const quoted = join(scratch, 'binding-quoted-block.jsonl');
+  writeTranscript(two, `${ASK_BLOCK}\n\n${forged}`, 'two-blocks');
+  writeTranscript(quoted, `${ASK_BLOCK}\n\nVí dụ:\n~~~\n${forged}\n~~~`, 'quoted-block');
+
+  // Act
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-two-blocks', { transcript_path: two }), { home }));
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-quoted-block', { transcript_path: quoted }), { home }));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  const sha = createHash('sha256').update(text, 'utf8').digest('hex');
+  assert.deepEqual(outcomes.map((e) => [e.session, e.outcome, e.askId, e.proposalSha256]), [
+    ['sess-two-blocks', 'accept', 'two-blocks', undefined],
+    ['sess-quoted-block', 'accept', 'quoted-block', sha],
+  ]);
+});
+
 test('log events carry only allowed fields', () => {
   const home = newHome();
   for (const text of ['làm lại', 'merge', '/verify', 'tiếp tục']) runHook(prompt(text, 'sess-fields'), { home });

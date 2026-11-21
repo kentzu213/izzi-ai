@@ -291,23 +291,57 @@ export function isWrapperPrompt(cls) {
   return Boolean(cls) && cls.label === 'abstain' && WRAPPER_RULES.has(cls.ruleId);
 }
 
-// The skill's ask blocks in an assistant message's lines: [header line, "Trả lời:" line] index pairs, in order.
-function askBlocks(lines) {
+// CommonMark fences: at most 3 spaces in, ``` (an info string without backticks) or ~~~; the closing fence uses the
+// same character, at least as many, and nothing after it.
+const FENCE_OPEN = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+const COMMENT_OPEN = /^ {0,3}<!--/;
+
+// Per line, whether markdown shows it as text: false inside a ``` or ~~~ code fence or an HTML comment block (a line
+// starting with "<!--", up to the line holding "-->"), the fence and comment lines included. An unclosed fence or
+// comment runs to the end of the message.
+function liveLines(lines) {
+  let fence = null;
+  let comment = false;
+  return lines.map((line) => {
+    if (fence) {
+      const close = FENCE_CLOSE.exec(line);
+      if (close && close[1][0] === fence[0] && close[1].length >= fence.length) fence = null;
+      return false;
+    }
+    if (comment) {
+      comment = !line.includes('-->');
+      return false;
+    }
+    const open = FENCE_OPEN.exec(line);
+    if (open) fence = open[1];
+    else if (COMMENT_OPEN.test(line)) comment = !line.includes('-->');
+    return !open && !COMMENT_OPEN.test(line);
+  });
+}
+
+// The skill's live ask blocks in an assistant message's lines (see liveLines): [header line, "Trả lời:" line] index
+// pairs, in order.
+function askBlocks(lines, live) {
   const blocks = [];
   for (let i = 0; i < lines.length; i += 1) {
-    if (!lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
+    if (!live[i] || !lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
     const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
-    const answer = lines.slice(i + 1, end).findIndex((l) => l.trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE));
+    const answer = lines.slice(i + 1, end).findIndex((l, j) => live[i + 1 + j] && l.trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE));
     if (answer >= 0) blocks.push([i, i + 1 + answer]);
   }
   return blocks;
 }
 
+const messageLines = (text) => text.normalize('NFC').split(/\r?\n/);
+
 // True when an assistant message holds the skill's ask block: a line starting with the header (indent
-// allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence does not count.
+// allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence, a code fence or an HTML
+// comment does not count.
 export function hasCheckpointAsk(text) {
   if (typeof text !== 'string') return false;
-  return askBlocks(text.normalize('NFC').split('\n')).length > 0;
+  const lines = messageLines(text);
+  return askBlocks(lines, liveLines(lines)).length > 0;
 }
 
 // The floor labels a checkpoint question may show (critic/floor.mjs FLOOR_CLASSES).
@@ -318,15 +352,19 @@ const PROPOSAL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Đề xuất[*_]{0,2}\s*:[*_]
 const LABEL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Nhãn an toàn[^:]*:[*_]{0,2}\s*([a-z_]+)/u;
 const firstMatch = (lines, re) => lines.map((l) => re.exec(l)).find(Boolean) ?? null;
 
-// The last ask block of an assistant message: { proposal, floor }, where proposal is the exact NFC text of its
-// "Đề xuất" line (trimmed; null when the block has none) and floor its "Nhãn an toàn" label (null unless one of
-// FLOOR_LABELS). null when the message holds no ask block.
+// The one live ask block of an assistant message: { proposal, floor }, where proposal is the exact NFC text of its
+// live "Đề xuất" line (trimmed; null when the block has none) and floor the label of its live "Nhãn an toàn" line
+// (null unless one of FLOOR_LABELS). Blocks inside a code fence or an HTML comment are not read. More than one live
+// block binds nothing: { proposal: null, floor: null }. null when the message holds no live ask block.
 export function checkpointAskParts(text) {
   if (typeof text !== 'string') return null;
-  const lines = text.normalize('NFC').split(/\r?\n/);
-  const last = askBlocks(lines).at(-1);
-  if (!last) return null;
-  const body = lines.slice(last[0] + 1, last[1]);
+  const lines = messageLines(text);
+  const live = liveLines(lines);
+  const blocks = askBlocks(lines, live);
+  if (blocks.length === 0) return null;
+  if (blocks.length > 1) return { proposal: null, floor: null };
+  const [[start, end]] = blocks;
+  const body = lines.slice(start + 1, end).filter((_, i) => live[start + 1 + i]);
   const proposal = firstMatch(body, PROPOSAL_LINE);
   const label = firstMatch(body, LABEL_LINE);
   return {

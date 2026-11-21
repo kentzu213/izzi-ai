@@ -127,7 +127,9 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
    the ask block the owner answered), `askId` and `floor` (the label on its "Nhãn an toàn" line), never the text.
    `proposalSha256` must be the sha256 of the statement the gate will store (the narrowed one for NARROW) and, when
    its floor class is not `pass`, `floor` must be that class; otherwise `owner_message_unbound` (also for an answer
-   logged before the hook recorded the binding). Read-only, like the input and CLI checks, so a refusal here writes
+   logged before the hook recorded the binding). The hook reads only live ask blocks (not inside a ```/~~~ code fence
+   or an HTML comment) and logs no `proposalSha256` when the message holds more than one, so such an answer is
+   `owner_message_unbound` too. Read-only, like the input and CLI checks, so a refusal here writes
    nothing.
 2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
    two pointers to one logged answer are the same answer: `owner_message_reused` for a second text or candidate), the statement
