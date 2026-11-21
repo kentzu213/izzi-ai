@@ -648,6 +648,7 @@ declare global {
       approve(input: AgentProfileActionInput): Promise<AgentProfilesResult>;
       discard(input: AgentProfileActionInput): Promise<AgentProfilesResult>;
       forget(input: AgentProfileActionInput): Promise<AgentProfilesResult>;
+      resume(): Promise<AgentProfilesResult>;
     };
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;

@@ -17,8 +17,10 @@ export function registerAgentProfileIpc(service: AgentProfileService): void {
       (isTrustedMarketingSender(event) ? run(...args) : REFUSED);
 
   ipcMain.handle('agentProfiles:get', guard(() => service.getState()));
+  // Always the owner's own click: the window can never start a background run.
   ipcMain.handle('agentProfiles:refresh', guard(() => service.refresh()));
   ipcMain.handle('agentProfiles:approve', guard((input: unknown) => service.approve(input)));
   ipcMain.handle('agentProfiles:discard', guard((input: unknown) => service.discard(input)));
   ipcMain.handle('agentProfiles:forget', guard((input: unknown) => service.forget(input)));
+  ipcMain.handle('agentProfiles:resume', guard(() => service.resume()));
 }

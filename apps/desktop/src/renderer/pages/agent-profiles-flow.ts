@@ -5,6 +5,7 @@
 import {
   AGENT_IDS_NOT_READING_PROFILE,
   type AgentProfilesError,
+  type AgentProfilesPauseReason,
   type AgentProfilesResult,
   type AgentProfilesState,
 } from '../../shared/agent-profile-types';
@@ -13,8 +14,8 @@ const ERROR_TEXT: Record<AgentProfilesError, string> = {
   auth: 'Hãy đăng nhập izzi để cập nhật hồ sơ agent.',
   busy: 'Đang chắt lọc hồ sơ, chờ một chút rồi xem lại.',
   no_activity: 'Chưa có hoạt động mới kể từ lần cập nhật trước, nên không cần gọi AI.',
-  daily_limit: 'Đã dùng hết số lần cập nhật cho phép hôm nay. Mai bạn cập nhật tiếp được.',
-  quota: 'Tài khoản izzi đã hết credit, nên chưa cập nhật được hồ sơ.',
+  paused: 'Cập nhật tự động đang tạm dừng. Bấm "Tiếp tục" để chạy lại.',
+  quota: 'Tài khoản izzi đã hết credit (lỗi 402), nên izzi dừng ngay và không thử model khác. Nạp thêm credit rồi cập nhật lại.',
   model_unavailable: 'Máy chủ AI đang bận hoặc không trả lời. Thử lại sau ít phút.',
   invalid_output: 'AI trả về kết quả không dùng được nên lần này bỏ qua. Lần sau chỉ đọc hoạt động mới.',
   invalid_input: 'Yêu cầu không hợp lệ. Tải lại trang rồi thử lại.',
@@ -35,13 +36,21 @@ export interface RefreshButtonState {
 export function refreshButtonState(state: AgentProfilesState | null, running: boolean): RefreshButtonState {
   if (running) return { disabled: true, label: 'Đang chắt lọc…', hint: null };
   if (!state) return { disabled: true, label: 'Cập nhật hồ sơ ngay', hint: null };
-  if (state.callsToday >= state.maxCallsPerDay) {
-    return { disabled: true, label: 'Cập nhật hồ sơ ngay', hint: 'Đã dùng hết lượt gọi AI hôm nay.' };
-  }
-  const left = Math.max(0, state.maxRunsPerDay - state.runsToday);
-  return left === 0
-    ? { disabled: true, label: 'Cập nhật hồ sơ ngay', hint: `Đã dùng hết ${state.maxRunsPerDay} lần hôm nay.` }
-    : { disabled: false, label: 'Cập nhật hồ sơ ngay', hint: `Còn ${left}/${state.maxRunsPerDay} lần hôm nay.` };
+  // No daily cap, and a background pause never blocks the owner's own click.
+  return { disabled: false, label: 'Cập nhật hồ sơ ngay', hint: 'izzi chỉ gọi AI khi có hoạt động mới.' };
+}
+
+const PAUSE_TEXT: Record<AgentProfilesPauseReason, string> = {
+  repeat_input: 'Cập nhật tự động đã tạm dừng vì sắp gửi lại cho AI đúng dữ liệu đã gửi trước đó.',
+  idle_runs: 'Cập nhật tự động đã tạm dừng vì nhiều lần gọi AI liền nhau mà không có hoạt động mới.',
+  quota: 'Cập nhật tự động đã dừng vì tài khoản izzi hết credit (lỗi 402). Nạp thêm credit trước khi chạy lại.',
+};
+
+/** Why background runs are paused, or null when they are not; the owner resumes them with "Tiếp tục". */
+export function backgroundPauseNotice(state: AgentProfilesState | null): string | null {
+  const pause = state?.backgroundPause;
+  if (!pause) return null;
+  return `${PAUSE_TEXT[pause.reason]} Bấm "Tiếp tục" để chạy lại. Nút "Cập nhật hồ sơ ngay" vẫn dùng được.`;
 }
 
 export function refreshNotice(result: AgentProfilesResult): string {

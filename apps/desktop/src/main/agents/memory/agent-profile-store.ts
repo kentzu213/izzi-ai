@@ -6,22 +6,33 @@
  * Each agent has its own watermark (the newest activity already distilled). Watermarks only move
  * forward, and one in the future (clock skew) is read as now.
  *
+ * There is no daily or monthly cap (owner's decision, 2026-11-21). Instead a loop record guards
+ * background runs only: the inputs already sent, the newest activity sent per agent, the background
+ * runs in a row that had nothing new, and a pause that only the owner's "Tiếp tục" clears.
+ *
  * @module main/agents/memory/agent-profile-store
  */
 import { createHash } from 'node:crypto';
-import type { AgentProfileVersion, AgentProfilesState } from '../../../shared/agent-profile-types';
+import type {
+  AgentProfilesPause,
+  AgentProfilesPauseReason,
+  AgentProfileVersion,
+  AgentProfilesState,
+} from '../../../shared/agent-profile-types';
 import { PROFILE_MAX_CHARS, type DistilledProfile } from './agent-profile-digest';
 
-/** Credit cap: distil runs per account per Vietnam day. */
-export const AGENT_PROFILES_MAX_RUNS_PER_DAY = 3;
-/** Credit cap on model calls (fallbacks and failed calls included) per account per Vietnam day. */
-export const AGENT_PROFILES_MAX_CALLS_PER_DAY = 6;
+/** A background run that would be this many in a row with no new activity pauses instead of calling. */
+export const AGENT_PROFILES_LOOP_IDLE_RUNS = 3;
 const KEY_PREFIX = 'agent_profiles:v1';
 const MAX_AGENTS = 50;
 const MAX_NAME_CHARS = 100;
-const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+const MAX_FINGERPRINTS = 20;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const FINGERPRINT = /^[0-9a-f]{64}$/;
+const PAUSE_REASONS: readonly AgentProfilesPauseReason[] = ['repeat_input', 'idle_runs', 'quota'];
+
+/** Who asked for a run: the owner's click, or a background job (the only kind the loop detector stops). */
+export type AgentProfilesTrigger = 'owner' | 'background';
 
 export interface StoredAgentProfile {
   agentName: string;
@@ -32,22 +43,21 @@ export interface StoredAgentProfile {
 export interface StoredProfiles {
   version: 1;
   lastRunAt: string | null;
-  runDay: string | null;
-  runsToday: number;
-  callDay: string | null;
-  callsToday: number;
   /** Per agent: the newest activity already distilled (ISO). */
   watermarks: Record<string, string>;
+  /** Per agent: the newest activity already sent to the model (ISO), answered or not. */
+  sent: Record<string, string>;
+  /** sha256 of recent inputs sent to the model, newest last. */
+  fingerprints: string[];
+  /** Background runs in a row that sent only activity already sent. */
+  idleRuns: number;
+  /** Background runs are paused until the owner presses "Tiếp tục". */
+  pause: AgentProfilesPause | null;
   agents: Record<string, StoredAgentProfile>;
 }
 
 export function emptyProfiles(): StoredProfiles {
-  return { version: 1, lastRunAt: null, runDay: null, runsToday: 0, callDay: null, callsToday: 0, watermarks: {}, agents: {} };
-}
-
-/** The calendar day in Vietnam (UTC+7, no daylight saving), YYYY-MM-DD. */
-export function vnDayKey(nowMs: number): string {
-  return new Date(nowMs + VN_OFFSET_MS).toISOString().slice(0, 10);
+  return { version: 1, lastRunAt: null, watermarks: {}, sent: {}, fingerprints: [], idleRuns: 0, pause: null, agents: {} };
 }
 
 type Fields = Record<string, unknown>;
@@ -93,12 +103,26 @@ function parseAgents(value: unknown): Record<string, StoredAgentProfile> {
   return agents;
 }
 
-function parseWatermarks(value: unknown): Record<string, string> {
-  const watermarks: Record<string, string> = {};
+/** Per-agent ISO marks (watermarks, sent marks). */
+function parseMarks(value: unknown): Record<string, string> {
+  const marks: Record<string, string> = {};
   for (const [agentId, at] of Object.entries(record(value) ?? {}).slice(0, MAX_AGENTS)) {
-    if (agentId.length <= MAX_NAME_CHARS && isIso(at)) watermarks[agentId] = at;
+    if (agentId.length <= MAX_NAME_CHARS && isIso(at)) marks[agentId] = at;
   }
-  return watermarks;
+  return marks;
+}
+
+function parseFingerprints(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && FINGERPRINT.test(item)).slice(-MAX_FINGERPRINTS);
+}
+
+function parsePause(value: unknown): AgentProfilesPause | null {
+  const obj = record(value);
+  if (!obj) return null;
+  const reason = PAUSE_REASONS.find((known) => known === own(obj, 'reason'));
+  const at = own(obj, 'at');
+  return reason && isIso(at) ? { reason, at } : null;
 }
 
 function parseStored(raw: string | null): StoredProfiles {
@@ -112,16 +136,14 @@ function parseStored(raw: string | null): StoredProfiles {
   const root = record(parsed);
   if (!root || own(root, 'version') !== 1) return emptyProfiles();
   const lastRunAt = own(root, 'lastRunAt');
-  const runDay = own(root, 'runDay');
-  const callDay = own(root, 'callDay');
   return {
     version: 1,
     lastRunAt: isIso(lastRunAt) ? lastRunAt : null,
-    runDay: typeof runDay === 'string' && DAY.test(runDay) ? runDay : null,
-    runsToday: count(own(root, 'runsToday')),
-    callDay: typeof callDay === 'string' && DAY.test(callDay) ? callDay : null,
-    callsToday: count(own(root, 'callsToday')),
-    watermarks: parseWatermarks(own(root, 'watermarks')),
+    watermarks: parseMarks(own(root, 'watermarks')),
+    sent: parseMarks(own(root, 'sent')),
+    fingerprints: parseFingerprints(own(root, 'fingerprints')),
+    idleRuns: count(own(root, 'idleRuns')),
+    pause: parsePause(own(root, 'pause')),
     agents: parseAgents(own(root, 'agents')),
   };
 }
@@ -195,14 +217,18 @@ export function forgetProfile(data: StoredProfiles, agentId: string): StoredProf
   return { ...data, agents };
 }
 
+function advanceMarks(marks: Readonly<Record<string, string>>, newest: Readonly<Record<string, number>>): Record<string, string> {
+  const next = { ...marks };
+  for (const [agentId, ms] of Object.entries(newest)) {
+    const current = Object.hasOwn(next, agentId) ? Date.parse(next[agentId]) : -Infinity;
+    if (Number.isFinite(ms) && ms > current) next[agentId] = new Date(ms).toISOString();
+  }
+  return next;
+}
+
 /** Watermarks move forward only. */
 export function advanceWatermarks(data: StoredProfiles, newest: Readonly<Record<string, number>>): StoredProfiles {
-  const watermarks = { ...data.watermarks };
-  for (const [agentId, ms] of Object.entries(newest)) {
-    const current = Object.hasOwn(watermarks, agentId) ? Date.parse(watermarks[agentId]) : -Infinity;
-    if (Number.isFinite(ms) && ms > current) watermarks[agentId] = new Date(ms).toISOString();
-  }
-  return { ...data, watermarks };
+  return { ...data, watermarks: advanceMarks(data.watermarks, newest) };
 }
 
 /** The agent's watermark in ms, never later than now; null when the agent was never distilled. */
@@ -211,41 +237,51 @@ export function watermarkMs(data: StoredProfiles, agentId: string, nowMs: number
   return Math.min(Date.parse(data.watermarks[agentId]), nowMs);
 }
 
-/** A run that cost a model call and produced profiles or an unusable answer: counted against the cap. */
+/** A run whose answer landed (profiles or an unusable answer): that activity is done. */
 export function recordRun(data: StoredProfiles, nowMs: number, newest: Readonly<Record<string, number>>): StoredProfiles {
-  const day = vnDayKey(nowMs);
-  return advanceWatermarks({
-    ...data,
-    lastRunAt: new Date(nowMs).toISOString(),
-    runDay: day,
-    runsToday: data.runDay === day ? data.runsToday + 1 : 1,
-  }, newest);
+  return advanceWatermarks({ ...data, lastRunAt: new Date(nowMs).toISOString() }, newest);
 }
 
-/** One model call, whatever its outcome. */
-export function countCall(data: StoredProfiles, nowMs: number): StoredProfiles {
-  const day = vnDayKey(nowMs);
-  return { ...data, callDay: day, callsToday: data.callDay === day ? data.callsToday + 1 : 1 };
+/** True when some agent has activity newer than anything sent to the model before. */
+function hasNewActivity(data: StoredProfiles, newest: Readonly<Record<string, number>>): boolean {
+  return Object.entries(newest).some(([agentId, ms]) => !Object.hasOwn(data.sent, agentId) || ms > Date.parse(data.sent[agentId]));
 }
 
-export function runsToday(data: StoredProfiles, nowMs: number): number {
-  return data.runDay === vnDayKey(nowMs) ? data.runsToday : 0;
+/** Why a background run must not call the model, or null when it may. Never asked for the owner's click. */
+export function backgroundLoopReason(
+  data: StoredProfiles,
+  fingerprint: string,
+  newest: Readonly<Record<string, number>>,
+): AgentProfilesPauseReason | null {
+  if (data.fingerprints.includes(fingerprint)) return 'repeat_input';
+  if (!hasNewActivity(data, newest) && data.idleRuns + 1 >= AGENT_PROFILES_LOOP_IDLE_RUNS) return 'idle_runs';
+  return null;
 }
 
-export function callsToday(data: StoredProfiles, nowMs: number): number {
-  return data.callDay === vnDayKey(nowMs) ? data.callsToday : 0;
+/** Recorded before a run's first model call, whatever comes back. Only background runs count as idle. */
+export function recordSend(
+  data: StoredProfiles,
+  fingerprint: string,
+  newest: Readonly<Record<string, number>>,
+  trigger: AgentProfilesTrigger,
+): StoredProfiles {
+  const idleRuns = hasNewActivity(data, newest) ? 0 : data.idleRuns + (trigger === 'background' ? 1 : 0);
+  const fingerprints = [...data.fingerprints.filter((known) => known !== fingerprint), fingerprint].slice(-MAX_FINGERPRINTS);
+  return { ...data, fingerprints, idleRuns, sent: advanceMarks(data.sent, newest) };
 }
 
-export function toProfilesState(data: StoredProfiles, nowMs: number): AgentProfilesState {
+export function pauseBackground(data: StoredProfiles, reason: AgentProfilesPauseReason, nowMs: number): StoredProfiles {
+  return { ...data, pause: { reason, at: new Date(nowMs).toISOString() } };
+}
+
+/** "Tiếp tục": background runs may call again, each remembered input allowed once more. */
+export function resumeBackground(data: StoredProfiles): StoredProfiles {
+  return { ...data, pause: null, idleRuns: 0, fingerprints: [] };
+}
+
+export function toProfilesState(data: StoredProfiles): AgentProfilesState {
   const profiles = Object.entries(data.agents)
     .map(([agentId, agent]) => ({ agentId, agentName: agent.agentName, approved: agent.approved, pending: agent.pending }))
     .sort((a, b) => a.agentName.localeCompare(b.agentName, 'vi'));
-  return {
-    profiles,
-    lastRunAt: data.lastRunAt,
-    runsToday: runsToday(data, nowMs),
-    maxRunsPerDay: AGENT_PROFILES_MAX_RUNS_PER_DAY,
-    callsToday: callsToday(data, nowMs),
-    maxCallsPerDay: AGENT_PROFILES_MAX_CALLS_PER_DAY,
-  };
+  return { profiles, lastRunAt: data.lastRunAt, backgroundPause: data.pause };
 }

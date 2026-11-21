@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { AgentProfileView, AgentProfilesResult, AgentProfilesState } from '../../shared/agent-profile-types';
 import {
   agentProfilesErrorText,
+  backgroundPauseNotice,
   forgetConfirmText,
   profileLineDiff,
   profileUseNote,
@@ -12,7 +13,8 @@ import {
 /**
  * "Hồ sơ agent" on the Memory page (docs/MYGRAPH-AGENT-MEMORY.md, S2 and S4): the owner asks izzi to
  * distil one short profile per agent from their own recent work, sees what changed against the profile in
- * use, then approves ("Dùng") or drops ("Bỏ") it. "Ngừng dùng" removes the approved profile.
+ * use, then approves ("Dùng") or drops ("Bỏ") it. "Ngừng dùng" removes the approved profile. When background
+ * runs pause on their own, "Tiếp tục" resumes them; the owner's own update button is never blocked.
  */
 type ProfileAction = 'approve' | 'discard' | 'forget';
 
@@ -21,6 +23,7 @@ export function AgentProfilesSection() {
   const [state, setState] = useState<AgentProfilesState | null>(null);
   const [running, setRunning] = useState(false);
   const [actingOn, setActingOn] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   /** Reads the current account's state; the signed-in account is always resolved in main. */
@@ -78,7 +81,20 @@ export function AgentProfilesSection() {
     }
   };
 
+  const resume = async () => {
+    setResuming(true);
+    try {
+      const result = await api.resume();
+      await finish(result, result.ok ? null : agentProfilesErrorText(result.error));
+    } catch {
+      setNotice(agentProfilesErrorText('model_unavailable'));
+    } finally {
+      setResuming(false);
+    }
+  };
+
   const button = refreshButtonState(state, running);
+  const pauseNotice = backgroundPauseNotice(state);
   const profiles = state?.profiles ?? [];
 
   return (
@@ -103,6 +119,20 @@ export function AgentProfilesSection() {
         liệu tham khảo, không thêm quyền gì. Bấm &quot;Ngừng dùng&quot; để gỡ.
         {button.hint ? ` ${button.hint}` : ''}
       </p>
+      {pauseNotice ? (
+        <div className="memory-section__empty" role="status">
+          {pauseNotice}{' '}
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => void resume()}
+            disabled={running || resuming}
+            aria-busy={resuming}
+          >
+            Tiếp tục
+          </button>
+        </div>
+      ) : null}
       {notice ? <div className="memory-section__empty" role="status">{notice}</div> : null}
       {profiles.length === 0 ? (
         <div className="memory-section__empty">Chưa có hồ sơ nào. Bấm &quot;Cập nhật hồ sơ ngay&quot; để tạo.</div>

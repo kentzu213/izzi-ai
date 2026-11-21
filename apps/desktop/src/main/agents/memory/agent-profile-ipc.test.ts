@@ -8,7 +8,7 @@ vi.mock('../../marketing/marketing-ipc', () => ({ isTrustedMarketingSender: trus
 import { registerAgentProfileIpc } from './agent-profile-ipc';
 import type { AgentProfileService } from './agent-profile-service';
 
-const OK = { ok: true, state: { profiles: [], lastRunAt: null, runsToday: 0, maxRunsPerDay: 3 } };
+const OK = { ok: true, state: { profiles: [], lastRunAt: null, backgroundPause: null } };
 
 function fakeService() {
   return {
@@ -17,6 +17,7 @@ function fakeService() {
     approve: vi.fn(async () => OK),
     discard: vi.fn(async () => OK),
     forget: vi.fn(async () => OK),
+    resume: vi.fn(async () => OK),
   };
 }
 
@@ -38,13 +39,27 @@ describe('registerAgentProfileIpc', () => {
       handlers.get('agentProfiles:approve')!({}, { agentId: 'socrates' }),
       handlers.get('agentProfiles:discard')!({}, { agentId: 'socrates' }),
       handlers.get('agentProfiles:forget')!({}, { agentId: 'socrates' }),
+      handlers.get('agentProfiles:resume')!({}),
     ]);
 
     // Assert
-    expect(results).toEqual([OK, OK, OK, OK, OK]);
+    expect(results).toEqual([OK, OK, OK, OK, OK, OK]);
+    expect(service.resume).toHaveBeenCalledTimes(1);
     expect(service.approve).toHaveBeenCalledWith({ agentId: 'socrates' });
     expect(service.discard).toHaveBeenCalledWith({ agentId: 'socrates' });
     expect(service.forget).toHaveBeenCalledWith({ agentId: 'socrates' });
+  });
+
+  it('[5] treats every refresh from the window as the owner clicking: the renderer cannot ask for a background run', async () => {
+    // Arrange
+    const service = fakeService();
+    registerAgentProfileIpc(service as unknown as AgentProfileService);
+
+    // Act
+    await handlers.get('agentProfiles:refresh')!({}, 'background');
+
+    // Assert
+    expect(service.refresh).toHaveBeenCalledWith();
   });
 
   it('refuses calls from anything but the trusted app window', async () => {

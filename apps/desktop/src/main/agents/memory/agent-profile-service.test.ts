@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AgentProfilesResult } from '../../../shared/agent-profile-types';
 import { DIRECTOR_AGENT } from './agent-profile-digest';
-import { AGENT_PROFILES_MAX_CALLS_PER_DAY, AGENT_PROFILES_MAX_RUNS_PER_DAY, AgentProfileStore, callsToday } from './agent-profile-store';
+import { AgentProfileStore, emptyProfiles } from './agent-profile-store';
 import {
   AGENT_PROFILES_MAX_AGENTS_PER_RUN,
   AGENT_PROFILE_FALLBACK_MODEL,
@@ -11,7 +12,13 @@ import {
 
 const NOW = Date.parse('2026-11-19T12:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 const at = (ms: number): string => new Date(ms).toISOString();
+const UNAVAILABLE = { reply: '', error: 'http 503: No provider available' };
+
+function pauseOf(result: AgentProfilesResult) {
+  return result.ok ? result.state.backgroundPause : 'not ok';
+}
 
 function profileText(note: string): string {
   return `Sở thích:\n- ${note}\nQuyết định:\n- giọng thân thiện\nViệc lặp lại:\n- caption hằng tuần\nKết quả gần đây:\n- 2 bài đã duyệt`;
@@ -85,12 +92,12 @@ describe('AgentProfileService.refresh', () => {
     expect(payload.message).not.toContain('0912345678');
     expect(result).toMatchObject({ ok: true, updated: 2 });
     if (!result.ok) return;
-    expect(result.state.runsToday).toBe(1);
+    expect(result.state.lastRunAt).toBe(at(NOW));
     expect(result.state.profiles.map((profile) => [profile.agentName, profile.approved])).toEqual([
       ['AI Marketing Director', null],
       ['Socrates', null],
     ]);
-    expect(callsToday(store.load('user-1'), NOW)).toBe(1);
+    expect(store.load('user-1').fingerprints).toHaveLength(1);
   });
 
   it('reads only newer activity per agent, including what arrived during the call, and builds on the approved profile', async () => {
@@ -154,16 +161,79 @@ describe('AgentProfileService.refresh', () => {
     expect(chat.mock.calls[0][0].message).toContain(`(id: ${DIRECTOR_AGENT.id})`);
   });
 
-  it('says there is nothing new instead of spending a model call', async () => {
+  it('[2] says there is nothing new instead of spending a model call, for the owner and in the background', async () => {
     const { service, chat } = setup({ sessions: [], marketing: async () => null });
     expect(await service.refresh()).toEqual({ ok: false, error: 'no_activity' });
+    expect(await service.refresh('background')).toEqual({ ok: false, error: 'no_activity' });
     expect(chat).not.toHaveBeenCalled();
+    expect(pauseOf(service.getState())).toBeNull();
+  });
+
+  it('[2] makes 0 calls once the activity is handled, however often it is asked', async () => {
+    // Arrange
+    const { service, chat } = setup({ marketing: async () => null });
+    await service.refresh();
+
+    // Act
+    const results = [await service.refresh(), await service.refresh('background'), await service.refresh()];
+
+    // Assert
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(results).toEqual(Array(3).fill({ ok: false, error: 'no_activity' }));
+  });
+
+  it('[1] has no daily cap: keeps calling for new activity past the old 3 runs and 6 calls a day', async () => {
+    // Arrange
+    const { service, chat, sessions, advance } = setup({ marketing: async () => null, chat: async () => reply([]) });
+    const results: AgentProfilesResult[] = [];
+
+    // Act
+    for (let index = 0; index < 8; index += 1) {
+      sessions.push(chatSession(`việc ${index}`, NOW + index * 120_000));
+      advance(120_000);
+      results.push(await service.refresh());
+    }
+
+    // Assert
+    expect(chat).toHaveBeenCalledTimes(8);
+    expect(results.every((result) => result.ok)).toBe(true);
+  });
+
+  it('[1] lets the owner retry a failed run as often as needed: failed calls use up nothing', async () => {
+    // Arrange
+    const chat = vi.fn().mockResolvedValue(UNAVAILABLE);
+    const { service } = setup({ chat });
+
+    // Act
+    const results: AgentProfilesResult[] = [];
+    for (let index = 0; index < 5; index += 1) results.push(await service.refresh());
+
+    // Assert
+    expect(chat).toHaveBeenCalledTimes(10);
+    expect(results).toEqual(Array(5).fill({ ok: false, error: 'model_unavailable' }));
+  });
+
+  it('[6] has no monthly cap: a run a day with new activity for 31 days is never refused', async () => {
+    // Arrange
+    const { service, chat, sessions, advance } = setup({ marketing: async () => null, chat: async () => reply([]) });
+    const results: AgentProfilesResult[] = [];
+
+    // Act
+    for (let day = 1; day <= 31; day += 1) {
+      advance(DAY);
+      sessions.push(chatSession(`ngày ${day}`, NOW + day * DAY - HOUR));
+      results.push(await service.refresh(day % 2 === 0 ? 'background' : 'owner'));
+    }
+
+    // Assert
+    expect(chat).toHaveBeenCalledTimes(31);
+    expect(results.every((result) => result.ok)).toBe(true);
   });
 
   it('falls back once to gpt-4o-mini, which needs no room for reasoning', async () => {
     // Arrange
     const chat = vi.fn()
-      .mockResolvedValueOnce({ reply: '', error: 'http 503: No provider available' })
+      .mockResolvedValueOnce(UNAVAILABLE)
       .mockResolvedValueOnce(reply([{ agentId: 'socrates', profile: profileText('ngắn') }]));
     const { service } = setup({ chat });
 
@@ -177,7 +247,7 @@ describe('AgentProfileService.refresh', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('stops on an out-of-credit answer without a fallback call and without using up a run', async () => {
+  it('[3] stops on a 402 answer at once, with no fallback call, and leaves the activity for later', async () => {
     // Arrange
     const chat = vi.fn().mockResolvedValue({ reply: '', error: 'http 402: insufficient balance' });
     const { service, store } = setup({ chat });
@@ -188,21 +258,163 @@ describe('AgentProfileService.refresh', () => {
     // Assert
     expect(result).toEqual({ ok: false, error: 'quota' });
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(store.load('user-1').runsToday).toBe(0);
-    expect(callsToday(store.load('user-1'), NOW)).toBe(1);
+    expect(chat.mock.calls[0][0].model).toBe(AGENT_PROFILE_MODEL);
+    expect(store.load('user-1').watermarks).toEqual({});
+    // The owner sees the 402 right away; no background pause is set for something the owner did.
+    expect(pauseOf(service.getState())).toBeNull();
   });
 
-  it(`caps model calls at ${AGENT_PROFILES_MAX_CALLS_PER_DAY} a day even when every call fails`, async () => {
+  it('[3] a background run that meets 402 stops background runs until "Tiếp tục"; the owner can still run', async () => {
     // Arrange
-    const chat = vi.fn().mockResolvedValue({ reply: '', error: 'http 503' });
-    const { service } = setup({ chat });
+    const chat = vi.fn()
+      .mockResolvedValueOnce({ reply: '', error: 'http 402: insufficient balance' })
+      .mockResolvedValue(reply([{ agentId: 'socrates', profile: profileText('ngắn') }]));
+    const { service, sessions, advance } = setup({ chat, marketing: async () => null });
 
     // Act
-    for (let index = 0; index < 4; index += 1) await service.refresh();
+    const first = await service.refresh('background');
+    advance(HOUR);
+    sessions.push(chatSession('việc mới', NOW + 30 * 60_000));
+    const next = await service.refresh('background');
+    const owner = await service.refresh();
 
     // Assert
-    expect(chat).toHaveBeenCalledTimes(AGENT_PROFILES_MAX_CALLS_PER_DAY);
-    expect(await service.refresh()).toEqual({ ok: false, error: 'daily_limit' });
+    expect(first).toEqual({ ok: false, error: 'quota' });
+    expect(next).toEqual({ ok: false, error: 'paused' });
+    expect(owner).toMatchObject({ ok: true, updated: 1 });
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(pauseOf(owner)).toEqual({ reason: 'quota', at: at(NOW) });
+  });
+
+  it('[4] gives up on a call after 90 s, then tries the fallback once with its own 90 s', async () => {
+    vi.useFakeTimers();
+    try {
+      // Arrange: a server that never answers and ignores the abort.
+      const signals: AbortSignal[] = [];
+      const chat = vi.fn((_payload: unknown, signal: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<never>(() => {});
+      });
+      const { service } = setup({ chat });
+
+      // Act
+      const run = service.refresh();
+      await vi.advanceTimersByTimeAsync(0);
+      const startedCalls = chat.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(89_999);
+      const abortedBefore = signals[0].aborted;
+      await vi.advanceTimersByTimeAsync(1);
+      const abortedAt90s = signals[0].aborted;
+      const callsAfterFirstTimeout = chat.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(90_000);
+
+      // Assert
+      expect(startedCalls).toBe(1);
+      expect(abortedBefore).toBe(false);
+      expect(abortedAt90s).toBe(true);
+      expect(callsAfterFirstTimeout).toBe(2);
+      expect(await run).toEqual({ ok: false, error: 'model_unavailable' });
+      expect(signals[1].aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('[5] pauses background runs instead of resending an input already sent, and keeps them paused', async () => {
+    // Arrange
+    const chat = vi.fn().mockResolvedValue(UNAVAILABLE);
+    const { service } = setup({ chat, marketing: async () => null });
+
+    // Act
+    const first = await service.refresh('background');
+    const second = await service.refresh('background');
+    const third = await service.refresh('background');
+
+    // Assert
+    expect(first).toEqual({ ok: false, error: 'model_unavailable' });
+    expect(second).toEqual({ ok: false, error: 'paused' });
+    expect(third).toEqual({ ok: false, error: 'paused' });
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(pauseOf(service.getState())).toEqual({ reason: 'repeat_input', at: at(NOW) });
+  });
+
+  it('[5] pauses the third background run in a row that would send no new activity', async () => {
+    // Arrange: Socrates' activity was sent once already and never answered; its profile is in use.
+    const chat = vi.fn().mockResolvedValue(UNAVAILABLE);
+    const { service, store } = setup({ chat, marketing: async () => null });
+    store.save('user-1', {
+      ...emptyProfiles(),
+      sent: { socrates: at(NOW - 2 * HOUR + 1000) },
+      idleRuns: 1,
+      agents: { socrates: { agentName: 'Socrates', approved: { text: profileText('cũ'), at: at(NOW - DAY) }, pending: null } },
+    });
+
+    // Act: the second idle run still calls; the owner then drops the profile, so the next input differs.
+    const second = await service.refresh('background');
+    await service.forget({ agentId: 'socrates' });
+    const third = await service.refresh('background');
+
+    // Assert
+    expect(second).toEqual({ ok: false, error: 'model_unavailable' });
+    expect(third).toEqual({ ok: false, error: 'paused' });
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(pauseOf(service.getState())).toEqual({ reason: 'idle_runs', at: at(NOW) });
+  });
+
+  it('[5] never blocks the owner\'s click, even while background runs are paused on that same input', async () => {
+    // Arrange
+    const chat = vi.fn()
+      .mockResolvedValueOnce(UNAVAILABLE)
+      .mockResolvedValueOnce(UNAVAILABLE)
+      .mockResolvedValue(reply([{ agentId: 'socrates', profile: profileText('ngắn') }]));
+    const { service } = setup({ chat, marketing: async () => null });
+    await service.refresh('background');
+    await service.refresh('background');
+
+    // Act
+    const owner = await service.refresh();
+
+    // Assert
+    expect(owner).toMatchObject({ ok: true, updated: 1 });
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(pauseOf(owner)).toEqual({ reason: 'repeat_input', at: at(NOW) });
+  });
+
+  it('[5] spends nothing in the background when it cannot remember what it sent; the owner still runs', async () => {
+    // Arrange
+    const { service, chat, store } = setup({ marketing: async () => null });
+    const save = vi.spyOn(store, 'save').mockReturnValue(false);
+
+    // Act
+    const background = await service.refresh('background');
+    const owner = await service.refresh();
+
+    // Assert
+    expect(background).toEqual({ ok: false, error: 'storage' });
+    expect(owner.ok).toBe(true);
+    expect(chat).toHaveBeenCalledTimes(1);
+    save.mockRestore();
+  });
+
+  it('[5] "Tiếp tục" lets background runs call the model again', async () => {
+    // Arrange
+    const chat = vi.fn()
+      .mockResolvedValueOnce(UNAVAILABLE)
+      .mockResolvedValueOnce(UNAVAILABLE)
+      .mockResolvedValue(reply([{ agentId: 'socrates', profile: profileText('ngắn') }]));
+    const { service } = setup({ chat, marketing: async () => null });
+    await service.refresh('background');
+    await service.refresh('background');
+
+    // Act
+    const resumed = await service.resume();
+    const again = await service.refresh('background');
+
+    // Assert
+    expect(pauseOf(resumed)).toBeNull();
+    expect(again).toMatchObject({ ok: true, updated: 1 });
+    expect(chat).toHaveBeenCalledTimes(3);
+    expect(await setup({ owner: () => null }).service.resume()).toEqual({ ok: false, error: 'auth' });
   });
 
   it('never loops on an unusable or cut-off answer: the run counts and that activity is done', async () => {
@@ -224,30 +436,12 @@ describe('AgentProfileService.refresh', () => {
     expect(again).toEqual({ ok: false, error: 'no_activity' });
     expect(truncated).toEqual({ ok: false, error: 'invalid_output' });
     const state = service.getState();
-    expect(state.ok && state.state.runsToday).toBe(2);
+    expect(state.ok && state.state.lastRunAt).toBe(at(NOW + HOUR));
   });
 
   it('reports every profile dropped by the checks as unusable, not as nothing new', async () => {
     const { service } = setup({ chat: async () => reply([{ agentId: 'socrates', profile: profileText('gọi 0912345678') }]) });
     expect(await service.refresh()).toEqual({ ok: false, error: 'invalid_output' });
-  });
-
-  it(`allows ${AGENT_PROFILES_MAX_RUNS_PER_DAY} runs per day`, async () => {
-    // Arrange
-    const { service, sessions, advance } = setup({ marketing: async () => null, chat: async () => reply([]) });
-    for (let index = 0; index < AGENT_PROFILES_MAX_RUNS_PER_DAY; index += 1) {
-      sessions.push(chatSession(`việc ${index}`, NOW + index * 60_000));
-      advance(120_000);
-      await service.refresh();
-    }
-    sessions.push(chatSession('thêm', NOW + 10 * 60_000));
-    advance(20 * 60_000);
-
-    // Act
-    const result = await service.refresh();
-
-    // Assert
-    expect(result).toEqual({ ok: false, error: 'daily_limit' });
   });
 
   it('drops the answer when the account changed during the call, or before it', async () => {
@@ -275,7 +469,7 @@ describe('AgentProfileService.refresh', () => {
     expect(before.chat).not.toHaveBeenCalled();
   });
 
-  it('is busy for a second refresh and for approve or discard while a run is going', async () => {
+  it('[4] runs one at a time: busy for a second refresh, a background run, approve, discard or "Tiếp tục"', async () => {
     // Arrange
     let release: (value: { reply: string }) => void = () => {};
     const { service, chat } = setup({ chat: () => new Promise((resolve) => { release = resolve; }) });
@@ -284,14 +478,19 @@ describe('AgentProfileService.refresh', () => {
     // Act
     const first = service.refresh();
     const second = await service.refresh();
+    const background = await service.refresh('background');
     const discard = await service.discard({ agentId: 'socrates' });
+    const resume = await service.resume();
     await vi.waitFor(() => expect(chat).toHaveBeenCalled());
     release(BOTH);
     await first;
 
     // Assert
     expect(second).toEqual({ ok: false, error: 'busy' });
+    expect(background).toEqual({ ok: false, error: 'busy' });
     expect(discard).toEqual({ ok: false, error: 'busy' });
+    expect(resume).toEqual({ ok: false, error: 'busy' });
+    expect(chat).toHaveBeenCalledTimes(1);
     expect(await signedOut.service.refresh()).toEqual({ ok: false, error: 'auth' });
   });
 
