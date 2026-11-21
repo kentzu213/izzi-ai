@@ -55,7 +55,19 @@ function snapshot(dir) {
 
 const ourCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/bin/hooks/prompt-signal.mjs"`;
 const isOurs = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/hooks/prompt-signal.mjs'));
+const ourSessionCommand = (home) => `node "${home.replace(/\\/g, '/')}/agent-maturity/bin/hooks/session-start.mjs"`;
+const isOurSession = (group) => group.hooks.some((h) => h.command.includes('agent-maturity/bin/hooks/session-start.mjs'));
 const readSettings = (file) => JSON.parse(readFileSync(file, 'utf8'));
+// Settings with both agent-maturity groups taken out; an event list left empty is dropped.
+function stripOurs(settings) {
+  const hooks = { ...settings.hooks };
+  for (const [event, mine] of [['UserPromptSubmit', isOurs], ['SessionStart', isOurSession]]) {
+    if (!hooks[event]) continue;
+    hooks[event] = hooks[event].filter((g) => !mine(g));
+    if (hooks[event].length === 0) delete hooks[event];
+  }
+  return { ...settings, hooks };
+}
 const backupsIn = (home) => readdirSync(home).filter((f) => /^settings\.json\.bak-\d{8}-\d{6}(-\d+)?-agent-maturity$/.test(f));
 
 test('install backs up settings byte-for-byte and keeps every other hook', () => {
@@ -68,8 +80,53 @@ test('install backs up settings byte-for-byte and keeps every other hook', () =>
   const next = readSettings(settings);
   const ours = next.hooks.UserPromptSubmit.filter(isOurs);
   assert.equal(ours.length, 1);
-  const withoutOurs = { ...next, hooks: { ...next.hooks, UserPromptSubmit: next.hooks.UserPromptSubmit.filter((g) => !isOurs(g)) } };
-  assert.deepEqual(withoutOurs, ORIGINAL);
+  assert.equal(next.hooks.SessionStart.filter(isOurSession).length, 1);
+  assert.deepEqual(stripOurs(next), ORIGINAL);
+});
+
+test('the installed SessionStart entry uses / paths, timeout 5, no matcher and no onFailure', () => {
+  const { home, settings } = makeHome();
+  install({ claudeHome: home, env: ENV });
+  const group = readSettings(settings).hooks.SessionStart.find(isOurSession);
+  assert.deepEqual(group, { hooks: [{ type: 'command', command: ourSessionCommand(home), timeout: 5 }] });
+  assert.ok(!group.hooks[0].command.includes('\\'));
+});
+
+test('an install from before D3 gets only the missing SessionStart group', () => {
+  const d1Only = { ...ORIGINAL, hooks: { ...ORIGINAL.hooks, UserPromptSubmit: [...ORIGINAL.hooks.UserPromptSubmit, { hooks: [{ type: 'command', command: 'node "C:/old/agent-maturity/bin/hooks/prompt-signal.mjs"', timeout: 5 }] }] } };
+  const { home, settings } = makeHome({ settingsText: `${JSON.stringify(d1Only, null, 2)}\n` });
+  const r = install({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 0, r.lines.join('\n'));
+  assert.ok(r.lines.some((l) => l.startsWith('add SessionStart hook')));
+  assert.ok(!r.lines.some((l) => l.startsWith('add UserPromptSubmit hook')));
+  const next = readSettings(settings);
+  assert.equal(next.hooks.UserPromptSubmit.filter(isOurs).length, 1);
+  assert.equal(next.hooks.SessionStart.filter(isOurSession).length, 1);
+});
+
+test('foreign SessionStart hooks are kept on install and on a remove-group uninstall', () => {
+  const theirs = { matcher: 'startup|clear', hooks: [{ type: 'command', command: 'node "C:/x/agent-routing/session-start.js"', timeout: 10 }] };
+  const withSession = { ...ORIGINAL, hooks: { ...ORIGINAL.hooks, SessionStart: [theirs] } };
+  const { home, settings } = makeHome({ settingsText: `${JSON.stringify(withSession, null, 2)}\n` });
+  install({ claudeHome: home, env: ENV });
+  assert.deepEqual(readSettings(settings).hooks.SessionStart[0], theirs);
+  assert.deepEqual(stripOurs(readSettings(settings)), withSession);
+  const edited = readSettings(settings);
+  edited.theme = 'dark';
+  writeFileSync(settings, `${JSON.stringify(edited, null, 2)}\n`);
+  const u = uninstall({ claudeHome: home, env: ENV });
+  assert.equal(u.mode, 'remove-group');
+  assert.deepEqual(readSettings(settings), { ...withSession, theme: 'dark' });
+});
+
+test('a SessionStart value that is not a list stops install with nothing written', () => {
+  const odd = { ...ORIGINAL, hooks: { ...ORIGINAL.hooks, SessionStart: { hooks: [] } } };
+  const { home } = makeHome({ settingsText: `${JSON.stringify(odd, null, 2)}\n` });
+  const before = snapshot(home);
+  const r = install({ claudeHome: home, env: ENV });
+  assert.equal(r.code, 1);
+  assert.equal(r.error, 'settings_invalid');
+  assert.deepEqual(snapshot(home), before);
 });
 
 test('the installed hook entry uses / paths, timeout 5 and no onFailure', () => {
@@ -84,7 +141,7 @@ test('the installed hook entry uses / paths, timeout 5 and no onFailure', () => 
 test('install copies runtime files and the marked skill, and the copied hook runs', () => {
   const { home } = makeHome();
   install({ claudeHome: home, env: ENV });
-  for (const rel of ['lib/classify.mjs', 'lib/decide.mjs', 'lib/store.mjs', 'lib/transcript-tail.mjs', 'hooks/prompt-signal.mjs']) {
+  for (const rel of ['lib/classify.mjs', 'lib/decide.mjs', 'lib/store.mjs', 'lib/transcript-tail.mjs', 'hooks/prompt-signal.mjs', 'hooks/session-start.mjs', 'standards/inject.mjs', 'standards/project-root.mjs']) {
     assert.ok(existsSync(join(home, 'agent-maturity', 'bin', rel)), rel);
   }
   assert.ok(existsSync(join(home, 'skills', 'upgrade-checkpoint', 'SKILL.md')));
@@ -106,6 +163,20 @@ test('install copies runtime files and the marked skill, and the copied hook run
   assert.equal(r.status, 0);
   assert.equal(r.stderr, '');
   assert.equal(JSON.parse(r.stdout).hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+
+  writeFileSync(join(home, 'agent-maturity', 'standards.json'), JSON.stringify({
+    schema: 'agent-maturity/standards@1',
+    standards: [{ id: 'u1', scope: 'user', project_id: null, topic: 'tests', title: 'Chạy test thật', summary: 'Kèm mã thoát.' }],
+    projects: [],
+  }));
+  const s = spawnSync(process.execPath, [join(home, 'agent-maturity', 'bin', 'hooks', 'session-start.mjs')], {
+    input: JSON.stringify({ session_id: 'inst-run', hook_event_name: 'SessionStart', cwd: scratch }), encoding: 'utf8', env, timeout: 15_000,
+  });
+  assert.equal(s.status, 0);
+  assert.equal(s.stderr, '');
+  const out = JSON.parse(s.stdout).hookSpecificOutput;
+  assert.equal(out.hookEventName, 'SessionStart');
+  assert.ok(out.additionalContext.includes('Chạy test thật: Kèm mã thoát.'));
 });
 
 test('installing twice keeps a single hook group and the first backup', () => {
@@ -115,6 +186,7 @@ test('installing twice keeps a single hook group and the first backup', () => {
   const r = install({ claudeHome: home, env: ENV });
   assert.equal(r.code, 0);
   assert.equal(readSettings(settings).hooks.UserPromptSubmit.filter(isOurs).length, 1);
+  assert.equal(readSettings(settings).hooks.SessionStart.filter(isOurSession).length, 1);
   assert.equal(backupsIn(home).length, 1);
   assert.equal(JSON.parse(readFileSync(join(home, 'agent-maturity', 'install-manifest.json'), 'utf8')).backup, JSON.parse(firstManifest).backup);
 });
@@ -233,9 +305,11 @@ test('uninstall keeps state and log unless --purge', () => {
   mkdirSync(join(am, 'log'), { recursive: true });
   writeFileSync(join(am, 'state', 's.json'), '{}');
   writeFileSync(join(am, 'log', 'events-2026-11.jsonl'), '{}\n');
+  writeFileSync(join(am, 'standards.json'), '{}\n');
   uninstall({ claudeHome: home, env: ENV });
   assert.ok(existsSync(join(am, 'state', 's.json')));
   assert.ok(existsSync(join(am, 'log', 'events-2026-11.jsonl')));
+  assert.ok(existsSync(join(am, 'standards.json')), 'the standards export stays without --purge');
   install({ claudeHome: home, env: ENV });
   uninstall({ claudeHome: home, purge: true, env: ENV });
   assert.equal(existsSync(am), false);

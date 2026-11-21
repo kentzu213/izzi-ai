@@ -1,7 +1,8 @@
 // Removes the upgrade-checkpoint hook and skill from a Claude Code home (default ~/.claude).
 // Usage: node tools/agent-maturity/uninstall.mjs [--claude-home <dir>] [--settings <file>] [--dry-run] [--purge]
 // If settings.json is unchanged since install it is restored byte-for-byte from the backup; otherwise only
-// the agent-maturity hook group is removed and every other change is kept. State and log stay unless --purge.
+// the agent-maturity hook groups (UserPromptSubmit, SessionStart) are removed and every other change is kept.
+// State, log and the standards.json export stay unless --purge.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,11 +79,11 @@ export function uninstall(opts = {}) {
 
     if (settingsPlan.data !== null) writeChecked(t.settings, settingsPlan.data, settingsPlan.current.sha, opts.beforeRename);
     for (const f of files) fs.rmSync(f, { force: true });
-    for (const dir of [path.join(t.maturity, 'bin', 'lib'), path.join(t.maturity, 'bin', 'hooks'), path.join(t.maturity, 'bin'), t.skillDir]) removeEmptyDir(dir);
+    for (const dir of [path.join(t.maturity, 'bin', 'lib'), path.join(t.maturity, 'bin', 'hooks'), path.join(t.maturity, 'bin', 'standards'), path.join(t.maturity, 'bin'), t.skillDir]) removeEmptyDir(dir);
     fs.rmSync(manifestPath(t), { force: true });
     if (opts.purge) {
       for (const dir of ['state', 'log']) fs.rmSync(path.join(t.maturity, dir), { recursive: true, force: true });
-      for (const file of ['global.json', 'config.json', '.last-cleanup']) fs.rmSync(path.join(t.maturity, file), { force: true });
+      for (const file of ['global.json', 'config.json', '.last-cleanup', 'standards.json']) fs.rmSync(path.join(t.maturity, file), { force: true });
     }
     removeEmptyDir(t.maturity);
     lines.push('uninstalled');
