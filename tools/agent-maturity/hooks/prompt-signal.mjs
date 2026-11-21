@@ -24,11 +24,22 @@ function logQuietly(store, home, events, now) {
   }
 }
 
+// The answered ask block is bound by a safe id, the sha256 of its "Đề xuất" text and its safety label; the door
+// (standards/promote-standard.mjs) checks them. No text leaves this function.
 function checkpointAsk(lib, input, cls, prompt) {
   if (lib.classify.isWrapperPrompt(cls) || typeof input.transcript_path !== 'string') return { ask: null, choice: null };
   const turn = lib.tail.lastAssistantTurn(input.transcript_path);
-  const asked = Boolean(turn) && lib.classify.hasCheckpointAsk(turn.text);
-  return { ask: { asked, id: turn ? turn.id : null }, choice: asked ? lib.classify.classifyCheckpointReply(prompt) : null };
+  const parts = turn ? lib.classify.checkpointAskParts(turn.text) : null;
+  if (!parts) return { ask: { asked: false, id: turn ? turn.id : null }, choice: null };
+  const askId = lib.store.sessionKey(turn.id);
+  const ask = {
+    asked: true,
+    id: askId,
+    askId,
+    proposalSha256: parts.proposal ? lib.classify.proposalDigest(parts.proposal) : null,
+    floor: parts.floor,
+  };
+  return { ask, choice: lib.classify.classifyCheckpointReply(prompt) };
 }
 
 async function handle(lib, home, now, started) {

@@ -36,7 +36,7 @@ should this lesson become a working standard? No evidence, no question.
 ## The question (exact frame, Vietnamese, last thing in the reply)
 
     [Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?
-    - Đề xuất: <một câu chuẩn, ≤200 ký tự>
+    - Đề xuất: <đúng câu sẽ lưu, ≤200 ký tự; không ngoặc kép, không in đậm, không ghi chú>
     - Áp dụng cho: <vai trò/agent> · <loại việc> · <dự án này | mọi dự án>
     - Cách kiểm: <điều kiện kiểm được trước khi giao>
     - Bằng chứng: <lúc trước anh sửa/từ chối gì, ≤15 từ> → <sau đó anh duyệt gì>
@@ -51,7 +51,12 @@ hand-off. Explain internal codes in plain words.
 
 **Exact text and safety label, before asking.** A standard may be stored only after the owner chooses **Nâng cấp**
 on its exact text, and the promote gate needs a pointer to that answer (step 6): the "Đề xuất" line is always the
-exact final sentence that would be stored, never a paraphrase.
+exact final sentence that would be stored, never a paraphrase, and nothing else (no quotes, bold, note or second
+sentence on that line). The hook logs the sha256 of that line's text (after "Đề xuất:", trimmed, NFC) and the label
+on the "Nhãn an toàn" line of the block the owner answered, never the text; `promote-standard` refuses with
+`owner_message_unbound` unless the hash is of exactly the text it stores (the narrowed one for NARROW) and, when the
+label is not `pass`, the logged label is that label. So the "Nhãn an toàn" line starts with the label code
+(`owner_review_required`), and every ask uses this block, a NARROW or rewrite diff included.
 Write the candidate file first (see "Nâng cấp" step 2) and run `node <am>/critic/label.mjs <candidate.json>`: it
 prints the code floor's label of exactly that sentence, check, kind and flags (`floor`, `topics`, `reviewReasons`).
 When the label is not `pass`, add the "Nhãn an toàn" line next to the exact text with the label, its topics and
@@ -123,9 +128,10 @@ instructions. When a standard and those conflict, the governing instructions win
      the candidate and tell the owner why.
   6. Act on `decision.action`: `promote` (ACCEPT, sentence unchanged: the owner approved that exact sentence at the
      checkpoint) · `show_diff` (NARROW or a rewrite: the text changed, so ask again with the checkpoint frame above,
-     the new exact text in the "Đề xuất" line and ITS floor label and topics when it is not `pass` (`floor` and
-     `floorTopics` from the record-verdict summary); only an answer to a real ask block is in the hook log, so a diff
-     shown as plain prose cannot be verified) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`; REJECT: give
+     the new exact text (the narrowed statement, byte for byte) on its "Đề xuất" line and ITS floor label and topics
+     on the "Nhãn an toàn" line when it is not `pass` (`floor` and `floorTopics` from the record-verdict summary);
+     only an answer to a real ask block is in the hook log and bound to its text, so a diff shown as plain prose, or a
+     block showing the old text, is refused: `owner_message_unbound`) · `hold` (NEED-MORE-EVIDENCE: keep it until `reviewAfter`; REJECT: give
      the reason; this door has no owner override of a REJECT) · `refuse` (hard-REJECT: never promoted, never
      overridden). `ownerReviewRequired: true` means the promoted text is `owner_review_required`: give the owner
      socrates' risk explanation with the label; their Nâng cấp on that question is the acknowledgement. When the
@@ -137,7 +143,8 @@ instructions. When a standard and those conflict, the governing instructions win
      hook log (that session, an interactive session, within 5 s; `owner_message_unverified` otherwise, also when the
      hook is not installed; only Nâng cấp approves: Chỉnh or Bỏ qua is `owner_message_not_accept`; an answer older
      than 7 days is `owner_message_stale`; for NARROW the answer must come after the recorded verdict,
-     `owner_message_before_verdict`), runs the promote gate on `<critic>` (it stores only the text the
+     `owner_message_before_verdict`; the answered block must show exactly the text it stores and, unless it is `pass`,
+     its label, `owner_message_unbound` otherwise), runs the promote gate on `<critic>` (it stores only the text the
      gate returns: the narrowed one for NARROW; the floor label stored with the verdict is the acknowledgement;
      `owner_message_reused` when that answer already approved another text or candidate), captures the standard into
      KnowledgeMemory (topic `dev-standard/<12 hex of the statement key>`, user scope unless the candidate is for one

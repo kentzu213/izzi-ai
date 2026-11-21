@@ -111,7 +111,12 @@ In this order, stopping at the first failure (exit 1, `{ error, step?, message }
    installed nothing can be stored) or the pointer is a message uuid (the hook logs none). Only outcome `accept`
    (Nâng cấp) approves: Chỉnh or Bỏ qua is `owner_message_not_accept`. The answer is at most 7 days old
    (`owner_message_stale`) and, for NARROW, later than the recorded verdict (`owner_message_before_verdict`).
-   Read-only, like the input and CLI checks, so a refusal here writes nothing.
+   The answer is bound to the text: the hook logs `proposalSha256` (sha256 of the NFC text on the "Đề xuất" line of
+   the ask block the owner answered), `askId` and `floor` (the label on its "Nhãn an toàn" line), never the text.
+   `proposalSha256` must be the sha256 of the statement the gate will store (the narrowed one for NARROW) and, when
+   its floor class is not `pass`, `floor` must be that class; otherwise `owner_message_unbound` (also for an answer
+   logged before the hook recorded the binding). Read-only, like the input and CLI checks, so a refusal here writes
+   nothing.
 2. **Gate.** `assertPromotable` on the critic store, with `ownerMessage = { sessionId, ts: <the hook event's ts> }` (so
    two pointers to one logged answer are the same answer: `owner_message_reused` for a second text or candidate), the statement
    the stored verdict allows and the floor label stored with it. Every gate refusal (hard_reject, REJECT, NEED-MORE,

@@ -156,6 +156,23 @@ test('all five checkpoint outcomes are recorded', () => {
   assert.ok(outcomes.slice(0, 4).every((o) => o.initiated === 'nudge'));
 });
 
+test('an answered ask block logs its ask id, proposal hash and safety label; malformed values are dropped', () => {
+  // Arrange
+  const sha = 'a'.repeat(64);
+  const bound = { asked: true, id: 'raw id', askId: 'msg-1', proposalSha256: sha, floor: 'owner_review_required' };
+  const junk = { asked: true, id: 'raw id 2', askId: 'has space', proposalSha256: 'Nâng cấp', floor: 'risky' };
+
+  // Act
+  const good = run([{ cls: L.none, ask: bound, choice: 'accept' }]);
+  const bad = run([{ cls: L.none, ask: junk, choice: 'edit' }]);
+
+  // Assert
+  assert.deepEqual(outcomeOf(good.results[0]), {
+    type: 'checkpoint_outcome', turn: 1, outcome: 'accept', initiated: 'agent', askId: 'msg-1', proposalSha256: sha, floor: 'owner_review_required',
+  });
+  assert.deepEqual(outcomeOf(bad.results[0]), { type: 'checkpoint_outcome', turn: 1, outcome: 'edit', initiated: 'agent' });
+});
+
 test('pending lives 5 owner turns, then expires as abstained', () => {
   const { results, state } = run(['correction', 'approve', 'none', 'none', 'none', 'none', 'none']);
   assert.equal(PENDING_TTL_TURNS, 5);

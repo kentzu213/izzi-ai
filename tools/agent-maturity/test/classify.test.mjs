@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
+  checkpointAskParts,
   classifyCheckpointReply,
   classifyPrompt,
   hasCheckpointAsk,
   isWrapperPrompt,
   lengthBucket,
+  proposalDigest,
 } from '../lib/classify.mjs';
 
 const FIXTURE = JSON.parse(readFileSync(new URL('./fixtures/classify-cases.json', import.meta.url), 'utf8'));
@@ -234,4 +237,46 @@ test('a checkpoint ask counts only as the skill block: header at a line start an
   assert.equal(hasCheckpointAsk('> [Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?\n> Trả lời: Nâng cấp / Chỉnh / Bỏ qua'), false);
   assert.equal(hasCheckpointAsk('[Checkpoint nâng cấp] Anh có muốn em nâng cấp cách làm không?'), false);
   assert.equal(hasCheckpointAsk(undefined), false);
+});
+
+test('checkpointAskParts reads the Đề xuất text and the safety label of the last ask block; proposalDigest hashes the NFC text', () => {
+  // Arrange
+  const text = 'Chạy test thật trước khi báo xong.';
+  const label = '- Nhãn an toàn: owner_review_required · Chủ đề: verification · Lý do: đụng tới kiểm thử';
+  const labelled = ASK_BLOCK.replace('- Loại:', `${label}\n- Loại:`);
+  const other = ASK_BLOCK.replace(text, 'Tóm tắt tối đa 5 dòng.');
+  const oldLabel = '- Nhãn an toàn (chỉ khi nhãn không phải pass): owner_review_required (cần anh xem) · Chủ đề: x · Lý do: y';
+  const sha = (s) => createHash('sha256').update(s, 'utf8').digest('hex');
+
+  // Act + Assert
+  assert.deepEqual(checkpointAskParts(`Đã merge.\n\n${ASK_BLOCK}`), { proposal: text, floor: null });
+  assert.deepEqual(checkpointAskParts(labelled.replace(/\n/g, '\r\n')), { proposal: text, floor: 'owner_review_required' });
+  assert.equal(checkpointAskParts(ASK_BLOCK.split('\n').map((l) => `    ${l}`).join('\n')).proposal, text);
+  assert.equal(checkpointAskParts(ASK_BLOCK.replace('- Đề xuất: ', '- **Đề xuất:** ')).proposal, text);
+  assert.equal(checkpointAskParts(ASK_BLOCK.replace('- Loại:', `${oldLabel}\n- Loại:`)).floor, 'owner_review_required');
+  assert.equal(checkpointAskParts(ASK_BLOCK.replace('- Loại:', '- Nhãn an toàn: risky\n- Loại:')).floor, null, 'only a known label');
+  assert.equal(checkpointAskParts(`${ASK_BLOCK}\n\n${other}`).proposal, 'Tóm tắt tối đa 5 dòng.', 'the last block wins');
+  const outside = `- Đề xuất: trước khối\n${ASK_BLOCK.replace(/- Đề xuất: .*\n/, '')}`;
+  assert.equal(checkpointAskParts(outside).proposal, null, 'a line outside the block is not read');
+  assert.equal(checkpointAskParts('Không hỏi gì.'), null);
+  assert.equal(checkpointAskParts(undefined), null);
+  assert.equal(proposalDigest(text.normalize('NFD')), sha(text.normalize('NFC')));
+  assert.equal(proposalDigest(text), sha(text));
+});
+
+test('the ask frame in SKILL.md, filled in, gives back its exact Đề xuất text and safety label', () => {
+  // Arrange
+  const skill = readFileSync(new URL('../skill/upgrade-checkpoint/SKILL.md', import.meta.url), 'utf8').split(/\r?\n/);
+  const start = skill.findIndex((l) => l.trim().startsWith('[Checkpoint nâng cấp]'));
+  const end = skill.findIndex((l, i) => i > start && l.trim().startsWith('Trả lời:'));
+  const frame = skill.slice(start, end + 1);
+  const text = 'Tóm tắt tiến độ tối đa 5 gạch đầu dòng.';
+  const filled = frame.map((l) => l.replace(/^(\s*- Đề xuất: ).*$/u, `$1${text}`)).join('\n');
+
+  // Act
+  const parts = checkpointAskParts(`Đã xong.\n\n${filled}`);
+
+  // Assert
+  assert.ok(start >= 0 && end > start, 'the frame is in SKILL.md');
+  assert.deepEqual(parts, { proposal: text, floor: 'owner_review_required' });
 });

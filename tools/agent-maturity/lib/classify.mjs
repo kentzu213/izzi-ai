@@ -1,6 +1,8 @@
 // Prompt classifier for the upgrade-checkpoint hook (docs/izzi-v2/PLAN.md §4.2 and §4.9).
 // Pure functions: no I/O, and results never carry the prompt text.
 
+import crypto from 'node:crypto';
+
 export const CHECKPOINT_HEADER = '[Checkpoint nâng cấp]';
 
 const LIMIT = {
@@ -289,20 +291,53 @@ export function isWrapperPrompt(cls) {
   return Boolean(cls) && cls.label === 'abstain' && WRAPPER_RULES.has(cls.ruleId);
 }
 
+// The skill's ask blocks in an assistant message's lines: [header line, "Trả lời:" line] index pairs, in order.
+function askBlocks(lines) {
+  const blocks = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
+    const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
+    const answer = lines.slice(i + 1, end).findIndex((l) => l.trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE));
+    if (answer >= 0) blocks.push([i, i + 1 + answer]);
+  }
+  return blocks;
+}
+
 // True when an assistant message holds the skill's ask block: a line starting with the header (indent
 // allowed) and, within the next lines, the "Trả lời:" line. A header quoted inside a sentence does not count.
 export function hasCheckpointAsk(text) {
   if (typeof text !== 'string') return false;
-  const lines = text.normalize('NFC').split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!lines[i].trimStart().startsWith(CHECKPOINT_HEADER)) continue;
-    const end = Math.min(lines.length, i + 1 + ASK_BLOCK_LINES);
-    for (let j = i + 1; j < end; j += 1) {
-      if (lines[j].trimStart().replace(/^[*_]+/, '').startsWith(ANSWER_LINE)) return true;
-    }
-  }
-  return false;
+  return askBlocks(text.normalize('NFC').split('\n')).length > 0;
 }
+
+// The floor labels a checkpoint question may show (critic/floor.mjs FLOOR_CLASSES).
+export const FLOOR_LABELS = Object.freeze(['pass', 'owner_review_required', 'hard_reject']);
+// "- Đề xuất: <exact text>" and "- Nhãn an toàn: <label> · ..." inside an ask block; a bullet and ** or __ around the
+// field name are allowed.
+const PROPOSAL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Đề xuất[*_]{0,2}\s*:[*_]{0,2}(.*)$/u;
+const LABEL_LINE = /^\s*(?:[-*•]\s*)?[*_]{0,2}Nhãn an toàn[^:]*:[*_]{0,2}\s*([a-z_]+)/u;
+const firstMatch = (lines, re) => lines.map((l) => re.exec(l)).find(Boolean) ?? null;
+
+// The last ask block of an assistant message: { proposal, floor }, where proposal is the exact NFC text of its
+// "Đề xuất" line (trimmed; null when the block has none) and floor its "Nhãn an toàn" label (null unless one of
+// FLOOR_LABELS). null when the message holds no ask block.
+export function checkpointAskParts(text) {
+  if (typeof text !== 'string') return null;
+  const lines = text.normalize('NFC').split(/\r?\n/);
+  const last = askBlocks(lines).at(-1);
+  if (!last) return null;
+  const body = lines.slice(last[0] + 1, last[1]);
+  const proposal = firstMatch(body, PROPOSAL_LINE);
+  const label = firstMatch(body, LABEL_LINE);
+  return {
+    proposal: proposal ? proposal[1].trim() || null : null,
+    floor: label && FLOOR_LABELS.includes(label[1]) ? label[1] : null,
+  };
+}
+
+// sha256 (hex) of the NFC form of a proposal. The hook logs it for the ask block the owner answered; the door
+// (standards/promote-standard.mjs) compares it with the text it stores.
+export const proposalDigest = (text) => crypto.createHash('sha256').update(text.normalize('NFC'), 'utf8').digest('hex');
 
 export function lengthBucket(text) {
   const n = typeof text === 'string' ? text.trim().length : 0;

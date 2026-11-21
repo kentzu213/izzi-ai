@@ -1,7 +1,7 @@
 // Nudge decision for the upgrade-checkpoint hook (docs/izzi-v2/PLAN.md §4.3 and §4.9).
 // Pure: decide(state, global, cls, info) returns new objects and never mutates its inputs.
 
-import { MILESTONE_LABELS, isWrapperPrompt } from './classify.mjs';
+import { FLOOR_LABELS, MILESTONE_LABELS, isWrapperPrompt } from './classify.mjs';
 
 export const CAP_PER_SESSION = 3;
 export const STRICT_CAP_PER_SESSION = 1;
@@ -116,6 +116,19 @@ function expireStrict(g, nowMs, turn, events) {
   return { ...g, recentOutcomes: [], strict: false, strictSince: null };
 }
 
+const SAFE_ASK_ID = /^[A-Za-z0-9-]{1,128}$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+// What the log keeps of the ask block the owner answered (info.ask.askId, proposalSha256, floor): a safe id, the
+// sha256 of its "Đề xuất" text and its safety label. Never text; a malformed value is dropped.
+function askBinding(ask) {
+  return {
+    ...(typeof ask.askId === 'string' && SAFE_ASK_ID.test(ask.askId) ? { askId: ask.askId } : {}),
+    ...(typeof ask.proposalSha256 === 'string' && SHA256_HEX.test(ask.proposalSha256) ? { proposalSha256: ask.proposalSha256 } : {}),
+    ...(FLOOR_LABELS.includes(ask.floor) ? { floor: ask.floor } : {}),
+  };
+}
+
 export function decide(state, global, cls, info = {}) {
   let s = normalizeState(state);
   const g0 = normalizeGlobal(global);
@@ -137,7 +150,7 @@ export function decide(state, global, cls, info = {}) {
   if (asked) {
     const outcome = CHOICES.has(info.choice) ? info.choice : 'ignored';
     outcomes.push(outcome);
-    events.push({ type: 'checkpoint_outcome', turn, outcome, initiated: s.pending ? 'nudge' : 'agent' });
+    events.push({ type: 'checkpoint_outcome', turn, outcome, initiated: s.pending ? 'nudge' : 'agent', ...askBinding(info.ask) });
     s = { ...s, asks: s.asks + 1, lastAskTurn: turn - 1, lastAskId: askId, pending: null, correctionsSinceCheckpoint: 0 };
   } else if (s.pending && turn - s.pending.turn >= PENDING_TTL_TURNS) {
     outcomes.push('abstained');

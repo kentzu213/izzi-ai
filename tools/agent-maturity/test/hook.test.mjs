@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,10 +135,41 @@ test('no prompt text, key or phone number is stored anywhere', () => {
   }
 });
 
+const LOG_FIELDS = ['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name', 'askId', 'proposalSha256', 'floor'];
+
+test('an answered ask block logs its ask id, the sha256 of its Đề xuất text and its safety label, never the text', () => {
+  // Arrange
+  const home = newHome();
+  const text = 'Chạy test thật trước khi báo xong.';
+  const label = '- Nhãn an toàn: owner_review_required · Chủ đề: verification · Lý do: đụng tới kiểm thử';
+  const labelled = join(scratch, 'binding-labelled.jsonl');
+  const unsafeId = join(scratch, 'binding-unsafe-id.jsonl');
+  writeTranscript(labelled, `Xong.\n\n${ASK_BLOCK.replace('- Loại:', `${label}\n- Loại:`)}`, 'b7f2c1d0-1111-4222-8333-444455556666');
+  writeTranscript(unsafeId, `Xong.\n\n${ASK_BLOCK}`, 'msg_01 not/safe');
+
+  // Act
+  assertQuiet(runHook(prompt('Nâng cấp', 'sess-bind-1', { transcript_path: labelled }), { home }));
+  assertQuiet(runHook(prompt('Chỉnh: bỏ chữ thật', 'sess-bind-2', { transcript_path: unsafeId }), { home }));
+
+  // Assert
+  const outcomes = readEvents(home).filter((e) => e.type === 'checkpoint_outcome');
+  const sha = createHash('sha256').update(text.normalize('NFC'), 'utf8').digest('hex');
+  assert.deepEqual(outcomes.map((e) => [e.outcome, e.askId, e.proposalSha256, e.floor]), [
+    ['accept', 'b7f2c1d0-1111-4222-8333-444455556666', sha, 'owner_review_required'],
+    ['edit', outcomes[1].askId, sha, undefined],
+  ]);
+  assert.match(outcomes[1].askId, /^[0-9a-f]{40}$/, 'an unsafe message id is hashed');
+  for (const e of outcomes) for (const k of Object.keys(e)) assert.ok(LOG_FIELDS.includes(k), `unexpected field ${k}`);
+  for (const f of listFiles(home)) {
+    const body = readFileSync(f, 'utf8');
+    for (const needle of ['Chạy test thật', 'msg_01', 'kiểm thử']) assert.ok(!body.includes(needle), `${needle} found in ${f}`);
+  }
+});
+
 test('log events carry only allowed fields', () => {
   const home = newHome();
   for (const text of ['làm lại', 'merge', '/verify', 'tiếp tục']) runHook(prompt(text, 'sess-fields'), { home });
-  const allowed = new Set(['ts', 'session', 'ep', 'type', 'turn', 'label', 'ruleId', 'len', 'ms', 'wrapper', 'corrections', 'nudged', 'kind', 'outcome', 'initiated', 'reason', 'name']);
+  const allowed = new Set(LOG_FIELDS);
   const events = readEvents(home);
   assert.ok(events.length >= 6);
   for (const e of events) for (const k of Object.keys(e)) assert.ok(allowed.has(k), `unexpected field ${k}`);

@@ -8,6 +8,10 @@
 //      (owner_message_unverified), with outcome accept: only Nâng cấp approves, Chỉnh or Bỏ qua is
 //      owner_message_not_accept. The answer is at most 7 days old (owner_message_stale), and for NARROW later than
 //      the recorded verdict (owner_message_before_verdict). Read-only, so a refused pointer writes nothing.
+//   1b. Bind the answer to the text (owner_message_unbound): the hook logged proposalSha256, the sha256 of the NFC
+//      "Đề xuất" line of the ask block the owner answered; it must be the sha256 of the statement the gate will store
+//      (the narrowed text for NARROW), and when that text's floor class is not pass, the label the block showed must
+//      be that class (hard_reject is refused by the gate whatever was shown). Read-only too.
 //   2. assertPromotable (D4 gate) on the critic store, with the hook event's own time as ownerMessage, so one logged
 //      answer approves one text of one candidate (owner_message_reused). The statement stored is the one the gate
 //      returns (the narrowed text for NARROW), never an argument.
@@ -23,11 +27,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { ID_RE, isObject } from '../critic/candidate.mjs';
+import { ID_RE, isObject, text } from '../critic/candidate.mjs';
 import { createJsonAdapter } from '../critic/json-adapter.mjs';
 import { statementKey, verdictDigest } from '../critic/loop-guard.mjs';
 import { assertPromotable } from '../critic/promote-gate.mjs';
 import { promotedFloor, promotedTopics } from '../critic/verdict.mjs';
+import { proposalDigest } from '../lib/classify.mjs';
 import { NUDGE_ENTRYPOINTS } from '../lib/decide.mjs';
 import { logPath, resolveHome } from '../lib/store.mjs';
 import { isInside } from './project-root.mjs';
@@ -56,6 +61,8 @@ const OUTCOME_WORDS = { edit: 'Chỉnh', skip: 'Bỏ qua', ignored: 'không ch�
 // 12 hex characters: never 13 digits in a row, so the store's card-number check cannot trip on a topic.
 const TOPIC_HASH_CHARS = 12;
 const TITLE_MAX = 160;
+// critic/promote-gate.mjs reads the approved statement with text(statement, 400).
+const GATE_STATEMENT_MAX = 400;
 // The hook logs a safe session id as-is (lib/store.mjs sessionKey); userSource accepts the same set.
 const SESSION_RE = /^[A-Za-z0-9-]{1,128}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -157,9 +164,23 @@ function checkAnsweredAfterVerdict(adapter, candidateId, verdict, ownerMessage) 
   }
 }
 
+// The owner answered the ask block that showed exactly this text and, unless it is pass, its floor label. The gate
+// stores a statement only when text(approval.statement) equals it, so that value is what the gate will return; a
+// statement that does not read as text is left to the gate, which refuses it (no candidate, verdict or narrowed text).
+function checkAnswerBound(answer, statement, floorClass) {
+  const stored = text(statement, GATE_STATEMENT_MAX);
+  if (!stored.ok) return;
+  if (answer.proposalSha256 !== proposalDigest(stored.value)) {
+    fail('owner_message_unbound', 'that answer was not to an ask block whose "Đề xuất" line is exactly the text to store (the narrowed one for NARROW): ask again with that exact text');
+  }
+  if (floorClass !== 'pass' && floorClass !== 'hard_reject' && answer.floor !== floorClass) {
+    fail('owner_message_unbound', `that ask block did not show the safety label ${floorClass} of this text: ask again with the label`);
+  }
+}
+
 // Under the critic store lock: the approval names what the stored verdict allows (the narrowed text for NARROW) and
 // the floor label stored with it; the gate re-derives and checks every one of them and returns what may be stored.
-function gateLocked(adapter, candidateId, ownerMessage, projectPath, now) {
+function gateLocked(adapter, candidateId, answer, ownerMessage, projectPath, now) {
   const record = adapter.loadCandidate(candidateId);
   const last = record && Array.isArray(record.verdicts) ? record.verdicts.at(-1) : undefined;
   const candidate = record && isObject(record.candidate) ? record.candidate : null;
@@ -169,9 +190,11 @@ function gateLocked(adapter, candidateId, ownerMessage, projectPath, now) {
   checkAnsweredAfterVerdict(adapter, candidateId, last, ownerMessage);
   const floorClass = isObject(last) ? promotedFloor(last) : undefined;
   const topics = isObject(last) ? promotedTopics(last) : null;
+  const statement = isObject(last) && last.verdict === 'NARROW' ? last.narrowed?.statement : candidate?.statement;
+  checkAnswerBound(answer, statement, floorClass);
   const ownerApproval = {
     approved: true,
-    statement: isObject(last) && last.verdict === 'NARROW' ? last.narrowed?.statement : candidate?.statement,
+    statement,
     ownerMessage,
     ...(typeof floorClass === 'string' ? { floorClass } : {}),
     ...(Array.isArray(topics) ? { topics } : {}),
@@ -268,7 +291,7 @@ export function promoteStandard(opts = {}) {
   if (!fs.existsSync(criticDir)) fail('candidate_missing', 'no critic store at that folder');
   const adapter = createJsonAdapter(criticDir);
   const ownerPointer = { sessionId: message.sessionId, ts: answer.ts };
-  const { gate, candidate, verdict } = adapter.withLock(() => gateLocked(adapter, candidateId, ownerPointer, projectPath, now));
+  const { gate, candidate, verdict } = adapter.withLock(() => gateLocked(adapter, candidateId, answer, ownerPointer, projectPath, now));
   return storeStandard({ adapter, gate, candidate, verdict, message, answer, projectPath, km, now });
 }
 

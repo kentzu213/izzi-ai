@@ -102,7 +102,7 @@ const ofType = (w, type) => criticLog(w).filter((e) => e.type === type);
 
 // The owner answers a checkpoint question in a fresh session; the real D1 hook logs the outcome. Returns the logged
 // event and at(offsetMs): the --owner-message pointer "<session>:<time>" offset from the logged time.
-function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.statement } = {}) {
+function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.statement, floor = null } = {}) {
   const session = randomUUID();
   const transcript = join(w.dir, `${session}.jsonl`);
   const ask = [
@@ -114,6 +114,7 @@ function ownerAnswers(w, answer = 'Nâng cấp', { ep = 'cli', statement = BASE.
     '- Cách kiểm: đếm gạch đầu dòng',
     '- Bằng chứng: anh chê bản dài → anh duyệt bản 5 dòng',
     '- Loại: sở thích · Tra cứu: R0',
+    ...(floor ? [`- Nhãn an toàn: ${floor} (cần anh xem) · Chủ đề: kiểm thử · Lý do: đụng tới kiểm thử`] : []),
     'Trả lời: Nâng cấp / Chỉnh (gõ chỗ cần đổi) / Bỏ qua',
   ].join('\n');
   writeFileSync(transcript, [
@@ -210,7 +211,7 @@ test('2. NARROW stores only the narrowed sentence; owner_review_required text pr
 
   // Act
   const narrow = door(w, BASE.id, ownerAnswers(w, 'Nâng cấp', { statement: NARROWED }).at(-800));
-  const review = door(w, SCOPED.id, ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement }).at(300));
+  const review = door(w, SCOPED.id, ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement, floor: 'owner_review_required' }).at(300));
 
   // Assert
   assert.equal(narrow.statement, NARROWED);
@@ -253,10 +254,11 @@ test('3. the owner answer must be in the hook log: right session, Nâng cấp, i
   nothingStored(w);
   assert.deepEqual(ofType(w, 'promotion_approved'), [], 'a refused pointer is not recorded as an approval');
 
-  // Act + Assert: exactly 5 s off still names the answer; the same answer cannot approve a second text
+  // Act + Assert: exactly 5 s off still names the answer; the same answer cannot approve a second text (it is bound
+  // to the text its ask block showed) nor a second candidate
   const ok = door(w, c.id, answer.at(OWNER_MESSAGE_WINDOW_MS));
   assert.equal(ok.statement, c.statement);
-  refusedWith('owner_message_reused', () => door(w, other.id, answer.at(2000)));
+  refusedWith('owner_message_unbound', () => door(w, other.id, answer.at(2000)));
   const twin = critique(w, { id: 'di-twin' });
   assert.equal(twin.statement, c.statement);
   refusedWith('owner_message_reused', () => door(w, twin.id, answer.at()));
@@ -280,6 +282,42 @@ test('the owner answer is at most 7 days old, and a NARROW answer comes after th
   assert.deepEqual(ofType(w, 'promotion_approved'), []);
   assert.equal(door(w, c.id, answer.at(), { now: new Date(atAnswer + OWNER_ANSWER_MAX_AGE_MS) }).statement, c.statement);
   assert.equal(door(w, 'di-narrow-late', ownerAnswers(w, 'Nâng cấp', { statement: NARROWED }).at()).statement, NARROWED);
+});
+
+test('the answer is bound to the exact Đề xuất text and safety label its ask block showed (owner_message_unbound)', { skip }, () => {
+  // Arrange
+  const w = world();
+  const c = critique(w);
+  critique(w, { id: 'di-narrowed' }, NARROW);
+  const scoped = critique(w, SCOPED);
+  const hookLine = (event) => {
+    mkdirSync(join(w.home, 'log'), { recursive: true });
+    const file = join(w.home, 'log', `events-${event.ts.slice(0, 7)}.jsonl`);
+    writeFileSync(file, `${existsSync(file) ? readFileSync(file, 'utf8') : ''}${JSON.stringify(event)}
+`);
+  };
+  const legacy = { ts: new Date().toISOString(), session: randomUUID(), ep: 'cli', type: 'checkpoint_outcome', turn: 2, outcome: 'accept', initiated: 'agent' };
+  hookLine(legacy);
+  const unbound = (pointer, id = c.id) => refusedWith('owner_message_unbound', () => door(w, id, pointer));
+
+  // Act + Assert: refused before the gate, so nothing is written and no approval is recorded
+  unbound(`${legacy.session}:${legacy.ts}`); // logged before the hook bound answers: no proposalSha256
+  unbound(ownerAnswers(w, 'Nâng cấp', { statement: 'Tóm tắt tiến độ ngắn gọn.' }).at()); // a paraphrase
+  unbound(ownerAnswers(w, 'Nâng cấp', { statement: `"${c.statement}"` }).at()); // quoted
+  unbound(ownerAnswers(w).at(), 'di-narrowed'); // the candidate text, not the narrowed one
+  unbound(ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement }).at(), scoped.id); // label not shown
+  unbound(ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement, floor: 'pass' }).at(), scoped.id); // wrong label
+  nothingStored(w);
+  assert.deepEqual(ofType(w, 'promotion_approved'), []);
+
+  // Act + Assert: the same text in NFD form is the same text; a pass text needs no label
+  const nfd = ownerAnswers(w, 'Nâng cấp', { statement: c.statement.normalize('NFD') });
+  assert.equal(nfd.event.proposalSha256, createHash('sha256').update(c.statement.normalize('NFC'), 'utf8').digest('hex'));
+  assert.equal(nfd.event.floor, undefined);
+  assert.equal(door(w, c.id, nfd.at()).statement, c.statement);
+  const labelled = ownerAnswers(w, 'Nâng cấp', { statement: scoped.statement, floor: 'owner_review_required' });
+  assert.equal(labelled.event.floor, 'owner_review_required');
+  assert.equal(door(w, scoped.id, labelled.at()).floor, 'owner_review_required');
 });
 
 test('Chỉnh is not approval: an edit answer is refused (owner_message_not_accept) and writes nothing', { skip }, () => {
