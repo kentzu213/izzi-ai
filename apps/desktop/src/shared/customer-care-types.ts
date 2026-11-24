@@ -102,6 +102,10 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   // 422, Phase C: automatic replies need the inbox on and the pages_messaging grant.
   'inbox_off',
   'permission_missing',
+  // Care CRM S2: set by the CRM client on a 429 (reported as `unavailable`), so the screen skips a refresh.
+  'rate_limited',
+  // Care CRM S2, 403 on a save: the chosen owner is no longer an active owner, manager or editor.
+  'owner_not_eligible',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -309,4 +313,127 @@ export interface CustomerCareMutationResult {
   error?: string;
   /** Phase C, only while automatic replies are on: whether the server now answers with the saved facts. */
   autoReplyScript?: 'updated' | 'failed';
+}
+
+// Care CRM S2: staff keep a hand-filled profile per Care lead and work a call list in MyGraph → CRM. Rows
+// live in memory for display only; nothing is written to graph nodes, SQLite, settings, logs or files.
+
+export const CUSTOMER_CARE_CRM_STAGES = [
+  'has_phone',
+  'consulting',
+  'deposit',
+  'delivered',
+  'lost',
+  'do_not_contact',
+] as const;
+export type CustomerCareCrmStage = (typeof CUSTOMER_CARE_CRM_STAGES)[number];
+
+export const CUSTOMER_CARE_CRM_OCCASIONS = ['new_home', 'tet', 'anniversary', 'gift', 'replacement', 'other'] as const;
+export type CustomerCareCrmOccasion = (typeof CUSTOMER_CARE_CRM_OCCASIONS)[number];
+
+/** Chosen by staff; never inferred. */
+export const CUSTOMER_CARE_CRM_ADDRESS_FORMS = ['anh', 'chi', 'co', 'chu', 'ban'] as const;
+export type CustomerCareCrmAddressForm = (typeof CUSTOMER_CARE_CRM_ADDRESS_FORMS)[number];
+
+export const CUSTOMER_CARE_CRM_LOST_REASONS = ['price', 'bought_elsewhere', 'no_reply', 'not_needed', 'other'] as const;
+export type CustomerCareCrmLostReason = (typeof CUSTOMER_CARE_CRM_LOST_REASONS)[number];
+
+/** The roles the CRM routes answer for; a viewer or reviewer gets 403. */
+export const CUSTOMER_CARE_CRM_ROLES = ['owner', 'manager', 'editor'] as const;
+export type CustomerCareCrmRole = (typeof CUSTOMER_CARE_CRM_ROLES)[number];
+
+/** The editable profile: a full replace on every save, never a patch. */
+export interface CustomerCareCrmProfileInput {
+  stage: CustomerCareCrmStage;
+  ownerUserId: string | null;
+  addressForm: CustomerCareCrmAddressForm | null;
+  occasion: CustomerCareCrmOccasion | null;
+  /** `YYYY-MM-DD`. */
+  neededBy: string | null;
+  /** Ids of the shop's approved Care facts; at most 8. */
+  productFactIds: string[];
+  nextStep: string | null;
+  /** ISO timestamp. */
+  nextStepDueAt: string | null;
+  /** Only when `stage` is `lost`. */
+  lostReason: CustomerCareCrmLostReason | null;
+  /** `YYYY-MM-DD`, only when `stage` is `deposit` or `delivered`. */
+  purchasedAt: string | null;
+  note: string | null;
+}
+
+export interface CustomerCareCrmProfile extends CustomerCareCrmProfileInput {
+  /** Null until the first save; a save carries it back as `expectedUpdatedAt`. */
+  updatedAt: string | null;
+  updatedBy: string | null;
+  /**
+   * Present only when the server could not open the sealed details: the detail fields came back empty, the
+   * row is shown read-only and is never saved (the server would answer 503).
+   */
+  detailsUnreadable?: true;
+}
+
+export interface CustomerCareCrmRow {
+  leadId: string;
+  pageId: string;
+  customerName: string | null;
+  /** Normalized Vietnamese mobile, `0xxxxxxxxx`. */
+  phone: string;
+  zaloMentioned: boolean;
+  leadStatus: CustomerCareLeadStatus;
+  phoneCapturedAt: string;
+  lastMessageAt: string;
+  /** Up to 3 customer messages, oldest first, plain text. */
+  recentMessages: CustomerCareLeadMessage[];
+  profile: CustomerCareCrmProfile;
+}
+
+/** An active owner, manager or editor of the workspace; `label` is null when no safe name could be shown. */
+export interface CustomerCareCrmAssignee {
+  userId: string;
+  label: string | null;
+}
+
+/** `canDelete` is a display hint for the existing purge; main and the server re-check the role. */
+export type CustomerCareCrmListResult =
+  | {
+    ok: true;
+    workspaceId: string;
+    role: CustomerCareCrmRole;
+    canDelete: boolean;
+    rows: CustomerCareCrmRow[];
+    nextCursor: string | null;
+    assignees: CustomerCareCrmAssignee[];
+  }
+  | CustomerCareFacebookFailure;
+
+/**
+ * Someone else saved first: nothing was overwritten, and `profile` is the current state on the server. Only
+ * the profile is handed back: after a save the server may not be able to present the lead's phone and
+ * messages, so the screen keeps the ones it already shows.
+ */
+export interface CustomerCareCrmConflict {
+  ok: false;
+  error: 'profile_conflict';
+  workspaceId: string;
+  leadId: string;
+  profile: CustomerCareCrmProfile;
+}
+
+/** A committed save answers with the stored profile; the screen merges it into the row it shows. */
+export type CustomerCareCrmSaveResult =
+  | { ok: true; workspaceId: string; leadId: string; profile: CustomerCareCrmProfile }
+  | CustomerCareCrmConflict
+  | CustomerCareFacebookFailure;
+
+/** Renderer inputs; the workspace always comes from main's live authority. */
+export interface CustomerCareCrmListInput {
+  cursor: string | null;
+}
+
+export interface CustomerCareCrmSaveInput {
+  leadId: string;
+  /** The `updatedAt` the edit was made against; null for a first save. */
+  expectedUpdatedAt: string | null;
+  profile: CustomerCareCrmProfileInput;
 }

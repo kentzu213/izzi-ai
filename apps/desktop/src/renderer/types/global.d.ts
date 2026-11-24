@@ -1,6 +1,6 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../../shared/agent-profile-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -641,6 +641,8 @@ declare global {
       purgeLead(input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult>;
       getAutoReply(): Promise<CustomerCareAutoReplyResult>;
       setAutoReply(input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult>;
+      listCrm(input: CustomerCareCrmListInput): Promise<CustomerCareCrmListResult>;
+      saveCrmProfile(input: CustomerCareCrmSaveInput): Promise<CustomerCareCrmSaveResult>;
     };
     agentProfiles?: {
       get(): Promise<AgentProfilesResult>;

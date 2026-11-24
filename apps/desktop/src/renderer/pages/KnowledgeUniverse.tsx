@@ -12,6 +12,7 @@ import * as bridge from "../lib/aibase-api";
 import { LiveProfilePanel } from "../components/LiveProfilePanel";
 import { MyGraphWorkspaceV2 } from "../components/v2/MyGraphWorkspaceV2";
 import { createOpenWebGuard, openMyGraphWebSafely } from "../lib/open-my-graph-web";
+import { CustomerCrmPanel } from "./CustomerCrmPanel";
 
 /**
  * Desktop "Knowledge Universe" page — a thin host around the shared
@@ -71,6 +72,7 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
       <MyGraphWorkspaceV2
         graph={<MyGraphView api={api} navigate={navigate} detached={false} />}
         aside={<LiveProfilePanel />}
+        crm={<CustomerCrmPanel />}
         onOpenWeb={() => void openMyGraphWeb()}
         openWebError={openWebError}
       />

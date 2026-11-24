@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../shared/agent-profile-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -694,6 +694,11 @@ const electronAPI = {
     getAutoReply: (): Promise<CustomerCareAutoReplyResult> => ipcRenderer.invoke('customerCare:getAutoReply'),
     setAutoReply: (input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult> =>
       ipcRenderer.invoke('customerCare:setAutoReply', input),
+    // Care CRM S2: rows stay in renderer memory for display; main parses both inputs strictly.
+    listCrm: (input: CustomerCareCrmListInput): Promise<CustomerCareCrmListResult> =>
+      ipcRenderer.invoke('customerCare:listCrm', input),
+    saveCrmProfile: (input: CustomerCareCrmSaveInput): Promise<CustomerCareCrmSaveResult> =>
+      ipcRenderer.invoke('customerCare:saveCrmProfile', input),
   },
   // Agent profiles (MyGraph agent memory, S2): distilled on request, used only after the owner approves.
   agentProfiles: {

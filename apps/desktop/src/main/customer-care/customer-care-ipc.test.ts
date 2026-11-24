@@ -11,7 +11,7 @@ describe('customer care IPC boundary', () => {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
     selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
-    purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(),
+    purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
@@ -30,6 +30,8 @@ describe('customer care IPC boundary', () => {
     ['purgeLead', service.purgeLead],
     ['getAutoReply', service.getAutoReply],
     ['setAutoReply', service.setAutoReply],
+    ['listCrm', service.listCrm],
+    ['saveCrmProfile', service.saveCrmProfile],
   ] as const;
 
   beforeEach(() => {
@@ -83,6 +85,16 @@ describe('customer care IPC boundary', () => {
     const purge = { leadId: 'l' };
     await invoke('purgeLead', purge, 'extra');
     expect(service.purgeLead).toHaveBeenCalledWith(purge);
+  });
+  it('registers the CRM channels and forwards only their opaque input, never extra arguments', async () => {
+    service.listCrm.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    service.saveCrmProfile.mockResolvedValue({ ok: false, error: 'forbidden' });
+    const page = { cursor: null };
+    expect(await invoke('listCrm', page, { workspaceId: 'injected' })).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.listCrm).toHaveBeenCalledWith(page);
+    const save = { leadId: 'l', expectedUpdatedAt: null, profile: {} };
+    expect(await invoke('saveCrmProfile', save, 'extra')).toEqual({ ok: false, error: 'forbidden' });
+    expect(service.saveCrmProfile).toHaveBeenCalledWith(save);
   });
   it('hands the buffered Page choices out without any renderer input', async () => {
     const choices = { ok: true, choiceId: 'c', expiresAt: 'e', pages: [], missingScopes: [] };

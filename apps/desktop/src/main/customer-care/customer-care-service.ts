@@ -15,6 +15,8 @@ import type {
   CustomerCareSnapshot,
   CustomerCareAutoReplyResult,
   CustomerCareAutoReplyState,
+  CustomerCareCrmListResult,
+  CustomerCareCrmSaveResult,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookFailure,
@@ -51,6 +53,14 @@ import {
   parseCareLeadPurgeInput,
   parseCareLeadStatusInput,
 } from './care-leads';
+import {
+  canUseCareCrm,
+  copyCareCrmProfile,
+  copyCareCrmRow,
+  parseCareCrmListInput,
+  parseCareCrmSaveInput,
+  type CareCrmGateway,
+} from './care-crm';
 import {
   connectedPage,
   deriveCareMode,
@@ -108,6 +118,8 @@ export interface CustomerCareServiceOptions {
   autoReply?: CareAutoReplyGateway;
   /** Called after a setup save or an automatic-reply switch succeeded, so the Care graph nodes refresh. */
   onCareChanged?: () => void;
+  /** Care CRM S2 routes. Absent ⇒ every CRM call answers `unsupported`. CRM data never reaches the store. */
+  crm?: CareCrmGateway;
 }
 
 /** Main-only result of starting a connect: the state never reaches the renderer. */
@@ -694,6 +706,7 @@ export class CustomerCareService {
   private readonly onFacebookInboxChanged?: () => void;
   private readonly autoReply?: CareAutoReplyGateway;
   private readonly onCareChanged?: () => void;
+  private readonly crm?: CareCrmGateway;
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -707,6 +720,7 @@ export class CustomerCareService {
     this.onFacebookInboxChanged = options.onFacebookInboxChanged;
     this.autoReply = options.autoReply;
     this.onCareChanged = options.onCareChanged;
+    this.crm = options.crm;
   }
 
   private async boundedSelection(input: { system: string; user: string }): Promise<string> {
@@ -1027,6 +1041,57 @@ export class CustomerCareService {
     const result = await this.runFacebookCall(authority, () => leads.purgeLead(authority.workspaceId, parsed.leadId));
     if (!result.ok) return result;
     return { ok: true, workspaceId: authority.workspaceId, leadId: result.value.leadId };
+  }
+
+  /** Care CRM S2: renderer input is only `{ cursor }`; rows leave main only in this answer. */
+  async listCrm(input: unknown): Promise<CustomerCareCrmListResult> {
+    const parsed = parseCareCrmListInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    const result = await this.runFacebookCall(authority, () => crm.listCrm(authority.workspaceId, parsed.cursor));
+    if (!result.ok) return result;
+    const page = result.value;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      role: page.role,
+      // The existing purge stays owner/manager: the server and the live role must both allow it.
+      canDelete: page.canDelete && CARE_LEAD_PURGE_ROLES.includes(authority.role),
+      rows: page.rows.map(copyCareCrmRow),
+      nextCursor: page.nextCursor,
+      assignees: page.assignees.map((assignee) => ({ ...assignee })),
+    };
+  }
+
+  /** Care CRM S2: renderer input is `{ leadId, expectedUpdatedAt, profile }`, checked against every rule. */
+  async saveCrmProfile(input: unknown): Promise<CustomerCareCrmSaveResult> {
+    const parsed = parseCareCrmSaveInput(input, this.now());
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    const result = await this.runFacebookCall(authority, () => crm.saveCrmProfile(authority.workspaceId, parsed));
+    if (!result.ok) return result;
+    const { leadId } = result.value;
+    const profile = copyCareCrmProfile(result.value.profile);
+    if (result.value.kind === 'conflict') {
+      return { ok: false, error: 'profile_conflict', workspaceId: authority.workspaceId, leadId, profile };
+    }
+    return { ok: true, workspaceId: authority.workspaceId, leadId, profile };
+  }
+
+  /** Fresh authority for a CRM call: signed in, owner/manager/editor, and the CRM backend present. */
+  private async crmAuthority(): Promise<
+    { ok: true; authority: CustomerCareAuthority; crm: CareCrmGateway } | CustomerCareFacebookFailure
+  > {
+    const authority = await this.resolveAuthority();
+    if (authority === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
+    if (typeof authority === 'string') return { ok: false, error: 'auth' };
+    if (!canUseCareCrm(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!this.crm) return { ok: false, error: 'unsupported' };
+    return { ok: true, authority, crm: this.crm };
   }
 
   /** Fresh authority for an inbox or lead call: signed in, one of `roles`, and the B1 backend present. */

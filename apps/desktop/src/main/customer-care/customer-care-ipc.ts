@@ -21,6 +21,8 @@ const METHODS = [
   'purgeLead',
   'getAutoReply',
   'setAutoReply',
+  'listCrm',
+  'saveCrmProfile',
 ] as const;
 
 export function registerCustomerCareIpc(
@@ -28,7 +30,7 @@ export function registerCustomerCareIpc(
     CustomerCareService,
     | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'disconnectFacebookPage'
     | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
-    | 'getAutoReply' | 'setAutoReply'
+    | 'getAutoReply' | 'setAutoReply' | 'listCrm' | 'saveCrmProfile'
   >,
   facebook: Pick<CareFacebookOAuthCoordinator, 'connect' | 'takeChoices'>,
 ): void {
@@ -54,6 +56,9 @@ export function registerCustomerCareIpc(
         // Phase C: only `{ enabled }` crosses; main builds the uploaded facts from the saved setup itself.
         if (method === 'getAutoReply') return await service.getAutoReply();
         if (method === 'setAutoReply') return await service.setAutoReply(input);
+        // Care CRM S2: only `{ cursor }` or `{ leadId, expectedUpdatedAt, profile }` cross; main parses them.
+        if (method === 'listCrm') return await service.listCrm(input);
+        if (method === 'saveCrmProfile') return await service.saveCrmProfile(input);
         return await service.assist(input);
       } catch (error) {
         // Fixed public Customer Care strings carry no data; anything else is never serialized.

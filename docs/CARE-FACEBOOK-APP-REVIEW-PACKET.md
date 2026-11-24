@@ -8,6 +8,8 @@ Hồ sơ này dùng để nộp **App Review** cho app Meta **N8-2-Auto-1** (App
 Liên quan: `CARE-FACEBOOK-PHASE-B1-LEADS.md` (kế hoạch B1 và B1b), `CARE-FACEBOOK-PHASE-B1-API.md` (hợp đồng API), `CARE-FACEBOOK-PHASE-C-AUTO-REPLY.md` (Phase C: tự trả lời khách).
 
 > **Cập nhật 2026-11-18 (Phase C):** izzi giờ **gửi** tin trả lời tự động cho khách qua Send API. Mọi đoạn trước đây nói "izzi không gửi tin nào cho khách" đã được thay bằng mô tả việc gửi. Screencast phải quay cả cảnh izzi tự trả lời (mục 3, bước 7–9).
+>
+> **Cập nhật 2026-11-24 (Care CRM S1):** tên khách không còn lưu dạng chữ thường. Tên được mã hoá (AES-256-GCM, gắn với đúng workspace và đúng khách) và xoá cùng khách. Hồ sơ CRM do nhân viên tự nhập (kể cả ghi chú) cũng được mã hoá trên máy chủ izzi, giữ cùng khách (90 ngày kể từ tin nhắn cuối) và xoá cùng khách. Các đoạn về tên ở mục 2.4 và mục chính sách đã sửa theo. Điều này chỉ đúng sau khi migration `20261125` và backend S1 lên production; xem `CARE-CRM-S1-S2.md`.
 
 ---
 
@@ -97,7 +99,7 @@ Data: messages and izzi's replies are stored encrypted (AES-256-GCM) for 30 days
 ### 2.4 Business Asset User Profile Access
 
 ```text
-When a customer leaves a phone number, izzi shows the customer's first and last name next to it so that sales staff can recognise the person they are calling. izzi reads only first_name and last_name with GET /{psid}?fields=first_name,last_name using the Page access token, at most 10 names per list load, and caches the name with the lead. The name is shown only to the shop's owner, manager and editor roles inside izzi and is deleted together with the lead (after 90 days of inactivity, when the shop deletes the customer's data, or when the Page is disconnected through a Facebook data deletion request).
+When a customer leaves a phone number, izzi shows the customer's first and last name next to it so that sales staff can recognise the person they are calling. izzi reads only first_name and last_name with GET /{psid}?fields=first_name,last_name using the Page access token, at most 10 names per list load, and stores the name with the lead, encrypted with AES-256-GCM and bound to that lead and the shop's workspace. The name is shown only to the shop's owner, manager and editor roles inside izzi and is deleted together with the lead (after 90 days of inactivity, when the shop deletes the customer's data, or when the Page is disconnected through a Facebook data deletion request).
 ```
 
 ---
@@ -179,12 +181,13 @@ Trang này nằm ở repo **izzi-web**. Thêm một mục mới, song ngữ như
 Khi bạn kết nối một Fanpage với tính năng Chăm sóc khách hàng của izzi, izzi nhận và lưu:
 - ID Facebook (theo ứng dụng) của người cấp quyền, ID và tên Page, mã truy cập (token) của Page (mã hoá AES-256-GCM);
 - tin nhắn khách gửi tới Page (mã hoá, giữ 30 ngày);
-- số điện thoại khách tự gửi trong tin nhắn, tên Facebook của khách (giữ 90 ngày kể từ tin nhắn cuối).
+- số điện thoại khách tự gửi trong tin nhắn, tên Facebook của khách (tên được mã hoá; giữ 90 ngày kể từ tin nhắn cuối);
+- hồ sơ khách do nhân viên của bạn tự nhập trong CRM (giai đoạn, người phụ trách, ngày hẹn, sản phẩm quan tâm, việc tiếp theo, ghi chú): mã hoá trên máy chủ izzi, giữ cùng khách (90 ngày kể từ tin nhắn cuối) và xoá cùng khách.
 izzi đọc tin nhắn để liệt kê khách để lại số cho nhân viên của bạn. Khi bạn bật "Tự động trả lời khách", izzi gửi thay Page tối đa 3 tin trả lời mỗi khách trong 24 giờ, chỉ dùng thông tin bạn đã duyệt, để xin số điện thoại hoặc Zalo; các tin đó được mã hoá và giữ 30 ngày. izzi không bán hay chia sẻ dữ liệu này.
 
 Xoá dữ liệu: chủ shop có thể xoá dữ liệu của từng khách ngay trong app (nút "Xoá dữ liệu khách"), ngắt kết nối Page, hoặc gỡ ứng dụng trong Cài đặt Facebook → Ứng dụng và trang web → Gửi yêu cầu xoá. Bạn cũng có thể email support@izziapi.com.
 
-When you connect a Facebook Page to izzi Customer Care, izzi receives and stores: the app-scoped Facebook ID of the person who granted access, the Page ID, name and Page access token (encrypted with AES-256-GCM); messages customers send to the Page (encrypted, kept 30 days); phone numbers customers send in those messages and the customer's Facebook name (kept 90 days after their last message). izzi reads messages to list customers who left a phone number for your staff. When you turn on "Automatic replies", izzi sends up to 3 replies per customer in 24 hours on the Page's behalf, using only information you approved, to ask for a phone number or Zalo; those replies are stored encrypted for 30 days. izzi does not sell or share this data.
+When you connect a Facebook Page to izzi Customer Care, izzi receives and stores: the app-scoped Facebook ID of the person who granted access, the Page ID, name and Page access token (encrypted with AES-256-GCM); messages customers send to the Page (encrypted, kept 30 days); phone numbers customers send in those messages and the customer's Facebook name (the name encrypted; kept 90 days after their last message); and the customer profile your staff enter by hand in the CRM (stage, owner, dates, products of interest, next step, notes), stored encrypted on the izzi server, kept with the customer (90 days after their last message) and deleted with them. izzi reads messages to list customers who left a phone number for your staff. When you turn on "Automatic replies", izzi sends up to 3 replies per customer in 24 hours on the Page's behalf, using only information you approved, to ask for a phone number or Zalo; those replies are stored encrypted for 30 days. izzi does not sell or share this data.
 
 Deletion: shop owners can delete any customer's data in the app ("Delete customer data"), disconnect the Page, or remove the app in Facebook Settings → Apps and Websites → Send deletion request. You can also email support@izziapi.com.
 ```
