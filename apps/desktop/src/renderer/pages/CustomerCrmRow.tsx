@@ -22,6 +22,7 @@ import {
   crmDue,
   crmFieldVisibility,
   crmProfilesEqual,
+  crmRowReadOnly,
   formatCrmDue,
   isoToLocalInput,
   localInputToIso,
@@ -67,6 +68,7 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
   const due = crmDue(profile, nowMs);
   const editorId = `crm-editor-${row.leadId}`;
   const stageId = `crm-stage-${row.leadId}`;
+  const readOnly = crmRowReadOnly(row);
   const dirty = edit !== null && !crmProfilesEqual(normalizeCrmProfile(edit.draft), profileFromRow(row));
   const status = saving ? 'Đang lưu…' : edit?.rejected ? 'Cần xem lại' : edit?.error ? 'Chưa lưu được' : dirty ? 'Chưa lưu' : '';
 
@@ -89,6 +91,7 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
             id={stageId}
             className="v2-field__select"
             value={profile.stage}
+            disabled={readOnly}
             onChange={(event) => props.onChange({ ...profile, stage: event.currentTarget.value as CustomerCareCrmStage })}
           >
             {CRM_STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -142,6 +145,8 @@ function CrmEditor({
   onChange, onSave, onPurge, onReapply, onDiscard, onToggle, name, editorId, dirty,
 }: CrmEditorProps) {
   const id = (field: string) => `crm-${field}-${row.leadId}`;
+  // Sealed details could not be opened: plain fields only, read-only, never saved.
+  const readOnly = crmRowReadOnly(row);
   const visible = crmFieldVisibility(profile.stage);
   const bounds = crmDateBounds(nowMs);
   const set = (changes: Partial<CustomerCareCrmProfileInput>) => onChange({ ...profile, ...changes });
@@ -173,6 +178,7 @@ function CrmEditor({
       ) : edit?.error ? (
         <p className="v2-crm__error" role="alert">{edit.error}</p>
       ) : null}
+      {readOnly && <p className="v2-crm__hint" role="note">Không đọc được chi tiết khách này.</p>}
 
       <div className="v2-crm__fields">
         <label className="v2-field" htmlFor={id('editor-stage')}>
@@ -181,6 +187,7 @@ function CrmEditor({
             id={id('editor-stage')}
             className="v2-field__select"
             value={profile.stage}
+            disabled={readOnly}
             onChange={(event) => set({ stage: event.currentTarget.value as CustomerCareCrmStage })}
           >
             {CRM_STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -192,6 +199,7 @@ function CrmEditor({
           <select
             id={id('owner')}
             className="v2-field__select"
+            disabled={readOnly}
             value={profile.ownerUserId ?? ''}
             onChange={(event) => set({ ownerUserId: nullable<string>(event.currentTarget.value) })}
           >
@@ -203,6 +211,7 @@ function CrmEditor({
           </select>
         </label>
 
+        {!readOnly && (
         <label className="v2-field" htmlFor={id('address')}>
           <span className="v2-field__label">Xưng hô</span>
           <select
@@ -215,7 +224,9 @@ function CrmEditor({
             {CRM_ADDRESS_FORM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
+        )}
 
+        {!readOnly && (
         <label className="v2-field" htmlFor={id('occasion')}>
           <span className="v2-field__label">Dịp mua</span>
           <select
@@ -228,12 +239,14 @@ function CrmEditor({
             {CRM_OCCASION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
+        )}
 
         <label className="v2-field" htmlFor={id('needed')}>
           <span className="v2-field__label">Cần trước ngày</span>
           <input
             id={id('needed')}
             type="date"
+            disabled={readOnly}
             className="v2-field__input"
             min={bounds.min}
             max={bounds.max}
@@ -242,7 +255,7 @@ function CrmEditor({
           />
         </label>
 
-        {visible.lostReason && (
+        {visible.lostReason && !readOnly && (
           <label className="v2-field" htmlFor={id('lost')}>
             <span className="v2-field__label">Lý do không mua</span>
             <select
@@ -263,6 +276,7 @@ function CrmEditor({
             <input
               id={id('purchased')}
               type="date"
+              disabled={readOnly}
               className="v2-field__input"
               min={bounds.min}
               max={bounds.max}
@@ -274,6 +288,7 @@ function CrmEditor({
       </div>
 
       <div className="v2-crm__fields v2-crm__fields--wide">
+        {!readOnly && (
         <label className="v2-field v2-crm__grow" htmlFor={id('next')}>
           <span className="v2-field__label">Việc tiếp theo</span>
           <input
@@ -286,11 +301,13 @@ function CrmEditor({
             onChange={(event) => set({ nextStep: event.currentTarget.value === '' ? null : event.currentTarget.value })}
           />
         </label>
+        )}
         <label className="v2-field" htmlFor={id('due')}>
           <span className="v2-field__label">Hạn</span>
           <input
             id={id('due')}
             type="datetime-local"
+            disabled={readOnly}
             className="v2-field__input"
             min={`${bounds.min}T00:00`}
             max={`${bounds.max}T23:59`}
@@ -300,7 +317,7 @@ function CrmEditor({
         </label>
       </div>
 
-      {products.length > 0 && (
+      {products.length > 0 && !readOnly && (
         <fieldset className="v2-crm__products">
           <legend className="v2-field__label">Sản phẩm quan tâm (tối đa {CRM_MAX_PRODUCTS})</legend>
           {products.map((product, index) => {
@@ -322,6 +339,7 @@ function CrmEditor({
         </fieldset>
       )}
 
+      {!readOnly && (
       <label className="v2-field v2-crm__note" htmlFor={id('note')}>
         <span className="v2-field__label">Ghi chú</span>
         <textarea
@@ -333,6 +351,7 @@ function CrmEditor({
           onChange={(event) => set({ note: event.currentTarget.value === '' ? null : event.currentTarget.value })}
         />
       </label>
+      )}
 
       {row.recentMessages.length > 0 && (
         <div className="v2-crm__messages">
@@ -370,14 +389,16 @@ function CrmEditor({
             </button>
           )}
           <button type="button" className="v2-button v2-button--ghost" onClick={onToggle}>Đóng</button>
-          <button
-            type="button"
-            className="v2-button v2-button--primary"
-            disabled={!dirty || saving}
-            onClick={onSave}
-          >
-            {saving ? 'Đang lưu…' : 'Lưu'}
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="v2-button v2-button--primary"
+              disabled={!dirty || saving}
+              onClick={onSave}
+            >
+              {saving ? 'Đang lưu…' : 'Lưu'}
+            </button>
+          )}
         </div>
       </div>
     </div>

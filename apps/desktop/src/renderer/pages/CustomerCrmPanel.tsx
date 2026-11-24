@@ -27,19 +27,21 @@ import {
   crmEditOnDiscard,
   crmEditOnReapply,
   crmFailureView,
-  crmPagesForRefresh,
   crmProductOptions,
   crmProfilesEqual,
+  crmReloadAfterSave,
+  crmRowReadOnly,
+  crmRowsOnFirstPage,
   crmRowsOnRefresh,
   crmRowsOnRemove,
   crmRowsOnSaved,
   crmSaveDecision,
+  crmShouldLoadOnShow,
+  crmShouldSkipNextTick,
   crmVisibleRows,
-  isCrmRateLimited,
   loadCrmPages,
   normalizeCrmProfile,
   profileFromRow,
-  shouldRefreshOnShow,
   type CrmFilter,
   type CrmProductOption,
   type CrmRowEdit,
@@ -123,13 +125,12 @@ export function CustomerCrmPanel() {
   /** Rows deleted here: a refresh that started before the delete must not bring them back. */
   const removedRef = useRef<Set<string>>(new Set());
   const loadSeqRef = useRef(0);
-  /** How many pages the last good load read and whether it reached the end; sizes the next refresh. */
-  const lastPagesRef = useRef<{ pages: number; complete: boolean } | null>(null);
-  /** When the last load started, so showing the tab again does not spend the shared rate budget. */
-  const lastLoadAtRef = useRef<number | null>(null);
-  /** Refresh ticks to skip after a 429, instead of retrying at once. */
+  /** When the last every-page load started, so reopening the tab does not reload every page again at once. */
+  const lastFullLoadAtRef = useRef<number | null>(null);
+  /** Refresh ticks to skip after a 429 or a 503, instead of adding load. */
   const skipTicksRef = useRef(0);
   const queueRef = useRef<CrmSaveQueue | null>(null);
+  const loadRef = useRef<(mode: 'full' | 'page1') => Promise<void>>(async () => undefined);
   const runSaveRef = useRef<(leadId: string, mode: 'auto' | 'explicit') => Promise<'done' | 'again'>>(
     async () => 'done',
   );
@@ -157,7 +158,6 @@ export function CustomerCrmPanel() {
   const dropAll = useCallback((message: string) => {
     for (const leadId of Object.keys(editsRef.current)) queueRef.current?.cancel(leadId);
     scopeRef.current = null;
-    lastPagesRef.current = null;
     removedRef.current = new Set();
     updateRows(() => []);
     updateEdits(() => ({}));
@@ -189,27 +189,29 @@ export function CustomerCrmPanel() {
   }, []);
 
   /**
-   * `quiet` is the periodic refresh: it re-reads only the pages the last load needed. A first load, the
-   * "Tải lại" button and a load after a workspace change read up to `CRM_MAX_PAGES` pages.
+   * `full` reads up to `CRM_MAX_PAGES` pages: when the tab opens, on "Làm mới", after a 409 and after a
+   * workspace change. `page1` is the 60 s tick: it reads page 1 only and merges it by `leadId`.
    */
-  const load = useCallback(async (quiet: boolean) => {
+  const load = useCallback(async (requested: 'full' | 'page1') => {
     const api = getCrmApi();
     if (!api) {
       setPhase({ state: 'blocked', message: NO_APP_MESSAGE });
       return;
     }
+    // Nothing is loaded yet, so there is nothing for page 1 to merge into.
+    const mode = scopeRef.current === null ? 'full' : requested;
     const seq = ++loadSeqRef.current;
-    lastLoadAtRef.current = Date.now();
-    const last = lastPagesRef.current;
-    const maxPages = quiet && last ? crmPagesForRefresh(last) : CRM_MAX_PAGES;
-    if (!quiet) setRefreshing(true);
+    if (mode === 'full') {
+      lastFullLoadAtRef.current = Date.now();
+      setRefreshing(true);
+    }
     try {
-      const result = await loadCrmPages((input) => api.listCrm(input), maxPages);
+      const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1);
       if (!mountedRef.current || seq !== loadSeqRef.current) return;
       setNow(Date.now());
       if (!result.ok) {
         const view = crmFailureView(result);
-        if (isCrmRateLimited(result)) skipTicksRef.current = 1;
+        if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
         if (view.dropRows) dropAll(view.message);
         else if (scopeRef.current === null) setPhase({ state: 'blocked', message: view.message });
         else setError(view.message);
@@ -220,14 +222,20 @@ export function CustomerCrmPanel() {
         // Another workspace is active now: nothing from the previous one stays on screen.
         for (const leadId of Object.keys(editsRef.current)) queueRef.current?.cancel(leadId);
         removedRef.current = new Set();
+        updateRows(() => []);
         updateEdits(() => ({}));
         setExpandedId(null);
+        if (mode === 'page1') {
+          // Page 1 of another workspace is not enough: read all of it.
+          scopeRef.current = null;
+          void loadRef.current('full');
+          return;
+        }
       }
       scopeRef.current = result.workspaceId;
-      lastPagesRef.current = { pages: result.pages, complete: result.complete };
-      // A capped refresh that stopped before the end leaves the rows past it as they were.
-      const partial = !switched && !result.complete && maxPages < CRM_MAX_PAGES;
-      updateRows((current) => crmRowsOnRefresh(switched ? [] : current, result.rows, removedRef.current, partial));
+      updateRows((current) => (mode === 'full'
+        ? crmRowsOnRefresh(current, result.rows, removedRef.current)
+        : crmRowsOnFirstPage(current, result.rows, result.complete, removedRef.current)));
       const present = new Set(rowsRef.current.map((row) => row.leadId));
       for (const leadId of Object.keys(editsRef.current)) {
         if (!present.has(leadId)) queueRef.current?.cancel(leadId);
@@ -237,17 +245,19 @@ export function CustomerCrmPanel() {
       setMeta((current) => ({
         canDelete: result.canDelete,
         assignees: result.assignees,
-        truncated: partial ? (current?.truncated ?? false) : result.truncated,
+        // Only an every-page load knows whether more than 500 customers exist.
+        truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
       }));
       setPhase({ state: 'ready' });
       setError('');
       if (switched) void loadProducts(api, result.workspaceId);
     } catch {
       if (!mountedRef.current || seq !== loadSeqRef.current) return;
+      skipTicksRef.current = 1;
       if (scopeRef.current === null) setPhase({ state: 'blocked', message: GENERIC_LOAD_ERROR });
       else setError(GENERIC_LOAD_ERROR);
     } finally {
-      if (mountedRef.current && !quiet) setRefreshing(false);
+      if (mountedRef.current && mode === 'full') setRefreshing(false);
     }
   }, [dropAll, loadProducts, updateEdits, updateRows]);
 
@@ -283,11 +293,14 @@ export function CustomerCrmPanel() {
         const pending = next !== null && !crmProfilesEqual(normalizeCrmProfile(next.draft), profileFromRow(result.row));
         return pending ? 'again' : 'done';
       }
+      const reload = crmReloadAfterSave(result);
       if (result.error === 'profile_conflict') {
         if (result.workspaceId !== scopeRef.current) return 'done';
         updateRows((current) => crmRowsOnSaved(current, result.row));
         updateEdits((current) => ({ ...current, [leadId]: crmEditOnConflict(current[leadId], result.row) }));
         setExpandedId((current) => current ?? leadId);
+        // Someone else is editing: read every page again so other rows they changed show too.
+        if (reload) void loadRef.current(reload);
         return 'done';
       }
       if (result.reason === 'lead_not_found') {
@@ -296,14 +309,14 @@ export function CustomerCrmPanel() {
         return 'done';
       }
       if (result.error === 'forbidden') {
-        // Either the chosen owner left the project or this account lost access; a refresh tells which.
+        // Either the chosen owner left the project or this account lost access; page 1 tells which.
         setRowError(leadId, CRM_SAVE_FORBIDDEN_MESSAGE);
-        void load(true);
+        if (reload) void loadRef.current(reload);
         return 'done';
       }
-      if (isCrmRateLimited(result)) {
-        // Never retried by itself: the row waits for the user, and the next refresh is skipped.
-        skipTicksRef.current = 1;
+      // A 429 or a 503 is never retried by itself: the row waits for the user, and the next tick is skipped.
+      if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
+      if (result.reason === 'rate_limited') {
         setRowError(leadId, CRM_SAVE_RATE_LIMITED_MESSAGE);
         return 'done';
       }
@@ -325,6 +338,10 @@ export function CustomerCrmPanel() {
   });
 
   useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  useEffect(() => {
     mountedRef.current = true;
     const queue = new CrmSaveQueue((leadId, mode) => runSaveRef.current(leadId, mode));
     queueRef.current = queue;
@@ -338,22 +355,24 @@ export function CustomerCrmPanel() {
   }, []);
 
   const visible = active && documentVisible;
-  // Rows load when the CRM first comes on screen, then refresh every 60 s while it stays there. Showing it
-  // again reloads only when the last load is a full period old, and a tick after a 429 is skipped.
+  // Opening the tab reloads every page (at most once per refresh period); while it stays on screen the 60 s
+  // tick reads page 1 only. A tick after a 429 or a 503 is skipped.
   useEffect(() => {
     if (!visible) return undefined;
-    if (shouldRefreshOnShow(lastLoadAtRef.current, Date.now())) void load(scopeRef.current !== null);
+    if (crmShouldLoadOnShow(lastFullLoadAtRef.current, Date.now())) void load('full');
     const timer = setInterval(() => {
       if (skipTicksRef.current > 0) {
         skipTicksRef.current -= 1;
         return;
       }
-      void load(true);
+      void load('page1');
     }, CRM_REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible, load]);
 
   const change = (row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput) => {
+    // A row whose details could not be opened is never saved, so it takes no edits either.
+    if (crmRowReadOnly(row)) return;
     updateEdits((current) => ({ ...current, [row.leadId]: crmEditOnChange(current[row.leadId], profile) }));
     setNotice('');
     queueRef.current?.changed(row.leadId);
@@ -397,6 +416,7 @@ export function CustomerCrmPanel() {
       if (!mountedRef.current) return;
       if (!result.ok) {
         const view = crmFailureView(result);
+        if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
         if (view.dropRows && result.error !== 'forbidden') dropAll(view.message);
         else setError(careLeadsErrorMessage(result, 'purge'));
         if (result.reason === 'lead_not_found') removeRow(row.leadId);
@@ -424,8 +444,8 @@ export function CustomerCrmPanel() {
           <p className="v2-crm__lead">Hồ sơ do nhân viên ghi tay. Chỉ hiện ở đây, không đưa vào Memory và không lưu trên máy.</p>
         </div>
         {phase.state === 'ready' && (
-          <button type="button" className="v2-button v2-button--ghost" disabled={refreshing} onClick={() => { void load(false); }}>
-            {refreshing ? 'Đang tải…' : 'Tải lại'}
+          <button type="button" className="v2-button v2-button--ghost" disabled={refreshing} onClick={() => { void load('full'); }}>
+            {refreshing ? 'Đang tải…' : 'Làm mới'}
           </button>
         )}
       </header>
@@ -436,7 +456,7 @@ export function CustomerCrmPanel() {
         <div className="v2-empty">
           <p role="alert">{phase.message}</p>
           {phase.message !== CRM_FORBIDDEN_MESSAGE && phase.message !== NO_APP_MESSAGE && (
-            <button type="button" className="v2-button" disabled={refreshing} onClick={() => { void load(false); }}>Thử lại</button>
+            <button type="button" className="v2-button" disabled={refreshing} onClick={() => { void load('full'); }}>Thử lại</button>
           )}
         </div>
       )}

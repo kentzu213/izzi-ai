@@ -12,9 +12,11 @@ import {
   CRM_MAX_PAGES,
   CRM_REFRESH_MS,
   crmChangedFields,
-  crmPagesForRefresh,
-  isCrmRateLimited,
-  shouldRefreshOnShow,
+  crmReloadAfterSave,
+  crmRowReadOnly,
+  crmRowsOnFirstPage,
+  crmShouldLoadOnShow,
+  crmShouldSkipNextTick,
   crmDue,
   crmEditAfterSaved,
   crmEditOnChange,
@@ -263,35 +265,79 @@ describe('refresh merge', () => {
     expect(crmRowsOnRefresh([a], [b], new Set())).toEqual([b]);
   });
 
-  it('keeps rows past the re-read pages when a refresh stopped before the end', () => {
-    const a = row();
-    const b = row();
-    const tail = row();
-    expect(crmRowsOnRefresh([a, b, tail], [a, b], new Set(), true)).toEqual([a, b, tail]);
-    expect(crmRowsOnRefresh([a, b, tail], [a, b], new Set([tail.leadId]), true)).toEqual([a, b]);
+  describe('periodic refresh: page 1 merged into the loaded rows by leadId', () => {
+    const captured = (day: number) => ({ phoneCapturedAt: at(day, 9) });
+
+    it('adds a new lead, updates a changed row and keeps rows older than page 1', () => {
+      const older = row({}, captured(10));
+      const kept = row({}, captured(20));
+      const changed = { ...kept, profile: { ...kept.profile, stage: 'deposit' as const, updatedAt: '2026-11-24T07:00:00.000Z' } };
+      const fresh = row({}, captured(23));
+      expect(crmRowsOnFirstPage([kept, older], [fresh, changed], false, new Set())).toEqual([fresh, changed, older]);
+    });
+
+    it('drops a row inside page 1\'s window that page 1 no longer has, and skips rows deleted here', () => {
+      const gone = row({}, captured(22));
+      const onPage = row({}, captured(21));
+      const older = row({}, captured(10));
+      const deletedHere = row({}, captured(23));
+      expect(crmRowsOnFirstPage([gone, onPage, older], [deletedHere, onPage], false, new Set([deletedHere.leadId])))
+        .toEqual([onPage, older]);
+    });
+
+    it('treats a complete page 1 as the whole list', () => {
+      const a = row({}, captured(21));
+      const old = row({}, captured(5));
+      expect(crmRowsOnFirstPage([a, old], [a], true, new Set())).toEqual([a]);
+    });
+
+    it('never undoes a save that finished after the refresh started', () => {
+      const base = row({}, captured(21));
+      const newer = { ...base, profile: { ...base.profile, stage: 'deposit' as const, updatedAt: '2026-11-24T08:00:00.000Z' } };
+      expect(crmRowsOnFirstPage([newer], [base], false, new Set())).toEqual([newer]);
+    });
   });
 });
 
-describe('rate budget (30 requests a minute across every Care route)', () => {
-  it('re-reads only the pages the last load needed, one more when rows grew past them', () => {
-    expect(crmPagesForRefresh({ pages: 1, complete: true })).toBe(1);
-    expect(crmPagesForRefresh({ pages: 3, complete: true })).toBe(3);
-    expect(crmPagesForRefresh({ pages: 2, complete: false })).toBe(3);
-    expect(crmPagesForRefresh({ pages: CRM_MAX_PAGES, complete: false })).toBe(CRM_MAX_PAGES);
+describe('load budget (no ETag; every page is several DB queries)', () => {
+  it('reloads every page when the tab opens, at most once per refresh period', () => {
+    expect(crmShouldLoadOnShow(null, NOW)).toBe(true);
+    expect(crmShouldLoadOnShow(NOW - 5_000, NOW)).toBe(false);
+    expect(crmShouldLoadOnShow(NOW - CRM_REFRESH_MS, NOW)).toBe(true);
   });
 
-  it('does not re-read just because the tab was shown again', () => {
-    expect(shouldRefreshOnShow(null, NOW)).toBe(true);
-    expect(shouldRefreshOnShow(NOW - 5_000, NOW)).toBe(false);
-    expect(shouldRefreshOnShow(NOW - CRM_REFRESH_MS, NOW)).toBe(true);
+  it('reloads every page after a 409, checks page 1 after a 403, and nothing otherwise', () => {
+    const server = row();
+    expect(crmReloadAfterSave({ ok: false, error: 'profile_conflict', workspaceId: WORKSPACE, row: server })).toBe('full');
+    expect(crmReloadAfterSave({ ok: false, error: 'forbidden' })).toBe('page1');
+    expect(crmReloadAfterSave({ ok: true, workspaceId: WORKSPACE, row: server })).toBeNull();
+    expect(crmReloadAfterSave({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toBeNull();
   });
 
-  it('recognises a 429 so the next tick is skipped instead of retried', () => {
-    expect(isCrmRateLimited({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toBe(true);
-    expect(isCrmRateLimited({ ok: false, error: 'unavailable' })).toBe(false);
+  it('skips the next tick after a 429 or a 503, never after a refusal', () => {
+    expect(crmShouldSkipNextTick({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toBe(true);
+    expect(crmShouldSkipNextTick({ ok: false, error: 'not_configured' })).toBe(true);
+    expect(crmShouldSkipNextTick({ ok: false, error: 'unavailable' })).toBe(true);
+    expect(crmShouldSkipNextTick({ ok: false, error: 'forbidden' })).toBe(false);
+    expect(crmShouldSkipNextTick({ ok: false, error: 'rejected', reason: 'invalid_request' })).toBe(false);
+  });
+
+  it('says plainly that a 429 will be retried later', () => {
     expect(crmFailureView({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toEqual({
       message: 'Đang có nhiều yêu cầu. CRM sẽ tự tải lại sau ít phút.', dropRows: false,
     });
+  });
+});
+
+describe('a profile whose sealed details could not be opened', () => {
+  it('is read-only: never saved, whatever was typed', () => {
+    const base = row({ stage: 'consulting' });
+    const unreadable = { ...base, profile: { ...base.profile, detailsUnreadable: true as const } };
+    expect(crmRowReadOnly(unreadable)).toBe(true);
+    expect(crmRowReadOnly(base)).toBe(false);
+    const edit = crmEditOnChange(undefined, { ...profileFromRow(unreadable), stage: 'deposit' });
+    expect(crmSaveDecision(edit, unreadable, NOW)).toEqual({ kind: 'skip' });
+    expect(profileFromRow(unreadable)).not.toHaveProperty('detailsUnreadable');
   });
 });
 
@@ -320,11 +366,11 @@ describe('paging', () => {
     expect(result).toMatchObject({ ok: true, truncated: false, rows: [a, b], pages: 2, complete: true });
   });
 
-  it('a capped refresh that stops early is incomplete but not cut off', async () => {
+  it('the periodic refresh reads page 1 only: incomplete but not cut off', async () => {
     let calls = 0;
-    const result = await loadCrmPages(async () => { calls += 1; return ok([row()], `c${calls}`); }, 2);
-    expect(calls).toBe(2);
-    expect(result).toMatchObject({ ok: true, pages: 2, complete: false, truncated: false });
+    const result = await loadCrmPages(async () => { calls += 1; return ok([row()], `c${calls}`); }, 1);
+    expect(calls).toBe(1);
+    expect(result).toMatchObject({ ok: true, pages: 1, complete: false, truncated: false });
   });
 
   it('fails when a page fails or answers for another workspace', async () => {

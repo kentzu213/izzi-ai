@@ -115,6 +115,27 @@ describe('CustomerCrmRow', () => {
     expect(html).toContain('Dùng lại thay đổi của tôi');
   });
 
+  it('shows a profile whose details could not be opened read-only: plain fields only, a short note, no save', () => {
+    const unreadable: CustomerCareCrmRow = {
+      ...ROW,
+      profile: {
+        ...ROW.profile, addressForm: null, occasion: null, productFactIds: [], nextStep: null, lostReason: null, note: null,
+        detailsUnreadable: true,
+      },
+    };
+    const html = render({ row: unreadable, profile: profileFromRow(unreadable), canDelete: true });
+    expect(html).toContain('Không đọc được chi tiết khách này.');
+    for (const plain of ['Giai đoạn', 'Người phụ trách', 'Cần trước ngày', 'Hạn']) expect(html).toContain(plain);
+    for (const detail of ['Xưng hô', 'Dịp mua', 'Sản phẩm quan tâm', 'Việc tiếp theo', 'Lý do không mua', 'Ghi chú']) {
+      expect(html).not.toContain(detail);
+    }
+    const controls = html.match(/<(input|select|textarea)\b[^>]*>/g) ?? [];
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) expect(control).toContain('disabled=""');
+    expect(html).not.toMatch(/>Lưu</);
+    expect(html).toContain('Xoá dữ liệu khách');
+  });
+
   it('labels every control and asks for no age, marital status or religion', () => {
     const html = render({ profile: { ...PROFILE, stage: 'lost', lostReason: 'price' }, canDelete: true });
     for (const label of ['Giai đoạn', 'Người phụ trách', 'Xưng hô', 'Dịp mua', 'Cần trước ngày', 'Việc tiếp theo', 'Hạn', 'Ghi chú']) {

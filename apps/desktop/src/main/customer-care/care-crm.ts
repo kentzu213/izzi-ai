@@ -234,8 +234,11 @@ export function parseCareCrmSaveInput(input: unknown, now: Date): CustomerCareCr
  * shape is checked here; the renderer re-applies the stage rules before the next save.
  */
 function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
-  const profile = exactRecord(value, [...PROFILE_INPUT_KEYS, 'updatedAt', 'updatedBy']);
-  if (!profile) return null;
+  // `detailsUnreadable` is the only optional key: present (true or false) or absent.
+  const keys = [...PROFILE_INPUT_KEYS, 'updatedAt', 'updatedBy'];
+  const flagged = typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'detailsUnreadable');
+  const profile = exactRecord(value, flagged ? [...keys, 'detailsUnreadable'] : keys);
+  if (!profile || (flagged && typeof profile.detailsUnreadable !== 'boolean')) return null;
   const { stage, ownerUserId, addressForm, occasion, neededBy, nextStepDueAt, lostReason, purchasedAt } = profile;
   if (!oneOf(CUSTOMER_CARE_CRM_STAGES, stage) || !isUuidOrNull(ownerUserId)) return null;
   if (!nullableOneOf(CUSTOMER_CARE_CRM_ADDRESS_FORMS, addressForm)) return null;
@@ -266,6 +269,7 @@ function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
     note,
     updatedAt: profile.updatedAt as string | null,
     updatedBy: profile.updatedBy,
+    ...(profile.detailsUnreadable === true ? { detailsUnreadable: true as const } : {}),
   };
 }
 

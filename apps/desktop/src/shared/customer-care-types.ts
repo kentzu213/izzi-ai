@@ -364,6 +364,11 @@ export interface CustomerCareCrmProfile extends CustomerCareCrmProfileInput {
   /** Null until the first save; a save carries it back as `expectedUpdatedAt`. */
   updatedAt: string | null;
   updatedBy: string | null;
+  /**
+   * Present only when the server could not open the sealed details: the detail fields came back empty, the
+   * row is shown read-only and is never saved (the server would answer 503).
+   */
+  detailsUnreadable?: true;
 }
 
 export interface CustomerCareCrmRow {

@@ -14,6 +14,7 @@ import type {
   CustomerCareCrmRole,
   CustomerCareCrmRow,
   CustomerCareCrmSaveInput,
+  CustomerCareCrmSaveResult,
   CustomerCareCrmStage,
   CustomerCareFacebookFailure,
   CustomerCareFact,
@@ -221,8 +222,16 @@ export function crmFieldVisibility(stage: CustomerCareCrmStage): { lostReason: b
 }
 
 export function profileFromRow(row: CustomerCareCrmRow): CustomerCareCrmProfileInput {
-  const { updatedAt: _updatedAt, updatedBy: _updatedBy, ...profile } = row.profile;
+  const { updatedAt: _updatedAt, updatedBy: _updatedBy, detailsUnreadable: _unreadable, ...profile } = row.profile;
   return { ...profile, productFactIds: [...profile.productFactIds] };
+}
+
+/**
+ * The server could not open this profile's sealed details. The row shows its plain fields only and is
+ * never saved: a full replace would wipe details nobody can see, and the server answers 503 anyway.
+ */
+export function crmRowReadOnly(row: CustomerCareCrmRow): boolean {
+  return row.profile.detailsUnreadable === true;
 }
 
 // Control characters (and bidi overrides) become spaces; the server rejects them.
@@ -358,7 +367,7 @@ export function crmEditOnChange(edit: CrmRowEdit | undefined, draft: CustomerCar
 
 /** Whether to send, and what: the normalized draft against the `updatedAt` the user was looking at. */
 export function crmSaveDecision(edit: CrmRowEdit | undefined, row: CustomerCareCrmRow, nowMs: number): CrmSaveDecision {
-  if (!edit) return { kind: 'skip' };
+  if (!edit || crmRowReadOnly(row)) return { kind: 'skip' };
   const profile = normalizeCrmProfile(edit.draft);
   if (crmProfilesEqual(profile, profileFromRow(row))) return { kind: 'skip' };
   const problem = validateCrmProfile(profile, nowMs);
@@ -405,19 +414,35 @@ export function crmRowsOnRefresh(
   current: readonly CustomerCareCrmRow[],
   fresh: readonly CustomerCareCrmRow[],
   removed: ReadonlySet<string>,
-  /** The refresh re-read fewer pages than exist: rows past them were not re-read, so they stay. */
-  partial = false,
 ): CustomerCareCrmRow[] {
   const local = new Map(current.map((row) => [row.leadId, row]));
-  const merged = fresh
+  return fresh
     .filter((row) => !removed.has(row.leadId))
     .map((row) => {
       const mine = local.get(row.leadId);
       return mine && isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
     });
-  if (!partial) return merged;
-  const reread = new Set(fresh.map((row) => row.leadId));
-  return [...merged, ...current.filter((row) => !reread.has(row.leadId) && !removed.has(row.leadId))];
+}
+
+/**
+ * The periodic refresh reads page 1 only (newest phone first) and merges it by `leadId`. Rows older than
+ * page 1 stay as loaded; a row inside page 1's window that page 1 no longer holds was deleted, so it goes.
+ * A complete page 1 (no cursor) is the whole list.
+ */
+export function crmRowsOnFirstPage(
+  current: readonly CustomerCareCrmRow[],
+  page: readonly CustomerCareCrmRow[],
+  complete: boolean,
+  removed: ReadonlySet<string>,
+): CustomerCareCrmRow[] {
+  const fresh = crmRowsOnRefresh(current, page, removed);
+  if (complete) return fresh;
+  const onPage = new Set(page.map((row) => row.leadId));
+  const oldest = Math.min(...page.map((row) => Date.parse(row.phoneCapturedAt)));
+  const rest = current.filter((row) => !onPage.has(row.leadId) && !removed.has(row.leadId)
+    // Equal times may sit on page 2, so only strictly newer rows count as gone.
+    && !(page.length > 0 && Date.parse(row.phoneCapturedAt) > oldest));
+  return [...fresh, ...rest];
 }
 
 export function crmRowsOnSaved(rows: readonly CustomerCareCrmRow[], saved: CustomerCareCrmRow): CustomerCareCrmRow[] {
@@ -487,23 +512,25 @@ export async function loadCrmPages(
   };
 }
 
-/**
- * Every Care route shares one budget of 30 requests a minute per user. A periodic refresh re-reads only the
- * pages the last load needed, plus one when rows had grown past them, never more than `CRM_MAX_PAGES`.
- */
-export function crmPagesForRefresh(last: { pages: number; complete: boolean }): number {
-  const pages = last.complete ? last.pages : last.pages + 1;
-  return Math.min(Math.max(pages, 1), CRM_MAX_PAGES);
+// Load budget: GET /crm has no ETag, each page costs several DB queries plus sealed messages, and every Care
+// route shares 30 requests a minute per user. The 60 s tick reads page 1 only; every page is read again only
+// when the tab opens (at most once per refresh period), on "Làm mới", and after a 409.
+
+/** Opening the tab reloads every page, unless the last full load is less than one refresh period old. */
+export function crmShouldLoadOnShow(lastFullLoadMs: number | null, nowMs: number): boolean {
+  return lastFullLoadMs === null || nowMs - lastFullLoadMs >= CRM_REFRESH_MS;
 }
 
-/** Showing the tab again reloads only when the last load is at least one refresh period old. */
-export function shouldRefreshOnShow(lastLoadMs: number | null, nowMs: number): boolean {
-  return lastLoadMs === null || nowMs - lastLoadMs >= CRM_REFRESH_MS;
+/** What a save answer asks of the list: every page after a 409, page 1 after a 403 (access check), else nothing. */
+export function crmReloadAfterSave(result: CustomerCareCrmSaveResult): 'full' | 'page1' | null {
+  if (result.ok) return null;
+  if (result.error === 'profile_conflict') return 'full';
+  return result.error === 'forbidden' ? 'page1' : null;
 }
 
-/** A 429 from the shared Care budget: skip the next refresh rather than retry at once. */
-export function isCrmRateLimited(failure: CustomerCareFacebookFailure): boolean {
-  return failure.reason === 'rate_limited';
+/** A 429, a 503 or another server-side failure: skip the next tick instead of adding load. */
+export function crmShouldSkipNextTick(failure: CustomerCareFacebookFailure): boolean {
+  return failure.error === 'unavailable' || failure.error === 'not_configured';
 }
 
 // ---------------------------------------------------------------------------

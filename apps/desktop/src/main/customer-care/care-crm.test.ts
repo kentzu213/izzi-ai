@@ -269,6 +269,17 @@ describe('parseCareCrmRow and the list answer', () => {
     expect(parseCareCrmRow(unreadable)?.profile).toMatchObject({ stage: 'lost', lostReason: null, note: null });
   });
 
+  it('marks a profile whose sealed details could not be opened, from a boolean flag only', () => {
+    const empty = { addressForm: null, occasion: null, productFactIds: [], nextStep: null, lostReason: null, note: null };
+    const flagged = parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, ...empty, detailsUnreadable: true } });
+    expect(flagged?.profile.detailsUnreadable).toBe(true);
+    expect(flagged?.profile.stage).toBe('consulting');
+    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, detailsUnreadable: false } })?.profile)
+      .not.toHaveProperty('detailsUnreadable');
+    expect(parseCareCrmRow(ROW)?.profile).not.toHaveProperty('detailsUnreadable');
+    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, detailsUnreadable: 'yes' } })).toBeNull();
+  });
+
   it('never shows an assignee label that looks like an email, and keeps the server order', () => {
     const page = parseCareCrmListBody({
       ...LIST_BODY,
