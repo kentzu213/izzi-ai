@@ -102,6 +102,8 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   // 422, Phase C: automatic replies need the inbox on and the pages_messaging grant.
   'inbox_off',
   'permission_missing',
+  // Care CRM S2: set by the CRM client on a 429 (reported as `unavailable`), so the screen skips a refresh.
+  'rate_limited',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 

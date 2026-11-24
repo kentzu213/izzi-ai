@@ -46,6 +46,10 @@ const DATE_WINDOW_YEARS = 2;
 // Control characters and bidi overrides; a note keeps only its line breaks.
 const UNSAFE_LINE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 const UNSAFE_NOTE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
+// The server refuses half of a surrogate pair.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// What the server accepts in a request: a zone is required, at most 6 fractional digits.
+const REQUEST_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PROFILE_INPUT_KEYS = [
   'stage', 'ownerUserId', 'addressForm', 'occasion', 'neededBy', 'productFactIds',
   'nextStep', 'nextStepDueAt', 'lostReason', 'purchasedAt', 'note',
@@ -104,6 +108,11 @@ function isIso(value: unknown): value is string {
   return typeof value === 'string' && ISO_PATTERN.test(value) && Number.isFinite(Date.parse(value));
 }
 
+/** A timestamp the server accepts in a request; sent on exactly as given. */
+function isRequestTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && REQUEST_TIMESTAMP_PATTERN.test(value) && Number.isFinite(Date.parse(value));
+}
+
 function isUuidOrNull(value: unknown): value is string | null {
   return value === null || isCareFacebookChoiceId(value);
 }
@@ -135,12 +144,13 @@ function timeInWindow(value: string, now: Date): boolean {
   return time >= shiftYears(now, -DATE_WINDOW_YEARS).getTime() && time <= shiftYears(now, DATE_WINDOW_YEARS).getTime();
 }
 
-/** Trimmed text within `max`, or null when the value is not acceptable. */
+/** Trimmed text of 1..`max` characters (code points, so an emoji counts as one), or null when unacceptable. */
 function boundedText(value: unknown, max: number, unsafe: RegExp): string | null {
   if (typeof value !== 'string' || value.length > max * 4) return null;
   const trimmed = value.trim();
-  if (trimmed.length < 1 || trimmed.length > max || unsafe.test(trimmed)) return null;
-  return trimmed;
+  if (unsafe.test(trimmed) || LONE_SURROGATE.test(trimmed)) return null;
+  const length = Array.from(trimmed).length;
+  return length >= 1 && length <= max ? trimmed : null;
 }
 
 /** `undefined` marks an invalid value; null stays null. */
@@ -183,7 +193,7 @@ export function parseCareCrmProfileInput(value: unknown, now: Date): CustomerCar
   if (!nullableOneOf(CUSTOMER_CARE_CRM_LOST_REASONS, lostReason)) return null;
   if (neededBy !== null && !(isCalendarDate(neededBy) && dayInWindow(neededBy, now))) return null;
   if (purchasedAt !== null && !(isCalendarDate(purchasedAt) && dayInWindow(purchasedAt, now))) return null;
-  if (nextStepDueAt !== null && !(isIso(nextStepDueAt) && timeInWindow(nextStepDueAt, now))) return null;
+  if (nextStepDueAt !== null && !(isRequestTimestamp(nextStepDueAt) && timeInWindow(nextStepDueAt, now))) return null;
   if (lostReason !== null && stage !== 'lost') return null;
   if (purchasedAt !== null && !PURCHASE_STAGES.includes(stage)) return null;
   const productFactIds = parseProductIds(profile.productFactIds, true);
@@ -209,7 +219,8 @@ export function parseCareCrmProfileInput(value: unknown, now: Date): CustomerCar
 export function parseCareCrmSaveInput(input: unknown, now: Date): CustomerCareCrmSaveInput | null {
   const record = exactRecord(input, ['leadId', 'expectedUpdatedAt', 'profile']);
   if (!record || !isCareFacebookChoiceId(record.leadId)) return null;
-  if (record.expectedUpdatedAt !== null && !isIso(record.expectedUpdatedAt)) return null;
+  // Echoed exactly as the server returned it; never re-formatted here.
+  if (record.expectedUpdatedAt !== null && !isRequestTimestamp(record.expectedUpdatedAt)) return null;
   const profile = parseCareCrmProfileInput(record.profile, now);
   return profile ? { leadId: record.leadId, expectedUpdatedAt: record.expectedUpdatedAt, profile } : null;
 }
@@ -308,7 +319,8 @@ function parseAssignees(value: unknown): CustomerCareCrmAssignee[] | null {
     const label = parseCustomerName(assignee.label);
     if (label === undefined) return null;
     seen.add(assignee.userId);
-    assignees.push({ userId: assignee.userId, label });
+    // The server never sends an email; anything that looks like one is not shown.
+    assignees.push({ userId: assignee.userId, label: label !== null && label.includes('@') ? null : label });
   }
   return assignees;
 }

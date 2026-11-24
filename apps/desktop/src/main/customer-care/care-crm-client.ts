@@ -34,7 +34,10 @@ import {
 
 const INVALID_REQUEST: CareFacebookFailure = { ok: false, error: 'rejected', reason: 'invalid_request' };
 const INVALID_RESPONSE: CareFacebookFailure = { ok: false, error: 'invalid-response' };
+/** Over the shared Care budget (30 a minute per user): the screen skips its next refresh instead of retrying. */
+const RATE_LIMITED: CareFacebookFailure = { ok: false, error: 'unavailable', reason: 'rate_limited' };
 const CONFLICT_STATUS = 409;
+const RATE_LIMIT_STATUS = 429;
 
 type CrmResponse = { ok: true; status: number; body: unknown } | CareFacebookFailure;
 
@@ -120,6 +123,8 @@ export class CareCrmClient implements CareCrmGateway {
         readable = false;
       }
       if (!response.ok) logFailure(label, response.status);
+      if (response.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
+      // Failures are read by status and `reason`; the server's English `error` text is never used.
       if (!response.ok && response.status !== CONFLICT_STATUS) return careFacebookFailure(response.status, body);
       return readable ? { ok: true, status: response.status, body } : INVALID_RESPONSE;
     } catch {

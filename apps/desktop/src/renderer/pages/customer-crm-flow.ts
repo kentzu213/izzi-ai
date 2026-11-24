@@ -260,10 +260,13 @@ export function validateCrmProfile(profile: CustomerCareCrmProfileInput, nowMs: 
       return DATE_RANGE_MESSAGE;
     }
   }
-  if (profile.nextStep !== null && profile.nextStep.length > CRM_MAX_NEXT_STEP) {
+  // Counted in characters like the server: an emoji is one.
+  if (profile.nextStep !== null && Array.from(profile.nextStep).length > CRM_MAX_NEXT_STEP) {
     return `Việc tiếp theo tối đa ${CRM_MAX_NEXT_STEP} ký tự.`;
   }
-  if (profile.note !== null && profile.note.length > CRM_MAX_NOTE) return `Ghi chú tối đa ${CRM_MAX_NOTE} ký tự.`;
+  if (profile.note !== null && Array.from(profile.note).length > CRM_MAX_NOTE) {
+    return `Ghi chú tối đa ${CRM_MAX_NOTE} ký tự.`;
+  }
   if (profile.productFactIds.length > CRM_MAX_PRODUCTS) return `Chọn tối đa ${CRM_MAX_PRODUCTS} sản phẩm.`;
   return null;
 }
@@ -402,14 +405,19 @@ export function crmRowsOnRefresh(
   current: readonly CustomerCareCrmRow[],
   fresh: readonly CustomerCareCrmRow[],
   removed: ReadonlySet<string>,
+  /** The refresh re-read fewer pages than exist: rows past them were not re-read, so they stay. */
+  partial = false,
 ): CustomerCareCrmRow[] {
   const local = new Map(current.map((row) => [row.leadId, row]));
-  return fresh
+  const merged = fresh
     .filter((row) => !removed.has(row.leadId))
     .map((row) => {
       const mine = local.get(row.leadId);
       return mine && isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
     });
+  if (!partial) return merged;
+  const reread = new Set(fresh.map((row) => row.leadId));
+  return [...merged, ...current.filter((row) => !reread.has(row.leadId) && !removed.has(row.leadId))];
 }
 
 export function crmRowsOnSaved(rows: readonly CustomerCareCrmRow[], saved: CustomerCareCrmRow): CustomerCareCrmRow[] {
@@ -432,6 +440,10 @@ export type CrmLoadResult =
     canDelete: boolean;
     rows: CustomerCareCrmRow[];
     assignees: CustomerCareCrmAssignee[];
+    /** Pages read by this load. */
+    pages: number;
+    /** The last page was reached (no cursor left). */
+    complete: boolean;
     /** More than `CRM_MAX_PAGES` pages exist; only the newest are shown. */
     truncated: boolean;
   }
@@ -444,11 +456,13 @@ export async function loadCrmPages(
 ): Promise<CrmLoadResult> {
   let cursor: string | null = null;
   let first: Extract<CustomerCareCrmListResult, { ok: true }> | null = null;
+  let pages = 0;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < maxPages; page += 1) {
     const result = await list({ cursor });
     if (!result.ok) return result;
+    pages += 1;
     if (first && result.workspaceId !== first.workspaceId) return { ok: false, error: 'access_changed' };
     first ??= result;
     for (const row of result.rows) {
@@ -467,8 +481,29 @@ export async function loadCrmPages(
     canDelete: first.canDelete,
     rows,
     assignees: first.assignees,
-    truncated: cursor !== null,
+    pages,
+    complete: cursor === null,
+    truncated: cursor !== null && pages >= CRM_MAX_PAGES,
   };
+}
+
+/**
+ * Every Care route shares one budget of 30 requests a minute per user. A periodic refresh re-reads only the
+ * pages the last load needed, plus one when rows had grown past them, never more than `CRM_MAX_PAGES`.
+ */
+export function crmPagesForRefresh(last: { pages: number; complete: boolean }): number {
+  const pages = last.complete ? last.pages : last.pages + 1;
+  return Math.min(Math.max(pages, 1), CRM_MAX_PAGES);
+}
+
+/** Showing the tab again reloads only when the last load is at least one refresh period old. */
+export function shouldRefreshOnShow(lastLoadMs: number | null, nowMs: number): boolean {
+  return lastLoadMs === null || nowMs - lastLoadMs >= CRM_REFRESH_MS;
+}
+
+/** A 429 from the shared Care budget: skip the next refresh rather than retry at once. */
+export function isCrmRateLimited(failure: CustomerCareFacebookFailure): boolean {
+  return failure.reason === 'rate_limited';
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +524,11 @@ const FAILURE_MESSAGES: Partial<Record<CustomerCareFacebookFailure['error'], str
 /** Fixed text for a bounded failure; `dropRows` when this account may no longer see the rows. */
 export function crmFailureView(failure: CustomerCareFacebookFailure): { message: string; dropRows: boolean } {
   const dropRows = failure.error === 'forbidden' || failure.error === 'auth' || failure.error === 'access_changed';
+  // Read by `reason`; the server's own text (e.g. a 422 saying "No Facebook Page available") is never shown.
   if (failure.reason === 'lead_not_found') return { message: 'Khách này không còn trong danh sách.', dropRows };
+  if (failure.reason === 'rate_limited') {
+    return { message: 'Đang có nhiều yêu cầu. CRM sẽ tự tải lại sau ít phút.', dropRows };
+  }
   if (failure.error === 'rejected' && failure.reason === 'invalid_request') {
     return { message: FAILURE_MESSAGES.invalid_input!, dropRows };
   }

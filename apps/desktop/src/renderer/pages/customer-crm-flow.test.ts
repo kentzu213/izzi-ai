@@ -10,7 +10,11 @@ import {
   CRM_CONFLICT_MESSAGE,
   CRM_FORBIDDEN_MESSAGE,
   CRM_MAX_PAGES,
+  CRM_REFRESH_MS,
   crmChangedFields,
+  crmPagesForRefresh,
+  isCrmRateLimited,
+  shouldRefreshOnShow,
   crmDue,
   crmEditAfterSaved,
   crmEditOnChange,
@@ -152,6 +156,8 @@ describe('field visibility by stage', () => {
       note: 'dòng 1\ndòng 2',
     });
     expect(normalizeCrmProfile({ ...EMPTY, nextStep: '   ', note: '' })).toEqual(EMPTY);
+    expect(normalizeCrmProfile({ ...EMPTY, note: 'a\rb\r\nc' }).note).toBe('a\nb\nc');
+    expect(normalizeCrmProfile({ ...EMPTY, note: ' \r\n ' }).note).toBeNull();
     expect(normalizeCrmProfile({ ...EMPTY, stage: 'lost', lostReason: 'price' }).lostReason).toBe('price');
     expect(normalizeCrmProfile({ ...EMPTY, stage: 'delivered', purchasedAt: '2026-11-20' }).purchasedAt).toBe('2026-11-20');
   });
@@ -163,6 +169,11 @@ describe('field visibility by stage', () => {
     expect(validateCrmProfile({ ...EMPTY, note: 'a'.repeat(1001) }, NOW)).toMatch(/1000/);
     expect(validateCrmProfile({ ...EMPTY, nextStep: 'a'.repeat(201) }, NOW)).toMatch(/200/);
     expect(validateCrmProfile({ ...EMPTY, productFactIds: Array.from({ length: 9 }, (_, i) => `p${i}`) }, NOW)).toMatch(/8/);
+  });
+
+  it('counts an emoji as one character, like the server', () => {
+    expect(validateCrmProfile({ ...EMPTY, nextStep: '😀'.repeat(200), note: '😀'.repeat(1000) }, NOW)).toBeNull();
+    expect(validateCrmProfile({ ...EMPTY, nextStep: '😀'.repeat(201) }, NOW)).toMatch(/200/);
   });
 
   it('round-trips the due time through the local date-time input', () => {
@@ -251,6 +262,37 @@ describe('refresh merge', () => {
     expect(merged).toEqual([c, newerB]);
     expect(crmRowsOnRefresh([a], [b], new Set())).toEqual([b]);
   });
+
+  it('keeps rows past the re-read pages when a refresh stopped before the end', () => {
+    const a = row();
+    const b = row();
+    const tail = row();
+    expect(crmRowsOnRefresh([a, b, tail], [a, b], new Set(), true)).toEqual([a, b, tail]);
+    expect(crmRowsOnRefresh([a, b, tail], [a, b], new Set([tail.leadId]), true)).toEqual([a, b]);
+  });
+});
+
+describe('rate budget (30 requests a minute across every Care route)', () => {
+  it('re-reads only the pages the last load needed, one more when rows grew past them', () => {
+    expect(crmPagesForRefresh({ pages: 1, complete: true })).toBe(1);
+    expect(crmPagesForRefresh({ pages: 3, complete: true })).toBe(3);
+    expect(crmPagesForRefresh({ pages: 2, complete: false })).toBe(3);
+    expect(crmPagesForRefresh({ pages: CRM_MAX_PAGES, complete: false })).toBe(CRM_MAX_PAGES);
+  });
+
+  it('does not re-read just because the tab was shown again', () => {
+    expect(shouldRefreshOnShow(null, NOW)).toBe(true);
+    expect(shouldRefreshOnShow(NOW - 5_000, NOW)).toBe(false);
+    expect(shouldRefreshOnShow(NOW - CRM_REFRESH_MS, NOW)).toBe(true);
+  });
+
+  it('recognises a 429 so the next tick is skipped instead of retried', () => {
+    expect(isCrmRateLimited({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toBe(true);
+    expect(isCrmRateLimited({ ok: false, error: 'unavailable' })).toBe(false);
+    expect(crmFailureView({ ok: false, error: 'unavailable', reason: 'rate_limited' })).toEqual({
+      message: 'Đang có nhiều yêu cầu. CRM sẽ tự tải lại sau ít phút.', dropRows: false,
+    });
+  });
 });
 
 describe('paging', () => {
@@ -266,7 +308,7 @@ describe('paging', () => {
     });
     expect(cursors).toHaveLength(CRM_MAX_PAGES);
     expect(cursors[0]).toBeNull();
-    expect(result).toMatchObject({ ok: true, truncated: true });
+    expect(result).toMatchObject({ ok: true, truncated: true, pages: CRM_MAX_PAGES, complete: false });
     if (result.ok) expect(result.rows).toHaveLength(CRM_MAX_PAGES);
   });
 
@@ -275,7 +317,14 @@ describe('paging', () => {
     const b = row();
     const pages = [ok([a], 'c1'), ok([a, b], null)];
     const result = await loadCrmPages(async () => pages.shift()!);
-    expect(result).toMatchObject({ ok: true, truncated: false, rows: [a, b] });
+    expect(result).toMatchObject({ ok: true, truncated: false, rows: [a, b], pages: 2, complete: true });
+  });
+
+  it('a capped refresh that stops early is incomplete but not cut off', async () => {
+    let calls = 0;
+    const result = await loadCrmPages(async () => { calls += 1; return ok([row()], `c${calls}`); }, 2);
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ ok: true, pages: 2, complete: false, truncated: false });
   });
 
   it('fails when a page fails or answers for another workspace', async () => {

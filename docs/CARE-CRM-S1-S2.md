@@ -84,6 +84,14 @@ interface CrmRow {
 
 Validation: dates are real calendar dates; `neededBy`, `purchasedAt` and `nextStepDueAt` fall within two years before or after now; strings are rejected if they hold control characters (a `note` may keep newlines); unknown keys are rejected. Logs never carry a phone, name, PSID, note or next step: only the event, `workspaceId`, `actorUserId` and counts.
 
+### Details fixed by the backend S1 build (2026-11-24)
+
+- **Save body:** all 11 profile keys plus `expectedUpdatedAt` are required; an empty field is `null`, never a missing key. An empty or whitespace-only `nextStep` or `note` answers 400, so the desktop sends `null`. A `\r` in `note` answers 400, so the desktop turns line breaks into `\n` first. The server trims text and returns the trimmed value. Length is counted in characters (code points): an emoji counts as one.
+- **Timestamps:** `nextStepDueAt` and `expectedUpdatedAt` carry a zone (`Z` or `±hh:mm`, at most 6 fractional digits). The desktop builds `nextStepDueAt` with `toISOString()` and sends `profile.updatedAt` back exactly as received.
+- **Responses:** an owner who is no longer an eligible member comes back as `ownerUserId: null`. Each assignee `label` is a display name (at most 80 characters, never containing `@`) or `Thành viên <8 chars>`, ordered owner, manager, editor. A profile whose sealed details cannot be opened still comes back with its plain fields and empty details.
+- **Errors:** read by `reason`, never by `error`: `invalid_request` 400, `forbidden` 403, `profile_conflict` 409 (with `row`, and no `workspaceId`), `lead_not_found` 422 (its `error` text is a generic Page message, so the desktop shows its own Vietnamese text), `not_configured` 503. The body is validated before the role, so a viewer sending a bad body gets 400.
+- **Rate budget:** all Care routes share 30 requests a minute per user. The first load reads up to 10 pages; the periodic refresh re-reads only the pages the last load needed (one more when rows grew past them); showing the tab again reloads only when the last load is a full refresh period old; a 429 (`rate_limited` on the desktop) skips the next refresh tick, and a save that hit it waits for the user.
+
 ## Desktop S2
 
 - **Main:** `apps/desktop/src/main/customer-care/care-crm.ts` holds the role rule (`canUseCareCrm`), the strict IPC-input parsers and the answer parsers; `apps/desktop/src/main/customer-care/care-crm-client.ts` calls the two routes (token only in the Authorization header, logs only a route label and status). `CustomerCareService.listCrm` and `saveCrmProfile` resolve the live marketing-workspace authority, exactly as the Care leads panel does, re-check it after the call, and hand back copies. IPC channels: `customerCare:listCrm` (`{ cursor }`) and `customerCare:saveCrmProfile` (`{ leadId, expectedUpdatedAt, profile }`). The workspace never comes from the renderer.

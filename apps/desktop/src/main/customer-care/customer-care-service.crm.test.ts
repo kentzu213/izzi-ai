@@ -157,6 +157,10 @@ describe('CustomerCareService.listCrm', () => {
     expect(await fixture({ crm }).service.listCrm({ cursor: null })).toEqual({ ok: false, error: 'not_configured' });
     expect(await fixture({ authority: null }).service.listCrm({ cursor: null })).toEqual({ ok: false, error: 'auth' });
     expect(await fixture({ crm: null }).service.listCrm({ cursor: null })).toEqual({ ok: false, error: 'unsupported' });
+    const limited = new FakeCrm();
+    limited.listResult = { ok: false, error: 'unavailable', reason: 'rate_limited' };
+    expect(await fixture({ crm: limited }).service.listCrm({ cursor: null }))
+      .toEqual({ ok: false, error: 'unavailable', reason: 'rate_limited' });
     const throwing = new FakeCrm();
     throwing.listCrm = async () => { throw new Error(PHONE); };
     expect(await fixture({ crm: throwing }).service.listCrm({ cursor: null })).toEqual({ ok: false, error: 'unavailable' });

@@ -179,6 +179,29 @@ describe('parseCareCrmSaveInput (IPC argument guard)', () => {
     expect(parseCareCrmProfileInput(withProfile({ stage: 'lost', purchasedAt: '2026-11-20' }), NOW)).toBeNull();
   });
 
+  it('counts text in characters, so an emoji counts as one (server rule)', () => {
+    const emoji = '😀';
+    expect(parseCareCrmProfileInput(withProfile({ nextStep: emoji.repeat(200) }), NOW)?.nextStep).toBe(emoji.repeat(200));
+    expect(parseCareCrmProfileInput(withProfile({ nextStep: emoji.repeat(201) }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ note: emoji.repeat(1000) }), NOW)?.note).toBe(emoji.repeat(1000));
+    expect(parseCareCrmProfileInput(withProfile({ note: emoji.repeat(1001) }), NOW)).toBeNull();
+  });
+
+  it('rejects a lone surrogate the server would refuse', () => {
+    expect(parseCareCrmProfileInput(withProfile({ note: 'a\uD83D b' }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ nextStep: 'a\uDE00' }), NOW)).toBeNull();
+  });
+
+  it('requires a timezone and at most 6 fractional digits on timestamps, and passes them through unchanged', () => {
+    expect(parseCareCrmSaveInput(save(PROFILE, { expectedUpdatedAt: '2026-11-21T09:30:00.123' }), NOW)).toBeNull();
+    expect(parseCareCrmSaveInput(save(PROFILE, { expectedUpdatedAt: '2026-11-21T09:30:00.1234567Z' }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ nextStepDueAt: '2026-11-25T09:00:00' }), NOW)).toBeNull();
+    const echoed = '2026-11-21T16:30:00.123+07:00';
+    expect(parseCareCrmSaveInput(save(PROFILE, { expectedUpdatedAt: echoed }), NOW)?.expectedUpdatedAt).toBe(echoed);
+    expect(parseCareCrmProfileInput(withProfile({ nextStepDueAt: '2026-11-25T09:00+07:00' }), NOW)?.nextStepDueAt)
+      .toBe('2026-11-25T09:00+07:00');
+  });
+
   it('accepts dates near the two-year edges', () => {
     expect(parseCareCrmProfileInput(withProfile({ neededBy: '2028-11-23' }), NOW)).not.toBeNull();
     expect(parseCareCrmProfileInput(withProfile({ neededBy: '2024-11-25' }), NOW)).not.toBeNull();
@@ -230,6 +253,31 @@ describe('parseCareCrmRow and the list answer', () => {
       nextCursor: LIST_BODY.nextCursor,
       assignees: [{ userId: OWNER_ID, label: 'Lan' }],
     });
+  });
+
+  it('accepts a stored note of 1000 emoji and a row whose sealed details could not be opened', () => {
+    const emojiNote = { ...ROW, profile: { ...ROW.profile, note: '😀'.repeat(1000) } };
+    expect(parseCareCrmRow(emojiNote)?.profile.note).toHaveLength(2000);
+    // Undecryptable details come back empty next to the plain columns; a lost row without a reason is fine.
+    const unreadable = {
+      ...ROW,
+      profile: {
+        ...ROW.profile, stage: 'lost', addressForm: null, occasion: null, productFactIds: [],
+        nextStep: null, lostReason: null, note: null,
+      },
+    };
+    expect(parseCareCrmRow(unreadable)?.profile).toMatchObject({ stage: 'lost', lostReason: null, note: null });
+  });
+
+  it('never shows an assignee label that looks like an email, and keeps the server order', () => {
+    const page = parseCareCrmListBody({
+      ...LIST_BODY,
+      assignees: [
+        { userId: OWNER_ID, label: 'lan@example.com' },
+        { userId: LEAD_ID_2, label: 'Thành viên 55555555' },
+      ],
+    }, WORKSPACE);
+    expect(page?.assignees).toEqual([{ userId: OWNER_ID, label: null }, { userId: LEAD_ID_2, label: 'Thành viên 55555555' }]);
   });
 
   it('keeps an assignee whose label is unsafe or blank, without the label', () => {

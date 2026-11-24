@@ -135,6 +135,34 @@ describe('CareCrmClient POST /crm/profile', () => {
     expect(JSON.parse(call(fetchImpl)[1].body as string).expectedUpdatedAt).toBeNull();
   });
 
+  it('sends every one of the 11 profile keys, with null for an empty field, never leaving a key out', async () => {
+    const { instance, fetchImpl } = client(json({ success: true, workspaceId: WORKSPACE, row: ROW }));
+    const empty: CustomerCareCrmProfileInput = {
+      stage: 'has_phone', ownerUserId: null, addressForm: null, occasion: null, neededBy: null, productFactIds: [],
+      nextStep: null, nextStepDueAt: null, lostReason: null, purchasedAt: null, note: null,
+    };
+    await instance.saveCrmProfile(WORKSPACE, { leadId: LEAD_ID, expectedUpdatedAt: null, profile: empty });
+    const body = JSON.parse(call(fetchImpl)[1].body as string);
+    expect(Object.keys(body).sort()).toEqual(['expectedUpdatedAt', 'leadId', 'profile', 'workspaceId']);
+    expect(Object.keys(body.profile)).toHaveLength(11);
+    expect(body.profile).toEqual(empty);
+  });
+
+  it('echoes expectedUpdatedAt byte for byte', async () => {
+    const { instance, fetchImpl } = client(json({ success: true, workspaceId: WORKSPACE, row: ROW }));
+    await instance.saveCrmProfile(WORKSPACE, saveInput('2026-11-21T09:30:00.123Z'));
+    expect(call(fetchImpl)[1].body as string).toContain('"expectedUpdatedAt":"2026-11-21T09:30:00.123Z"');
+  });
+
+  it('reads the exact server envelopes by reason, never by their English error text', async () => {
+    const conflict = client(json({ success: false, error: 'Customer profile changed', reason: 'profile_conflict', row: ROW }, 409));
+    expect(await conflict.instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', row: ROW } });
+    const gone = client(json({ success: false, error: 'No Facebook Page available', reason: 'lead_not_found' }, 422));
+    const result = await gone.instance.saveCrmProfile(WORKSPACE, saveInput());
+    expect(result).toEqual({ ok: false, error: 'rejected', reason: 'lead_not_found' });
+    expect(JSON.stringify(result)).not.toContain('Facebook Page');
+  });
+
   it('turns a 409 profile_conflict into the current row, never an overwrite', async () => {
     const { instance } = client(json({ success: false, error: 'Conflict', reason: 'profile_conflict', row: ROW }, 409));
     expect(await instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', row: ROW } });
@@ -167,7 +195,7 @@ describe('CareCrmClient failures', () => {
     [403, { success: false, error: 'Forbidden', reason: 'forbidden' }, { ok: false, error: 'forbidden' }],
     [404, { success: false, error: 'Not found' }, { ok: false, error: 'unsupported' }],
     [422, { success: false, error: 'x', reason: 'lead_not_found' }, { ok: false, error: 'rejected', reason: 'lead_not_found' }],
-    [429, { success: false, error: 'Too many requests' }, { ok: false, error: 'unavailable' }],
+    [429, { success: false, error: 'Too many requests' }, { ok: false, error: 'unavailable', reason: 'rate_limited' }],
     [500, { success: false, error: 'Internal' }, { ok: false, error: 'unavailable' }],
     [503, { success: false, error: 'x', reason: 'not_configured' }, { ok: false, error: 'not_configured' }],
   ])('maps status %i to a bounded failure', async (status, body, expected) => {

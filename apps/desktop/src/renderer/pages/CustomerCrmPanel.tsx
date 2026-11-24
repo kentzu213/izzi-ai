@@ -27,6 +27,7 @@ import {
   crmEditOnDiscard,
   crmEditOnReapply,
   crmFailureView,
+  crmPagesForRefresh,
   crmProductOptions,
   crmProfilesEqual,
   crmRowsOnRefresh,
@@ -34,9 +35,11 @@ import {
   crmRowsOnSaved,
   crmSaveDecision,
   crmVisibleRows,
+  isCrmRateLimited,
   loadCrmPages,
   normalizeCrmProfile,
   profileFromRow,
+  shouldRefreshOnShow,
   type CrmFilter,
   type CrmProductOption,
   type CrmRowEdit,
@@ -64,6 +67,7 @@ interface CrmMeta {
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
 const GENERIC_SAVE_ERROR = 'Chưa lưu được. Thử lại sau ít phút.';
+const CRM_SAVE_RATE_LIMITED_MESSAGE = 'Đang có nhiều yêu cầu. Chờ ít phút rồi bấm Lưu.';
 const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
 
 function getCrmApi(): CrmApi | null {
@@ -119,6 +123,12 @@ export function CustomerCrmPanel() {
   /** Rows deleted here: a refresh that started before the delete must not bring them back. */
   const removedRef = useRef<Set<string>>(new Set());
   const loadSeqRef = useRef(0);
+  /** How many pages the last good load read and whether it reached the end; sizes the next refresh. */
+  const lastPagesRef = useRef<{ pages: number; complete: boolean } | null>(null);
+  /** When the last load started, so showing the tab again does not spend the shared rate budget. */
+  const lastLoadAtRef = useRef<number | null>(null);
+  /** Refresh ticks to skip after a 429, instead of retrying at once. */
+  const skipTicksRef = useRef(0);
   const queueRef = useRef<CrmSaveQueue | null>(null);
   const runSaveRef = useRef<(leadId: string, mode: 'auto' | 'explicit') => Promise<'done' | 'again'>>(
     async () => 'done',
@@ -147,6 +157,7 @@ export function CustomerCrmPanel() {
   const dropAll = useCallback((message: string) => {
     for (const leadId of Object.keys(editsRef.current)) queueRef.current?.cancel(leadId);
     scopeRef.current = null;
+    lastPagesRef.current = null;
     removedRef.current = new Set();
     updateRows(() => []);
     updateEdits(() => ({}));
@@ -177,6 +188,10 @@ export function CustomerCrmPanel() {
     }
   }, []);
 
+  /**
+   * `quiet` is the periodic refresh: it re-reads only the pages the last load needed. A first load, the
+   * "Tải lại" button and a load after a workspace change read up to `CRM_MAX_PAGES` pages.
+   */
   const load = useCallback(async (quiet: boolean) => {
     const api = getCrmApi();
     if (!api) {
@@ -184,13 +199,17 @@ export function CustomerCrmPanel() {
       return;
     }
     const seq = ++loadSeqRef.current;
+    lastLoadAtRef.current = Date.now();
+    const last = lastPagesRef.current;
+    const maxPages = quiet && last ? crmPagesForRefresh(last) : CRM_MAX_PAGES;
     if (!quiet) setRefreshing(true);
     try {
-      const result = await loadCrmPages((input) => api.listCrm(input), CRM_MAX_PAGES);
+      const result = await loadCrmPages((input) => api.listCrm(input), maxPages);
       if (!mountedRef.current || seq !== loadSeqRef.current) return;
       setNow(Date.now());
       if (!result.ok) {
         const view = crmFailureView(result);
+        if (isCrmRateLimited(result)) skipTicksRef.current = 1;
         if (view.dropRows) dropAll(view.message);
         else if (scopeRef.current === null) setPhase({ state: 'blocked', message: view.message });
         else setError(view.message);
@@ -205,14 +224,21 @@ export function CustomerCrmPanel() {
         setExpandedId(null);
       }
       scopeRef.current = result.workspaceId;
-      updateRows((current) => crmRowsOnRefresh(switched ? [] : current, result.rows, removedRef.current));
+      lastPagesRef.current = { pages: result.pages, complete: result.complete };
+      // A capped refresh that stopped before the end leaves the rows past it as they were.
+      const partial = !switched && !result.complete && maxPages < CRM_MAX_PAGES;
+      updateRows((current) => crmRowsOnRefresh(switched ? [] : current, result.rows, removedRef.current, partial));
       const present = new Set(rowsRef.current.map((row) => row.leadId));
       for (const leadId of Object.keys(editsRef.current)) {
         if (!present.has(leadId)) queueRef.current?.cancel(leadId);
       }
       updateEdits((current) => Object.fromEntries(Object.entries(current).filter(([leadId]) => present.has(leadId))));
       setExpandedId((current) => (current !== null && present.has(current) ? current : null));
-      setMeta({ canDelete: result.canDelete, assignees: result.assignees, truncated: result.truncated });
+      setMeta((current) => ({
+        canDelete: result.canDelete,
+        assignees: result.assignees,
+        truncated: partial ? (current?.truncated ?? false) : result.truncated,
+      }));
       setPhase({ state: 'ready' });
       setError('');
       if (switched) void loadProducts(api, result.workspaceId);
@@ -275,6 +301,12 @@ export function CustomerCrmPanel() {
         void load(true);
         return 'done';
       }
+      if (isCrmRateLimited(result)) {
+        // Never retried by itself: the row waits for the user, and the next refresh is skipped.
+        skipTicksRef.current = 1;
+        setRowError(leadId, CRM_SAVE_RATE_LIMITED_MESSAGE);
+        return 'done';
+      }
       const view = crmFailureView(result);
       if (view.dropRows) dropAll(view.message);
       else setRowError(leadId, view.message);
@@ -306,11 +338,18 @@ export function CustomerCrmPanel() {
   }, []);
 
   const visible = active && documentVisible;
-  // Rows load when the CRM comes on screen, then refresh every 60 s while it stays there.
+  // Rows load when the CRM first comes on screen, then refresh every 60 s while it stays there. Showing it
+  // again reloads only when the last load is a full period old, and a tick after a 429 is skipped.
   useEffect(() => {
     if (!visible) return undefined;
-    void load(scopeRef.current !== null);
-    const timer = setInterval(() => { void load(true); }, CRM_REFRESH_MS);
+    if (shouldRefreshOnShow(lastLoadAtRef.current, Date.now())) void load(scopeRef.current !== null);
+    const timer = setInterval(() => {
+      if (skipTicksRef.current > 0) {
+        skipTicksRef.current -= 1;
+        return;
+      }
+      void load(true);
+    }, CRM_REFRESH_MS);
     return () => clearInterval(timer);
   }, [visible, load]);
 
