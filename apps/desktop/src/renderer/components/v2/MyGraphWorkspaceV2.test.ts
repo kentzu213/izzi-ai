@@ -63,6 +63,34 @@ describe('MyGraphWorkspaceV2', () => {
     expect(html).toContain('<p class="v2-mygraph__error" role="alert">Không mở được trình duyệt.</p>');
     expect(html.indexOf('role="alert"')).toBeLessThan(html.indexOf('class="v2-mygraph__stage"'));
   });
+
+  it('has no tab strip when no CRM panel is given', () => {
+    expect(render()).not.toContain('role="tablist"');
+  });
+});
+
+describe('MyGraphWorkspaceV2 with the CRM tab (Care CRM S2)', () => {
+  const html = render({ crm: createElement('div', { 'data-testid': 'crm' }) });
+
+  it('shows "Memory doanh nghiệp | CRM" with Memory selected', () => {
+    expect(html).toContain('role="tablist"');
+    expect(html).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Memory doanh nghiệp<\/button>/);
+    expect(html).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>CRM<\/button>/);
+    expect(html.indexOf('>Memory doanh nghiệp<')).toBeLessThan(html.indexOf('>CRM<'));
+  });
+
+  it('keeps the existing graph view unchanged inside the Memory panel', () => {
+    const memory = html.slice(html.indexOf('id="v2-mygraph-panel-memory"'), html.indexOf('id="v2-mygraph-panel-crm"'));
+    expect(memory).toContain('<div class="v2-mygraph__stage"><div class="graphview-scope v2-mygraph__canvas"><div data-testid="graph"></div></div><div data-testid="aside"></div></div>');
+  });
+
+  it('wires each tab to its panel and mounts the CRM only once it is opened', () => {
+    expect(html).toContain('aria-controls="v2-mygraph-panel-memory"');
+    expect(html).toContain('aria-controls="v2-mygraph-panel-crm"');
+    expect(html).toContain('aria-labelledby="v2-mygraph-tab-crm"');
+    expect(html).toMatch(/id="v2-mygraph-panel-crm"[^>]*hidden=""/);
+    expect(html).not.toContain('data-testid="crm"');
+  });
 });
 
 describe('MyGraph V2 wiring', () => {
@@ -95,5 +123,12 @@ describe('MyGraph V2 wiring', () => {
 
   it('keeps the V2 component free of IPC and the graph package', () => {
     expect(component).not.toMatch(/window\.|electronAPI|ipcRenderer|invoke\(|@kentzu213\/graph-view|aibase-api/);
+  });
+
+  it('adds the CRM panel to the V2 page only, leaving the legacy page as it was', () => {
+    const v2 = page.slice(page.indexOf('if (v2) {'), page.indexOf('// `.graphview-scope` both'));
+    const legacy = page.slice(page.indexOf('// `.graphview-scope` both'));
+    expect(v2).toContain('crm={<CustomerCrmPanel />}');
+    expect(legacy).not.toContain('CustomerCrmPanel');
   });
 });

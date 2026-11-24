@@ -99,6 +99,7 @@ import { registerCustomerMarketingIpc } from './customer-marketing/customer-mark
 import { registerCustomerCareIpc } from './customer-care/customer-care-ipc';
 import { CustomerCareService } from './customer-care/customer-care-service';
 import { CareFacebookClient } from './customer-care/care-facebook-client';
+import { CareCrmClient } from './customer-care/care-crm-client';
 import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './customer-care/care-facebook-oauth';
 import { CareLeadNotifier } from './customer-care/care-lead-notifier';
 import { CareGraphPublisher } from './customer-care/care-graph-publisher';
@@ -931,6 +932,12 @@ function setupIPC() {
       ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
     allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
   });
+  // Care CRM S2: same origin rules; rows are returned to the renderer only, never stored or logged.
+  const careCrmClient = new CareCrmClient(authManager, {
+    baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+      ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
+    allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
+  });
   careLeadNotifier = new CareLeadNotifier({
     resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
@@ -960,6 +967,7 @@ function setupIPC() {
     facebook: careFacebookClient,
     leads: careFacebookClient,
     autoReply: careFacebookClient,
+    crm: careCrmClient,
     onFacebookInboxChanged: () => careLeadNotifier?.refresh(),
     onCareChanged: () => careGraphPublisher?.requestPublish(),
     selectFacts: async ({ system, user, signal }) => {

@@ -338,13 +338,13 @@ export function parseCareAutoReplyState(value: unknown): CustomerCareAutoReplySt
 }
 
 /** Facebook's display name; a name that could disguise text degrades to "no name" instead of hiding the lead. */
-function parseCustomerName(value: unknown): string | null | undefined {
+export function parseCustomerName(value: unknown): string | null | undefined {
   if (value === null) return null;
   if (typeof value !== 'string') return undefined;
   return parseName(value) ?? null;
 }
 
-function parseLeadMessage(value: unknown): CustomerCareLeadMessage | null {
+export function parseLeadMessage(value: unknown): CustomerCareLeadMessage | null {
   const message = exactRecord(value, ['text', 'at']);
   if (!message || typeof message.text !== 'string' || !isIso(message.at)) return null;
   // Counted in code points: an emoji-heavy 500-character message is still within the contract.

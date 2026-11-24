@@ -2059,6 +2059,29 @@
   overflow: hidden;
 }
 
+/* Care CRM S2: "Memory doanh nghiệp | CRM" tabs. Each panel takes the stage's old place in the column. */
+.izzi-v2 .v2-mygraph__tabs .v2-tab:focus-visible {
+  outline: 2px solid var(--v2-brand-primary);
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-mygraph__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.izzi-v2 .v2-mygraph__panel[hidden] {
+  display: none;
+}
+
+.izzi-v2 .v2-mygraph__crm {
+  overflow: auto;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
 .izzi-v2 .v2-project-feed,
 .izzi-v2 .v2-project-steps {
   display: flex;

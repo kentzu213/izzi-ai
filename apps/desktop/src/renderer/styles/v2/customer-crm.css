@@ -1,0 +1,345 @@
+/*
+ * MyGraph → CRM (Care CRM S2). V2 tokens only. MyGraph sits outside `.v2-workspace--surface`, so the legacy
+ * `input, textarea, select` rules in index.css still paint these controls with `!important`; the CRM
+ * re-asserts the V2 control tokens the same way the surfaces do in shell.css.
+ */
+
+.izzi-v2 .v2-crm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  min-width: 0;
+  padding: var(--v2-space-4);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-crm__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v2-space-4);
+}
+
+.izzi-v2 .v2-crm__title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-section-size);
+  line-height: var(--v2-text-section-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm__lead,
+.izzi-v2 .v2-crm__hint,
+.izzi-v2 .v2-crm__meta {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm__error,
+.izzi-v2 .v2-crm__notice {
+  margin: 0;
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border-radius: var(--v2-radius-control);
+  font-size: var(--v2-text-meta-size);
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__error {
+  background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-danger) 40%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm__notice {
+  background: color-mix(in srgb, var(--v2-success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-success) 40%, transparent);
+  color: var(--v2-text-primary) !important;
+}
+
+.izzi-v2 .v2-crm__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm__filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  min-width: 180px;
+}
+
+/* Controls: V2 tokens over the legacy !important input skin. */
+.izzi-v2 .v2-crm .v2-field__select,
+.izzi-v2 .v2-crm .v2-field__input {
+  min-height: 32px;
+  background: var(--v2-bg-deep, var(--v2-bg-panel)) !important;
+  border: 1px solid var(--v2-border-default) !important;
+  border-radius: var(--v2-radius-control) !important;
+  box-shadow: none !important;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm .v2-field__select:focus,
+.izzi-v2 .v2-crm .v2-field__input:focus {
+  border-color: var(--v2-brand-primary) !important;
+  box-shadow: none !important;
+}
+
+.izzi-v2 .v2-crm .v2-field__select:focus-visible,
+.izzi-v2 .v2-crm .v2-field__input:focus-visible,
+.izzi-v2 .v2-crm .v2-button:focus-visible,
+.izzi-v2 .v2-crm .v2-tab:focus-visible,
+.izzi-v2 .v2-crm input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-crm .v2-field__input::placeholder {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* The wrap is the size container, so an open editor can match the visible width while the table scrolls. */
+.izzi-v2 .v2-crm__table-wrap {
+  overflow-x: auto;
+  container-type: inline-size;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-crm__table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+.izzi-v2 .v2-crm__table th {
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border-bottom: 1px solid var(--v2-border-default);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-crm__table td {
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border-bottom: 1px solid var(--v2-border-default);
+  vertical-align: top;
+}
+
+.izzi-v2 .v2-crm__row.is-open td {
+  border-bottom-color: transparent;
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-crm__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--v2-space-2);
+  min-width: 150px;
+}
+
+.izzi-v2 .v2-crm__who strong {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__phone {
+  flex-basis: 100%;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__owner,
+.izzi-v2 .v2-crm__status {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-crm__next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--v2-space-2);
+  min-width: 140px;
+}
+
+.izzi-v2 .v2-crm__due {
+  padding: 0 var(--v2-space-2);
+  border-radius: var(--v2-radius-pill);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 18px;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__due.is-overdue {
+  background: color-mix(in srgb, var(--v2-danger) 14%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm__due.is-today {
+  background: color-mix(in srgb, var(--v2-warning) 16%, transparent);
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm__actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.izzi-v2 .v2-crm__editor-row > td {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-crm__editor {
+  position: sticky;
+  left: var(--v2-space-3);
+  box-sizing: border-box;
+  width: calc(100cqw - 2 * var(--v2-space-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm__fields--wide {
+  grid-template-columns: minmax(0, 2fr) minmax(190px, 1fr);
+}
+
+.izzi-v2 .v2-crm .v2-field {
+  min-width: 0;
+}
+
+.izzi-v2 .v2-crm__products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--v2-space-1) var(--v2-space-3);
+  margin: 0;
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-crm__products legend {
+  padding: 0 var(--v2-space-1);
+}
+
+.izzi-v2 .v2-crm__product {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--v2-space-2);
+  font-size: var(--v2-text-meta-size);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__product input {
+  margin-top: 2px;
+  accent-color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-crm__note textarea {
+  resize: vertical;
+}
+
+.izzi-v2 .v2-crm__messages ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: var(--v2-space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-crm__messages p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__conflict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-3);
+  background: color-mix(in srgb, var(--v2-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-warning) 45%, transparent);
+  border-radius: var(--v2-radius-control);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__conflict p,
+.izzi-v2 .v2-crm__conflict ul {
+  margin: 0;
+}
+
+.izzi-v2 .v2-crm__conflict ul {
+  padding-left: var(--v2-space-4);
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm__conflict li span {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm .v2-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.izzi-v2 .v2-crm__danger {
+  border-color: color-mix(in srgb, var(--v2-danger) 50%, transparent);
+  color: var(--v2-danger);
+}
+
+@media (max-width: 720px) {
+  .izzi-v2 .v2-crm {
+    padding: var(--v2-space-3) var(--v2-space-2);
+  }
+
+  .izzi-v2 .v2-crm__fields--wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
