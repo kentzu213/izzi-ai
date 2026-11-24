@@ -93,17 +93,42 @@ describe('CrmSaveQueue (no request per keystroke)', () => {
     expect(queue.isSaving(LEAD)).toBe(false);
   });
 
-  it('keeps rows independent, cancels a row and flushes pending rows at once on unmount', () => {
+  it('keeps rows independent, cancels a row and sends waiting rows at once on close', () => {
     const { run } = controlledRun();
     const queue = new CrmSaveQueue(run, 1_500);
     queue.changed(LEAD);
     queue.changed(OTHER);
     queue.cancel(OTHER);
-    queue.flushAll();
+    queue.close();
     expect(run.mock.calls).toEqual([[LEAD, 'auto']]);
-    queue.dispose();
     queue.changed(LEAD);
     vi.advanceTimersByTime(5_000);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('on close, gives a row changed during its in-flight save exactly one final save', async () => {
+    const { run, finish } = controlledRun();
+    const queue = new CrmSaveQueue(run, 1_500);
+    queue.changed(LEAD);
+    vi.advanceTimersByTime(1_500);
+    queue.changed(LEAD);
+    queue.close();
+    expect(run).toHaveBeenCalledTimes(1);
+    await finish('done');
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenLastCalledWith(LEAD, 'auto');
+    await finish('again');
+    vi.advanceTimersByTime(60_000);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('on close, also sends one final save when the in-flight save reports newer input', async () => {
+    const { run, finish } = controlledRun();
+    const queue = new CrmSaveQueue(run, 1_500);
+    queue.changed(LEAD);
+    vi.advanceTimersByTime(1_500);
+    queue.close();
+    await finish('again');
+    expect(run).toHaveBeenCalledTimes(2);
   });
 });

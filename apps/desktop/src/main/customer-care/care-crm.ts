@@ -43,10 +43,12 @@ export const CARE_CRM_MAX_ASSIGNEES = 200;
 const PRODUCT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_WINDOW_YEARS = 2;
-// Control characters and bidi overrides; a note keeps only its line breaks.
-const UNSAFE_LINE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
-const UNSAFE_NOTE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
-// The server refuses half of a surrogate pair.
+// The server's text rule (backend 58d8ea0), checked before trimming: no control character (a note keeps its
+// line breaks), no format character (Cf: bidi controls, zero-width marks, U+FEFF, ...) except the zero-width
+// joiner that multi-part emoji need, no line or paragraph separator, and no half of a surrogate pair.
+const UNSAFE_LINE = /[\u0000-\u001f\u007f-\u009f]/;
+const UNSAFE_NOTE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/;
+const FORMAT_OR_SEPARATOR = /(?!\u200D)[\p{Cf}\u2028\u2029]/u;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 // What the server accepts in a request: a zone is required, at most 6 fractional digits.
 const REQUEST_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -65,10 +67,13 @@ export interface CareCrmPage {
   assignees: CustomerCareCrmAssignee[];
 }
 
-/** A save either stored the profile, or lost to a newer save and carries the current row. */
+/**
+ * A save either stored the profile, or lost to a newer save and carries the current profile. Only the profile
+ * is kept: the server may answer without the lead's phone and messages after the database step committed.
+ */
 export type CareCrmSaveOutcome =
-  | { kind: 'saved'; row: CustomerCareCrmRow }
-  | { kind: 'conflict'; row: CustomerCareCrmRow };
+  | { kind: 'saved'; leadId: string; profile: CustomerCareCrmProfile }
+  | { kind: 'conflict'; leadId: string; profile: CustomerCareCrmProfile };
 
 /** The two CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export interface CareCrmGateway {
@@ -144,11 +149,14 @@ function timeInWindow(value: string, now: Date): boolean {
   return time >= shiftYears(now, -DATE_WINDOW_YEARS).getTime() && time <= shiftYears(now, DATE_WINDOW_YEARS).getTime();
 }
 
-/** Trimmed text of 1..`max` characters (code points, so an emoji counts as one), or null when unacceptable. */
+/**
+ * Trimmed text of 1..`max` characters (code points, so an emoji counts as one), or null when unacceptable.
+ * Like the server, the characters are checked on the value as given, before trimming.
+ */
 function boundedText(value: unknown, max: number, unsafe: RegExp): string | null {
   if (typeof value !== 'string' || value.length > max * 4) return null;
+  if (unsafe.test(value) || FORMAT_OR_SEPARATOR.test(value) || LONE_SURROGATE.test(value)) return null;
   const trimmed = value.trim();
-  if (unsafe.test(trimmed) || LONE_SURROGATE.test(trimmed)) return null;
   const length = Array.from(trimmed).length;
   return length >= 1 && length <= max ? trimmed : null;
 }
@@ -234,11 +242,11 @@ export function parseCareCrmSaveInput(input: unknown, now: Date): CustomerCareCr
  * shape is checked here; the renderer re-applies the stage rules before the next save.
  */
 function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
-  // `detailsUnreadable` is the only optional key: present (true or false) or absent.
+  // `detailsUnreadable` is the only optional key, and the server sends it only as `true`.
   const keys = [...PROFILE_INPUT_KEYS, 'updatedAt', 'updatedBy'];
   const flagged = typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'detailsUnreadable');
   const profile = exactRecord(value, flagged ? [...keys, 'detailsUnreadable'] : keys);
-  if (!profile || (flagged && typeof profile.detailsUnreadable !== 'boolean')) return null;
+  if (!profile || (flagged && profile.detailsUnreadable !== true)) return null;
   const { stage, ownerUserId, addressForm, occasion, neededBy, nextStepDueAt, lostReason, purchasedAt } = profile;
   if (!oneOf(CUSTOMER_CARE_CRM_STAGES, stage) || !isUuidOrNull(ownerUserId)) return null;
   if (!nullableOneOf(CUSTOMER_CARE_CRM_ADDRESS_FORMS, addressForm)) return null;
@@ -349,27 +357,51 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
   return { role: envelope.role, canDelete: envelope.canDelete, rows, nextCursor: envelope.nextCursor, assignees };
 }
 
-/** `POST /crm/profile` success envelope: the saved row for exactly that workspace and lead. */
-export function parseCareCrmSaveBody(body: unknown, workspaceId: string, leadId: string): CustomerCareCrmRow | null {
+const ROW_KEYS = [
+  'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
+  'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
+];
+
+/**
+ * The profile of a row in a save answer (200 or 409). After the database step the server may fail to present
+ * the lead and answer with `phone: ""`, empty times and no messages, or leave presentation fields out. Only
+ * this path is relaxed: the row may carry contract keys only, its lead must match and its profile is checked
+ * strictly. The presentation fields are dropped unread; the screen keeps the ones it already shows.
+ */
+function parseSavedRowProfile(value: unknown, leadId: string): CustomerCareCrmProfile | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  if (prototype !== Object.prototype && prototype !== null) return null;
+  if (!Object.keys(value).every((key) => ROW_KEYS.includes(key))) return null;
+  const row = value as Record<string, unknown>;
+  if (row.leadId !== leadId) return null;
+  return parseCareCrmProfile(row.profile);
+}
+
+/** `POST /crm/profile` success envelope: the saved profile for exactly that workspace and lead. */
+export function parseCareCrmSaveBody(body: unknown, workspaceId: string, leadId: string): CustomerCareCrmProfile | null {
   const envelope = exactRecord(body, ['success', 'workspaceId', 'row']);
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
-  const row = parseCareCrmRow(envelope.row);
-  return row && row.leadId === leadId ? row : null;
+  return parseSavedRowProfile(envelope.row, leadId);
 }
 
 /**
  * The 409 `profile_conflict` error envelope carries the current row. The shared error envelope is
  * `{ success:false, error, reason }`; `workspaceId` is accepted when present and must then match.
  */
-export function parseCareCrmConflictBody(body: unknown, workspaceId: string, leadId: string): CustomerCareCrmRow | null {
+export function parseCareCrmConflictBody(body: unknown, workspaceId: string, leadId: string): CustomerCareCrmProfile | null {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
   const allowed = ['success', 'error', 'reason', 'row', 'workspaceId'];
   if (!Object.keys(body).every((key) => allowed.includes(key))) return null;
   const envelope = body as Record<string, unknown>;
   if (envelope.success !== false || envelope.reason !== 'profile_conflict') return null;
   if ('workspaceId' in envelope && envelope.workspaceId !== workspaceId) return null;
-  const row = parseCareCrmRow(envelope.row);
-  return row && row.leadId === leadId ? row : null;
+  return parseSavedRowProfile(envelope.row, leadId);
+}
+
+/** A fresh copy of a profile for IPC. */
+export function copyCareCrmProfile(profile: CustomerCareCrmProfile): CustomerCareCrmProfile {
+  return { ...profile, productFactIds: [...profile.productFactIds] };
 }
 
 /** A fresh copy, so the object handed to IPC shares nothing with the client's parse result. */
@@ -377,6 +409,6 @@ export function copyCareCrmRow(row: CustomerCareCrmRow): CustomerCareCrmRow {
   return {
     ...row,
     recentMessages: row.recentMessages.map((message) => ({ ...message })),
-    profile: { ...row.profile, productFactIds: [...row.profile.productFactIds] },
+    profile: copyCareCrmProfile(row.profile),
   };
 }

@@ -120,7 +120,7 @@ describe('CareCrmClient GET /crm', () => {
 describe('CareCrmClient POST /crm/profile', () => {
   it('sends the full replace with the expected updatedAt and returns the saved row', async () => {
     const { instance, fetchImpl } = client(json({ success: true, workspaceId: WORKSPACE, row: ROW }));
-    expect(await instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'saved', row: ROW } });
+    expect(await instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'saved', leadId: LEAD_ID, profile: ROW.profile } });
     const [url, init] = call(fetchImpl);
     expect(url).toBe(`${ROOT}/crm/profile`);
     expect(init.method).toBe('POST');
@@ -156,7 +156,7 @@ describe('CareCrmClient POST /crm/profile', () => {
 
   it('reads the exact server envelopes by reason, never by their English error text', async () => {
     const conflict = client(json({ success: false, error: 'Customer profile changed', reason: 'profile_conflict', row: ROW }, 409));
-    expect(await conflict.instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', row: ROW } });
+    expect(await conflict.instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', leadId: LEAD_ID, profile: ROW.profile } });
     const gone = client(json({ success: false, error: 'No Facebook Page available', reason: 'lead_not_found' }, 422));
     const result = await gone.instance.saveCrmProfile(WORKSPACE, saveInput());
     expect(result).toEqual({ ok: false, error: 'rejected', reason: 'lead_not_found' });
@@ -165,7 +165,33 @@ describe('CareCrmClient POST /crm/profile', () => {
 
   it('turns a 409 profile_conflict into the current row, never an overwrite', async () => {
     const { instance } = client(json({ success: false, error: 'Conflict', reason: 'profile_conflict', row: ROW }, 409));
-    expect(await instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', row: ROW } });
+    expect(await instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: true, value: { kind: 'conflict', leadId: LEAD_ID, profile: ROW.profile } });
+  });
+
+  it('treats a committed save whose row came back partial as a success with the saved profile', async () => {
+    const partial = { ...ROW, phone: '', phoneCapturedAt: '', lastMessageAt: '', recentMessages: [], customerName: null };
+    const saved = client(json({ success: true, workspaceId: WORKSPACE, row: partial }));
+    expect(await saved.instance.saveCrmProfile(WORKSPACE, saveInput()))
+      .toEqual({ ok: true, value: { kind: 'saved', leadId: LEAD_ID, profile: ROW.profile } });
+    const conflict = client(json({ success: false, error: 'Customer profile changed', reason: 'profile_conflict', row: partial }, 409));
+    expect(await conflict.instance.saveCrmProfile(WORKSPACE, saveInput()))
+      .toEqual({ ok: true, value: { kind: 'conflict', leadId: LEAD_ID, profile: ROW.profile } });
+  });
+
+  it('never sends the read-only profile fields, even if the profile object carries them', async () => {
+    const { instance, fetchImpl } = client(json({ success: true, workspaceId: WORKSPACE, row: ROW }));
+    const carrying = { ...PROFILE, updatedAt: UPDATED, updatedBy: OWNER_ID, detailsUnreadable: true } as CustomerCareCrmProfileInput;
+    await instance.saveCrmProfile(WORKSPACE, { leadId: LEAD_ID, expectedUpdatedAt: UPDATED, profile: carrying });
+    const sent = JSON.parse(call(fetchImpl)[1].body as string).profile;
+    expect(Object.keys(sent).sort()).toEqual(Object.keys(PROFILE).sort());
+  });
+
+  it('reads 403 owner_not_eligible apart from a viewer\'s 403', async () => {
+    const owner = client(json({ success: false, error: 'Forbidden', reason: 'owner_not_eligible' }, 403));
+    expect(await owner.instance.saveCrmProfile(WORKSPACE, saveInput()))
+      .toEqual({ ok: false, error: 'rejected', reason: 'owner_not_eligible' });
+    const viewer = client(json({ success: false, error: 'Forbidden', reason: 'forbidden' }, 403));
+    expect(await viewer.instance.saveCrmProfile(WORKSPACE, saveInput())).toEqual({ ok: false, error: 'forbidden' });
   });
 
   it('reports a 409 without a readable row as an invalid answer', async () => {
@@ -195,6 +221,8 @@ describe('CareCrmClient failures', () => {
     [403, { success: false, error: 'Forbidden', reason: 'forbidden' }, { ok: false, error: 'forbidden' }],
     [404, { success: false, error: 'Not found' }, { ok: false, error: 'unsupported' }],
     [422, { success: false, error: 'x', reason: 'lead_not_found' }, { ok: false, error: 'rejected', reason: 'lead_not_found' }],
+    [429, { success: false, error: 'Too many requests', reason: 'rate_limited' }, { ok: false, error: 'unavailable', reason: 'rate_limited' }],
+    // Fallback: a 429 without a reason is still read as the rate limit.
     [429, { success: false, error: 'Too many requests' }, { ok: false, error: 'unavailable', reason: 'rate_limited' }],
     [500, { success: false, error: 'Internal' }, { ok: false, error: 'unavailable' }],
     [503, { success: false, error: 'x', reason: 'not_configured' }, { ok: false, error: 'not_configured' }],

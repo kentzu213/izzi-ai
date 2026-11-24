@@ -14,7 +14,7 @@ import {
   type NativeMarketingClientOptions,
   type NativeMarketingTokenProvider,
 } from '../marketing/native-marketing-client';
-import type { CustomerCareCrmSaveInput } from '../../shared/customer-care-types';
+import type { CustomerCareCrmProfileInput, CustomerCareCrmSaveInput } from '../../shared/customer-care-types';
 import {
   CARE_FACEBOOK_ROOT,
   careFacebookFailure,
@@ -36,10 +36,35 @@ const INVALID_REQUEST: CareFacebookFailure = { ok: false, error: 'rejected', rea
 const INVALID_RESPONSE: CareFacebookFailure = { ok: false, error: 'invalid-response' };
 /** Over the shared Care budget (30 a minute per user): the screen skips its next refresh instead of retrying. */
 const RATE_LIMITED: CareFacebookFailure = { ok: false, error: 'unavailable', reason: 'rate_limited' };
+const OWNER_NOT_ELIGIBLE: CareFacebookFailure = { ok: false, error: 'rejected', reason: 'owner_not_eligible' };
+const FORBIDDEN_STATUS = 403;
 const CONFLICT_STATUS = 409;
 const RATE_LIMIT_STATUS = 429;
 
 type CrmResponse = { ok: true; status: number; body: unknown } | CareFacebookFailure;
+
+/** The 11 editable keys only: `updatedAt`, `updatedBy` or `detailsUnreadable` in a POST answer 400. */
+function editableProfile(profile: CustomerCareCrmProfileInput): CustomerCareCrmProfileInput {
+  return {
+    stage: profile.stage,
+    ownerUserId: profile.ownerUserId,
+    addressForm: profile.addressForm,
+    occasion: profile.occasion,
+    neededBy: profile.neededBy,
+    productFactIds: [...profile.productFactIds],
+    nextStep: profile.nextStep,
+    nextStepDueAt: profile.nextStepDueAt,
+    lostReason: profile.lostReason,
+    purchasedAt: profile.purchasedAt,
+    note: profile.note,
+  };
+}
+
+function rejectReasonOf(body: unknown): unknown {
+  return typeof body === 'object' && body !== null && !Array.isArray(body)
+    ? (body as Record<string, unknown>).reason
+    : undefined;
+}
 
 export class CareCrmClient implements CareCrmGateway {
   private readonly baseUrl: string | null;
@@ -68,29 +93,31 @@ export class CareCrmClient implements CareCrmGateway {
 
   /**
    * POST /crm/profile — a full replace of the editable fields, guarded by `expectedUpdatedAt`. The caller
-   * has already parsed `input`. A 409 `profile_conflict` returns the current row; nothing was overwritten.
+   * has already parsed `input`. A 409 `profile_conflict` returns the current profile; nothing was overwritten.
    */
   async saveCrmProfile(
     workspaceId: string,
     input: CustomerCareCrmSaveInput,
   ): Promise<CareFacebookResult<CareCrmSaveOutcome>> {
     if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(input.leadId)) return INVALID_REQUEST;
+    const { leadId } = input;
     const result = await this.request('crm-profile', '/crm/profile', {
       method: 'POST',
       body: JSON.stringify({
         workspaceId,
-        leadId: input.leadId,
+        leadId,
         expectedUpdatedAt: input.expectedUpdatedAt,
-        profile: input.profile,
+        profile: editableProfile(input.profile),
       }),
     });
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) {
-      const current = parseCareCrmConflictBody(result.body, workspaceId, input.leadId);
-      return current ? { ok: true, value: { kind: 'conflict', row: current } } : INVALID_RESPONSE;
+      const current = parseCareCrmConflictBody(result.body, workspaceId, leadId);
+      return current ? { ok: true, value: { kind: 'conflict', leadId, profile: current } } : INVALID_RESPONSE;
     }
-    const row = parseCareCrmSaveBody(result.body, workspaceId, input.leadId);
-    return row ? { ok: true, value: { kind: 'saved', row } } : INVALID_RESPONSE;
+    // Committed: a row that came back without its phone and messages is still a success.
+    const saved = parseCareCrmSaveBody(result.body, workspaceId, leadId);
+    return saved ? { ok: true, value: { kind: 'saved', leadId, profile: saved } } : INVALID_RESPONSE;
   }
 
   /**
@@ -123,7 +150,10 @@ export class CareCrmClient implements CareCrmGateway {
         readable = false;
       }
       if (!response.ok) logFailure(label, response.status);
+      // Read by status, so a 429 without `reason: "rate_limited"` is still the rate limit.
       if (response.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
+      // A chosen owner who left is a field to fix, not lost access (a viewer's 403 stays `forbidden`).
+      if (response.status === FORBIDDEN_STATUS && rejectReasonOf(body) === 'owner_not_eligible') return OWNER_NOT_ELIGIBLE;
       // Failures are read by status and `reason`; the server's English `error` text is never used.
       if (!response.ok && response.status !== CONFLICT_STATUS) return careFacebookFailure(response.status, body);
       return readable ? { ok: true, status: response.status, body } : INVALID_RESPONSE;

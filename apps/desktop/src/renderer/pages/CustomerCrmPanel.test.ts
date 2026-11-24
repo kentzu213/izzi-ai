@@ -9,10 +9,12 @@ import type {
 } from '../../shared/customer-care-types';
 import { CustomerCrmRow, type CustomerCrmRowProps } from './CustomerCrmRow';
 import { CustomerCrmPanel } from './CustomerCrmPanel';
-import { CRM_CONFLICT_MESSAGE, profileFromRow, type CrmRowEdit } from './customer-crm-flow';
+import { CRM_CONFLICT_MESSAGE, CRM_SAVE_INVALID_MESSAGE, profileFromRow, type CrmRowEdit } from './customer-crm-flow';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
-const NOW = new Date(2026, 10, 24, 14, 0).getTime();
+/** Wall-clock time in Vietnam (UTC+7), whatever zone this PC is in. */
+const vn = (day: number, hour: number) => new Date(Date.UTC(2026, 10, day, hour - 7, 0)).toISOString();
+const NOW = Date.parse(vn(24, 14));
 const noop = () => undefined;
 
 const PROFILE: CustomerCareCrmProfileInput = {
@@ -23,7 +25,7 @@ const PROFILE: CustomerCareCrmProfileInput = {
   neededBy: '2026-12-20',
   productFactIds: ['ban-127'],
   nextStep: 'Gọi lại báo giá',
-  nextStepDueAt: new Date(2026, 10, 24, 9, 0).toISOString(),
+  nextStepDueAt: vn(24, 9),
   lostReason: null,
   purchasedAt: null,
   note: 'Nhà mới',
@@ -36,9 +38,9 @@ const ROW: CustomerCareCrmRow = {
   phone: '0901234567',
   zaloMentioned: true,
   leadStatus: 'contacted',
-  phoneCapturedAt: new Date(2026, 10, 24, 13, 0).toISOString(),
-  lastMessageAt: new Date(2026, 10, 24, 13, 0).toISOString(),
-  recentMessages: [{ text: 'Cho em xin giá bàn thờ', at: new Date(2026, 10, 24, 13, 0).toISOString() }],
+  phoneCapturedAt: vn(24, 13),
+  lastMessageAt: vn(24, 13),
+  recentMessages: [{ text: 'Cho em xin giá bàn thờ', at: vn(24, 13) }],
   profile: { ...PROFILE, updatedAt: '2026-11-21T09:30:00.000Z', updatedBy: OWNER_ID },
 };
 
@@ -108,6 +110,7 @@ describe('CustomerCrmRow', () => {
       draft: profileFromRow(ROW),
       rejected: { ...PROFILE, stage: 'deposit', note: 'Khách đã cọc 2 triệu' },
       error: CRM_CONFLICT_MESSAGE,
+      baseUpdatedAt: '2026-11-24T06:00:00.000Z',
     };
     const html = render({ edit });
     expect(html).toContain('Có người vừa cập nhật khách này.');
@@ -134,6 +137,17 @@ describe('CustomerCrmRow', () => {
     for (const control of controls) expect(control).toContain('disabled=""');
     expect(html).not.toMatch(/>Lưu</);
     expect(html).toContain('Xoá dữ liệu khách');
+  });
+
+  it('keeps a row editable after a 400: the message shows, every control and "Lưu" stay enabled', () => {
+    const draft = { ...PROFILE, note: 'Ghi chú mới' };
+    const edit: CrmRowEdit = { draft, rejected: null, error: CRM_SAVE_INVALID_MESSAGE, baseUpdatedAt: ROW.profile.updatedAt };
+    const html = render({ profile: draft, edit });
+    expect(html).toContain(CRM_SAVE_INVALID_MESSAGE);
+    const controls = html.match(/<(input|select|textarea)\b[^>]*>/g) ?? [];
+    expect(controls.length).toBeGreaterThan(5);
+    for (const control of controls) expect(control).not.toContain('disabled');
+    expect(html).toContain('<button type="button" class="v2-button v2-button--primary">Lưu</button>');
   });
 
   it('labels every control and asks for no age, marital status or religion', () => {

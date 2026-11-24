@@ -55,6 +55,7 @@ import {
 } from './care-leads';
 import {
   canUseCareCrm,
+  copyCareCrmProfile,
   copyCareCrmRow,
   parseCareCrmListInput,
   parseCareCrmSaveInput,
@@ -1073,11 +1074,12 @@ export class CustomerCareService {
     const { authority, crm } = gate;
     const result = await this.runFacebookCall(authority, () => crm.saveCrmProfile(authority.workspaceId, parsed));
     if (!result.ok) return result;
-    const row = copyCareCrmRow(result.value.row);
+    const { leadId } = result.value;
+    const profile = copyCareCrmProfile(result.value.profile);
     if (result.value.kind === 'conflict') {
-      return { ok: false, error: 'profile_conflict', workspaceId: authority.workspaceId, row };
+      return { ok: false, error: 'profile_conflict', workspaceId: authority.workspaceId, leadId, profile };
     }
-    return { ok: true, workspaceId: authority.workspaceId, row };
+    return { ok: true, workspaceId: authority.workspaceId, leadId, profile };
   }
 
   /** Fresh authority for a CRM call: signed in, owner/manager/editor, and the CRM backend present. */

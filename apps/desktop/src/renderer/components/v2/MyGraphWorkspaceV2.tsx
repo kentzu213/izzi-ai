@@ -16,7 +16,55 @@ export interface MyGraphWorkspaceV2Props {
   openWebError?: string;
 }
 
-type MyGraphTab = 'memory' | 'crm';
+export type MyGraphTab = 'memory' | 'crm';
+
+/** Which tab is shown, and whether CRM was ever opened (it then stays mounted). */
+export interface MyGraphTabsState {
+  tab: MyGraphTab;
+  crmOpened: boolean;
+}
+
+export function myGraphTabsAfter(state: MyGraphTabsState, tab: MyGraphTab): MyGraphTabsState {
+  return { tab, crmOpened: state.crmOpened || tab === 'crm' };
+}
+
+export interface MyGraphTabPanelsProps extends MyGraphTabsState {
+  /** The Memory view (graph stage and Live.md panel). */
+  stage: ReactNode;
+  crm: ReactNode;
+}
+
+/**
+ * Both tab panels. The Memory view is always mounted and only hidden while CRM is shown, so the graph's state
+ * and any Live.md draft survive a tab switch. CRM mounts the first time it is opened, then stays mounted with
+ * its refresh paused while hidden.
+ */
+export function MyGraphTabPanels({ tab, crmOpened, stage, crm }: MyGraphTabPanelsProps) {
+  return (
+    <>
+      <div
+        className="v2-mygraph__panel"
+        role="tabpanel"
+        id="v2-mygraph-panel-memory"
+        aria-labelledby="v2-mygraph-tab-memory"
+        hidden={tab !== 'memory'}
+      >
+        {stage}
+      </div>
+      <div
+        className="v2-mygraph__panel v2-mygraph__crm"
+        role="tabpanel"
+        id="v2-mygraph-panel-crm"
+        aria-labelledby="v2-mygraph-tab-crm"
+        hidden={tab !== 'crm'}
+      >
+        <PanelVisibleContext.Provider value={tab === 'crm'}>
+          {(tab === 'crm' || crmOpened) && crm}
+        </PanelVisibleContext.Provider>
+      </div>
+    </>
+  );
+}
 
 const TABS: ReadonlyArray<{ id: MyGraphTab; label: string }> = [
   { id: 'memory', label: 'Memory doanh nghiệp' },
@@ -29,13 +77,12 @@ const TABS: ReadonlyArray<{ id: MyGraphTab; label: string }> = [
  * never targets that class.
  */
 export function MyGraphWorkspaceV2({ graph, aside, crm, onOpenWeb, openWebError }: MyGraphWorkspaceV2Props) {
-  const [tab, setTab] = useState<MyGraphTab>('memory');
-  const [crmOpened, setCrmOpened] = useState(false);
+  const [tabs, setTabs] = useState<MyGraphTabsState>({ tab: 'memory', crmOpened: false });
+  const { tab } = tabs;
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const select = (next: MyGraphTab) => {
-    setTab(next);
-    if (next === 'crm') setCrmOpened(true);
+    setTabs((current) => myGraphTabsAfter(current, next));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -94,28 +141,7 @@ export function MyGraphWorkspaceV2({ graph, aside, crm, onOpenWeb, openWebError 
               );
             })}
           </div>
-          {/* The graph mounts exactly as before whenever Memory is shown. */}
-          <div
-            className="v2-mygraph__panel"
-            role="tabpanel"
-            id="v2-mygraph-panel-memory"
-            aria-labelledby="v2-mygraph-tab-memory"
-            hidden={tab !== 'memory'}
-          >
-            {tab === 'memory' && stage}
-          </div>
-          <div
-            className="v2-mygraph__panel v2-mygraph__crm"
-            role="tabpanel"
-            id="v2-mygraph-panel-crm"
-            aria-labelledby="v2-mygraph-tab-crm"
-            hidden={tab !== 'crm'}
-          >
-            {/* Kept mounted once opened so unsaved edits survive a tab switch; its refresh pauses while hidden. */}
-            <PanelVisibleContext.Provider value={tab === 'crm'}>
-              {(tab === 'crm' || crmOpened) && crm}
-            </PanelVisibleContext.Provider>
-          </div>
+          <MyGraphTabPanels {...tabs} stage={stage} crm={crm} />
         </>
       )}
     </section>

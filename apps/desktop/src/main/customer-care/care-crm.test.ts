@@ -154,7 +154,7 @@ describe('parseCareCrmSaveInput (IPC argument guard)', () => {
     ['an empty next step', save(withProfile({ nextStep: '   ' }))],
     ['a next step over 200 characters', save(withProfile({ nextStep: 'a'.repeat(201) }))],
     ['a next step with a newline', save(withProfile({ nextStep: 'Gọi\nlại' }))],
-    ['a next step with a bidi override', save(withProfile({ nextStep: 'Gọi ‮ lại' }))],
+    ['a next step with a bidi override', save(withProfile({ nextStep: 'Gọi \u202E lại' }))],
     ['a nextStepDueAt that is not ISO', save(withProfile({ nextStepDueAt: '2026-11-25' }))],
     ['a nextStepDueAt more than two years ahead', save(withProfile({ nextStepDueAt: '2028-12-01T00:00:00.000Z' }))],
     ['a lost reason while not lost', save(withProfile({ lostReason: 'price' }))],
@@ -192,6 +192,28 @@ describe('parseCareCrmSaveInput (IPC argument guard)', () => {
     expect(parseCareCrmProfileInput(withProfile({ nextStep: 'a\uDE00' }), NOW)).toBeNull();
   });
 
+  it('applies the server text rule: no format character except the zero-width joiner, no line or paragraph separator', () => {
+    const family = '👨\u200D👩\u200D👧';
+    expect(parseCareCrmProfileInput(withProfile({ nextStep: `Gọi ${family}`, note: family }), NOW)?.note).toBe(family);
+    for (const bad of ['\uFEFF', '\u200B', '\u200E', '\u202E', '\u2066', '\u00AD', '\u2060', '\u2028', '\u2029']) {
+      expect(parseCareCrmProfileInput(withProfile({ note: `a${bad}b` }), NOW), bad).toBeNull();
+      expect(parseCareCrmProfileInput(withProfile({ nextStep: `a${bad}b` }), NOW), bad).toBeNull();
+    }
+  });
+
+  it('checks the text before trimming, like the server', () => {
+    expect(parseCareCrmProfileInput(withProfile({ note: '\uFEFFghi chú' }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ nextStep: 'gọi lại\t' }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ note: 'ghi chú\u2028' }), NOW)).toBeNull();
+    expect(parseCareCrmProfileInput(withProfile({ note: '  ghi chú\n ' }), NOW)?.note).toBe('ghi chú');
+  });
+
+  it('never accepts the read-only profile fields in a save', () => {
+    for (const extra of [{ updatedAt: null }, { updatedBy: null }, { detailsUnreadable: true }]) {
+      expect(parseCareCrmSaveInput(save({ ...PROFILE, ...extra }), NOW)).toBeNull();
+    }
+  });
+
   it('requires a timezone and at most 6 fractional digits on timestamps, and passes them through unchanged', () => {
     expect(parseCareCrmSaveInput(save(PROFILE, { expectedUpdatedAt: '2026-11-21T09:30:00.123' }), NOW)).toBeNull();
     expect(parseCareCrmSaveInput(save(PROFILE, { expectedUpdatedAt: '2026-11-21T09:30:00.1234567Z' }), NOW)).toBeNull();
@@ -222,7 +244,7 @@ describe('parseCareCrmRow and the list answer', () => {
   it('degrades a name that could disguise text to no name, and replaces control characters in messages', () => {
     const row = parseCareCrmRow({
       ...ROW,
-      customerName: 'Hoa‮',
+      customerName: 'Hoa\u202E',
       recentMessages: [{ text: 'a\u0007b\nc', at: ISO }],
     });
     expect(row?.customerName).toBeNull();
@@ -269,14 +291,14 @@ describe('parseCareCrmRow and the list answer', () => {
     expect(parseCareCrmRow(unreadable)?.profile).toMatchObject({ stage: 'lost', lostReason: null, note: null });
   });
 
-  it('marks a profile whose sealed details could not be opened, from a boolean flag only', () => {
+  it('marks a profile whose sealed details could not be opened: the flag is present only as true', () => {
     const empty = { addressForm: null, occasion: null, productFactIds: [], nextStep: null, lostReason: null, note: null };
     const flagged = parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, ...empty, detailsUnreadable: true } });
     expect(flagged?.profile.detailsUnreadable).toBe(true);
     expect(flagged?.profile.stage).toBe('consulting');
-    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, detailsUnreadable: false } })?.profile)
-      .not.toHaveProperty('detailsUnreadable');
     expect(parseCareCrmRow(ROW)?.profile).not.toHaveProperty('detailsUnreadable');
+    // The backend never sends false; anything but true breaks the contract.
+    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, detailsUnreadable: false } })).toBeNull();
     expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, detailsUnreadable: 'yes' } })).toBeNull();
   });
 
@@ -294,7 +316,7 @@ describe('parseCareCrmRow and the list answer', () => {
   it('keeps an assignee whose label is unsafe or blank, without the label', () => {
     const page = parseCareCrmListBody({
       ...LIST_BODY,
-      assignees: [{ userId: OWNER_ID, label: '  ' }, { userId: LEAD_ID_2, label: 'Lan‮' }],
+      assignees: [{ userId: OWNER_ID, label: '  ' }, { userId: LEAD_ID_2, label: 'Lan\u202E' }],
     }, WORKSPACE);
     expect(page?.assignees).toEqual([{ userId: OWNER_ID, label: null }, { userId: LEAD_ID_2, label: null }]);
   });
@@ -317,16 +339,37 @@ describe('parseCareCrmRow and the list answer', () => {
 });
 
 describe('save and conflict answers', () => {
-  it('accepts the saved row only for the requested workspace and lead', () => {
-    expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: ROW }, WORKSPACE, LEAD_ID)).toEqual(ROW);
+  // What the backend sends after a commit when it cannot present the lead (presentRow → partialRow).
+  const PARTIAL_ROW = {
+    ...ROW, phone: '', phoneCapturedAt: '', lastMessageAt: '', recentMessages: [], customerName: null,
+  };
+
+  it('takes the saved profile, only for the requested workspace and lead', () => {
+    expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: ROW }, WORKSPACE, LEAD_ID)).toEqual(ROW.profile);
     expect(parseCareCrmSaveBody({ success: true, workspaceId: OTHER_WORKSPACE, row: ROW }, WORKSPACE, LEAD_ID)).toBeNull();
     expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: ROW }, WORKSPACE, LEAD_ID_2)).toBeNull();
   });
 
-  it('reads the current row from a profile_conflict answer', () => {
-    const body = { success: false, error: 'Conflict', reason: 'profile_conflict', row: ROW };
-    expect(parseCareCrmConflictBody(body, WORKSPACE, LEAD_ID)).toEqual(ROW);
-    expect(parseCareCrmConflictBody({ ...body, workspaceId: WORKSPACE }, WORKSPACE, LEAD_ID)).toEqual(ROW);
+  it('accepts a committed save whose row came back without its presentation fields', () => {
+    expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: PARTIAL_ROW }, WORKSPACE, LEAD_ID))
+      .toEqual(ROW.profile);
+    const { phone: _p, recentMessages: _m, phoneCapturedAt: _c, ...missing } = ROW;
+    expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: missing }, WORKSPACE, LEAD_ID))
+      .toEqual(ROW.profile);
+    // The profile itself stays strict, and the row may not carry fields outside the contract.
+    expect(parseCareCrmSaveBody({ success: true, workspaceId: WORKSPACE, row: { ...PARTIAL_ROW, psid: '1' } }, WORKSPACE, LEAD_ID))
+      .toBeNull();
+    expect(parseCareCrmSaveBody(
+      { success: true, workspaceId: WORKSPACE, row: { ...PARTIAL_ROW, profile: { ...ROW.profile, stage: 'won' } } },
+      WORKSPACE, LEAD_ID,
+    )).toBeNull();
+  });
+
+  it('reads the current profile from a profile_conflict answer, full or partial', () => {
+    const body = { success: false, error: 'Customer profile changed', reason: 'profile_conflict', row: ROW };
+    expect(parseCareCrmConflictBody(body, WORKSPACE, LEAD_ID)).toEqual(ROW.profile);
+    expect(parseCareCrmConflictBody({ ...body, workspaceId: WORKSPACE }, WORKSPACE, LEAD_ID)).toEqual(ROW.profile);
+    expect(parseCareCrmConflictBody({ ...body, row: PARTIAL_ROW }, WORKSPACE, LEAD_ID)).toEqual(ROW.profile);
   });
 
   it.each([

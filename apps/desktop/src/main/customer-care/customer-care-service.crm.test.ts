@@ -82,7 +82,7 @@ class FakeCrm implements CareCrmGateway {
   readonly calls: unknown[][] = [];
   during: () => void = () => {};
   listResult: CareFacebookResult<CareCrmPage> = { ok: true, value: PAGE };
-  saveResult: CareFacebookResult<CareCrmSaveOutcome> = { ok: true, value: { kind: 'saved', row: ROW } };
+  saveResult: CareFacebookResult<CareCrmSaveOutcome> = { ok: true, value: { kind: 'saved', leadId: LEAD_ID, profile: ROW.profile } };
 
   async listCrm(workspaceId: string, cursor: string | null) {
     this.calls.push(['listCrm', workspaceId, cursor]); this.during(); return this.listResult;
@@ -186,9 +186,13 @@ describe('CustomerCareService.listCrm', () => {
 });
 
 describe('CustomerCareService.saveCrmProfile', () => {
-  it('saves for the live workspace and returns the saved row', async () => {
+  it('saves for the live workspace and returns the saved profile', async () => {
     const { service, crm } = fixture({ authority: as('editor') });
-    expect(await service.saveCrmProfile(SAVE)).toEqual({ ok: true, workspaceId: WORKSPACE_A, row: ROW });
+    const result = await service.saveCrmProfile(SAVE);
+    expect(result).toEqual({ ok: true, workspaceId: WORKSPACE_A, leadId: LEAD_ID, profile: ROW.profile });
+    if (!result.ok) throw new Error('expected a save');
+    expect(result.profile).not.toBe(ROW.profile);
+    expect(result.profile.productFactIds).not.toBe(ROW.profile.productFactIds);
     expect(crm.calls).toEqual([['saveCrmProfile', WORKSPACE_A, SAVE]]);
   });
 
@@ -214,15 +218,18 @@ describe('CustomerCareService.saveCrmProfile', () => {
     }
   });
 
-  it('returns the current server row on a conflict, and forwards lead_not_found', async () => {
+  it('returns the current server profile on a conflict, and forwards lead_not_found and owner_not_eligible', async () => {
     const crm = new FakeCrm();
-    const current = { ...ROW, profile: { ...ROW.profile, stage: 'deposit' as const, updatedAt: '2026-11-24T07:00:00.000Z' } };
-    crm.saveResult = { ok: true, value: { kind: 'conflict', row: current } };
+    const current = { ...ROW.profile, stage: 'deposit' as const, updatedAt: '2026-11-24T07:00:00.000Z' };
+    crm.saveResult = { ok: true, value: { kind: 'conflict', leadId: LEAD_ID, profile: current } };
     const { service } = fixture({ crm });
     const conflict = await service.saveCrmProfile(SAVE);
-    expect(conflict).toEqual({ ok: false, error: 'profile_conflict', workspaceId: WORKSPACE_A, row: current });
+    expect(conflict).toEqual({ ok: false, error: 'profile_conflict', workspaceId: WORKSPACE_A, leadId: LEAD_ID, profile: current });
     if (conflict.ok || conflict.error !== 'profile_conflict') throw new Error('expected a conflict');
-    expect(conflict.row).not.toBe(current);
+    expect(conflict.profile).not.toBe(current);
+
+    crm.saveResult = { ok: false, error: 'rejected', reason: 'owner_not_eligible' };
+    expect(await service.saveCrmProfile(SAVE)).toEqual({ ok: false, error: 'rejected', reason: 'owner_not_eligible' });
 
     crm.saveResult = { ok: false, error: 'rejected', reason: 'lead_not_found' };
     expect(await service.saveCrmProfile(SAVE)).toEqual({ ok: false, error: 'rejected', reason: 'lead_not_found' });
@@ -243,7 +250,7 @@ describe('CRM data stays out of SQLite, graph_nodes and the logger', () => {
 
     await service.listCrm({ cursor: null });
     await service.saveCrmProfile(SAVE);
-    crm.saveResult = { ok: true, value: { kind: 'conflict', row: ROW } };
+    crm.saveResult = { ok: true, value: { kind: 'conflict', leadId: LEAD_ID, profile: ROW.profile } };
     await service.saveCrmProfile(SAVE);
     crm.saveResult = { ok: false, error: 'unavailable' };
     await service.saveCrmProfile(SAVE);

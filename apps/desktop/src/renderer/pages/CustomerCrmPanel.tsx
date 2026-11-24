@@ -18,7 +18,6 @@ import {
   CRM_FORBIDDEN_MESSAGE,
   CRM_MAX_PAGES,
   CRM_REFRESH_MS,
-  CRM_SAVE_FORBIDDEN_MESSAGE,
   CRM_STAGE_OPTIONS,
   crmCallTodayCount,
   crmEditAfterSaved,
@@ -27,6 +26,7 @@ import {
   crmEditOnDiscard,
   crmEditOnReapply,
   crmFailureView,
+  crmRefreshCooldownLeft,
   crmProductOptions,
   crmProfilesEqual,
   crmReloadAfterSave,
@@ -34,8 +34,10 @@ import {
   crmRowsOnFirstPage,
   crmRowsOnRefresh,
   crmRowsOnRemove,
+  crmRowWithProfile,
   crmRowsOnSaved,
   crmSaveDecision,
+  crmSaveFailureView,
   crmShouldLoadOnShow,
   crmShouldSkipNextTick,
   crmVisibleRows,
@@ -69,7 +71,7 @@ interface CrmMeta {
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
 const GENERIC_SAVE_ERROR = 'Chưa lưu được. Thử lại sau ít phút.';
-const CRM_SAVE_RATE_LIMITED_MESSAGE = 'Đang có nhiều yêu cầu. Chờ ít phút rồi bấm Lưu.';
+const REFRESH_RESTING_NOTE = 'Vừa tải xong. Có thể làm mới lại sau 15 giây.';
 const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
 
 function getCrmApi(): CrmApi | null {
@@ -113,6 +115,8 @@ export function CustomerCrmPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [purgingId, setPurgingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** "Làm mới" rests for 15 s after a full reload. */
+  const [refreshResting, setRefreshResting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -131,6 +135,7 @@ export function CustomerCrmPanel() {
   const skipTicksRef = useRef(0);
   const queueRef = useRef<CrmSaveQueue | null>(null);
   const loadRef = useRef<(mode: 'full' | 'page1') => Promise<void>>(async () => undefined);
+  const restTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runSaveRef = useRef<(leadId: string, mode: 'auto' | 'explicit') => Promise<'done' | 'again'>>(
     async () => 'done',
   );
@@ -204,6 +209,12 @@ export function CustomerCrmPanel() {
     if (mode === 'full') {
       lastFullLoadAtRef.current = Date.now();
       setRefreshing(true);
+      setRefreshResting(true);
+      if (restTimerRef.current !== null) clearTimeout(restTimerRef.current);
+      restTimerRef.current = setTimeout(() => {
+        restTimerRef.current = null;
+        if (mountedRef.current) setRefreshResting(false);
+      }, crmRefreshCooldownLeft(lastFullLoadAtRef.current, Date.now()));
     }
     try {
       const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1);
@@ -283,52 +294,50 @@ export function CustomerCrmPanel() {
     markSaving(leadId, true);
     try {
       const result = await api.saveCrmProfile(decision.input);
-      if (!mountedRef.current) return 'done';
-      if (result.ok) {
-        if (result.workspaceId !== scopeRef.current) return 'done';
-        updateRows((current) => crmRowsOnSaved(current, result.row));
-        const next = crmEditAfterSaved(editsRef.current[leadId], result.row);
-        updateEdits((current) => (next ? { ...current, [leadId]: next } : withoutKey(current, leadId)));
-        if (mode === 'explicit') setNotice(`Đã lưu hồ sơ của ${leadDisplayName(result.row)}.`);
-        const pending = next !== null && !crmProfilesEqual(normalizeCrmProfile(next.draft), profileFromRow(result.row));
-        return pending ? 'again' : 'done';
-      }
+      // Rows and edits are updated even after the panel closed, so a final save on close builds on this one.
+      // Only requests (reloads) wait for a mounted panel.
       const reload = crmReloadAfterSave(result);
-      if (result.error === 'profile_conflict') {
+      if (result.ok || result.error === 'profile_conflict') {
         if (result.workspaceId !== scopeRef.current) return 'done';
-        updateRows((current) => crmRowsOnSaved(current, result.row));
-        updateEdits((current) => ({ ...current, [leadId]: crmEditOnConflict(current[leadId], result.row) }));
-        setExpandedId((current) => current ?? leadId);
-        // Someone else is editing: read every page again so other rows they changed show too.
-        if (reload) void loadRef.current(reload);
-        return 'done';
+        const known = rowsRef.current.find((item) => item.leadId === leadId);
+        if (!known) return 'done';
+        // The answer carries the stored profile only; the row keeps the phone, messages and times it shows.
+        const merged = crmRowWithProfile(known, result.profile);
+        updateRows((current) => crmRowsOnSaved(current, merged));
+        if (!result.ok) {
+          updateEdits((current) => ({ ...current, [leadId]: crmEditOnConflict(current[leadId], merged) }));
+          setExpandedId((current) => current ?? leadId);
+          // Someone else is editing: read every page again so other rows they changed show too.
+          if (reload && mountedRef.current) void loadRef.current(reload);
+          return 'done';
+        }
+        const next = crmEditAfterSaved(editsRef.current[leadId], merged);
+        updateEdits((current) => (next ? { ...current, [leadId]: next } : withoutKey(current, leadId)));
+        if (mode === 'explicit') setNotice(`Đã lưu hồ sơ của ${leadDisplayName(merged)}.`);
+        const pending = next !== null && !crmProfilesEqual(normalizeCrmProfile(next.draft), profileFromRow(merged));
+        return pending ? 'again' : 'done';
       }
       if (result.reason === 'lead_not_found') {
         removeRow(leadId);
         setNotice('Khách này không còn trong danh sách.');
         return 'done';
       }
-      if (result.error === 'forbidden') {
-        // Either the chosen owner left the project or this account lost access; page 1 tells which.
-        setRowError(leadId, CRM_SAVE_FORBIDDEN_MESSAGE);
-        if (reload) void loadRef.current(reload);
-        return 'done';
-      }
       // A 429 or a 503 is never retried by itself: the row waits for the user, and the next tick is skipped.
       if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
-      if (result.reason === 'rate_limited') {
-        setRowError(leadId, CRM_SAVE_RATE_LIMITED_MESSAGE);
+      const view = crmSaveFailureView(result);
+      if (view.dropRows) {
+        dropAll(view.message);
         return 'done';
       }
-      const view = crmFailureView(result);
-      if (view.dropRows) dropAll(view.message);
-      else setRowError(leadId, view.message);
+      // The draft stays and the row stays editable; owner_not_eligible also re-reads page 1 for the assignees.
+      setRowError(leadId, view.message);
+      if (reload && mountedRef.current) void loadRef.current(reload);
       return 'done';
     } catch {
-      if (mountedRef.current) setRowError(leadId, GENERIC_SAVE_ERROR);
+      setRowError(leadId, GENERIC_SAVE_ERROR);
       return 'done';
     } finally {
-      if (mountedRef.current) markSaving(leadId, false);
+      markSaving(leadId, false);
     }
   };
 
@@ -347,10 +356,11 @@ export function CustomerCrmPanel() {
     queueRef.current = queue;
     return () => {
       mountedRef.current = false;
-      // Leaving MyGraph: send what is still waiting rather than lose it, then stop.
-      queue.flushAll();
-      queue.dispose();
+      // Leaving MyGraph: send what is still waiting, plus one final save for a row changed mid-save.
+      queue.close();
       if (queueRef.current === queue) queueRef.current = null;
+      // The "Làm mới" rest timer is left to run: it only touches state while mounted, and a development
+      // re-mount (StrictMode) must not leave the button resting for good.
     };
   }, []);
 
@@ -373,7 +383,7 @@ export function CustomerCrmPanel() {
   const change = (row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput) => {
     // A row whose details could not be opened is never saved, so it takes no edits either.
     if (crmRowReadOnly(row)) return;
-    updateEdits((current) => ({ ...current, [row.leadId]: crmEditOnChange(current[row.leadId], profile) }));
+    updateEdits((current) => ({ ...current, [row.leadId]: crmEditOnChange(current[row.leadId], profile, row) }));
     setNotice('');
     queueRef.current?.changed(row.leadId);
   };
@@ -444,9 +454,19 @@ export function CustomerCrmPanel() {
           <p className="v2-crm__lead">Hồ sơ do nhân viên ghi tay. Chỉ hiện ở đây, không đưa vào Memory và không lưu trên máy.</p>
         </div>
         {phase.state === 'ready' && (
-          <button type="button" className="v2-button v2-button--ghost" disabled={refreshing} onClick={() => { void load('full'); }}>
-            {refreshing ? 'Đang tải…' : 'Làm mới'}
-          </button>
+          <div className="v2-crm__refresh">
+            {refreshResting && !refreshing && <span className="v2-crm__meta" id="v2-crm-refresh-note">Vừa tải xong</span>}
+            <button
+              type="button"
+              className="v2-button v2-button--ghost"
+              disabled={refreshing || refreshResting}
+              title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
+              aria-describedby={refreshResting && !refreshing ? 'v2-crm-refresh-note' : undefined}
+              onClick={() => { void load('full'); }}
+            >
+              {refreshing ? 'Đang tải…' : 'Làm mới'}
+            </button>
+          </div>
         )}
       </header>
 
@@ -456,7 +476,15 @@ export function CustomerCrmPanel() {
         <div className="v2-empty">
           <p role="alert">{phase.message}</p>
           {phase.message !== CRM_FORBIDDEN_MESSAGE && phase.message !== NO_APP_MESSAGE && (
-            <button type="button" className="v2-button" disabled={refreshing} onClick={() => { void load('full'); }}>Thử lại</button>
+            <button
+              type="button"
+              className="v2-button"
+              disabled={refreshing || refreshResting}
+              title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
+              onClick={() => { void load('full'); }}
+            >
+              Thử lại
+            </button>
           )}
         </div>
       )}

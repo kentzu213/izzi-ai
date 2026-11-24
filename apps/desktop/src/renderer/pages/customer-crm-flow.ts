@@ -10,6 +10,7 @@ import type {
   CustomerCareCrmListResult,
   CustomerCareCrmLostReason,
   CustomerCareCrmOccasion,
+  CustomerCareCrmProfile,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRole,
   CustomerCareCrmRow,
@@ -99,49 +100,52 @@ export function crmAssigneeLabel(assignees: readonly CustomerCareCrmAssignee[], 
 // Dates and times (local calendar, the way staff read them)
 // ---------------------------------------------------------------------------
 
-function pad(value: number): string {
-  return String(value).padStart(2, '0');
+// The shops are in Vietnam: "today", "overdue", the date pickers and due times use Asia/Ho_Chi_Minh whatever
+// zone this PC is set to. Vietnam is UTC+7 all year (no daylight saving), so a fixed offset is exact.
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The Vietnamese wall clock of an instant, read through the UTC getters. */
+function vietnamClock(ms: number): Date {
+  return new Date(ms + VIETNAM_OFFSET_MS);
 }
 
-/** Local `YYYY-MM-DD` of an instant. */
-export function localDateKey(ms: number): string {
-  const date = new Date(ms);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+/** Vietnamese `YYYY-MM-DD` of an instant. */
+export function vietnamDateKey(ms: number): string {
+  return vietnamClock(ms).toISOString().slice(0, 10);
 }
 
-function shiftLocalYears(ms: number, years: number, days = 0): number {
+function shiftYears(ms: number, years: number, days = 0): number {
   const date = new Date(ms);
-  date.setFullYear(date.getFullYear() + years);
-  date.setDate(date.getDate() + days);
-  return date.getTime();
+  date.setUTCFullYear(date.getUTCFullYear() + years);
+  return date.getTime() + days * DAY_MS;
 }
 
 /** Bounds for the date pickers, one day inside the server's ±2 years so an edge day never fails there. */
 export function crmDateBounds(nowMs: number): { min: string; max: string } {
-  return { min: localDateKey(shiftLocalYears(nowMs, -2, 1)), max: localDateKey(shiftLocalYears(nowMs, 2, -1)) };
+  return { min: vietnamDateKey(shiftYears(nowMs, -2, 1)), max: vietnamDateKey(shiftYears(nowMs, 2, -1)) };
 }
 
-/** An ISO instant as the value of a local `datetime-local` input. */
+/** An ISO instant as the value of the `datetime-local` input, in Vietnamese time. */
 export function isoToLocalInput(iso: string | null): string {
   if (iso === null) return '';
   const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return '';
-  const date = new Date(ms);
-  return `${localDateKey(ms)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return Number.isFinite(ms) ? vietnamClock(ms).toISOString().slice(0, 16) : '';
 }
 
+/** The `datetime-local` value, read as Vietnamese time. */
 export function localInputToIso(value: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
-  const ms = new Date(value).getTime();
+  const ms = Date.parse(`${value}:00+07:00`);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
-/** "09:30 25/11" for a due time. */
+/** "09:30 25/11" for a due time, in Vietnamese time. */
 export function formatCrmDue(iso: string): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return '';
-  const date = new Date(ms);
-  return `${pad(date.getHours())}:${pad(date.getMinutes())} ${pad(date.getDate())}/${pad(date.getMonth() + 1)}`;
+  const clock = vietnamClock(ms).toISOString();
+  return `${clock.slice(11, 16)} ${clock.slice(8, 10)}/${clock.slice(5, 7)}`;
 }
 
 /** "20/12/2026" for a `YYYY-MM-DD` day. */
@@ -164,13 +168,16 @@ export interface CrmFilter {
 
 type DueFields = Pick<CustomerCareCrmProfileInput, 'stage' | 'nextStep' | 'nextStepDueAt'>;
 
-/** A customer who asked not to be contacted is never due, whatever date is left on the row. */
+/** Customers no one should call: they did not buy, or asked not to be contacted. A delivery still gets follow-ups. */
+const NEVER_DUE_STAGES: readonly CustomerCareCrmStage[] = ['lost', 'do_not_contact'];
+
+/** Due on the Vietnamese calendar. A lost or do-not-contact customer is never due, whatever date is left. */
 export function crmDue(profile: DueFields, nowMs: number): CrmDue {
-  if (profile.stage === 'do_not_contact' || profile.nextStepDueAt === null) return 'none';
+  if (NEVER_DUE_STAGES.includes(profile.stage) || profile.nextStepDueAt === null) return 'none';
   const due = Date.parse(profile.nextStepDueAt);
   if (!Number.isFinite(due)) return 'none';
   if (due < nowMs) return 'overdue';
-  return localDateKey(due) === localDateKey(nowMs) ? 'today' : 'later';
+  return vietnamDateKey(due) === vietnamDateKey(nowMs) ? 'today' : 'later';
 }
 
 /** "Cần gọi hôm nay": a next step due today or overdue, or a new number with no next step yet. */
@@ -234,13 +241,21 @@ export function crmRowReadOnly(row: CustomerCareCrmRow): boolean {
   return row.profile.detailsUnreadable === true;
 }
 
-// Control characters (and bidi overrides) become spaces; the server rejects them.
-const LINE_UNSAFE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
-const NOTE_UNSAFE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
+// The server refuses control characters (a note keeps line breaks), every format character (Cf) except the
+// zero-width joiner, and the line and paragraph separators. Typed text is cleaned so a save never gets a 400.
+const LINE_UNSAFE = /[\u0000-\u001f\u007f-\u009f]/g;
+const NOTE_UNSAFE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g;
+const FORMAT_EXCEPT_JOINER = /(?!\u200D)\p{Cf}/gu;
+const SEPARATORS = /[\u2028\u2029]/g;
 
 function cleanText(value: string | null, unsafe: RegExp): string | null {
   if (value === null) return null;
-  const cleaned = value.replace(/\r\n?/g, '\n').replace(unsafe, ' ').trim();
+  const cleaned = value
+    .replace(/\r\n?/g, '\n')
+    .replace(SEPARATORS, '\n')
+    .replace(FORMAT_EXCEPT_JOINER, '')
+    .replace(unsafe, ' ')
+    .trim();
   return cleaned === '' ? null : cleaned;
 }
 
@@ -265,7 +280,7 @@ export function validateCrmProfile(profile: CustomerCareCrmProfileInput, nowMs: 
   }
   if (profile.nextStepDueAt !== null) {
     const due = Date.parse(profile.nextStepDueAt);
-    if (!Number.isFinite(due) || due < shiftLocalYears(nowMs, -2, 1) || due > shiftLocalYears(nowMs, 2, -1)) {
+    if (!Number.isFinite(due) || due < shiftYears(nowMs, -2, 1) || due > shiftYears(nowMs, 2, -1)) {
       return DATE_RANGE_MESSAGE;
     }
   }
@@ -354,6 +369,11 @@ export interface CrmRowEdit {
   /** The user's unsaved values after a conflict, kept visible until re-applied or dropped. */
   rejected: CustomerCareCrmProfileInput | null;
   error: string;
+  /**
+   * The `updatedAt` of the version this draft was made from, fixed when the edit starts. A save always sends
+   * it, so a refresh that swaps in someone else's newer row cannot turn this draft into a silent overwrite.
+   */
+  baseUpdatedAt: string | null;
 }
 
 export type CrmSaveDecision =
@@ -361,34 +381,53 @@ export type CrmSaveDecision =
   | { kind: 'invalid'; message: string }
   | { kind: 'save'; input: CustomerCareCrmSaveInput };
 
-export function crmEditOnChange(edit: CrmRowEdit | undefined, draft: CustomerCareCrmProfileInput): CrmRowEdit {
-  return { draft, rejected: edit?.rejected ?? null, error: '' };
+/** A change: a new edit starts from the row on screen; an ongoing edit keeps the version it started from. */
+export function crmEditOnChange(
+  edit: CrmRowEdit | undefined,
+  draft: CustomerCareCrmProfileInput,
+  row: CustomerCareCrmRow,
+): CrmRowEdit {
+  return {
+    draft,
+    rejected: edit?.rejected ?? null,
+    error: '',
+    baseUpdatedAt: edit ? edit.baseUpdatedAt : row.profile.updatedAt,
+  };
 }
 
-/** Whether to send, and what: the normalized draft against the `updatedAt` the user was looking at. */
+/** Whether to send, and what: the normalized draft against the version the edit started from. */
 export function crmSaveDecision(edit: CrmRowEdit | undefined, row: CustomerCareCrmRow, nowMs: number): CrmSaveDecision {
   if (!edit || crmRowReadOnly(row)) return { kind: 'skip' };
   const profile = normalizeCrmProfile(edit.draft);
   if (crmProfilesEqual(profile, profileFromRow(row))) return { kind: 'skip' };
   const problem = validateCrmProfile(profile, nowMs);
   if (problem) return { kind: 'invalid', message: problem };
-  return { kind: 'save', input: { leadId: row.leadId, expectedUpdatedAt: row.profile.updatedAt, profile } };
+  return { kind: 'save', input: { leadId: row.leadId, expectedUpdatedAt: edit.baseUpdatedAt, profile } };
 }
 
-/** After a save: the edit is done unless the user typed more meanwhile or still has values to re-apply. */
+/**
+ * After a save: the edit is done unless the user typed more meanwhile or still has values to re-apply. What is
+ * left now builds on the version this save just wrote.
+ */
 export function crmEditAfterSaved(edit: CrmRowEdit | undefined, saved: CustomerCareCrmRow): CrmRowEdit | null {
   if (!edit) return null;
   if (!edit.rejected && crmProfilesEqual(normalizeCrmProfile(edit.draft), profileFromRow(saved))) return null;
-  return { draft: edit.draft, rejected: edit.rejected, error: '' };
+  return { draft: edit.draft, rejected: edit.rejected, error: '', baseUpdatedAt: saved.profile.updatedAt };
 }
 
 /** Someone saved first: show their row and keep what this user typed, without saving it again by itself. */
 export function crmEditOnConflict(edit: CrmRowEdit | undefined, server: CustomerCareCrmRow): CrmRowEdit {
-  return { draft: profileFromRow(server), rejected: edit?.draft ?? null, error: CRM_CONFLICT_MESSAGE };
+  return {
+    draft: profileFromRow(server),
+    rejected: edit?.draft ?? null,
+    error: CRM_CONFLICT_MESSAGE,
+    baseUpdatedAt: server.profile.updatedAt,
+  };
 }
 
+/** Re-applying builds on the version the conflict showed; a newer change by someone else gets another 409. */
 export function crmEditOnReapply(edit: CrmRowEdit): CrmRowEdit {
-  return { draft: edit.rejected ?? edit.draft, rejected: null, error: '' };
+  return { draft: edit.rejected ?? edit.draft, rejected: null, error: '', baseUpdatedAt: edit.baseUpdatedAt };
 }
 
 export function crmEditOnDiscard(edit: CrmRowEdit, row: CustomerCareCrmRow): CrmRowEdit | null {
@@ -449,6 +488,14 @@ export function crmRowsOnSaved(rows: readonly CustomerCareCrmRow[], saved: Custo
   return rows.map((row) => (row.leadId === saved.leadId ? saved : row));
 }
 
+/**
+ * A save answer carries the stored profile only (the server may not present the lead after it commits): the
+ * row on screen keeps its name, phone, messages and times, and takes the profile.
+ */
+export function crmRowWithProfile(row: CustomerCareCrmRow, profile: CustomerCareCrmProfile): CustomerCareCrmRow {
+  return { ...row, profile: { ...profile, productFactIds: [...profile.productFactIds] } };
+}
+
 export function crmRowsOnRemove(rows: readonly CustomerCareCrmRow[], leadId: string): CustomerCareCrmRow[] {
   return rows.filter((row) => row.leadId !== leadId);
 }
@@ -469,7 +516,7 @@ export type CrmLoadResult =
     pages: number;
     /** The last page was reached (no cursor left). */
     complete: boolean;
-    /** More than `CRM_MAX_PAGES` pages exist; only the newest are shown. */
+    /** The page cap of this load was hit with pages left; for a full load, only the newest 500 are shown. */
     truncated: boolean;
   }
   | CustomerCareFacebookFailure;
@@ -508,8 +555,16 @@ export async function loadCrmPages(
     assignees: first.assignees,
     pages,
     complete: cursor === null,
-    truncated: cursor !== null && pages >= CRM_MAX_PAGES,
+    truncated: cursor !== null && pages >= maxPages,
   };
+}
+
+/** "Làm mới" rests this long after a full reload, so repeated clicks cannot pile up every-page reads. */
+export const CRM_REFRESH_COOLDOWN_MS = 15_000;
+
+export function crmRefreshCooldownLeft(lastFullLoadMs: number | null, nowMs: number): number {
+  if (lastFullLoadMs === null) return 0;
+  return Math.max(0, CRM_REFRESH_COOLDOWN_MS - (nowMs - lastFullLoadMs));
 }
 
 // Load budget: GET /crm has no ETag, each page costs several DB queries plus sealed messages, and every Care
@@ -521,11 +576,14 @@ export function crmShouldLoadOnShow(lastFullLoadMs: number | null, nowMs: number
   return lastFullLoadMs === null || nowMs - lastFullLoadMs >= CRM_REFRESH_MS;
 }
 
-/** What a save answer asks of the list: every page after a 409, page 1 after a 403 (access check), else nothing. */
+/**
+ * What a save answer asks of the list: every page after a 409; page 1 after `owner_not_eligible`, so the
+ * assignee list is current; otherwise nothing.
+ */
 export function crmReloadAfterSave(result: CustomerCareCrmSaveResult): 'full' | 'page1' | null {
   if (result.ok) return null;
   if (result.error === 'profile_conflict') return 'full';
-  return result.error === 'forbidden' ? 'page1' : null;
+  return result.reason === 'owner_not_eligible' ? 'page1' : null;
 }
 
 /** A 429, a 503 or another server-side failure: skip the next tick instead of adding load. */
@@ -562,5 +620,19 @@ export function crmFailureView(failure: CustomerCareFacebookFailure): { message:
   return { message: FAILURE_MESSAGES[failure.error] ?? 'Chưa tải được CRM. Thử lại sau ít phút.', dropRows };
 }
 
-/** A save refused with 403 may be an owner who left the project rather than lost access. */
-export const CRM_SAVE_FORBIDDEN_MESSAGE = 'Chưa lưu được. Người phụ trách phải còn trong dự án; hãy chọn người khác.';
+export const CRM_OWNER_NOT_ELIGIBLE_MESSAGE = 'Người phụ trách này không còn trong dự án.';
+export const CRM_SAVE_INVALID_MESSAGE = 'Chưa lưu được: có nội dung không hợp lệ. Hãy sửa rồi bấm Lưu.';
+const SAVE_RATE_LIMITED_MESSAGE = 'Đang có nhiều yêu cầu. Chờ ít phút rồi bấm Lưu.';
+
+/**
+ * Fixed text for a failed save. Only lost access drops the rows; anything else leaves the row editable with
+ * its draft, so a 400, 429 or 503 never locks it.
+ */
+export function crmSaveFailureView(failure: CustomerCareFacebookFailure): { message: string; dropRows: boolean } {
+  if (failure.reason === 'owner_not_eligible') return { message: CRM_OWNER_NOT_ELIGIBLE_MESSAGE, dropRows: false };
+  if (failure.reason === 'rate_limited') return { message: SAVE_RATE_LIMITED_MESSAGE, dropRows: false };
+  if (failure.error === 'invalid_input' || (failure.error === 'rejected' && failure.reason === 'invalid_request')) {
+    return { message: CRM_SAVE_INVALID_MESSAGE, dropRows: false };
+  }
+  return crmFailureView(failure);
+}

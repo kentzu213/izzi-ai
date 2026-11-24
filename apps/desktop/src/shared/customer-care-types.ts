@@ -104,6 +104,8 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   'permission_missing',
   // Care CRM S2: set by the CRM client on a 429 (reported as `unavailable`), so the screen skips a refresh.
   'rate_limited',
+  // Care CRM S2, 403 on a save: the chosen owner is no longer an active owner, manager or editor.
+  'owner_not_eligible',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -405,16 +407,22 @@ export type CustomerCareCrmListResult =
   }
   | CustomerCareFacebookFailure;
 
-/** Someone else saved first: nothing was overwritten, and `row` is the current state on the server. */
+/**
+ * Someone else saved first: nothing was overwritten, and `profile` is the current state on the server. Only
+ * the profile is handed back: after a save the server may not be able to present the lead's phone and
+ * messages, so the screen keeps the ones it already shows.
+ */
 export interface CustomerCareCrmConflict {
   ok: false;
   error: 'profile_conflict';
   workspaceId: string;
-  row: CustomerCareCrmRow;
+  leadId: string;
+  profile: CustomerCareCrmProfile;
 }
 
+/** A committed save answers with the stored profile; the screen merges it into the row it shows. */
 export type CustomerCareCrmSaveResult =
-  | { ok: true; workspaceId: string; row: CustomerCareCrmRow }
+  | { ok: true; workspaceId: string; leadId: string; profile: CustomerCareCrmProfile }
   | CustomerCareCrmConflict
   | CustomerCareFacebookFailure;
 

@@ -3,7 +3,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { MyGraphWorkspaceV2, type MyGraphWorkspaceV2Props } from './MyGraphWorkspaceV2';
+import {
+  MyGraphTabPanels,
+  MyGraphWorkspaceV2,
+  myGraphTabsAfter,
+  type MyGraphTabsState,
+  type MyGraphWorkspaceV2Props,
+} from './MyGraphWorkspaceV2';
 
 const noop = () => undefined;
 
@@ -90,6 +96,28 @@ describe('MyGraphWorkspaceV2 with the CRM tab (Care CRM S2)', () => {
     expect(html).toContain('aria-labelledby="v2-mygraph-tab-crm"');
     expect(html).toMatch(/id="v2-mygraph-panel-crm"[^>]*hidden=""/);
     expect(html).not.toContain('data-testid="crm"');
+  });
+
+  it('keeps the Memory view mounted, only hidden, through memory → CRM → memory', () => {
+    const stage = createElement('div', { className: 'v2-mygraph__stage' }, createElement('div', { 'data-testid': 'graph' }));
+    const crm = createElement('div', { 'data-testid': 'crm' });
+    const panels = (state: MyGraphTabsState) => renderToStaticMarkup(createElement(MyGraphTabPanels, { ...state, stage, crm }));
+    const memoryPanel = (markup: string) => markup.slice(markup.indexOf('id="v2-mygraph-panel-memory"'), markup.indexOf('id="v2-mygraph-panel-crm"'));
+    const crmPanel = (markup: string) => markup.slice(markup.indexOf('id="v2-mygraph-panel-crm"'));
+
+    const start: MyGraphTabsState = { tab: 'memory', crmOpened: false };
+    const onCrm = myGraphTabsAfter(start, 'crm');
+    const back = myGraphTabsAfter(onCrm, 'memory');
+    expect([onCrm, back]).toEqual([{ tab: 'crm', crmOpened: true }, { tab: 'memory', crmOpened: true }]);
+
+    for (const [state, memoryHidden] of [[start, false], [onCrm, true], [back, false]] as const) {
+      const memory = memoryPanel(panels(state));
+      expect(memory, state.tab).toContain('data-testid="graph"');
+      expect(/^id="v2-mygraph-panel-memory"[^>]*hidden=""/.test(memory), state.tab).toBe(memoryHidden);
+    }
+    expect(crmPanel(panels(start))).not.toContain('data-testid="crm"');
+    expect(crmPanel(panels(onCrm))).toContain('data-testid="crm"');
+    expect(crmPanel(panels(back))).toMatch(/hidden=""[^]*data-testid="crm"/);
   });
 });
 
