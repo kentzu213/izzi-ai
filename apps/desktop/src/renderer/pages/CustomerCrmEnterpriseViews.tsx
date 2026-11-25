@@ -7,7 +7,6 @@ import type {
 import {
   buildCustomerPortrait,
   buildLifecyclePlan,
-  buildMetaCustomAudienceCsv,
   buildSalerPlaybook,
   crmAdsExportBlock,
   selectMetaAudience,
@@ -34,6 +33,7 @@ import {
   profileFromRow,
   type CrmRowEdit,
 } from './customer-crm-flow';
+import type { CrmAdsExportOutcome } from './customer-crm-ads-export';
 import type { CrmDisplay } from './customer-crm-graph';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +77,8 @@ const BUCKET_TITLES: Readonly<Record<CrmAdsBucket, { title: string; subtitle: st
   },
 };
 
+const TRUNCATED_NOTE = ' Chỉ gồm 500 khách mới nhất.';
+
 const ADS_EXPORT_BLOCK_NOTES: Readonly<Record<CrmAdsExportBlock, string>> = {
   identity_off:
     'Xuất tệp Ads đang khoá: AI hồ sơ khách chưa bật cho dự án này, nên chưa có khách nào bấm "Đồng ý" qua izzi.',
@@ -116,7 +118,7 @@ export function CrmEnterpriseKpiStrip({
     const persistedAds = savedRows ? summarizeAdsAudiences(savedRows, identityState) : liveAds;
     const classifiedCount =
       liveAds.byPersona.P1.count + liveAds.byPersona.P2.count + liveAds.byPersona.P3.count + liveAds.byPersona.P4.count;
-    const lifecycle = buildLifecyclePlan(rows, products, nowMs);
+    const lifecycle = buildLifecyclePlan(rows, products, nowMs, { identityEnabled: identityState.identityEnabled });
     const overdueLifecycle = lifecycle.filter((item) => item.isOverdue).length;
     return {
       total: rows.length,
@@ -207,6 +209,8 @@ export interface CrmSalerWorkspaceProps {
   savingIds: ReadonlySet<string>;
   edits?: Readonly<Record<string, CrmRowEdit>>;
   nowMs: number;
+  /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
+  identityEnabled: boolean | null;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -221,6 +225,7 @@ export function CrmSalerWorkspace({
   savingIds,
   edits,
   nowMs,
+  identityEnabled,
   onChangeProfile,
   onCopyText,
   onOpenProfile,
@@ -229,7 +234,8 @@ export function CrmSalerWorkspace({
 
   const items = useMemo(() => {
     const built = rows.map((row) => {
-      const playbook = buildSalerPlaybook(row, buildCustomerPortrait(row, products, nowMs), products, nowMs);
+      const portrait = buildCustomerPortrait(row, products, nowMs, { identityEnabled });
+      const playbook = buildSalerPlaybook(row, portrait, products, nowMs);
       const due = crmDue(row.profile, nowMs);
       return { row, playbook, due };
     });
@@ -239,7 +245,7 @@ export function CrmSalerWorkspace({
       || (a.due === 'overdue' ? -1 : 0) - (b.due === 'overdue' ? -1 : 0)
       || Date.parse(b.row.phoneCapturedAt) - Date.parse(a.row.phoneCapturedAt)
     ));
-  }, [rows, products, nowMs]);
+  }, [rows, products, nowMs, identityEnabled]);
 
   const counts = useMemo(() => ({
     all: items.length,
@@ -430,6 +436,10 @@ export interface CrmAdsWorkspaceProps {
   rows: readonly CustomerCareCrmRow[];
   /** The list answer's identity state: the export fails closed without a readable, enabled identity. */
   identityState: CrmAdsIdentityState;
+  /** Unsaved drafts by lead: the preview withholds a customer a draft would (e.g. "Không liên hệ" not saved yet). */
+  drafts: Readonly<Record<string, CustomerCareCrmProfileInput>>;
+  /** Builds the file from a fresh full read with identity, never from the rows on screen. */
+  onExport: (target: CrmMetaAudienceTarget) => Promise<CrmAdsExportOutcome>;
   onNotify: (kind: 'notice' | 'error', message: string) => void;
 }
 
@@ -443,6 +453,8 @@ const ORDERED_ADS_BUCKETS: readonly CrmAdsBucket[] = [
 export function CrmAdsWorkspace({
   rows,
   identityState,
+  drafts,
+  onExport,
   onNotify,
 }: CrmAdsWorkspaceProps) {
   const [exportTarget, setExportTarget] = useState<CrmMetaAudienceTarget>('all');
@@ -453,29 +465,42 @@ export function CrmAdsWorkspace({
     [rows, identityState],
   );
 
-  // The preview runs the same selection as the export, so the two can never disagree.
+  // The preview runs the same selection as the export on the rows on screen; the export itself reads them again.
   const preview = useMemo(
-    () => selectMetaAudience(rows, exportTarget, identityState),
-    [rows, exportTarget, identityState],
+    () => selectMetaAudience(rows, exportTarget, identityState, drafts),
+    [rows, exportTarget, identityState, drafts],
   );
   const exportBlock = crmAdsExportBlock(identityState);
+
+  /** The fresh export's file, or null after saying why there is none. */
+  const freshCsv = async (emptyMessage: string) => {
+    const outcome = await onExport(exportTarget);
+    if (!outcome.ok) {
+      onNotify('error', outcome.message);
+      return null;
+    }
+    const { result } = outcome;
+    if (result.blockedReason !== null) {
+      onNotify('error', ADS_EXPORT_BLOCK_NOTES[result.blockedReason]);
+      return null;
+    }
+    if (result.includedCount === 0) {
+      onNotify('error', emptyMessage);
+      return null;
+    }
+    return { result, truncated: outcome.truncated };
+  };
 
   const handleCopyCsv = async () => {
     setExporting(true);
     try {
-      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, identityState);
-      if (result.blockedReason !== null) {
-        onNotify('error', ADS_EXPORT_BLOCK_NOTES[result.blockedReason]);
-        return;
-      }
-      if (result.includedCount === 0) {
-        onNotify('error', 'Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để xuất CSV.');
-        return;
-      }
+      const fresh = await freshCsv('Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để xuất CSV.');
+      if (fresh === null) return;
+      const { result } = fresh;
       await navigator.clipboard.writeText(result.csv);
       onNotify(
         'notice',
-        `Đã sao chép CSV SHA-256 (${result.includedCount} mã băm ẩn danh, loại trừ ${result.excludedNoConsent + result.excludedSuppressed} hồ sơ bảo vệ quyền riêng tư).`,
+        `Đã sao chép CSV SHA-256 (${result.includedCount} mã băm ẩn danh, loại trừ ${result.excludedNoConsent + result.excludedSuppressed} hồ sơ bảo vệ quyền riêng tư).${fresh.truncated ? TRUNCATED_NOTE : ''}`,
       );
     } catch {
       onNotify('error', 'Không sao chép được CSV SHA-256. Hãy thử tải file trực tiếp.');
@@ -487,15 +512,9 @@ export function CrmAdsWorkspace({
   const handleDownloadCsv = async () => {
     setExporting(true);
     try {
-      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, identityState);
-      if (result.blockedReason !== null) {
-        onNotify('error', ADS_EXPORT_BLOCK_NOTES[result.blockedReason]);
-        return;
-      }
-      if (result.includedCount === 0) {
-        onNotify('error', 'Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để tải CSV.');
-        return;
-      }
+      const fresh = await freshCsv('Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để tải CSV.');
+      if (fresh === null) return;
+      const { result } = fresh;
       const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -507,7 +526,7 @@ export function CrmAdsWorkspace({
       URL.revokeObjectURL(url);
       onNotify(
         'notice',
-        `Đã tải file CSV SHA-256 (${result.includedCount} khách đủ điều kiện, 0% dữ liệu cá nhân thô).`,
+        `Đã tải file CSV SHA-256 (${result.includedCount} khách đủ điều kiện, 0% dữ liệu cá nhân thô).${fresh.truncated ? TRUNCATED_NOTE : ''}`,
       );
     } catch {
       onNotify('error', 'Không tải được file CSV SHA-256.');
@@ -629,7 +648,7 @@ export function CrmAdsWorkspace({
               Xuất tệp Custom Audience mã hóa SHA-256 chuẩn Meta
             </h3>
             <p className="v2-crm__meta">
-              Chỉ băm một chiều SHA-256 số 84… của khách đã bấm &ldquo;Đồng ý&rdquo; (máy chủ ghi nhận), không từ chối nhận tin và không yêu cầu xoá. Tệp chỉ có cột phone: không tên, tuổi, gia đình hay chân dung.
+              Chỉ băm một chiều SHA-256 số 84… của khách đã bấm &ldquo;Đồng ý&rdquo; (máy chủ ghi nhận), không từ chối nhận tin và không yêu cầu xoá. Tệp chỉ có cột phone: không tên, tuổi, gia đình hay chân dung. Khi xuất, izzi đọc lại toàn bộ danh sách để kiểm tra đồng ý mới nhất.
             </p>
           </div>
         </div>
@@ -713,6 +732,8 @@ export interface CrmLifecycleWorkspaceProps {
   rows: readonly CustomerCareCrmRow[];
   products: readonly CrmEnterpriseProduct[];
   nowMs: number;
+  /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
+  identityEnabled: boolean | null;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -724,6 +745,7 @@ export function CrmLifecycleWorkspace({
   rows,
   products,
   nowMs,
+  identityEnabled,
   onChangeProfile,
   onCopyText,
   onOpenProfile,
@@ -733,12 +755,12 @@ export function CrmLifecycleWorkspace({
   const rowMap = useMemo(() => new Map(rows.map((r) => [r.leadId, r])), [rows]);
 
   const allItems = useMemo(() => {
-    const raw = buildLifecyclePlan(rows, products, nowMs);
+    const raw = buildLifecyclePlan(rows, products, nowMs, { identityEnabled });
     return [...raw].sort((a, b) => (
       Number(b.isOverdue) - Number(a.isOverdue)
       || a.dueDay.localeCompare(b.dueDay)
     ));
-  }, [rows, products, nowMs]);
+  }, [rows, products, nowMs, identityEnabled]);
 
   const counts = useMemo(() => ({
     all: allItems.length,

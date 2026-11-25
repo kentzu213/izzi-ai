@@ -21,6 +21,7 @@ import type {
   CustomerCareFacebookFailure,
   CustomerCareFact,
 } from '../../shared/customer-care-types';
+import { normalizeCrmNoteTags } from '../../shared/customer-crm-enterprise';
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
 export const CRM_REFRESH_MS = 60_000;
@@ -267,7 +268,8 @@ export function normalizeCrmProfile(draft: CustomerCareCrmProfileInput): Custome
     ...draft,
     productFactIds: [...new Set(draft.productFactIds)],
     nextStep: cleanText(draft.nextStep, LINE_UNSAFE),
-    note: cleanText(draft.note, NOTE_UNSAFE),
+    // Through the codec on every save: a tag beta.121 left in the note loses its profile-layer keys (Care CRM S3).
+    note: normalizeCrmNoteTags(cleanText(draft.note, NOTE_UNSAFE)),
     lostReason: visible.lostReason ? draft.lostReason : null,
     purchasedAt: visible.purchasedAt ? draft.purchasedAt : null,
   };
@@ -296,11 +298,12 @@ export function validateCrmProfile(profile: CustomerCareCrmProfileInput, nowMs: 
   return null;
 }
 
+/** Notes compare as the codec writes them: a row is never saved only to clean an old tag, but is once it changes. */
 export function crmProfilesEqual(a: CustomerCareCrmProfileInput, b: CustomerCareCrmProfileInput): boolean {
   return a.stage === b.stage && a.ownerUserId === b.ownerUserId && a.addressForm === b.addressForm
     && a.occasion === b.occasion && a.neededBy === b.neededBy && a.nextStep === b.nextStep
     && a.nextStepDueAt === b.nextStepDueAt && a.lostReason === b.lostReason && a.purchasedAt === b.purchasedAt
-    && a.note === b.note && a.productFactIds.length === b.productFactIds.length
+    && normalizeCrmNoteTags(a.note) === normalizeCrmNoteTags(b.note) && a.productFactIds.length === b.productFactIds.length
     && a.productFactIds.every((id, index) => id === b.productFactIds[index]);
 }
 

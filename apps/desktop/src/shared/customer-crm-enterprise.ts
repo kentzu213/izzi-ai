@@ -28,6 +28,7 @@ import {
   type CustomerCareCrmIdentity,
   type CustomerCareCrmOccasion,
   type CustomerCareCrmPersona,
+  type CustomerCareCrmProfileInput,
   type CustomerCareCrmRecipient,
   type CustomerCareCrmRow,
   type CustomerCareCrmSharedLink,
@@ -382,6 +383,17 @@ export function replaceEditableFreeNote(note: string | null, nextFreeNote: strin
   return sliced.trim() === '' ? tag : `${sliced}\n${tag}`;
 }
 
+/**
+ * A note on its way to the server. When it carries an `[izzi-ctx]` line the tag is written again from what the codec
+ * reads (a timeline and a refusal), so the keys beta.121 left behind (persona, age, recipient, budget, ad, domain,
+ * `consent=granted`) are dropped; a note without one is returned exactly as it is.
+ */
+export function normalizeCrmNoteTags(note: string | null): string | null {
+  if (note === null) return null;
+  const tagged = note.replace(/\r\n?/g, '\n').split('\n').some((line) => CTX_ANY_LINE_PATTERN.test(line.trim()));
+  return tagged ? replaceEditableFreeNote(note, extractEditableFreeNote(note)) : note;
+}
+
 // ---------------------------------------------------------------------------
 // Sensitive Denylist (bereavement, severe illness, divorce, personal religion)
 // ---------------------------------------------------------------------------
@@ -459,12 +471,13 @@ function splitSentences(row: CustomerCareCrmRow, freeNote: string): TextSegment[
 // A2. Customer portrait (`buildCustomerPortrait`): the server identity first, behind the consent gate
 // ---------------------------------------------------------------------------
 //
-// Care CRM S3 (docs/CARE-CRM-S3-IDENTITY.md): the server's identity is the one source of truth. When a row carries
-// it, every AI field comes from it; this file's chat heuristics only run for a row that has no identity at all (an
-// older server, or an identity that could not be read), and then only for the order layer (products, occasion,
-// timeline). The profile layer (age band, who the purchase is for, interests, persona) exists only after the
-// customer tapped "Đồng ý", so it is never guessed here: there is no gender, an age is a band labelled "ước tính",
-// "who it is for" stands only with a quote of the customer's own words, and a social-network link keeps its domain.
+// Care CRM S3 (docs/CARE-CRM-S3-IDENTITY.md): the server's identity is the one source of truth. While the AI profile
+// is on, the order layer (products, occasion, timeline) is the server's and this file's chat guesses fill only what
+// it left empty; while it is off, or for a row without identity, the order layer is guessed from the chat. Those
+// guesses need no consent. The profile layer (age band, who the purchase is for, interests, persona) exists only
+// after the customer tapped "Đồng ý", so it is never guessed here: there is no gender, an age is a band labelled
+// "ước tính", "who it is for" stands only with a quote of the customer's own words, and a social-network link keeps
+// its domain.
 
 export type CrmReasoningSource = 'staff' | 'identity' | 'chat' | 'note' | 'none';
 
@@ -768,6 +781,25 @@ function inferTimelineFromText(segments: readonly TextSegment[]): CustomerCareCr
   return null;
 }
 
+/** The #85 occasion cues, in its order (gift, new home or replacement, Tết, giỗ). */
+const OCCASION_CUES: ReadonlyArray<{ pattern: RegExp; occasion: CustomerCareCrmOccasion }> = [
+  { pattern: /(?:hộp\s+quà|quà\s+tân\s+gia|tặng\s+tân\s+gia|biếu\s+sếp|làm\s+quà|quà\s+tặng|mua\s+tặng)/iu, occasion: 'gift' },
+  { pattern: /(?:nhập\s+trạch|nhà\s+mới|căn\s+hộ\s+mới|chung\s+cư\s+mới|phòng\s+thờ\s+mới)/iu, occasion: 'new_home' },
+  { pattern: /(?:thay\s+bàn\s+thờ|thay\s+đồ\s+thờ)/iu, occasion: 'replacement' },
+  { pattern: /(?:sắm\s+tết|dịp\s+tết|đón\s+tết|kịp\s+tết|trước\s+tết)/iu, occasion: 'tet' },
+  { pattern: /(?:cúng\s+giỗ|đám\s+giỗ|ngày\s+giỗ|làm\s+giỗ)/iu, occasion: 'anniversary' },
+];
+
+/** An occasion guessed from plain order talk. A sentence with a sensitive term (a death, an illness...) is never read. */
+function inferOccasionFromText(segments: readonly TextSegment[]): CustomerCareCrmOccasion | null {
+  for (const seg of segments) {
+    if (containsSensitiveHouseholdTerm(seg.text)) continue;
+    const cue = OCCASION_CUES.find((item) => item.pattern.test(seg.text));
+    if (cue) return cue.occasion;
+  }
+  return null;
+}
+
 function timelineFromNeededBy(neededBy: string | null, occasion: CustomerCareCrmOccasion | null, nowMs: number): CustomerCareCrmTimeline | null {
   if (neededBy === null) return occasion === 'tet' ? 'before_tet' : null;
   const dueMs = Date.parse(`${neededBy}T23:59:59+07:00`);
@@ -778,29 +810,34 @@ function timelineFromNeededBy(neededBy: string | null, occasion: CustomerCareCrm
   return occasion === 'tet' ? 'before_tet' : 'later';
 }
 
-/** Products the customer asked about: the staff's picks, then the server's, or (with no identity) a match on the chat. */
+/**
+ * Products the customer asked about: the staff's picks, plus the server's while the AI profile is on, or a match on
+ * the chat when the server has none to give. `guessed` says the chat was used.
+ */
 function orderLayerProducts(
   row: CustomerCareCrmRow,
-  identity: CustomerCareCrmIdentity | null,
+  orderIdentity: CustomerCareCrmIdentity | null,
   segments: readonly TextSegment[],
   products: readonly CrmEnterpriseProduct[],
-): CrmEnterpriseProduct[] {
+): { matched: CrmEnterpriseProduct[]; guessed: boolean } {
   const known = new Set(products.map((product) => product.id));
   const matched = new Set(row.profile.productFactIds.filter((id) => known.has(id)));
-  const field = identity?.productFactIds;
-  if (identity !== null) {
-    if (isShownField(field) && Array.isArray(field.value)) {
-      for (const id of field.value) if (typeof id === 'string' && known.has(id)) matched.add(id);
-    }
-  } else {
+  const field = orderIdentity?.productFactIds;
+  const server = isShownField(field) && Array.isArray(field.value)
+    ? field.value.filter((id): id is string => typeof id === 'string' && known.has(id))
+    : [];
+  const guessed = server.length === 0;
+  if (guessed) {
     const corpusTokens = new Set(normalizeMatchTokens(segments.map((seg) => seg.text).join('\n')));
     for (const product of products) {
       const tokens = normalizeMatchTokens(product.label);
       const overlap = tokens.filter((token) => corpusTokens.has(token)).length;
       if ((tokens.length === 1 && overlap === 1) || overlap >= 2) matched.add(product.id);
     }
+  } else {
+    for (const id of server) matched.add(id);
   }
-  return products.filter((product) => matched.has(product.id));
+  return { matched: products.filter((product) => matched.has(product.id)), guessed };
 }
 
 /** The source ad, links the customer shared and a budget band: profile layer, from the server, after consent. */
@@ -830,28 +867,30 @@ function profileInterests(identity: CustomerCareCrmIdentity | null, allowed: boo
 function buildLayer4Interests(
   row: CustomerCareCrmRow,
   identity: CustomerCareCrmIdentity | null,
+  orderIdentity: CustomerCareCrmIdentity | null,
   allowed: boolean,
   ctx: CrmStaffContext,
   segments: readonly TextSegment[],
   products: readonly CrmEnterpriseProduct[],
   nowMs: number,
 ): CrmPortraitLayer4Interests {
-  const matchedProducts = orderLayerProducts(row, identity, segments, products);
+  // Order layer (no consent needed): staff first, then the server while the AI profile is on, then a chat guess.
+  const { matched: matchedProducts, guessed: productsGuessed } = orderLayerProducts(row, orderIdentity, segments, products);
   const corpus = segments.map((seg) => seg.text).join('\n');
-  const topicKeywords = identity === null
+  const topicKeywords = productsGuessed
     ? DOMAIN_PRODUCT_KEYWORDS.filter((item) => item.pattern.test(corpus)).map((item) => item.label)
     : [];
 
-  const idOccasion = identity?.occasion;
+  const idOccasion = orderIdentity?.occasion;
   const serverOccasion = isShownField(idOccasion) && oneOf(CUSTOMER_CARE_CRM_OCCASIONS, idOccasion.value) ? idOccasion.value : null;
-  const occasion = row.profile.occasion ?? serverOccasion;
+  const occasion = row.profile.occasion ?? serverOccasion ?? inferOccasionFromText(segments);
 
-  const idTimeline = identity?.timeline;
+  const idTimeline = orderIdentity?.timeline;
   const serverTimeline = isShownField(idTimeline) && oneOf(CUSTOMER_CARE_CRM_TIMELINES, idTimeline.value) ? idTimeline.value : null;
   const timeline = serverTimeline
     ?? ctx.timeline
     ?? timelineFromNeededBy(row.profile.neededBy, occasion, nowMs)
-    ?? (identity === null ? inferTimelineFromText(segments) : null);
+    ?? inferTimelineFromText(segments);
 
   const { adTitle, sharedLinks, budgetBand, budgetQuote } = profileInterests(identity, allowed);
 
@@ -867,7 +906,8 @@ function buildLayer4Interests(
   if (timeline) parts.push(`Thời hạn: ${TIMELINE_LABELS[timeline]}`);
 
   const staffSet = row.profile.productFactIds.length > 0 || row.profile.occasion !== null || row.profile.neededBy !== null || ctx.timeline !== null;
-  const serverSet = serverOccasion !== null || serverTimeline !== null || adTitle !== null || sharedLinks.length > 0 || budgetBand !== null;
+  const serverSet = serverOccasion !== null || serverTimeline !== null || !productsGuessed
+    || adTitle !== null || sharedLinks.length > 0 || budgetBand !== null;
   const hasAny = parts.length > 0 || occasion !== null;
   const source: CrmReasoningSource = staffSet ? 'staff' : serverSet ? 'identity' : hasAny ? 'chat' : 'none';
 
@@ -941,24 +981,32 @@ function buildLayer5Persona(row: CustomerCareCrmRow, allowed: boolean, missingPr
   };
 }
 
+export interface CrmPortraitOptions {
+  /** The list answer's `identityEnabled`. Unless it is true, the order layer is guessed from the chat. */
+  identityEnabled?: boolean | null;
+}
+
 /**
- * The five portrait layers that drive the Saler scripts, the lifecycle messages and the Ads counts. Server identity
- * first; heuristics only for the order layer of a row without identity; the profile layer only after consent.
+ * The five portrait layers that drive the Saler scripts, the lifecycle messages and the Ads counts. The server's
+ * order layer while the AI profile is on, with chat guesses for what it left empty (and for everything while it is
+ * off); the profile layer only from the server, after consent.
  */
 export function buildCustomerPortrait(
   row: CustomerCareCrmRow,
   products: readonly CrmEnterpriseProduct[] = [],
   nowMs: number = Date.now(),
+  options: CrmPortraitOptions = {},
 ): CrmCustomerPortrait {
   const identity = crmServerIdentity(row);
   const allowed = crmProfileLayerAllowed(row);
+  const orderIdentity = options.identityEnabled === true ? identity : null;
   const { freeNote, ctx } = splitCrmNote(row.profile.note);
-  const segments = identity === null ? splitSentences(row, freeNote) : [];
+  const segments = splitSentences(row, freeNote);
 
   const layer_1_age = buildLayer1Age(identity, allowed);
   const layer_2_demographic = buildLayer2AddressForm(row, identity, allowed);
   const layer_3_household = buildLayer3Recipient(identity, allowed);
-  const layer_4_interests = buildLayer4Interests(row, identity, allowed, ctx, segments, products, nowMs);
+  const layer_4_interests = buildLayer4Interests(row, identity, orderIdentity, allowed, ctx, segments, products, nowMs);
   const missingPrompts = buildMissingPrompts(layer_2_demographic, layer_4_interests);
   const layer_5_persona = buildLayer5Persona(row, allowed, missingPrompts);
 
@@ -1479,6 +1527,11 @@ async function sha256HexLower(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** An unsaved draft can only withhold a customer ("Không liên hệ" typed but not saved yet), never add one. */
+function draftSuppresses(row: CustomerCareCrmRow, draft: CustomerCareCrmProfileInput | undefined): boolean {
+  return draft !== undefined && isCrmRowAdsSuppressed({ ...row, profile: { ...row.profile, ...draft } });
+}
+
 /**
  * The one selection both the export and its preview use. Fails closed (see `crmAdsExportBlock`); otherwise a customer
  * is included only when not suppressed and `hasExplicitMarketingConsent` (server consent `granted`, `noMarketing`
@@ -1488,6 +1541,7 @@ export function selectMetaAudience(
   rows: readonly CustomerCareCrmRow[],
   target: CrmMetaAudienceTarget,
   identityState: CrmAdsIdentityState,
+  drafts: Readonly<Record<string, CustomerCareCrmProfileInput>> = {},
 ): CrmMetaAudienceSelection {
   const blockedReason = crmAdsExportBlock(identityState);
   if (blockedReason !== null) return { blockedReason, phones: [], excludedNoConsent: 0, excludedSuppressed: 0 };
@@ -1499,7 +1553,7 @@ export function selectMetaAudience(
   for (const row of rows) {
     if (personaTarget && crmConsentedPersona(row) !== target) continue;
     const bucket = classifyCrmAdsBucket(row);
-    if (bucket === 'suppressed') {
+    if (bucket === 'suppressed' || draftSuppresses(row, drafts[row.leadId])) {
       excludedSuppressed += 1;
       continue;
     }
@@ -1519,8 +1573,9 @@ export async function buildMetaCustomAudienceCsv(
   rows: readonly CustomerCareCrmRow[],
   target: CrmMetaAudienceTarget,
   identityState: CrmAdsIdentityState,
+  drafts: Readonly<Record<string, CustomerCareCrmProfileInput>> = {},
 ): Promise<CrmMetaCustomAudienceCsvResult> {
-  const selection = selectMetaAudience(rows, target, identityState);
+  const selection = selectMetaAudience(rows, target, identityState, drafts);
   const hashes: string[] = [];
   for (const phone of selection.phones) hashes.push(await sha256HexLower(phone));
   return {
@@ -1575,13 +1630,14 @@ export function buildLifecyclePlan(
   rows: readonly CustomerCareCrmRow[],
   products: readonly CrmEnterpriseProduct[] = [],
   nowMs: number = Date.now(),
+  options: CrmPortraitOptions = {},
 ): CrmLifecycleItem[] {
   const items: CrmLifecycleItem[] = [];
 
   for (const row of rows) {
     if (isCrmRowAdsSuppressed(row)) continue;
 
-    const portrait = buildCustomerPortrait(row, products, nowMs);
+    const portrait = buildCustomerPortrait(row, products, nowMs, options);
     const sal = portrait.layer_2_demographic.salutation;
     const salLower = sal === 'Anh/Chị' ? 'anh/chị' : sal.toLowerCase();
     const firstProd = cleanSingleLine(
@@ -1755,7 +1811,7 @@ export function summarizeCareCrmSegments(
 
   // Include suppressed rows' personas? No — keeping suppressed leads out of active P1–P4 marketing counts
   // (and counting only actionable lifecycle items due now or within 48 hours) keeps Director numbers clean.
-  const plan = buildLifecyclePlan(rows, [], nowMs);
+  const plan = buildLifecyclePlan(rows, [], nowMs, { identityEnabled: identityState.identityEnabled });
   const todayKey = vietnamDateKey(nowMs);
   const tomorrowKey = vietnamDateKey(nowMs + DAY_MS);
 

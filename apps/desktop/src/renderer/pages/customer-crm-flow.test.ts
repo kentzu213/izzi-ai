@@ -668,3 +668,31 @@ describe('CrmLoadSequence: which list read is current (re-review of a394761, LOW
     expect(sequence.invalidate()).toBe(false);
   });
 });
+
+describe('saves clear the [izzi-ctx] keys beta.121 wrote (persona, age, recipient, budget, ad, domain, consent=granted)', () => {
+  const STALE = 'Khách hỏi thước Lỗ Ban\n[izzi-ctx: v=1; persona=P2; age=35-44; recipient=parents; timeline=before_tet; budget=5m_15m; consent=granted; ad=QC Tết; domain=shopee.vn]';
+  const CLEAN = 'Khách hỏi thước Lỗ Ban\n[izzi-ctx: v=1; timeline=before_tet]';
+
+  it('sends the note through the codec on a change to any other field, even though the note text did not change', () => {
+    const base = row({ stage: 'consulting', note: STALE });
+    const edit = crmEditOnChange(undefined, { ...profileFromRow(base), stage: 'deposit' }, base);
+    const decision = crmSaveDecision(edit, base, NOW);
+    expect(decision).toEqual({
+      kind: 'save',
+      input: { leadId: base.leadId, expectedUpdatedAt: T1, profile: { ...profileFromRow(base), stage: 'deposit', note: CLEAN } },
+    });
+    if (decision.kind !== 'save') throw new Error('expected a save');
+    expect(validateCrmProfile(decision.input.profile, NOW)).toBeNull();
+    expect(normalizeCrmProfile({ ...EMPTY, note: '[izzi-ctx: v=1; persona=P1; consent=granted]' }).note).toBeNull();
+  });
+
+  it('does not save a row only for its old tag, and an edit is done once the cleaned note is stored', () => {
+    const base = row({ stage: 'consulting', note: STALE });
+    expect(crmSaveDecision(crmEditOnChange(undefined, profileFromRow(base), base), base, NOW)).toEqual({ kind: 'skip' });
+
+    const edit = crmEditOnChange(undefined, { ...profileFromRow(base), stage: 'deposit' }, base);
+    const saved = refreshed(base, { stage: 'deposit', note: CLEAN });
+    expect(crmEditAfterSaved(edit, saved)).toBeNull();
+    expect(crmEditOnDiscard(edit, refreshed(base, { stage: 'deposit' }))).toBeNull();
+  });
+});

@@ -24,6 +24,7 @@ import {
   isCrmRowAdsSuppressed,
   isCrmSocialDomain,
   maxFreeNoteLength,
+  normalizeCrmNoteTags,
   normalizeVietnamPhoneForMeta,
   replaceEditableFreeNote,
   sanitizeCtxDomain,
@@ -179,6 +180,19 @@ describe('A1 · [izzi-ctx] codec on profile.note: a timeline and a refusal only,
     expect(composeCrmNote(freeNote, ctx)).toBe('Khách hỏi kỹ thước Lỗ Ban\n[izzi-ctx: v=1; timeline=before_tet]');
   });
 
+  it('normalizes a note on save: stale beta.121 keys are dropped, a note without a tag is left exactly as it is', () => {
+    const legacy = 'Khách hỏi kỹ\n[izzi-ctx: v=1; persona=P2; age=35-44; recipient=parents; budget=5m_15m; consent=granted; ad=QC; domain=shopee.vn]';
+    expect(normalizeCrmNoteTags(legacy)).toBe('Khách hỏi kỹ');
+    expect(normalizeCrmNoteTags('Cũ\n[izzi-ctx: v=1; persona=P1; timeline=later; consent=withdrawn]')).toBe(
+      'Cũ\n[izzi-ctx: v=1; timeline=later; consent=withdrawn]',
+    );
+    expect(normalizeCrmNoteTags('[izzi-ctx: v=1; persona=P1]')).toBeNull();
+    expect(normalizeCrmNoteTags('  Ghi chú  thường \n dòng 2')).toBe('  Ghi chú  thường \n dòng 2');
+    expect(normalizeCrmNoteTags(null)).toBeNull();
+    const once = normalizeCrmNoteTags(legacy);
+    expect(normalizeCrmNoteTags(once)).toBe(once);
+  });
+
   it('keeps a refusal from any tag line, and a later tag never cancels it', () => {
     const parsed = splitCrmNote('Dòng 1\n[izzi-ctx: v=1; consent=withdrawn]\nDòng 2\n[izzi-ctx: v=1; timeline=this_week; consent=granted]');
     expect(parsed.freeNote).toBe('Dòng 1\nDòng 2');
@@ -269,30 +283,79 @@ describe('A2 · portrait: server identity first, profile layer only after consen
     expect(staff.layer_2_demographic).toMatchObject({ addressForm: 'chi', salutation: 'Chị', label: 'Xưng Chị', source: 'staff' });
   });
 
-  it('with a server identity but no consent uses the server order layer and nothing else, not the chat', () => {
-    const asked = makeIdentity(
-      {
-        occasion: idField('new_home' as const),
-        timeline: idField('this_month' as const),
-        productFactIds: idField(['ngu-su-dong']),
-        // A profile layer the server should never send before consent is still ignored here.
-        ageBand: idField(['35-44'] as Array<'35-44'>),
-        family: idField({ recipient: 'spouse' as const }, { evidence: [{ source: 'customer', at: NOW_ISO, quote: 'hai vợ chồng' }] }),
-        persona: { ...idField('P1' as const), summary: 'x' },
-      },
-      { state: 'asked' },
-    );
-    const portrait = buildCustomerPortrait({ ...chattyRow, identity: asked }, PRODUCTS, NOW_MS);
+  const askedWithOrderLayer = makeIdentity(
+    {
+      occasion: idField('anniversary' as const),
+      timeline: idField('this_month' as const),
+      productFactIds: idField(['ngu-su-dong']),
+      // A profile layer the server should never send before consent is still ignored here.
+      ageBand: idField(['35-44'] as Array<'35-44'>),
+      family: idField({ recipient: 'spouse' as const }, { evidence: [{ source: 'customer', at: NOW_ISO, quote: 'hai vợ chồng' }] }),
+      persona: { ...idField('P1' as const), summary: 'x' },
+    },
+    { state: 'asked' },
+  );
+
+  it('with the AI profile on, uses the server order layer and nothing from the chat; the profile layer waits for consent', () => {
+    const row = { ...chattyRow, identity: askedWithOrderLayer };
+    const portrait = buildCustomerPortrait(row, PRODUCTS, NOW_MS, { identityEnabled: true });
 
     expect(portrait.profileAllowed).toBe(false);
-    expect(portrait.layer_4_interests.occasion).toBe('new_home');
+    expect(portrait.layer_4_interests.occasion).toBe('anniversary');
     expect(portrait.layer_4_interests.timeline).toBe('this_month');
     expect(portrait.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ngu-su-dong']);
     expect(portrait.layer_4_interests.topicKeywords).toEqual([]);
     expect(portrait.layer_1_age.ageBands).toEqual([]);
     expect(portrait.layer_3_household.recipient).toBeNull();
     expect(portrait.layer_5_persona.persona).toBeNull();
-    expect(crmConsentedPersona({ ...chattyRow, identity: asked })).toBeNull();
+    expect(crmConsentedPersona(row)).toBeNull();
+  });
+
+  it('with the AI profile off, guesses the order layer from the chat (products, topics, occasion, timeline) and still gates the profile layer', () => {
+    for (const identityEnabled of [false, null, undefined]) {
+      const portrait = buildCustomerPortrait({ ...chattyRow, identity: askedWithOrderLayer }, PRODUCTS, NOW_MS, { identityEnabled });
+      expect(portrait.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ban-tho-gu']);
+      expect(portrait.layer_4_interests.topicKeywords).toEqual(expect.arrayContaining(['Bàn thờ', 'Gỗ gụ']));
+      expect(portrait.layer_4_interests.occasion).toBe('new_home');
+      expect(portrait.layer_4_interests.timeline).toBe('before_tet');
+      expect(portrait.layer_4_interests.source).toBe('chat');
+      expect(portrait.layer_1_age.ageBands).toEqual([]);
+      expect(portrait.layer_4_interests.budgetBand).toBeNull();
+      expect(portrait.layer_5_persona.persona).toBeNull();
+    }
+  });
+
+  it('with the AI profile on but the server order layer empty, guesses each empty field from the chat; staff values still win', () => {
+    const empty = makeIdentity({}, { state: 'unknown' });
+    const guessed = buildCustomerPortrait({ ...chattyRow, identity: empty }, PRODUCTS, NOW_MS, { identityEnabled: true });
+    expect(guessed.layer_4_interests).toMatchObject({ occasion: 'new_home', timeline: 'before_tet' });
+    expect(guessed.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ban-tho-gu']);
+    expect(guessed.layer_4_interests.topicKeywords).toContain('Bàn thờ');
+
+    const partial = makeIdentity({ timeline: idField('this_week' as const) }, { state: 'unknown' });
+    const mixed = buildCustomerPortrait(
+      { ...chattyRow, identity: partial, profile: { ...chattyRow.profile, occasion: 'gift' } },
+      PRODUCTS,
+      NOW_MS,
+      { identityEnabled: true },
+    );
+    expect(mixed.layer_4_interests).toMatchObject({ occasion: 'gift', timeline: 'this_week' });
+    expect(mixed.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ban-tho-gu']);
+  });
+
+  it('guesses an occasion only from plain order talk, never from a sensitive sentence', () => {
+    const guess = (text: string) => buildCustomerPortrait(
+      makeRow({ recentMessages: [{ text, at: NOW_ISO }] }),
+      PRODUCTS,
+      NOW_MS,
+    ).layer_4_interests.occasion;
+    expect(guess('Em mua làm quà tân gia cho sếp')).toBe('gift');
+    expect(guess('Nhà em sắp nhập trạch, cần bàn thờ')).toBe('new_home');
+    expect(guess('Muốn thay bàn thờ cũ đã xuống màu')).toBe('replacement');
+    expect(guess('Sắm Tết năm nay cần bộ ngũ sự')).toBe('tet');
+    expect(guess('Nhà em sắp cúng giỗ ông')).toBe('anniversary');
+    expect(guess('Bố anh mới mất, sắp làm giỗ đầu, nhà mới chuyển')).toBeNull();
+    expect(guess('Cho em xin giá')).toBeNull();
   });
 
   it('after consent shows the server profile layer: age as an estimate, no gender, social links as a domain only', () => {
@@ -426,6 +489,22 @@ describe('A3 · Saler playbook, Ads export & lifecycle', () => {
         expect(exported).toMatchObject({ csv: 'phone', includedCount: 0, blockedReason: crmAdsExportBlock(state) });
         expect(summarizeAdsAudiences(rows, state).consentedCount).toBe(0);
       }
+    });
+
+    it('honours unsaved drafts that withhold a customer ("Không liên hệ", bought elsewhere, a refusal tag); a draft never adds one', async () => {
+      const drafts = {
+        [granted.leadId]: { ...granted.profile, stage: 'do_not_contact' as const },
+        [unknown.leadId]: { ...unknown.profile, stage: 'deposit' as const },
+      };
+      const selection = selectMetaAudience([granted, unknown], 'all', IDENTITY_ON, drafts);
+      expect(selection).toEqual({ blockedReason: null, phones: [], excludedNoConsent: 1, excludedSuppressed: 1 });
+      expect((await buildMetaCustomAudienceCsv([granted], 'all', IDENTITY_ON, drafts)).includedCount).toBe(0);
+
+      const lostDraft = { [granted.leadId]: { ...granted.profile, stage: 'lost' as const, lostReason: 'bought_elsewhere' as const } };
+      expect(selectMetaAudience([granted], 'all', IDENTITY_ON, lostDraft).excludedSuppressed).toBe(1);
+      const refusalDraft = { [granted.leadId]: { ...granted.profile, note: 'x\n[izzi-ctx: v=1; consent=declined]' } };
+      expect(selectMetaAudience([granted], 'all', IDENTITY_ON, refusalDraft).excludedSuppressed).toBe(1);
+      expect(selectMetaAudience([granted], 'all', IDENTITY_ON, {}).phones).toEqual(['84901234567']);
     });
 
     it('filters a persona by the server persona after consent only, and the preview matches the export', async () => {

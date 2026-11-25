@@ -16,6 +16,7 @@ import type {
   CustomerCareLeadPurgeResult,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
+import type { CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
 import {
@@ -54,6 +55,7 @@ import {
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
+import { crmDraftProfiles, crmFreshAdsExport } from './customer-crm-ads-export';
 import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
 import { crmIdentityActionView, crmIdentityRefreshView, crmRowsWithIdentity, type CrmIdentityOutcomeView } from './customer-crm-identity';
 import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
@@ -478,6 +480,17 @@ export function CustomerCrmPanel() {
     () => ({ identityEnabled, identityUnavailable }),
     [identityEnabled, identityUnavailable],
   );
+  // Unsaved drafts can only withhold a customer from the Ads preview and export (an unsaved "Không liên hệ").
+  const adsDrafts = useMemo(() => crmDraftProfiles(edits), [edits]);
+  // "Xuất CSV" never uses the rows on screen: pages 2–10 keep the identities of the last full load.
+  const exportAds = useCallback(async (target: CrmMetaAudienceTarget) => {
+    const api = getCrmApi();
+    if (!api) return { ok: false as const, message: NO_APP_MESSAGE };
+    return crmFreshAdsExport((input) => api.listCrm(input), target, {
+      workspaceId: () => scopeRef.current,
+      drafts: () => crmDraftProfiles(editsRef.current),
+    });
+  }, []);
 
   // The queue calls the latest save, so it always reads the current rows, edits and workspace.
   useEffect(() => {
@@ -794,6 +807,7 @@ export function CustomerCrmPanel() {
                 savingIds={savingIds}
                 edits={edits}
                 nowMs={now}
+                identityEnabled={identityEnabled}
                 onChangeProfile={change}
                 onCopyText={(text, msg) => { void copyText(text, msg); }}
                 onOpenProfile={openProfile}
@@ -803,6 +817,8 @@ export function CustomerCrmPanel() {
             <CrmAdsWorkspace
               rows={rows}
               identityState={adsIdentityState}
+              drafts={adsDrafts}
+              onExport={exportAds}
               onNotify={(kind, msg) => {
                 if (kind === 'error') {
                   setNotice('');
@@ -818,6 +834,7 @@ export function CustomerCrmPanel() {
               rows={liveRows}
               products={products}
               nowMs={now}
+              identityEnabled={identityEnabled}
               onChangeProfile={change}
               onCopyText={(text, msg) => { void copyText(text, msg); }}
               onOpenProfile={openProfile}

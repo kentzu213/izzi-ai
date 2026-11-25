@@ -851,6 +851,16 @@
   overflow-wrap: anywhere;
 }
 
+/* Section headings inside the workspaces (Ads: P1–P4 table, Custom Audience export) */
+.izzi-v2 .v2-crm-section-title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-strong-size);
+  line-height: var(--v2-text-body-strong-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
 /* Shared Enterprise Workspaces (Saler / Ads / Lifecycle) */
 .izzi-v2 .v2-crm-workspace {
   display: flex;

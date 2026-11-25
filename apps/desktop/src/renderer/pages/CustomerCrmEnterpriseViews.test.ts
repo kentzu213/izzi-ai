@@ -21,6 +21,7 @@ import {
 import { CustomerCrmDisplaySwitch } from './CustomerCrmPanel';
 import { CustomerCrmRow, updateCrmRowFreeNote, type CustomerCrmRowProps } from './CustomerCrmRow';
 import { CRM_CONFLICT_MESSAGE, isCallToday, profileFromRow } from './customer-crm-flow';
+import type { CrmAdsExportOutcome } from './customer-crm-ads-export';
 import type { CrmDisplay } from './customer-crm-graph';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
@@ -29,6 +30,8 @@ const NOW = Date.parse(vn(25, 10));
 const noop = () => undefined;
 const IDENTITY_ON: CrmAdsIdentityState = { identityEnabled: true, identityUnavailable: false };
 const IDENTITY_OFF: CrmAdsIdentityState = { identityEnabled: false, identityUnavailable: false };
+const NO_DRAFTS: Readonly<Record<string, CustomerCareCrmProfileInput>> = {};
+const noExport = async (): Promise<CrmAdsExportOutcome> => ({ ok: false, message: 'x' });
 
 const PRODUCTS = [
   { id: 'ban-127', label: 'Bàn thờ gỗ gụ 1m27' },
@@ -280,6 +283,7 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
         assignees: ASSIGNEES,
         savingIds: new Set<string>(),
         nowMs: NOW,
+        identityEnabled: true,
         onChangeProfile: noop,
         onCopyText: noop,
         onOpenProfile: noop,
@@ -294,6 +298,35 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
     expect(html).not.toMatch(/T1 Tuổi|Chân dung \d+%|Nam ·|Nữ ·|hôn nhân/);
     expect(html.indexOf('Nguyễn Văn Hùng')).toBeLessThan(html.indexOf('Trần Thị Mai'));
     expect(html.indexOf('Trần Thị Mai')).toBeLessThan(html.indexOf('Lê Quốc Tuấn'));
+  });
+
+  it('with the AI profile off, the Saler script still uses the products and occasion guessed from the chat', () => {
+    const guessRow: CustomerCareCrmRow = {
+      ...ROW_LOST,
+      leadId: '44444444-4444-4444-8444-444444444405',
+      recentMessages: [{ text: 'Nhà em sắp nhập trạch, cần bàn thờ gỗ gụ 1m27', at: vn(25, 9) }],
+      profile: { ...ROW_LOST.profile, stage: 'consulting', lostReason: null, note: null },
+      // The server sent an identity with an empty order layer (flag-off prod, or nothing found yet).
+      identity: {
+        ...grantedIdentity('P1'),
+        consent: { state: 'unknown', at: null, noMarketing: false, canAsk: false, eraseRequestedAt: null },
+        persona: null,
+      },
+    };
+    const render = (identityEnabled: boolean | null) => renderToStaticMarkup(createElement(CrmSalerWorkspace, {
+      rows: [guessRow],
+      products: PRODUCTS,
+      assignees: ASSIGNEES,
+      savingIds: new Set<string>(),
+      nowMs: NOW,
+      identityEnabled,
+      onChangeProfile: noop,
+      onCopyText: noop,
+      onOpenProfile: noop,
+    }));
+    for (const html of [render(false), render(null), render(true)]) {
+      expect(html).toContain('quan tâm Bàn thờ gỗ gụ 1m27 cho dịp nhà mới / nhập trạch');
+    }
   });
 
   it('shows a save conflict on the Saler card and points to the table', () => {
@@ -312,6 +345,7 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
           },
         },
         nowMs: NOW,
+        identityEnabled: true,
         onChangeProfile: noop,
         onCopyText: noop,
         onOpenProfile: noop,
@@ -322,7 +356,7 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
 
   it('renders CrmAdsWorkspace with the 4 buckets, P1–P4 angles and export counts from the export selection', () => {
     const html = renderToStaticMarkup(
-      createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: IDENTITY_ON, onNotify: noop }),
+      createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: IDENTITY_ON, drafts: NO_DRAFTS, onExport: noExport, onNotify: noop }),
     );
 
     expect(html).toContain('Khách ấm chưa chốt (high_intent)');
@@ -338,15 +372,50 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
   });
 
   it('locks the export with a reason while the AI profile is off or could not be loaded', () => {
-    const off = renderToStaticMarkup(createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: IDENTITY_OFF, onNotify: noop }));
+    const off = renderToStaticMarkup(createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: IDENTITY_OFF, drafts: NO_DRAFTS, onExport: noExport, onNotify: noop }));
     expect(off).toContain('Xuất tệp Ads đang khoá: AI hồ sơ khách chưa bật cho dự án này');
     expect(off).toContain('Đủ điều kiện xuất: 0 khách');
     expect(off.match(/<button[^>]*disabled=""[^>]*>(Sao chép|Tải file) CSV SHA-256/g)).toHaveLength(2);
 
     const unread = renderToStaticMarkup(
-      createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: { identityEnabled: true, identityUnavailable: true }, onNotify: noop }),
+      createElement(CrmAdsWorkspace, { rows: ALL_ROWS, identityState: { identityEnabled: true, identityUnavailable: true }, drafts: NO_DRAFTS, onExport: noExport, onNotify: noop }),
     );
     expect(unread).toContain('Xuất tệp Ads tạm khoá: AI hồ sơ khách chưa tải được');
+  });
+
+  it('builds the CSV only from the fresh read the panel runs on export, and the preview honours unsaved drafts', () => {
+    const views = readSource('./CustomerCrmEnterpriseViews.tsx');
+    expect(views).not.toMatch(/buildMetaCustomAudienceCsv/);
+    expect(views.match(/await onExport\(exportTarget\)/g)).toHaveLength(1);
+    expect(views.match(/await freshCsv\(/g)).toHaveLength(2);
+    expect(views).toContain('izzi đọc lại toàn bộ danh sách');
+
+    const panel = readSource('./CustomerCrmPanel.tsx');
+    expect(panel).toMatch(/crmFreshAdsExport\(/);
+    expect(panel).toMatch(/onExport=\{exportAds\}/);
+    expect(panel).toMatch(/drafts=\{adsDrafts\}/);
+
+    const withDraft = renderToStaticMarkup(createElement(CrmAdsWorkspace, {
+      rows: ALL_ROWS,
+      identityState: IDENTITY_ON,
+      drafts: { [ROW_HOT.leadId]: { ...profileFromRow(ROW_HOT), stage: 'do_not_contact' } },
+      onExport: noExport,
+      onNotify: noop,
+    }));
+    expect(withDraft).toContain('Đủ điều kiện xuất: 1 khách');
+    expect(withDraft).toContain('Loại bảo vệ quyền riêng tư: 1 chưa đồng ý · 2 đã chặn');
+  });
+
+  it('styles the two Ads section headings', () => {
+    const css = readSource('../styles/v2/customer-crm.css');
+    expect(css).toMatch(/\.izzi-v2 \.v2-crm-section-title \{[^}]*font-weight: var\(--v2-font-weight-semibold\);/);
+    expect(readSource('./CustomerCrmEnterpriseViews.tsx').match(/className="v2-crm-section-title"/g)).toHaveLength(2);
+  });
+
+  it('gives Saler and Hậu mãi the AI switch, so they fall back to chat guesses for the order layer while it is off', () => {
+    const panel = readSource('./CustomerCrmPanel.tsx');
+    expect(panel).toMatch(/<CrmSalerWorkspace[^>]*identityEnabled=\{identityEnabled\}/);
+    expect(panel).toMatch(/<CrmLifecycleWorkspace[^>]*identityEnabled=\{identityEnabled\}/);
   });
 
   it('renders CrmLifecycleWorkspace with post-sale & remarketing milestones and 24h Messenger vs Zalo/Call badges', () => {
@@ -355,6 +424,7 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
         rows: [ROW_HOT, ROW_DELIVERED, ROW_LOST, ROW_DNC],
         products: PRODUCTS,
         nowMs: NOW,
+        identityEnabled: false,
         onChangeProfile: noop,
         onCopyText: noop,
         onOpenProfile: noop,
@@ -377,6 +447,7 @@ describe('3 Enterprise Workspaces — Saler, Ads & Lifecycle', () => {
         rows: [freshDelivered],
         products: PRODUCTS,
         nowMs: NOW,
+        identityEnabled: false,
         onChangeProfile: noop,
         onCopyText: noop,
         onOpenProfile: noop,
