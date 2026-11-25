@@ -103,7 +103,7 @@ describe('Agent Marketing V2 tabs', () => {
     for (const other of ['conversation', 'care', 'crm', 'ads', 'plan', 'content', 'analytics', 'channels']) {
       expect(html.includes(`id="slot-${other}"`)).toBe(other === tab);
     }
-    if (tab === 'crm' || tab === 'ads') {
+    if (tab === 'care' || tab === 'crm' || tab === 'ads') {
       // Wide tabs collapse the right inspector by default and expose a toggle button.
       expect(html).toContain('v2-agent-marketing--wide');
       expect(html).toContain('Hiện thanh kiểm soát');

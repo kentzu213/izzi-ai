@@ -153,7 +153,7 @@ export function AgentMarketingWorkspaceV2({
   const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AgentMarketingTab>>(() => new Set([tab]));
   const [wideInspectorOpen, setWideInspectorOpen] = useState(false);
   const activeIndex = AGENT_MARKETING_TABS.findIndex((item) => item.id === tab);
-  const isWideTab = tab === 'crm' || tab === 'ads';
+  const isWideTab = tab === 'care' || tab === 'crm' || tab === 'ads';
   const inspectorVisible = !isWideTab || wideInspectorOpen;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

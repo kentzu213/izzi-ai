@@ -151,7 +151,7 @@
 
 .izzi-v2 .v2-ads__channels {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
   gap: 10px;
 }
 
@@ -169,15 +169,17 @@
 
 .izzi-v2 .v2-ads__tile-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px 8px;
 }
 
 .izzi-v2 .v2-ads__tile-head strong {
   color: var(--v2-text-primary);
   font-size: 13px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .izzi-v2 .v2-ads__pill {

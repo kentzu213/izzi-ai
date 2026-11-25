@@ -564,6 +564,7 @@
 
 .ccw__lead-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -571,11 +572,12 @@
 
 .ccw__lead-who {
   display: flex;
+  flex: 1 1 200px;
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .ccw__lead-who strong { color: var(--cmr-text); font-size: 15px; }
@@ -592,7 +594,8 @@
 }
 
 .ccw label.ccw__lead-status {
-  flex: 0 0 150px;
+  flex: 0 1 150px;
+  min-width: 125px;
   gap: 5px;
   font-size: 11px;
 }
@@ -724,7 +727,7 @@
 
 .ccw__pancake {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   gap: 12px;
   max-height: 520px;
   min-height: 300px;
