@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
+  CustomerCareCrmIdentity,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
 } from '../../shared/customer-care-types';
+import { CustomerCrmDrawer, type CustomerCrmDrawerProps } from './CustomerCrmDrawer';
 import { CustomerCrmRow, type CustomerCrmRowProps } from './CustomerCrmRow';
 import { CustomerCrmDisplaySwitch, CustomerCrmPanel } from './CustomerCrmPanel';
 import { CRM_CONFLICT_MESSAGE, CRM_SAVE_INVALID_MESSAGE, profileFromRow, type CrmRowEdit } from './customer-crm-flow';
@@ -218,7 +220,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
   });
 
   it('never carries its own copy of the consent question: the dialog shows the server\'s text (review MEDIUM 3)', () => {
-    for (const file of ['./CustomerCrmPanel.tsx', './CustomerCrmIdentity.tsx', './customer-crm-identity.ts']) {
+    for (const file of ['./CustomerCrmPanel.tsx', './CustomerCrmDrawer.tsx', './CustomerCrmIdentity.tsx', './customer-crm-identity.ts']) {
       expect(read(file), file).not.toMatch(/xin phép lưu thông tin|trợ lý tự động của/);
     }
   });
@@ -245,9 +247,9 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
 
 describe('CRM data never reaches storage, graph nodes or the logger', () => {
   const renderer = [
-    './CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
+    './CustomerCrmPanel.tsx', './CustomerCrmDrawer.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
     './CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
-    './CustomerCrmIdentity.tsx', './customer-crm-identity.ts',
+    './CustomerCrmIdentity.tsx', './customer-crm-identity.ts', './customer-crm-ads-export.ts',
   ];
   const main = [
     '../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts', '../../main/customer-care/care-crm-identity.ts',
@@ -279,5 +281,128 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
     expect(start).toBeGreaterThan(-1);
     const call = index.slice(start, index.indexOf('});', start));
     expect(call).not.toMatch(/dbManager|store|graph|log/i);
+  });
+});
+
+describe('Compact Enterprise CRM v3 — Dense Multi-Page Row & Slide-Over Drawer with S3 Identity', () => {
+  const S3_IDENTITY: CustomerCareCrmIdentity = {
+    version: '2026-11-25T01:00:00.000Z',
+    lastRunAt: '2026-11-25T01:00:00.000Z',
+    consent: { state: 'granted', at: '2026-11-25T01:00:00.000Z', noMarketing: false, canAsk: false },
+    occasion: null,
+    timeline: {
+      value: 'before_tet', confidence: 'high', kind: 'stated', source: 'ai', status: 'suggested',
+      updatedAt: '2026-11-25T01:00:00.000Z', evidence: [],
+    },
+    productFactIds: null,
+    addressForm: null,
+    ageBand: null,
+    family: null,
+    interests: null,
+    persona: {
+      value: 'P1', confidence: 'high', kind: 'inferred', source: 'ai', status: 'suggested',
+      updatedAt: '2026-11-25T01:00:00.000Z', evidence: [], summary: 'Bàn thờ nhà mới',
+    },
+  };
+
+  function renderDrawer(overrides: Partial<CustomerCrmDrawerProps> = {}): string {
+    const props: CustomerCrmDrawerProps = {
+      row: { ...ROW, identity: S3_IDENTITY },
+      profile: profileFromRow(ROW),
+      edit: null,
+      saving: false,
+      nowMs: NOW,
+      pageLabel: 'Đồng Thờ Hồng Hưng',
+      assignees: [{ userId: OWNER_ID, label: 'Lan' }],
+      products: [{ id: 'ban-127', label: 'Bàn thờ gỗ gụ 1m27' }],
+      canDelete: true,
+      purging: false,
+      identityHandlers: {
+        enabled: true,
+        consentAsk: 'Question from server',
+        act: async () => ({
+          identity: null, workspaceId: null, message: '', tone: 'notice',
+          dropRows: false, removeRow: false, skipTick: false, reloadList: false,
+        }),
+        refresh: async () => ({
+          identity: null, workspaceId: null, message: '', tone: 'notice',
+          dropRows: false, removeRow: false, skipTick: false, reloadList: false,
+        }),
+      },
+      positionLabel: '1/3',
+      hasPrev: false,
+      hasNext: true,
+      onPrev: noop,
+      onNext: noop,
+      onClose: noop,
+      onChange: noop,
+      onSave: noop,
+      onCopy: noop,
+      onPurge: noop,
+      onReapply: noop,
+      onDiscard: noop,
+      ...overrides,
+    };
+    return renderToStaticMarkup(createElement(CustomerCrmDrawer, props));
+  }
+
+  it('renders Page source tag and consented 1-line segment chips on CustomerCrmRow without sensitive words', () => {
+    const html = render({
+      expanded: false,
+      row: { ...ROW, identity: S3_IDENTITY },
+      pageLabel: 'Xưởng tranh đồng Đại Long',
+      showSegmentColumn: true,
+      selected: true,
+    });
+    expect(html).toContain('Xưởng tranh đồng Đại Long');
+    expect(html).toContain('>P1<');
+    expect(html).toContain('>Nhà mới<');
+    expect(html).toContain('>Đã đồng ý Ads<');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html.toLowerCase()).not.toMatch(/tuổi|hôn nhân|tôn giáo|giới tính|kết hôn/);
+  });
+
+  it('embeds S3 Identity card & actions in Tab 2, Page source & messages in Tab 3, and forces Tab 1 on 409 conflict', () => {
+    const tab1 = renderDrawer({ tab: 'profile' });
+    expect(tab1).toContain('id="crm-editor-44444444-4444-4444-8444-444444444444"');
+    expect(tab1).toContain('Đồng Thờ Hồng Hưng');
+    expect(tab1).toContain('Hồ sơ &amp; Hẹn gọi');
+    expect(tab1).toContain('Nhận diện (AI)');
+    expect(tab1).toContain('Phím tắt: J / K chuyển khách · Esc đóng ngăn');
+
+    const tab2Granted = renderDrawer({ tab: 'identity' });
+    expect(tab2Granted).toContain('P1 · Bàn thờ nhà mới');
+    expect(tab2Granted).toContain('Cập nhật hồ sơ');
+    expect(tab2Granted).toContain('Khách rút đồng ý');
+    expect(tab2Granted).toContain('aria-label="Duyệt Chân dung: P1 · Bàn thờ nhà mới"');
+
+    const tab2Unknown = renderDrawer({
+      tab: 'identity',
+      row: {
+        ...ROW,
+        identity: {
+          ...S3_IDENTITY,
+          consent: { state: 'unknown', at: null, noMarketing: false, canAsk: true },
+        },
+      },
+    });
+    expect(tab2Unknown).toContain('Xin phép khách');
+
+    const tab3 = renderDrawer({ tab: 'messages' });
+    expect(tab3).toContain('Nguồn Page');
+    expect(tab3).toContain('Đồng Thờ Hồng Hưng');
+    expect(tab3).toContain('Cho em xin giá bàn thờ');
+    expect(tab3).toContain('Xoá dữ liệu khách');
+
+    // A 409 profile_conflict forces Tab 1 even if `identity` tab was requested
+    const conflict: CrmRowEdit = {
+      draft: profileFromRow(ROW),
+      rejected: { ...PROFILE, stage: 'deposit', note: 'Cọc 5 triệu' },
+      error: CRM_CONFLICT_MESSAGE,
+      baseUpdatedAt: ROW.profile.updatedAt,
+    };
+    const forcedTab1 = renderDrawer({ tab: 'identity', edit: conflict });
+    expect(forcedTab1).toContain('Dùng lại thay đổi của tôi');
+    expect(forcedTab1).toContain('Cọc 5 triệu');
   });
 });

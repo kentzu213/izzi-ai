@@ -4,6 +4,7 @@
  * here so it can be tested without a DOM.
  */
 import type {
+  CustomerCareBackfillSummary,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookConnectResult,
@@ -93,9 +94,13 @@ export function pageFlowOnWaitTimeout(flow: CarePageFlowState, now: number): Car
   return { flow: { ...flow, waitingUntil: null }, error: facebookErrorMessage('expired'), notice: '' };
 }
 
+export function formatBackfillSummaryNotice(backfill: CustomerCareBackfillSummary): string {
+  return `Đã đồng bộ ${backfill.pagesProcessed} Page (quét ${backfill.conversationsScanned} hội thoại): cập nhật ${backfill.leadsImported} khách có SĐT, ${backfill.namesSealed} tên khách hàng vào CRM.`;
+}
+
 /**
- * Select or disconnect result. Success applies the snapshot (only for the workspace on screen) and closes
- * the picker; `unavailable` keeps the Page list so the same choice can be retried; anything else drops it.
+ * Select, multi-Page backfill or disconnect result. Success applies the snapshot (only for the workspace on screen)
+ * and closes the picker; `unavailable` keeps the Page list so the same choice can be retried; anything else drops it.
  */
 export function pageFlowOnActionResult(
   flow: CarePageFlowState,
@@ -110,7 +115,11 @@ export function pageFlowOnActionResult(
       : { flow: { ...INITIAL_PAGE_FLOW, waitingUntil: flow.waitingUntil }, error };
   }
   if (response.snapshot.workspaceId !== scopeKey) return { flow: INITIAL_PAGE_FLOW, error: SCOPE_MISMATCH };
-  return { flow: INITIAL_PAGE_FLOW, snapshot: response.snapshot, notice: success };
+  const backfillText = response.backfill ? formatBackfillSummaryNotice(response.backfill) : '';
+  const notice = backfillText
+    ? (success ? `${success} ${backfillText}` : backfillText)
+    : success;
+  return { flow: INITIAL_PAGE_FLOW, snapshot: response.snapshot, notice };
 }
 
 /** A thrown IPC call is treated as transient: the Page list stays so the operator can retry. */

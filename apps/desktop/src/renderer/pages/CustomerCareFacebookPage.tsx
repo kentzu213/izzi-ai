@@ -17,6 +17,11 @@ export interface CustomerCareFacebookPageChoices {
   missingScopes: string[];
 }
 
+export interface CustomerCareConfirmPageOptions {
+  backfillPageIds?: string[];
+  importOnly?: boolean;
+}
+
 export interface CustomerCareFacebookPagePanelProps {
   connection: CustomerCarePageConnection;
   /** Display hint from the snapshot; main re-checks the role on every action. */
@@ -28,8 +33,9 @@ export interface CustomerCareFacebookPagePanelProps {
   onConnect: () => void;
   onDisconnect: () => void;
   onSelectPage: (pageId: string) => void;
-  onConfirmPage: () => void;
+  onConfirmPage: (options?: CustomerCareConfirmPageOptions) => void;
   onCancelChoices: () => void;
+  onBackfillCurrent?: () => void;
 }
 
 const ERROR_MESSAGES: Record<CustomerCareFacebookError, string> = {
@@ -134,12 +140,35 @@ export function filterPageChoices(
   return pages.filter((page) => page.pageId.includes(needle) || foldForSearch(page.name ?? '').includes(needle));
 }
 
+const MAX_BACKFILL_PAGES = 10;
+
 function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: CustomerCareFacebookPageChoices }) {
-  const { choices, selectedPageId, busy } = props;
+  const { choices, connection, selectedPageId, busy } = props;
+  const connected = connection.state === 'connected';
+  const eligibleIds = choices.pages.filter((page) => page.eligible).map((page) => page.pageId);
   const [filter, setFilter] = useState('');
+  const [checkedIds, setCheckedIds] = useState<string[]>(() => eligibleIds.slice(0, MAX_BACKFILL_PAGES));
   const visiblePages = filterPageChoices(choices.pages, filter);
-  // Only a Page the merchant can currently see may be confirmed.
+  // Only a Page the merchant can currently see may be confirmed as the primary Page.
   const selected = visiblePages.find((page) => page.pageId === selectedPageId);
+  const checkedSet = new Set(checkedIds);
+  const validCheckedIds = choices.pages
+    .filter((page) => page.eligible && checkedSet.has(page.pageId))
+    .map((page) => page.pageId)
+    .slice(0, MAX_BACKFILL_PAGES);
+  const checkedCount = validCheckedIds.length;
+  const maxSelectable = Math.min(eligibleIds.length, MAX_BACKFILL_PAGES);
+
+  const toggleBackfillPage = (pageId: string, nextChecked: boolean) => {
+    setCheckedIds((current) => {
+      if (nextChecked) {
+        if (current.includes(pageId) || current.length >= MAX_BACKFILL_PAGES) return current;
+        return [...current, pageId];
+      }
+      return current.filter((id) => id !== pageId);
+    });
+  };
+
   return (
     <fieldset className="ccw__page-picker">
       <legend>Chọn Page dùng cho Chăm sóc khách hàng</legend>
@@ -180,6 +209,46 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
               </li>
             ))}
           </ul>
+
+          {eligibleIds.length > 0 && (
+            <div className="ccw__backfill-box" role="group" aria-label="Trích xuất lịch sử đa Page vào CRM">
+              <div className="ccw__backfill-head">
+                <strong>
+                  {`Trích xuất SĐT & lịch sử khách hàng (90 ngày) vào CRM (${checkedCount}/${maxSelectable} Page, tối đa ${MAX_BACKFILL_PAGES} Page/lần):`}
+                </strong>
+                {eligibleIds.length > 1 && (
+                  <button
+                    type="button"
+                    className="cmr-text-button"
+                    disabled={busy}
+                    onClick={() => setCheckedIds(checkedCount > 0 ? [] : eligibleIds.slice(0, MAX_BACKFILL_PAGES))}
+                  >
+                    {checkedCount > 0
+                      ? 'Bỏ chọn tất cả'
+                      : (eligibleIds.length > MAX_BACKFILL_PAGES ? `Chọn ${MAX_BACKFILL_PAGES} Page đầu` : 'Chọn tất cả đủ điều kiện')}
+                  </button>
+                )}
+              </div>
+              <ul className="ccw__backfill-list">
+                {choices.pages.filter((page) => page.eligible).map((page) => (
+                  <li key={`bf-${page.pageId}`}>
+                    <label className="ccw__backfill-item">
+                      <input
+                        type="checkbox"
+                        checked={checkedSet.has(page.pageId)}
+                        disabled={busy || (!checkedSet.has(page.pageId) && checkedCount >= MAX_BACKFILL_PAGES)}
+                        onChange={(event) => toggleBackfillPage(page.pageId, event.currentTarget.checked)}
+                      />
+                      <span>
+                        <strong>{page.name ?? 'Page chưa có tên'}</strong>
+                        <small>ID {page.pageId}</small>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
       <p className="ccw__hint">
@@ -194,14 +263,44 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
       )}
       <div className="ccw__actions">
         <button type="button" className="cmr-text-button" onClick={props.onCancelChoices} disabled={busy}>Hủy</button>
-        <button
-          type="button"
-          className="cmr-button cmr-button--primary"
-          disabled={busy || !selected?.eligible}
-          onClick={props.onConfirmPage}
-        >
-          Dùng Page đã chọn
-        </button>
+        {connected ? (
+          <>
+            <button
+              type="button"
+              className="cmr-button"
+              disabled={busy || !selected?.eligible}
+              onClick={() => props.onConfirmPage({
+                backfillPageIds: validCheckedIds.length > 0 ? validCheckedIds : undefined,
+                importOnly: false,
+              })}
+            >
+              Đổi Page chính &amp; Trích xuất
+            </button>
+            <button
+              type="button"
+              className="cmr-button cmr-button--primary"
+              disabled={busy || checkedCount === 0}
+              onClick={() => props.onConfirmPage({
+                backfillPageIds: validCheckedIds,
+                importOnly: true,
+              })}
+            >
+              {`Trích xuất ${checkedCount} Page vào CRM (Giữ Page đang trực)`}
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="cmr-button cmr-button--primary"
+            disabled={busy || !selected?.eligible}
+            onClick={() => props.onConfirmPage({
+              backfillPageIds: validCheckedIds.length > 0 ? validCheckedIds : undefined,
+              importOnly: false,
+            })}
+          >
+            Dùng Page đã chọn
+          </button>
+        )}
       </div>
     </fieldset>
   );
@@ -221,7 +320,17 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
           <div className="ccw__page-actions">
             {connected ? (
               <>
-                <button type="button" className="cmr-button" disabled={busy} onClick={props.onConnect}>Kết nối lại</button>
+                <button
+                  type="button"
+                  className="cmr-button cmr-button--primary"
+                  disabled={busy}
+                  onClick={props.onBackfillCurrent}
+                >
+                  Đồng bộ khách cũ (90 ngày)
+                </button>
+                <button type="button" className="cmr-button" disabled={busy} onClick={props.onConnect}>
+                  Kết nối lại / Thêm Page CRM
+                </button>
                 <button type="button" className="cmr-text-button" disabled={busy} onClick={props.onDisconnect}>Ngắt kết nối</button>
               </>
             ) : (
@@ -240,6 +349,11 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
       <p className="ccw__page-status" role="status">{describeConnection(connection)}</p>
       {connected && connection.missingScopes.length > 0 && (
         <p className="ccw__hint">Page còn thiếu quyền: {connection.missingScopes.join(', ')}.</p>
+      )}
+      {connected && canManage && (
+        <p className="ccw__hint">
+          Muốn gom thêm SĐT &amp; dữ liệu khách từ các Page khác (như Xưởng tranh đồng Đại Long, Đồ đồng Đại Long) mà vẫn giữ Page đang trực, hãy bấm “Kết nối lại / Thêm Page CRM”.
+        </p>
       )}
       <p className="ccw__hint">
         Kết nối chỉ xác minh Page. izzi chỉ đọc tin nhắn khi bạn bật “Nhận tin nhắn từ Page”, và chỉ gửi tin cho khách khi chủ sở hữu hoặc quản lý bật “Tự động trả lời khách”.

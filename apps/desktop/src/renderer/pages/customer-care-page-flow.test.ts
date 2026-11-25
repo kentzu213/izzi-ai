@@ -134,10 +134,19 @@ describe('Care Page flow: connect and waiting', () => {
 describe('Care Page flow: select and disconnect results', () => {
   const busyWithChoices = (): CarePageFlowState => ({ ...withChoices(), busy: true });
 
-  it('applies the snapshot and closes the picker on success', () => {
+  it('applies the snapshot, formats backfill summary notice and closes the picker on success', () => {
     const next = snapshot();
     const step = pageFlowOnActionResult(busyWithChoices(), { ok: true, snapshot: next }, WORKSPACE, 'Đã kết nối');
     expect(step).toEqual({ flow: INITIAL_PAGE_FLOW, snapshot: next, notice: 'Đã kết nối' });
+
+    const withBackfill = pageFlowOnActionResult(busyWithChoices(), {
+      ok: true,
+      snapshot: next,
+      backfill: { pagesProcessed: 3, conversationsScanned: 90, leadsImported: 24, messagesStored: 52, namesSealed: 21 },
+    }, WORKSPACE, '');
+    expect(withBackfill.notice).toBe(
+      'Đã đồng bộ 3 Page (quét 90 hội thoại): cập nhật 24 khách có SĐT, 21 tên khách hàng vào CRM.',
+    );
   });
 
   it('keeps the Page list after an unavailable error so the same choice can be retried', () => {

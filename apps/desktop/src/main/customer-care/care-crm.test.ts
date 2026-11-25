@@ -337,8 +337,30 @@ describe('parseCareCrmRow and the list answer', () => {
     ['an assignee email field', { ...LIST_BODY, assignees: [{ userId: OWNER_ID, label: 'Lan', email: 'lan@example.com' }] }],
     ['an extra envelope field', { ...LIST_BODY, debug: true }],
     ['success false', { ...LIST_BODY, success: false }],
+    ['duplicate pageId in pages', { ...LIST_BODY, pages: [{ pageId: '105252511858057', pageName: 'A' }, { pageId: '105252511858057', pageName: 'B' }] }],
+    ['extra field in pages item', { ...LIST_BODY, pages: [{ pageId: '105252511858057', pageName: 'A', accessToken: 'secret' }] }],
   ])('rejects a list answer with %s', (_label, body) => {
     expect(parseCareCrmListBody(body, WORKSPACE)).toBeNull();
+  });
+
+  it('parses optional pages on both S1 and include=identity envelopes', () => {
+    const pages = [
+      { pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: '206363622969168', pageName: 'Đồ đồng Đại Long\u202E' },
+    ];
+    const s1WithPages = parseCareCrmListBody({ ...LIST_BODY, pages }, WORKSPACE);
+    expect(s1WithPages?.pages).toEqual([
+      { pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: '206363622969168', pageName: null },
+    ]);
+    const s3WithPages = parseCareCrmListBody({
+      ...LIST_BODY,
+      identityEnabled: false,
+      consentAsk: null,
+      pages: [{ pageId: '105252511858057', pageName: 'Xưởng tranh đồng Đại Long' }],
+    }, WORKSPACE);
+    expect(s3WithPages?.identityEnabled).toBe(false);
+    expect(s3WithPages?.pages).toEqual([{ pageId: '105252511858057', pageName: 'Xưởng tranh đồng Đại Long' }]);
   });
 });
 

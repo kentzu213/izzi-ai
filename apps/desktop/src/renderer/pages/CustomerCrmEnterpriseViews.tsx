@@ -96,6 +96,8 @@ export interface CrmEnterpriseKpiStripProps {
   savedRows?: readonly CustomerCareCrmRow[];
   products: readonly CrmEnterpriseProduct[];
   nowMs: number;
+  /** Distinct Facebook Page source count across CRM leads. */
+  pageCount?: number;
   /** The list answer's identity state: the Ads count follows the export gate. */
   identityState: CrmAdsIdentityState;
   display: CrmDisplay;
@@ -107,6 +109,7 @@ export function CrmEnterpriseKpiStrip({
   savedRows,
   products,
   nowMs,
+  pageCount,
   identityState,
   display,
   onSelectDisplay,
@@ -142,7 +145,9 @@ export function CrmEnterpriseKpiStrip({
       >
         <span className="v2-crm-kpi__label">Tổng khách</span>
         <strong className="v2-crm-kpi__value">{stats.total}</strong>
-        <span className="v2-crm-kpi__sub">Hồ sơ SĐT trong dự án</span>
+        <span className="v2-crm-kpi__sub">
+          {pageCount && pageCount > 0 ? `${pageCount} Page nguồn` : 'Hồ sơ SĐT trong dự án'}
+        </span>
       </button>
 
       <button
@@ -211,6 +216,7 @@ export interface CrmSalerWorkspaceProps {
   nowMs: number;
   /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
   identityEnabled: boolean | null;
+  resolvePageLabel?: (pageId: string) => string;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -226,6 +232,7 @@ export function CrmSalerWorkspace({
   edits,
   nowMs,
   identityEnabled,
+  resolvePageLabel,
   onChangeProfile,
   onCopyText,
   onOpenProfile,
@@ -321,6 +328,7 @@ export function CrmSalerWorkspace({
                       {`${priority.label} · ${playbook.priorityScore}đ`}
                     </span>
                     <h3 className="v2-crm-saler-card__name">{name}</h3>
+                    {resolvePageLabel && <span className="v2-crm__page-tag">{resolvePageLabel(row.pageId)}</span>}
                     {row.zaloMentioned && <span className="v2-badge">Có nhắc Zalo</span>}
                     <span className="v2-crm__phone">{formatLeadPhone(row.phone)}</span>
                     <button
@@ -734,6 +742,7 @@ export interface CrmLifecycleWorkspaceProps {
   nowMs: number;
   /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
   identityEnabled: boolean | null;
+  resolvePageLabel?: (pageId: string) => string;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -746,6 +755,7 @@ export function CrmLifecycleWorkspace({
   products,
   nowMs,
   identityEnabled,
+  resolvePageLabel,
   onChangeProfile,
   onCopyText,
   onOpenProfile,
@@ -830,6 +840,7 @@ export function CrmLifecycleWorkspace({
                 <header className="v2-crm-lifecycle-card__head">
                   <div className="v2-crm-lifecycle-card__who">
                     <h3 className="v2-crm-lifecycle-card__name">{name}</h3>
+                    {resolvePageLabel && <span className="v2-crm__page-tag">{resolvePageLabel(row.pageId)}</span>}
                     <span className="v2-crm-chip">{crmStageLabel(row.profile.stage)}</span>
                     <span className="v2-crm__phone">{formatLeadPhone(row.phone)}</span>
                     <button

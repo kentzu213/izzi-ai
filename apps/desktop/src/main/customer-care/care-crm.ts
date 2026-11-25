@@ -16,6 +16,7 @@ import {
   type CustomerCareCrmConsentAsk,
   type CustomerCareCrmIdentityActionInput,
   type CustomerCareCrmListInput,
+  type CustomerCareCrmPageSource,
   type CustomerCareCrmProfile,
   type CustomerCareCrmProfileInput,
   type CustomerCareCrmRole,
@@ -67,13 +68,14 @@ const PROFILE_INPUT_KEYS = [
 ] as const;
 const PURCHASE_STAGES: readonly CustomerCareCrmStage[] = ['deposit', 'delivered'];
 
-/** One page of CRM rows, newest phone first, with the people a row may be assigned to. */
+/** One page of CRM rows, newest phone first, with the people a row may be assigned to and optional source Pages. */
 export interface CareCrmPage {
   role: CustomerCareCrmRole;
   canDelete: boolean;
   rows: CustomerCareCrmRow[];
   nextCursor: string | null;
   assignees: CustomerCareCrmAssignee[];
+  pages?: CustomerCareCrmPageSource[];
   /** Care CRM S3: the server's `identityEnabled`; null when it answered without identity (no S3 there). */
   identityEnabled: boolean | null;
   /** Care CRM S3: the identity could not be loaded for this page; the rows are shown without it. */
@@ -386,18 +388,33 @@ function parseAssignees(value: unknown): CustomerCareCrmAssignee[] | null {
   return assignees;
 }
 
+function parsePageSources(value: unknown): CustomerCareCrmPageSource[] | null {
+  if (!Array.isArray(value) || value.length > CARE_CRM_MAX_ASSIGNEES) return null;
+  const pages: CustomerCareCrmPageSource[] = [];
+  const seen = new Set<string>();
+  for (const raw of value as unknown[]) {
+    const item = exactRecord(raw, ['pageId', 'pageName']);
+    if (!item || !isCareFacebookPageId(item.pageId) || seen.has(item.pageId)) return null;
+    const pageName = parseCustomerName(item.pageName);
+    if (pageName === undefined) return null;
+    seen.add(item.pageId);
+    pages.push({ pageId: item.pageId, pageName });
+  }
+  return pages;
+}
+
 const ENVELOPE_KEYS = ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees'];
-/** Care CRM S3 envelope keys: optional, and never a reason to reject the page. */
-const IDENTITY_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk'];
+/** Care CRM S3 + Multi-Page source keys: optional in the envelope. */
+const OPTIONAL_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk', 'pages'];
 
 /**
  * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. The Care
- * CRM S3 parts are optional and never take the CRM down: a server without S3 sends none of them; an unreadable
+ * CRM S3 parts and `pages` (`include=identity,pages`) are optional: a server without S3 sends none of them; an unreadable
  * `identityEnabled` (or row identities without it) shows the table without identity (`identityUnavailable`); an
  * unreadable row identity drops only that identity; an unreadable `consentAsk` is null (asking stays off).
  */
 export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCrmPage | null {
-  const envelope = exactRecord(body, [...ENVELOPE_KEYS, ...IDENTITY_ENVELOPE_KEYS.filter((key) => hasOwn(body, key))]);
+  const envelope = exactRecord(body, [...ENVELOPE_KEYS, ...OPTIONAL_ENVELOPE_KEYS.filter((key) => hasOwn(body, key))]);
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_ROLES, envelope.role) || typeof envelope.canDelete !== 'boolean') return null;
   if (envelope.nextCursor !== null && !isCareLeadsCursor(envelope.nextCursor)) return null;
@@ -413,6 +430,9 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
   }
   const assignees = parseAssignees(envelope.assignees);
   if (!assignees) return null;
+  const hasPages = 'pages' in envelope;
+  const pages = hasPages ? parsePageSources(envelope.pages) : undefined;
+  if (hasPages && !pages) return null;
   const unreadable = !withIdentity
     && ('identityEnabled' in envelope || (envelope.rows as unknown[]).some((raw) => hasOwn(raw, 'identity')));
   return {
@@ -421,6 +441,7 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
     rows,
     nextCursor: envelope.nextCursor,
     assignees,
+    ...(pages ? { pages } : {}),
     identityEnabled: withIdentity ? envelope.identityEnabled as boolean : null,
     identityUnavailable: unreadable,
     consentAsk: withIdentity ? parseCareCrmConsentAsk(envelope.consentAsk) : null,

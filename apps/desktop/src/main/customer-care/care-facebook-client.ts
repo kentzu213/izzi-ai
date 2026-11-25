@@ -23,6 +23,7 @@ import {
   CUSTOMER_CARE_LEAD_STATUSES,
   type CustomerCareAutoReplyProblem,
   type CustomerCareAutoReplyState,
+  type CustomerCareBackfillSummary,
   type CustomerCareFactTopic,
   type CustomerCareFacebookPageChoice,
   type CustomerCareFacebookRejectReason,
@@ -123,11 +124,21 @@ export interface CareLeadPage {
   nextCursor: string | null;
 }
 
+export interface CareFacebookSelectOptions {
+  backfillPageIds?: string[];
+  importOnly?: boolean;
+}
+
+export interface CareFacebookSelectWithBackfill {
+  connection: CareFacebookConnection | null;
+  backfill: CustomerCareBackfillSummary;
+}
+
 /** The surface `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export type CareFacebookGateway = Pick<
   CareFacebookClient,
   'startConnect' | 'completeCallback' | 'selectPage' | 'getStatus' | 'disconnect'
->;
+> & Partial<Pick<CareFacebookClient, 'backfillBoundPage'>>;
 
 /** What the backend deleted for one customer (B1b). */
 export interface CareLeadPurge {
@@ -304,6 +315,36 @@ export function parseCareInboxState(value: unknown): CustomerCareInboxState | nu
 
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+export const CARE_FACEBOOK_MAX_BACKFILL_PAGES = 10;
+
+export function parseBackfillPageIds(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > CARE_FACEBOOK_MAX_BACKFILL_PAGES) return null;
+  if (!value.every((pageId) => isCareFacebookPageId(pageId))) return null;
+  if (new Set(value).size !== value.length) return null;
+  return [...value] as string[];
+}
+
+export function parseCareBackfillSummary(value: unknown): CustomerCareBackfillSummary | null {
+  const summary = exactRecord(value, [
+    'pagesProcessed', 'conversationsScanned', 'leadsImported', 'messagesStored', 'namesSealed',
+  ]);
+  if (
+    !summary
+    || !isCount(summary.pagesProcessed)
+    || !isCount(summary.conversationsScanned)
+    || !isCount(summary.leadsImported)
+    || !isCount(summary.messagesStored)
+    || !isCount(summary.namesSealed)
+  ) return null;
+  return {
+    pagesProcessed: summary.pagesProcessed,
+    conversationsScanned: summary.conversationsScanned,
+    leadsImported: summary.leadsImported,
+    messagesStored: summary.messagesStored,
+    namesSealed: summary.namesSealed,
+  };
 }
 
 /** Phase C state, rebuilt from an exact allowlist; an unknown problem code is kept as `unknown`. */
@@ -503,23 +544,86 @@ export class CareFacebookClient {
     };
   }
 
-  /** POST /select — bind the chosen Page after backend verification. */
+  /** POST /select — bind the chosen Page (and/or backfill multi-Page history into CRM) after backend verification. */
   async selectPage(
     workspaceId: string,
     choiceId: string,
     pageId: string,
-  ): Promise<CareFacebookResult<CareFacebookConnection>> {
+  ): Promise<CareFacebookResult<CareFacebookConnection>>;
+  async selectPage(
+    workspaceId: string,
+    choiceId: string,
+    pageId: string,
+    options?: CareFacebookSelectOptions,
+  ): Promise<CareFacebookResult<CareFacebookConnection | CareFacebookSelectWithBackfill>>;
+  async selectPage(
+    workspaceId: string,
+    choiceId: string,
+    pageId: string,
+    options?: CareFacebookSelectOptions,
+  ): Promise<CareFacebookResult<CareFacebookConnection | CareFacebookSelectWithBackfill>> {
     if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(choiceId) || !isCareFacebookPageId(pageId)) {
       return INVALID_REQUEST;
     }
-    const result = await this.request('select', '/select', {
-      method: 'POST',
-      body: JSON.stringify({ workspaceId, choiceId, pageId }),
-    });
+    if (options?.importOnly !== undefined && typeof options.importOnly !== 'boolean') return INVALID_REQUEST;
+    const hasBackfillIds = options?.backfillPageIds !== undefined;
+    const backfillPageIds = hasBackfillIds ? parseBackfillPageIds(options.backfillPageIds) : undefined;
+    if (hasBackfillIds && !backfillPageIds) return INVALID_REQUEST;
+    const importOnly = options?.importOnly === true;
+
+    if (!hasBackfillIds && !importOnly) {
+      const result = await this.request('select', '/select', {
+        method: 'POST',
+        body: JSON.stringify({ workspaceId, choiceId, pageId }),
+      });
+      if (!result.ok) return result;
+      const envelope = parseSuccessEnvelope(result.body, ['connection'], workspaceId);
+      const connection = envelope ? parseCareFacebookConnection(envelope.connection) : null;
+      return connection && connection.pageId === pageId ? { ok: true, value: connection } : INVALID_RESPONSE;
+    }
+
+    const result = await this.request(
+      'select',
+      '/select',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          workspaceId,
+          choiceId,
+          pageId,
+          ...(backfillPageIds ? { backfillPageIds } : {}),
+          ...(importOnly ? { importOnly: true } : {}),
+        }),
+      },
+      Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
+    );
     if (!result.ok) return result;
-    const envelope = parseSuccessEnvelope(result.body, ['connection'], workspaceId);
-    const connection = envelope ? parseCareFacebookConnection(envelope.connection) : null;
-    return connection && connection.pageId === pageId ? { ok: true, value: connection } : INVALID_RESPONSE;
+    const envelope = parseSuccessEnvelope(result.body, ['connection', 'backfill'], workspaceId);
+    if (!envelope) return INVALID_RESPONSE;
+    const backfill = parseCareBackfillSummary(envelope.backfill);
+    if (!backfill) return INVALID_RESPONSE;
+    if (importOnly) {
+      const connection = envelope.connection === null ? null : parseCareFacebookConnection(envelope.connection);
+      if (envelope.connection !== null && !connection) return INVALID_RESPONSE;
+      return { ok: true, value: { connection, backfill } };
+    }
+    const connection = parseCareFacebookConnection(envelope.connection);
+    return connection && connection.pageId === pageId ? { ok: true, value: { connection, backfill } } : INVALID_RESPONSE;
+  }
+
+  /** POST /backfill — scan 90-day Messenger history of the workspace's bound Page into CRM. */
+  async backfillBoundPage(workspaceId: string): Promise<CareFacebookResult<CustomerCareBackfillSummary>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const result = await this.request(
+      'backfill',
+      '/backfill',
+      { method: 'POST', body: JSON.stringify({ workspaceId }) },
+      Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
+    );
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['backfill'], workspaceId);
+    const backfill = envelope ? parseCareBackfillSummary(envelope.backfill) : null;
+    return backfill ? { ok: true, value: backfill } : INVALID_RESPONSE;
   }
 
   /** GET /status — the verified connection, or null. */

@@ -7,6 +7,7 @@ import type {
   CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
+  CustomerCareCrmPageSource,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
   CustomerCareCrmSaveInput,
@@ -16,7 +17,7 @@ import type {
   CustomerCareLeadPurgeResult,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
-import type { CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
+import { CRM_PERSONA_OPTIONS, type CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
 import {
@@ -32,6 +33,8 @@ import {
   crmEditOnDiscard,
   crmEditOnReapply,
   crmFailureView,
+  crmFilterRows,
+  crmPageOptions,
   crmRefreshCooldownLeft,
   crmProductOptions,
   crmProfilesEqual,
@@ -51,15 +54,19 @@ import {
   loadCrmPages,
   normalizeCrmProfile,
   profileFromRow,
+  resolveCrmPageLabel,
+  snapshotPageFallback,
   type CrmFilter,
+  type CrmPersonaFilter,
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
 import { crmDraftProfiles, crmFreshAdsExport } from './customer-crm-ads-export';
-import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
+import { crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
 import { crmIdentityActionView, crmIdentityRefreshView, crmRowsWithIdentity, type CrmIdentityOutcomeView } from './customer-crm-identity';
 import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 import { CrmSaveQueue } from './customer-crm-save-queue';
+import { CustomerCrmDrawer, type CrmDrawerTab } from './CustomerCrmDrawer';
 import { CustomerCrmGraphSlot } from './CustomerCrmGraphSlot';
 import {
   CrmAdsWorkspace,
@@ -114,6 +121,7 @@ type Phase = { state: 'loading' } | { state: 'blocked'; message: string } | { st
 interface CrmMeta {
   canDelete: boolean;
   assignees: CustomerCareCrmAssignee[];
+  pageSources: CustomerCareCrmPageSource[];
   truncated: boolean;
   /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
   identityEnabled: boolean | null;
@@ -128,6 +136,14 @@ const GENERIC_SAVE_ERROR = 'Chưa lưu được. Thử lại sau ít phút.';
 const REFRESH_RESTING_NOTE = 'Vừa tải xong. Có thể làm mới lại sau 15 giây.';
 const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
 const NO_ASSIGNEES: CustomerCareCrmAssignee[] = [];
+const NO_PAGE_SOURCES: CustomerCareCrmPageSource[] = [];
+const INITIAL_FILTER: CrmFilter = {
+  view: 'today',
+  stage: 'any',
+  pageId: 'any',
+  persona: 'any',
+  query: '',
+};
 
 function getCrmApi(): CrmApi | null {
   if (typeof window === 'undefined') return null;
@@ -153,9 +169,9 @@ function withoutKey(edits: Edits, leadId: string): Edits {
 }
 
 /**
- * MyGraph → CRM (Enterprise CRM v2): 5-layer customer reasoning & operational workspaces (Bảng, Sơ đồ, Saler,
- * Ads, Hậu mãi). Rows, phones and notes live only in this component's memory; edits are saved per row after a
- * pause in typing or on "Lưu".
+ * MyGraph → CRM (Compact Enterprise CRM v3 + Care CRM S3 AI Identity):
+ * Multi-Page lead attribution, 1-row KPI ribbon, unified command/filter bar, dense table + 420px slide-over drawer,
+ * and 5 operational workspaces (Bảng, Sơ đồ, Saler, Ads, Hậu mãi). Rows, phones and notes live only in memory.
  */
 export function CustomerCrmPanel() {
   const active = usePanelVisible();
@@ -165,10 +181,12 @@ export function CustomerCrmPanel() {
   const [edits, setEdits] = useState<Edits>({});
   const [meta, setMeta] = useState<CrmMeta | null>(null);
   const [products, setProducts] = useState<CrmProductOption[]>([]);
+  const [fallbackPage, setFallbackPage] = useState<CustomerCareCrmPageSource | null>(null);
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [filter, setFilter] = useState<CrmFilter>({ view: 'today', stage: 'any' });
+  const [filter, setFilter] = useState<CrmFilter>(INITIAL_FILTER);
   const [display, setDisplay] = useState<CrmDisplay>('table');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [drawerTab, setDrawerTab] = useState<CrmDrawerTab>('profile');
   /** The row "Mở hồ sơ" opened: scrolled into view and focused once the table shows it. */
   const [revealId, setRevealId] = useState<string | null>(null);
   const [purgingId, setPurgingId] = useState<string | null>(null);
@@ -200,6 +218,10 @@ export function CustomerCrmPanel() {
     async () => 'done',
   );
 
+  const selectDisplay = useCallback((next: CrmDisplay) => {
+    setDisplay(next);
+  }, []);
+
   const updateRows = useCallback((change: (current: CustomerCareCrmRow[]) => CustomerCareCrmRow[]) => {
     rowsRef.current = change(rowsRef.current);
     setRows(rowsRef.current);
@@ -228,7 +250,8 @@ export function CustomerCrmPanel() {
     updateEdits(() => ({}));
     setMeta(null);
     setProducts([]);
-    setExpandedId(null);
+    setFallbackPage(null);
+    setDrawerId(null);
     setNotice('');
     setError('');
     setPhase({ state: 'blocked', message });
@@ -239,17 +262,26 @@ export function CustomerCrmPanel() {
     removedRef.current.add(leadId);
     updateRows((current) => crmRowsOnRemove(current, leadId));
     updateEdits((current) => withoutKey(current, leadId));
-    setExpandedId((current) => (current === leadId ? null : current));
+    setDrawerId((current) => (current === leadId ? null : current));
   }, [updateRows, updateEdits]);
 
   const loadProducts = useCallback(async (api: CrmApi, workspaceId: string) => {
     try {
       const snapshot = await api.getSnapshot();
       if (!mountedRef.current || scopeRef.current !== workspaceId) return;
-      // Facts saved for another workspace on this machine never become this workspace's products.
-      setProducts(snapshot.workspaceId === workspaceId ? crmProductOptions(snapshot.setup?.facts, Date.now()) : []);
+      // Facts and Page metadata saved for another workspace on this machine never leak here.
+      if (snapshot.workspaceId === workspaceId) {
+        setProducts(crmProductOptions(snapshot.setup?.facts, Date.now()));
+        setFallbackPage(snapshotPageFallback(snapshot));
+      } else {
+        setProducts([]);
+        setFallbackPage(null);
+      }
     } catch {
-      if (mountedRef.current) setProducts([]);
+      if (mountedRef.current) {
+        setProducts([]);
+        setFallbackPage(null);
+      }
     }
   }, []);
 
@@ -298,7 +330,11 @@ export function CustomerCrmPanel() {
         removedRef.current = new Set();
         updateRows(() => []);
         updateEdits(() => ({}));
-        setExpandedId(null);
+        setMeta(null);
+        setProducts([]);
+        setFallbackPage(null);
+        setDrawerId(null);
+        setFilter((current) => ({ ...current, pageId: 'any' }));
         if (mode === 'page1') {
           // Page 1 of another workspace is not enough: read all of it.
           scopeRef.current = null;
@@ -315,10 +351,13 @@ export function CustomerCrmPanel() {
         if (!present.has(leadId)) queueRef.current?.cancel(leadId);
       }
       updateEdits((current) => Object.fromEntries(Object.entries(current).filter(([leadId]) => present.has(leadId))));
-      setExpandedId((current) => (current !== null && present.has(current) ? current : null));
+      setDrawerId((current) => (current !== null && present.has(current) ? current : null));
       setMeta((current) => ({
         canDelete: result.canDelete,
         assignees: result.assignees,
+        pageSources: switched || mode === 'full'
+          ? result.pageSources
+          : (result.pageSources.length > 0 ? result.pageSources : (current?.pageSources ?? NO_PAGE_SOURCES)),
         // Only an every-page load knows whether more than 500 customers exist.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
         identityEnabled: result.identityEnabled,
@@ -374,7 +413,8 @@ export function CustomerCrmPanel() {
         updateRows((current) => crmRowsOnSaved(current, merged));
         if (!result.ok) {
           updateEdits((current) => ({ ...current, [leadId]: crmEditOnConflict(current[leadId], merged) }));
-          setExpandedId((current) => current ?? leadId);
+          setDrawerId((current) => current ?? leadId);
+          setDrawerTab('profile');
           if (displayRef.current !== 'table') setError(`${leadDisplayName(merged)}: ${CRM_CONFLICT_MESSAGE}`);
           // Someone else is editing: read every page again so other rows they changed show too.
           if (reload && mountedRef.current) void loadRef.current(reload);
@@ -536,16 +576,24 @@ export function CustomerCrmPanel() {
     if (display !== 'table' || revealId === null) return;
     // 'nearest' scrolls only the CRM panel; 'center' would also shift the shell's overflow-hidden frames.
     document.getElementById(`crm-editor-${revealId}`)?.scrollIntoView({ block: 'nearest' });
-    document.getElementById(`crm-stage-${revealId}`)?.focus({ preventScroll: true });
+    (
+      document.getElementById(`crm-drawer-stage-${revealId}`)
+      ?? document.getElementById(`crm-stage-${revealId}`)
+    )?.focus({ preventScroll: true });
     setRevealId(null);
   }, [display, revealId]);
 
-  /** The card's "Mở hồ sơ": back to the table with that customer's editor open. */
+  /** The card's "Mở hồ sơ": back to the table with that customer's slide-over drawer open. */
   const openProfile = (leadId: string) => {
     const next = crmOpenProfile(leadId);
-    setDisplay(next.display);
-    setExpandedId(next.expandedId);
+    selectDisplay(next.display);
+    setDrawerId(next.expandedId);
+    setDrawerTab('profile');
     setRevealId(next.revealId);
+  };
+
+  const toggleDrawer = (leadId: string) => {
+    setDrawerId((current) => (current === leadId ? null : leadId));
   };
 
   const change = (row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput) => {
@@ -622,7 +670,17 @@ export function CustomerCrmPanel() {
   };
 
   const canPurge = Boolean(meta?.canDelete && getCrmApi()?.purgeLead);
-  const shown = crmVisibleRows(rows, filter, now, expandedId);
+  const pageSources = meta?.pageSources ?? NO_PAGE_SOURCES;
+  const pageOptions = useMemo(
+    () => crmPageOptions(rows, pageSources, fallbackPage),
+    [rows, pageSources, fallbackPage],
+  );
+  const pageLabelOf = useCallback(
+    (pageId: string) => resolveCrmPageLabel(pageId, pageSources, fallbackPage),
+    [pageSources, fallbackPage],
+  );
+
+  const shown = crmVisibleRows(rows, filter, now, drawerId);
   const todayCount = crmCallTodayCount(rows, now);
 
   /**
@@ -641,8 +699,13 @@ export function CustomerCrmPanel() {
   );
 
   const stageFilteredLiveRows = useMemo(
-    () => crmGraphRows(liveRows, filter.stage),
-    [liveRows, filter.stage],
+    () => crmFilterRows(liveRows, filter),
+    [liveRows, filter],
+  );
+
+  const lifecycleLiveRows = useMemo(
+    () => crmFilterRows(liveRows, filter, { ignoreStage: true }),
+    [liveRows, filter],
   );
 
   const troubledRow = useMemo(
@@ -651,13 +714,26 @@ export function CustomerCrmPanel() {
   );
   const troubledEdit = troubledRow ? edits[troubledRow.leadId] ?? null : null;
 
+  const drawerRow = useMemo(
+    () => (drawerId === null ? null : rows.find((item) => item.leadId === drawerId) ?? null),
+    [rows, drawerId],
+  );
+  const drawerIndex = drawerRow ? shown.findIndex((item) => item.leadId === drawerRow.leadId) : -1;
+  const hasPrev = drawerIndex > 0;
+  const hasNext = drawerIndex >= 0 && drawerIndex < shown.length - 1;
+
+  const hasActiveFilters = (filter.pageId ?? 'any') !== 'any'
+    || filter.stage !== 'any'
+    || (filter.persona ?? 'any') !== 'any'
+    || (filter.query?.trim() ?? '') !== '';
+
   return (
     <section className="v2-crm" aria-labelledby="v2-crm-title">
       <header className="v2-crm__header">
-        <div>
+        <div className="v2-crm__heading">
           <h2 id="v2-crm-title" className="v2-crm__title">Khách để lại số</h2>
           <p className="v2-crm__lead">
-            Hồ sơ khách và chân dung AI (chỉ khi khách đồng ý) — phục vụ Saler, tối ưu Ads, chăm sóc hậu bán &amp; đồng bộ số liệu ẩn danh lên MyGraph.
+            CRM đa Page &amp; Nhận diện (AI) khi khách đồng ý — Saler, Ads SHA-256, Hậu mãi &amp; MyGraph.
           </p>
         </div>
         {phase.state === 'ready' && (
@@ -723,13 +799,14 @@ export function CustomerCrmPanel() {
               savedRows={rows}
               products={products}
               nowMs={now}
+              pageCount={pageOptions.length}
               identityState={adsIdentityState}
               display={display}
-              onSelectDisplay={setDisplay}
+              onSelectDisplay={selectDisplay}
             />
           )}
 
-          <div className="v2-crm__toolbar">
+          <div className="v2-crm__toolbar" role="search" aria-label="Thanh điều hướng và bộ lọc CRM">
             <div className="v2-crm__views">
               <CustomerCrmDisplaySwitch display={display} onChange={setDisplay} />
               {display === 'table' && (
@@ -740,7 +817,7 @@ export function CustomerCrmPanel() {
                     aria-pressed={filter.view === 'today'}
                     onClick={() => setFilter((current) => ({ ...current, view: 'today' }))}
                   >
-                    Cần gọi hôm nay ({todayCount})
+                    {`Hôm nay (${todayCount})`}
                   </button>
                   <button
                     type="button"
@@ -748,27 +825,110 @@ export function CustomerCrmPanel() {
                     aria-pressed={filter.view === 'all'}
                     onClick={() => setFilter((current) => ({ ...current, view: 'all' }))}
                   >
-                    Tất cả ({rows.length})
+                    {`Tất cả (${rows.length})`}
                   </button>
                 </div>
               )}
             </div>
-            {(display === 'table' || display === 'graph' || display === 'saler') && (
-              <label className="v2-crm__filter" htmlFor="v2-crm-stage-filter">
-                <span className="v2-field__label">Giai đoạn</span>
-                <select
-                  id="v2-crm-stage-filter"
-                  className="v2-field__select"
-                  value={filter.stage}
-                  onChange={(event) => {
-                    const stage = event.currentTarget.value as CustomerCareCrmStage | 'any';
-                    setFilter((current) => ({ ...current, stage }));
-                  }}
-                >
-                  <option value="any">Tất cả giai đoạn</option>
-                  {CRM_STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
+
+            {display !== 'ads' && (
+              <div className="v2-crm__controls">
+                {(display === 'table' || display === 'saler' || display === 'lifecycle') && (
+                  <label className="v2-crm__inline-filter v2-crm__inline-filter--search" htmlFor="v2-crm-search">
+                    <span className="v2-visually-hidden">Tìm khách theo tên, SĐT hoặc ghi chú</span>
+                    <input
+                      id="v2-crm-search"
+                      type="search"
+                      className="v2-field__input"
+                      placeholder="Tìm tên, SĐT, ghi chú…"
+                      value={filter.query ?? ''}
+                      onChange={(event) => {
+                        const query = event.currentTarget.value;
+                        setFilter((current) => ({ ...current, query }));
+                      }}
+                    />
+                  </label>
+                )}
+
+                {pageOptions.length > 0 && (
+                  <label className="v2-crm__inline-filter" htmlFor="v2-crm-page-filter">
+                    <span className="v2-visually-hidden">Nguồn Page</span>
+                    <select
+                      id="v2-crm-page-filter"
+                      className="v2-field__select"
+                      value={filter.pageId ?? 'any'}
+                      onChange={(event) => {
+                        const pageId = event.currentTarget.value;
+                        setFilter((current) => ({ ...current, pageId }));
+                      }}
+                    >
+                      <option value="any">{`Tất cả Page (${pageOptions.length})`}</option>
+                      {pageOptions.map((opt) => (
+                        <option key={opt.pageId} value={opt.pageId}>
+                          {`${opt.label} (${opt.count})`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {(display === 'table' || display === 'graph' || display === 'saler') && (
+                  <label className="v2-crm__inline-filter" htmlFor="v2-crm-stage-filter">
+                    <span className="v2-visually-hidden">Giai đoạn</span>
+                    <select
+                      id="v2-crm-stage-filter"
+                      className="v2-field__select"
+                      value={filter.stage}
+                      onChange={(event) => {
+                        const stage = event.currentTarget.value as CustomerCareCrmStage | 'any';
+                        setFilter((current) => ({ ...current, stage }));
+                      }}
+                    >
+                      <option value="any">Tất cả giai đoạn</option>
+                      {CRM_STAGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {(display === 'table' || display === 'saler' || display === 'lifecycle') && (
+                  <label className="v2-crm__inline-filter" htmlFor="v2-crm-persona-filter">
+                    <span className="v2-visually-hidden">Chân dung P1 đến P4</span>
+                    <select
+                      id="v2-crm-persona-filter"
+                      className="v2-field__select"
+                      value={filter.persona ?? 'any'}
+                      onChange={(event) => {
+                        const persona = event.currentTarget.value as CrmPersonaFilter;
+                        setFilter((current) => ({ ...current, persona }));
+                      }}
+                    >
+                      <option value="any">Mọi chân dung P1–P4</option>
+                      {CRM_PERSONA_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{`${opt.value} · ${opt.shortLabel}`}</option>
+                      ))}
+                      <option value="unclassified">Chưa phân nhóm</option>
+                    </select>
+                  </label>
+                )}
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    className="v2-button v2-button--ghost"
+                    onClick={() => setFilter((current) => ({
+                      ...current,
+                      stage: 'any',
+                      pageId: 'any',
+                      persona: 'any',
+                      query: '',
+                    }))}
+                  >
+                    Xoá lọc
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -797,7 +957,7 @@ export function CustomerCrmPanel() {
           ) : display === 'saler' ? (
             stageFilteredLiveRows.length === 0 ? (
               <div className="v2-empty">
-                <p>Không có khách nào khớp bộ lọc giai đoạn.</p>
+                <p>Không có khách nào khớp bộ lọc.</p>
               </div>
             ) : (
               <CrmSalerWorkspace
@@ -808,6 +968,7 @@ export function CustomerCrmPanel() {
                 edits={edits}
                 nowMs={now}
                 identityEnabled={identityEnabled}
+                resolvePageLabel={pageLabelOf}
                 onChangeProfile={change}
                 onCopyText={(text, msg) => { void copyText(text, msg); }}
                 onOpenProfile={openProfile}
@@ -831,63 +992,104 @@ export function CustomerCrmPanel() {
             />
           ) : display === 'lifecycle' ? (
             <CrmLifecycleWorkspace
-              rows={liveRows}
+              rows={lifecycleLiveRows}
               products={products}
               nowMs={now}
               identityEnabled={identityEnabled}
+              resolvePageLabel={pageLabelOf}
               onChangeProfile={change}
               onCopyText={(text, msg) => { void copyText(text, msg); }}
               onOpenProfile={openProfile}
             />
           ) : shown.length === 0 ? (
             <div className="v2-empty">
-              <p>{filter.view === 'today' && filter.stage === 'any' ? 'Hôm nay chưa có khách cần gọi.' : 'Không có khách nào khớp bộ lọc.'}</p>
+              <p>{filter.view === 'today' && !hasActiveFilters ? 'Hôm nay chưa có khách cần gọi.' : 'Không có khách nào khớp bộ lọc.'}</p>
             </div>
           ) : (
-            <div className="v2-crm__table-wrap">
-              <table className="v2-crm__table">
-                <caption className="v2-visually-hidden">
-                  Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Khách</th>
-                    <th scope="col">Giai đoạn</th>
-                    <th scope="col">Phụ trách</th>
-                    <th scope="col">Việc tiếp theo</th>
-                    <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
-                    <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((row) => {
-                    const edit = edits[row.leadId] ?? null;
-                    return (
-                      <CustomerCrmRow
-                        key={row.leadId}
-                        row={row}
-                        profile={edit?.draft ?? profileFromRow(row)}
-                        edit={edit}
-                        saving={savingIds.has(row.leadId)}
-                        expanded={expandedId === row.leadId}
-                        nowMs={now}
-                        assignees={meta?.assignees ?? []}
-                        products={products}
-                        canDelete={canPurge}
-                        purging={purgingId === row.leadId}
-                        onChange={(profile) => change(row, profile)}
-                        onToggle={() => setExpandedId((current) => (current === row.leadId ? null : row.leadId))}
-                        onSave={() => queueRef.current?.saveNow(row.leadId)}
-                        onCopy={() => { void copyPhone(row); }}
-                        onPurge={() => { void purge(row); }}
-                        onReapply={() => reapply(row)}
-                        onDiscard={() => discard(row)}
-                        identityHandlers={identityHandlers}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className={`v2-crm__master-detail${drawerRow ? ' has-drawer' : ''}`}>
+              <div className="v2-crm__table-wrap">
+                <table className="v2-crm__table">
+                  <caption className="v2-visually-hidden">
+                    Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Khách &amp; Page</th>
+                      <th scope="col">Phân khúc</th>
+                      <th scope="col">Giai đoạn</th>
+                      <th scope="col">Phụ trách</th>
+                      <th scope="col">Việc tiếp theo</th>
+                      <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
+                      <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((row) => {
+                      const edit = edits[row.leadId] ?? null;
+                      return (
+                        <CustomerCrmRow
+                          key={row.leadId}
+                          row={row}
+                          profile={edit?.draft ?? profileFromRow(row)}
+                          edit={edit}
+                          saving={savingIds.has(row.leadId)}
+                          expanded={false}
+                          selected={drawerId === row.leadId}
+                          pageLabel={pageLabelOf(row.pageId)}
+                          showSegmentColumn
+                          nowMs={now}
+                          assignees={meta?.assignees ?? []}
+                          products={products}
+                          canDelete={canPurge}
+                          purging={purgingId === row.leadId}
+                          onChange={(profile) => change(row, profile)}
+                          onToggle={() => toggleDrawer(row.leadId)}
+                          onSave={() => queueRef.current?.saveNow(row.leadId)}
+                          onCopy={() => { void copyPhone(row); }}
+                          onPurge={() => { void purge(row); }}
+                          onReapply={() => reapply(row)}
+                          onDiscard={() => discard(row)}
+                          identityHandlers={identityHandlers}
+                        />
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {drawerRow && (
+                <CustomerCrmDrawer
+                  row={drawerRow}
+                  profile={edits[drawerRow.leadId]?.draft ?? profileFromRow(drawerRow)}
+                  edit={edits[drawerRow.leadId] ?? null}
+                  saving={savingIds.has(drawerRow.leadId)}
+                  nowMs={now}
+                  pageLabel={pageLabelOf(drawerRow.pageId)}
+                  assignees={meta?.assignees ?? NO_ASSIGNEES}
+                  products={products}
+                  canDelete={canPurge}
+                  purging={purgingId === drawerRow.leadId}
+                  identityHandlers={identityHandlers}
+                  tab={drawerTab}
+                  onTabChange={setDrawerTab}
+                  positionLabel={drawerIndex >= 0 ? `${drawerIndex + 1}/${shown.length}` : undefined}
+                  hasPrev={hasPrev}
+                  hasNext={hasNext}
+                  onPrev={() => {
+                    if (hasPrev) setDrawerId(shown[drawerIndex - 1]!.leadId);
+                  }}
+                  onNext={() => {
+                    if (hasNext) setDrawerId(shown[drawerIndex + 1]!.leadId);
+                  }}
+                  onClose={() => setDrawerId(null)}
+                  onChange={(profile) => change(drawerRow, profile)}
+                  onSave={() => queueRef.current?.saveNow(drawerRow.leadId)}
+                  onCopy={() => { void copyPhone(drawerRow); }}
+                  onPurge={() => { void purge(drawerRow); }}
+                  onReapply={() => reapply(drawerRow)}
+                  onDiscard={() => discard(drawerRow)}
+                />
+              )}
             </div>
           )}
 
