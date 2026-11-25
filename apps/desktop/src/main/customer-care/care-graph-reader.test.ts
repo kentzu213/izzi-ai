@@ -62,7 +62,7 @@ describe('readCareGraph', () => {
 
     // Assert
     const expected = buildCareGraphNodes(SOURCE, WS, asOf).map((node) => node.metadata);
-    expect(view).toEqual({ process: expected[0], facts: expected[1], results: expected[2] });
+    expect(view).toEqual({ process: expected[0], facts: expected[1], results: expected[2], crmSegments: null });
   });
 
   it('returns null when the cache is missing, not a list, or has no Care node for the workspace', () => {
@@ -102,6 +102,29 @@ describe('readCareGraph', () => {
 
     // Assert
     expect(view?.results?.leads7d).toBe(9);
+  });
+
+  it('parses valid care-crm-segments metadata and drops malformed segment counts', () => {
+    const asOf = new Date(NOW).toISOString();
+    const withCrm: CareGraphSource = {
+      ...SOURCE,
+      crmSegments: {
+        totalLeads: 20,
+        leadsCapped: false,
+        byStage: { has_phone: 5, consulting: 8, deposit: 2, delivered: 3, lost: 1, do_not_contact: 1 },
+        byPersona: { P1: 9, P2: 5, P3: 2, P4: 2, unclassified: 2 },
+        adsBuckets: { highIntent: 13, vipLookalike: 5, reengageLost: 1, consented: 8, suppressed: 1 },
+        lifecycleDue: { postSale: 2, remarketing: 3 },
+      },
+    };
+    const nodes = cachedNodes(withCrm, WS, asOf);
+    const view = readCareGraph(nodes, WS);
+    expect(view?.crmSegments?.totalLeads).toBe(20);
+    expect(view?.crmSegments?.byPersona.P1).toBe(9);
+
+    const segNode = nodes.find((n) => (n.metadata as { kind?: string }).kind === 'care-crm-segments')!;
+    const malformed = [{ ...segNode, metadata: { ...segNode.metadata, byPersona: { P1: -5 } } }];
+    expect(readCareGraph(malformed, WS)).toBeNull();
   });
 });
 
@@ -181,5 +204,26 @@ describe('careDirectorContext', () => {
     // Assert
     expect(text).toContain('24 giờ qua: chưa đọc được số tin izzi gửi.');
     expect(text).toContain('7 ngày qua: 3 khách để lại số');
+  });
+
+  it('adds CRM segment summary and Director Ads/Lifecycle guidance when crmSegments is fresh (<48h), and omits it when stale', () => {
+    const crmSegments = {
+      totalLeads: 24,
+      leadsCapped: false,
+      byStage: { has_phone: 6, consulting: 9, deposit: 3, delivered: 4, lost: 1, do_not_contact: 1 },
+      byPersona: { P1: 11, P2: 6, P3: 2, P4: 3, unclassified: 2 },
+      adsBuckets: { highIntent: 15, vipLookalike: 7, reengageLost: 1, consented: 10, suppressed: 1 },
+      lifecycleDue: { postSale: 3, remarketing: 4 },
+    };
+
+    const freshText = directorText({ ...SOURCE, crmSegments }, NOW);
+    expect(freshText).toContain('Phân khúc CRM (24 khách');
+    expect(freshText).toContain('P1 (Gia chủ nhà mới / Sắm chính');
+    expect(freshText).toContain('Lookalike 1%–3%');
+    expect(freshText).toContain('3 lịch Hậu mãi');
+
+    const staleText = directorText({ ...SOURCE, crmSegments }, NOW - 49 * HOUR);
+    expect(staleText).not.toContain('Phân khúc CRM (24 khách');
+    expect(staleText).not.toContain('Lookalike 1%–3%');
   });
 });

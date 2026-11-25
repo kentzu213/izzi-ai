@@ -8,9 +8,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCareAuthority,
   CustomerCareAutoReplyState,
+  CustomerCareCrmRow,
   CustomerCareSetup,
 } from '../../shared/customer-care-types';
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
+import type { CareCrmGateway, CareCrmPage } from './care-crm';
+import { buildCareGraphNodes, careWorkspaceKey } from './care-graph-digest';
 import type {
   CareAutoReplyGateway,
   CareAutoReplyScript,
@@ -86,7 +89,7 @@ class FakeAutoReply implements CareAutoReplyGateway {
   async setAutoReply(_workspaceId: string, _enabled: boolean, _script: CareAutoReplyScript | null) { return this.setResult; }
 }
 
-function fixture(authority: CustomerCareAuthority | null = OWNER) {
+function fixture(authority: CustomerCareAuthority | null = OWNER, crm?: CareCrmGateway) {
   const facebook = new FakeFacebook();
   const autoReply = new FakeAutoReply();
   const onCareChanged = vi.fn();
@@ -98,6 +101,7 @@ function fixture(authority: CustomerCareAuthority | null = OWNER) {
     now: () => NOW,
     facebook: facebook as unknown as CareFacebookGateway,
     autoReply,
+    crm,
     onCareChanged,
   });
   return { service, facebook, autoReply, onCareChanged };
@@ -121,6 +125,7 @@ describe('CustomerCareService.readGraphSnapshot', () => {
         page: 'connected',
         facts: { byTopic: { catalog: 0, price: 1, quality: 0, policy: 0, contact: 1 }, expired: 0, handoffSet: true },
         autoReply: STATE,
+        crmSegments: null,
       },
     });
     const serialized = JSON.stringify(snapshot);
@@ -188,6 +193,87 @@ describe('CustomerCareService.readGraphSnapshot', () => {
     // Assert
     expect(withoutPage).toBeNull();
     expect(withoutSwitch).toBeNull();
+  });
+
+  it('aggregates crmSegments best-effort with 0% PII, and preserves the 3 Care nodes when CRM fails', async () => {
+    const row: CustomerCareCrmRow = {
+      leadId: '44444444-4444-4444-8444-444444444444',
+      pageId: PAGE_ID,
+      customerName: 'Nguyễn Văn Hùng',
+      phone: '0901234567',
+      zaloMentioned: true,
+      leadStatus: 'contacted',
+      phoneCapturedAt: '2026-11-18T10:00:00.000Z',
+      lastMessageAt: '2026-11-19T02:00:00.000Z',
+      recentMessages: [{ text: 'Anh sn 1988 cần mua bộ đồ thờ cho nhà mới số 0901234567', at: '2026-11-19T02:00:00.000Z' }],
+      profile: {
+        stage: 'consulting',
+        ownerUserId: null,
+        addressForm: 'anh',
+        occasion: 'new_home',
+        neededBy: '2026-12-15',
+        productFactIds: ['gia'],
+        nextStep: 'Gọi tư vấn gỗ gụ',
+        nextStepDueAt: '2026-11-19T08:00:00.000Z',
+        lostReason: null,
+        purchasedAt: null,
+        note: 'Khách thiện chí ở Quận 7\n[izzi-ctx: v=1; consent=granted]',
+        updatedAt: '2026-11-19T03:00:00.000Z',
+        updatedBy: null,
+      },
+    };
+    const crmPage: CareCrmPage = {
+      role: 'owner',
+      canDelete: true,
+      rows: [row],
+      nextCursor: 'next-page-token',
+      assignees: [],
+    };
+    const okCrm: CareCrmGateway = {
+      listCrm: async () => ({ ok: true, value: crmPage }),
+      saveCrmProfile: async () => ({ ok: false, error: 'unsupported' }),
+    };
+    const failingCrm: CareCrmGateway = {
+      listCrm: async () => ({ ok: false, error: 'unavailable' }),
+      saveCrmProfile: async () => ({ ok: false, error: 'unavailable' }),
+    };
+
+    const withCrm = fixture(OWNER, okCrm);
+    await withCrm.service.saveSetup(SETUP);
+    const snapOk = await withCrm.service.readGraphSnapshot();
+    expect(snapOk?.source.crmSegments).toEqual({
+      totalLeads: 1,
+      leadsCapped: true,
+      byStage: { has_phone: 0, consulting: 1, deposit: 0, delivered: 0, lost: 0, do_not_contact: 0 },
+      byPersona: { P1: 1, P2: 0, P3: 0, P4: 0, unclassified: 0 },
+      adsBuckets: { highIntent: 1, vipLookalike: 0, reengageLost: 0, consented: 1, suppressed: 0 },
+      lifecycleDue: { postSale: 0, remarketing: 0 },
+    });
+
+    const graphNodes = buildCareGraphNodes(
+      { ...snapOk!.source, leads: { last24h: 1, last7d: 1, open: 0, capped: false } },
+      careWorkspaceKey(OWNER.identityId, WORKSPACE),
+      NOW.toISOString(),
+    );
+    const serializedNodes = JSON.stringify(graphNodes);
+    for (const secret of [
+      '0901234567',
+      'Nguyễn Văn Hùng',
+      'Quận 7',
+      '44444444-4444-4444-8444-444444444444',
+      WORKSPACE,
+      PAGE_ID,
+    ]) {
+      expect(serializedNodes).not.toContain(secret);
+    }
+    expect(serializedNodes).not.toMatch(/\d{8,}/);
+
+    const withDownCrm = fixture(OWNER, failingCrm);
+    await withDownCrm.service.saveSetup(SETUP);
+    const snapFallback = await withDownCrm.service.readGraphSnapshot();
+    expect(snapFallback).not.toBeNull();
+    expect(snapFallback?.source.crmSegments).toBeNull();
+    expect(snapFallback?.source.page).toBe('connected');
   });
 });
 

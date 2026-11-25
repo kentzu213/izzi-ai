@@ -1,4 +1,4 @@
-import type { Ref } from 'react';
+import type { ReactNode, Ref } from 'react';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
 import { formatLeadPhone } from './customer-care-leads-flow';
 import {
@@ -23,6 +23,7 @@ export interface CustomerCrmCardProps {
   onClose: () => void;
   /** Focus moves here when the card opens. */
   cardRef?: Ref<HTMLElement>;
+  extraSection?: ReactNode;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
@@ -42,7 +43,7 @@ function IdentityMarks({ line }: { line: CrmIdentityLine }) {
  * Editing stays in the table ("Mở hồ sơ").
  */
 export function CustomerCrmCard({
-  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef,
+  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef, extraSection,
 }: CustomerCrmCardProps) {
   const { profile } = row;
   const name = crmCustomerLabel(row);
@@ -152,6 +153,8 @@ export function CustomerCrmCard({
           )}
         </section>
       )}
+
+      {extraSection}
 
       <div className="v2-crm-card__actions">
         <button type="button" className="v2-button v2-button--primary" onClick={onOpenProfile}>Mở hồ sơ</button>

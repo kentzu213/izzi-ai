@@ -54,6 +54,7 @@ import {
   parseCareLeadStatusInput,
 } from './care-leads';
 import {
+  CARE_CRM_PAGE_SIZE,
   canUseCareCrm,
   copyCareCrmProfile,
   copyCareCrmRow,
@@ -67,7 +68,8 @@ import {
   derivePageBlockers,
   toCustomerCarePageConnection,
 } from './care-page-connection';
-import { carePageState, countCareFacts, type CareGraphSnapshot } from './care-graph-digest';
+import { carePageState, countCareFacts, type CareCrmSegmentSummary, type CareGraphSnapshot } from './care-graph-digest';
+import { summarizeCareCrmSegments } from '../../shared/customer-crm-enterprise';
 import { OAUTH_CODE_PATTERN, OAUTH_STATE_PATTERN } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_ACCESS_CHANGED_ERROR,
@@ -868,6 +870,23 @@ export class CustomerCareService {
       if (!result.ok) return null;
       autoReply = result.value ? copyCareAutoReplyState(result.value) : null;
     }
+    const nowMs = this.now().getTime();
+    let crmSegments: CareCrmSegmentSummary | null = null;
+    const crmGateway = this.crm;
+    if (crmGateway && canUseCareCrm(authority.role)) {
+      const crmResult = await this.runFacebookCall(authority, () => crmGateway.listCrm(authority.workspaceId, null));
+      if (!crmResult.ok && crmResult.error === 'access_changed') return null;
+      if (crmResult.ok) {
+        const page = crmResult.value;
+        const products = setup
+          ? setup.facts
+            .filter((fact) => (fact.topic === 'catalog' || fact.topic === 'price') && isActive(fact, nowMs))
+            .map((fact) => ({ id: fact.id, label: fact.text }))
+          : [];
+        const capped = page.nextCursor !== null || page.rows.length >= CARE_CRM_PAGE_SIZE;
+        crmSegments = summarizeCareCrmSegments(page.rows, products, nowMs, capped);
+      }
+    }
     return {
       identityId: authority.identityId,
       workspaceId: authority.workspaceId,
@@ -875,9 +894,10 @@ export class CustomerCareService {
         pageName: connection.state === 'connected' ? connection.pageName : null,
         page: carePageState(connection),
         facts: setup
-          ? { ...countCareFacts(setup.facts, this.now().getTime()), handoffSet: setup.handoffTarget.trim() !== '' }
+          ? { ...countCareFacts(setup.facts, nowMs), handoffSet: setup.handoffTarget.trim() !== '' }
           : null,
         autoReply,
+        crmSegments,
       },
     };
   }
