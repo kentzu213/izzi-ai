@@ -29,6 +29,7 @@ import {
   type CareFacebookResult,
 } from './care-facebook-client';
 import {
+  CARE_CRM_REQUEST_PAGE_SIZE,
   parseCareCrmConflictBody,
   parseCareCrmListBody,
   parseCareCrmSaveBody,
@@ -114,6 +115,11 @@ export class CareCrmClient implements CareCrmGateway {
    * asking for `pages` for 5 minutes (or until `retryIdentity` / scope change) so multi-page loads do not burn 400s.
    */
   private pagesBackoff: { scope: string; until: number } | null = null;
+  /**
+   * When an older backend rejects `limit=100` with `invalid_request`, skip sending `limit=100` for 5 minutes
+   * (or until `retryIdentity` / scope change) so subsequent pages use the server's default page size cleanly.
+   */
+  private limitBackoff: { scope: string; until: number } | null = null;
 
   constructor(
     private readonly auth: NativeMarketingTokenProvider,
@@ -139,31 +145,62 @@ export class CareCrmClient implements CareCrmGateway {
     // A workspace or account switch starts afresh.
     if (this.identityBackoff !== null && this.identityBackoff.scope !== scope) this.identityBackoff = null;
     if (this.pagesBackoff !== null && this.pagesBackoff.scope !== scope) this.pagesBackoff = null;
+    if (this.limitBackoff !== null && this.limitBackoff.scope !== scope) this.limitBackoff = null;
     const now = Date.now();
     const paused = this.identityBackoff !== null && now < this.identityBackoff.until && options.retryIdentity !== true;
     const skipPages = this.pagesBackoff !== null && now < this.pagesBackoff.until && options.retryIdentity !== true;
+    const skipLimit = this.limitBackoff !== null && now < this.limitBackoff.until && options.retryIdentity !== true;
     let identityFailed = false;
+    let limitRejected = false;
     if (!paused) {
-      const firstInclude = skipPages ? 'identity' : 'identity,pages';
-      let result = await this.request('crm', `${path}&include=${firstInclude}${query}`, {}, { raw: true });
-      if (!result.ok) return result;
+      let usePages = !skipPages;
+      let useLimit = !skipLimit;
       let pagesRejected = false;
+      const buildIncludePath = (inc: string, withLimit: boolean) =>
+        `${path}&include=${inc}${withLimit ? `&limit=${CARE_CRM_REQUEST_PAGE_SIZE}` : ''}${query}`;
+      let result = await this.request(
+        'crm',
+        buildIncludePath(usePages ? 'identity,pages' : 'identity', useLimit),
+        {},
+        { raw: true },
+      );
+      if (!result.ok) return result;
       if (
-        firstInclude === 'identity,pages'
+        useLimit
         && (result.status === 400 || result.status === 422)
         && rejectReasonOf(result.body) === 'invalid_request'
       ) {
+        useLimit = false;
+        limitRejected = true;
+        result = await this.request(
+          'crm',
+          buildIncludePath(usePages ? 'identity,pages' : 'identity', false),
+          {},
+          { raw: true },
+        );
+        if (!result.ok) return result;
+      }
+      if (
+        usePages
+        && (result.status === 400 || result.status === 422)
+        && rejectReasonOf(result.body) === 'invalid_request'
+      ) {
+        usePages = false;
         pagesRejected = true;
-        result = await this.request('crm', `${path}&include=identity${query}`, {}, { raw: true });
+        result = await this.request('crm', buildIncludePath('identity', useLimit), {}, { raw: true });
         if (!result.ok) return result;
       }
       if (result.status >= 200 && result.status < 300) {
         const page = parseCareCrmListBody(result.body, workspaceId);
         if (!page) return INVALID_RESPONSE;
+        const backoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
         this.identityBackoff = null;
+        this.limitBackoff = limitRejected
+          ? { scope, until: backoffUntil }
+          : (!skipLimit ? null : this.limitBackoff);
         this.pagesBackoff = pagesRejected
-          ? { scope, until: Date.now() + IDENTITY_BACKOFF_MS }
-          : (firstInclude === 'identity,pages' ? null : this.pagesBackoff);
+          ? { scope, until: backoffUntil }
+          : (!skipPages ? null : this.pagesBackoff);
         return { ok: true, value: page };
       }
       if (result.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
@@ -171,13 +208,31 @@ export class CareCrmClient implements CareCrmGateway {
       // The identity read failed: the CRM is read once more without it.
       identityFailed = true;
     }
-    const result = await this.request('crm', `${path}${query}`);
+    let result: CrmResponse;
+    if (!identityFailed && !skipLimit) {
+      const rawLimit = await this.request('crm', `${path}&limit=${CARE_CRM_REQUEST_PAGE_SIZE}${query}`, {}, { raw: true });
+      if (!rawLimit.ok) return rawLimit;
+      if ((rawLimit.status === 400 || rawLimit.status === 422) && rejectReasonOf(rawLimit.body) === 'invalid_request') {
+        limitRejected = true;
+        result = await this.request('crm', `${path}${query}`);
+      } else if (rawLimit.status === RATE_LIMIT_STATUS) {
+        return RATE_LIMITED;
+      } else if (rawLimit.status >= 200 && rawLimit.status < 300) {
+        result = rawLimit;
+      } else {
+        return careFacebookFailure(rawLimit.status, rawLimit.body);
+      }
+    } else {
+      result = await this.request('crm', `${path}${query}`);
+    }
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) return INVALID_RESPONSE;
     const page = parseCareCrmListBody(result.body, workspaceId);
     if (!page) return INVALID_RESPONSE;
+    const backoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
+    if (limitRejected) this.limitBackoff = { scope, until: backoffUntil };
     // Only a failure the read without identity got past pauses the identity read; any other failure is retried next time.
-    if (identityFailed) this.identityBackoff = { scope, until: Date.now() + IDENTITY_BACKOFF_MS };
+    if (identityFailed) this.identityBackoff = { scope, until: backoffUntil };
     return { ok: true, value: { ...page, identityUnavailable: true } };
   }
 

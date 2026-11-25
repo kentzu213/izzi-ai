@@ -12,6 +12,7 @@ const METHODS = [
   'assist',
   'connectFacebookPage',
   'selectFacebookPage',
+  'getBackfillStatus',
   'disconnectFacebookPage',
   'takeFacebookPageChoices',
   'getFacebookInbox',
@@ -30,7 +31,7 @@ const METHODS = [
 export function registerCustomerCareIpc(
   service: Pick<
     CustomerCareService,
-    | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'disconnectFacebookPage'
+    | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'getBackfillStatus' | 'disconnectFacebookPage'
     | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
     | 'getAutoReply' | 'setAutoReply' | 'listCrm' | 'saveCrmProfile' | 'identityAction' | 'refreshIdentity'
   >,
@@ -45,6 +46,7 @@ export function registerCustomerCareIpc(
         // The renderer never supplies workspace, identity, state or code; main resolves them itself.
         if (method === 'connectFacebookPage') return await facebook.connect();
         if (method === 'selectFacebookPage') return await service.selectFacebookPage(input);
+        if (method === 'getBackfillStatus') return await service.getBackfillStatus();
         if (method === 'disconnectFacebookPage') return await service.disconnectFacebookPage();
         // Take-once: the buffered deep-link outcome is cleared as it is handed out.
         if (method === 'takeFacebookPageChoices') return await facebook.takeChoices();

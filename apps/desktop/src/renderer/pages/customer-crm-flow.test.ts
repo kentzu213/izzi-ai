@@ -25,6 +25,7 @@ import {
   crmEditOnReapply,
   crmFailureView,
   crmFieldVisibility,
+  crmPage1NeedsFullReload,
   crmPageOptions,
   crmProductOptions,
   crmRefreshCooldownLeft,
@@ -38,9 +39,13 @@ import {
   crmShouldLoadOnShow,
   crmShouldSkipNextTick,
   crmVisibleRows,
+  effectiveCrmRenderLimit,
   formatCrmDue,
+  mergeCrmPageSources,
+  PAGE_RENDER_STEP,
   resolveCrmPageLabel,
   snapshotPageFallback,
+  snapshotPageSources,
   isCallToday,
   isoToLocalInput,
   loadCrmPages,
@@ -569,7 +574,8 @@ describe('paging', () => {
     expect(await loadCrmPages(async () => ok([row()], null, WORKSPACE, true))).toMatchObject({ ok: true, identityUnavailable: false });
   });
 
-  it('loads at most 10 pages and reports the list as cut off', async () => {
+  it('loads up to 50 pages (5,000 customers) and reports the list as cut off when more remain', async () => {
+    expect(CRM_MAX_PAGES).toBe(50);
     const cursors: (string | null)[] = [];
     const result = await loadCrmPages(async ({ cursor }) => {
       cursors.push(cursor);
@@ -579,6 +585,19 @@ describe('paging', () => {
     expect(cursors[0]).toBeNull();
     expect(result).toMatchObject({ ok: true, truncated: true, pages: CRM_MAX_PAGES, complete: false });
     if (result.ok) expect(result.rows).toHaveLength(CRM_MAX_PAGES);
+  });
+
+  it('loads 850 customers across 9 pages of 100 without truncation', async () => {
+    const pageBatches = Array.from({ length: 9 }, (_, pageIdx) => {
+      const count = pageIdx < 8 ? 100 : 50;
+      return ok(
+        Array.from({ length: count }, () => row()),
+        pageIdx < 8 ? `c${pageIdx + 1}` : null,
+      );
+    });
+    const result = await loadCrmPages(async () => pageBatches.shift()!);
+    expect(result).toMatchObject({ ok: true, pages: 9, complete: true, truncated: false });
+    if (result.ok) expect(result.rows).toHaveLength(850);
   });
 
   it('stops at the last page and removes a row repeated on the next page', async () => {
@@ -596,9 +615,33 @@ describe('paging', () => {
     expect(result).toMatchObject({ ok: true, pages: 1, complete: false, truncated: true });
   });
 
-  it('fails when a page fails or answers for another workspace', async () => {
-    const pages: CustomerCareCrmListResult[] = [ok([row()], 'c1'), { ok: false, error: 'unavailable' }];
-    expect(await loadCrmPages(async () => pages.shift()!)).toEqual({ ok: false, error: 'unavailable' });
+  it('keeps rows loaded so far on a transient page > 0 error, while failing closed on page 0, lost access, workspace switch, or strictAllPages', async () => {
+    // Page 0 failure fails closed
+    expect(await loadCrmPages(async () => ({ ok: false, error: 'unavailable' }))).toEqual({ ok: false, error: 'unavailable' });
+
+    // Resilient pagination: page 1 succeeds, page 2 hits transient network timeout => preserves page 1 rows with truncated + partialFailure
+    const firstRow = row();
+    const transientPages: CustomerCareCrmListResult[] = [ok([firstRow], 'c1'), { ok: false, error: 'unavailable' }];
+    expect(await loadCrmPages(async () => transientPages.shift()!)).toMatchObject({
+      ok: true,
+      rows: [firstRow],
+      pages: 1,
+      complete: false,
+      truncated: true,
+      partialFailure: { ok: false, error: 'unavailable' },
+    });
+
+    // strictAllPages (Ads CSV export) still fails closed on page > 0 transient error
+    const strictPages: CustomerCareCrmListResult[] = [ok([firstRow], 'c1'), { ok: false, error: 'unavailable' }];
+    expect(await loadCrmPages(async () => strictPages.shift()!, CRM_MAX_PAGES, { strictAllPages: true }))
+      .toEqual({ ok: false, error: 'unavailable' });
+
+    // Auth / forbidden / access_changed on page > 0 still fail closed immediately
+    for (const error of ['auth', 'forbidden', 'access_changed'] as const) {
+      const authPages: CustomerCareCrmListResult[] = [ok([firstRow], 'c1'), { ok: false, error }];
+      expect(await loadCrmPages(async () => authPages.shift()!)).toEqual({ ok: false, error });
+    }
+
     const switched = [ok([row()], 'c1'), ok([row()], null, '22222222-2222-4222-8222-222222222222')];
     expect(await loadCrmPages(async () => switched.shift()!)).toEqual({ ok: false, error: 'access_changed' });
   });
@@ -800,5 +843,59 @@ describe('multi-Page source attribution and unified filter bar', () => {
       { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
       { pageId: PAGE_DO_DONG_DAI_LONG, pageName: 'Đồ đồng Đại Long' },
     ]);
+  });
+
+  it('extracts all 3 connected Pages from snapshot (primary + crmPages) and keeps 3 Page options even when leads so far come from 1 Page', () => {
+    const snapPages = snapshotPageSources({
+      setup: null,
+      pageConnection: {
+        state: 'connected',
+        pageId: PAGE_HONG_HUNG,
+        pageName: 'Đồng Thờ Hồng Hưng',
+        status: 'active',
+        missingScopes: [],
+        verifiedAt: T1,
+        crmPages: [
+          { pageId: PAGE_DO_DONG_DAI_LONG, pageName: 'Đồ Đồng Đại Long', verifiedAt: T1 },
+          { pageId: PAGE_TRANH_DAI_LONG, pageName: 'Xưởng Tranh Đồng Đại Long Nam Định', verifiedAt: T1 },
+        ],
+      },
+    });
+    expect(snapPages).toEqual([
+      { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: PAGE_DO_DONG_DAI_LONG, pageName: 'Đồ Đồng Đại Long' },
+      { pageId: PAGE_TRANH_DAI_LONG, pageName: 'Xưởng Tranh Đồng Đại Long Nam Định' },
+    ]);
+
+    // Mid-backfill scenario: 157 rows loaded from Đồ Đồng Đại Long only, GET /crm returned only 1 page source
+    const partialRows = Array.from({ length: 157 }, () => row({}, { pageId: PAGE_DO_DONG_DAI_LONG }));
+    const mergedSources = mergeCrmPageSources(
+      [{ pageId: PAGE_DO_DONG_DAI_LONG, pageName: null }],
+      snapPages,
+    );
+    const options = crmPageOptions(partialRows, mergedSources);
+    expect(options).toEqual([
+      { pageId: PAGE_DO_DONG_DAI_LONG, label: 'Đồ Đồng Đại Long', count: 157 },
+      { pageId: PAGE_HONG_HUNG, label: 'Đồng Thờ Hồng Hưng', count: 0 },
+      { pageId: PAGE_TRANH_DAI_LONG, label: 'Xưởng Tranh Đồng Đại Long Nam Định', count: 0 },
+    ]);
+    expect(options).toHaveLength(3);
+  });
+
+  it('detects when page1 has >100 brand-new leads (!complete) so CRM triggers a full reload, and computes bounded DOM render limits', () => {
+    const existing = [row(), row()];
+    const overlappingPage1 = [row(), existing[0]!];
+    const disjointPage1 = [row(), row()];
+    expect(crmPage1NeedsFullReload(existing, overlappingPage1, false)).toBe(false);
+    expect(crmPage1NeedsFullReload(existing, disjointPage1, true)).toBe(false);
+    expect(crmPage1NeedsFullReload(existing, disjointPage1, false)).toBe(true);
+    expect(crmPage1NeedsFullReload([], disjointPage1, false)).toBe(true);
+
+    expect(PAGE_RENDER_STEP).toBe(100);
+    expect(effectiveCrmRenderLimit(831, 100, -1)).toBe(100);
+    expect(effectiveCrmRenderLimit(831, 200, -1)).toBe(200);
+    // Opening a Drawer row at index 245 automatically expands the DOM slice to 300 so the row is mounted
+    expect(effectiveCrmRenderLimit(831, 100, 245)).toBe(300);
+    expect(effectiveCrmRenderLimit(45, 100, -1)).toBe(45);
   });
 });

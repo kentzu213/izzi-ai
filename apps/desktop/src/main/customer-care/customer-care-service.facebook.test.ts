@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCareAuthority,
-  CustomerCareBackfillSummary,
+  CustomerCareBackfillJobSnapshot,
   CustomerCareSetup,
 } from '../../shared/customer-care-types';
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
 import type {
+  CareFacebookBackfillResult,
   CareFacebookCallbackResult,
   CareFacebookConnectStart,
   CareFacebookConnection,
@@ -86,9 +87,25 @@ class FakeFacebook implements CareFacebookGateway {
     },
   };
   selectResult: CareFacebookResult<CareFacebookConnection | CareFacebookSelectWithBackfill> = { ok: true, value: CONNECTION };
-  backfillResult: CareFacebookResult<CustomerCareBackfillSummary> = {
+  backfillResult: CareFacebookResult<CareFacebookBackfillResult> = {
     ok: true,
     value: { pagesProcessed: 1, conversationsScanned: 20, leadsImported: 5, messagesStored: 12, namesSealed: 5 },
+  };
+  backfillStatusResult: CareFacebookResult<CustomerCareBackfillJobSnapshot> = {
+    ok: true,
+    value: {
+      status: 'idle',
+      startedAt: null,
+      updatedAt: null,
+      completedAt: null,
+      pagesTotal: 0,
+      pagesProcessed: 0,
+      conversationsScanned: 0,
+      leadsImported: 0,
+      messagesStored: 0,
+      namesSealed: 0,
+      skippedPages: [],
+    },
   };
   statusResult: CareFacebookResult<CareFacebookStatus> | (() => Promise<CareFacebookResult<CareFacebookStatus>>) = {
     ok: true,
@@ -109,6 +126,11 @@ class FakeFacebook implements CareFacebookGateway {
     this.calls.push(['backfillBoundPage', workspaceId]);
     this.during();
     return this.backfillResult;
+  }
+  async getBackfillStatus(workspaceId: string) {
+    this.calls.push(['getBackfillStatus', workspaceId]);
+    this.during();
+    return this.backfillStatusResult;
   }
   async getStatus(workspaceId: string) {
     this.calls.push(['getStatus', workspaceId]);
@@ -465,5 +487,74 @@ describe('CustomerCareService Facebook Page actions', () => {
     const { service, facebook } = fixture();
     facebook.during = () => { throw new Error('token EAAB-private'); };
     expect(await service.disconnectFacebookPage()).toEqual({ ok: false, error: 'unavailable' });
+  });
+
+  it('tracks running backfillJob on snapshot across select/backfill/getSnapshot and clears it once getBackfillStatus completes', async () => {
+    const { service, facebook, as } = fixture();
+    const runningJob: CustomerCareBackfillJobSnapshot = {
+      status: 'running',
+      startedAt: NOW,
+      updatedAt: NOW,
+      completedAt: null,
+      pagesTotal: 3,
+      pagesProcessed: 1,
+      conversationsScanned: 512,
+      leadsImported: 157,
+      messagesStored: 400,
+      namesSealed: 156,
+      skippedPages: [],
+    };
+    const completedJob: CustomerCareBackfillJobSnapshot = {
+      ...runningJob,
+      status: 'completed',
+      completedAt: NOW,
+      pagesProcessed: 3,
+      conversationsScanned: 4256,
+      leadsImported: 831,
+      messagesStored: 2100,
+      namesSealed: 830,
+    };
+    facebook.statusResult = {
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE_A, requiredScopes: [], connection: CONNECTION },
+    };
+    facebook.backfillResult = {
+      ok: true,
+      value: {
+        pagesProcessed: 0,
+        conversationsScanned: 0,
+        leadsImported: 0,
+        messagesStored: 0,
+        namesSealed: 0,
+        backfillJob: runningJob,
+      },
+    };
+    facebook.backfillStatusResult = { ok: true, value: runningJob };
+
+    const started = await service.selectFacebookPage({ pageId: PAGE, backfillCurrent: true });
+    expect(started.ok).toBe(true);
+    if (started.ok) {
+      expect(started.backfillJob).toEqual(runningJob);
+      expect(started.snapshot.backfillJob).toEqual(runningJob);
+    }
+
+    // Re-opening the workspace while running refreshes the job via getBackfillStatus
+    const midSnapshot = await service.getSnapshot();
+    expect(midSnapshot.backfillJob).toEqual(runningJob);
+
+    // Non-managers cannot poll backfill status
+    as({ ...OWNER, role: 'viewer' });
+    expect(await service.getBackfillStatus()).toEqual({ ok: false, error: 'forbidden' });
+    as(OWNER);
+
+    // Polling until completed returns the completed job and clears running state from future snapshots
+    facebook.backfillStatusResult = { ok: true, value: completedJob };
+    expect(await service.getBackfillStatus()).toEqual({
+      ok: true,
+      workspaceId: WORKSPACE_A,
+      job: completedJob,
+    });
+    const afterDone = await service.getSnapshot();
+    expect(afterDone.backfillJob).toBeUndefined();
   });
 });

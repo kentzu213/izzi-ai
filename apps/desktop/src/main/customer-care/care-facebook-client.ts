@@ -19,11 +19,14 @@ import {
 } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_AUTO_REPLY_PROBLEMS,
+  CUSTOMER_CARE_BACKFILL_JOB_STATUSES,
   CUSTOMER_CARE_BACKFILL_SKIP_REASONS,
   CUSTOMER_CARE_FACEBOOK_REJECT_REASONS,
   CUSTOMER_CARE_LEAD_STATUSES,
   type CustomerCareAutoReplyProblem,
   type CustomerCareAutoReplyState,
+  type CustomerCareBackfillJobSnapshot,
+  type CustomerCareBackfillJobStatus,
   type CustomerCareBackfillSkipReason,
   type CustomerCareBackfillSkippedPage,
   type CustomerCareBackfillSummary,
@@ -139,17 +142,19 @@ export interface CareFacebookSelectWithBackfill {
   connection: CareFacebookConnection | null;
   backfill: CustomerCareBackfillSummary;
   crmPages?: CustomerCareCrmSyncedPage[];
+  backfillJob?: CustomerCareBackfillJobSnapshot;
 }
 
 export type CareFacebookBackfillResult = CustomerCareBackfillSummary & {
   crmPages?: CustomerCareCrmSyncedPage[];
+  backfillJob?: CustomerCareBackfillJobSnapshot;
 };
 
 /** The surface `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export type CareFacebookGateway = Pick<
   CareFacebookClient,
   'startConnect' | 'completeCallback' | 'selectPage' | 'getStatus' | 'disconnect'
-> & Partial<Pick<CareFacebookClient, 'backfillBoundPage'>>;
+> & Partial<Pick<CareFacebookClient, 'backfillBoundPage' | 'getBackfillStatus'>>;
 
 /** What the backend deleted for one customer (B1b). */
 export interface CareLeadPurge {
@@ -405,6 +410,59 @@ export function parseCareBackfillSummary(value: unknown): CustomerCareBackfillSu
     messagesStored: summary.messagesStored,
     namesSealed: summary.namesSealed,
     ...(skippedPages ? { skippedPages } : {}),
+  };
+}
+
+const BACKFILL_JOB_KEYS = [
+  'status',
+  'startedAt',
+  'updatedAt',
+  'completedAt',
+  'pagesTotal',
+  'pagesProcessed',
+  'conversationsScanned',
+  'leadsImported',
+  'messagesStored',
+  'namesSealed',
+  'skippedPages',
+] as const;
+
+export function parseCareBackfillJobSnapshot(value: unknown): CustomerCareBackfillJobSnapshot | null {
+  const job = exactRecord(value, BACKFILL_JOB_KEYS);
+  if (!job) return null;
+  if (
+    typeof job.status !== 'string'
+    || !(CUSTOMER_CARE_BACKFILL_JOB_STATUSES as readonly string[]).includes(job.status)
+  ) {
+    return null;
+  }
+  if (!isIsoOrNull(job.startedAt) || !isIsoOrNull(job.updatedAt) || !isIsoOrNull(job.completedAt)) {
+    return null;
+  }
+  if (
+    !isCount(job.pagesTotal)
+    || !isCount(job.pagesProcessed)
+    || !isCount(job.conversationsScanned)
+    || !isCount(job.leadsImported)
+    || !isCount(job.messagesStored)
+    || !isCount(job.namesSealed)
+  ) {
+    return null;
+  }
+  const skippedPages = parseSkippedPages(job.skippedPages);
+  if (!skippedPages) return null;
+  return {
+    status: job.status as CustomerCareBackfillJobStatus,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt,
+    pagesTotal: job.pagesTotal,
+    pagesProcessed: job.pagesProcessed,
+    conversationsScanned: job.conversationsScanned,
+    leadsImported: job.leadsImported,
+    messagesStored: job.messagesStored,
+    namesSealed: job.namesSealed,
+    skippedPages,
   };
 }
 
@@ -670,67 +728,128 @@ export class CareFacebookClient {
       return connection && connection.pageId === pageId ? { ok: true, value: connection } : INVALID_RESPONSE;
     }
 
-    const result = await this.request(
+    const basePayload = {
+      workspaceId,
+      choiceId,
+      pageId,
+      ...(backfillPageIds ? { backfillPageIds } : {}),
+      ...(importOnly ? { importOnly: true } : {}),
+      includeCrmPages: true,
+    };
+    const backfillTimeoutMs = Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS);
+    let result = await this.request(
       'select',
       '/select',
       {
         method: 'POST',
-        body: JSON.stringify({
-          workspaceId,
-          choiceId,
-          pageId,
-          ...(backfillPageIds ? { backfillPageIds } : {}),
-          ...(importOnly ? { importOnly: true } : {}),
-          includeCrmPages: true,
-        }),
+        body: JSON.stringify({ ...basePayload, async: true }),
       },
-      Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
+      backfillTimeoutMs,
     );
+    if (!result.ok && result.error === 'rejected' && result.reason === 'invalid_request') {
+      result = await this.request(
+        'select',
+        '/select',
+        { method: 'POST', body: JSON.stringify(basePayload) },
+        backfillTimeoutMs,
+      );
+    }
     if (!result.ok) return result;
     const withCrmPages = hasOwn(result.body, 'crmPages');
-    const envelope = parseSuccessEnvelope(
-      result.body,
-      withCrmPages ? ['connection', 'backfill', 'crmPages'] : ['connection', 'backfill'],
-      workspaceId,
-    );
+    const withBackfillJob = hasOwn(result.body, 'backfillJob');
+    const envelopeKeys = [
+      'connection',
+      'backfill',
+      ...(withCrmPages ? ['crmPages'] : []),
+      ...(withBackfillJob ? ['backfillJob'] : []),
+    ];
+    const envelope = parseSuccessEnvelope(result.body, envelopeKeys, workspaceId);
     if (!envelope) return INVALID_RESPONSE;
     const backfill = parseCareBackfillSummary(envelope.backfill);
     if (!backfill) return INVALID_RESPONSE;
     const crmPages = withCrmPages ? parseCrmSyncedPages(envelope.crmPages) : undefined;
     if (withCrmPages && !crmPages) return INVALID_RESPONSE;
+    const backfillJob = withBackfillJob ? parseCareBackfillJobSnapshot(envelope.backfillJob) : undefined;
+    if (withBackfillJob && !backfillJob) return INVALID_RESPONSE;
     if (importOnly) {
       const connection = envelope.connection === null ? null : parseCareFacebookConnection(envelope.connection);
       if (envelope.connection !== null && !connection) return INVALID_RESPONSE;
-      return { ok: true, value: { connection, backfill, ...(crmPages ? { crmPages } : {}) } };
+      return {
+        ok: true,
+        value: {
+          connection,
+          backfill,
+          ...(crmPages ? { crmPages } : {}),
+          ...(backfillJob ? { backfillJob } : {}),
+        },
+      };
     }
     const connection = parseCareFacebookConnection(envelope.connection);
     return connection && connection.pageId === pageId
-      ? { ok: true, value: { connection, backfill, ...(crmPages ? { crmPages } : {}) } }
+      ? {
+        ok: true,
+        value: {
+          connection,
+          backfill,
+          ...(crmPages ? { crmPages } : {}),
+          ...(backfillJob ? { backfillJob } : {}),
+        },
+      }
       : INVALID_RESPONSE;
   }
 
   /** POST /backfill — scan 90-day Messenger history of the workspace's bound & CRM Pages into CRM. */
   async backfillBoundPage(workspaceId: string): Promise<CareFacebookResult<CareFacebookBackfillResult>> {
     if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
-    const result = await this.request(
+    const backfillTimeoutMs = Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS);
+    let result = await this.request(
       'backfill',
       '/backfill',
-      { method: 'POST', body: JSON.stringify({ workspaceId, includeCrmPages: true }) },
-      Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
+      { method: 'POST', body: JSON.stringify({ workspaceId, includeCrmPages: true, async: true }) },
+      backfillTimeoutMs,
     );
+    if (!result.ok && result.error === 'rejected' && result.reason === 'invalid_request') {
+      result = await this.request(
+        'backfill',
+        '/backfill',
+        { method: 'POST', body: JSON.stringify({ workspaceId, includeCrmPages: true }) },
+        backfillTimeoutMs,
+      );
+    }
     if (!result.ok) return result;
     const withCrmPages = hasOwn(result.body, 'crmPages');
-    const envelope = parseSuccessEnvelope(
-      result.body,
-      withCrmPages ? ['backfill', 'crmPages'] : ['backfill'],
-      workspaceId,
-    );
+    const withBackfillJob = hasOwn(result.body, 'backfillJob');
+    const envelopeKeys = [
+      'backfill',
+      ...(withCrmPages ? ['crmPages'] : []),
+      ...(withBackfillJob ? ['backfillJob'] : []),
+    ];
+    const envelope = parseSuccessEnvelope(result.body, envelopeKeys, workspaceId);
     if (!envelope) return INVALID_RESPONSE;
     const backfill = parseCareBackfillSummary(envelope.backfill);
     if (!backfill) return INVALID_RESPONSE;
     const crmPages = withCrmPages ? parseCrmSyncedPages(envelope.crmPages) : undefined;
     if (withCrmPages && !crmPages) return INVALID_RESPONSE;
-    return { ok: true, value: crmPages ? { ...backfill, crmPages } : backfill };
+    const backfillJob = withBackfillJob ? parseCareBackfillJobSnapshot(envelope.backfillJob) : undefined;
+    if (withBackfillJob && !backfillJob) return INVALID_RESPONSE;
+    return {
+      ok: true,
+      value: {
+        ...backfill,
+        ...(crmPages ? { crmPages } : {}),
+        ...(backfillJob ? { backfillJob } : {}),
+      },
+    };
+  }
+
+  /** GET /backfill — poll the workspace's async 90-day Messenger backfill job status (exact 3-key envelope). */
+  async getBackfillStatus(workspaceId: string): Promise<CareFacebookResult<CustomerCareBackfillJobSnapshot>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const result = await this.request('backfill-status', `/backfill?workspaceId=${encodeURIComponent(workspaceId)}`);
+    if (!result.ok) return result;
+    const envelope = parseSuccessEnvelope(result.body, ['job'], workspaceId);
+    const job = envelope ? parseCareBackfillJobSnapshot(envelope.job) : null;
+    return job ? { ok: true, value: job } : INVALID_RESPONSE;
   }
 
   /** GET /status — the verified connection, plus CRM-synced Pages (falling back cleanly on older servers). */

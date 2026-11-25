@@ -9,7 +9,7 @@ import { CUSTOMER_CARE_AUTH_ERROR, CUSTOMER_CARE_UNAVAILABLE_ERROR } from '../..
 describe('customer care IPC boundary', () => {
   const service = {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
-    selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
+    selectFacebookPage: vi.fn(), getBackfillStatus: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
     purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
     identityAction: vi.fn(), refreshIdentity: vi.fn(),
@@ -22,6 +22,7 @@ describe('customer care IPC boundary', () => {
     ['assist', service.assist],
     ['connectFacebookPage', facebook.connect],
     ['selectFacebookPage', service.selectFacebookPage],
+    ['getBackfillStatus', service.getBackfillStatus],
     ['disconnectFacebookPage', service.disconnectFacebookPage],
     ['takeFacebookPageChoices', facebook.takeChoices],
     ['getFacebookInbox', service.getFacebookInbox],
@@ -62,10 +63,13 @@ describe('customer care IPC boundary', () => {
     expect(service.selectFacebookPage).toHaveBeenCalledWith(selection);
 
     facebook.connect.mockResolvedValue({ ok: true });
+    service.getBackfillStatus.mockResolvedValue({ ok: false, error: 'forbidden' });
     service.disconnectFacebookPage.mockResolvedValue({ ok: false, error: 'forbidden' });
     expect(await invoke('connectFacebookPage', { workspaceId: 'injected' })).toEqual({ ok: true });
+    expect(await invoke('getBackfillStatus', { workspaceId: 'injected' })).toEqual({ ok: false, error: 'forbidden' });
     expect(await invoke('disconnectFacebookPage', { workspaceId: 'injected' })).toEqual({ ok: false, error: 'forbidden' });
     expect(facebook.connect).toHaveBeenCalledWith();
+    expect(service.getBackfillStatus).toHaveBeenCalledWith();
     expect(service.disconnectFacebookPage).toHaveBeenCalledWith();
   });
   it('registers the Phase B1 inbox and lead channels and forwards only their opaque input', async () => {

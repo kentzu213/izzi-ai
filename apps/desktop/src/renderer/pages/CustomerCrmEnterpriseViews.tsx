@@ -23,11 +23,13 @@ import {
 import { formatLeadPhone, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_CONFLICT_MESSAGE,
+  PAGE_RENDER_STEP,
   crmAssigneeLabel,
   crmCallTodayCount,
   crmDue,
   crmRowReadOnly,
   crmStageLabel,
+  effectiveCrmRenderLimit,
   formatCrmDay,
   formatCrmDue,
   profileFromRow,
@@ -77,7 +79,48 @@ const BUCKET_TITLES: Readonly<Record<CrmAdsBucket, { title: string; subtitle: st
   },
 };
 
-const TRUNCATED_NOTE = ' Chỉ gồm 500 khách mới nhất.';
+const TRUNCATED_NOTE = ' Chỉ gồm 5.000 khách mới nhất.';
+
+export interface CrmRenderPaginationProps {
+  renderedCount: number;
+  totalCount: number;
+  step?: number;
+  onShowMore: () => void;
+  onShowAll: () => void;
+}
+
+export function CrmRenderPagination({
+  renderedCount,
+  totalCount,
+  step = PAGE_RENDER_STEP,
+  onShowMore,
+  onShowAll,
+}: CrmRenderPaginationProps) {
+  if (totalCount <= step || renderedCount >= totalCount) return null;
+  return (
+    <div className="v2-crm__render-pager" role="navigation" aria-label="Phân trang hiển thị khách hàng">
+      <span className="v2-crm__meta" role="status" aria-live="polite">
+        {`Đang hiển thị ${renderedCount} / ${totalCount} khách hàng`}
+      </span>
+      <div className="v2-crm__buttons">
+        <button
+          type="button"
+          className="v2-button v2-button--ghost"
+          onClick={onShowMore}
+        >
+          {`Hiện thêm ${step} khách`}
+        </button>
+        <button
+          type="button"
+          className="v2-button v2-button--ghost"
+          onClick={onShowAll}
+        >
+          Hiện tất cả
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const ADS_EXPORT_BLOCK_NOTES: Readonly<Record<CrmAdsExportBlock, string>> = {
   identity_off:
@@ -217,6 +260,7 @@ export interface CrmSalerWorkspaceProps {
   /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
   identityEnabled: boolean | null;
   resolvePageLabel?: (pageId: string) => string;
+  filterResetKey?: string;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -233,11 +277,18 @@ export function CrmSalerWorkspace({
   nowMs,
   identityEnabled,
   resolvePageLabel,
+  filterResetKey = '',
   onChangeProfile,
   onCopyText,
   onOpenProfile,
 }: CrmSalerWorkspaceProps) {
   const [bandFilter, setBandFilter] = useState<SalerBandFilter>('all');
+  const pagerKey = `${filterResetKey}\n${bandFilter}`;
+  const [pager, setPager] = useState<{ key: string; limit: number }>(() => ({
+    key: pagerKey,
+    limit: PAGE_RENDER_STEP,
+  }));
+  const renderLimit = pager.key === pagerKey ? pager.limit : PAGE_RENDER_STEP;
 
   const items = useMemo(() => {
     const built = rows.map((row) => {
@@ -264,6 +315,11 @@ export function CrmSalerWorkspace({
   const visibleItems = useMemo(
     () => (bandFilter === 'all' ? items : items.filter((item) => item.playbook.priorityBand === bandFilter)),
     [items, bandFilter],
+  );
+  const effectiveLimit = effectiveCrmRenderLimit(visibleItems.length, renderLimit);
+  const renderedItems = useMemo(
+    () => visibleItems.slice(0, effectiveLimit),
+    [visibleItems, effectiveLimit],
   );
 
   return (
@@ -313,8 +369,9 @@ export function CrmSalerWorkspace({
           <p>Không có khách nào thuộc nhóm mức ưu tiên đang chọn.</p>
         </div>
       ) : (
-        <div className="v2-crm-saler-list">
-          {visibleItems.map(({ row, playbook, due }) => {
+        <>
+          <div className="v2-crm-saler-list">
+            {renderedItems.map(({ row, playbook, due }) => {
             const name = leadDisplayName(row);
             const priority = PRIORITY_META[playbook.priorityBand];
             const readOnly = crmRowReadOnly(row);
@@ -430,7 +487,17 @@ export function CrmSalerWorkspace({
               </article>
             );
           })}
-        </div>
+          </div>
+          <CrmRenderPagination
+            renderedCount={renderedItems.length}
+            totalCount={visibleItems.length}
+            onShowMore={() => setPager((current) => ({
+              key: pagerKey,
+              limit: (current.key === pagerKey ? current.limit : PAGE_RENDER_STEP) + PAGE_RENDER_STEP,
+            }))}
+            onShowAll={() => setPager({ key: pagerKey, limit: visibleItems.length })}
+          />
+        </>
       )}
     </div>
   );
@@ -743,6 +810,7 @@ export interface CrmLifecycleWorkspaceProps {
   /** The list answer's identityEnabled: unless true, the order layer (products, occasion, timeline) is guessed from the chat. */
   identityEnabled: boolean | null;
   resolvePageLabel?: (pageId: string) => string;
+  filterResetKey?: string;
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
@@ -756,11 +824,18 @@ export function CrmLifecycleWorkspace({
   nowMs,
   identityEnabled,
   resolvePageLabel,
+  filterResetKey = '',
   onChangeProfile,
   onCopyText,
   onOpenProfile,
 }: CrmLifecycleWorkspaceProps) {
   const [categoryFilter, setCategoryFilter] = useState<LifecycleFilter>('all');
+  const pagerKey = `${filterResetKey}\n${categoryFilter}`;
+  const [pager, setPager] = useState<{ key: string; limit: number }>(() => ({
+    key: pagerKey,
+    limit: PAGE_RENDER_STEP,
+  }));
+  const renderLimit = pager.key === pagerKey ? pager.limit : PAGE_RENDER_STEP;
 
   const rowMap = useMemo(() => new Map(rows.map((r) => [r.leadId, r])), [rows]);
 
@@ -781,6 +856,11 @@ export function CrmLifecycleWorkspace({
   const visibleItems = useMemo(
     () => (categoryFilter === 'all' ? allItems : allItems.filter((item) => item.category === categoryFilter)),
     [allItems, categoryFilter],
+  );
+  const effectiveLimit = effectiveCrmRenderLimit(visibleItems.length, renderLimit);
+  const renderedItems = useMemo(
+    () => visibleItems.slice(0, effectiveLimit),
+    [visibleItems, effectiveLimit],
   );
 
   return (
@@ -822,8 +902,9 @@ export function CrmLifecycleWorkspace({
           <p>Chưa có lịch chăm sóc hậu bán hoặc remarketing nào trong nhóm đang chọn.</p>
         </div>
       ) : (
-        <div className="v2-crm-lifecycle-list">
-          {visibleItems.map((item, idx) => {
+        <>
+          <div className="v2-crm-lifecycle-list">
+            {renderedItems.map((item, idx) => {
             const row = rowMap.get(item.leadId);
             if (!row) return null;
             const name = leadDisplayName(row);
@@ -905,7 +986,17 @@ export function CrmLifecycleWorkspace({
               </article>
             );
           })}
-        </div>
+          </div>
+          <CrmRenderPagination
+            renderedCount={renderedItems.length}
+            totalCount={visibleItems.length}
+            onShowMore={() => setPager((current) => ({
+              key: pagerKey,
+              limit: (current.key === pagerKey ? current.limit : PAGE_RENDER_STEP) + PAGE_RENDER_STEP,
+            }))}
+            onShowAll={() => setPager({ key: pagerKey, limit: visibleItems.length })}
+          />
+        </>
       )}
     </div>
   );

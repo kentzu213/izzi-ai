@@ -4,6 +4,7 @@
  * here so it can be tested without a DOM.
  */
 import type {
+  CustomerCareBackfillJobSnapshot,
   CustomerCareBackfillSkipReason,
   CustomerCareBackfillSummary,
   CustomerCareFacebookActionResult,
@@ -16,6 +17,10 @@ import { facebookErrorMessage, setupForSave, type CustomerCareFacebookPageChoice
 
 /** How long the screen waits for Facebook Login before reporting the attempt as expired. */
 export const CARE_FACEBOOK_WAIT_MS = 15 * 60_000;
+/** Poll interval while an async 90-day Messenger backfill job is running on the server. */
+export const CARE_BACKFILL_POLL_MS = 2_500;
+/** Dispatched on `window` whenever backfill imports leads or completes, so `CustomerCrmPanel` refreshes immediately. */
+export const CRM_BACKFILL_UPDATED_EVENT = 'izzi:crm-backfill-updated';
 
 const SCOPE_MISMATCH = 'Phạm vi chăm sóc khách hàng không khớp workspace hiện tại. Hãy tải lại workspace.';
 const BROWSER_OPENED =
@@ -124,9 +129,63 @@ export function formatBackfillSummaryNotice(backfill: CustomerCareBackfillSummar
   return `${base} Cảnh báo — có ${skipped.length} Page bị bỏ qua chưa đồng bộ được: ${details}.${actionHint}`;
 }
 
+export function formatBackfillProgressText(job: CustomerCareBackfillJobSnapshot): string {
+  const totalPages = Math.max(1, job.pagesTotal);
+  const currentPage = Math.min(totalPages, job.pagesProcessed + 1);
+  return `Đang quét lịch sử 90 ngày (Page ${currentPage}/${totalPages}): đã quét ${job.conversationsScanned} hội thoại · trích xuất ${job.leadsImported} khách có SĐT...`;
+}
+
+export function formatBackfillFailedMessage(job: CustomerCareBackfillJobSnapshot): string {
+  if (job.leadsImported > 0) {
+    return `Quá trình quét lịch sử 90 ngày tạm gián đoạn sau khi đã trích xuất ${job.leadsImported} khách có SĐT (${job.conversationsScanned} hội thoại). Dữ liệu đã lưu trong CRM — hãy bấm Đồng bộ lại để quét tiếp phần còn lại.`;
+  }
+  return 'Quá trình quét lịch sử 90 ngày chưa hoàn tất do lỗi tạm thời từ Facebook hoặc kết nối mạng. Hãy thử bấm Đồng bộ lại sau ít phút.';
+}
+
+export function backfillPollStep(
+  snapshot: CustomerCareSnapshot,
+  job: CustomerCareBackfillJobSnapshot,
+): CarePageFlowStep & { completed: boolean } {
+  if (job.status === 'running') {
+    return {
+      flow: INITIAL_PAGE_FLOW,
+      snapshot: { ...snapshot, backfillJob: job },
+      completed: false,
+    };
+  }
+  const { backfillJob: _done, ...cleanSnapshot } = snapshot;
+  if (job.status === 'completed') {
+    const hasSkipped = job.skippedPages.length > 0;
+    return {
+      flow: INITIAL_PAGE_FLOW,
+      snapshot: cleanSnapshot,
+      notice: formatBackfillSummaryNotice(job),
+      noticeTone: hasSkipped ? 'warning' : 'success',
+      error: '',
+      completed: true,
+    };
+  }
+  if (job.status === 'failed') {
+    const skippedNotice = job.skippedPages.length > 0 ? formatBackfillSummaryNotice(job) : undefined;
+    return {
+      flow: INITIAL_PAGE_FLOW,
+      snapshot: cleanSnapshot,
+      error: formatBackfillFailedMessage(job),
+      ...(skippedNotice ? { notice: skippedNotice, noticeTone: 'warning' as const } : {}),
+      completed: true,
+    };
+  }
+  return {
+    flow: INITIAL_PAGE_FLOW,
+    snapshot: cleanSnapshot,
+    completed: true,
+  };
+}
+
 /**
  * Select, multi-Page backfill or disconnect result. Success applies the snapshot (only for the workspace on screen)
  * and closes the picker; `unavailable` keeps the Page list so the same choice can be retried; anything else drops it.
+ * When `backfillJob.status === 'running'`, closes the picker immediately and attaches `backfillJob` so live polling starts.
  */
 export function pageFlowOnActionResult(
   flow: CarePageFlowState,
@@ -141,14 +200,33 @@ export function pageFlowOnActionResult(
       : { flow: { ...INITIAL_PAGE_FLOW, waitingUntil: flow.waitingUntil }, error };
   }
   if (response.snapshot.workspaceId !== scopeKey) return { flow: INITIAL_PAGE_FLOW, error: SCOPE_MISMATCH };
-  const hasSkipped = (response.backfill?.skippedPages?.length ?? 0) > 0;
-  const backfillText = response.backfill ? formatBackfillSummaryNotice(response.backfill) : '';
+  const job = response.backfillJob ?? response.snapshot.backfillJob;
+  if (job?.status === 'running') {
+    return {
+      flow: INITIAL_PAGE_FLOW,
+      snapshot: { ...response.snapshot, backfillJob: job },
+      error: '',
+      notice: success,
+    };
+  }
+  const { backfillJob: _cleared, ...cleanSnapshot } = response.snapshot;
+  if (job?.status === 'failed') {
+    return {
+      flow: INITIAL_PAGE_FLOW,
+      snapshot: cleanSnapshot,
+      error: formatBackfillFailedMessage(job),
+      ...(success ? { notice: success } : {}),
+    };
+  }
+  const effectiveBackfill = job?.status === 'completed' ? job : response.backfill;
+  const hasSkipped = (effectiveBackfill?.skippedPages?.length ?? 0) > 0;
+  const backfillText = effectiveBackfill ? formatBackfillSummaryNotice(effectiveBackfill) : '';
   const notice = backfillText
     ? (success ? `${success} ${backfillText}` : backfillText)
     : success;
   return {
     flow: INITIAL_PAGE_FLOW,
-    snapshot: response.snapshot,
+    snapshot: cleanSnapshot,
     notice,
     ...(hasSkipped ? { noticeTone: 'warning' as const } : {}),
   };

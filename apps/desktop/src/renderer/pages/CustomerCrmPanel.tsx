@@ -20,12 +20,14 @@ import type {
 import { CRM_PERSONA_OPTIONS, type CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
+import { CRM_BACKFILL_UPDATED_EVENT } from './customer-care-page-flow';
 import {
   CRM_CONFLICT_MESSAGE,
   CRM_FORBIDDEN_MESSAGE,
   CRM_MAX_PAGES,
   CRM_REFRESH_MS,
   CRM_STAGE_OPTIONS,
+  PAGE_RENDER_STEP,
   crmCallTodayCount,
   crmEditAfterSaved,
   crmEditOnChange,
@@ -34,6 +36,7 @@ import {
   crmEditOnReapply,
   crmFailureView,
   crmFilterRows,
+  crmPage1NeedsFullReload,
   crmPageOptions,
   crmRefreshCooldownLeft,
   crmProductOptions,
@@ -51,11 +54,13 @@ import {
   crmShouldSkipNextTick,
   crmVisibleRows,
   CrmLoadSequence,
+  effectiveCrmRenderLimit,
   loadCrmPages,
+  mergeCrmPageSources,
   normalizeCrmProfile,
   profileFromRow,
   resolveCrmPageLabel,
-  snapshotPageFallback,
+  snapshotPageSources,
   type CrmFilter,
   type CrmPersonaFilter,
   type CrmProductOption,
@@ -72,6 +77,7 @@ import {
   CrmAdsWorkspace,
   CrmEnterpriseKpiStrip,
   CrmLifecycleWorkspace,
+  CrmRenderPagination,
   CrmSalerWorkspace,
 } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow } from './CustomerCrmRow';
@@ -123,12 +129,124 @@ interface CrmMeta {
   assignees: CustomerCareCrmAssignee[];
   pageSources: CustomerCareCrmPageSource[];
   truncated: boolean;
+  partial: boolean;
   /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
   identityEnabled: boolean | null;
   /** Care CRM S3: the identity could not be loaded; the table is shown without it. */
   identityUnavailable: boolean;
   /** Care CRM S3: the exact consent question the server would send; null while asks are off. */
   consentAsk: string | null;
+}
+
+export interface CustomerCrmTableSectionProps {
+  shown: readonly CustomerCareCrmRow[];
+  renderLimit?: number;
+  drawerId: string | null;
+  edits: Edits;
+  savingIds: ReadonlySet<string>;
+  purgingId: string | null;
+  nowMs: number;
+  assignees: readonly CustomerCareCrmAssignee[];
+  products: readonly CrmProductOption[];
+  canDelete: boolean;
+  identityHandlers: CrmIdentityHandlers | null;
+  resolvePageLabel: (pageId: string) => string;
+  onChange: (row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput) => void;
+  onToggle: (leadId: string) => void;
+  onSave: (leadId: string) => void;
+  onCopy: (row: CustomerCareCrmRow) => void;
+  onPurge: (row: CustomerCareCrmRow) => void;
+  onReapply: (row: CustomerCareCrmRow) => void;
+  onDiscard: (row: CustomerCareCrmRow) => void;
+  onShowMore: () => void;
+  onShowAll: () => void;
+}
+
+export function CustomerCrmTableSection({
+  shown,
+  renderLimit = PAGE_RENDER_STEP,
+  drawerId,
+  edits,
+  savingIds,
+  purgingId,
+  nowMs,
+  assignees,
+  products,
+  canDelete,
+  identityHandlers,
+  resolvePageLabel,
+  onChange,
+  onToggle,
+  onSave,
+  onCopy,
+  onPurge,
+  onReapply,
+  onDiscard,
+  onShowMore,
+  onShowAll,
+}: CustomerCrmTableSectionProps) {
+  const pinnedIndex = drawerId === null ? -1 : shown.findIndex((item) => item.leadId === drawerId);
+  const effectiveLimit = effectiveCrmRenderLimit(shown.length, renderLimit, pinnedIndex);
+  const renderedRows = shown.slice(0, effectiveLimit);
+  return (
+    <div className="v2-crm__table-col">
+      <div className="v2-crm__table-wrap">
+        <table className="v2-crm__table">
+          <caption className="v2-visually-hidden">
+            Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Khách &amp; Page</th>
+              <th scope="col">Phân khúc</th>
+              <th scope="col">Giai đoạn</th>
+              <th scope="col">Phụ trách</th>
+              <th scope="col">Việc tiếp theo</th>
+              <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
+              <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {renderedRows.map((row) => {
+              const edit = edits[row.leadId] ?? null;
+              return (
+                <CustomerCrmRow
+                  key={row.leadId}
+                  row={row}
+                  profile={edit?.draft ?? profileFromRow(row)}
+                  edit={edit}
+                  saving={savingIds.has(row.leadId)}
+                  expanded={false}
+                  selected={drawerId === row.leadId}
+                  pageLabel={resolvePageLabel(row.pageId)}
+                  showSegmentColumn
+                  nowMs={nowMs}
+                  assignees={[...assignees]}
+                  products={[...products]}
+                  canDelete={canDelete}
+                  purging={purgingId === row.leadId}
+                  onChange={(profile) => onChange(row, profile)}
+                  onToggle={() => onToggle(row.leadId)}
+                  onSave={() => onSave(row.leadId)}
+                  onCopy={() => onCopy(row)}
+                  onPurge={() => onPurge(row)}
+                  onReapply={() => onReapply(row)}
+                  onDiscard={() => onDiscard(row)}
+                  identityHandlers={identityHandlers}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <CrmRenderPagination
+        renderedCount={renderedRows.length}
+        totalCount={shown.length}
+        onShowMore={onShowMore}
+        onShowAll={onShowAll}
+      />
+    </div>
+  );
 }
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
@@ -138,7 +256,7 @@ const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
 const NO_ASSIGNEES: CustomerCareCrmAssignee[] = [];
 const NO_PAGE_SOURCES: CustomerCareCrmPageSource[] = [];
 const INITIAL_FILTER: CrmFilter = {
-  view: 'today',
+  view: 'all',
   stage: 'any',
   pageId: 'any',
   persona: 'any',
@@ -181,7 +299,7 @@ export function CustomerCrmPanel() {
   const [edits, setEdits] = useState<Edits>({});
   const [meta, setMeta] = useState<CrmMeta | null>(null);
   const [products, setProducts] = useState<CrmProductOption[]>([]);
-  const [fallbackPage, setFallbackPage] = useState<CustomerCareCrmPageSource | null>(null);
+  const [snapshotPages, setSnapshotPages] = useState<CustomerCareCrmPageSource[]>(NO_PAGE_SOURCES);
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState<CrmFilter>(INITIAL_FILTER);
   const [display, setDisplay] = useState<CrmDisplay>('table');
@@ -250,7 +368,7 @@ export function CustomerCrmPanel() {
     updateEdits(() => ({}));
     setMeta(null);
     setProducts([]);
-    setFallbackPage(null);
+    setSnapshotPages(NO_PAGE_SOURCES);
     setDrawerId(null);
     setNotice('');
     setError('');
@@ -272,15 +390,15 @@ export function CustomerCrmPanel() {
       // Facts and Page metadata saved for another workspace on this machine never leak here.
       if (snapshot.workspaceId === workspaceId) {
         setProducts(crmProductOptions(snapshot.setup?.facts, Date.now()));
-        setFallbackPage(snapshotPageFallback(snapshot));
+        setSnapshotPages(snapshotPageSources(snapshot));
       } else {
         setProducts([]);
-        setFallbackPage(null);
+        setSnapshotPages(NO_PAGE_SOURCES);
       }
     } catch {
       if (mountedRef.current) {
         setProducts([]);
-        setFallbackPage(null);
+        setSnapshotPages(NO_PAGE_SOURCES);
       }
     }
   }, []);
@@ -332,7 +450,7 @@ export function CustomerCrmPanel() {
         updateEdits(() => ({}));
         setMeta(null);
         setProducts([]);
-        setFallbackPage(null);
+        setSnapshotPages(NO_PAGE_SOURCES);
         setDrawerId(null);
         setFilter((current) => ({ ...current, pageId: 'any' }));
         if (mode === 'page1') {
@@ -343,6 +461,8 @@ export function CustomerCrmPanel() {
         }
       }
       scopeRef.current = result.workspaceId;
+      const needsFullAfterPage1 = mode === 'page1'
+        && crmPage1NeedsFullReload(rowsRef.current, result.rows, result.complete);
       updateRows((current) => (mode === 'full'
         ? crmRowsOnRefresh(current, result.rows, removedRef.current)
         : crmRowsOnFirstPage(current, result.rows, result.complete, removedRef.current)));
@@ -352,21 +472,27 @@ export function CustomerCrmPanel() {
       }
       updateEdits((current) => Object.fromEntries(Object.entries(current).filter(([leadId]) => present.has(leadId))));
       setDrawerId((current) => (current !== null && present.has(current) ? current : null));
+      if (result.partialFailure && crmShouldSkipNextTick(result.partialFailure)) skipTicksRef.current = 1;
       setMeta((current) => ({
         canDelete: result.canDelete,
         assignees: result.assignees,
-        pageSources: switched || mode === 'full'
+        pageSources: switched
           ? result.pageSources
-          : (result.pageSources.length > 0 ? result.pageSources : (current?.pageSources ?? NO_PAGE_SOURCES)),
-        // Only an every-page load knows whether more than 500 customers exist.
+          : mergeCrmPageSources(
+            mode === 'full' && !result.partialFailure ? result.pageSources : (current?.pageSources ?? NO_PAGE_SOURCES),
+            result.pageSources,
+          ),
+        // Only an every-page load knows whether more than 5,000 customers exist or a later page hit a transient error.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
+        partial: mode === 'full' ? Boolean(result.partialFailure) : (current?.partial ?? false),
         identityEnabled: result.identityEnabled,
         identityUnavailable: result.identityUnavailable,
         consentAsk: result.consentAsk?.text ?? null,
       }));
       setPhase({ state: 'ready' });
       setError('');
-      if (switched) void loadProducts(api, result.workspaceId);
+      if (switched || mode === 'full') void loadProducts(api, result.workspaceId);
+      if (needsFullAfterPage1 && mountedRef.current) void loadRef.current('full');
     } catch {
       if (!mountedRef.current || !sequenceRef.current.isCurrent(seq)) return;
       skipTicksRef.current = 1;
@@ -557,6 +683,22 @@ export function CustomerCrmPanel() {
   }, []);
 
   const visible = active && documentVisible;
+  const visibleRef = useRef(visible);
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
+    const onBackfillUpdated = () => {
+      lastFullLoadAtRef.current = null;
+      if (visibleRef.current) {
+        void loadRef.current('full');
+      }
+    };
+    window.addEventListener(CRM_BACKFILL_UPDATED_EVENT, onBackfillUpdated);
+    return () => window.removeEventListener(CRM_BACKFILL_UPDATED_EVENT, onBackfillUpdated);
+  }, []);
   // Opening the tab reloads every page (at most once per refresh period); while it stays on screen the 60 s
   // tick reads page 1 only. A tick after a 429 or a 503 is skipped.
   useEffect(() => {
@@ -671,17 +813,28 @@ export function CustomerCrmPanel() {
 
   const canPurge = Boolean(meta?.canDelete && getCrmApi()?.purgeLead);
   const pageSources = meta?.pageSources ?? NO_PAGE_SOURCES;
+  const fallbackPage = snapshotPages[0] ?? null;
+  const allPageSources = useMemo(
+    () => mergeCrmPageSources(pageSources, snapshotPages),
+    [pageSources, snapshotPages],
+  );
   const pageOptions = useMemo(
-    () => crmPageOptions(rows, pageSources, fallbackPage),
-    [rows, pageSources, fallbackPage],
+    () => crmPageOptions(rows, allPageSources, fallbackPage),
+    [rows, allPageSources, fallbackPage],
   );
   const pageLabelOf = useCallback(
-    (pageId: string) => resolveCrmPageLabel(pageId, pageSources, fallbackPage),
-    [pageSources, fallbackPage],
+    (pageId: string) => resolveCrmPageLabel(pageId, allPageSources, fallbackPage),
+    [allPageSources, fallbackPage],
   );
 
   const shown = crmVisibleRows(rows, filter, now, drawerId);
   const todayCount = crmCallTodayCount(rows, now);
+  const filterResetKey = `${filter.view}\n${filter.stage}\n${filter.pageId ?? 'any'}\n${filter.persona ?? 'any'}\n${filter.query ?? ''}`;
+  const [tablePager, setTablePager] = useState<{ key: string; limit: number }>(() => ({
+    key: filterResetKey,
+    limit: PAGE_RENDER_STEP,
+  }));
+  const tableRenderLimit = tablePager.key === filterResetKey ? tablePager.limit : PAGE_RENDER_STEP;
 
   /**
    * Live rows with unsaved drafts overlaid, so Graph hubs and workspaces react immediately. The identity stays the
@@ -969,6 +1122,7 @@ export function CustomerCrmPanel() {
                 nowMs={now}
                 identityEnabled={identityEnabled}
                 resolvePageLabel={pageLabelOf}
+                filterResetKey={filterResetKey}
                 onChangeProfile={change}
                 onCopyText={(text, msg) => { void copyText(text, msg); }}
                 onOpenProfile={openProfile}
@@ -997,6 +1151,7 @@ export function CustomerCrmPanel() {
               nowMs={now}
               identityEnabled={identityEnabled}
               resolvePageLabel={pageLabelOf}
+              filterResetKey={filterResetKey}
               onChangeProfile={change}
               onCopyText={(text, msg) => { void copyText(text, msg); }}
               onOpenProfile={openProfile}
@@ -1007,55 +1162,32 @@ export function CustomerCrmPanel() {
             </div>
           ) : (
             <div className={`v2-crm__master-detail${drawerRow ? ' has-drawer' : ''}`}>
-              <div className="v2-crm__table-wrap">
-                <table className="v2-crm__table">
-                  <caption className="v2-visually-hidden">
-                    Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Khách &amp; Page</th>
-                      <th scope="col">Phân khúc</th>
-                      <th scope="col">Giai đoạn</th>
-                      <th scope="col">Phụ trách</th>
-                      <th scope="col">Việc tiếp theo</th>
-                      <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
-                      <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((row) => {
-                      const edit = edits[row.leadId] ?? null;
-                      return (
-                        <CustomerCrmRow
-                          key={row.leadId}
-                          row={row}
-                          profile={edit?.draft ?? profileFromRow(row)}
-                          edit={edit}
-                          saving={savingIds.has(row.leadId)}
-                          expanded={false}
-                          selected={drawerId === row.leadId}
-                          pageLabel={pageLabelOf(row.pageId)}
-                          showSegmentColumn
-                          nowMs={now}
-                          assignees={meta?.assignees ?? []}
-                          products={products}
-                          canDelete={canPurge}
-                          purging={purgingId === row.leadId}
-                          onChange={(profile) => change(row, profile)}
-                          onToggle={() => toggleDrawer(row.leadId)}
-                          onSave={() => queueRef.current?.saveNow(row.leadId)}
-                          onCopy={() => { void copyPhone(row); }}
-                          onPurge={() => { void purge(row); }}
-                          onReapply={() => reapply(row)}
-                          onDiscard={() => discard(row)}
-                          identityHandlers={identityHandlers}
-                        />
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <CustomerCrmTableSection
+                shown={shown}
+                renderLimit={tableRenderLimit}
+                drawerId={drawerId}
+                edits={edits}
+                savingIds={savingIds}
+                purgingId={purgingId}
+                nowMs={now}
+                assignees={meta?.assignees ?? NO_ASSIGNEES}
+                products={products}
+                canDelete={canPurge}
+                identityHandlers={identityHandlers}
+                resolvePageLabel={pageLabelOf}
+                onChange={change}
+                onToggle={toggleDrawer}
+                onSave={(leadId) => queueRef.current?.saveNow(leadId)}
+                onCopy={(row) => { void copyPhone(row); }}
+                onPurge={(row) => { void purge(row); }}
+                onReapply={reapply}
+                onDiscard={discard}
+                onShowMore={() => setTablePager((current) => ({
+                  key: filterResetKey,
+                  limit: (current.key === filterResetKey ? current.limit : PAGE_RENDER_STEP) + PAGE_RENDER_STEP,
+                }))}
+                onShowAll={() => setTablePager({ key: filterResetKey, limit: shown.length })}
+              />
 
               {drawerRow && (
                 <CustomerCrmDrawer
@@ -1093,7 +1225,21 @@ export function CustomerCrmPanel() {
             </div>
           )}
 
-          {meta?.truncated && <p className="v2-crm__hint">Đang hiện 500 khách mới nhất.</p>}
+          {meta?.partial ? (
+            <div className="v2-crm__partial-warning" role="status">
+              <span>{`Mạng tạm gián đoạn khi tải trang tiếp theo — đang giữ ${rows.length} khách đã tải được.`}</span>
+              <button
+                type="button"
+                className="v2-button v2-button--ghost"
+                disabled={refreshing || refreshResting}
+                onClick={() => { void load('full'); }}
+              >
+                Tải lại đủ danh sách
+              </button>
+            </div>
+          ) : meta?.truncated ? (
+            <p className="v2-crm__hint">Đang hiện 5.000 khách mới nhất.</p>
+          ) : null}
         </>
       )}
     </section>

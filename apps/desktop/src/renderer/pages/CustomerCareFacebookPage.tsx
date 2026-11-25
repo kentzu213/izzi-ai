@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type {
+  CustomerCareBackfillJobSnapshot,
   CustomerCareCrmSyncedPage,
   CustomerCareFacebookError,
   CustomerCareFacebookPageChoice,
@@ -7,6 +8,7 @@ import type {
   CustomerCarePageConnection,
   CustomerCareSetup,
 } from '../../shared/customer-care-types';
+import { formatBackfillProgressText } from './customer-care-page-flow';
 
 /** Same bound the main-process setup parser applies to `pageName`. */
 const MAX_SETUP_PAGE_NAME = 120;
@@ -38,6 +40,7 @@ export interface CustomerCareFacebookPagePanelProps {
   onConfirmPage: (options?: CustomerCareConfirmPageOptions) => void;
   onCancelChoices: () => void;
   onBackfillCurrent?: () => void;
+  backfillJob?: CustomerCareBackfillJobSnapshot | null;
 }
 
 const ERROR_MESSAGES: Record<CustomerCareFacebookError, string> = {
@@ -361,10 +364,11 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
 }
 
 export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePanelProps) {
-  const { connection, canManage, busy, waitingForFacebook, choices } = props;
+  const { connection, canManage, busy, waitingForFacebook, choices, backfillJob } = props;
   const connected = connection.state === 'connected';
   const crmPages = extraCrmPages(connection);
   const totalConnectedPages = connected ? 1 + crmPages.length : 0;
+  const backfillRunning = backfillJob?.status === 'running';
   return (
     <section className="ccw__section ccw__page" aria-labelledby="ccw-page-title">
       <div className="ccw__section-heading">
@@ -379,23 +383,23 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
                 <button
                   type="button"
                   className="cmr-button cmr-button--primary"
-                  disabled={busy}
+                  disabled={busy || backfillRunning}
                   onClick={props.onBackfillCurrent}
                 >
                   {totalConnectedPages > 1
                     ? `Đồng bộ khách cũ (${totalConnectedPages} Page · 90 ngày)`
                     : 'Đồng bộ khách cũ (90 ngày)'}
                 </button>
-                <button type="button" className="cmr-button" disabled={busy} onClick={props.onConnect}>
+                <button type="button" className="cmr-button" disabled={busy || backfillRunning} onClick={props.onConnect}>
                   Kết nối lại / Thêm Page CRM
                 </button>
-                <button type="button" className="cmr-text-button" disabled={busy} onClick={props.onDisconnect}>Ngắt kết nối</button>
+                <button type="button" className="cmr-text-button" disabled={busy || backfillRunning} onClick={props.onDisconnect}>Ngắt kết nối</button>
               </>
             ) : (
               <button
                 type="button"
                 className="cmr-button cmr-button--primary"
-                disabled={busy || connection.state === 'unsupported'}
+                disabled={busy || backfillRunning || connection.state === 'unsupported'}
                 onClick={props.onConnect}
               >
                 Kết nối Page Facebook
@@ -418,6 +422,33 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
             </li>
           ))}
         </ul>
+      )}
+      {backfillRunning && backfillJob && (
+        <div className="ccw__backfill-progress" role="status" aria-live="polite">
+          <div className="ccw__backfill-progress-head">
+            <strong>{formatBackfillProgressText(backfillJob)}</strong>
+            <span>
+              {`${Math.min(
+                100,
+                Math.round((backfillJob.pagesProcessed / Math.max(1, backfillJob.pagesTotal)) * 100),
+              )}%`}
+            </span>
+          </div>
+          <div className="ccw__backfill-progress-bar" aria-hidden="true">
+            <div
+              className="ccw__backfill-progress-fill"
+              style={{
+                width: `${Math.max(
+                  12,
+                  Math.min(
+                    100,
+                    Math.round(((backfillJob.pagesProcessed + 0.35) / Math.max(1, backfillJob.pagesTotal)) * 100),
+                  ),
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
       )}
       {connected && connection.missingScopes.length > 0 && (
         <p className="ccw__hint">Page còn thiếu quyền: {connection.missingScopes.join(', ')}.</p>

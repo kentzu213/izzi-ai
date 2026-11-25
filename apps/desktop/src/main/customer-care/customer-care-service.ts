@@ -15,10 +15,12 @@ import type {
   CustomerCareSnapshot,
   CustomerCareAutoReplyResult,
   CustomerCareAutoReplyState,
+  CustomerCareBackfillStatusResult,
   CustomerCareBackfillSummary,
   CustomerCareCrmIdentityActionResult,
   CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListResult,
+  CustomerCareCrmRow,
   CustomerCareCrmSaveResult,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
@@ -58,13 +60,13 @@ import {
   parseCareLeadStatusInput,
 } from './care-leads';
 import {
-  CARE_CRM_PAGE_SIZE,
   canUseCareCrm,
   copyCareCrmProfile,
   copyCareCrmRow,
   parseCareCrmListInput,
   parseCareCrmSaveInput,
   type CareCrmGateway,
+  type CareCrmPage,
 } from './care-crm';
 import {
   copyCareCrmIdentity,
@@ -74,6 +76,7 @@ import {
 import {
   CarePageConnectionCoordinator,
   connectedPage,
+  copyBackfillJobSnapshot,
   copyCrmSyncedPages,
   deriveCareMode,
   derivePageBlockers,
@@ -170,6 +173,8 @@ const AUTHORITY_RETRY_DELAY_MS = 500;
 const AUTHORITY_RETRY_BUDGET_MS = 7_000;
 /** Upper bound for the Page status read inside a snapshot, including a stalled token refresh. */
 const FACEBOOK_STATUS_TIMEOUT_MS = 10_000;
+/** Max CRM pages (`50 * 100 = 5,000` leads) aggregated for the count-only MyGraph segment node. */
+const CARE_GRAPH_CRM_MAX_PAGES = 50;
 
 const STORAGE_PREFIX = 'customer_care_setup:v1';
 const ENVELOPE_VERSION = 1;
@@ -759,7 +764,9 @@ export class CustomerCareService {
   async getSnapshot(): Promise<CustomerCareSnapshot> {
     const authority = await this.resolveAuthority();
     if (typeof authority === 'string') throw new Error(authority);
-    return this.buildSnapshot(authority, await this.readPageConnection(authority));
+    const connection = await this.readPageConnection(authority);
+    await this.refreshRunningBackfillJob(authority);
+    return this.buildSnapshot(authority, connection);
   }
 
   async saveSetup(input: unknown): Promise<CustomerCareMutationResult> {
@@ -886,16 +893,48 @@ export class CustomerCareService {
     const crmGateway = this.crm;
     if (crmGateway && canUseCareCrm(authority.role)) {
       // The same identity-pause scope as the CRM screen, so this read never resets it (Care CRM S3).
-      const crmResult = await this.runFacebookCall(
-        authority,
-        () => crmGateway.listCrm(authority.workspaceId, null, { scope: scopeHash(authority) }),
-      );
-      if (!crmResult.ok && crmResult.error === 'access_changed') return null;
-      if (crmResult.ok) {
+      const scope = scopeHash(authority);
+      let cursor: string | null = null;
+      let firstPage: CareCrmPage | null = null;
+      let identityUnavailable = false;
+      const allRows: CustomerCareCrmRow[] = [];
+      const seenLeadIds = new Set<string>();
+      const seenCursors = new Set<string>();
+      for (let pageIdx = 0; pageIdx < CARE_GRAPH_CRM_MAX_PAGES; pageIdx += 1) {
+        const currentCursor: string | null = cursor;
+        const crmResult: { ok: true; value: CareCrmPage } | CustomerCareFacebookFailure = await this.runFacebookCall(
+          authority,
+          (): Promise<CareFacebookResult<CareCrmPage>> => crmGateway.listCrm(authority.workspaceId, currentCursor, { scope }),
+        );
+        if (!crmResult.ok) {
+          if (crmResult.error === 'access_changed') return null;
+          if (crmResult.error === 'auth' || crmResult.error === 'forbidden') {
+            firstPage = null;
+            break;
+          }
+          break;
+        }
         const page = crmResult.value;
-        const capped = page.nextCursor !== null || page.rows.length >= CARE_CRM_PAGE_SIZE;
-        // `page` carries identityEnabled / identityUnavailable: the "consented" count follows the Ads export gate.
-        crmSegments = summarizeCareCrmSegments(page.rows, page, nowMs, capped);
+        firstPage ??= page;
+        identityUnavailable ||= page.identityUnavailable;
+        for (const row of page.rows) {
+          if (seenLeadIds.has(row.leadId)) continue;
+          seenLeadIds.add(row.leadId);
+          allRows.push(row);
+        }
+        cursor = page.nextCursor;
+        if (cursor === null || seenCursors.has(cursor)) break;
+        seenCursors.add(cursor);
+      }
+      if (firstPage) {
+        const capped = cursor !== null;
+        // `firstPage` + aggregated `identityUnavailable`: the "consented" count follows the Ads export gate.
+        crmSegments = summarizeCareCrmSegments(
+          allRows,
+          { identityEnabled: firstPage.identityEnabled, identityUnavailable },
+          nowMs,
+          capped,
+        );
       }
     }
     return {
@@ -999,11 +1038,13 @@ export class CustomerCareService {
       if (result.value.crmPages !== undefined) {
         this.pageConnections.setCrmPages(authority.workspaceId, result.value.crmPages);
       }
+      this.pageConnections.setBackfillJob(authority.workspaceId, result.value.backfillJob);
       const connection = await this.readPageConnection(authority);
       return {
         ok: true,
         snapshot: this.buildSnapshot(authority, connection),
         backfill: copyBackfillSummary(result.value),
+        ...(result.value.backfillJob ? { backfillJob: copyBackfillJobSnapshot(result.value.backfillJob) } : {}),
       };
     }
 
@@ -1041,6 +1082,7 @@ export class CustomerCareService {
       if (result.value.crmPages !== undefined) {
         this.pageConnections.setCrmPages(authority.workspaceId, result.value.crmPages);
       }
+      this.pageConnections.setBackfillJob(authority.workspaceId, result.value.backfillJob);
       const pageConn = result.value.connection
         ? connectedPage(result.value.connection, this.pageConnections.getCrmPages(authority.workspaceId))
         : await this.readPageConnection(authority);
@@ -1048,6 +1090,7 @@ export class CustomerCareService {
         ok: true,
         snapshot: this.buildSnapshot(authority, pageConn),
         backfill: copyBackfillSummary(result.value.backfill),
+        ...(result.value.backfillJob ? { backfillJob: copyBackfillJobSnapshot(result.value.backfillJob) } : {}),
       };
     }
     return {
@@ -1056,6 +1099,29 @@ export class CustomerCareService {
         authority,
         connectedPage(result.value, this.pageConnections.getCrmPages(authority.workspaceId)),
       ),
+    };
+  }
+
+  /** Owner/manager only. Polls the workspace's async 90-day Messenger backfill job status. */
+  async getBackfillStatus(): Promise<CustomerCareBackfillStatusResult> {
+    const gate = await this.facebookAuthority();
+    if (!gate.ok) return gate;
+    const { authority, facebook } = gate;
+    if (!facebook.getBackfillStatus) return { ok: false, error: 'unsupported' };
+    const result = await this.runFacebookCall(
+      authority,
+      () => facebook.getBackfillStatus!(authority.workspaceId),
+    );
+    if (!result.ok) return result;
+    const wasRunning = Boolean(this.pageConnections.getRunningBackfillJob(authority.workspaceId));
+    this.pageConnections.setBackfillJob(authority.workspaceId, result.value);
+    if (wasRunning && result.value.status === 'completed') {
+      this.notifyCareChanged();
+    }
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      job: copyBackfillJobSnapshot(result.value),
     };
   }
 
@@ -1299,6 +1365,27 @@ export class CustomerCareService {
     if (current === CUSTOMER_CARE_UNAVAILABLE_ERROR) return { ok: false, error: 'unavailable' };
     if (typeof current === 'string' || !sameAuthority(authority, current)) return { ok: false, error: 'access_changed' };
     return result.ok ? result : facebookFailure(result);
+  }
+
+  /** Best-effort refresh of a running async backfill job during snapshot reads; no-op when idle. */
+  private async refreshRunningBackfillJob(authority: CustomerCareAuthority): Promise<void> {
+    if (!this.pageConnections.getRunningBackfillJob(authority.workspaceId)) return;
+    const getBackfillStatus = this.facebook?.getBackfillStatus;
+    if (!getBackfillStatus) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        getBackfillStatus.call(this.facebook, authority.workspaceId),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('care-backfill-status-timeout')), FACEBOOK_STATUS_TIMEOUT_MS);
+        }),
+      ]);
+      if (result.ok) this.pageConnections.setBackfillJob(authority.workspaceId, result.value);
+    } catch {
+      // Keep the last known running job snapshot on transient timeout/error.
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /** Bounded status read; any failure or timeout reports `unavailable`, never a connected Page. */
@@ -1573,12 +1660,14 @@ export class CustomerCareService {
       : (pageConnection.state === 'not_connected'
         ? this.pageConnections.getCrmPages(authority.workspaceId)
         : []);
+    const backfillJob = this.pageConnections.getRunningBackfillJob(authority.workspaceId);
     return {
       workspaceId: authority.workspaceId,
       setup: setup ? cloneSetup(setup) : null,
       blockers,
       pageConnection,
       ...(crmPages.length > 0 ? { crmPages } : {}),
+      ...(backfillJob ? { backfillJob } : {}),
       canManagePage: MUTATION_ROLES.includes(authority.role),
       mode: careMode.mode,
       modeReasons: careMode.reasons,

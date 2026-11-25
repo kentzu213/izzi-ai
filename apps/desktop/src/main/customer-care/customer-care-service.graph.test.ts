@@ -313,6 +313,74 @@ describe('CustomerCareService.readGraphSnapshot', () => {
     expect(snapFallback?.source.crmSegments).toBeNull();
     expect(snapFallback?.source.page).toBe('connected');
   });
+
+  it('reads across multiple 100-row CRM pages (up to 50 pages / 5,000 leads) so 850+ leads are counted completely', async () => {
+    const totalLeads = 850;
+    const pages: CareCrmPage[] = Array.from({ length: 9 }, (_, pageIdx) => {
+      const count = pageIdx < 8 ? 100 : 50;
+      const start = pageIdx * 100;
+      const rows: CustomerCareCrmRow[] = Array.from({ length: count }, (__, idx) => {
+        const n = start + idx + 1000;
+        return {
+          leadId: `44444444-4444-4444-8444-44444444${String(n)}`,
+          pageId: PAGE_ID,
+          customerName: `Khách ${n}`,
+          phone: `090123${String(n)}`,
+          zaloMentioned: false,
+          leadStatus: 'new',
+          phoneCapturedAt: '2026-11-18T10:00:00.000Z',
+          lastMessageAt: '2026-11-19T02:00:00.000Z',
+          recentMessages: [],
+          profile: {
+            stage: idx % 2 === 0 ? 'has_phone' : 'consulting',
+            ownerUserId: null,
+            addressForm: null,
+            occasion: null,
+            neededBy: null,
+            productFactIds: [],
+            nextStep: null,
+            nextStepDueAt: null,
+            lostReason: null,
+            purchasedAt: null,
+            note: null,
+            updatedAt: null,
+            updatedBy: null,
+          },
+        };
+      });
+      return {
+        role: 'owner',
+        canDelete: true,
+        rows,
+        nextCursor: pageIdx < 8 ? `cursor-${pageIdx + 1}` : null,
+        assignees: [],
+        identityEnabled: true,
+        identityUnavailable: false,
+        consentAsk: null,
+      };
+    });
+    let callIdx = 0;
+    const multiPageCrm: CareCrmGateway = {
+      listCrm: async (_ws, cursor) => {
+        expect(cursor).toBe(callIdx === 0 ? null : `cursor-${callIdx}`);
+        const page = pages[callIdx]!;
+        callIdx += 1;
+        return { ok: true, value: page };
+      },
+      saveCrmProfile: async () => ({ ok: false, error: 'unsupported' }),
+      identityAction: async () => ({ ok: false, error: 'unsupported' }),
+      refreshIdentity: async () => ({ ok: false, error: 'unsupported' }),
+    };
+
+    const { service } = fixture(OWNER, multiPageCrm);
+    await service.saveSetup(SETUP);
+    const snap = await service.readGraphSnapshot();
+    expect(callIdx).toBe(9);
+    expect(snap?.source.crmSegments?.totalLeads).toBe(totalLeads);
+    expect(snap?.source.crmSegments?.leadsCapped).toBe(false);
+    expect(snap?.source.crmSegments?.byStage.has_phone).toBe(425);
+    expect(snap?.source.crmSegments?.byStage.consulting).toBe(425);
+  });
 });
 
 describe('CustomerCareService onCareChanged', () => {
