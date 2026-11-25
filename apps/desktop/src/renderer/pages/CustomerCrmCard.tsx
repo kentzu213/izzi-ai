@@ -1,4 +1,4 @@
-import type { Ref } from 'react';
+import type { ReactNode, Ref } from 'react';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
 import { formatLeadPhone } from './customer-care-leads-flow';
 import {
@@ -31,6 +31,7 @@ export interface CustomerCrmCardProps {
   canDelete?: boolean;
   /** The existing purge for this customer. */
   onPurge?: () => void;
+  extraSection?: ReactNode;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
@@ -42,6 +43,7 @@ const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
  */
 export function CustomerCrmCard({
   row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef, identityHandlers = null, canDelete = false, onPurge,
+  extraSection,
 }: CustomerCrmCardProps) {
   const { profile } = row;
   const name = crmCustomerLabel(row);
@@ -136,6 +138,8 @@ export function CustomerCrmCard({
         onPurge={onPurge}
         controller={identityControl}
       />
+
+      {extraSection}
 
       <div className="v2-crm-card__actions">
         <button type="button" className="v2-button v2-button--primary" onClick={onOpenProfile}>Mở hồ sơ</button>

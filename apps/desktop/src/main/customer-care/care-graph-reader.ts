@@ -10,7 +10,11 @@
  */
 import {
   CUSTOMER_CARE_AUTO_REPLY_PROBLEMS,
+  CUSTOMER_CARE_CRM_PERSONAS,
+  CUSTOMER_CARE_CRM_STAGES,
   type CustomerCareAutoReplyProblem,
+  type CustomerCareCrmPersona,
+  type CustomerCareCrmStage,
   type CustomerCareFactTopic,
 } from '../../shared/customer-care-types';
 import { ISO_PATTERN } from '../marketing/native-marketing-client';
@@ -22,6 +26,7 @@ import {
   careWorkspaceKey,
   formatCareGraphTime,
   type CareAutoReplyMode,
+  type CareCrmSegmentsMeta,
   type CareFactsMeta,
   type CareGraphKind,
   type CareGraphMeta,
@@ -35,6 +40,7 @@ export interface CareGraphView {
   process: CareProcessMeta | null;
   facts: CareFactsMeta | null;
   results: CareResultsMeta | null;
+  crmSegments: CareCrmSegmentsMeta | null;
 }
 
 /** Results older than this are shown as stale: the Director must not set KPIs from them. */
@@ -123,6 +129,59 @@ function parseResults(meta: Fields, wsKey: string): CareResultsMeta | null {
   };
 }
 
+function parseCrmSegments(meta: Fields, wsKey: string): CareCrmSegmentsMeta | null {
+  const asOf = own(meta, 'asOf');
+  const totalLeads = own(meta, 'totalLeads');
+  const leadsCapped = own(meta, 'leadsCapped');
+  const rawStages = record(own(meta, 'byStage'));
+  const rawPersonas = record(own(meta, 'byPersona'));
+  const rawAds = record(own(meta, 'adsBuckets'));
+  const rawLifecycle = record(own(meta, 'lifecycleDue'));
+  if (!isIso(asOf) || !isCount(totalLeads) || typeof leadsCapped !== 'boolean') return null;
+  if (!rawStages || !rawPersonas || !rawAds || !rawLifecycle) return null;
+
+  const byStage = {} as Record<CustomerCareCrmStage, number>;
+  for (const stage of CUSTOMER_CARE_CRM_STAGES) {
+    const val = own(rawStages, stage);
+    if (!isCount(val)) return null;
+    byStage[stage] = val;
+  }
+
+  const personaKeys = [...CUSTOMER_CARE_CRM_PERSONAS, 'unclassified'] as const;
+  const byPersona = {} as Record<CustomerCareCrmPersona | 'unclassified', number>;
+  for (const key of personaKeys) {
+    const val = own(rawPersonas, key);
+    if (!isCount(val)) return null;
+    byPersona[key] = val;
+  }
+
+  const highIntent = own(rawAds, 'highIntent');
+  const vipLookalike = own(rawAds, 'vipLookalike');
+  const reengageLost = own(rawAds, 'reengageLost');
+  const consented = own(rawAds, 'consented');
+  const suppressed = own(rawAds, 'suppressed');
+  if (!isCount(highIntent) || !isCount(vipLookalike) || !isCount(reengageLost) || !isCount(consented) || !isCount(suppressed)) {
+    return null;
+  }
+
+  const postSale = own(rawLifecycle, 'postSale');
+  const remarketing = own(rawLifecycle, 'remarketing');
+  if (!isCount(postSale) || !isCount(remarketing)) return null;
+
+  return {
+    kind: 'care-crm-segments',
+    schema: CARE_GRAPH_SCHEMA,
+    wsKey,
+    asOf,
+    totalLeads,
+    leadsCapped,
+    byStage,
+    byPersona,
+    adsBuckets: { highIntent, vipLookalike, reengageLost, consented, suppressed },
+    lifecycleDue: { postSale, remarketing },
+  };
+}
+
 function parseMeta(node: Fields, wsKey: string): CareGraphMeta | null {
   const meta = record(own(node, 'metadata'));
   if (!meta || own(meta, 'schema') !== CARE_GRAPH_SCHEMA || own(meta, 'wsKey') !== wsKey) return null;
@@ -130,6 +189,7 @@ function parseMeta(node: Fields, wsKey: string): CareGraphMeta | null {
     case 'care-process': return parseProcess(meta, wsKey);
     case 'care-facts': return parseFacts(meta, wsKey);
     case 'care-results': return parseResults(meta, wsKey);
+    case 'care-crm-segments': return parseCrmSegments(meta, wsKey);
     default: return null;
   }
 }
@@ -156,6 +216,7 @@ export function readCareGraph(cachedNodes: unknown, wsKey: string): CareGraphVie
     process: (best.get('care-process')?.meta as CareProcessMeta | undefined) ?? null,
     facts: (best.get('care-facts')?.meta as CareFactsMeta | undefined) ?? null,
     results: (best.get('care-results')?.meta as CareResultsMeta | undefined) ?? null,
+    crmSegments: (best.get('care-crm-segments')?.meta as CareCrmSegmentsMeta | undefined) ?? null,
   };
 }
 
@@ -204,7 +265,37 @@ function resultsLine(results: CareResultsMeta): string {
   return `- ${replies} ${leads}`;
 }
 
-function guidance(view: CareGraphView, fresh: boolean): string[] {
+const PERSONA_DIRECTOR_ANGLES: Record<CustomerCareCrmPersona, string> = {
+  P1: 'P1 (Gia chủ nhà mới / Sắm chính — ưu tiên nội dung chuẩn thước Lỗ Ban, phối cảnh phòng thờ chung cư/nhà phố)',
+  P2: 'P2 (Gia đình truyền thống / Lễ Tết — ưu tiên nội dung hiếu kính gia tiên, chất liệu bền đẹp đón Tết/giỗ chạp)',
+  P3: 'P3 (Quà biếu / Tri ân — ưu tiên nội dung hộp quà trang trọng, giao đúng ngày mừng tân gia/tri ân)',
+  P4: 'P4 (Khảo giá / Ngân sách — ưu tiên nội dung minh bạch phân khúc giá tại xưởng, so sánh chất liệu thực tế)',
+};
+
+function dominantPersona(byPersona: Record<CustomerCareCrmPersona | 'unclassified', number>): CustomerCareCrmPersona | null {
+  let top: CustomerCareCrmPersona | null = null;
+  let bestCount = 0;
+  for (const persona of CUSTOMER_CARE_CRM_PERSONAS) {
+    if (byPersona[persona] > bestCount) {
+      bestCount = byPersona[persona];
+      top = persona;
+    }
+  }
+  return top;
+}
+
+function crmSegmentsLine(seg: CareCrmSegmentsMeta): string {
+  const cap = seg.leadsCapped;
+  return `- Phân khúc CRM (${count(seg.totalLeads, cap)} khách, cập nhật ${formatCareGraphTime(seg.asOf)}): `
+    + `Có số ${seg.byStage.has_phone}, Đang tư vấn ${seg.byStage.consulting}, `
+    + `Đã cọc ${seg.byStage.deposit}, Đã giao ${seg.byStage.delivered}; `
+    + `Chân dung P1 ${seg.byPersona.P1}, P2 ${seg.byPersona.P2}, P3 ${seg.byPersona.P3}, P4 ${seg.byPersona.P4}; `
+    + `Tệp Ads khách ấm ${seg.adsBuckets.highIntent}, hạt giống Lookalike ${seg.adsBuckets.vipLookalike}, `
+    + `đồng ý nhận tin ${seg.adsBuckets.consented}; `
+    + `Lịch Hậu mãi ${seg.lifecycleDue.postSale}, Remarketing ${seg.lifecycleDue.remarketing}.`;
+}
+
+function guidance(view: CareGraphView, fresh: boolean, crmFresh: boolean): string[] {
   const lines = ['Cách dùng khối Chăm sóc khách:'];
   if (view.process?.autoReply === 'on' && fresh) {
     lines.push('- Tự trả lời đang bật: được dùng CTA "Nhắn tin Page để được tư vấn"; '
@@ -223,6 +314,22 @@ function guidance(view: CareGraphView, fresh: boolean): string[] {
   if (problem === 'standby' || problem === 'other_app') {
     lines.push('- Đề xuất chủ shop chỉnh Phân luồng hội thoại của Page (ứng dụng khác như Pancake đang giữ '
       + 'hội thoại) để izzi trả lời được.');
+  }
+  if (crmFresh && view.crmSegments) {
+    const seg = view.crmSegments;
+    const topPersona = dominantPersona(seg.byPersona);
+    if (topPersona) {
+      lines.push(`- Góc nội dung Ads ưu tiên theo nhóm chân dung CRM chiếm đa số: ${PERSONA_DIRECTOR_ANGLES[topPersona]}.`);
+    }
+    if (seg.adsBuckets.highIntent > 0 || seg.adsBuckets.vipLookalike > 0) {
+      lines.push(`- Khai thác tệp CRM cho Ads: bám đuổi ${seg.adsBuckets.highIntent} khách ấm đang cân nhắc, `
+        + `dùng ${seg.adsBuckets.vipLookalike} khách Đã cọc/Đã giao làm hạt giống Lookalike 1%–3% (chỉ xuất tệp từ `
+        + `${seg.adsBuckets.consented} khách đã đồng ý marketing và luôn loại trừ ${seg.adsBuckets.suppressed} khách đã chặn).`);
+    }
+    if (seg.lifecycleDue.postSale > 0 || seg.lifecycleDue.remarketing > 0) {
+      lines.push(`- Nhắc đội Sale/CSKH xử lý ${seg.lifecycleDue.postSale} lịch Hậu mãi (N+1/N+7/N+30) và `
+        + `${seg.lifecycleDue.remarketing} lịch Remarketing khách chưa chốt (tuân thủ khung 24h Messenger hoặc gọi/Zalo).`);
+    }
   }
   lines.push('- Khối này là số liệu vận hành, không phải proof claim: không dùng nó để khẳng định điều gì về sản phẩm.');
   return lines;
@@ -246,6 +353,7 @@ export function careDirectorContext(view: CareGraphView, nowMs: number): string[
   const asOf = view.results?.asOf ?? null;
   const stale = asOf !== null && nowMs - Date.parse(asOf) > CARE_GRAPH_STALE_MS;
   const fresh = asOf !== null && !stale;
+  const crmFresh = view.crmSegments !== null && nowMs - Date.parse(view.crmSegments.asOf) <= CARE_GRAPH_STALE_MS;
   const when = asOf ? `cập nhật ${formatCareGraphTime(asOf)}` : 'chưa có số liệu kết quả';
   const header = `Chăm sóc khách trên Facebook Page (từ MyGraph, ${when}`
     + `${stale ? '; số liệu đã cũ hơn 48 giờ, không đặt KPI theo các số này' : ''}):`;
@@ -258,5 +366,8 @@ export function careDirectorContext(view: CareGraphView, nowMs: number): string[
       lines.push(`- Lần gần nhất izzi không gửi được: ${CARE_PROBLEM_LABELS[view.results.lastProblem]}.`);
     }
   }
-  return [...lines, ...guidance(view, fresh)];
+  if (crmFresh && view.crmSegments) {
+    lines.push(crmSegmentsLine(view.crmSegments));
+  }
+  return [...lines, ...guidance(view, fresh, crmFresh)];
 }

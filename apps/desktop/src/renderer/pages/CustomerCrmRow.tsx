@@ -7,12 +7,17 @@ import type {
   CustomerCareCrmRow,
   CustomerCareCrmStage,
 } from '../../shared/customer-care-types';
+import {
+  extractEditableFreeNote,
+  maxFreeNoteLength,
+  replaceEditableFreeNote,
+  splitCrmNote,
+} from '../../shared/customer-crm-enterprise';
 import { formatLeadAbsoluteTime, formatLeadPhone, formatLeadTime, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_ADDRESS_FORM_OPTIONS,
   CRM_LOST_REASON_OPTIONS,
   CRM_MAX_NEXT_STEP,
-  CRM_MAX_NOTE,
   CRM_MAX_PRODUCTS,
   CRM_OCCASION_OPTIONS,
   CRM_STAGE_OPTIONS,
@@ -56,12 +61,21 @@ export interface CustomerCrmRowProps {
   onDiscard: () => void;
   /** Care CRM S3: the AI identity card in the editor; absent shows it read-only. */
   identityHandlers?: CrmIdentityHandlers | null;
+  onInspectPortrait?: () => void;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
 
 function nullable<T extends string>(value: string): T | null {
   return value === '' ? null : value as T;
+}
+
+/** Updates staff-visible free note text while preserving any `[izzi-ctx: ...]` metadata line. */
+export function updateCrmRowFreeNote(
+  profile: CustomerCareCrmProfileInput,
+  nextFreeNote: string,
+): CustomerCareCrmProfileInput {
+  return { ...profile, note: replaceEditableFreeNote(profile.note, nextFreeNote) };
 }
 
 /** One customer: a summary line in the call list, and the full profile form when opened. */
@@ -112,6 +126,16 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
         </td>
         <td className="v2-crm__status" aria-live="polite">{status}</td>
         <td className="v2-crm__actions">
+          {props.onInspectPortrait && (
+            <button
+              type="button"
+              className="v2-button v2-button--ghost"
+              aria-label={`Chân dung của ${name}`}
+              onClick={props.onInspectPortrait}
+            >
+              Chân dung
+            </button>
+          )}
           <button type="button" className="v2-button v2-button--ghost" aria-label={`Sao chép số của ${name}`} onClick={onCopy}>
             Sao chép
           </button>
@@ -157,6 +181,9 @@ function CrmEditor({
   const offered = new Set(products.map((product) => product.id));
   const otherProducts = profile.productFactIds.filter((productId) => !offered.has(productId)).length;
   const productLimitReached = profile.productFactIds.length >= CRM_MAX_PRODUCTS;
+  const { ctx: noteCtx } = splitCrmNote(profile.note);
+  const noteMaxLength = maxFreeNoteLength(noteCtx);
+  const noteValue = extractEditableFreeNote(profile.note);
   const toggleProduct = (productId: string, checked: boolean) => set({
     productFactIds: checked
       ? [...profile.productFactIds, productId]
@@ -349,9 +376,9 @@ function CrmEditor({
           id={id('note')}
           className="v2-field__input"
           rows={3}
-          maxLength={CRM_MAX_NOTE}
-          value={profile.note ?? ''}
-          onChange={(event) => set({ note: event.currentTarget.value === '' ? null : event.currentTarget.value })}
+          maxLength={noteMaxLength}
+          value={noteValue}
+          onChange={(event) => onChange(updateCrmRowFreeNote(profile, event.currentTarget.value))}
         />
       </label>
       )}

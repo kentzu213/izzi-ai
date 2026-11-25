@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { colorWithAlpha, drawGraphViewCanvasField, mixTagColors } from '@kentzu213/graph-view';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
@@ -17,6 +17,7 @@ import {
   type CrmGraphEntry,
   type CrmGraphLink,
   type CrmGraphNode,
+  type CrmGraphRow,
 } from './customer-crm-graph';
 import { CustomerCrmCard } from './CustomerCrmCard';
 import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
@@ -35,6 +36,7 @@ export interface CustomerCrmGraphProps {
   canDelete?: boolean;
   /** The existing purge, for a customer's erase request. */
   onPurge?: (row: CustomerCareCrmRow) => void;
+  renderExtraCard?: (row: CrmGraphRow) => ReactNode;
 }
 
 /** The engine adds positions and speeds to these copies; pill sizes are kept for hit-testing. */
@@ -69,7 +71,7 @@ function truncate(text: string, max: number): string {
  * opens the card: the staff profile read-only, the AI identity with its staff actions.
  */
 export default function CustomerCrmGraph({
-  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null, canDelete = false, onPurge,
+  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null, canDelete = false, onPurge, renderExtraCard,
 }: CustomerCrmGraphProps) {
   // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
   // restart; the 60 s tick hands over new row arrays every time.
@@ -382,6 +384,7 @@ export default function CustomerCrmGraph({
           nowMs={nowMs}
           assignees={assignees}
           products={products}
+          extraSection={renderExtraCard ? renderExtraCard(selectedRow) : undefined}
           onCopy={() => onCopy(selectedRow)}
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
           onClose={closeCard}
