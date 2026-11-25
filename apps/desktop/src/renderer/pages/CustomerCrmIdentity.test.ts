@@ -62,13 +62,15 @@ const ROW: CustomerCareCrmRow = {
 
 const PRODUCTS = [{ id: 'ban-127', label: 'Bàn thờ gỗ gụ 1m27' }];
 
+const ASK = 'Dạ em là trợ lý tự động của Hồng Hưng ạ.\nDạ, để tư vấn đúng (chi tiết: https://izziapi.com/privacy).';
+
 function handlers(enabled: boolean | null = true): CrmIdentityHandlers {
-  return { enabled, pageName: 'Hồng Hưng', act: vi.fn(), refresh: vi.fn() };
+  return { enabled, consentAsk: ASK, act: vi.fn(), refresh: vi.fn() };
 }
 
 function render(overrides: Partial<CustomerCrmIdentityProps> = {}): string {
   return renderToStaticMarkup(createElement(CustomerCrmIdentity, {
-    row: ROW, products: PRODUCTS, handlers: handlers(), showOccasion: true, ...overrides,
+    row: ROW, products: PRODUCTS, handlers: handlers(), place: 'editor', ...overrides,
   }));
 }
 
@@ -133,12 +135,11 @@ describe('CustomerCrmIdentity: the AI identity card', () => {
     expect(buttonText(html)).not.toContain('Khách rút đồng ý');
   });
 
-  it('keeps "Xin phép khách" disabled, with the reason, when the server says izzi may not ask now', () => {
-    const html = render({ row: withIdentity(identity('asked', false)) });
-    const ask = buttons(html).find((button) => button.includes('Xin phép khách'))!;
-    expect(ask).toContain('disabled');
-    expect(ask).toContain('aria-describedby="crm-identity-ask-44444444-4444-4444-8444-444444444444"');
-    expect(html).toContain('Chỉ xin phép được trong 24 giờ sau tin cuối của khách');
+  it('hides "Xin phép khách" when the server says izzi may not ask now, or sent no consent question (review LOW 4)', () => {
+    expect(buttonText(render({ row: withIdentity(identity('asked', false)) }))).not.toContain('Xin phép khách');
+    const noQuestion = { ...handlers(), consentAsk: null };
+    expect(buttonText(render({ row: withIdentity(identity('unknown', true)), handlers: noQuestion }))).not.toContain('Xin phép khách');
+    expect(render({ row: withIdentity(identity('unknown', true)) })).not.toMatch(/disabled[^>]*>Xin phép khách/);
   });
 
   it('offers nothing after the customer refused or withdrew', () => {
@@ -178,12 +179,12 @@ describe('CustomerCrmIdentity: the AI identity card', () => {
     expect(render()).toContain('aria-label="Duyệt Dịp mua: Tết"');
     const staff = render({ row: withIdentity(identity(), { occasion: 'new_home' }) });
     expect(staff).not.toContain('Dịp mua');
-    expect(render({ showOccasion: false })).not.toContain('Dịp mua');
+    expect(render({ place: 'card' })).not.toContain('Dịp mua');
   });
 
   it('shows the spinner while "Cập nhật hồ sơ" runs, with every action waiting', () => {
     const controller: CrmIdentityController = {
-      state: { ...crmIdentityCardStart(ROW.identity), pending: 'refresh' },
+      state: { ...crmIdentityCardStart(), pending: 'refresh' },
       run: noop,
       refresh: noop,
     };
@@ -196,7 +197,7 @@ describe('CustomerCrmIdentity: the AI identity card', () => {
 
   it('shows the last answer in a polite live region', () => {
     const controller: CrmIdentityController = {
-      state: { baseVersion: AT, pending: null, message: { text: CRM_IDENTITY_CONFLICT_MESSAGE, tone: 'notice' } },
+      state: { pending: null, message: { text: CRM_IDENTITY_CONFLICT_MESSAGE, tone: 'notice' } },
       run: noop,
       refresh: noop,
     };
@@ -207,6 +208,38 @@ describe('CustomerCrmIdentity: the AI identity card', () => {
 
   it('renders nothing for a row without identity (a server without S3)', () => {
     expect(render({ row: { ...ROW, identity: undefined } })).toBe('');
+  });
+
+  it('says the AI profile could not be loaded for a row whose identity was unreadable (review HIGH 2)', () => {
+    const html = render({ row: { ...ROW, identity: undefined, identityUnavailable: true } });
+    expect(html).toContain('Nhận diện (AI)');
+    expect(html).toContain('AI hồ sơ khách tạm không tải được.');
+    expect(buttons(html)).toEqual([]);
+  });
+
+  it('shows a red "Khách yêu cầu xoá dữ liệu" chip with the time; owners and managers get both choices, editors none', () => {
+    const asked = identity('granted');
+    asked.consent = { ...asked.consent!, canAsk: true, noMarketing: true, eraseRequestedAt: '2026-11-25T03:15:00.000Z' };
+    const manager = render({ row: withIdentity(asked), canDelete: true, onPurge: noop });
+    expect(manager).toContain('class="v2-crm-card__erase"');
+    expect(manager).toContain('Khách yêu cầu xoá dữ liệu');
+    expect(manager).toContain('<time dateTime="2026-11-25T03:15:00.000Z">10:15 25/11</time>');
+    expect(buttonText(manager)).toEqual(expect.arrayContaining(['Xoá dữ liệu khách', 'Bỏ yêu cầu (khách đổi ý)']));
+    // While the request is pending nothing is asked or refreshed.
+    expect(buttonText(manager)).not.toContain('Xin phép khách');
+    expect(buttonText(manager)).not.toContain('Cập nhật hồ sơ');
+    const editor = render({ row: withIdentity(asked), canDelete: false, onPurge: noop });
+    expect(editor).toContain('Khách yêu cầu xoá dữ liệu');
+    expect(buttonText(editor)).not.toContain('Xoá dữ liệu khách');
+    expect(buttonText(editor)).not.toContain('Bỏ yêu cầu (khách đổi ý)');
+    // Without the purge (an older preload) or the identity handlers, only the choice that can run is offered.
+    expect(buttonText(render({ row: withIdentity(asked), canDelete: true }))).not.toContain('Xoá dữ liệu khách');
+    expect(buttonText(render({ row: withIdentity(asked), canDelete: true, onPurge: noop, handlers: null }))).toEqual(['Xoá dữ liệu khách']);
+    // Shown whatever else the card shows: AI off, no handlers, a refusal.
+    const refused = identity('declined');
+    refused.consent = { ...refused.consent!, eraseRequestedAt: '2026-11-25T03:15:00.000Z' };
+    expect(render({ row: withIdentity(refused), handlers: null })).toContain('Khách yêu cầu xoá dữ liệu');
+    expect(render({ row: withIdentity(identity()) })).not.toContain('Khách yêu cầu xoá dữ liệu');
   });
 });
 

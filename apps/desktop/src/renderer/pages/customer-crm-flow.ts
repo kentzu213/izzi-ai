@@ -6,6 +6,7 @@
 import type {
   CustomerCareCrmAddressForm,
   CustomerCareCrmAssignee,
+  CustomerCareCrmConsentAsk,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
   CustomerCareCrmLostReason,
@@ -445,9 +446,29 @@ function isNewer(a: string | null, b: string | null): boolean {
   return Date.parse(a) > Date.parse(b);
 }
 
+type CrmIdentity = NonNullable<CustomerCareCrmRow['identity']>;
+
+/**
+ * Care CRM S3: the identity has its own version (`identity_updated_at`, which every write and every wipe moves
+ * forward, to the millisecond). A refresh never puts an older identity over a newer one on screen, e.g. a 60 s tick
+ * that read the list before a staff action answered. An equal or newer one follows the server (a consent change
+ * keeps the version), and so does none at all (the list was read without identity).
+ */
+function newerIdentity(mine: CrmIdentity | undefined, fresh: CrmIdentity | undefined): CrmIdentity | undefined {
+  if (!fresh || !mine || mine.version === null) return fresh;
+  return fresh.version === null || Date.parse(mine.version) > Date.parse(fresh.version) ? mine : fresh;
+}
+
+function rowWithIdentity(row: CustomerCareCrmRow, identity: CrmIdentity | undefined, unavailable: boolean): CustomerCareCrmRow {
+  const { identity: _identity, identityUnavailable: _unavailable, ...rest } = row;
+  if (identity) return { ...rest, identity };
+  return unavailable ? { ...rest, identityUnavailable: true } : rest;
+}
+
 /**
  * A refresh follows the server's rows and order, but never brings back a row deleted here and never undoes
- * a save that finished after the refresh started (a newer local `updatedAt` wins).
+ * a save that finished after the refresh started (a newer local `updatedAt` wins). The identity is merged on its
+ * own version, apart from the profile.
  */
 export function crmRowsOnRefresh(
   current: readonly CustomerCareCrmRow[],
@@ -459,7 +480,12 @@ export function crmRowsOnRefresh(
     .filter((row) => !removed.has(row.leadId))
     .map((row) => {
       const mine = local.get(row.leadId);
-      return mine && isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
+      if (!mine) return row;
+      const base = isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
+      const identity = newerIdentity(mine.identity, row.identity);
+      const unavailable = identity === undefined && row.identityUnavailable === true;
+      if (identity === base.identity && unavailable === (base.identityUnavailable === true)) return base;
+      return rowWithIdentity(base, identity, unavailable);
     });
 }
 
@@ -520,6 +546,10 @@ export type CrmLoadResult =
     truncated: boolean;
     /** Care CRM S3, from the first page: the AI profile is on; null when the server sent no identity. */
     identityEnabled: boolean | null;
+    /** Care CRM S3: some page was read without its identity (the identity read failed). */
+    identityUnavailable: boolean;
+    /** Care CRM S3, from the first page: the exact consent question; null while asks are off. */
+    consentAsk: CustomerCareCrmConsentAsk | null;
   }
   | CustomerCareFacebookFailure;
 
@@ -531,12 +561,14 @@ export async function loadCrmPages(
   let cursor: string | null = null;
   let first: Extract<CustomerCareCrmListResult, { ok: true }> | null = null;
   let pages = 0;
+  let identityUnavailable = false;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < maxPages; page += 1) {
     const result = await list({ cursor });
     if (!result.ok) return result;
     pages += 1;
+    identityUnavailable ||= result.identityUnavailable;
     if (first && result.workspaceId !== first.workspaceId) return { ok: false, error: 'access_changed' };
     first ??= result;
     for (const row of result.rows) {
@@ -559,6 +591,8 @@ export async function loadCrmPages(
     complete: cursor === null,
     truncated: cursor !== null && pages >= maxPages,
     identityEnabled: first.identityEnabled,
+    identityUnavailable,
+    consentAsk: first.consentAsk,
   };
 }
 

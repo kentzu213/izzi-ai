@@ -213,22 +213,77 @@ describe('GET /crm with and without the identity block', () => {
     expect(page?.rows[0].identity?.version).toBe(VERSION);
   });
 
-  it('rejects a mixed answer: identityEnabled without a row identity, or a row identity without identityEnabled', () => {
-    expect(parseCareCrmListBody(listBody([row()], { identityEnabled: true }), WORKSPACE)).toBeNull();
-    expect(parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() })]), WORKSPACE)).toBeNull();
-  });
-
-  it('rejects identityEnabled that is not a boolean, and a page with one invalid identity', () => {
-    expect(parseCareCrmListBody(listBody([], { identityEnabled: 'yes' }), WORKSPACE)).toBeNull();
-    const bad = withPath(identity(), ['consent', 'state'], 'maybe');
-    expect(parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() }), row(LEAD_ID_2, { identity: bad })], {
+  // One bad identity never takes the CRM down (review of a694110): the row stays, only its identity is dropped.
+  it.each([
+    ['an unknown key inside the identity', withPath(identity(), ['persona', 'gender'], 'x')],
+    ['an unknown key inside a field', withPath(identity(), ['ageBand', 'extra'], 1)],
+    ['a malformed identity', withPath(identity(), ['consent', 'state'], 'maybe')],
+    ['an identity that is not an object', 'identity'],
+    ['a null identity', null],
+  ])('keeps the row and drops only its identity on %s', (_label, bad) => {
+    const page = parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() }), row(LEAD_ID_2, { identity: bad })], {
       identityEnabled: true,
-    }), WORKSPACE)).toBeNull();
+    }), WORKSPACE);
+    expect(page?.rows).toHaveLength(2);
+    expect(page?.rows[0].identity).toEqual(identity());
+    expect(page?.rows[0]).not.toHaveProperty('identityUnavailable');
+    expect(page?.rows[1]).not.toHaveProperty('identity');
+    expect(page?.rows[1].identityUnavailable).toBe(true);
+    expect(page?.rows[1].profile.stage).toBe('consulting');
+    expect(page?.identityEnabled).toBe(true);
+    expect(page?.identityUnavailable).toBe(false);
   });
 
-  it('still rejects any other unknown envelope or row key', () => {
+  it('marks a row the server sent without its identity as unavailable', () => {
+    const page = parseCareCrmListBody(listBody([row()], { identityEnabled: true }), WORKSPACE);
+    expect(page?.rows[0].identityUnavailable).toBe(true);
+  });
+
+  it('shows the table without identity when the identity part of the envelope is unreadable', () => {
+    const page = parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() })], { identityEnabled: 'yes' }), WORKSPACE);
+    expect(page?.rows).toHaveLength(1);
+    expect(page?.rows[0]).not.toHaveProperty('identity');
+    expect(page?.identityEnabled).toBeNull();
+    expect(page?.identityUnavailable).toBe(true);
+    const stray = parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() })]), WORKSPACE);
+    expect(stray?.rows[0]).not.toHaveProperty('identity');
+    expect(stray?.identityUnavailable).toBe(true);
+  });
+
+  it('still rejects any other unknown envelope or row key (the S1 contract)', () => {
     expect(parseCareCrmListBody(listBody([row()], { identityEnabled: true, extra: 1 }), WORKSPACE)).toBeNull();
-    expect(parseCareCrmRow(row(LEAD_ID, { identity: identity() }))).toBeNull();
+    expect(parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity(), extra: 1 })], { identityEnabled: true }), WORKSPACE)).toBeNull();
+    expect(parseCareCrmRow(row(LEAD_ID, { extra: 1 }))).toBeNull();
+  });
+
+  it('takes the exact consent question when the server sends it, and null otherwise', () => {
+    const ask = { text: 'Dạ em là trợ lý tự động của Hồng Hưng ạ.\nDạ, để tư vấn đúng (chi tiết: https://izziapi.com/privacy).', copyVersion: 1 };
+    expect(parseCareCrmListBody(listBody([], { identityEnabled: true, consentAsk: ask }), WORKSPACE)?.consentAsk).toEqual(ask);
+    expect(parseCareCrmListBody(listBody([], { identityEnabled: true, consentAsk: null }), WORKSPACE)?.consentAsk).toBeNull();
+    expect(parseCareCrmListBody(listBody([], { identityEnabled: true }), WORKSPACE)?.consentAsk).toBeNull();
+    expect(parseCareCrmListBody(listBody([]), WORKSPACE)).toMatchObject({ consentAsk: null, identityUnavailable: false });
+  });
+
+  it.each([
+    ['an unknown key', { text: 'x', copyVersion: 1, extra: 1 }],
+    ['an empty text', { text: '', copyVersion: 1 }],
+    ['a bidi control', { text: 'Dạ \u202E ạ', copyVersion: 1 }],
+    ['a control character other than a line break', { text: 'Dạ\u0007 ạ', copyVersion: 1 }],
+    ['over 2000 characters', { text: 'x'.repeat(2001), copyVersion: 1 }],
+    ['a copy version that is not a positive whole number', { text: 'x', copyVersion: 0 }],
+  ])('disables asking (consentAsk null) on a consent question with %s, keeping the page', (_label, consentAsk) => {
+    const page = parseCareCrmListBody(listBody([row(LEAD_ID, { identity: identity() })], { identityEnabled: true, consentAsk }), WORKSPACE);
+    expect(page?.consentAsk).toBeNull();
+    expect(page?.rows[0].identity).toEqual(identity());
+  });
+
+  it('reads consent.eraseRequestedAt when present (backend round 3), strictly', () => {
+    const asked = withPath(identity(), ['consent', 'eraseRequestedAt'], AT);
+    expect(parseCareCrmIdentity(asked)?.consent?.eraseRequestedAt).toBe(AT);
+    expect(parseCareCrmIdentity(withPath(identity(), ['consent', 'eraseRequestedAt'], null))?.consent?.eraseRequestedAt).toBeNull();
+    expect(parseCareCrmIdentity(identity())?.consent).not.toHaveProperty('eraseRequestedAt');
+    expect(parseCareCrmIdentity(withPath(identity(), ['consent', 'eraseRequestedAt'], 'yesterday'))).toBeNull();
+    expect(copyCareCrmIdentity(parseCareCrmIdentity(asked)!).consent?.eraseRequestedAt).toBe(AT);
   });
 
   it('copies a row with its identity for IPC', () => {
@@ -279,6 +334,17 @@ describe('parseCareCrmIdentityActionInput (IPC argument guard)', () => {
   it('accepts ask_consent and withdraw_consent with the lead only', () => {
     expect(parseCareCrmIdentityActionInput({ leadId: LEAD_ID, action: 'ask_consent' })).toEqual({ leadId: LEAD_ID, action: 'ask_consent' });
     expect(parseCareCrmIdentityActionInput({ leadId: LEAD_ID, action: 'withdraw_consent' })).not.toBeNull();
+  });
+
+  it('accepts clear_erase_request (backend 79e14f9) with exactly the lead and the action', () => {
+    expect(parseCareCrmIdentityActionInput({ leadId: LEAD_ID, action: 'clear_erase_request' }))
+      .toEqual({ leadId: LEAD_ID, action: 'clear_erase_request' });
+    for (const extra of [{ workspaceId: WORKSPACE }, { field: 'occasion' }, { expectedVersion: null }, { value: 1 }]) {
+      expect(parseCareCrmIdentityActionInput({ leadId: LEAD_ID, action: 'clear_erase_request', ...extra })).toBeNull();
+    }
+    expect(parseCareCrmIdentityActionInput({ leadId: 'lead-1', action: 'clear_erase_request' })).toBeNull();
+    expect(careCrmIdentityRequestBody(WORKSPACE, { leadId: LEAD_ID, action: 'clear_erase_request' }))
+      .toEqual({ workspaceId: WORKSPACE, leadId: LEAD_ID, action: 'clear_erase_request' });
   });
 
   it.each([

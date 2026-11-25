@@ -85,7 +85,8 @@ describe('CareCrmClient GET /crm', () => {
     const result = await instance.listCrm(WORKSPACE, null);
     expect(result).toEqual({
       ok: true,
-      value: { role: 'owner', canDelete: true, rows: [ROW], nextCursor: null, assignees: LIST_BODY.assignees, identityEnabled: null },
+      value: { role: 'owner', canDelete: true, rows: [ROW], nextCursor: null, assignees: LIST_BODY.assignees, identityEnabled: null,
+        identityUnavailable: false, consentAsk: null },
     });
     const [url, init] = call(fetchImpl);
     expect(url).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity`);
@@ -258,6 +259,8 @@ describe('CareCrmClient failures', () => {
     const logged = [...warn.mock.calls, ...log.mock.calls, ...error.mock.calls].flat().map(String).join('\n');
     expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
       '[CareCrmClient] crm-profile: status 409',
+      // The identity read, then the read without it (both failed).
+      '[CareCrmClient] crm: status 500',
       '[CareCrmClient] crm: status 500',
       '[CareCrmClient] crm-profile: unavailable',
     ]);
@@ -298,6 +301,99 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     const result = await instance.listCrm(WORKSPACE, null);
     expect(result.ok && result.value.identityEnabled).toBe(true);
     expect(result.ok && result.value.rows[0].identity).toEqual(IDENTITY);
+  });
+
+  // The identity read must never take the CRM down (review of a694110).
+  function sequence(...responses: Response[]) {
+    const fetchImpl = vi.fn(async () => responses.shift()!);
+    const instance = new CareCrmClient({ getAccessToken: async () => TOKEN }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+    return { instance, fetchImpl, urls: () => fetchImpl.mock.calls.map((args) => (args as unknown as [string])[0]) };
+  }
+
+  it.each([
+    [400, 'invalid_request'],
+    [422, 'invalid_request'],
+    [500, undefined],
+    [502, undefined],
+    [503, 'not_configured'],
+  ])('reads the list again without identity after a %i on include=identity, once', async (status, reason) => {
+    const { instance, urls } = sequence(json({ success: false, error: 'x', ...(reason ? { reason } : {}) }, status), json(LIST_BODY));
+    const result = await instance.listCrm(WORKSPACE, 'crm-next-1');
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        role: 'owner', canDelete: true, rows: [ROW], nextCursor: null, assignees: LIST_BODY.assignees,
+        identityEnabled: null, identityUnavailable: true, consentAsk: null,
+      },
+    });
+    expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&cursor=crm-next-1`,
+    ]);
+  });
+
+  it('does not retry an answer that would not change without include: 401, 403, 404, 429', async () => {
+    for (const [status, expected] of [
+      [401, { ok: false, error: 'auth' }],
+      [403, { ok: false, error: 'forbidden' }],
+      [404, { ok: false, error: 'unsupported' }],
+      [429, { ok: false, error: 'unavailable', reason: 'rate_limited' }],
+    ] as const) {
+      const { instance, fetchImpl } = sequence(json({ success: false, error: 'x', reason: 'forbidden' }, status), json(LIST_BODY));
+      expect(await instance.listCrm(WORKSPACE, null), String(status)).toEqual(expected);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('fails as before when the read without include fails too', async () => {
+    const { instance, fetchImpl } = sequence(json({ success: false, error: 'x' }, 500), json({ success: false, error: 'x' }, 500));
+    expect(await instance.listCrm(WORKSPACE, null)).toEqual({ ok: false, error: 'unavailable' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips include for 5 minutes after a failure, so a broken identity read never doubles the Care budget', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-11-25T10:00:00.000Z'));
+      const { instance, urls } = sequence(
+        json({ success: false, error: 'x' }, 500), json(LIST_BODY), json(LIST_BODY), json({ ...LIST_BODY, identityEnabled: true }),
+      );
+      await instance.listCrm(WORKSPACE, null);
+      vi.setSystemTime(new Date('2026-11-25T10:04:59.000Z'));
+      const during = await instance.listCrm(WORKSPACE, null);
+      expect(during.ok && during.value.identityUnavailable).toBe(true);
+      vi.setSystemTime(new Date('2026-11-25T10:05:01.000Z'));
+      const after = await instance.listCrm(WORKSPACE, null);
+      expect(after.ok && after.value).toMatchObject({ identityEnabled: true, identityUnavailable: false });
+      expect(urls().map((url) => url.includes('include=identity'))).toEqual([true, false, false, true]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('CareCrmClient POST /crm/identity clear_erase_request (backend 79e14f9)', () => {
+  const CLEAR = { leadId: LEAD_ID, action: 'clear_erase_request' as const };
+
+  it('sends exactly the workspace, the lead and the action, and returns the identity after it', async () => {
+    const cleared = { ...IDENTITY, consent: { ...IDENTITY.consent, noMarketing: true, eraseRequestedAt: null } };
+    const { instance, fetchImpl } = client(actionOk(cleared));
+    expect(await instance.identityAction(WORKSPACE, CLEAR)).toEqual({ ok: true, value: { kind: 'applied', leadId: LEAD_ID, identity: cleared } });
+    expect(JSON.parse(call(fetchImpl)[1].body as string)).toEqual({ workspaceId: WORKSPACE, leadId: LEAD_ID, action: 'clear_erase_request' });
+  });
+
+  it.each([
+    [400, 'invalid_request', { ok: false, error: 'rejected', reason: 'invalid_request' }],
+    [401, undefined, { ok: false, error: 'auth' }],
+    [403, 'forbidden', { ok: false, error: 'forbidden' }],
+    [404, undefined, { ok: false, error: 'unsupported' }],
+    [422, 'lead_not_found', { ok: false, error: 'rejected', reason: 'lead_not_found' }],
+    [429, 'rate_limited', { ok: false, error: 'unavailable', reason: 'rate_limited' }],
+    [500, undefined, { ok: false, error: 'unavailable' }],
+    [503, 'not_configured', { ok: false, error: 'not_configured' }],
+  ])('maps %i %s', async (status, reason, expected) => {
+    const body = reason === undefined ? { success: false, error: 'x' } : { success: false, error: 'x', reason };
+    expect(await client(json(body, status)).instance.identityAction(WORKSPACE, CLEAR)).toEqual(expected);
   });
 });
 

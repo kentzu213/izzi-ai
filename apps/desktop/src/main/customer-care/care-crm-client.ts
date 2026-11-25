@@ -56,6 +56,14 @@ const OWNER_NOT_ELIGIBLE: CareFacebookFailure = { ok: false, error: 'rejected', 
 const FORBIDDEN_STATUS = 403;
 const CONFLICT_STATUS = 409;
 const RATE_LIMIT_STATUS = 429;
+/** Answers to `GET /crm?include=identity` that reading again without it would not change: no retry. */
+const NO_RETRY_STATUSES = [401, 403, 404];
+/**
+ * After the identity read failed, lists are read without it this long: a broken identity read (e.g. a backend
+ * deployed before its migration) then costs one extra request every 5 minutes, not one per page, against the shared
+ * 30-a-minute Care budget.
+ */
+const IDENTITY_BACKOFF_MS = 5 * 60_000;
 
 type CrmResponse = { ok: true; status: number; body: unknown } | CareFacebookFailure;
 
@@ -95,6 +103,8 @@ export class CareCrmClient implements CareCrmGateway {
   private readonly baseUrl: string | null;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  /** Until then GET /crm is read without `include=identity` (set when the identity read failed). */
+  private identityBackoffUntil = 0;
 
   constructor(
     private readonly auth: NativeMarketingTokenProvider,
@@ -107,16 +117,31 @@ export class CareCrmClient implements CareCrmGateway {
 
   /**
    * GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`. Asks for
-   * the Care CRM S3 identity block; a server without S3 ignores the parameter and answers without it.
+   * the Care CRM S3 identity block; a server without S3 ignores the parameter and answers without it. The identity
+   * never takes the CRM down: when that read fails (any 4xx or 5xx except 401, 403, 404 and 429, which would not
+   * change), the page is read once more without it and marked `identityUnavailable`.
    */
   async listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>> {
     if (!isCareFacebookChoiceId(workspaceId) || (cursor !== null && !isCareLeadsCursor(cursor))) return INVALID_REQUEST;
+    const path = `/crm?workspaceId=${encodeURIComponent(workspaceId)}`;
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
-    const result = await this.request('crm', `/crm?workspaceId=${encodeURIComponent(workspaceId)}&include=identity${query}`);
+    if (Date.now() >= this.identityBackoffUntil) {
+      const result = await this.request('crm', `${path}&include=identity${query}`, {}, { raw: true });
+      if (!result.ok) return result;
+      if (result.status >= 200 && result.status < 300) {
+        const page = parseCareCrmListBody(result.body, workspaceId);
+        return page ? { ok: true, value: page } : INVALID_RESPONSE;
+      }
+      if (result.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
+      if (NO_RETRY_STATUSES.includes(result.status)) return careFacebookFailure(result.status, result.body);
+      // The identity read failed: the CRM is read once more without it, and without it for a while.
+      this.identityBackoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
+    }
+    const result = await this.request('crm', `${path}${query}`);
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) return INVALID_RESPONSE;
     const page = parseCareCrmListBody(result.body, workspaceId);
-    return page ? { ok: true, value: page } : INVALID_RESPONSE;
+    return page ? { ok: true, value: { ...page, identityUnavailable: true } } : INVALID_RESPONSE;
   }
 
   /**

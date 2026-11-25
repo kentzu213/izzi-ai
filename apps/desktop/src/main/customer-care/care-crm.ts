@@ -13,6 +13,7 @@ import {
   CUSTOMER_CARE_CRM_ROLES,
   CUSTOMER_CARE_CRM_STAGES,
   type CustomerCareCrmAssignee,
+  type CustomerCareCrmConsentAsk,
   type CustomerCareCrmIdentityActionInput,
   type CustomerCareCrmListInput,
   type CustomerCareCrmProfile,
@@ -37,6 +38,7 @@ import {
 } from './care-facebook-client';
 import {
   copyCareCrmIdentity,
+  parseCareCrmConsentAsk,
   parseCareCrmIdentity,
   type CareCrmIdentityOutcome,
   type CareCrmRefreshOutcome,
@@ -74,6 +76,10 @@ export interface CareCrmPage {
   assignees: CustomerCareCrmAssignee[];
   /** Care CRM S3: the server's `identityEnabled`; null when it answered without identity (no S3 there). */
   identityEnabled: boolean | null;
+  /** Care CRM S3: the identity could not be loaded for this page; the rows are shown without it. */
+  identityUnavailable: boolean;
+  /** Care CRM S3: the exact consent question the server would send; null while asks are off. */
+  consentAsk: CustomerCareCrmConsentAsk | null;
 }
 
 /**
@@ -310,12 +316,18 @@ const ROW_KEYS = [
   'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
 ];
 
+function hasOwn(value: unknown, key: string): boolean {
+  return typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, key);
+}
+
 /**
- * One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. With
- * `withIdentity` (the envelope carried `identityEnabled`) the row must also carry a valid `identity`.
+ * One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. The Care
+ * CRM S3 `identity` key is optional and never fails the row: with `withIdentity` (the envelope carried a valid
+ * `identityEnabled`) an identity that is missing or does not parse is dropped and the row marked
+ * `identityUnavailable`; without it any identity is ignored.
  */
 export function parseCareCrmRow(value: unknown, withIdentity = false): CustomerCareCrmRow | null {
-  const row = exactRecord(value, withIdentity ? [...ROW_KEYS, 'identity'] : ROW_KEYS);
+  const row = exactRecord(value, hasOwn(value, 'identity') ? [...ROW_KEYS, 'identity'] : ROW_KEYS);
   if (!row || !isCareFacebookChoiceId(row.leadId) || !isCareFacebookPageId(row.pageId)) return null;
   if (typeof row.phone !== 'string' || !CARE_LEAD_PHONE_PATTERN.test(row.phone)) return null;
   if (typeof row.zaloMentioned !== 'boolean' || !isCareLeadStatus(row.leadStatus)) return null;
@@ -324,8 +336,7 @@ export function parseCareCrmRow(value: unknown, withIdentity = false): CustomerC
   const recentMessages = parseMessages(row.recentMessages);
   const profile = parseCareCrmProfile(row.profile);
   if (customerName === undefined || !recentMessages || !profile) return null;
-  const identity = withIdentity ? parseCareCrmIdentity(row.identity) : null;
-  if (withIdentity && !identity) return null;
+  const identity = withIdentity && 'identity' in row ? parseCareCrmIdentity(row.identity) : null;
   return {
     leadId: row.leadId,
     pageId: row.pageId,
@@ -337,7 +348,7 @@ export function parseCareCrmRow(value: unknown, withIdentity = false): CustomerC
     lastMessageAt: row.lastMessageAt,
     recentMessages,
     profile,
-    ...(identity ? { identity } : {}),
+    ...(identity ? { identity } : withIdentity ? { identityUnavailable: true as const } : {}),
   };
 }
 
@@ -359,20 +370,22 @@ function parseAssignees(value: unknown): CustomerCareCrmAssignee[] | null {
 }
 
 const ENVELOPE_KEYS = ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees'];
+/** Care CRM S3 envelope keys: optional, and never a reason to reject the page. */
+const IDENTITY_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk'];
 
 /**
- * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. Care CRM
- * S3: the answer either carries `identityEnabled` and an `identity` on every row, or neither (a server without
- * S3, which ignores `include=identity`); a mix is rejected.
+ * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. The Care
+ * CRM S3 parts are optional and never take the CRM down: a server without S3 sends none of them; an unreadable
+ * `identityEnabled` (or row identities without it) shows the table without identity (`identityUnavailable`); an
+ * unreadable row identity drops only that identity; an unreadable `consentAsk` is null (asking stays off).
  */
 export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCrmPage | null {
-  const withIdentity = typeof body === 'object' && body !== null && Object.prototype.hasOwnProperty.call(body, 'identityEnabled');
-  const envelope = exactRecord(body, withIdentity ? [...ENVELOPE_KEYS, 'identityEnabled'] : ENVELOPE_KEYS);
+  const envelope = exactRecord(body, [...ENVELOPE_KEYS, ...IDENTITY_ENVELOPE_KEYS.filter((key) => hasOwn(body, key))]);
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_ROLES, envelope.role) || typeof envelope.canDelete !== 'boolean') return null;
-  if (withIdentity && typeof envelope.identityEnabled !== 'boolean') return null;
   if (envelope.nextCursor !== null && !isCareLeadsCursor(envelope.nextCursor)) return null;
   if (!Array.isArray(envelope.rows) || envelope.rows.length > CARE_CRM_PAGE_SIZE) return null;
+  const withIdentity = typeof envelope.identityEnabled === 'boolean';
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (const raw of envelope.rows as unknown[]) {
@@ -383,6 +396,8 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
   }
   const assignees = parseAssignees(envelope.assignees);
   if (!assignees) return null;
+  const unreadable = !withIdentity
+    && ('identityEnabled' in envelope || (envelope.rows as unknown[]).some((raw) => hasOwn(raw, 'identity')));
   return {
     role: envelope.role,
     canDelete: envelope.canDelete,
@@ -390,6 +405,8 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
     nextCursor: envelope.nextCursor,
     assignees,
     identityEnabled: withIdentity ? envelope.identityEnabled as boolean : null,
+    identityUnavailable: unreadable,
+    consentAsk: withIdentity ? parseCareCrmConsentAsk(envelope.consentAsk) : null,
   };
 }
 

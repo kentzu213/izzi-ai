@@ -27,6 +27,10 @@ export interface CustomerCrmCardProps {
   cardRef?: Ref<HTMLElement>;
   /** Care CRM S3 staff actions on the identity; absent shows the identity read-only. */
   identityHandlers?: CrmIdentityHandlers | null;
+  /** Owner or manager with the purge available (an erase request then offers "Xoá dữ liệu khách"). */
+  canDelete?: boolean;
+  /** The existing purge for this customer. */
+  onPurge?: () => void;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
@@ -37,7 +41,7 @@ const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
  * question and "Cập nhật hồ sơ".
  */
 export function CustomerCrmCard({
-  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef, identityHandlers = null,
+  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef, identityHandlers = null, canDelete = false, onPurge,
 }: CustomerCrmCardProps) {
   const { profile } = row;
   const name = crmCustomerLabel(row);
@@ -51,7 +55,8 @@ export function CustomerCrmCard({
   const identityControl = useCrmIdentityController(row, identityHandlers);
   const aiOccasion = crmIdentityOccasionLine(row);
   const occasionActions = row.identity && aiOccasion
-    && crmIdentityPermissions(row.identity, identityHandlers?.enabled ?? null, identityHandlers !== null).fieldActions;
+    && crmIdentityPermissions(row.identity, identityHandlers?.enabled ?? null, identityHandlers !== null, identityHandlers?.consentAsk ?? null)
+      .fieldActions;
 
   return (
     <aside ref={cardRef} className="v2-crm-card" aria-labelledby={headingId} tabIndex={-1}>
@@ -122,7 +127,15 @@ export function CustomerCrmCard({
 
       {crmRowReadOnly(row) && <p className="v2-crm__hint">Không đọc được chi tiết khách này.</p>}
 
-      <CustomerCrmIdentity row={row} products={products} handlers={identityHandlers} showOccasion={false} controller={identityControl} />
+      <CustomerCrmIdentity
+        row={row}
+        products={products}
+        handlers={identityHandlers}
+        place="card"
+        canDelete={canDelete}
+        onPurge={onPurge}
+        controller={identityControl}
+      />
 
       <div className="v2-crm-card__actions">
         <button type="button" className="v2-button v2-button--primary" onClick={onOpenProfile}>Mở hồ sơ</button>

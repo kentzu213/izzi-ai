@@ -10,6 +10,7 @@ import { crmCustomerLabel, crmIdentityOccasionLine, crmIdentityView, type CrmIde
 import {
   CRM_IDENTITY_EMPTY_HINT,
   CRM_IDENTITY_OFF_MESSAGE,
+  crmClearEraseConfirmText,
   crmConsentConfirmText,
   crmIdentityActionInput,
   crmIdentityCardBegin,
@@ -26,11 +27,12 @@ import {
   type CrmIdentityRequest,
 } from './customer-crm-identity';
 
-/** What the panel hands the card: the AI switch, the Page name for the consent text, and the two IPC calls. */
+/** What the panel hands the card: the AI switch, the server's consent question, and the two IPC calls. */
 export interface CrmIdentityHandlers {
   /** `identityEnabled` from the list; null when the server sent no identity (no S3 there). */
   enabled: boolean | null;
-  pageName: string | null;
+  /** `consentAsk.text` from the list: exactly what "Xin phép khách" sends; null while asks are off. */
+  consentAsk: string | null;
   /** Never rejects: a failure comes back as a view with its message. */
   act: (input: CustomerCareCrmIdentityActionInput) => Promise<CrmIdentityOutcomeView>;
   refresh: (leadId: string) => Promise<CrmIdentityOutcomeView>;
@@ -45,18 +47,18 @@ export interface CrmIdentityController {
 
 const UNREACHABLE: CrmIdentityOutcomeView = {
   identity: null, workspaceId: null, message: 'Chưa kết nối được máy chủ izzi. Thử lại sau ít phút.', tone: 'error',
-  dropRows: false, removeRow: false, skipTick: false,
+  dropRows: false, removeRow: false, skipTick: false, reloadList: false,
 };
-const ASK_HINT = 'Chỉ xin phép được trong 24 giờ sau tin cuối của khách, tối đa 2 lần cách nhau 7 ngày, '
-  + 'và không hỏi lại khách đã từ chối trong 24 tháng.';
+const UNAVAILABLE_HINT = 'AI hồ sơ khách tạm không tải được.';
 const MAX_PRODUCTS = 6;
 
 /**
- * The card's state: the identity `version` when it opened (sent as `expectedVersion`), the action in flight and the
- * last answer. A newer identity from the 60 s refresh does not move the version; a 409 or an answer does.
+ * The card's state: the action in flight and the last answer. It keeps no version of its own: an action is sent
+ * against the identity on screen (`row.identity`, which the panel updates from answers and refreshes), so it is
+ * never sent against a version the user was not looking at.
  */
 export function useCrmIdentityController(row: CustomerCareCrmRow, handlers: CrmIdentityHandlers | null): CrmIdentityController {
-  const [state, setState] = useState(() => crmIdentityCardStart(row.identity));
+  const [state, setState] = useState(crmIdentityCardStart);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -78,9 +80,13 @@ export function useCrmIdentityController(row: CustomerCareCrmRow, handlers: CrmI
     state,
     run: (key, request) => {
       if (!handlers || state.pending !== null) return;
-      if (request.action === 'ask_consent' && !window.confirm(crmConsentConfirmText(handlers.pageName))) return;
+      if (request.action === 'ask_consent') {
+        // The dialog shows exactly what the server will send; without it there is nothing to ask with.
+        if (handlers.consentAsk === null || !window.confirm(crmConsentConfirmText(handlers.consentAsk))) return;
+      }
       if (request.action === 'withdraw_consent' && !window.confirm(crmWithdrawConfirmText(crmCustomerLabel(row)))) return;
-      const input = crmIdentityActionInput(state, row.leadId, request);
+      if (request.action === 'clear_erase_request' && !window.confirm(crmClearEraseConfirmText(crmCustomerLabel(row)))) return;
+      const input = crmIdentityActionInput(row.identity?.version ?? null, row.leadId, request);
       start(key, () => handlers.act(input));
     },
     refresh: () => {
@@ -220,13 +226,14 @@ interface FieldActionsProps {
 
 /** Duyệt (only an AI suggestion), Sửa (when this field can be corrected here) and Bỏ for one shown field. */
 export function CrmIdentityFieldActions({ row, identity, line, products, controller }: FieldActionsProps) {
-  const [editing, setEditing] = useState(false);
+  /** The version on screen when "Sửa" was pressed: the correction is sent against what the user was looking at. */
+  const [editing, setEditing] = useState<{ version: string | null } | null>(null);
   const target = crmIdentityLineTarget(line.key);
   if (!target) return null;
   const editor = crmIdentityEditor(target.field, identity, target.index, products);
   const busy = controller.state.pending !== null;
   const id = domId(row.leadId, line.key);
-  if (editing && editor) {
+  if (editing !== null && editor) {
     return (
       <IdentityEditForm
         id={id}
@@ -235,10 +242,10 @@ export function CrmIdentityFieldActions({ row, identity, line, products, control
         editor={editor}
         busy={busy}
         onSave={(value) => {
-          setEditing(false);
-          controller.run(line.key, { action: 'correct', ...target, value });
+          setEditing(null);
+          controller.run(line.key, { action: 'correct', ...target, value, expectedVersion: editing.version });
         }}
-        onCancel={() => setEditing(false)}
+        onCancel={() => setEditing(null)}
       />
     );
   }
@@ -253,7 +260,7 @@ export function CrmIdentityFieldActions({ row, identity, line, products, control
       )}
       {editor && (
         <button type="button" className="v2-button v2-button--ghost v2-crm-card__act" disabled={busy}
-          aria-label={`Sửa ${line.label}`} onClick={() => setEditing(true)}>
+          aria-label={`Sửa ${line.label}`} onClick={() => setEditing({ version: identity.version })}>
           Sửa
         </button>
       )}
@@ -271,7 +278,11 @@ export interface CustomerCrmIdentityProps {
   /** Absent (an older preload or a read-only view): the identity is shown without any action. */
   handlers?: CrmIdentityHandlers | null;
   /** The table editor lists the AI occasion as its own line; the graph card shows it in its "Dịp mua" row. */
-  showOccasion: boolean;
+  place: 'editor' | 'card';
+  /** Owner or manager with the purge available: an erase request offers "Xoá dữ liệu khách" and "Bỏ yêu cầu". */
+  canDelete?: boolean;
+  /** The existing purge ("Xoá dữ liệu khách", behind its own confirm); absent hides that choice. */
+  onPurge?: () => void;
   /** The graph card shares one controller with its "Dịp mua" row. */
   controller?: CrmIdentityController;
 }
@@ -281,23 +292,34 @@ export interface CustomerCrmIdentityProps {
  * quote, the age as an estimate, and the staff actions the consent and the AI switch allow. Without the customer's
  * "Đồng ý" only the order layer is shown. Links are plain text, never clickable.
  */
-export function CustomerCrmIdentity({ row, products, handlers = null, showOccasion, controller }: CustomerCrmIdentityProps) {
+export function CustomerCrmIdentity({
+  row, products, handlers = null, place, canDelete = false, onPurge, controller,
+}: CustomerCrmIdentityProps) {
   const own = useCrmIdentityController(row, handlers);
   const control = controller ?? own;
   const identity = row.identity;
-  const view = crmIdentityView(identity, products);
-  if (!identity || !view) return null;
-  const enabled = handlers?.enabled ?? null;
-  const permissions = crmIdentityPermissions(identity, enabled, handlers !== null);
-  const occasion = showOccasion ? crmIdentityOccasionLine(row) : null;
-  const lines = occasion ? [occasion, ...view.lines] : view.lines;
-  const state = identity.consent?.state;
-  const askShown = handlers !== null && enabled === true && (state === 'unknown' || state === 'asked');
-  const anyAction = permissions.canRefresh || askShown || permissions.canWithdraw;
-  if (view.consent === null && lines.length === 0 && view.age === null && !anyAction && enabled !== false) return null;
-
   const headingId = `crm-identity-${row.leadId}`;
-  const askHintId = `crm-identity-ask-${row.leadId}`;
+  const view = crmIdentityView(identity, products);
+  if (!identity || !view) {
+    // The server sent this row's identity but it could not be read: the row works, the card says so.
+    if (!row.identityUnavailable) return null;
+    return (
+      <section className="v2-crm-card__identity" aria-labelledby={headingId}>
+        <h4 id={headingId} className="v2-crm-card__section">Nhận diện (AI)</h4>
+        <p className="v2-crm__hint">{UNAVAILABLE_HINT}</p>
+      </section>
+    );
+  }
+  const enabled = handlers?.enabled ?? null;
+  const permissions = crmIdentityPermissions(identity, enabled, handlers !== null, handlers?.consentAsk ?? null);
+  const occasion = place === 'editor' ? crmIdentityOccasionLine(row) : null;
+  const lines = occasion ? [occasion, ...view.lines] : view.lines;
+  const eraseAt = identity.consent?.eraseRequestedAt ?? null;
+  const anyAction = permissions.canRefresh || permissions.canAsk || permissions.canWithdraw;
+  if (view.consent === null && lines.length === 0 && view.age === null && !anyAction && enabled !== false && eraseAt === null) {
+    return null;
+  }
+
   const { pending, message } = control.state;
   const busy = pending !== null;
   const refreshing = pending === 'refresh';
@@ -316,6 +338,26 @@ export function CustomerCrmIdentity({ row, products, handlers = null, showOccasi
           </span>
         )}
       </div>
+      {eraseAt !== null && (
+        <p className="v2-crm-card__erase">
+          <span className="v2-crm-card__erase-chip">
+            {'Khách yêu cầu xoá dữ liệu · '}
+            <time dateTime={eraseAt}>{formatCrmDue(eraseAt)}</time>
+          </span>
+          {/* Owners and managers decide: delete everything, or drop the request when the customer changed their mind. */}
+          {canDelete && onPurge && (
+            <button type="button" className="v2-button v2-crm__danger v2-crm-card__act" disabled={busy} onClick={onPurge}>
+              Xoá dữ liệu khách
+            </button>
+          )}
+          {canDelete && handlers !== null && (
+            <button type="button" className="v2-button v2-button--ghost v2-crm-card__act" disabled={busy}
+              onClick={() => control.run('clear-erase', { action: 'clear_erase_request' })}>
+              {pending === 'clear-erase' ? 'Đang bỏ yêu cầu…' : 'Bỏ yêu cầu (khách đổi ý)'}
+            </button>
+          )}
+        </p>
+      )}
       {enabled === false && <p className="v2-crm__hint">{CRM_IDENTITY_OFF_MESSAGE}</p>}
       {identity.consent?.noMarketing && <p className="v2-crm__meta">Khách không muốn nhận ưu đãi.</p>}
 
@@ -351,9 +393,8 @@ export function CustomerCrmIdentity({ row, products, handlers = null, showOccasi
               {refreshing ? 'Đang cập nhật…' : 'Cập nhật hồ sơ'}
             </button>
           )}
-          {askShown && (
-            <button type="button" className="v2-button v2-crm-card__act" disabled={busy || !permissions.canAsk}
-              aria-describedby={permissions.canAsk ? undefined : askHintId}
+          {permissions.canAsk && (
+            <button type="button" className="v2-button v2-crm-card__act" disabled={busy}
               onClick={() => control.run('ask', { action: 'ask_consent' })}>
               {pending === 'ask' ? 'Đang gửi…' : 'Xin phép khách'}
             </button>
@@ -366,7 +407,6 @@ export function CustomerCrmIdentity({ row, products, handlers = null, showOccasi
           )}
         </div>
       )}
-      {askShown && !permissions.canAsk && <p id={askHintId} className="v2-crm__meta">{ASK_HINT}</p>}
       {identity.lastRunAt && <p className="v2-crm__meta">{`AI đọc hội thoại lúc ${formatCrmDue(identity.lastRunAt)}`}</p>}
       <p
         className={message ? `v2-crm-card__identity-message ${message.tone === 'error' ? 'v2-crm__error' : 'v2-crm__notice'}` : 'v2-crm-card__identity-message'}

@@ -204,6 +204,21 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect([...calls].sort()).toEqual(['getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile']);
   });
 
+  it('discards list reads in flight when an identity answer lands, and reloads page 1 when the answer asks for it', () => {
+    // Review of a694110, HIGH 1 and LOW 5. The merge itself is covered in customer-crm-flow.test.ts.
+    const panel = read('./CustomerCrmPanel.tsx');
+    const apply = panel.slice(panel.indexOf('const applyIdentityOutcome'), panel.indexOf('const identityAct'));
+    expect(apply).toContain('loadSeqRef.current += 1');
+    expect(apply).toContain("loadRef.current('page1')");
+    expect(panel).toContain('AI hồ sơ khách tạm không tải được.');
+  });
+
+  it('never carries its own copy of the consent question: the dialog shows the server\'s text (review MEDIUM 3)', () => {
+    for (const file of ['./CustomerCrmPanel.tsx', './CustomerCrmIdentity.tsx', './customer-crm-identity.ts']) {
+      expect(read(file), file).not.toMatch(/xin phép lưu thông tin|trợ lý tự động của/);
+    }
+  });
+
   it('keeps the customerCare IPC channels exactly as they were, plus the two Care CRM S3 identity channels', () => {
     const ipc = read('../../main/customer-care/customer-care-ipc.ts');
     const methods = ipc.slice(ipc.indexOf('const METHODS = ['), ipc.indexOf('] as const;')).match(/'(\w+)'/g);

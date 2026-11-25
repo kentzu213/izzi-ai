@@ -403,6 +403,8 @@ export interface CustomerCareCrmRow {
   profile: CustomerCareCrmProfile;
   /** Care CRM S3: present on every row when the server answered `include=identity`; absent from an older server. */
   identity?: CustomerCareCrmIdentity;
+  /** Care CRM S3: the server sent this row's identity but it could not be read; the row itself is shown as usual. */
+  identityUnavailable?: true;
 }
 
 /** An active owner, manager or editor of the workspace; `label` is null when no safe name could be shown. */
@@ -426,6 +428,13 @@ export type CustomerCareCrmListResult =
      * at all (a server without S3), so the rows carry none.
      */
     identityEnabled: boolean | null;
+    /**
+     * Care CRM S3: the identity could not be loaded for this page (the identity read failed and the list was read
+     * without it, or the answer's identity part was unreadable); the table is shown without it.
+     */
+    identityUnavailable: boolean;
+    /** Care CRM S3: the exact consent question "Xin phép khách" would send now; null while asks are off. */
+    consentAsk: CustomerCareCrmConsentAsk | null;
   }
   | CustomerCareFacebookFailure;
 
@@ -487,6 +496,17 @@ export interface CustomerCareCrmConsent {
   at: string | null;
   noMarketing: boolean;
   canAsk: boolean;
+  /**
+   * When the customer sent "XOÁ" without having been told about it: nothing was purged and staff decide. Absent
+   * from a server older than CRM S3 round 3.
+   */
+  eraseRequestedAt?: string | null;
+}
+
+/** The consent question exactly as the server would send it (disclosure, consent line, privacy link). */
+export interface CustomerCareCrmConsentAsk {
+  text: string;
+  copyVersion: number;
 }
 
 export const CUSTOMER_CARE_CRM_TIMELINES = ['this_week', 'this_month', 'before_tet', 'later'] as const;
@@ -555,13 +575,16 @@ export type CustomerCareCrmIdentityField = (typeof CUSTOMER_CARE_CRM_IDENTITY_FI
 /** Allowed before the customer agreed; every other field is the profile layer. */
 export const CUSTOMER_CARE_CRM_ORDER_FIELDS: readonly CustomerCareCrmIdentityField[] = ['occasion', 'timeline', 'productFactIds'];
 
-export const CUSTOMER_CARE_CRM_IDENTITY_ACTIONS = ['confirm', 'correct', 'reject', 'ask_consent', 'withdraw_consent'] as const;
+// clear_erase_request (owner/manager): the customer changed their mind about a pending "XOÁ" (backend 79e14f9).
+export const CUSTOMER_CARE_CRM_IDENTITY_ACTIONS = [
+  'confirm', 'correct', 'reject', 'ask_consent', 'withdraw_consent', 'clear_erase_request',
+] as const;
 export type CustomerCareCrmIdentityAction = (typeof CUSTOMER_CARE_CRM_IDENTITY_ACTIONS)[number];
 
 /**
  * confirm / correct / reject carry `field` and `expectedVersion` (the identity `version` the card opened with);
- * `correct` adds `value` (the field's type), `sharedLink` adds `index` (0–2). ask_consent / withdraw_consent carry
- * only `leadId` and `action`. Main checks the exact key set for each action.
+ * `correct` adds `value` (the field's type), `sharedLink` adds `index` (0–2). ask_consent, withdraw_consent and
+ * clear_erase_request carry only `leadId` and `action`. Main checks the exact key set for each action.
  */
 export interface CustomerCareCrmIdentityActionInput {
   leadId: string;

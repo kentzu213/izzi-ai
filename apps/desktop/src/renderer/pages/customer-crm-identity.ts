@@ -31,10 +31,9 @@ export const CRM_IDENTITY_CONFLICT_MESSAGE = 'Hồ sơ vừa được cập nh�
 export const CRM_IDENTITY_EMPTY_HINT = 'AI chưa ghi nhận gì về khách này.';
 const MAX_PRODUCTS = 6;
 const MAX_LINK_TITLE = 120;
-const MAX_SHOP_NAME = 60;
 const MAX_SHARED_LINKS = 3;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-// The server's rule for a Page name in a message: no control, format (bidi, zero-width) or separator character.
+// A link title: no control, format (bidi, zero-width) or separator character.
 const UNSAFE_TEXT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
 function oneOf<T extends string>(values: readonly T[], value: unknown): value is T {
@@ -48,7 +47,10 @@ function oneOf<T extends string>(values: readonly T[], value: unknown): value is
 export interface CrmIdentityPermissions {
   /** Duyệt / Sửa / Bỏ on the fields shown (the server refuses the profile layer without consent; it is not shown). */
   fieldActions: boolean;
-  /** "Xin phép khách": only when the server says izzi may ask now (24-hour window, at most twice, 7 days apart). */
+  /**
+   * "Xin phép khách": only when the server says izzi may ask this customer now (24-hour window, at most twice, 7 days
+   * apart, no refusal in 24 months) and sent the question it would ask. Otherwise the button is not shown.
+   */
   canAsk: boolean;
   /** "Khách rút đồng ý": once the customer agreed or was asked, even with the AI profile off. */
   canWithdraw: boolean;
@@ -67,16 +69,19 @@ export function crmIdentityPermissions(
   identity: CustomerCareCrmIdentity | null | undefined,
   enabled: boolean | null,
   hasHandlers: boolean,
+  consentAsk: string | null,
 ): CrmIdentityPermissions {
   const state = identity?.consent?.state;
   if (enabled === null || !hasHandlers || state === undefined) return NO_PERMISSIONS;
+  // A pending "XOÁ" (backend 79e14f9): the identity is already wiped and nothing is asked or run until staff decide.
+  const erasePending = (identity?.consent?.eraseRequestedAt ?? null) !== null;
   const canWithdraw = state === 'granted' || state === 'asked';
   if (enabled !== true || state === 'declined' || state === 'withdrawn') return { ...NO_PERMISSIONS, canWithdraw };
   return {
     fieldActions: true,
-    canAsk: identity?.consent?.canAsk === true,
+    canAsk: identity?.consent?.canAsk === true && consentAsk !== null && !erasePending,
     canWithdraw,
-    canRefresh: true,
+    canRefresh: !erasePending,
   };
 }
 
@@ -203,8 +208,6 @@ export function crmIdentityEditValue(field: CustomerCareCrmIdentityField, raw: u
 // ---------------------------------------------------------------------------
 
 export interface CrmIdentityCardState {
-  /** The identity `version` when the card opened, then the one each answer returned; sent as `expectedVersion`. */
-  baseVersion: string | null;
   /** The line (or 'ask', 'withdraw', 'refresh') whose request is running; every action waits for it. */
   pending: string | null;
   message: { text: string; tone: CrmIdentityTone } | null;
@@ -212,36 +215,43 @@ export interface CrmIdentityCardState {
 
 export type CrmIdentityTone = 'success' | 'notice' | 'error';
 
-export function crmIdentityCardStart(identity: CustomerCareCrmIdentity | null | undefined): CrmIdentityCardState {
-  return { baseVersion: identity?.version ?? null, pending: null, message: null };
+export function crmIdentityCardStart(): CrmIdentityCardState {
+  return { pending: null, message: null };
 }
 
 export function crmIdentityCardBegin(state: CrmIdentityCardState, key: string): CrmIdentityCardState {
   return { ...state, pending: key, message: null };
 }
 
-/** An answer arrived: take its identity's version (a 409 included), show its message, allow the next action. */
-export function crmIdentityCardSettle(state: CrmIdentityCardState, view: CrmIdentityOutcomeView): CrmIdentityCardState {
-  return {
-    baseVersion: view.identity ? view.identity.version : state.baseVersion,
-    pending: null,
-    message: { text: view.message, tone: view.tone },
-  };
+/** An answer arrived: show its message and allow the next action (the panel puts its identity on the row). */
+export function crmIdentityCardSettle(_state: CrmIdentityCardState, view: CrmIdentityOutcomeView): CrmIdentityCardState {
+  return { pending: null, message: { text: view.message, tone: view.tone } };
 }
 
+/**
+ * A field action names the version it was decided on: a correction the version its editor was opened on; confirm
+ * and reject none, so the version on screen at the click is used.
+ */
 export type CrmIdentityRequest =
-  | { action: 'ask_consent' | 'withdraw_consent' }
+  | { action: 'ask_consent' | 'withdraw_consent' | 'clear_erase_request' }
   | { action: 'confirm' | 'reject'; field: CustomerCareCrmIdentityField; index?: number }
-  | { action: 'correct'; field: CustomerCareCrmIdentityField; index?: number; value: unknown };
+  | { action: 'correct'; field: CustomerCareCrmIdentityField; index?: number; value: unknown; expectedVersion?: string | null };
 
-/** The IPC input: field actions carry the card's version, consent actions only the lead. */
+/**
+ * The IPC input. A field action is always sent against an identity the user was looking at: the one on screen (the
+ * row's current identity, `shownVersion`), or for a correction the one its editor opened on. A newer identity from
+ * the server then answers 409 and the card shows it. Consent actions carry only the lead.
+ */
 export function crmIdentityActionInput(
-  state: CrmIdentityCardState,
+  shownVersion: string | null,
   leadId: string,
   request: CrmIdentityRequest,
 ): CustomerCareCrmIdentityActionInput {
-  if (request.action === 'ask_consent' || request.action === 'withdraw_consent') return { leadId, action: request.action };
-  return { leadId, ...request, expectedVersion: state.baseVersion };
+  if (request.action === 'ask_consent' || request.action === 'withdraw_consent' || request.action === 'clear_erase_request') {
+    return { leadId, action: request.action };
+  }
+  if (request.action === 'correct' && request.expectedVersion !== undefined) return { leadId, ...request };
+  return { leadId, ...request, expectedVersion: shownVersion };
 }
 
 /** The rows with one customer's identity replaced; every other row is kept as it is. */
@@ -270,6 +280,8 @@ export interface CrmIdentityOutcomeView {
   removeRow: boolean;
   /** A 429, a 503 or another server-side problem: the panel skips its next 60 s tick. */
   skipTick: boolean;
+  /** The answer means the row's consent or the AI switch changed on the server: the panel reads page 1 again now. */
+  reloadList: boolean;
 }
 
 const SUCCESS_TEXT: Readonly<Record<CustomerCareCrmIdentityAction, string>> = {
@@ -278,6 +290,7 @@ const SUCCESS_TEXT: Readonly<Record<CustomerCareCrmIdentityAction, string>> = {
   reject: 'Đã bỏ. AI sẽ không đề xuất lại giá trị này.',
   ask_consent: 'Đã gửi lời xin phép cho khách qua Messenger.',
   withdraw_consent: 'Đã ghi nhận khách rút đồng ý. Thông tin AI về khách đã được xoá.',
+  clear_erase_request: 'Đã bỏ yêu cầu xoá. Khách vẫn không nhận ưu đãi và cần đồng ý lại trước khi izzi lưu hồ sơ.',
 };
 
 const INVALID_TEXT = 'Giá trị không hợp lệ. Hãy tải lại rồi thử lại.';
@@ -324,11 +337,12 @@ function failureView(failure: CustomerCareFacebookFailure, unavailableText: stri
     dropRows,
     removeRow: failure.reason === 'lead_not_found',
     skipTick: crmShouldSkipNextTick(failure),
+    reloadList: failure.reason === 'consent_required' || failure.reason === 'profile_ai_off',
   };
 }
 
 function settled(identity: CustomerCareCrmIdentity, workspaceId: string, message: string, tone: CrmIdentityTone): CrmIdentityOutcomeView {
-  return { identity, workspaceId, message, tone, dropRows: false, removeRow: false, skipTick: false };
+  return { identity, workspaceId, message, tone, dropRows: false, removeRow: false, skipTick: false, reloadList: false };
 }
 
 /**
@@ -348,6 +362,10 @@ export function crmIdentityActionView(action: CustomerCareCrmIdentityAction, res
   if (result.reason === 'lead_not_found' && (action === 'ask_consent' || action === 'withdraw_consent')) {
     return { ...view, message: CONSENT_NO_CONVERSATION[action], removeRow: false };
   }
+  // Deciding an erase request is for owners and managers: a refusal is about the role, not lost access to the CRM.
+  if (action === 'clear_erase_request' && result.error === 'forbidden') {
+    return { ...view, message: 'Chỉ chủ shop hoặc quản lý bỏ được yêu cầu xoá.', dropRows: false };
+  }
   return view;
 }
 
@@ -366,7 +384,7 @@ export function crmIdentityRefreshView(result: CustomerCareCrmIdentityRefreshRes
   if (result.error === 'refresh_too_soon') {
     return {
       identity: null, workspaceId: result.workspaceId, message: `Thử lại sau ${crmRetryMinutes(result.retryAfterSec)} phút.`,
-      tone: 'notice', dropRows: false, removeRow: false, skipTick: false,
+      tone: 'notice', dropRows: false, removeRow: false, skipTick: false, reloadList: false,
     };
   }
   return failureView(result, 'Chưa cập nhật được hồ sơ. Thử lại sau ít phút.');
@@ -376,25 +394,16 @@ export function crmIdentityRefreshView(result: CustomerCareCrmIdentityRefreshRes
 // Confirm dialogs
 // ---------------------------------------------------------------------------
 
-function shopName(pageName: string | null): string {
-  const name = pageName?.trim() ?? '';
-  return name.length > 0 && name.length <= MAX_SHOP_NAME && !UNSAFE_TEXT.test(name) ? name : 'shop';
+/** The confirm before "Xin phép khách": the server's consent question verbatim (`consentAsk.text`), then its buttons. */
+export function crmConsentConfirmText(consentAsk: string): string {
+  return `Gửi tin này cho khách qua Messenger?\n\n${consentAsk}\n\nKèm 2 nút: [Đồng ý] [Không]`;
 }
 
-/**
- * The message the server sends for "Xin phép khách" (backend bae6259, copy version 1): the automated-assistant
- * disclosure, then the consent line, with the quick replies [Đồng ý] [Không]. When the server has a privacy page
- * set (`CUSTOMER_CARE_PROFILE_PRIVACY_URL`, not set yet), it adds " (chi tiết: <link>)" after "tại đây".
- */
-export function crmConsentMessageText(pageName: string | null): string {
-  const shop = shopName(pageName);
-  return `Dạ em là trợ lý tự động của ${shop} ạ.\n`
-    + `Dạ, để tư vấn đúng và báo ưu đãi hợp với nhà mình, ${shop} xin phép lưu thông tin anh/chị nhắn tại đây.`
-    + ' Anh/chị bấm Đồng ý nhé; không muốn thì bấm Không hoặc nhắn KHÔNG bất cứ lúc nào, shop vẫn tư vấn bình thường ạ.';
-}
-
-export function crmConsentConfirmText(pageName: string | null): string {
-  return `Gửi tin này cho khách qua Messenger?\n\n${crmConsentMessageText(pageName)}\n\nKèm 2 nút: [Đồng ý] [Không]`;
+/** The confirm before "Bỏ yêu cầu (khách đổi ý)": only when the customer changed their mind about "XOÁ". */
+export function crmClearEraseConfirmText(name: string): string {
+  return `Bỏ yêu cầu xoá dữ liệu của ${name}?\n\n`
+    + 'Chỉ làm khi khách đã đổi ý (ví dụ nói lại qua điện thoại). izzi giữ dữ liệu hiện có; khách vẫn không nhận ưu đãi '
+    + 'và phải đồng ý lại trước khi izzi lưu hồ sơ.';
 }
 
 export function crmWithdrawConfirmText(name: string): string {

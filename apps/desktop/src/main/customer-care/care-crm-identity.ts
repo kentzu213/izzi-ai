@@ -27,6 +27,7 @@ import {
   CUSTOMER_CARE_CRM_TIMELINES,
   type CustomerCareCrmAgeBand,
   type CustomerCareCrmConsent,
+  type CustomerCareCrmConsentAsk,
   type CustomerCareCrmEvidence,
   type CustomerCareCrmIdField,
   type CustomerCareCrmIdentity,
@@ -47,6 +48,9 @@ const MAX_LINK_TITLE = 120;
 const MAX_AD_TITLE = 300;
 const MAX_SUMMARY = 200;
 const MAX_RETRY_AFTER_SEC = 86_400;
+/** Messenger's text limit, which the server's composed messages respect. */
+const MAX_ASK_TEXT = 2_000;
+const MAX_COPY_VERSION = 1_000;
 const PRODUCT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 // The server's text rule for stored identity text: no control, format (bidi, zero-width) or separator character.
@@ -58,7 +62,7 @@ const IDENTITY_KEYS = [
   'version', 'lastRunAt', 'consent', 'occasion', 'timeline', 'productFactIds', 'addressForm', 'ageBand', 'family',
   'interests', 'persona',
 ] as const;
-const CONSENT_ACTIONS = ['ask_consent', 'withdraw_consent'] as const;
+const CONSENT_ACTIONS = ['ask_consent', 'withdraw_consent', 'clear_erase_request'] as const;
 /** 422 reasons of the identity routes that the screen explains; any other 422 is a plain rejection. */
 const IDENTITY_422_REASONS = [
   'lead_not_found', 'consent_required', 'outside_window', 'ask_limit', 'page_not_connected', 'permission_missing',
@@ -214,13 +218,36 @@ function nullableField<T>(value: unknown, copyValue: ValueCopy<T>): CustomerCare
   return parseField(value, copyValue) ?? INVALID;
 }
 
+const CONSENT_KEYS = ['state', 'at', 'noMarketing', 'canAsk'] as const;
+
+/** `eraseRequestedAt` (backend round 3) is optional, so an older server still parses; when present it is checked. */
 function parseConsent(value: unknown): CustomerCareCrmConsent | null {
-  const consent = exactRecord(value, ['state', 'at', 'noMarketing', 'canAsk']);
+  const erase = plainRecord(value) !== null && Object.prototype.hasOwnProperty.call(value, 'eraseRequestedAt');
+  const consent = exactRecord(value, erase ? [...CONSENT_KEYS, 'eraseRequestedAt'] : CONSENT_KEYS);
   if (!consent || !oneOf(CUSTOMER_CARE_CRM_CONSENT_STATES, consent.state)) return null;
   if ((consent.at !== null && !isIso(consent.at)) || typeof consent.noMarketing !== 'boolean' || typeof consent.canAsk !== 'boolean') {
     return null;
   }
-  return { state: consent.state, at: consent.at, noMarketing: consent.noMarketing, canAsk: consent.canAsk };
+  if (erase && consent.eraseRequestedAt !== null && !isIso(consent.eraseRequestedAt)) return null;
+  const parsed: CustomerCareCrmConsent = { state: consent.state, at: consent.at, noMarketing: consent.noMarketing, canAsk: consent.canAsk };
+  if (erase) parsed.eraseRequestedAt = consent.eraseRequestedAt as string | null;
+  return parsed;
+}
+
+/** The consent question as the server would send it: a line break is allowed, no other control or format character. */
+const UNSAFE_ASK_TEXT = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/**
+ * The envelope's `consentAsk` (backend round 3): the exact text "Xin phép khách" would send, or null while asks are
+ * off. Absent (an older server) or unreadable is null too, so asking stays off; it never fails the page.
+ */
+export function parseCareCrmConsentAsk(value: unknown): CustomerCareCrmConsentAsk | null {
+  const ask = exactRecord(value, ['text', 'copyVersion']);
+  if (!ask || typeof ask.text !== 'string' || ask.text.length === 0 || ask.text.length > MAX_ASK_TEXT * 2) return null;
+  if (Array.from(ask.text).length > MAX_ASK_TEXT || UNSAFE_ASK_TEXT.test(ask.text)) return null;
+  const version = ask.copyVersion;
+  if (!Number.isInteger(version) || (version as number) < 1 || (version as number) > MAX_COPY_VERSION) return null;
+  return { text: ask.text, copyVersion: version as number };
 }
 
 function parsePersona(value: unknown): CustomerCareCrmIdentity['persona'] | typeof INVALID {

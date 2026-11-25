@@ -384,6 +384,49 @@ describe('refresh merge', () => {
     expect(crmRowsOnRefresh([a], [b], new Set())).toEqual([b]);
   });
 
+  describe('identity (Care CRM S3): merged by its own version, apart from the profile (review HIGH 1)', () => {
+    const identity = (version: string | null, state: 'unknown' | 'granted' = 'granted') => ({
+      version, lastRunAt: null, consent: { state, at: null, noMarketing: false, canAsk: false },
+      occasion: null, timeline: null, productFactIds: null, addressForm: null, ageBand: null, family: null,
+      interests: { adTitle: null, sharedLinks: [], budgetBand: null }, persona: null,
+    });
+    const V1 = '2026-11-25T01:02:03.456Z';
+    const V2 = '2026-11-25T01:02:03.457Z';
+
+    it('keeps a newer local identity over an older incoming one, to the millisecond', () => {
+      const local = row({}, { identity: identity(V2) });
+      const incoming = { ...local, identity: identity(V1) };
+      expect(crmRowsOnRefresh([local], [incoming], new Set())[0].identity?.version).toBe(V2);
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity('2026-11-25T01:02:03.457+00:00') }], new Set())[0].identity?.version)
+        .toBe('2026-11-25T01:02:03.457+00:00');
+    });
+
+    it('takes the incoming identity when it is as new or newer (a consent change keeps the version)', () => {
+      const local = row({}, { identity: identity(V1, 'unknown') });
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity(V1, 'granted') }], new Set())[0].identity?.consent?.state).toBe('granted');
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity(V2) }], new Set())[0].identity?.version).toBe(V2);
+      expect(crmRowsOnRefresh([row({}, { identity: identity(null) })], [{ ...local, identity: identity(V1) }], new Set())[0].identity?.version)
+        .toBe(V1);
+    });
+
+    it('keeps a newer local identity even when the incoming profile wins, and the other way round', () => {
+      const local = row({}, { identity: identity(V2) });
+      const incoming = { ...local, profile: { ...local.profile, stage: 'deposit' as const, updatedAt: T2 }, identity: identity(V1) };
+      const merged = crmRowsOnRefresh([local], [incoming], new Set())[0];
+      expect(merged.profile.stage).toBe('deposit');
+      expect(merged.identity?.version).toBe(V2);
+      const newerProfile = { ...local, profile: { ...local.profile, updatedAt: T2 } };
+      const keptProfile = crmRowsOnRefresh([newerProfile], [{ ...newerProfile, profile: { ...local.profile, updatedAt: T1 }, identity: identity(V2) }], new Set())[0];
+      expect(keptProfile.profile.updatedAt).toBe(T2);
+    });
+
+    it('follows the server when it sends no identity this time (read without it)', () => {
+      const local = row({}, { identity: identity(V2) });
+      const plain = { ...local, identity: undefined };
+      expect(crmRowsOnRefresh([local], [plain], new Set())[0].identity).toBeUndefined();
+    });
+  });
+
   describe('periodic refresh: page 1 merged into the loaded rows by leadId', () => {
     const captured = (day: number) => ({ phoneCapturedAt: at(day, 9) });
 
@@ -473,14 +516,23 @@ describe('paging', () => {
     nextCursor: string | null,
     workspaceId = WORKSPACE,
     identityEnabled: boolean | null = null,
+    extra: { identityUnavailable?: boolean; consentAsk?: { text: string; copyVersion: number } | null } = {},
   ): CustomerCareCrmListResult => ({
     ok: true, workspaceId, role: 'editor', canDelete: false, rows, nextCursor, assignees: [], identityEnabled,
+    identityUnavailable: extra.identityUnavailable ?? false, consentAsk: extra.consentAsk ?? null,
   });
 
-  it('takes identityEnabled (Care CRM S3) from the first page', async () => {
-    const pages = [ok([row()], 'c1', WORKSPACE, true), ok([row()], null, WORKSPACE, true)];
-    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityEnabled: true });
-    expect(await loadCrmPages(async () => ok([row()], null))).toMatchObject({ ok: true, identityEnabled: null });
+  it('takes identityEnabled and the consent question (Care CRM S3) from the first page', async () => {
+    const ask = { text: 'Dạ em là trợ lý tự động của shop ạ.', copyVersion: 1 };
+    const pages = [ok([row()], 'c1', WORKSPACE, true, { consentAsk: ask }), ok([row()], null, WORKSPACE, true)];
+    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityEnabled: true, consentAsk: ask });
+    expect(await loadCrmPages(async () => ok([row()], null))).toMatchObject({ ok: true, identityEnabled: null, consentAsk: null });
+  });
+
+  it('reports the identity unavailable when any page was read without it', async () => {
+    const pages = [ok([row()], 'c1', WORKSPACE, true), ok([row()], null, WORKSPACE, null, { identityUnavailable: true })];
+    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityUnavailable: true });
+    expect(await loadCrmPages(async () => ok([row()], null, WORKSPACE, true))).toMatchObject({ ok: true, identityUnavailable: false });
   });
 
   it('loads at most 10 pages and reports the list as cut off', async () => {

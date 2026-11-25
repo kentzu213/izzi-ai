@@ -104,6 +104,10 @@ interface CrmMeta {
   truncated: boolean;
   /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
   identityEnabled: boolean | null;
+  /** Care CRM S3: the identity could not be loaded; the table is shown without it. */
+  identityUnavailable: boolean;
+  /** Care CRM S3: the exact consent question the server would send; null while asks are off. */
+  consentAsk: string | null;
 }
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
@@ -148,8 +152,6 @@ export function CustomerCrmPanel() {
   const [edits, setEdits] = useState<Edits>({});
   const [meta, setMeta] = useState<CrmMeta | null>(null);
   const [products, setProducts] = useState<CrmProductOption[]>([]);
-  /** The connected Page's name, for the exact consent text shown before "Xin phép khách". */
-  const [pageName, setPageName] = useState<string | null>(null);
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState<CrmFilter>({ view: 'today', stage: 'any' });
   const [display, setDisplay] = useState<CrmDisplay>('table');
@@ -211,7 +213,6 @@ export function CustomerCrmPanel() {
     updateEdits(() => ({}));
     setMeta(null);
     setProducts([]);
-    setPageName(null);
     setExpandedId(null);
     setNotice('');
     setError('');
@@ -231,13 +232,9 @@ export function CustomerCrmPanel() {
       const snapshot = await api.getSnapshot();
       if (!mountedRef.current || scopeRef.current !== workspaceId) return;
       // Facts saved for another workspace on this machine never become this workspace's products.
-      const same = snapshot.workspaceId === workspaceId;
-      setProducts(same ? crmProductOptions(snapshot.setup?.facts, Date.now()) : []);
-      setPageName(same && snapshot.pageConnection.state === 'connected' ? snapshot.pageConnection.pageName : null);
+      setProducts(snapshot.workspaceId === workspaceId ? crmProductOptions(snapshot.setup?.facts, Date.now()) : []);
     } catch {
-      if (!mountedRef.current) return;
-      setProducts([]);
-      setPageName(null);
+      if (mountedRef.current) setProducts([]);
     }
   }, []);
 
@@ -307,6 +304,8 @@ export function CustomerCrmPanel() {
         // Only an every-page load knows whether more than 500 customers exist.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
         identityEnabled: result.identityEnabled,
+        identityUnavailable: result.identityUnavailable,
+        consentAsk: result.consentAsk?.text ?? null,
       }));
       setPhase({ state: 'ready' });
       setError('');
@@ -407,7 +406,14 @@ export function CustomerCrmPanel() {
       return;
     }
     const { identity } = view;
-    if (identity && view.workspaceId === scopeRef.current) updateRows((current) => crmRowsWithIdentity(current, leadId, identity));
+    if (identity && view.workspaceId === scopeRef.current) {
+      // A list read still in flight started before this answer: it is discarded, so it cannot put the older identity
+      // back (the merge by identity version guards the same thing for reads that start later).
+      loadSeqRef.current += 1;
+      updateRows((current) => crmRowsWithIdentity(current, leadId, identity));
+    }
+    // The customer's consent or the AI switch changed on the server: read page 1 again now, once.
+    if (view.reloadList && mountedRef.current) void loadRef.current('page1');
   }, [dropAll, removeRow, updateRows]);
 
   const identityAct = useCallback(async (input: CustomerCareCrmIdentityActionInput): Promise<CrmIdentityOutcomeView> => {
@@ -438,11 +444,12 @@ export function CustomerCrmPanel() {
   }, [applyIdentityOutcome]);
 
   const identityEnabled = meta?.identityEnabled ?? null;
+  const consentAsk = meta?.consentAsk ?? null;
   const identityHandlers = useMemo<CrmIdentityHandlers | null>(() => {
     const api = getCrmApi();
     if (!api?.identityAction || !api.refreshIdentity) return null;
-    return { enabled: identityEnabled, pageName, act: identityAct, refresh: identityRefresh };
-  }, [identityEnabled, pageName, identityAct, identityRefresh]);
+    return { enabled: identityEnabled, consentAsk, act: identityAct, refresh: identityRefresh };
+  }, [identityEnabled, consentAsk, identityAct, identityRefresh]);
 
   // The queue calls the latest save, so it always reads the current rows, edits and workspace.
   useEffect(() => {
@@ -613,6 +620,7 @@ export function CustomerCrmPanel() {
         <>
           {error && <p className="v2-crm__error" role="alert">{error}</p>}
           {notice && <p className="v2-crm__notice" role="status">{notice}</p>}
+          {meta?.identityUnavailable && <p className="v2-crm__hint" role="status">AI hồ sơ khách tạm không tải được.</p>}
 
           <div className="v2-crm__toolbar">
             <div className="v2-crm__views">
@@ -673,6 +681,8 @@ export function CustomerCrmPanel() {
                 onCopy={(row) => { void copyPhone(row); }}
                 onOpenProfile={openProfile}
                 identityHandlers={identityHandlers}
+                canDelete={canPurge}
+                onPurge={(row) => { void purge(row); }}
               />
             )
           ) : shown.length === 0 ? (

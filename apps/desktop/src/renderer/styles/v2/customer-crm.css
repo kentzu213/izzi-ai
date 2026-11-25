@@ -644,6 +644,27 @@
   color: var(--v2-danger) !important;
 }
 
+/* The customer asked (XOÁ) for their data to be deleted; staff decide. */
+.izzi-v2 .v2-crm-card__erase {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--v2-space-2);
+  margin: 0;
+}
+
+.izzi-v2 .v2-crm-card__erase-chip {
+  padding: 0 var(--v2-space-2);
+  border: 1px solid color-mix(in srgb, var(--v2-danger) 60%, transparent);
+  border-radius: var(--v2-radius-pill);
+  background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  color: var(--v2-danger) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 20px;
+}
+
 .izzi-v2 .v2-crm-card__quote {
   flex-basis: 100%;
   color: var(--v2-text-secondary) !important;

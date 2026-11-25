@@ -86,6 +86,8 @@ const PAGE: CareCrmPage = {
   nextCursor: 'crm-next-1',
   assignees: [{ userId: OWNER_ID, label: 'Lan' }],
   identityEnabled: null,
+  identityUnavailable: false,
+  consentAsk: null,
 };
 
 const SAVE: CustomerCareCrmSaveInput = { leadId: LEAD_ID, expectedUpdatedAt: UPDATED, profile: PROFILE };
@@ -278,6 +280,17 @@ describe('CustomerCareService.saveCrmProfile', () => {
 const CONFIRM = { leadId: LEAD_ID, action: 'confirm', field: 'family', expectedVersion: VERSION } as const;
 
 describe('CustomerCareService.listCrm with identity (Care CRM S3)', () => {
+  it('passes the consent question, a row whose identity was unreadable, and the unavailable flag through', async () => {
+    const crm = new FakeCrm();
+    const consentAsk = { text: 'Dạ em là trợ lý tự động của shop ạ.', copyVersion: 1 };
+    crm.listResult = { ok: true, value: { ...PAGE, identityEnabled: true, identityUnavailable: true, consentAsk, rows: [{ ...ROW, identityUnavailable: true }] } };
+    const result = await fixture({ crm }).service.listCrm({ cursor: null });
+    if (!result.ok) throw new Error('expected rows');
+    expect(result).toMatchObject({ identityEnabled: true, identityUnavailable: true, consentAsk });
+    expect(result.consentAsk).not.toBe(consentAsk);
+    expect(result.rows[0].identityUnavailable).toBe(true);
+  });
+
   it('passes identityEnabled and hands out identity copies', async () => {
     const crm = new FakeCrm();
     crm.listResult = { ok: true, value: { ...PAGE, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] } };
@@ -337,6 +350,25 @@ describe('CustomerCareService.identityAction (Care CRM S3)', () => {
     const { service, crm, switchTo } = fixture();
     crm.during = () => switchTo({ ...OWNER, workspaceId: WORKSPACE_B });
     expect(await service.identityAction(CONFIRM)).toEqual({ ok: false, error: 'access_changed' });
+  });
+
+  it('lets only an owner or a manager clear an erase request; an editor is refused without a request', async () => {
+    const clear = { leadId: LEAD_ID, action: 'clear_erase_request' } as const;
+    for (const role of ['owner', 'manager'] as const) {
+      const { service, crm } = fixture({ authority: as(role) });
+      expect(await service.identityAction(clear)).toEqual({ ok: true, workspaceId: WORKSPACE_A, leadId: LEAD_ID, identity: IDENTITY });
+      expect(crm.calls).toEqual([['identityAction', WORKSPACE_A, clear]]);
+    }
+    for (const role of ['editor', 'viewer', 'reviewer'] as const) {
+      const { service, crm } = fixture({ authority: as(role) });
+      expect(await service.identityAction(clear), role).toEqual({ ok: false, error: 'forbidden' });
+      expect(crm.calls).toEqual([]);
+    }
+    const { service, crm } = fixture();
+    crm.identityResult = { ok: false, error: 'rejected', reason: 'lead_not_found' };
+    expect(await service.identityAction(clear)).toEqual({ ok: false, error: 'rejected', reason: 'lead_not_found' });
+    crm.identityResult = { ok: false, error: 'forbidden' };
+    expect(await service.identityAction(clear)).toEqual({ ok: false, error: 'forbidden' });
   });
 });
 

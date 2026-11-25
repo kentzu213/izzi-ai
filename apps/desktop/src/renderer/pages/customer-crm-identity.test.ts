@@ -1,6 +1,7 @@
 /**
  * Care CRM S3 identity card, pure rules: what the card offers (consent gating, the AI switch), the staff edit
- * values, the 409 flow on the version the card opened with, refresh answers and every error reason in Vietnamese.
+ * values, the version an action is sent against (always the one on screen), the 409 flow, refresh answers and every
+ * error reason in Vietnamese.
  */
 import { describe, expect, it } from 'vitest';
 import type {
@@ -15,7 +16,6 @@ import {
   CRM_IDENTITY_CONFLICT_MESSAGE,
   CRM_IDENTITY_OFF_MESSAGE,
   crmConsentConfirmText,
-  crmConsentMessageText,
   crmIdentityActionInput,
   crmIdentityActionView,
   crmIdentityCardBegin,
@@ -28,8 +28,10 @@ import {
   crmIdentityRefreshView,
   crmRetryMinutes,
   crmRowsWithIdentity,
+  crmClearEraseConfirmText,
   crmWithdrawConfirmText,
 } from './customer-crm-identity';
+import { crmRowsOnRefresh } from './customer-crm-flow';
 
 const WORKSPACE = '11111111-1111-4111-8111-111111111111';
 const LEAD_ID = '44444444-4444-4444-8444-444444444444';
@@ -60,45 +62,61 @@ function identity(state: CustomerCareCrmIdentity['consent'] extends infer C ? C 
   };
 }
 
+const ASK = 'Dạ em là trợ lý tự động của Hồng Hưng ạ.\nDạ, để tư vấn đúng (chi tiết: https://izziapi.com/privacy).';
 const PRODUCTS = [{ id: 'ban-127', label: 'Bàn thờ gỗ gụ 1m27' }, { id: 'lu-huong', label: 'Lư hương đồng' }];
 const fail = (error: CustomerCareFacebookFailure['error'], reason?: CustomerCareFacebookRejectReason): CustomerCareFacebookFailure =>
   (reason ? { ok: false, error, reason } : { ok: false, error });
 
 describe('crmIdentityPermissions: what the card offers', () => {
   it('offers field actions, refresh and withdraw once the customer agreed; asking follows the server', () => {
-    expect(crmIdentityPermissions(identity('granted'), true, true)).toEqual({
+    expect(crmIdentityPermissions(identity('granted'), true, true, ASK)).toEqual({
       fieldActions: true, canAsk: false, canWithdraw: true, canRefresh: true,
     });
   });
 
   it('before an answer: the order layer can be acted on and refreshed, "Xin phép khách" only when the server allows', () => {
-    expect(crmIdentityPermissions(identity('unknown'), true, true)).toEqual({ fieldActions: true, canAsk: true, canWithdraw: false, canRefresh: true });
+    expect(crmIdentityPermissions(identity('unknown'), true, true, ASK)).toEqual({ fieldActions: true, canAsk: true, canWithdraw: false, canRefresh: true });
     const askedTwice = identity('asked');
     askedTwice.consent = { ...askedTwice.consent!, canAsk: false };
-    expect(crmIdentityPermissions(askedTwice, true, true)).toEqual({ fieldActions: true, canAsk: false, canWithdraw: true, canRefresh: true });
+    expect(crmIdentityPermissions(askedTwice, true, true, ASK)).toEqual({ fieldActions: true, canAsk: false, canWithdraw: true, canRefresh: true });
   });
 
   it('offers nothing once the customer refused or withdrew, whatever the server flag says', () => {
     for (const state of ['declined', 'withdrawn'] as const) {
       const refused = identity(state);
       refused.consent = { ...refused.consent!, canAsk: true };
-      expect(crmIdentityPermissions(refused, true, true)).toEqual({ fieldActions: false, canAsk: false, canWithdraw: false, canRefresh: false });
+      expect(crmIdentityPermissions(refused, true, true, ASK)).toEqual({ fieldActions: false, canAsk: false, canWithdraw: false, canRefresh: false });
     }
   });
 
   it('hides every AI action while the AI profile is off, on a server without S3, or without the IPC handlers', () => {
     const none = { fieldActions: false, canAsk: false, canWithdraw: false, canRefresh: false };
-    expect(crmIdentityPermissions(identity('unknown'), false, true)).toEqual(none);
-    expect(crmIdentityPermissions(identity('unknown'), null, true)).toEqual(none);
-    expect(crmIdentityPermissions(identity('unknown'), true, false)).toEqual(none);
-    expect(crmIdentityPermissions(undefined, true, true)).toEqual(none);
+    expect(crmIdentityPermissions(identity('unknown'), false, true, ASK)).toEqual(none);
+    expect(crmIdentityPermissions(identity('unknown'), null, true, ASK)).toEqual(none);
+    expect(crmIdentityPermissions(identity('unknown'), true, false, ASK)).toEqual(none);
+    expect(crmIdentityPermissions(undefined, true, true, ASK)).toEqual(none);
+  });
+
+  it('offers "Xin phép khách" only with the server\'s consent question (review LOW 4)', () => {
+    expect(crmIdentityPermissions(identity('unknown'), true, true, ASK).canAsk).toBe(true);
+    expect(crmIdentityPermissions(identity('unknown'), true, true, null)).toEqual({
+      fieldActions: true, canAsk: false, canWithdraw: false, canRefresh: true,
+    });
+  });
+
+  it('hides "Xin phép khách" and "Cập nhật hồ sơ" while the customer\'s erase request is pending (backend 79e14f9)', () => {
+    const pending = identity('unknown');
+    pending.consent = { ...pending.consent!, canAsk: true, eraseRequestedAt: AT };
+    expect(crmIdentityPermissions(pending, true, true, ASK)).toMatchObject({ canAsk: false, canRefresh: false });
+    pending.consent = { ...pending.consent!, eraseRequestedAt: null };
+    expect(crmIdentityPermissions(pending, true, true, ASK)).toMatchObject({ canAsk: true, canRefresh: true });
   });
 
   it('keeps "Khách rút đồng ý" with the AI profile off for a customer who agreed or was asked (backend 84c2523)', () => {
     const withdrawOnly = { fieldActions: false, canAsk: false, canWithdraw: true, canRefresh: false };
-    expect(crmIdentityPermissions(identity('granted'), false, true)).toEqual(withdrawOnly);
-    expect(crmIdentityPermissions(identity('asked'), false, true)).toEqual(withdrawOnly);
-    expect(crmIdentityPermissions(identity('granted'), null, true).canWithdraw).toBe(false);
+    expect(crmIdentityPermissions(identity('granted'), false, true, ASK)).toEqual(withdrawOnly);
+    expect(crmIdentityPermissions(identity('asked'), false, true, ASK)).toEqual(withdrawOnly);
+    expect(crmIdentityPermissions(identity('granted'), null, true, ASK).canWithdraw).toBe(false);
   });
 });
 
@@ -163,16 +181,40 @@ describe('staff corrections (Sửa)', () => {
   });
 });
 
-describe('the card keeps the version it opened with (409 flow)', () => {
-  it('sends the version from when the card opened, even after a background refresh brought a newer one', () => {
-    const opened = crmIdentityCardStart(identity());
-    expect(opened.baseVersion).toBe(V1);
-    // The 60 s tick replaced the row's identity with V2; the card's state is untouched by that.
-    const input = crmIdentityActionInput(opened, LEAD_ID, { action: 'confirm', field: 'ageBand' });
-    expect(input).toEqual({ leadId: LEAD_ID, action: 'confirm', field: 'ageBand', expectedVersion: V1 });
+describe('the version an action is sent against (review HIGH 1)', () => {
+  const row = (leadId: string, value: CustomerCareCrmIdentity, updatedAt = AT) => ({
+    leadId, profile: { updatedAt } as never, identity: value,
+  }) as unknown as import('../../shared/customer-care-types').CustomerCareCrmRow;
+
+  it('sends the version of the identity on screen, for confirm, reject and consent-free fields alike', () => {
+    expect(crmIdentityActionInput(V1, LEAD_ID, { action: 'confirm', field: 'ageBand' }))
+      .toEqual({ leadId: LEAD_ID, action: 'confirm', field: 'ageBand', expectedVersion: V1 });
+    expect(crmIdentityActionInput(null, LEAD_ID, { action: 'reject', field: 'occasion' }).expectedVersion).toBeNull();
   });
 
-  it('reloads with the identity a 409 returned, says so, and acts on that version next', () => {
+  it('sends a correction against the version its editor was opened on', () => {
+    expect(crmIdentityActionInput(V2, LEAD_ID, { action: 'correct', field: 'ageBand', value: ['55+'], expectedVersion: V1 }))
+      .toEqual({ leadId: LEAD_ID, action: 'correct', field: 'ageBand', value: ['55+'], expectedVersion: V1 });
+  });
+
+  it('a late 60 s tick that read v1 never brings v1 back over a staff correction (v2); the next Bỏ is sent against v2', () => {
+    // The tick read the list while the identity was still v1.
+    const before = [row(LEAD_ID, identity('granted', { version: V1 })), row(LEAD_ID_2, identity('granted', { version: V1 }))];
+    const lateTick = before.map((item) => ({ ...item }));
+    // Meanwhile staff corrected the age: the server answered with v2.
+    const v2 = identity('granted', { version: V2, ageBand: field<Array<'55+'>>(['55+'], { status: 'corrected', source: 'staff' }) });
+    const afterAction = crmRowsWithIdentity(before, LEAD_ID, v2);
+    // The tick lands afterwards with v1.
+    const shown = crmRowsOnRefresh(afterAction, lateTick, new Set());
+    expect(shown[0].identity?.version).toBe(V2);
+    expect(shown[0].identity?.ageBand?.value).toEqual(['55+']);
+    expect(shown[1].identity?.version).toBe(V1);
+    // "Bỏ" on the age the screen shows goes out against v2.
+    const reject = crmIdentityActionInput(shown[0].identity!.version, LEAD_ID, { action: 'reject', field: 'ageBand' });
+    expect(reject).toEqual({ leadId: LEAD_ID, action: 'reject', field: 'ageBand', expectedVersion: V2 });
+  });
+
+  it('reloads with the identity a 409 returned and says so; the card then shows (and sends) that version', () => {
     const newer = identity('granted', { version: V2 });
     const result: CustomerCareCrmIdentityActionResult = {
       ok: false, error: 'identity_conflict', workspaceId: WORKSPACE, leadId: LEAD_ID, identity: newer,
@@ -181,28 +223,17 @@ describe('the card keeps the version it opened with (409 flow)', () => {
     expect(view).toMatchObject({ identity: newer, tone: 'notice', dropRows: false, removeRow: false, workspaceId: WORKSPACE });
     expect(view.message).toBe(CRM_IDENTITY_CONFLICT_MESSAGE);
     expect(CRM_IDENTITY_CONFLICT_MESSAGE.startsWith('Hồ sơ vừa được cập nhật')).toBe(true);
-    const busy = crmIdentityCardBegin(crmIdentityCardStart(identity()), 'ageBand');
+    const busy = crmIdentityCardBegin(crmIdentityCardStart(), 'ageBand');
     expect(busy.pending).toBe('ageBand');
-    const settled = crmIdentityCardSettle(busy, view);
-    expect(settled).toEqual({ baseVersion: V2, pending: null, message: { text: CRM_IDENTITY_CONFLICT_MESSAGE, tone: 'notice' } });
-    expect(crmIdentityActionInput(settled, LEAD_ID, { action: 'reject', field: 'ageBand' }).expectedVersion).toBe(V2);
-  });
-
-  it('takes the new version after its own action, and keeps it after a failure', () => {
-    const after = identity('granted', { version: V2 });
-    const ok = crmIdentityActionView('correct', { ok: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: after });
-    expect(ok).toMatchObject({ identity: after, message: 'Đã sửa.', tone: 'success' });
-    expect(crmIdentityCardSettle(crmIdentityCardStart(identity()), ok).baseVersion).toBe(V2);
-    const failed = crmIdentityActionView('confirm', fail('unavailable'));
-    expect(crmIdentityCardSettle(crmIdentityCardStart(identity()), failed).baseVersion).toBe(V1);
+    expect(crmIdentityCardSettle(busy, view)).toEqual({ pending: null, message: { text: CRM_IDENTITY_CONFLICT_MESSAGE, tone: 'notice' } });
+    const shown = crmRowsWithIdentity([row(LEAD_ID, identity())], LEAD_ID, view.identity!);
+    expect(crmIdentityActionInput(shown[0].identity!.version, LEAD_ID, { action: 'reject', field: 'ageBand' }).expectedVersion).toBe(V2);
   });
 
   it('sends consent actions without a field or a version, and a link with its server index', () => {
-    const state = crmIdentityCardStart(identity());
-    expect(crmIdentityActionInput(state, LEAD_ID, { action: 'ask_consent' })).toEqual({ leadId: LEAD_ID, action: 'ask_consent' });
-    expect(crmIdentityActionInput(state, LEAD_ID, { action: 'correct', field: 'sharedLink', index: 1, value: { title: null, domain: 'a.vn' } }))
+    expect(crmIdentityActionInput(V1, LEAD_ID, { action: 'ask_consent' })).toEqual({ leadId: LEAD_ID, action: 'ask_consent' });
+    expect(crmIdentityActionInput(V1, LEAD_ID, { action: 'correct', field: 'sharedLink', index: 1, value: { title: null, domain: 'a.vn' } }))
       .toEqual({ leadId: LEAD_ID, action: 'correct', field: 'sharedLink', index: 1, value: { title: null, domain: 'a.vn' }, expectedVersion: V1 });
-    expect(crmIdentityCardStart(undefined).baseVersion).toBeNull();
   });
 
   it('replaces only that customer\'s identity in the rows the panel holds', () => {
@@ -221,6 +252,7 @@ describe('crmIdentityActionView: success texts and every error reason', () => {
     ['reject', 'Đã bỏ. AI sẽ không đề xuất lại giá trị này.'],
     ['ask_consent', 'Đã gửi lời xin phép cho khách qua Messenger.'],
     ['withdraw_consent', 'Đã ghi nhận khách rút đồng ý. Thông tin AI về khách đã được xoá.'],
+    ['clear_erase_request', 'Đã bỏ yêu cầu xoá. Khách vẫn không nhận ưu đãi và cần đồng ý lại trước khi izzi lưu hồ sơ.'],
   ] as const)('%s succeeds with "%s"', (action, message) => {
     const view = crmIdentityActionView(action, { ok: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: identity() });
     expect(view).toMatchObject({ message, tone: 'success', dropRows: false, removeRow: false, skipTick: false });
@@ -273,6 +305,44 @@ describe('crmIdentityActionView: success texts and every error reason', () => {
   });
 });
 
+describe('clear_erase_request answers (backend 79e14f9)', () => {
+  it('is sent with the lead only, and its answers are explained without dropping the rows on a role refusal', () => {
+    expect(crmIdentityActionInput(V1, LEAD_ID, { action: 'clear_erase_request' })).toEqual({ leadId: LEAD_ID, action: 'clear_erase_request' });
+    expect(crmIdentityActionView('clear_erase_request', fail('forbidden'))).toMatchObject({
+      dropRows: false, removeRow: false, tone: 'error', message: 'Chỉ chủ shop hoặc quản lý bỏ được yêu cầu xoá.',
+    });
+    expect(crmIdentityActionView('clear_erase_request', fail('rejected', 'lead_not_found'))).toMatchObject({
+      removeRow: true, message: 'Khách này không còn trong danh sách.',
+    });
+    expect(crmIdentityActionView('clear_erase_request', fail('unavailable', 'rate_limited'))).toMatchObject({
+      skipTick: true, message: 'Đang có nhiều yêu cầu. Chờ ít phút rồi thử lại.',
+    });
+    expect(crmIdentityActionView('clear_erase_request', fail('rejected', 'invalid_request')).message)
+      .toBe('Giá trị không hợp lệ. Hãy tải lại rồi thử lại.');
+    expect(crmIdentityActionView('clear_erase_request', fail('not_configured')).message)
+      .toBe('Máy chủ izzi chưa sẵn sàng cho hồ sơ AI. Hãy liên hệ hỗ trợ izzi.');
+    expect(crmIdentityActionView('clear_erase_request', fail('unavailable')).message).toBe('Chưa kết nối được máy chủ izzi. Thử lại sau ít phút.');
+    // Lost access still drops the rows.
+    expect(crmIdentityActionView('clear_erase_request', fail('auth')).dropRows).toBe(true);
+  });
+});
+
+describe('reading the list again after an answer that changed what the card may do (review LOW 5)', () => {
+  it('asks for a page-1 reload after consent_required and profile_ai_off, from an action or a refresh', () => {
+    for (const reason of ['consent_required', 'profile_ai_off'] as const) {
+      expect(crmIdentityActionView('confirm', fail('rejected', reason)).reloadList, reason).toBe(true);
+      expect(crmIdentityRefreshView(fail('rejected', reason)).reloadList, reason).toBe(true);
+    }
+    for (const view of [
+      crmIdentityActionView('confirm', fail('rejected', 'ask_limit')),
+      crmIdentityActionView('confirm', fail('unavailable', 'rate_limited')),
+      crmIdentityActionView('confirm', { ok: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: identity() }),
+    ]) {
+      expect(view.reloadList).toBe(false);
+    }
+  });
+});
+
 describe('crmIdentityRefreshView ("Cập nhật hồ sơ")', () => {
   const refreshed = (outcome: 'updated' | 'no_change'): CustomerCareCrmIdentityRefreshResult => ({
     ok: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: identity('granted', { version: V2 }), outcome,
@@ -308,24 +378,16 @@ describe('crmIdentityRefreshView ("Cập nhật hồ sơ")', () => {
 });
 
 describe('the consent question and the withdraw confirm', () => {
-  const sent = (shop: string) => `Dạ em là trợ lý tự động của ${shop} ạ.\n`
-    + `Dạ, để tư vấn đúng và báo ưu đãi hợp với nhà mình, ${shop} xin phép lưu thông tin anh/chị nhắn tại đây.`
-    + ' Anh/chị bấm Đồng ý nhé; không muốn thì bấm Không hoặc nhắn KHÔNG bất cứ lúc nào, shop vẫn tư vấn bình thường ạ.';
-
-  it('is the exact text the server sends with the Page name (backend bae6259, copy v1)', () => {
-    expect(crmConsentMessageText('Đồng Thờ Hồng Hưng')).toBe(sent('Đồng Thờ Hồng Hưng'));
-    expect(crmConsentMessageText('  Hồng Hưng  ')).toBe(sent('Hồng Hưng'));
+  it('shows the server\'s consent question verbatim, with its two buttons (review MEDIUM 3)', () => {
+    const text = crmConsentConfirmText(ASK);
+    expect(text).toBe(`Gửi tin này cho khách qua Messenger?\n\n${ASK}\n\nKèm 2 nút: [Đồng ý] [Không]`);
   });
 
-  it('says "shop" like the server when the Page name is missing, too long or unsafe', () => {
-    for (const name of [null, '', '   ', 'x'.repeat(61), 'Hồng\u200BHưng']) expect(crmConsentMessageText(name)).toBe(sent('shop'));
-  });
-
-  it('shows the whole message and its two buttons in the confirm dialog', () => {
-    const text = crmConsentConfirmText('Hồng Hưng');
-    expect(text).toContain(sent('Hồng Hưng'));
-    expect(text).toContain('[Đồng ý] [Không]');
-    expect(text.startsWith('Gửi tin này cho khách qua Messenger?')).toBe(true);
+  it('explains what dropping an erase request does before staff confirm it', () => {
+    const text = crmClearEraseConfirmText('Nguyễn Thị Hoa');
+    expect(text).toContain('Nguyễn Thị Hoa');
+    expect(text).toContain('đổi ý');
+    expect(text).toContain('đồng ý lại');
   });
 
   it('explains what withdrawing does before staff record it', () => {

@@ -356,7 +356,14 @@ function CrmEditor({
       </label>
       )}
 
-      <CustomerCrmIdentity row={row} products={products} handlers={identityHandlers} showOccasion />
+      <CustomerCrmIdentity
+        row={row}
+        products={products}
+        handlers={identityHandlers}
+        place="editor"
+        canDelete={canDelete}
+        onPurge={purging ? undefined : onPurge}
+      />
 
       {row.recentMessages.length > 0 && (
         <div className="v2-crm__messages">

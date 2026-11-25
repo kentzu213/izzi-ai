@@ -31,6 +31,10 @@ export interface CustomerCrmGraphProps {
   onOpenProfile: (leadId: string) => void;
   /** Care CRM S3 staff actions on the card's identity; absent shows it read-only. */
   identityHandlers?: CrmIdentityHandlers | null;
+  /** Owner or manager with the purge available. */
+  canDelete?: boolean;
+  /** The existing purge, for a customer's erase request. */
+  onPurge?: (row: CustomerCareCrmRow) => void;
 }
 
 /** The engine adds positions and speeds to these copies; pill sizes are kept for hit-testing. */
@@ -65,7 +69,7 @@ function truncate(text: string, max: number): string {
  * opens the card: the staff profile read-only, the AI identity with its staff actions.
  */
 export default function CustomerCrmGraph({
-  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null,
+  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null, canDelete = false, onPurge,
 }: CustomerCrmGraphProps) {
   // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
   // restart; the 60 s tick hands over new row arrays every time.
@@ -382,6 +386,8 @@ export default function CustomerCrmGraph({
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
           onClose={closeCard}
           identityHandlers={identityHandlers}
+          canDelete={canDelete}
+          onPurge={onPurge ? () => onPurge(selectedRow) : undefined}
         />
       ) : (
         <p className="v2-crm-graph__hint v2-crm__hint">Bấm vào một khách trên sơ đồ để xem thẻ nhận diện.</p>

@@ -1070,6 +1070,8 @@ export class CustomerCareService {
       nextCursor: page.nextCursor,
       assignees: page.assignees.map((assignee) => ({ ...assignee })),
       identityEnabled: page.identityEnabled,
+      identityUnavailable: page.identityUnavailable,
+      consentAsk: page.consentAsk === null ? null : { ...page.consentAsk },
     };
   }
 
@@ -1100,6 +1102,8 @@ export class CustomerCareService {
     const gate = await this.crmAuthority();
     if (!gate.ok) return gate;
     const { authority, crm } = gate;
+    // Deciding a customer's erasure request is the purge roles' call (owner, manager), as on the server.
+    if (parsed.action === 'clear_erase_request' && !CARE_LEAD_PURGE_ROLES.includes(authority.role)) return { ok: false, error: 'forbidden' };
     const result = await this.runFacebookCall(authority, () => crm.identityAction(authority.workspaceId, parsed));
     if (!result.ok) return result;
     const { leadId } = result.value;

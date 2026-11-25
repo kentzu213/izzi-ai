@@ -247,7 +247,8 @@ Deletion: shop owners can delete any customer's data in the app ("Delete custome
 
 - **CRM S3 (thẻ nhận diện AI):**
   - Lớp đơn hàng (dịp mua, thời điểm, sản phẩm) được ghi trước khi khách trả lời. Nếu luật sư coi đó là lập hồ sơ (Platform Terms 3.a), tắt phần này.
-  - Câu hỏi xin phép có thêm đường dẫn "(chi tiết: …)" chỉ khi đặt `CUSTOMER_CARE_PROFILE_PRIVACY_URL`; trang chính sách phải nói thời hạn lưu khớp với 90 ngày của lead.
+  - izzi chỉ hỏi xin phép khi đã đặt `CUSTOMER_CARE_PROFILE_PRIVACY_URL`: câu hỏi luôn kèm đường dẫn "(chi tiết: …)", chưa đặt thì nút "Xin phép khách" không hiện. Trang chính sách phải nói thời hạn lưu khớp với 90 ngày của lead.
+  - Khách nhắn "XOÁ" khi chưa được báo trước: izzi không tự xoá, thẻ khách hiện "Khách yêu cầu xoá dữ liệu" để chủ shop hoặc quản lý xoá bằng "Xoá dữ liệu khách".
   - Mở rộng ra ngoài danh sách workspace thử cần khai báo trong App Review trước.
 
 - **Phase C (tự trả lời):**
