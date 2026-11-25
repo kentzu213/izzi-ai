@@ -14,6 +14,7 @@ import {
   CRM_REFRESH_COOLDOWN_MS,
   CRM_REFRESH_MS,
   CRM_SAVE_INVALID_MESSAGE,
+  CrmLoadSequence,
   crmChangedFields,
   crmDateBounds,
   crmDue,
@@ -420,6 +421,26 @@ describe('refresh merge', () => {
       expect(keptProfile.profile.updatedAt).toBe(T2);
     });
 
+    // Re-review of a394761: a wipe can delete the identity row (version null), and a refusal or an erase request must
+    // show at once; reads that predate a staff action are dropped by the load sequence instead.
+    it('takes an incoming identity with no version (wiped) over a newer local one, erase request included', () => {
+      const local = row({}, { identity: identity(V2, 'granted') });
+      const wiped = { ...identity(null, 'granted'), consent: { state: 'granted' as const, at: null, noMarketing: true, canAsk: false, eraseRequestedAt: V2 } };
+      const merged = crmRowsOnRefresh([local], [{ ...local, identity: wiped }], new Set())[0];
+      expect(merged.identity?.version).toBeNull();
+      expect(merged.identity?.consent?.eraseRequestedAt).toBe(V2);
+    });
+
+    it('takes an incoming refusal or erase request even when its version is older', () => {
+      const local = row({}, { identity: identity(V2, 'granted') });
+      for (const state of ['declined', 'withdrawn'] as const) {
+        const refused = { ...identity(V1), consent: { state, at: null, noMarketing: true, canAsk: false } };
+        expect(crmRowsOnRefresh([local], [{ ...local, identity: refused }], new Set())[0].identity?.consent?.state, state).toBe(state);
+      }
+      const erasing = { ...identity(V1), consent: { state: 'granted' as const, at: null, noMarketing: true, canAsk: false, eraseRequestedAt: V1 } };
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: erasing }], new Set())[0].identity?.consent?.eraseRequestedAt).toBe(V1);
+    });
+
     it('follows the server when it sends no identity this time (read without it)', () => {
       const local = row({}, { identity: identity(V2) });
       const plain = { ...local, identity: undefined };
@@ -529,6 +550,16 @@ describe('paging', () => {
     expect(await loadCrmPages(async () => ok([row()], null))).toMatchObject({ ok: true, identityEnabled: null, consentAsk: null });
   });
 
+  it('asks main to try the identity again on the first page only when the user pressed "Làm mới"', async () => {
+    const inputs: unknown[] = [];
+    const pages = [ok([row()], 'c1'), ok([row()], null)];
+    await loadCrmPages(async (input) => { inputs.push(input); return pages.shift()!; }, CRM_MAX_PAGES, { retryIdentity: true });
+    expect(inputs).toEqual([{ cursor: null, retryIdentity: true }, { cursor: 'c1' }]);
+    const plain: unknown[] = [];
+    await loadCrmPages(async (input) => { plain.push(input); return ok([row()], null); });
+    expect(plain).toEqual([{ cursor: null }]);
+  });
+
   it('reports the identity unavailable when any page was read without it', async () => {
     const pages = [ok([row()], 'c1', WORKSPACE, true), ok([row()], null, WORKSPACE, null, { identityUnavailable: true })];
     expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityUnavailable: true });
@@ -603,5 +634,37 @@ describe('product picker', () => {
     expect(options.map((option) => option.id)).toEqual(['ban-127', 'gia-127', 'dai']);
     expect(options[2].label.length).toBeLessThanOrEqual(80);
     expect(crmProductOptions(undefined, NOW)).toEqual([]);
+  });
+});
+
+describe('CrmLoadSequence: which list read is current (re-review of a394761, LOW 3)', () => {
+  it('drops a read that a later read started after, and stops the spinner with the full reload it belongs to', () => {
+    const sequence = new CrmLoadSequence();
+    const full = sequence.start('full');
+    const tick = sequence.start('page1');
+    expect(sequence.isCurrent(full)).toBe(false);
+    expect(sequence.isCurrent(tick)).toBe(true);
+    expect(sequence.finish(tick)).toBe(false);
+    expect(sequence.finish(full)).toBe(true);
+  });
+
+  it('an identity answer drops every read in flight; a full reload in flight is started again, not lost', () => {
+    const sequence = new CrmLoadSequence();
+    const full = sequence.start('full');
+    expect(sequence.invalidate()).toBe(true);
+    expect(sequence.isCurrent(full)).toBe(false);
+    const again = sequence.start('full');
+    // The dropped reload ends first: the spinner keeps going for the one started again.
+    expect(sequence.finish(full)).toBe(false);
+    expect(sequence.isCurrent(again)).toBe(true);
+    expect(sequence.finish(again)).toBe(true);
+  });
+
+  it('an identity answer during a tick only drops the tick', () => {
+    const sequence = new CrmLoadSequence();
+    const tick = sequence.start('page1');
+    expect(sequence.invalidate()).toBe(false);
+    expect(sequence.isCurrent(tick)).toBe(false);
+    expect(sequence.invalidate()).toBe(false);
   });
 });

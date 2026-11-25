@@ -554,6 +554,8 @@ export interface CustomerCareCrmIdentity {
 /** Renderer inputs; the workspace always comes from main's live authority. */
 export interface CustomerCareCrmListInput {
   cursor: string | null;
+  /** Care CRM S3, first page of "Làm mới" only: try the identity read again even while main has paused it. */
+  retryIdentity?: true;
 }
 
 export interface CustomerCareCrmSaveInput {

@@ -370,6 +370,37 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       vi.useRealTimers();
     }
   });
+
+  // Re-review of a394761, LOW 2.
+  const FAIL = () => json({ success: false, error: 'x' }, 500);
+  const includes = (urls: string[]) => urls.map((url) => url.includes('include=identity'));
+
+  it('pauses the identity read only when the read without it succeeded', async () => {
+    const both = sequence(FAIL(), FAIL(), FAIL(), json(LIST_BODY));
+    expect(await both.instance.listCrm(WORKSPACE, null)).toEqual({ ok: false, error: 'unavailable' });
+    await both.instance.listCrm(WORKSPACE, null);
+    expect(includes(both.urls())).toEqual([true, false, true, false]);
+  });
+
+  it('starts afresh on a workspace or account switch', async () => {
+    const { instance, urls } = sequence(
+      FAIL(), json(LIST_BODY), json({ ...LIST_BODY, workspaceId: OTHER_WORKSPACE }), json({ ...LIST_BODY, identityEnabled: true }),
+    );
+    await instance.listCrm(WORKSPACE, null, { scope: 'account-a:workspace-1' });
+    await instance.listCrm(OTHER_WORKSPACE, null, { scope: 'account-a:workspace-2' });
+    await instance.listCrm(WORKSPACE, null, { scope: 'account-b:workspace-1' });
+    expect(includes(urls())).toEqual([true, false, true, true]);
+  });
+
+  it('tries the identity again during the pause when the user asks ("Làm mới"), and resumes it when it works', async () => {
+    const { instance, urls } = sequence(FAIL(), json(LIST_BODY), json({ ...LIST_BODY, identityEnabled: true }), json(LIST_BODY));
+    const scope = { scope: 'account-a:workspace-1' };
+    await instance.listCrm(WORKSPACE, null, scope);
+    const retried = await instance.listCrm(WORKSPACE, null, { ...scope, retryIdentity: true });
+    expect(retried.ok && retried.value).toMatchObject({ identityEnabled: true, identityUnavailable: false });
+    await instance.listCrm(WORKSPACE, null, scope);
+    expect(includes(urls())).toEqual([true, false, true, true]);
+  });
 });
 
 describe('CareCrmClient POST /crm/identity clear_erase_request (backend 79e14f9)', () => {

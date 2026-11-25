@@ -45,6 +45,7 @@ import {
   crmShouldLoadOnShow,
   crmShouldSkipNextTick,
   crmVisibleRows,
+  CrmLoadSequence,
   loadCrmPages,
   normalizeCrmProfile,
   profileFromRow,
@@ -173,13 +174,14 @@ export function CustomerCrmPanel() {
   const scopeRef = useRef<string | null>(null);
   /** Rows deleted here: a refresh that started before the delete must not bring them back. */
   const removedRef = useRef<Set<string>>(new Set());
-  const loadSeqRef = useRef(0);
+  /** Which list read is current; an identity answer drops the reads in flight (Care CRM S3). */
+  const sequenceRef = useRef(new CrmLoadSequence());
   /** When the last every-page load started, so reopening the tab does not reload every page again at once. */
   const lastFullLoadAtRef = useRef<number | null>(null);
   /** Refresh ticks to skip after a 429 or a 503, instead of adding load. */
   const skipTicksRef = useRef(0);
   const queueRef = useRef<CrmSaveQueue | null>(null);
-  const loadRef = useRef<(mode: 'full' | 'page1') => Promise<void>>(async () => undefined);
+  const loadRef = useRef<(mode: 'full' | 'page1', retryIdentity?: boolean) => Promise<void>>(async () => undefined);
   const restTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runSaveRef = useRef<(leadId: string, mode: 'auto' | 'explicit') => Promise<'done' | 'again'>>(
     async () => 'done',
@@ -240,9 +242,10 @@ export function CustomerCrmPanel() {
 
   /**
    * `full` reads up to `CRM_MAX_PAGES` pages: when the tab opens, on "Làm mới", after a 409 and after a
-   * workspace change. `page1` is the 60 s tick: it reads page 1 only and merges it by `leadId`.
+   * workspace change. `page1` is the 60 s tick: it reads page 1 only and merges it by `leadId`. `retryIdentity`
+   * ("Làm mới", "Thử lại"): main tries the identity read again even while it is paused after a failure.
    */
-  const load = useCallback(async (requested: 'full' | 'page1') => {
+  const load = useCallback(async (requested: 'full' | 'page1', retryIdentity = false) => {
     const api = getCrmApi();
     if (!api) {
       setPhase({ state: 'blocked', message: NO_APP_MESSAGE });
@@ -250,7 +253,7 @@ export function CustomerCrmPanel() {
     }
     // Nothing is loaded yet, so there is nothing for page 1 to merge into.
     const mode = scopeRef.current === null ? 'full' : requested;
-    const seq = ++loadSeqRef.current;
+    const seq = sequenceRef.current.start(mode);
     if (mode === 'full') {
       lastFullLoadAtRef.current = Date.now();
       setRefreshing(true);
@@ -262,8 +265,10 @@ export function CustomerCrmPanel() {
       }, crmRefreshCooldownLeft(lastFullLoadAtRef.current, Date.now()));
     }
     try {
-      const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1);
-      if (!mountedRef.current || seq !== loadSeqRef.current) return;
+      const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1, {
+        retryIdentity: retryIdentity && mode === 'full',
+      });
+      if (!mountedRef.current || !sequenceRef.current.isCurrent(seq)) return;
       setNow(Date.now());
       if (!result.ok) {
         const view = crmFailureView(result);
@@ -311,12 +316,13 @@ export function CustomerCrmPanel() {
       setError('');
       if (switched) void loadProducts(api, result.workspaceId);
     } catch {
-      if (!mountedRef.current || seq !== loadSeqRef.current) return;
+      if (!mountedRef.current || !sequenceRef.current.isCurrent(seq)) return;
       skipTicksRef.current = 1;
       if (scopeRef.current === null) setPhase({ state: 'blocked', message: GENERIC_LOAD_ERROR });
       else setError(GENERIC_LOAD_ERROR);
     } finally {
-      if (mountedRef.current && mode === 'full') setRefreshing(false);
+      // The spinner belongs to the latest full reload; one dropped and started again keeps it going.
+      if (sequenceRef.current.finish(seq) && mountedRef.current) setRefreshing(false);
     }
   }, [dropAll, loadProducts, updateEdits, updateRows]);
 
@@ -407,10 +413,11 @@ export function CustomerCrmPanel() {
     }
     const { identity } = view;
     if (identity && view.workspaceId === scopeRef.current) {
-      // A list read still in flight started before this answer: it is discarded, so it cannot put the older identity
-      // back (the merge by identity version guards the same thing for reads that start later).
-      loadSeqRef.current += 1;
+      // A list read still in flight may predate this answer: it is dropped, so it cannot put the older identity back.
+      // A full reload ("Làm mới") caught that way is started again rather than lost.
+      const rerunFull = sequenceRef.current.invalidate();
       updateRows((current) => crmRowsWithIdentity(current, leadId, identity));
+      if (rerunFull && mountedRef.current) void loadRef.current('full');
     }
     // The customer's consent or the AI switch changed on the server: read page 1 again now, once.
     if (view.reloadList && mountedRef.current) void loadRef.current('page1');
@@ -589,7 +596,7 @@ export function CustomerCrmPanel() {
               disabled={refreshing || refreshResting}
               title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
               aria-describedby={refreshResting && !refreshing ? 'v2-crm-refresh-note' : undefined}
-              onClick={() => { void load('full'); }}
+              onClick={() => { void load('full', true); }}
             >
               {refreshing ? 'Đang tải…' : 'Làm mới'}
             </button>
@@ -608,7 +615,7 @@ export function CustomerCrmPanel() {
               className="v2-button"
               disabled={refreshing || refreshResting}
               title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
-              onClick={() => { void load('full'); }}
+              onClick={() => { void load('full', true); }}
             >
               Thử lại
             </button>

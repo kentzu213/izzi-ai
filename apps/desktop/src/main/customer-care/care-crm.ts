@@ -90,9 +90,19 @@ export type CareCrmSaveOutcome =
   | { kind: 'saved'; leadId: string; profile: CustomerCareCrmProfile }
   | { kind: 'conflict'; leadId: string; profile: CustomerCareCrmProfile };
 
+/**
+ * Care CRM S3, how a list read treats the identity: `scope` names the live account and workspace (the identity pause
+ * after a failed read belongs to it, so a switch starts afresh); `retryIdentity` ("Làm mới") tries the identity read
+ * again even while it is paused.
+ */
+export interface CareCrmListOptions {
+  scope?: string;
+  retryIdentity?: boolean;
+}
+
 /** The CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export interface CareCrmGateway {
-  listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>>;
+  listCrm(workspaceId: string, cursor: string | null, options?: CareCrmListOptions): Promise<CareFacebookResult<CareCrmPage>>;
   saveCrmProfile(workspaceId: string, input: CustomerCareCrmSaveInput): Promise<CareFacebookResult<CareCrmSaveOutcome>>;
   /** Care CRM S3: a staff action on the identity card; the caller has already parsed `input`. */
   identityAction(workspaceId: string, input: CustomerCareCrmIdentityActionInput): Promise<CareFacebookResult<CareCrmIdentityOutcome>>;
@@ -197,8 +207,15 @@ function parseProductIds(value: unknown, unique: boolean): string[] | null {
 // Renderer input (the IPC argument guard)
 // ---------------------------------------------------------------------------
 
-/** `{ cursor }`: null for the first page, otherwise the opaque `nextCursor` main handed out. */
+/**
+ * `{ cursor }`: null for the first page, otherwise the opaque `nextCursor` main handed out. Care CRM S3: the first
+ * page of "Làm mới" may add `retryIdentity: true` (and only `true`).
+ */
 export function parseCareCrmListInput(input: unknown): CustomerCareCrmListInput | null {
+  if (hasOwn(input, 'retryIdentity')) {
+    const retry = exactRecord(input, ['cursor', 'retryIdentity']);
+    return retry && retry.cursor === null && retry.retryIdentity === true ? { cursor: null, retryIdentity: true } : null;
+  }
   const record = exactRecord(input, ['cursor']);
   if (!record) return null;
   if (record.cursor === null) return { cursor: null };

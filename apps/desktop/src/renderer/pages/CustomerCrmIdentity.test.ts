@@ -5,7 +5,7 @@ import type { CustomerCareCrmIdField, CustomerCareCrmIdentity, CustomerCareCrmRo
 import { CRM_IDENTITY_CONFLICT_MESSAGE, CRM_IDENTITY_OFF_MESSAGE, crmIdentityCardStart } from './customer-crm-identity';
 import { CustomerCrmCard } from './CustomerCrmCard';
 import { CustomerCrmRow } from './CustomerCrmRow';
-import { profileFromRow } from './customer-crm-flow';
+import { crmRowsOnRefresh, profileFromRow } from './customer-crm-flow';
 import { CustomerCrmIdentity, type CrmIdentityController, type CrmIdentityHandlers, type CustomerCrmIdentityProps } from './CustomerCrmIdentity';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
@@ -204,6 +204,17 @@ describe('CustomerCrmIdentity: the AI identity card', () => {
     const html = render({ controller });
     expect(html).toContain(`role="status" aria-live="polite">${CRM_IDENTITY_CONFLICT_MESSAGE}</p>`);
     expect(render()).toContain('role="status" aria-live="polite"></p>');
+  });
+
+  it('shows the erase-request chip after a refresh brings a wiped identity (version null) over a granted one', () => {
+    // Re-review of a394761, HIGH: the wipe deletes the identity row, so the server sends version null.
+    const wiped = identity('granted');
+    wiped.version = null;
+    wiped.consent = { ...wiped.consent!, canAsk: false, noMarketing: true, eraseRequestedAt: '2026-11-25T03:15:00.000Z' };
+    const [merged] = crmRowsOnRefresh([ROW], [withIdentity(wiped)], new Set());
+    const html = render({ row: merged, canDelete: true, onPurge: noop });
+    expect(html).toContain('Khách yêu cầu xoá dữ liệu');
+    expect(buttonText(html)).not.toContain('Cập nhật hồ sơ');
   });
 
   it('renders nothing for a row without identity (a server without S3)', () => {

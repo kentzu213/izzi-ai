@@ -208,9 +208,13 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     // Review of a694110, HIGH 1 and LOW 5. The merge itself is covered in customer-crm-flow.test.ts.
     const panel = read('./CustomerCrmPanel.tsx');
     const apply = panel.slice(panel.indexOf('const applyIdentityOutcome'), panel.indexOf('const identityAct'));
-    expect(apply).toContain('loadSeqRef.current += 1');
+    expect(apply).toContain('sequenceRef.current.invalidate()');
+    // A full reload in flight is started again rather than lost (re-review of a394761, LOW 3).
+    expect(apply).toContain("loadRef.current('full')");
     expect(apply).toContain("loadRef.current('page1')");
     expect(panel).toContain('AI hồ sơ khách tạm không tải được.');
+    // "Làm mới" and "Thử lại" ask main to try the identity again, past its 5-minute pause (LOW 2).
+    expect(panel.split("void load('full', true);")).toHaveLength(3);
   });
 
   it('never carries its own copy of the consent question: the dialog shows the server\'s text (review MEDIUM 3)', () => {

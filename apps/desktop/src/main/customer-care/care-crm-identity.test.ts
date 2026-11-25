@@ -16,7 +16,7 @@ import {
   parseCareCrmIdentityRefreshInput,
   parseCareCrmRefreshTooSoonBody,
 } from './care-crm-identity';
-import { copyCareCrmRow, parseCareCrmListBody, parseCareCrmRow } from './care-crm';
+import { copyCareCrmRow, parseCareCrmListBody, parseCareCrmListInput, parseCareCrmRow } from './care-crm';
 
 const WORKSPACE = '11111111-1111-4111-8111-111111111111';
 const OTHER_WORKSPACE = '22222222-2222-4222-8222-222222222222';
@@ -396,6 +396,16 @@ describe('parseCareCrmIdentityActionInput (IPC argument guard)', () => {
     for (const input of [null, [], 'confirm', Object.assign(Object.create({ leadId: LEAD_ID }), confirm)]) {
       expect(parseCareCrmIdentityActionInput(input)).toBeNull();
     }
+  });
+});
+
+describe('parseCareCrmListInput with retryIdentity ("Làm mới", re-review of a394761)', () => {
+  it('accepts retryIdentity: true on the first page only', () => {
+    expect(parseCareCrmListInput({ cursor: null, retryIdentity: true })).toEqual({ cursor: null, retryIdentity: true });
+    expect(parseCareCrmListInput({ cursor: null })).toEqual({ cursor: null });
+    expect(parseCareCrmListInput({ cursor: 'crm-next-1', retryIdentity: true })).toBeNull();
+    expect(parseCareCrmListInput({ cursor: null, retryIdentity: false })).toBeNull();
+    expect(parseCareCrmListInput({ cursor: null, retryIdentity: 'yes' })).toBeNull();
   });
 });
 

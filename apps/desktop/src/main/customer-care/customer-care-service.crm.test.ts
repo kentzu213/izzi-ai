@@ -109,8 +109,9 @@ class FakeCrm implements CareCrmGateway {
   listResult: CareFacebookResult<CareCrmPage> = { ok: true, value: PAGE };
   saveResult: CareFacebookResult<CareCrmSaveOutcome> = { ok: true, value: { kind: 'saved', leadId: LEAD_ID, profile: ROW.profile } };
 
-  async listCrm(workspaceId: string, cursor: string | null) {
-    this.calls.push(['listCrm', workspaceId, cursor]); this.during(); return this.listResult;
+  readonly listOptions: unknown[] = [];
+  async listCrm(workspaceId: string, cursor: string | null, options?: unknown) {
+    this.calls.push(['listCrm', workspaceId, cursor]); this.listOptions.push(options); this.during(); return this.listResult;
   }
   async saveCrmProfile(workspaceId: string, input: CustomerCareCrmSaveInput) {
     this.calls.push(['saveCrmProfile', workspaceId, input]); this.during(); return this.saveResult;
@@ -280,6 +281,22 @@ describe('CustomerCareService.saveCrmProfile', () => {
 const CONFIRM = { leadId: LEAD_ID, action: 'confirm', field: 'family', expectedVersion: VERSION } as const;
 
 describe('CustomerCareService.listCrm with identity (Care CRM S3)', () => {
+  it('scopes the identity pause to the live account and workspace, and passes "Làm mới" through', async () => {
+    const { service, crm, switchTo } = fixture();
+    await service.listCrm({ cursor: null });
+    await service.listCrm({ cursor: null, retryIdentity: true });
+    switchTo({ ...OWNER, identityId: IDENTITY_B });
+    await service.listCrm({ cursor: null });
+    switchTo({ ...OWNER, workspaceId: WORKSPACE_B });
+    await service.listCrm({ cursor: null });
+    const [first, retry, otherAccount, otherWorkspace] = crm.listOptions as Array<{ scope: string; retryIdentity: boolean }>;
+    expect(first).toEqual({ scope: expect.any(String), retryIdentity: false });
+    expect(retry).toEqual({ scope: first.scope, retryIdentity: true });
+    expect(new Set([first.scope, otherAccount.scope, otherWorkspace.scope]).size).toBe(3);
+    // The scope is a hash: it never carries the account or the workspace id.
+    for (const id of [IDENTITY_A, IDENTITY_B, WORKSPACE_A, WORKSPACE_B]) expect(JSON.stringify(crm.listOptions)).not.toContain(id);
+  });
+
   it('passes the consent question, a row whose identity was unreadable, and the unavailable flag through', async () => {
     const crm = new FakeCrm();
     const consentAsk = { text: 'Dạ em là trợ lý tự động của shop ạ.', copyVersion: 1 };

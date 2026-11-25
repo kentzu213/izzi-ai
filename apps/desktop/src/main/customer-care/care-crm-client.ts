@@ -33,6 +33,7 @@ import {
   parseCareCrmListBody,
   parseCareCrmSaveBody,
   type CareCrmGateway,
+  type CareCrmListOptions,
   type CareCrmPage,
   type CareCrmSaveOutcome,
 } from './care-crm';
@@ -59,7 +60,7 @@ const RATE_LIMIT_STATUS = 429;
 /** Answers to `GET /crm?include=identity` that reading again without it would not change: no retry. */
 const NO_RETRY_STATUSES = [401, 403, 404];
 /**
- * After the identity read failed, lists are read without it this long: a broken identity read (e.g. a backend
+ * After the identity read failed and the read without it worked, lists are read without it this long: a broken identity read (e.g. a backend
  * deployed before its migration) then costs one extra request every 5 minutes, not one per page, against the shared
  * 30-a-minute Care budget.
  */
@@ -103,8 +104,11 @@ export class CareCrmClient implements CareCrmGateway {
   private readonly baseUrl: string | null;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
-  /** Until then GET /crm is read without `include=identity` (set when the identity read failed). */
-  private identityBackoffUntil = 0;
+  /**
+   * The identity read is paused for this account and workspace (`scope`) until `until`: set when it failed and the
+   * read without it worked. Another scope starts afresh.
+   */
+  private identityBackoff: { scope: string; until: number } | null = null;
 
   constructor(
     private readonly auth: NativeMarketingTokenProvider,
@@ -119,29 +123,40 @@ export class CareCrmClient implements CareCrmGateway {
    * GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`. Asks for
    * the Care CRM S3 identity block; a server without S3 ignores the parameter and answers without it. The identity
    * never takes the CRM down: when that read fails (any 4xx or 5xx except 401, 403, 404 and 429, which would not
-   * change), the page is read once more without it and marked `identityUnavailable`.
+   * change), the page is read once more without it and marked `identityUnavailable`. When that worked, the identity
+   * read is paused for 5 minutes for this `scope` (account and workspace); "Làm mới" (`retryIdentity`) tries it anyway.
    */
-  async listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>> {
+  async listCrm(workspaceId: string, cursor: string | null, options: CareCrmListOptions = {}): Promise<CareFacebookResult<CareCrmPage>> {
     if (!isCareFacebookChoiceId(workspaceId) || (cursor !== null && !isCareLeadsCursor(cursor))) return INVALID_REQUEST;
     const path = `/crm?workspaceId=${encodeURIComponent(workspaceId)}`;
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
-    if (Date.now() >= this.identityBackoffUntil) {
+    const scope = options.scope ?? workspaceId;
+    // A workspace or account switch starts afresh.
+    if (this.identityBackoff !== null && this.identityBackoff.scope !== scope) this.identityBackoff = null;
+    const paused = this.identityBackoff !== null && Date.now() < this.identityBackoff.until && options.retryIdentity !== true;
+    let identityFailed = false;
+    if (!paused) {
       const result = await this.request('crm', `${path}&include=identity${query}`, {}, { raw: true });
       if (!result.ok) return result;
       if (result.status >= 200 && result.status < 300) {
         const page = parseCareCrmListBody(result.body, workspaceId);
-        return page ? { ok: true, value: page } : INVALID_RESPONSE;
+        if (!page) return INVALID_RESPONSE;
+        this.identityBackoff = null;
+        return { ok: true, value: page };
       }
       if (result.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
       if (NO_RETRY_STATUSES.includes(result.status)) return careFacebookFailure(result.status, result.body);
-      // The identity read failed: the CRM is read once more without it, and without it for a while.
-      this.identityBackoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
+      // The identity read failed: the CRM is read once more without it.
+      identityFailed = true;
     }
     const result = await this.request('crm', `${path}${query}`);
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) return INVALID_RESPONSE;
     const page = parseCareCrmListBody(result.body, workspaceId);
-    return page ? { ok: true, value: { ...page, identityUnavailable: true } } : INVALID_RESPONSE;
+    if (!page) return INVALID_RESPONSE;
+    // Only a failure the read without identity got past pauses the identity read; any other failure is retried next time.
+    if (identityFailed) this.identityBackoff = { scope, until: Date.now() + IDENTITY_BACKOFF_MS };
+    return { ok: true, value: { ...page, identityUnavailable: true } };
   }
 
   /**

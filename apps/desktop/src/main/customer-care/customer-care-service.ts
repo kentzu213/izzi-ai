@@ -1057,7 +1057,9 @@ export class CustomerCareService {
     const gate = await this.crmAuthority();
     if (!gate.ok) return gate;
     const { authority, crm } = gate;
-    const result = await this.runFacebookCall(authority, () => crm.listCrm(authority.workspaceId, parsed.cursor));
+    // The identity pause belongs to this account and workspace (a hash, never the ids); "Làm mới" tries it anyway.
+    const options = { scope: scopeHash(authority), retryIdentity: parsed.retryIdentity === true };
+    const result = await this.runFacebookCall(authority, () => crm.listCrm(authority.workspaceId, parsed.cursor, options));
     if (!result.ok) return result;
     const page = result.value;
     return {
