@@ -12,6 +12,7 @@ describe('customer care IPC boundary', () => {
     selectFacebookPage: vi.fn(), getBackfillStatus: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
     purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
+    saveCrmTeam: vi.fn(), bulkAssignCrm: vi.fn(),
     identityAction: vi.fn(), refreshIdentity: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
@@ -34,6 +35,8 @@ describe('customer care IPC boundary', () => {
     ['setAutoReply', service.setAutoReply],
     ['listCrm', service.listCrm],
     ['saveCrmProfile', service.saveCrmProfile],
+    ['saveCrmTeam', service.saveCrmTeam],
+    ['bulkAssignCrm', service.bulkAssignCrm],
     ['identityAction', service.identityAction],
     ['refreshIdentity', service.refreshIdentity],
   ] as const;
@@ -102,6 +105,14 @@ describe('customer care IPC boundary', () => {
     const save = { leadId: 'l', expectedUpdatedAt: null, profile: {} };
     expect(await invoke('saveCrmProfile', save, 'extra')).toEqual({ ok: false, error: 'forbidden' });
     expect(service.saveCrmProfile).toHaveBeenCalledWith(save);
+    service.saveCrmTeam.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    service.bulkAssignCrm.mockResolvedValue({ ok: false, error: 'forbidden' });
+    const team = { expectedRevision: 0, salers: [], routing: { mode: 'by_page', protectZaloAndWon: true } };
+    expect(await invoke('saveCrmTeam', team, 'extra')).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.saveCrmTeam).toHaveBeenCalledWith(team);
+    const bulk = { assignments: [] };
+    expect(await invoke('bulkAssignCrm', bulk, 'extra')).toEqual({ ok: false, error: 'forbidden' });
+    expect(service.bulkAssignCrm).toHaveBeenCalledWith(bulk);
   });
   it('registers the CRM identity channels and forwards only their opaque input, never extra arguments', async () => {
     service.identityAction.mockResolvedValue({ ok: false, error: 'invalid_input' });

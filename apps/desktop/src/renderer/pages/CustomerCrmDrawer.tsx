@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import type {
   CustomerCareCrmAddressForm,
   CustomerCareCrmAssignee,
+  CustomerCareCrmCareStep,
   CustomerCareCrmLostReason,
   CustomerCareCrmOccasion,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
+  CustomerCareCrmSalerMember,
   CustomerCareCrmStage,
 } from '../../shared/customer-care-types';
 import {
@@ -13,6 +15,11 @@ import {
   maxFreeNoteLength,
   splitCrmNote,
 } from '../../shared/customer-crm-enterprise';
+import {
+  CRM_CARE_STEP_META,
+  CRM_CARE_STEP_ORDER,
+  CRM_SALER_COLOR_PALETTE,
+} from '../../shared/customer-crm-saler-routing';
 import { formatLeadAbsoluteTime, formatLeadPhone, formatLeadTime, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_ADDRESS_FORM_OPTIONS,
@@ -32,6 +39,7 @@ import {
   localInputToIso,
   normalizeCrmProfile,
   profileFromRow,
+  resolveCrmRowSaler,
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
@@ -49,6 +57,7 @@ export interface CustomerCrmDrawerProps {
   nowMs: number;
   pageLabel: string;
   assignees: readonly CustomerCareCrmAssignee[];
+  salers?: readonly CustomerCareCrmSalerMember[];
   products: readonly CrmProductOption[];
   canDelete: boolean;
   purging: boolean;
@@ -94,6 +103,7 @@ export function CustomerCrmDrawer({
   nowMs,
   pageLabel,
   assignees,
+  salers = [],
   products,
   canDelete,
   purging,
@@ -170,6 +180,8 @@ export function CustomerCrmDrawer({
   const noteValue = extractEditableFreeNote(profile.note);
   const identityPreview = crmIdentityView(row.identity, products);
   const erasePending = Boolean(row.identity?.consent?.eraseRequestedAt);
+  const activeSaler = resolveCrmRowSaler(salers, profile);
+  const salerPalette = activeSaler ? CRM_SALER_COLOR_PALETTE[activeSaler.color] : null;
 
   const toggleProduct = (productId: string, checked: boolean) => set({
     productFactIds: checked
@@ -201,6 +213,14 @@ export function CustomerCrmDrawer({
               Sao chép
             </button>
             <span className="v2-crm__page-tag">{pageLabel}</span>
+            {activeSaler && salerPalette && (
+              <span
+                className="v2-crm-saler-chip"
+                style={{ background: salerPalette.bg, borderColor: salerPalette.border, color: salerPalette.text }}
+              >
+                {activeSaler.name}
+              </span>
+            )}
             {erasePending ? (
               <span className="v2-crm-chip is-danger">Yêu cầu xoá</span>
             ) : identityPreview?.consent ? (
@@ -295,7 +315,7 @@ export function CustomerCrmDrawer({
               <div className="v2-crm__conflict" role="alert">
                 <p><strong>{edit.error}</strong> Đang hiện thông tin mới nhất. Bạn đã nhập:</p>
                 <ul>
-                  {crmChangedFields(edit.rejected, profile, assignees, products).map((field) => (
+                  {crmChangedFields(edit.rejected, profile, assignees, products, salers).map((field) => (
                     <li key={field.label}><span>{field.label}:</span> {field.value}</li>
                   ))}
                 </ul>
@@ -338,6 +358,44 @@ export function CustomerCrmDrawer({
                     <option key={assignee.userId} value={assignee.userId}>{crmAssigneeLabel(assignees, assignee.userId)}</option>
                   ))}
                   {!ownerKnown && <option value={profile.ownerUserId ?? ''}>Người đã rời dự án</option>}
+                </select>
+              </label>
+
+              {salers.length > 0 && (
+                <label className="v2-field" htmlFor={id('saler')}>
+                  <span className="v2-field__label">Saler phụ trách</span>
+                  <select
+                    id={id('saler')}
+                    className="v2-field__select"
+                    disabled={readOnly}
+                    value={profile.salerId ?? ''}
+                    onChange={(event) => {
+                      const sid = nullable<string>(event.currentTarget.value);
+                      const chosen = sid ? salers.find((s) => s.id === sid) : null;
+                      set({ salerId: sid, ownerUserId: sid === null ? null : (chosen ? chosen.memberUserId : profile.ownerUserId) });
+                    }}
+                  >
+                    <option value="">Chưa giao Saler</option>
+                    {salers.map((saler) => (
+                      <option key={saler.id} value={saler.id}>{saler.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="v2-field" htmlFor={id('care-step')}>
+                <span className="v2-field__label">Bước chăm sóc</span>
+                <select
+                  id={id('care-step')}
+                  className="v2-field__select"
+                  disabled={readOnly}
+                  value={profile.careStep ?? ''}
+                  onChange={(event) => set({ careStep: nullable<CustomerCareCrmCareStep>(event.currentTarget.value) })}
+                >
+                  <option value="">Tự động theo giai đoạn</option>
+                  {CRM_CARE_STEP_ORDER.map((step) => (
+                    <option key={step} value={step}>{CRM_CARE_STEP_META[step].label}</option>
+                  ))}
                 </select>
               </label>
 

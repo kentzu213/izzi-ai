@@ -1531,3 +1531,364 @@
     max-width: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Saler Auto-Routing, Color Tag Rail 2.0, 3-Step Inline & Supervision Matrix
+ * -------------------------------------------------------------------------- */
+
+.izzi-v2 .v2-crm__refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.izzi-v2 .v2-crm__badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--v2-radius-pill);
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-saler-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.izzi-v2 .v2-crm-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-crm-rail__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.izzi-v2 .v2-crm-step-pill,
+.izzi-v2 .v2-crm-saler-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-crm-step-pill.is-active {
+  border-color: var(--v2-brand-primary);
+  background: color-mix(in srgb, var(--v2-brand-primary) 16%, transparent);
+}
+
+.izzi-v2 .v2-crm-saler-pill.is-active {
+  box-shadow: 0 0 0 2px var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-crm-saler-pill.is-inactive {
+  opacity: 0.6;
+}
+
+.izzi-v2 .v2-crm-pill-count,
+.izzi-v2 .v2-crm-saler-pill__count {
+  padding: 0 5px;
+  border-radius: var(--v2-radius-pill);
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-pill-stale {
+  padding: 0 5px;
+  border-radius: var(--v2-radius-pill);
+  background: color-mix(in srgb, var(--v2-warning) 22%, transparent);
+  color: var(--v2-warning) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: 11px;
+}
+
+.izzi-v2 .v2-crm-saler-chip,
+.izzi-v2 .v2-crm-step-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--v2-radius-pill);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 16px;
+  white-space: nowrap;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm-step-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 185px;
+}
+
+.izzi-v2 .v2-crm-step-cell__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.izzi-v2 .v2-crm-step-cell__select {
+  min-height: 24px !important;
+  padding: 0 4px !important;
+  font-size: 11px;
+  max-width: 112px;
+}
+
+.izzi-v2 .v2-crm-step-cell__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.izzi-v2 .v2-crm-quick-btn {
+  appearance: none;
+  padding: 1px 7px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-family: var(--v2-font-family);
+  font-size: 11px;
+  font-weight: var(--v2-font-weight-semibold);
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-quick-btn:hover {
+  border-color: var(--v2-brand-primary);
+}
+
+.izzi-v2 .v2-crm-quick-btn.is-primary {
+  border-color: color-mix(in srgb, var(--v2-brand-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--v2-brand-primary) 14%, transparent);
+}
+
+.izzi-v2 .v2-crm-quick-btn.is-success {
+  border-color: color-mix(in srgb, var(--v2-success) 55%, transparent);
+  background: color-mix(in srgb, var(--v2-success) 14%, transparent);
+}
+
+.izzi-v2 .v2-crm-quick-btn.is-warn {
+  border-color: color-mix(in srgb, var(--v2-warning) 55%, transparent);
+  background: color-mix(in srgb, var(--v2-warning) 14%, transparent);
+}
+
+.izzi-v2 .v2-crm-quick-btn.is-danger {
+  border-color: color-mix(in srgb, var(--v2-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm-owner-pill-select {
+  min-height: 26px;
+  max-width: 150px;
+  padding: 2px 8px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+  -webkit-text-fill-color: currentColor;
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-owner-pill-select option {
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary);
+}
+
+.izzi-v2 .v2-crm-matrix__num,
+.izzi-v2 .v2-crm-matrix__stale-btn {
+  appearance: none;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--v2-radius-control);
+  background: transparent;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-family: var(--v2-font-family);
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-matrix__num:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-bg-subtle);
+}
+
+.izzi-v2 .v2-crm-matrix__b1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.izzi-v2 .v2-crm-matrix__stale-btn {
+  border-color: color-mix(in srgb, var(--v2-warning) 50%, transparent);
+  background: color-mix(in srgb, var(--v2-warning) 14%, transparent);
+  color: var(--v2-warning) !important;
+  font-size: 11px;
+}
+
+.izzi-v2 .v2-crm-matrix__rescue-btn {
+  min-height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.izzi-v2 .v2-crm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--v2-space-4);
+  background: rgba(2, 5, 9, 0.72);
+}
+
+.izzi-v2 .v2-crm-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  max-height: 88vh;
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-card);
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  overflow: hidden;
+}
+
+.izzi-v2 .v2-crm-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v2-space-3);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--v2-border-default);
+  background: var(--v2-bg-subtle);
+}
+
+.izzi-v2 .v2-crm-modal__title {
+  margin: 0;
+  font-size: var(--v2-text-section-size);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-modal__tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-modal__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.izzi-v2 .v2-crm-modal__section,
+.izzi-v2 .v2-crm-modal__preview,
+.izzi-v2 .v2-crm-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.izzi-v2 .v2-crm-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.izzi-v2 .v2-crm-modal__preview-head,
+.izzi-v2 .v2-crm-modal__quick-bar,
+.izzi-v2 .v2-crm-modal__quick-names {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.izzi-v2 .v2-crm-team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-subtle);
+}
+
+.izzi-v2 .v2-crm-team-card__top,
+.izzi-v2 .v2-crm-team-card__colors,
+.izzi-v2 .v2-crm-team-card__meta,
+.izzi-v2 .v2-crm-team-card__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.izzi-v2 .v2-crm-color-dot {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-color-dot.is-selected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px var(--v2-brand-primary);
+}
+
+@media (max-width: 720px) {
+  .izzi-v2 .v2-crm-modal__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

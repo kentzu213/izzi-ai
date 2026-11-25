@@ -24,6 +24,8 @@ const METHODS = [
   'setAutoReply',
   'listCrm',
   'saveCrmProfile',
+  'saveCrmTeam',
+  'bulkAssignCrm',
   'identityAction',
   'refreshIdentity',
 ] as const;
@@ -33,7 +35,8 @@ export function registerCustomerCareIpc(
     CustomerCareService,
     | 'getSnapshot' | 'saveSetup' | 'assist' | 'selectFacebookPage' | 'getBackfillStatus' | 'disconnectFacebookPage'
     | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
-    | 'getAutoReply' | 'setAutoReply' | 'listCrm' | 'saveCrmProfile' | 'identityAction' | 'refreshIdentity'
+    | 'getAutoReply' | 'setAutoReply' | 'listCrm' | 'saveCrmProfile' | 'saveCrmTeam' | 'bulkAssignCrm'
+    | 'identityAction' | 'refreshIdentity'
   >,
   facebook: Pick<CareFacebookOAuthCoordinator, 'connect' | 'takeChoices'>,
 ): void {
@@ -63,6 +66,8 @@ export function registerCustomerCareIpc(
         // Care CRM S2: only `{ cursor }` or `{ leadId, expectedUpdatedAt, profile }` cross; main parses them.
         if (method === 'listCrm') return await service.listCrm(input);
         if (method === 'saveCrmProfile') return await service.saveCrmProfile(input);
+        if (method === 'saveCrmTeam') return await service.saveCrmTeam(input);
+        if (method === 'bulkAssignCrm') return await service.bulkAssignCrm(input);
         // Care CRM S3: only `{ leadId, action, ... }` or `{ leadId }` cross; main parses them, the workspace is its own.
         if (method === 'identityAction') return await service.identityAction(input);
         if (method === 'refreshIdentity') return await service.refreshIdentity(input);

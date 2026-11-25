@@ -16,9 +16,13 @@ import {
   type NativeMarketingTokenProvider,
 } from '../marketing/native-marketing-client';
 import type {
+  CustomerCareCrmBulkAssignInput,
+  CustomerCareCrmBulkAssignUpdatedItem,
   CustomerCareCrmIdentityActionInput,
   CustomerCareCrmProfileInput,
+  CustomerCareCrmSalerRoutingConfig,
   CustomerCareCrmSaveInput,
+  CustomerCareCrmTeamSaveInput,
 } from '../../shared/customer-care-types';
 import {
   CARE_FACEBOOK_ROOT,
@@ -29,14 +33,20 @@ import {
   type CareFacebookResult,
 } from './care-facebook-client';
 import {
+  CARE_CRM_BULK_ASSIGN_CHUNK,
   CARE_CRM_REQUEST_PAGE_SIZE,
+  parseCareCrmBulkAssignBody,
   parseCareCrmConflictBody,
   parseCareCrmListBody,
   parseCareCrmSaveBody,
+  parseCareCrmTeamConflictBody,
+  parseCareCrmTeamSaveBody,
+  type CareCrmBulkAssignOutcome,
   type CareCrmGateway,
   type CareCrmListOptions,
   type CareCrmPage,
   type CareCrmSaveOutcome,
+  type CareCrmTeamSaveOutcome,
 } from './care-crm';
 import {
   CARE_CRM_IDENTITY_REFRESH_TIMEOUT_MS,
@@ -78,8 +88,13 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-/** The 11 editable keys only: `updatedAt`, `updatedBy` or `detailsUnreadable` in a POST answer 400. */
-function editableProfile(profile: CustomerCareCrmProfileInput): CustomerCareCrmProfileInput {
+const DEFAULT_SALER_ROUTING: CustomerCareCrmSalerRoutingConfig = {
+  mode: 'by_page',
+  protectZaloAndWon: true,
+};
+
+/** The 11 legacy editable keys only: fallback when an older server rejects the 14-key profile. */
+function editableProfile11(profile: CustomerCareCrmProfileInput): CustomerCareCrmProfileInput {
   return {
     stage: profile.stage,
     ownerUserId: profile.ownerUserId,
@@ -92,6 +107,16 @@ function editableProfile(profile: CustomerCareCrmProfileInput): CustomerCareCrmP
     lostReason: profile.lostReason,
     purchasedAt: profile.purchasedAt,
     note: profile.note,
+  };
+}
+
+/** The 14 editable keys including Saler routing & 3-step care state. */
+function editableProfile14(profile: CustomerCareCrmProfileInput): CustomerCareCrmProfileInput {
+  return {
+    ...editableProfile11(profile),
+    salerId: profile.salerId ?? null,
+    careStep: profile.careStep ?? null,
+    callTries: profile.callTries ?? 0,
   };
 }
 
@@ -120,6 +145,11 @@ export class CareCrmClient implements CareCrmGateway {
    * (or until `retryIdentity` / scope change) so subsequent pages use the server's default page size cleanly.
    */
   private limitBackoff: { scope: string; until: number } | null = null;
+  /**
+   * When an older backend rejects `include=...,salers` with `invalid_request`, skip asking for `salers`
+   * for 5 minutes (or until `retryIdentity` / scope change) and default empty salers/config.
+   */
+  private salersBackoff: { scope: string; until: number } | null = null;
 
   constructor(
     private readonly auth: NativeMarketingTokenProvider,
@@ -131,11 +161,8 @@ export class CareCrmClient implements CareCrmGateway {
   }
 
   /**
-   * GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`. Asks for
-   * the Care CRM S3 identity block; a server without S3 ignores the parameter and answers without it. The identity
-   * never takes the CRM down: when that read fails (any 4xx or 5xx except 401, 403, 404 and 429, which would not
-   * change), the page is read once more without it and marked `identityUnavailable`. When that worked, the identity
-   * read is paused for 5 minutes for this `scope` (account and workspace); "Làm mới" (`retryIdentity`) tries it anyway.
+   * GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`.
+   * Asks for `include=identity,pages,salers` & `limit=100`, falling back gracefully on older servers.
    */
   async listCrm(workspaceId: string, cursor: string | null, options: CareCrmListOptions = {}): Promise<CareFacebookResult<CareCrmPage>> {
     if (!isCareFacebookChoiceId(workspaceId) || (cursor !== null && !isCareLeadsCursor(cursor))) return INVALID_REQUEST;
@@ -146,61 +173,76 @@ export class CareCrmClient implements CareCrmGateway {
     if (this.identityBackoff !== null && this.identityBackoff.scope !== scope) this.identityBackoff = null;
     if (this.pagesBackoff !== null && this.pagesBackoff.scope !== scope) this.pagesBackoff = null;
     if (this.limitBackoff !== null && this.limitBackoff.scope !== scope) this.limitBackoff = null;
+    if (this.salersBackoff !== null && this.salersBackoff.scope !== scope) this.salersBackoff = null;
     const now = Date.now();
     const paused = this.identityBackoff !== null && now < this.identityBackoff.until && options.retryIdentity !== true;
     const skipPages = this.pagesBackoff !== null && now < this.pagesBackoff.until && options.retryIdentity !== true;
     const skipLimit = this.limitBackoff !== null && now < this.limitBackoff.until && options.retryIdentity !== true;
+    const skipSalers = this.salersBackoff !== null && now < this.salersBackoff.until && options.retryIdentity !== true;
     let identityFailed = false;
     let limitRejected = false;
+    let salersRejected = false;
     if (!paused) {
       let usePages = !skipPages;
+      let useSalers = !skipSalers;
       let useLimit = !skipLimit;
       let pagesRejected = false;
-      const buildIncludePath = (inc: string, withLimit: boolean) =>
-        `${path}&include=${inc}${withLimit ? `&limit=${CARE_CRM_REQUEST_PAGE_SIZE}` : ''}${query}`;
+      const buildIncludePath = (withPages: boolean, withSalers: boolean, withLimit: boolean) => {
+        const parts = ['identity'];
+        if (withPages) parts.push('pages');
+        if (withSalers) parts.push('salers');
+        return `${path}&include=${parts.join(',')}${withLimit ? `&limit=${CARE_CRM_REQUEST_PAGE_SIZE}` : ''}${query}`;
+      };
+      const isInvalidRequest = (res: CrmResponse) =>
+        res.ok && (res.status === 400 || res.status === 422) && rejectReasonOf(res.body) === 'invalid_request';
+
       let result = await this.request(
         'crm',
-        buildIncludePath(usePages ? 'identity,pages' : 'identity', useLimit),
+        buildIncludePath(usePages, useSalers, useLimit),
         {},
         { raw: true },
       );
       if (!result.ok) return result;
-      if (
-        useLimit
-        && (result.status === 400 || result.status === 422)
-        && rejectReasonOf(result.body) === 'invalid_request'
-      ) {
-        useLimit = false;
-        limitRejected = true;
-        result = await this.request(
-          'crm',
-          buildIncludePath(usePages ? 'identity,pages' : 'identity', false),
-          {},
-          { raw: true },
-        );
+      if (useSalers && isInvalidRequest(result)) {
+        useSalers = false;
+        salersRejected = true;
+        result = await this.request('crm', buildIncludePath(usePages, false, useLimit), {}, { raw: true });
         if (!result.ok) return result;
       }
-      if (
-        usePages
-        && (result.status === 400 || result.status === 422)
-        && rejectReasonOf(result.body) === 'invalid_request'
-      ) {
+      if (useLimit && isInvalidRequest(result)) {
+        useLimit = false;
+        limitRejected = true;
+        result = await this.request('crm', buildIncludePath(usePages, useSalers, false), {}, { raw: true });
+        if (!result.ok) return result;
+      }
+      if (usePages && isInvalidRequest(result)) {
         usePages = false;
         pagesRejected = true;
-        result = await this.request('crm', buildIncludePath('identity', useLimit), {}, { raw: true });
+        result = await this.request('crm', buildIncludePath(false, useSalers, useLimit), {}, { raw: true });
         if (!result.ok) return result;
       }
       if (result.status >= 200 && result.status < 300) {
-        const page = parseCareCrmListBody(result.body, workspaceId);
-        if (!page) return INVALID_RESPONSE;
+        const parsed = parseCareCrmListBody(result.body, workspaceId);
+        if (!parsed) return INVALID_RESPONSE;
         const backoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
         this.identityBackoff = null;
         this.limitBackoff = limitRejected
           ? { scope, until: backoffUntil }
           : (!skipLimit ? null : this.limitBackoff);
+        this.salersBackoff = salersRejected
+          ? { scope, until: backoffUntil }
+          : (!skipSalers ? null : this.salersBackoff);
         this.pagesBackoff = pagesRejected
           ? { scope, until: backoffUntil }
           : (!skipPages ? null : this.pagesBackoff);
+        const page: CareCrmPage = !useSalers
+          ? {
+            ...parsed,
+            salers: parsed.salers ?? [],
+            salerRouting: parsed.salerRouting ?? { ...DEFAULT_SALER_ROUTING },
+            salerTeamRevision: parsed.salerTeamRevision ?? 0,
+          }
+          : parsed;
         return { ok: true, value: page };
       }
       if (result.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
@@ -231,14 +273,28 @@ export class CareCrmClient implements CareCrmGateway {
     if (!page) return INVALID_RESPONSE;
     const backoffUntil = Date.now() + IDENTITY_BACKOFF_MS;
     if (limitRejected) this.limitBackoff = { scope, until: backoffUntil };
+    if (salersRejected) this.salersBackoff = { scope, until: backoffUntil };
     // Only a failure the read without identity got past pauses the identity read; any other failure is retried next time.
     if (identityFailed) this.identityBackoff = { scope, until: backoffUntil };
-    return { ok: true, value: { ...page, identityUnavailable: true } };
+    return {
+      ok: true,
+      value: {
+        ...page,
+        ...(skipSalers || salersRejected
+          ? {
+            salers: page.salers ?? [],
+            salerRouting: page.salerRouting ?? { ...DEFAULT_SALER_ROUTING },
+            salerTeamRevision: page.salerTeamRevision ?? 0,
+          }
+          : {}),
+        identityUnavailable: true,
+      },
+    };
   }
 
   /**
-   * POST /crm/profile — a full replace of the editable fields, guarded by `expectedUpdatedAt`. The caller
-   * has already parsed `input`. A 409 `profile_conflict` returns the current profile; nothing was overwritten.
+   * POST /crm/profile — a full replace of the editable fields (14 keys, auto-falling back to 11 keys on
+   * an older server returning `400 invalid_request`), guarded by `expectedUpdatedAt`.
    */
   async saveCrmProfile(
     workspaceId: string,
@@ -246,15 +302,19 @@ export class CareCrmClient implements CareCrmGateway {
   ): Promise<CareFacebookResult<CareCrmSaveOutcome>> {
     if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(input.leadId)) return INVALID_REQUEST;
     const { leadId } = input;
-    const result = await this.request('crm-profile', '/crm/profile', {
+    const postProfile = (profile: CustomerCareCrmProfileInput) => this.request('crm-profile', '/crm/profile', {
       method: 'POST',
       body: JSON.stringify({
         workspaceId,
         leadId,
         expectedUpdatedAt: input.expectedUpdatedAt,
-        profile: editableProfile(input.profile),
+        profile,
       }),
     });
+    let result = await postProfile(editableProfile14(input.profile));
+    if (!result.ok && result.error === 'rejected' && result.reason === 'invalid_request') {
+      result = await postProfile(editableProfile11(input.profile));
+    }
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) {
       const current = parseCareCrmConflictBody(result.body, workspaceId, leadId);
@@ -263,6 +323,63 @@ export class CareCrmClient implements CareCrmGateway {
     // Committed: a row that came back without its phone and messages is still a success.
     const saved = parseCareCrmSaveBody(result.body, workspaceId, leadId);
     return saved ? { ok: true, value: { kind: 'saved', leadId, profile: saved } } : INVALID_RESPONSE;
+  }
+
+  /** POST /crm/team — save Saler roster & auto-routing defaults (`409 team_conflict` handled gracefully). */
+  async saveTeam(
+    workspaceId: string,
+    input: CustomerCareCrmTeamSaveInput,
+  ): Promise<CareFacebookResult<CareCrmTeamSaveOutcome>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const result = await this.request('crm-team', '/crm/team', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId,
+        expectedRevision: input.expectedRevision,
+        salers: input.salers,
+        routing: input.routing,
+      }),
+    });
+    if (!result.ok) return result;
+    if (result.status === CONFLICT_STATUS) {
+      const conflict = parseCareCrmTeamConflictBody(result.body, workspaceId);
+      return conflict ? { ok: true, value: { kind: 'conflict', ...conflict } } : INVALID_RESPONSE;
+    }
+    const saved = parseCareCrmTeamSaveBody(result.body, workspaceId);
+    return saved ? { ok: true, value: { kind: 'saved', ...saved } } : INVALID_RESPONSE;
+  }
+
+  /**
+   * POST /crm/bulk-assign — assigns Salers in sequential chunks of `<= 500` items and merges outcomes.
+   */
+  async bulkAssign(
+    workspaceId: string,
+    input: CustomerCareCrmBulkAssignInput,
+  ): Promise<CareFacebookResult<CareCrmBulkAssignOutcome>> {
+    if (!isCareFacebookChoiceId(workspaceId) || input.assignments.length === 0) return INVALID_REQUEST;
+    let assignedCount = 0;
+    let conflictCount = 0;
+    let skippedCount = 0;
+    const updated: CustomerCareCrmBulkAssignUpdatedItem[] = [];
+    for (let offset = 0; offset < input.assignments.length; offset += CARE_CRM_BULK_ASSIGN_CHUNK) {
+      const chunk = input.assignments.slice(offset, offset + CARE_CRM_BULK_ASSIGN_CHUNK);
+      const result = await this.request('crm-bulk-assign', '/crm/bulk-assign', {
+        method: 'POST',
+        body: JSON.stringify({ workspaceId, assignments: chunk }),
+      });
+      if (!result.ok) return result;
+      if (result.status === CONFLICT_STATUS) return INVALID_RESPONSE;
+      const parsed = parseCareCrmBulkAssignBody(result.body, workspaceId);
+      if (!parsed) return INVALID_RESPONSE;
+      assignedCount += parsed.assignedCount;
+      conflictCount += parsed.conflictCount;
+      skippedCount += parsed.skippedCount;
+      updated.push(...parsed.updated);
+    }
+    return {
+      ok: true,
+      value: { assignedCount, conflictCount, skippedCount, updated },
+    };
   }
 
   /**

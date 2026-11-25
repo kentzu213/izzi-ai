@@ -45,7 +45,7 @@ const ROW = {
   phoneCapturedAt: ISO,
   lastMessageAt: ISO,
   recentMessages: [{ text: `Số em ${PHONE}`, at: ISO }],
-  profile: { ...PROFILE, updatedAt: UPDATED, updatedBy: OWNER_ID },
+  profile: { ...PROFILE, salerId: null, careStep: null, callTries: 0, updatedAt: UPDATED, updatedBy: OWNER_ID },
 };
 
 const LIST_BODY = {
@@ -89,7 +89,7 @@ describe('CareCrmClient GET /crm', () => {
         identityUnavailable: false, consentAsk: null },
     });
     const [url, init] = call(fetchImpl);
-    expect(url).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100`);
+    expect(url).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100`);
     expect(init.method).toBeUndefined();
     expect(init.body).toBeUndefined();
     expect(init.redirect).toBe('error');
@@ -100,7 +100,7 @@ describe('CareCrmClient GET /crm', () => {
   it('passes the opaque cursor encoded', async () => {
     const { instance, fetchImpl } = client(json(LIST_BODY));
     await instance.listCrm(WORKSPACE, 'crm_2026-11-20T10:00:00Z|abc');
-    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm_2026-11-20T10%3A00%3A00Z%7Cabc`);
+    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm_2026-11-20T10%3A00%3A00Z%7Cabc`);
   });
 
   it('rejects an answer for another workspace or with an invalid row', async () => {
@@ -126,7 +126,10 @@ describe('CareCrmClient POST /crm/profile', () => {
     expect(url).toBe(`${ROOT}/crm/profile`);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
-      workspaceId: WORKSPACE, leadId: LEAD_ID, expectedUpdatedAt: UPDATED, profile: PROFILE,
+      workspaceId: WORKSPACE,
+      leadId: LEAD_ID,
+      expectedUpdatedAt: UPDATED,
+      profile: { ...PROFILE, salerId: null, careStep: null, callTries: 0 },
     });
   });
 
@@ -136,7 +139,7 @@ describe('CareCrmClient POST /crm/profile', () => {
     expect(JSON.parse(call(fetchImpl)[1].body as string).expectedUpdatedAt).toBeNull();
   });
 
-  it('sends every one of the 11 profile keys, with null for an empty field, never leaving a key out', async () => {
+  it('sends every one of the 14 profile keys (with 11-key fallback on 400 invalid_request)', async () => {
     const { instance, fetchImpl } = client(json({ success: true, workspaceId: WORKSPACE, row: ROW }));
     const empty: CustomerCareCrmProfileInput = {
       stage: 'has_phone', ownerUserId: null, addressForm: null, occasion: null, neededBy: null, productFactIds: [],
@@ -145,8 +148,20 @@ describe('CareCrmClient POST /crm/profile', () => {
     await instance.saveCrmProfile(WORKSPACE, { leadId: LEAD_ID, expectedUpdatedAt: null, profile: empty });
     const body = JSON.parse(call(fetchImpl)[1].body as string);
     expect(Object.keys(body).sort()).toEqual(['expectedUpdatedAt', 'leadId', 'profile', 'workspaceId']);
-    expect(Object.keys(body.profile)).toHaveLength(11);
-    expect(body.profile).toEqual(empty);
+    expect(Object.keys(body.profile)).toHaveLength(14);
+    expect(body.profile).toEqual({ ...empty, salerId: null, careStep: null, callTries: 0 });
+
+    // Legacy server fallback: 400 invalid_request retries with 11 keys.
+    const responses = [
+      json({ success: false, error: 'Bad', reason: 'invalid_request' }, 400),
+      json({ success: true, workspaceId: WORKSPACE, row: ROW }),
+    ];
+    const fallbackFetch = vi.fn(async () => responses.shift()!);
+    const fallbackClient = new CareCrmClient({ getAccessToken: async () => TOKEN }, { fetchImpl: fallbackFetch as unknown as typeof fetch });
+    const fbRes = await fallbackClient.saveCrmProfile(WORKSPACE, { leadId: LEAD_ID, expectedUpdatedAt: null, profile: empty });
+    expect(fbRes).toEqual({ ok: true, value: { kind: 'saved', leadId: LEAD_ID, profile: ROW.profile } });
+    expect(fallbackFetch).toHaveBeenCalledTimes(2);
+    expect(Object.keys(JSON.parse(call(fallbackFetch, 1)[1].body as string).profile)).toHaveLength(11);
   });
 
   it('echoes expectedUpdatedAt byte for byte', async () => {
@@ -184,7 +199,7 @@ describe('CareCrmClient POST /crm/profile', () => {
     const carrying = { ...PROFILE, updatedAt: UPDATED, updatedBy: OWNER_ID, detailsUnreadable: true } as CustomerCareCrmProfileInput;
     await instance.saveCrmProfile(WORKSPACE, { leadId: LEAD_ID, expectedUpdatedAt: UPDATED, profile: carrying });
     const sent = JSON.parse(call(fetchImpl)[1].body as string).profile;
-    expect(Object.keys(sent).sort()).toEqual(Object.keys(PROFILE).sort());
+    expect(Object.keys(sent).sort()).toEqual([...Object.keys(PROFILE), 'salerId', 'careStep', 'callTries'].sort());
   });
 
   it('reads 403 owner_not_eligible apart from a viewer\'s 403', async () => {
@@ -295,14 +310,26 @@ const actionOk = (identity: unknown = IDENTITY) => json({ success: true, workspa
 const refreshOk = (outcome = 'updated') => json({ success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: IDENTITY, outcome });
 
 describe('CareCrmClient GET /crm?include=identity', () => {
-  it('asks for include=identity,pages&limit=100 and takes both identity and pages when returned', async () => {
+  it('asks for include=identity,pages,salers&limit=100 and takes identity, pages and salers when returned', async () => {
     const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
-    const body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
+    const salers = [{
+      id: '10000000-0000-4000-8000-000000000001',
+      name: 'Tuấn Thần Đèn',
+      color: 'blue' as const,
+      active: true,
+      assignedPageIds: ['105252511858057'],
+      memberUserId: OWNER_ID,
+    }];
+    const salerRouting = { mode: 'by_page' as const, protectZaloAndWon: true };
+    const body = { ...LIST_BODY, identityEnabled: true, pages, salers, salerRouting, salerTeamRevision: 2, rows: [{ ...ROW, identity: IDENTITY }] };
     const { instance, fetchImpl } = client(json(body));
     const result = await instance.listCrm(WORKSPACE, null);
-    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100`);
+    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100`);
     expect(result.ok && result.value.identityEnabled).toBe(true);
     expect(result.ok && result.value.pages).toEqual(pages);
+    expect(result.ok && result.value.salers).toEqual(salers);
+    expect(result.ok && result.value.salerRouting).toEqual(salerRouting);
+    expect(result.ok && result.value.salerTeamRevision).toBe(2);
     expect(result.ok && result.value.rows[0].identity).toEqual(IDENTITY);
   });
 
@@ -313,7 +340,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     return { instance, fetchImpl, urls: () => fetchImpl.mock.calls.map((args) => (args as unknown as [string])[0]) };
   }
 
-  it.each([400, 422])('falls back by dropping limit=100 on %i invalid_request while preserving include=identity,pages and caching limitBackoff', async (status) => {
+  it.each([400, 422])('drops salers FIRST on %i invalid_request to preserve limit=100 against beta.125 and caches salersBackoff', async (status) => {
     const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
     const v2Body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
     const { instance, urls } = sequence(
@@ -322,21 +349,49 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       json(v2Body),
     );
     const first = await instance.listCrm(WORKSPACE, 'crm-next-1');
+    expect(first.ok && first.value).toMatchObject({
+      identityEnabled: true,
+      pages,
+      salers: [],
+      salerRouting: { mode: 'by_page', protectZaloAndWon: true },
+      salerTeamRevision: 0,
+    });
+    // Next page within 5 minutes skips `salers` directly while keeping `limit=100` (5,000 leads).
+    const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
+    expect(second.ok && second.value.salers).toEqual([]);
+    expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-2`,
+    ]);
+  });
+
+  it.each([400, 422])('drops limit=100 second after salers on %i invalid_request and caches limitBackoff', async (status) => {
+    const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
+    const v2Body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
+    const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
+      json(v2Body),
+      json(v2Body),
+    );
+    const first = await instance.listCrm(WORKSPACE, 'crm-next-1');
     expect(first.ok && first.value.identityEnabled).toBe(true);
     expect(first.ok && first.value.pages).toEqual(pages);
-    // Next page within 5 minutes skips `limit=100` directly to `include=identity,pages` without burning another 400.
     const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
     expect(second.ok && second.value.pages).toEqual(pages);
     expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-2`,
     ]);
   });
 
-  it.each([400, 422])('falls back from include=identity,pages to include=identity on %i invalid_request, preserving identity', async (status) => {
+  it.each([400, 422])('falls back from include=identity,pages,salers to include=identity on %i invalid_request, preserving identity', async (status) => {
     const identityBody = { ...LIST_BODY, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] };
     const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
       json({ success: false, error: 'x', reason: 'invalid_request' }, status),
       json({ success: false, error: 'x', reason: 'invalid_request' }, status),
       json(identityBody),
@@ -346,10 +401,11 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     expect(first.ok && first.value.identityEnabled).toBe(true);
     expect(first.ok && first.value.identityUnavailable).toBe(false);
     expect(first.ok && first.value.rows[0].identity).toEqual(IDENTITY);
-    // Next page within 5 minutes skips both `limit=100` and `pages` directly to `include=identity`.
+    // Next page within 5 minutes skips `salers`, `limit=100` and `pages` directly to `include=identity`.
     const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
     expect(second.ok && second.value.identityEnabled).toBe(true);
     expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
@@ -360,8 +416,9 @@ describe('CareCrmClient GET /crm?include=identity', () => {
   it.each([
     [400, 'invalid_request'],
     [422, 'invalid_request'],
-  ])('falls back all the way to plain /crm when limit=100, include=identity,pages and include=identity return %i %s', async (status, reason) => {
+  ])('falls back all the way to plain /crm when salers, limit=100, pages and identity return %i %s', async (status, reason) => {
     const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason }, status),
       json({ success: false, error: 'x', reason }, status),
       json({ success: false, error: 'x', reason }, status),
       json({ success: false, error: 'x', reason }, status),
@@ -372,10 +429,12 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       ok: true,
       value: {
         role: 'owner', canDelete: true, rows: [ROW], nextCursor: null, assignees: LIST_BODY.assignees,
+        salers: [], salerRouting: { mode: 'by_page', protectZaloAndWon: true }, salerTeamRevision: 0,
         identityEnabled: null, identityUnavailable: true, consentAsk: null,
       },
     });
     expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
@@ -387,7 +446,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     [500, undefined],
     [502, undefined],
     [503, 'not_configured'],
-  ])('reads the list again without identity after a %i on include=identity,pages, once', async (status, reason) => {
+  ])('reads the list again without identity after a %i on include=identity,pages,salers, once', async (status, reason) => {
     const { instance, urls } = sequence(json({ success: false, error: 'x', ...(reason ? { reason } : {}) }, status), json(LIST_BODY));
     const result = await instance.listCrm(WORKSPACE, 'crm-next-1');
     expect(result).toEqual({
@@ -398,7 +457,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       },
     });
     expect(urls()).toEqual([
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&cursor=crm-next-1`,
     ]);
   });
@@ -636,5 +695,76 @@ describe('CareCrmClient POST /crm/identity/refresh', () => {
     ]);
     const logged = warn.mock.calls.flat().map(String).join('\n');
     for (const secret of [QUOTE, VERSION, LEAD_ID, WORKSPACE, TOKEN]) expect(logged).not.toContain(secret);
+  });
+});
+
+describe('CareCrmClient POST /crm/team and POST /crm/bulk-assign', () => {
+  const SALER_ID = '10000000-0000-4000-8000-000000000001';
+  const SALERS = [{
+    id: SALER_ID,
+    name: 'Tuấn Thần Đèn',
+    color: 'blue' as const,
+    active: true,
+    assignedPageIds: ['105252511858057'],
+    memberUserId: OWNER_ID,
+  }];
+  const ROUTING = { mode: 'by_page' as const, protectZaloAndWon: true };
+
+  it('saves saler team config and handles 409 team_conflict gracefully', async () => {
+    const body200 = { success: true, workspaceId: WORKSPACE, revision: 5, salers: SALERS, routing: ROUTING };
+    const okClient = client(json(body200));
+    expect(await okClient.instance.saveTeam(WORKSPACE, { expectedRevision: 4, salers: SALERS, routing: ROUTING })).toEqual({
+      ok: true,
+      value: { kind: 'saved', revision: 5, salers: SALERS, routing: ROUTING },
+    });
+    expect(call(okClient.fetchImpl)[0]).toBe(`${ROOT}/crm/team`);
+
+    const conflictBare = client(json({ success: false, error: 'Team conflict', reason: 'team_conflict' }, 409));
+    expect(await conflictBare.instance.saveTeam(WORKSPACE, { expectedRevision: 4, salers: SALERS, routing: ROUTING })).toEqual({
+      ok: true,
+      value: { kind: 'conflict' },
+    });
+
+    const conflictFull = client(json({
+      success: false, error: 'Team conflict', reason: 'team_conflict', workspaceId: WORKSPACE, revision: 6, salers: SALERS, routing: ROUTING,
+    }, 409));
+    expect(await conflictFull.instance.saveTeam(WORKSPACE, { expectedRevision: 4, salers: SALERS, routing: ROUTING })).toEqual({
+      ok: true,
+      value: { kind: 'conflict', revision: 6, salers: SALERS, routing: ROUTING },
+    });
+  });
+
+  it('automatically chunks bulkAssign sequentially into <= 500 items per request and merges results', async () => {
+    const assignments = Array.from({ length: 824 }, (_, idx) => ({
+      leadId: `44444444-4444-4444-8444-${String(100000000000 + idx)}`,
+      expectedUpdatedAt: null,
+      salerId: SALER_ID,
+      ownerUserId: OWNER_ID,
+    }));
+    const chunkSizes: number[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const payload = JSON.parse(init.body as string) as { workspaceId: string; assignments: Array<{ leadId: string }> };
+      chunkSizes.push(payload.assignments.length);
+      return json({
+        success: true,
+        workspaceId: WORKSPACE,
+        assignedCount: payload.assignments.length,
+        conflictCount: 0,
+        skippedCount: 0,
+        updated: payload.assignments.map((a) => ({
+          leadId: a.leadId,
+          salerId: SALER_ID,
+          ownerUserId: OWNER_ID,
+          careStep: 'step1_uncalled',
+          updatedAt: ISO,
+          updatedBy: OWNER_ID,
+        })),
+      });
+    });
+    const instance = new CareCrmClient({ getAccessToken: async () => TOKEN }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await instance.bulkAssign(WORKSPACE, { assignments });
+    expect(chunkSizes).toEqual([500, 324]);
+    expect(result.ok && result.value.assignedCount).toBe(824);
+    expect(result.ok && result.value.updated).toHaveLength(824);
   });
 });

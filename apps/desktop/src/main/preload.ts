@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../shared/agent-profile-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmBulkAssignInput, CustomerCareCrmBulkAssignResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareCrmTeamSaveInput, CustomerCareCrmTeamSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -701,6 +701,10 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:listCrm', input),
     saveCrmProfile: (input: CustomerCareCrmSaveInput): Promise<CustomerCareCrmSaveResult> =>
       ipcRenderer.invoke('customerCare:saveCrmProfile', input),
+    saveCrmTeam: (input: CustomerCareCrmTeamSaveInput): Promise<CustomerCareCrmTeamSaveResult> =>
+      ipcRenderer.invoke('customerCare:saveCrmTeam', input),
+    bulkAssignCrm: (input: CustomerCareCrmBulkAssignInput): Promise<CustomerCareCrmBulkAssignResult> =>
+      ipcRenderer.invoke('customerCare:bulkAssignCrm', input),
     // Care CRM S3: staff actions on the identity card and "Cập nhật hồ sơ"; started by a person, never polled.
     identityAction: (input: CustomerCareCrmIdentityActionInput): Promise<CustomerCareCrmIdentityActionResult> =>
       ipcRenderer.invoke('customerCare:identityAction', input),

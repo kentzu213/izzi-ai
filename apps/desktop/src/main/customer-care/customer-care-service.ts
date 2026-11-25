@@ -17,11 +17,13 @@ import type {
   CustomerCareAutoReplyState,
   CustomerCareBackfillStatusResult,
   CustomerCareBackfillSummary,
+  CustomerCareCrmBulkAssignResult,
   CustomerCareCrmIdentityActionResult,
   CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListResult,
   CustomerCareCrmRow,
   CustomerCareCrmSaveResult,
+  CustomerCareCrmTeamSaveResult,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
   CustomerCareFacebookFailure,
@@ -63,8 +65,12 @@ import {
   canUseCareCrm,
   copyCareCrmProfile,
   copyCareCrmRow,
+  copyCareCrmSaler,
+  copyCareCrmSalerRouting,
+  parseCareCrmBulkAssignInput,
   parseCareCrmListInput,
   parseCareCrmSaveInput,
+  parseCareCrmTeamSaveInput,
   type CareCrmGateway,
   type CareCrmPage,
 } from './care-crm';
@@ -1232,9 +1238,64 @@ export class CustomerCareService {
       nextCursor: page.nextCursor,
       assignees: page.assignees.map((assignee) => ({ ...assignee })),
       ...(page.pages ? { pages: page.pages.map((source) => ({ ...source })) } : {}),
+      ...(page.salers ? { salers: page.salers.map(copyCareCrmSaler) } : {}),
+      ...(page.salerRouting ? { salerRouting: copyCareCrmSalerRouting(page.salerRouting) } : {}),
+      ...(page.salerTeamRevision !== undefined ? { salerTeamRevision: page.salerTeamRevision } : {}),
       identityEnabled: page.identityEnabled,
       identityUnavailable: page.identityUnavailable,
       consentAsk: page.consentAsk === null ? null : { ...page.consentAsk },
+    };
+  }
+
+  /** Owner/manager only: save Saler roster and routing config (`POST /crm/team`). */
+  async saveCrmTeam(input: unknown): Promise<CustomerCareCrmTeamSaveResult> {
+    const parsed = parseCareCrmTeamSaveInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    if (!MUTATION_ROLES.includes(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!crm.saveTeam) return { ok: false, error: 'unsupported' };
+    const result = await this.runFacebookCall(authority, () => crm.saveTeam!(authority.workspaceId, parsed));
+    if (!result.ok) return result;
+    const value = result.value;
+    if (value.kind === 'conflict') {
+      return {
+        ok: false,
+        error: 'team_conflict',
+        workspaceId: authority.workspaceId,
+        ...(value.revision !== undefined ? { revision: value.revision } : {}),
+        ...(value.salers ? { salers: value.salers.map(copyCareCrmSaler) } : {}),
+        ...(value.routing ? { routing: copyCareCrmSalerRouting(value.routing) } : {}),
+      };
+    }
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      revision: value.revision,
+      salers: value.salers.map(copyCareCrmSaler),
+      routing: copyCareCrmSalerRouting(value.routing),
+    };
+  }
+
+  /** Owner/manager only: bulk-assign Salers (`POST /crm/bulk-assign`, chunked <= 500 in client). */
+  async bulkAssignCrm(input: unknown): Promise<CustomerCareCrmBulkAssignResult> {
+    const parsed = parseCareCrmBulkAssignInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    if (!MUTATION_ROLES.includes(authority.role)) return { ok: false, error: 'forbidden' };
+    if (!crm.bulkAssign) return { ok: false, error: 'unsupported' };
+    const result = await this.runFacebookCall(authority, () => crm.bulkAssign!(authority.workspaceId, parsed));
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      assignedCount: result.value.assignedCount,
+      conflictCount: result.value.conflictCount,
+      skippedCount: result.value.skippedCount,
+      updated: result.value.updated.map((item) => ({ ...item })),
     };
   }
 
