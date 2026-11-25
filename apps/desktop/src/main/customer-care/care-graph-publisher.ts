@@ -43,7 +43,11 @@ export const CARE_GRAPH_NODE_LIST_CAP = 1000;
 /** Lead counts come from the minute lead check; older ones mean it stopped (inbox off, signed out). */
 export const CARE_GRAPH_LEADS_MAX_AGE_MS = 15 * 60 * 1000;
 const STATE_PREFIX = 'care_graph:v1';
-const LINK_LABELS: Partial<Record<CareGraphKind, string>> = { 'care-facts': 'dùng', 'care-results': 'kết quả' };
+const LINK_LABELS: Partial<Record<CareGraphKind, string>> = {
+  'care-facts': 'dùng',
+  'care-results': 'kết quả',
+  'care-crm-segments': 'phân khúc',
+};
 
 interface NodeFields {
   title: string;
@@ -221,7 +225,9 @@ export class CareGraphPublisher {
   private isDue(draft: CareGraphNodeDraft, state: NodeState | null, nowMs: number): boolean {
     if (!state) return true;
     const age = nowMs - state.writtenAt;
-    if (draft.kind !== 'care-results') return state.fingerprint !== draft.fingerprint;
+    if (draft.kind !== 'care-results' && draft.kind !== 'care-crm-segments') {
+      return state.fingerprint !== draft.fingerprint;
+    }
     if (age >= CARE_GRAPH_RESULTS_MAX_AGE_MS) return true;
     return state.fingerprint !== draft.fingerprint && age >= CARE_GRAPH_RESULTS_MIN_MS;
   }
@@ -288,7 +294,7 @@ export class CareGraphPublisher {
   private async link(ids: Map<CareGraphKind, string>, created: Set<CareGraphKind>): Promise<void> {
     const processId = ids.get('care-process');
     if (!processId) return;
-    for (const kind of ['care-facts', 'care-results'] as const) {
+    for (const kind of ['care-facts', 'care-results', 'care-crm-segments'] as const) {
       const childId = ids.get(kind);
       if (!childId || !(created.has(kind) || created.has('care-process'))) continue;
       try {

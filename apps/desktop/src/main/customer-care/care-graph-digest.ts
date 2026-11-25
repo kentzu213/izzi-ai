@@ -16,17 +16,22 @@ import { createHash } from 'node:crypto';
 import type {
   CustomerCareAutoReplyProblem,
   CustomerCareAutoReplyState,
+  CustomerCareCrmPersona,
+  CustomerCareCrmStage,
   CustomerCareFact,
   CustomerCareFactTopic,
   CustomerCareLead,
   CustomerCarePageConnection,
 } from '../../shared/customer-care-types';
+import type { CareCrmSegmentSummary } from '../../shared/customer-crm-enterprise';
+
+export type { CareCrmSegmentSummary };
 
 export const CARE_GRAPH_SCHEMA = 1;
 export const CARE_PROCESS_VERSION = 'phase-c-1';
 /** Same muted accent as the agent hub nodes. */
 export const CARE_GRAPH_COLOR = '#5B8AA6';
-export const CARE_GRAPH_KINDS = ['care-process', 'care-facts', 'care-results'] as const;
+export const CARE_GRAPH_KINDS = ['care-process', 'care-facts', 'care-results', 'care-crm-segments'] as const;
 export type CareGraphKind = (typeof CARE_GRAPH_KINDS)[number];
 export const CARE_TOPICS: readonly CustomerCareFactTopic[] = ['catalog', 'price', 'quality', 'policy', 'contact'];
 export const CARE_TOPIC_LABELS: Record<CustomerCareFactTopic, string> = {
@@ -93,6 +98,8 @@ export interface CareGraphSource {
   autoReply: CustomerCareAutoReplyState | null;
   /** null: no fresh lead check (inbox off, not checked yet): no results node. */
   leads: CareLeadSummary | null;
+  /** Optional aggregated CRM segment counts (zero PII); absent/null omits the `care-crm-segments` node. */
+  crmSegments?: CareCrmSegmentSummary | null;
 }
 
 /** What main reads for the signed-in account's active workspace; leads are added by the publisher. */
@@ -136,7 +143,28 @@ export interface CareResultsMeta {
   leadsCapped: boolean;
   lastProblem: CustomerCareAutoReplyProblem | null;
 }
-export type CareGraphMeta = CareProcessMeta | CareFactsMeta | CareResultsMeta;
+export interface CareCrmSegmentsMeta {
+  kind: 'care-crm-segments';
+  schema: 1;
+  wsKey: string;
+  asOf: string;
+  totalLeads: number;
+  leadsCapped: boolean;
+  byStage: Record<CustomerCareCrmStage, number>;
+  byPersona: Record<CustomerCareCrmPersona | 'unclassified', number>;
+  adsBuckets: {
+    highIntent: number;
+    vipLookalike: number;
+    reengageLost: number;
+    consented: number;
+    suppressed: number;
+  };
+  lifecycleDue: {
+    postSale: number;
+    remarketing: number;
+  };
+}
+export type CareGraphMeta = CareProcessMeta | CareFactsMeta | CareResultsMeta | CareCrmSegmentsMeta;
 
 export interface CareGraphNodeDraft {
   kind: CareGraphKind;
@@ -373,6 +401,77 @@ function resultsNode(
   );
 }
 
+function safeSegmentCount(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  // Bounded strictly below 8 digits (<= 9,999,999) so serialized nodes never carry an 8-digit run.
+  return Math.max(0, Math.min(9_999_999, Math.trunc(value)));
+}
+
+function crmSegmentsNode(
+  segments: CareCrmSegmentSummary,
+  wsKey: string,
+  asOf: string,
+): CareGraphNodeDraft {
+  const byStage: Record<CustomerCareCrmStage, number> = {
+    has_phone: safeSegmentCount(segments.byStage.has_phone),
+    consulting: safeSegmentCount(segments.byStage.consulting),
+    deposit: safeSegmentCount(segments.byStage.deposit),
+    delivered: safeSegmentCount(segments.byStage.delivered),
+    lost: safeSegmentCount(segments.byStage.lost),
+    do_not_contact: safeSegmentCount(segments.byStage.do_not_contact),
+  };
+  const byPersona: Record<CustomerCareCrmPersona | 'unclassified', number> = {
+    P1: safeSegmentCount(segments.byPersona.P1),
+    P2: safeSegmentCount(segments.byPersona.P2),
+    P3: safeSegmentCount(segments.byPersona.P3),
+    P4: safeSegmentCount(segments.byPersona.P4),
+    unclassified: safeSegmentCount(segments.byPersona.unclassified),
+  };
+  const adsBuckets = {
+    highIntent: safeSegmentCount(segments.adsBuckets.highIntent),
+    vipLookalike: safeSegmentCount(segments.adsBuckets.vipLookalike),
+    reengageLost: safeSegmentCount(segments.adsBuckets.reengageLost),
+    consented: safeSegmentCount(segments.adsBuckets.consented),
+    suppressed: safeSegmentCount(segments.adsBuckets.suppressed),
+  };
+  const lifecycleDue = {
+    postSale: safeSegmentCount(segments.lifecycleDue.postSale),
+    remarketing: safeSegmentCount(segments.lifecycleDue.remarketing),
+  };
+  const metadata: CareCrmSegmentsMeta = {
+    kind: 'care-crm-segments',
+    schema: CARE_GRAPH_SCHEMA,
+    wsKey,
+    asOf,
+    totalLeads: safeSegmentCount(segments.totalLeads),
+    leadsCapped: Boolean(segments.leadsCapped),
+    byStage,
+    byPersona,
+    adsBuckets,
+    lifecycleDue,
+  };
+  const lines = [
+    'Phân khúc khách hàng CRM (chỉ số đếm tổng hợp, không lưu thông tin cá nhân).',
+    `Tổng số khách phân tích: ${countText(metadata.totalLeads, metadata.leadsCapped)} khách.`,
+    `Theo giai đoạn: Có số ${byStage.has_phone} · Đang tư vấn ${byStage.consulting} · Đã cọc ${byStage.deposit} `
+      + `· Đã giao ${byStage.delivered} · Không mua ${byStage.lost} · Không liên hệ ${byStage.do_not_contact}.`,
+    `Chân dung: P1 (Gia chủ nhà mới) ${byPersona.P1} · P2 (Lễ Tết & Gia đình) ${byPersona.P2} `
+      + `· P3 (Quà biếu) ${byPersona.P3} · P4 (Khảo giá) ${byPersona.P4} · Chưa phân loại ${byPersona.unclassified}.`,
+    `Tệp Ads: Khách ấm ${adsBuckets.highIntent} · Hạt giống Lookalike ${adsBuckets.vipLookalike} `
+      + `· Đánh thức lại ${adsBuckets.reengageLost} · Đã đồng ý marketing ${adsBuckets.consented} `
+      + `· Đã chặn ${adsBuckets.suppressed}.`,
+    `Lịch chăm sóc cần xử lý: Hậu mãi ${lifecycleDue.postSale} · Remarketing ${lifecycleDue.remarketing}.`,
+  ];
+  return draft(
+    'care-crm-segments',
+    'Chăm sóc khách · Phân khúc CRM',
+    lines.join('\n'),
+    metadata,
+    wsKey,
+    `Cập nhật: ${formatCareGraphTime(asOf)}.`,
+  );
+}
+
 /**
  * While the server answers customers, its script is the truth: a machine whose saved setup has a different
  * number of active facts (an older or newer setup on another device) does not describe the facts.
@@ -385,11 +484,13 @@ function setupMatchesServer(coverage: CareSetupCoverage, state: CustomerCareAuto
 
 /**
  * The Care nodes this machine can vouch for, in a fixed order: process always; facts only with a saved
- * setup; results only with a fresh lead check. A node left out keeps what the graph already holds.
+ * setup; results only with a fresh lead check; crm-segments only when CRM segment counts were read.
+ * A node left out keeps what the graph already holds.
  */
 export function buildCareGraphNodes(source: CareGraphSource, wsKey: string, asOf: string): CareGraphNodeDraft[] {
   const nodes = [processNode(source, wsKey)];
   if (source.facts && setupMatchesServer(source.facts, source.autoReply)) nodes.push(factsNode(source.facts, wsKey));
   if (source.leads) nodes.push(resultsNode(source, source.leads, wsKey, asOf));
+  if (source.crmSegments) nodes.push(crmSegmentsNode(source.crmSegments, wsKey, asOf));
   return nodes;
 }

@@ -478,7 +478,7 @@
 }
 
 .izzi-v2 .v2-crm-card {
-  flex: 0 0 300px;
+  flex: 0 0 340px;
   align-self: flex-start;
   display: flex;
   flex-direction: column;
@@ -669,9 +669,744 @@
   justify-content: flex-end;
 }
 
+/* --------------------------------------------------------------------------
+ * Enterprise CRM v2: KPI Strip, 5-Layer Portrait Inspector, Saler, Ads & Lifecycle
+ * -------------------------------------------------------------------------- */
+
+.izzi-v2 .v2-crm-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-kpi {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-family: var(--v2-font-family);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.izzi-v2 .v2-crm-kpi:hover {
+  background: var(--v2-bg-panel-hover, var(--v2-bg-subtle));
+  border-color: var(--v2-border-strong);
+}
+
+.izzi-v2 .v2-crm-kpi.is-active {
+  border-color: color-mix(in srgb, var(--v2-brand-primary) 62%, var(--v2-border-strong));
+  background: color-mix(in srgb, var(--v2-brand-primary) 9%, var(--v2-bg-panel));
+}
+
+.izzi-v2 .v2-crm-kpi.is-alert .v2-crm-kpi__value {
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm-kpi:focus-visible,
+.izzi-v2 .v2-crm-disclosure summary:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-crm-kpi__label {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-kpi__value {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-section-size);
+  line-height: var(--v2-text-section-line);
+  font-weight: var(--v2-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-kpi__sub {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  overflow-wrap: anywhere;
+}
+
+/* Split Table + Portrait Drawer */
+.izzi-v2 .v2-crm__table-split {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--v2-space-3);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-crm__table-split > .v2-crm__table-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 5-Layer Portrait Inspector */
+.izzi-v2 .v2-crm-portrait {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  min-width: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm-portrait.is-panel {
+  flex: 0 0 380px;
+  box-sizing: border-box;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-card);
+  box-shadow: var(--v2-shadow);
+}
+
+.izzi-v2 .v2-crm-portrait.is-inline {
+  margin-top: var(--v2-space-2);
+  padding: var(--v2-space-3);
+  background: var(--v2-bg-deep, var(--v2-bg-subtle));
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-crm-portrait.is-card {
+  padding-top: var(--v2-space-3);
+  border-top: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-portrait__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-portrait__title-group,
+.izzi-v2 .v2-crm-portrait__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-portrait__title,
+.izzi-v2 .v2-crm-portrait__ctx-title,
+.izzi-v2 .v2-crm-section-title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-strong-size);
+  line-height: var(--v2-text-body-strong-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-portrait__ctx-title {
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-portrait__close {
+  min-width: 30px;
+  padding: 0 var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-portrait__meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  padding: var(--v2-space-2) var(--v2-space-3);
+  background: var(--v2-bg-deep, var(--v2-bg-subtle));
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-crm-portrait__meter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-crm-portrait__meter-label {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm-portrait__meter-pct {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-portrait__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--v2-radius-pill);
+  background: color-mix(in srgb, var(--v2-text-muted) 24%, transparent);
+}
+
+.izzi-v2 .v2-crm-portrait__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--v2-radius-pill);
+  background: linear-gradient(90deg, var(--v2-info), var(--v2-success));
+  transition: width 180ms ease;
+}
+
+.izzi-v2 .v2-crm-portrait__summary {
+  margin: var(--v2-space-1) 0 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-portrait__layers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-crm-portrait__layer {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--v2-space-2) var(--v2-space-3);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-crm-portrait.is-panel .v2-crm-portrait__layer {
+  background: var(--v2-bg-deep, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-crm-portrait__layer-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-1) var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-portrait__layer-title {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-portrait__marks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-crm-portrait__badge {
+  padding: 0 var(--v2-space-2);
+  border-radius: var(--v2-radius-pill);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 18px;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm-portrait__badge.is-confirmed {
+  background: color-mix(in srgb, var(--v2-success) 16%, transparent);
+  color: var(--v2-success) !important;
+}
+
+.izzi-v2 .v2-crm-portrait__badge.is-ai {
+  background: color-mix(in srgb, var(--v2-info) 16%, transparent);
+  color: var(--v2-info) !important;
+}
+
+.izzi-v2 .v2-crm-portrait__badge.is-hint {
+  background: color-mix(in srgb, var(--v2-warning) 15%, transparent);
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm-portrait__badge.is-empty {
+  background: color-mix(in srgb, var(--v2-text-muted) 16%, transparent);
+  color: var(--v2-text-muted) !important;
+}
+
+.izzi-v2 .v2-crm-portrait__conf {
+  color: var(--v2-text-muted) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+}
+
+.izzi-v2 .v2-crm-portrait__layer-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-portrait__persona-pill {
+  padding: 0 var(--v2-space-2);
+  border-radius: var(--v2-radius-pill);
+  background: color-mix(in srgb, var(--v2-brand-primary) 20%, transparent);
+  color: var(--v2-brand-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-bold);
+  line-height: 18px;
+}
+
+.izzi-v2 .v2-crm-portrait__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-crm-portrait__tag,
+.izzi-v2 .v2-crm-portrait__guard {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--v2-space-2);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-panel);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: 16px;
+}
+
+.izzi-v2 .v2-crm-portrait__guard {
+  border-color: color-mix(in srgb, var(--v2-warning) 40%, transparent);
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm-portrait__reason {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+}
+
+.izzi-v2 .v2-crm-portrait__quote {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-portrait__ctx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  padding-top: var(--v2-space-2);
+  border-top: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-portrait__ctx-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.izzi-v2 .v2-crm-portrait__ctx-toggle {
+  width: 100%;
+  justify-content: center;
+}
+
+.izzi-v2 .v2-crm-portrait__ctx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--v2-space-2);
+}
+
+/* Shared Enterprise Workspaces (Saler / Ads / Lifecycle) */
+.izzi-v2 .v2-crm-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-4);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-crm-workspace__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2) var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-saler-list,
+.izzi-v2 .v2-crm-lifecycle-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-saler-card,
+.izzi-v2 .v2-crm-lifecycle-card,
+.izzi-v2 .v2-crm-ads-card,
+.izzi-v2 .v2-crm-ads-personas,
+.izzi-v2 .v2-crm-ads-export {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+}
+
+.izzi-v2 .v2-crm-saler-card__header,
+.izzi-v2 .v2-crm-lifecycle-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2) var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-saler-card__who,
+.izzi-v2 .v2-crm-saler-card__meta,
+.izzi-v2 .v2-crm-lifecycle-card__who,
+.izzi-v2 .v2-crm-lifecycle-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-saler-card__who .v2-crm__phone,
+.izzi-v2 .v2-crm-lifecycle-card__who .v2-crm__phone {
+  flex-basis: auto;
+}
+
+.izzi-v2 .v2-crm-saler-card__name,
+.izzi-v2 .v2-crm-lifecycle-card__name,
+.izzi-v2 .v2-crm-ads-card__title {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-strong-size);
+  line-height: var(--v2-text-body-strong-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-priority,
+.izzi-v2 .v2-crm-chip,
+.izzi-v2 .v2-crm-channel {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--v2-space-2);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-priority.is-hot {
+  border-color: color-mix(in srgb, var(--v2-danger) 48%, transparent);
+  background: color-mix(in srgb, var(--v2-danger) 14%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm-priority.is-warm {
+  border-color: color-mix(in srgb, var(--v2-warning) 48%, transparent);
+  background: color-mix(in srgb, var(--v2-warning) 15%, transparent);
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm-priority.is-normal {
+  border-color: color-mix(in srgb, var(--v2-info) 44%, transparent);
+  background: color-mix(in srgb, var(--v2-info) 14%, transparent);
+  color: var(--v2-info) !important;
+}
+
+.izzi-v2 .v2-crm-chip.is-granted,
+.izzi-v2 .v2-crm-channel.is-safe-24h {
+  border-color: color-mix(in srgb, var(--v2-success) 48%, transparent);
+  background: color-mix(in srgb, var(--v2-success) 14%, transparent);
+  color: var(--v2-success) !important;
+}
+
+.izzi-v2 .v2-crm-channel.is-outside-24h {
+  border-color: color-mix(in srgb, var(--v2-warning) 48%, transparent);
+  background: color-mix(in srgb, var(--v2-warning) 15%, transparent);
+  color: var(--v2-warning) !important;
+}
+
+.izzi-v2 .v2-crm-chip.is-danger {
+  border-color: color-mix(in srgb, var(--v2-danger) 48%, transparent);
+  background: color-mix(in srgb, var(--v2-danger) 14%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm-saler-card__portrait-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-1) var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-mini-layer {
+  padding: 2px var(--v2-space-2);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-deep, var(--v2-bg-subtle));
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: 16px;
+}
+
+.izzi-v2 .v2-crm-mini-layer.is-persona {
+  border-color: color-mix(in srgb, var(--v2-brand-primary) 45%, var(--v2-border-default));
+  color: var(--v2-text-primary) !important;
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-saler-card__script,
+.izzi-v2 .v2-crm-lifecycle-card__template {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-3);
+  border: 1px solid color-mix(in srgb, var(--v2-info) 30%, var(--v2-border-default));
+  border-radius: var(--v2-radius-control);
+  background: color-mix(in srgb, var(--v2-info) 6%, var(--v2-bg-deep, var(--v2-bg-subtle)));
+}
+
+.izzi-v2 .v2-crm-saler-card__script-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-saler-card__opener,
+.izzi-v2 .v2-crm-saler-card__hint,
+.izzi-v2 .v2-crm-lifecycle-card__milestone,
+.izzi-v2 .v2-crm-ads-card__headline,
+.izzi-v2 .v2-crm-ads-table__hook {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-saler-card__hint {
+  color: var(--v2-text-secondary) !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-lifecycle-card__milestone,
+.izzi-v2 .v2-crm-ads-card__headline {
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-saler-card__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-crm-saler-card__questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding-left: var(--v2-space-4);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-disclosure summary {
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  font-weight: var(--v2-font-weight-semibold);
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-disclosure[open] .v2-crm-saler-card__questions {
+  margin-top: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-saler-card__footer,
+.izzi-v2 .v2-crm-lifecycle-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+  padding-top: var(--v2-space-2);
+  border-top: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-saler-card__next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+}
+
+/* Ads Workspace */
+.izzi-v2 .v2-crm-ads-buckets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-ads-card.is-suppressed {
+  border-color: color-mix(in srgb, var(--v2-danger) 32%, var(--v2-border-default));
+  background: color-mix(in srgb, var(--v2-danger) 4%, var(--v2-bg-panel));
+}
+
+.izzi-v2 .v2-crm-ads-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-ads-card__count {
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-page-size);
+  line-height: var(--v2-text-page-line);
+  font-weight: var(--v2-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-ads-card__angle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-deep, var(--v2-bg-subtle));
+}
+
+.izzi-v2 .v2-crm-ads-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.izzi-v2 .v2-crm .v2-button.is-selected {
+  border-color: var(--v2-brand-primary);
+  color: var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 .v2-crm-ads-personas__head,
+.izzi-v2 .v2-crm-ads-export__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-ads-table__counts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.izzi-v2 .v2-crm-ads-table__hook {
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-ads-export__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--v2-space-3);
+}
+
+.izzi-v2 .v2-crm-ads-export__picker {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.izzi-v2 .v2-crm-ads-export__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+  flex: 1 1 280px;
+}
+
+@media (max-width: 1080px) {
+  .izzi-v2 .v2-crm-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .izzi-v2 .v2-crm__table-split {
+    flex-direction: column;
+  }
+
+  .izzi-v2 .v2-crm__table-split > .v2-crm__table-wrap,
+  .izzi-v2 .v2-crm-portrait.is-panel {
+    flex: none;
+    width: 100%;
+  }
+}
+
 @media (max-width: 720px) {
   .izzi-v2 .v2-crm {
     padding: var(--v2-space-3) var(--v2-space-2);
+  }
+
+  .izzi-v2 .v2-crm-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .izzi-v2 .v2-crm-ads-buckets {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .izzi-v2 .v2-crm__fields--wide {
@@ -696,5 +1431,9 @@
 
   .izzi-v2 .v2-crm-graph__search {
     width: calc(100% - 120px);
+  }
+
+  .izzi-v2 .v2-crm-ads-export__picker {
+    max-width: none;
   }
 }

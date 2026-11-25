@@ -291,4 +291,46 @@ describe('buildCareGraphNodes', () => {
     for (const value of planted) expect(serialized).not.toContain(value);
     expect(serialized).not.toMatch(/\d{8,}/);
   });
+
+  it('appends the 4th care-crm-segments node with zero PII and zero >=8 digit runs when crmSegments is present', () => {
+    // Arrange
+    const crmSegments = {
+      totalLeads: 50,
+      leadsCapped: true,
+      byStage: { has_phone: 12, consulting: 18, deposit: 5, delivered: 7, lost: 6, do_not_contact: 2 },
+      byPersona: { P1: 20, P2: 12, P3: 4, P4: 8, unclassified: 6 },
+      adsBuckets: { highIntent: 30, vipLookalike: 12, reengageLost: 5, consented: 19, suppressed: 3 },
+      lifecycleDue: { postSale: 4, remarketing: 9 },
+    };
+
+    // Act
+    const nodes = buildCareGraphNodes(source({ crmSegments }), wsKey, asOf);
+    const later = buildCareGraphNodes(source({ crmSegments }), wsKey, iso(NOW + 6 * HOUR));
+    const segNode = nodes[3]!;
+
+    // Assert
+    expect(nodes.map((n) => n.kind)).toEqual(['care-process', 'care-facts', 'care-results', 'care-crm-segments']);
+    expect(segNode.title).toBe('Chăm sóc khách · Phân khúc CRM');
+    expect(segNode.url).toBe(`https://izziapi.com/aibase/graph?care=care-crm-segments&ws=${wsKey}`);
+    expect(segNode.metadata).toEqual({
+      kind: 'care-crm-segments',
+      schema: 1,
+      wsKey,
+      asOf,
+      ...crmSegments,
+    });
+    expect(segNode.content).toContain('50+ khách');
+    expect(segNode.content).toContain('P1 (Gia chủ nhà mới) 20');
+    expect(segNode.content).toContain('Đã đồng ý marketing 19');
+    expect(segNode.content).toContain('Hậu mãi 4 · Remarketing 9');
+    expect(later[3]!.fingerprint).toBe(segNode.fingerprint);
+
+    // Even oversized counts are clamped below 8 digits so serialized payloads never match /\d{8,}/
+    const clampedNodes = buildCareGraphNodes(
+      source({ crmSegments: { ...crmSegments, totalLeads: 123_456_789 } }),
+      wsKey,
+      asOf,
+    );
+    expect(JSON.stringify(clampedNodes)).not.toMatch(/\d{8,}/);
+  });
 });

@@ -399,6 +399,45 @@ describe('CareGraphPublisher.run', () => {
     // Assert
     expect(read).toHaveBeenCalledTimes(2);
   });
+
+  it('links care-crm-segments with "phân khúc" and throttles its writes to the 6h/24h egress budget', async () => {
+    // Arrange
+    const baseSegments = {
+      totalLeads: 10,
+      leadsCapped: false,
+      byStage: { has_phone: 3, consulting: 4, deposit: 1, delivered: 1, lost: 1, do_not_contact: 0 },
+      byPersona: { P1: 5, P2: 2, P3: 1, P4: 1, unclassified: 1 },
+      adsBuckets: { highIntent: 7, vipLookalike: 2, reengageLost: 1, consented: 4, suppressed: 0 },
+      lifecycleDue: { postSale: 1, remarketing: 2 },
+    };
+    let current = snapshot({ crmSegments: baseSegments });
+    const context = setup({ read: async () => current });
+
+    // Act: initial create + link
+    await context.publisher.run();
+    context.sync();
+
+    // Assert initial creation and link label
+    expect(context.server.nodes.map((node) => node.url)).toEqual([
+      careNodeUrl('care-process', WS_KEY),
+      careNodeUrl('care-facts', WS_KEY),
+      careNodeUrl('care-crm-segments', WS_KEY),
+    ]);
+    expect(context.graph.createLink.mock.calls).toContainEqual(['node-1', 'node-3', 'phân khúc', '#5B8AA6']);
+
+    vi.clearAllMocks();
+
+    // 1 hour later: CRM segment counts change, but held back by 6h budget
+    context.advance(HOUR);
+    current = snapshot({ crmSegments: { ...baseSegments, totalLeads: 12 } });
+    await context.publisher.run();
+    expect(context.graph.updateNode).not.toHaveBeenCalled();
+
+    // After 6 hours total: now due and patched
+    context.advance(5 * HOUR);
+    await context.publisher.run();
+    expect(patchedKinds(context.graph)).toEqual(['care-crm-segments']);
+  });
 });
 
 describe('CareGraphPublisher timers', () => {

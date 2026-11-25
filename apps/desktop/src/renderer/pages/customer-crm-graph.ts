@@ -273,7 +273,10 @@ function crmGraphKey(
   return JSON.stringify([
     rows.map((row) => [
       row.leadId, row.profile.updatedAt, row.customerName,
+      row.profile.stage, row.profile.occasion, row.profile.ownerUserId, row.profile.productFactIds,
       row.identity?.version ?? null, row.identity?.consent?.state ?? null,
+      row.identity?.persona?.value ?? null, row.identity?.interests?.adTitle?.value ?? null,
+      (row.identity?.interests?.sharedLinks ?? []).map((item) => item?.value?.domain ?? null),
     ]),
     products.map((product) => [product.id, product.label]),
     assignees.map((assignee) => [assignee.userId, assignee.label]),
@@ -309,7 +312,8 @@ export function crmGraphSearch(graph: CrmGraph, query: string, limit = 6): CrmGr
 // View state
 // ---------------------------------------------------------------------------
 
-export type CrmDisplay = 'table' | 'graph';
+export type CrmDisplay = 'table' | 'graph' | 'saler' | 'ads' | 'lifecycle';
+export type CrmGraphRow = CustomerCareCrmRow;
 
 /** The graph shows every customer; only the stage filter applies ("Cần gọi hôm nay" is a table view). */
 export function crmGraphRows<T extends CustomerCareCrmRow>(rows: readonly T[], stage: CustomerCareCrmStage | 'any'): T[] {

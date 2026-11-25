@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { colorWithAlpha, drawGraphViewCanvasField, mixTagColors } from '@kentzu213/graph-view';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
@@ -17,6 +17,7 @@ import {
   type CrmGraphEntry,
   type CrmGraphLink,
   type CrmGraphNode,
+  type CrmGraphRow,
 } from './customer-crm-graph';
 import { CustomerCrmCard } from './CustomerCrmCard';
 
@@ -28,6 +29,7 @@ export interface CustomerCrmGraphProps {
   nowMs: number;
   onCopy: (row: CustomerCareCrmRow) => void;
   onOpenProfile: (leadId: string) => void;
+  renderExtraCard?: (row: CrmGraphRow) => ReactNode;
 }
 
 /** The engine adds positions and speeds to these copies; pill sizes are kept for hit-testing. */
@@ -61,7 +63,9 @@ function truncate(text: string, max: number): string {
  * identity, persona, source ad and shared-link domains), drawn in the Memory graph's style. Clicking a customer
  * opens the read-only card.
  */
-export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onCopy, onOpenProfile }: CustomerCrmGraphProps) {
+export default function CustomerCrmGraph({
+  rows, products, assignees, nowMs, onCopy, onOpenProfile, renderExtraCard,
+}: CustomerCrmGraphProps) {
   // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
   // restart; the 60 s tick hands over new row arrays every time.
   const lastGraphRef = useRef<CrmGraphEntry | null>(null);
@@ -371,6 +375,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
           nowMs={nowMs}
           assignees={assignees}
           products={products}
+          extraSection={renderExtraCard ? renderExtraCard(selectedRow) : undefined}
           onCopy={() => onCopy(selectedRow)}
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
           onClose={closeCard}
