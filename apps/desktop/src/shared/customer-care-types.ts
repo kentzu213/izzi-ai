@@ -386,6 +386,8 @@ export interface CustomerCareCrmRow {
   /** Up to 3 customer messages, oldest first, plain text. */
   recentMessages: CustomerCareLeadMessage[];
   profile: CustomerCareCrmProfile;
+  /** Care CRM S3, only with `include=identity` (slice I4); absent from every row until then. */
+  identity?: CustomerCareCrmIdentity;
 }
 
 /** An active owner, manager or editor of the workspace; `label` is null when no safe name could be shown. */
@@ -425,6 +427,89 @@ export type CustomerCareCrmSaveResult =
   | { ok: true; workspaceId: string; leadId: string; profile: CustomerCareCrmProfile }
   | CustomerCareCrmConflict
   | CustomerCareFacebookFailure;
+
+// Care CRM S3 identity (spec 2026-11-25, section 5). `GET /crm` returns it per row only when the client asks with
+// `include=identity` (slice I4); this build still asks without it and main's exact row parser keeps no such key,
+// so no row carries it yet. The MyGraph CRM graph and card already read it when present. Every field may be null.
+
+export const CUSTOMER_CARE_CRM_ID_CONFIDENCES = ['low', 'medium', 'high'] as const;
+/** Server-computed: said directly = high, two or more signals = medium, one signal = low (never shown). */
+export type CustomerCareCrmIdConfidence = (typeof CUSTOMER_CARE_CRM_ID_CONFIDENCES)[number];
+
+export const CUSTOMER_CARE_CRM_ID_KINDS = ['stated', 'inferred'] as const;
+export const CUSTOMER_CARE_CRM_ID_SOURCES = ['ai', 'staff', 'meta', 'ad'] as const;
+export const CUSTOMER_CARE_CRM_ID_STATUSES = ['suggested', 'confirmed', 'corrected'] as const;
+export const CUSTOMER_CARE_CRM_EVIDENCE_SOURCES = ['customer', 'page', 'izzi', 'ad', 'link', 'note'] as const;
+
+export interface CustomerCareCrmEvidence {
+  source: (typeof CUSTOMER_CARE_CRM_EVIDENCE_SOURCES)[number];
+  at: string;
+  /** At most 80 characters, masked by the server. */
+  quote: string | null;
+}
+
+/** One identity field: its value, how it was reached, and up to two pieces of evidence. */
+export interface CustomerCareCrmIdField<T> {
+  value: T;
+  confidence: CustomerCareCrmIdConfidence;
+  kind: (typeof CUSTOMER_CARE_CRM_ID_KINDS)[number];
+  source: (typeof CUSTOMER_CARE_CRM_ID_SOURCES)[number];
+  status: (typeof CUSTOMER_CARE_CRM_ID_STATUSES)[number];
+  updatedAt: string;
+  evidence: CustomerCareCrmEvidence[];
+}
+
+export const CUSTOMER_CARE_CRM_CONSENT_STATES = ['unknown', 'asked', 'granted', 'declined', 'withdrawn'] as const;
+export type CustomerCareCrmConsentState = (typeof CUSTOMER_CARE_CRM_CONSENT_STATES)[number];
+
+export interface CustomerCareCrmConsent {
+  state: CustomerCareCrmConsentState;
+  at: string | null;
+  noMarketing: boolean;
+  canAsk: boolean;
+}
+
+export const CUSTOMER_CARE_CRM_TIMELINES = ['this_week', 'this_month', 'before_tet', 'later'] as const;
+export type CustomerCareCrmTimeline = (typeof CUSTOMER_CARE_CRM_TIMELINES)[number];
+
+/** Shown as an estimate ("ước tính"): one band, or two adjacent ones. */
+export const CUSTOMER_CARE_CRM_AGE_BANDS = ['18-24', '25-34', '35-44', '45-54', '55+'] as const;
+export type CustomerCareCrmAgeBand = (typeof CUSTOMER_CARE_CRM_AGE_BANDS)[number];
+
+/** Who the purchase is for; always backed by a customer quote. Never marital status. */
+export const CUSTOMER_CARE_CRM_RECIPIENTS = ['self', 'spouse', 'parents', 'children', 'household', 'gift'] as const;
+export type CustomerCareCrmRecipient = (typeof CUSTOMER_CARE_CRM_RECIPIENTS)[number];
+
+export const CUSTOMER_CARE_CRM_BUDGET_BANDS = ['under_5m', '5m_15m', '15m_30m', '30m_plus'] as const;
+export type CustomerCareCrmBudgetBand = (typeof CUSTOMER_CARE_CRM_BUDGET_BANDS)[number];
+
+export const CUSTOMER_CARE_CRM_PERSONAS = ['P1', 'P2', 'P3', 'P4'] as const;
+export type CustomerCareCrmPersona = (typeof CUSTOMER_CARE_CRM_PERSONAS)[number];
+
+/** A link the customer shared: the title and the domain only, never the address. */
+export interface CustomerCareCrmSharedLink {
+  title: string | null;
+  domain: string;
+}
+
+/** No gender field exists: the form of address (`addressForm`) is what staff use. */
+export interface CustomerCareCrmIdentity {
+  version: string | null;
+  lastRunAt: string | null;
+  consent: CustomerCareCrmConsent | null;
+  occasion: CustomerCareCrmIdField<CustomerCareCrmOccasion> | null;
+  timeline: CustomerCareCrmIdField<CustomerCareCrmTimeline> | null;
+  productFactIds: CustomerCareCrmIdField<string[]> | null;
+  addressForm: CustomerCareCrmIdField<CustomerCareCrmAddressForm> | null;
+  ageBand: CustomerCareCrmIdField<CustomerCareCrmAgeBand[]> | null;
+  family: CustomerCareCrmIdField<{ recipient: CustomerCareCrmRecipient }> | null;
+  interests: {
+    adTitle: CustomerCareCrmIdField<string> | null;
+    sharedLinks: CustomerCareCrmIdField<CustomerCareCrmSharedLink>[];
+    budgetBand: CustomerCareCrmIdField<CustomerCareCrmBudgetBand> | null;
+  } | null;
+  persona: (CustomerCareCrmIdField<CustomerCareCrmPersona> & { summary: string }) | null;
+}
 
 /** Renderer inputs; the workspace always comes from main's live authority. */
 export interface CustomerCareCrmListInput {
