@@ -2,21 +2,29 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
+  CustomerCareCrmConsent,
   CustomerCareCrmIdField,
   CustomerCareCrmIdentity,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
 } from '../../shared/customer-care-types';
+import { crmVisibleRows } from './customer-crm-flow';
 import {
   CRM_GRAPH_KIND_COLORS,
+  CRM_NO_SELECTION,
   CRM_STAGE_COLORS,
+  crmCardOccasion,
   crmCustomerLabel,
+  crmGraphReuse,
   crmGraphRows,
   crmGraphSearch,
   crmIdentityView,
   crmOpenProfile,
   crmRowsToGraph,
   crmSelectedRow,
+  crmSelectionOnClick,
+  crmSelectionOnClose,
+  crmSelectionOnSearch,
 } from './customer-crm-graph';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
@@ -60,6 +68,15 @@ function field<T>(value: T, extra: Partial<CustomerCareCrmIdField<T>> = {}): Cus
   return { value, confidence: 'high', kind: 'stated', source: 'ai', status: 'suggested', updatedAt: AT, evidence: [], ...extra };
 }
 
+const GRANTED: CustomerCareCrmConsent = { state: 'granted', at: AT, noMarketing: false, canAsk: false };
+const NOT_GRANTED: Array<CustomerCareCrmConsent | null> = [
+  { state: 'declined', at: AT, noMarketing: true, canAsk: false },
+  { state: 'withdrawn', at: AT, noMarketing: true, canAsk: false },
+  { state: 'unknown', at: null, noMarketing: false, canAsk: true },
+  { state: 'asked', at: AT, noMarketing: false, canAsk: false },
+  null,
+];
+
 const EMPTY_IDENTITY: CustomerCareCrmIdentity = {
   version: null,
   lastRunAt: null,
@@ -77,7 +94,7 @@ const EMPTY_IDENTITY: CustomerCareCrmIdentity = {
 const IDENTITY: CustomerCareCrmIdentity = {
   version: 'v1',
   lastRunAt: AT,
-  consent: { state: 'granted', at: AT, noMarketing: false, canAsk: false },
+  consent: GRANTED,
   occasion: field<'tet'>('tet', { confidence: 'medium', kind: 'inferred' }),
   timeline: field<'before_tet'>('before_tet'),
   productFactIds: field(['ban-127', 'gone-fact']),
@@ -191,8 +208,8 @@ describe('crmRowsToGraph', () => {
   it('links customers who share a persona to one P1–P4 hub', () => {
     const graph = crmRowsToGraph([
       row(LEAD_A, { identity: IDENTITY }),
-      row(LEAD_B, { identity: { ...EMPTY_IDENTITY, persona: { ...field<'P2'>('P2', { confidence: 'medium' }), summary: '' } } }),
-      row(LEAD_C, { identity: { ...EMPTY_IDENTITY, persona: { ...field<'P3'>('P3', { confidence: 'low' }), summary: '' } } }),
+      row(LEAD_B, { identity: { ...EMPTY_IDENTITY, consent: GRANTED, persona: { ...field<'P2'>('P2', { confidence: 'medium' }), summary: '' } } }),
+      row(LEAD_C, { identity: { ...EMPTY_IDENTITY, consent: GRANTED, persona: { ...field<'P3'>('P3', { confidence: 'low' }), summary: '' } } }),
     ], PRODUCTS, ASSIGNEES);
     expect(graph.nodes.find((node) => node.id === 'persona:P2')?.degree).toBe(2);
     expect(ids(graph)).not.toContain('persona:P3');
@@ -201,6 +218,7 @@ describe('crmRowsToGraph', () => {
   it('ignores identity values outside the contract instead of drawing them', () => {
     const odd = {
       ...EMPTY_IDENTITY,
+      consent: GRANTED,
       persona: { ...field('P9'), summary: '' },
       interests: {
         adTitle: { ...field('Ad'), source: 'robot' },
@@ -227,7 +245,7 @@ describe('crmRowsToGraph', () => {
     const graph = crmRowsToGraph([{ ...phoneName, identity }, noName, blank], PRODUCTS, ASSIGNEES);
     const labels = graph.nodes.map((node) => node.label);
     for (const label of labels) {
-      expect(label.replace(/\D/g, '')).not.toMatch(/\d{7,}/);
+      expect(label.normalize('NFKC').replace(/[\s._/,-]/g, '')).not.toMatch(/\d{9,}/);
       for (const phone of ['0901234567', '901234567', '0912345678', '0987654321']) expect(label).not.toContain(phone);
     }
     expect(labels).toEqual(expect.arrayContaining(['Khách ·567', 'Khách ·678', 'Khách ·321']));
@@ -235,9 +253,70 @@ describe('crmRowsToGraph', () => {
     expect(JSON.stringify(graph)).not.toMatch(/0901234567|0912345678|0987654321|0901\.234\.567/);
   });
 
+  it('masks a run of nine or more digits in every probe form, full-width included, and keeps shorter numbers', () => {
+    const probes = [
+      '0901234567', '0901 234 567', '0901.234.567', '0901-234-567', '0901/234/567', '0901_234_567', '0901,234,567',
+      '+84 901 234 567', '０９０１２３４５６７', '0 9 0 1 2 3 4 5 6 7', '901234567',
+    ];
+    const products = probes.map((probe, index) => ({ id: `p-${index}`, label: `Gọi ${probe} nhé` }));
+    const graph = crmRowsToGraph([row(LEAD_A, {}, { productFactIds: products.map((product) => product.id) })], products, ASSIGNEES);
+    const labels = graph.nodes.filter((node) => node.kind === 'product').map((node) => node.label);
+    expect(labels).toHaveLength(probes.length);
+    for (const label of labels) expect(label).toBe('Gọi ••• nhé');
+    for (const probe of probes) {
+      expect(crmCustomerLabel({ customerName: `Hoa ${probe}`, phone: '0901234567' }), probe).toBe('Khách ·567');
+    }
+    // A price of eight digits stays; privacy wins over a longer digit run, which is always masked.
+    const short = crmRowsToGraph([row(LEAD_A, {}, { productFactIds: ['x'] })], [{ id: 'x', label: 'Bàn 1m27 giá 15.000.000đ' }], ASSIGNEES);
+    expect(short.nodes.find((node) => node.id === 'product:x')?.label).toBe('Bàn 1m27 giá 15.000.000đ');
+  });
+
   it('strips invisible and bidi characters from labels', () => {
     const graph = crmRowsToGraph([row(LEAD_A, { customerName: 'Ho\u200Ba\u202E Lan\u0007' })], PRODUCTS, ASSIGNEES);
     expect(graph.nodes[0].label).toBe('Hoa Lan');
+  });
+});
+
+describe('consent gate (second guard behind the server)', () => {
+  it('draws no persona, ad or link node unless the customer agreed', () => {
+    for (const consent of NOT_GRANTED) {
+      const graph = crmRowsToGraph([row(LEAD_A, { identity: { ...IDENTITY, consent } })], PRODUCTS, ASSIGNEES);
+      expect(graph.nodes.some((node) => IDENTITY_KINDS.includes(node.kind)), String(consent?.state)).toBe(false);
+    }
+    const granted = crmRowsToGraph([row(LEAD_A, { identity: IDENTITY })], PRODUCTS, ASSIGNEES);
+    expect(granted.nodes.filter((node) => IDENTITY_KINDS.includes(node.kind))).toHaveLength(3);
+  });
+
+  it('shows only the order layer on the card unless the customer agreed, and leaks nothing else', () => {
+    for (const consent of NOT_GRANTED) {
+      const view = crmIdentityView({ ...IDENTITY, consent }, PRODUCTS)!;
+      expect(view.lines.map((line) => line.key), String(consent?.state)).toEqual(['timeline', 'productFactIds']);
+      expect(view.age).toBeNull();
+      const text = JSON.stringify(view);
+      for (const secret of ['P2', 'Chị', 'bố mẹ', 'ưu đãi', 'shopee', 'Mẫu bàn thờ', 'triệu', '25', 'Mua cho nhà mới']) {
+        expect(text, `${String(consent?.state)}: ${secret}`).not.toContain(secret);
+      }
+    }
+  });
+});
+
+describe('crmGraphReuse (a refresh that changed nothing keeps the layout)', () => {
+  it('returns the same graph for equal data in new arrays, and a new one when a row, identity or label changes', () => {
+    const rows = [row(LEAD_A, { identity: IDENTITY }), row(LEAD_B)];
+    const first = crmGraphReuse(null, rows, PRODUCTS, ASSIGNEES);
+    const copy = rows.map((item) => ({ ...item, profile: { ...item.profile }, recentMessages: [{ text: 'mới', at: AT }] }));
+    expect(crmGraphReuse(first, copy, [...PRODUCTS], [...ASSIGNEES])).toBe(first);
+
+    const saved = [rows[0], { ...rows[1], profile: { ...rows[1].profile, stage: 'deposit' as const, updatedAt: '2026-11-25T02:00:00.000Z' } }];
+    const afterSave = crmGraphReuse(first, saved, PRODUCTS, ASSIGNEES);
+    expect(afterSave).not.toBe(first);
+    expect(afterSave.graph.nodes.some((node) => node.id === 'stage:deposit')).toBe(true);
+
+    expect(crmGraphReuse(first, [{ ...rows[0], identity: { ...IDENTITY, version: 'v2' } }, rows[1]], PRODUCTS, ASSIGNEES)).not.toBe(first);
+    const withdrawn = crmGraphReuse(first, [{ ...rows[0], identity: { ...IDENTITY, consent: NOT_GRANTED[1] } }, rows[1]], PRODUCTS, ASSIGNEES);
+    expect(withdrawn.graph.nodes.some((node) => node.kind === 'persona')).toBe(false);
+    expect(crmGraphReuse(first, rows, PRODUCTS, [{ userId: OWNER_ID, label: 'Lan Anh' }])).not.toBe(first);
+    expect(crmGraphReuse(first, [rows[1]], PRODUCTS, ASSIGNEES)).not.toBe(first);
   });
 });
 
@@ -273,8 +352,52 @@ describe('graph view state', () => {
     expect(crmSelectedRow(rows, null)).toBeNull();
   });
 
-  it('"Mở hồ sơ" switches to the table with that row open and brought into view', () => {
-    expect(crmOpenProfile(LEAD_A)).toEqual({ display: 'table', expandedId: LEAD_A, revealId: LEAD_A });
+  it('"Mở hồ sơ" shows a row that "Cần gọi hôm nay" and the stage filter leave out, by pinning it open', () => {
+    const now = Date.parse('2026-11-25T03:00:00.000Z');
+    // Not due today (a later step) and not in the stage chosen in the graph.
+    const later = row(LEAD_B, {}, { stage: 'deposit', nextStepDueAt: '2026-12-10T02:00:00.000Z' });
+    const rows = [row(LEAD_A, {}, { stage: 'has_phone', nextStep: null, nextStepDueAt: null }), later];
+    const filter = { view: 'today' as const, stage: 'has_phone' as const };
+    expect(crmVisibleRows(rows, filter, now, null).map((item) => item.leadId)).toEqual([LEAD_A]);
+
+    const opened = crmOpenProfile(LEAD_B);
+    expect(opened.display).toBe('table');
+    expect(opened.revealId).toBe(LEAD_B);
+    expect(crmVisibleRows(rows, filter, now, opened.expandedId).map((item) => item.leadId)).toEqual([LEAD_A, LEAD_B]);
+  });
+});
+
+describe('graph selection and focus', () => {
+  const customer = { id: `customer:${LEAD_A}`, kind: 'customer' as const };
+  const hub = { id: 'stage:consulting', kind: 'stage' as const };
+
+  it('a node click selects from the canvas; a second click on a hub clears it, on a customer keeps it', () => {
+    const clicked = crmSelectionOnClick(CRM_NO_SELECTION, customer);
+    expect(clicked).toEqual({ nodeId: customer.id, from: 'canvas' });
+    expect(crmSelectionOnClick(clicked, customer)).toEqual(clicked);
+    const onHub = crmSelectionOnClick(clicked, hub);
+    expect(onHub).toEqual({ nodeId: hub.id, from: 'canvas' });
+    expect(crmSelectionOnClick(onHub, hub)).toEqual(CRM_NO_SELECTION);
+  });
+
+  it('closing the card returns focus where the customer was chosen: the search box or the canvas', () => {
+    expect(crmSelectionOnClose(crmSelectionOnSearch(customer.id))).toEqual({ next: CRM_NO_SELECTION, focus: 'search' });
+    expect(crmSelectionOnClose(crmSelectionOnClick(CRM_NO_SELECTION, customer))).toEqual({ next: CRM_NO_SELECTION, focus: 'stage' });
+    expect(crmSelectionOnClose(CRM_NO_SELECTION)).toEqual({ next: CRM_NO_SELECTION, focus: null });
+  });
+});
+
+describe('crmCardOccasion ("Dịp mua" once on the card)', () => {
+  it('uses the staff value, and the AI value only when staff left it empty', () => {
+    expect(crmCardOccasion(row(LEAD_A, { identity: IDENTITY }))).toEqual({ label: 'Nhà mới', badge: null });
+    expect(crmCardOccasion(row(LEAD_A, { identity: IDENTITY }, { occasion: null }))).toEqual({ label: 'Tết', badge: 'AI gợi ý' });
+    const confirmed = { ...IDENTITY, occasion: field<'gift'>('gift', { status: 'confirmed', source: 'staff' }) };
+    expect(crmCardOccasion(row(LEAD_A, { identity: confirmed }, { occasion: null }))).toEqual({ label: 'Làm quà', badge: 'Đã duyệt' });
+    // The occasion is order-layer data, so it shows without consent; a low-confidence one never does.
+    expect(crmCardOccasion(row(LEAD_A, { identity: { ...IDENTITY, consent: NOT_GRANTED[0] } }, { occasion: null }))?.label).toBe('Tết');
+    const low = { ...IDENTITY, occasion: field<'tet'>('tet', { confidence: 'low' }) };
+    expect(crmCardOccasion(row(LEAD_A, { identity: low }, { occasion: null }))).toBeNull();
+    expect(crmCardOccasion(row(LEAD_A, {}, { occasion: null }))).toBeNull();
   });
 });
 
@@ -291,7 +414,6 @@ describe('crmIdentityView', () => {
       ['persona', 'Chân dung', 'P2 · Mua cho nhà mới, trước Tết', 'AI', 'cao'],
       ['addressForm', 'Xưng hô', 'Chị', 'Đã duyệt', 'cao'],
       ['family', 'Gia đình', 'Mua cho bố mẹ', 'AI', 'cao'],
-      ['occasion', 'Dịp mua', 'Tết', 'AI', 'vừa'],
       ['timeline', 'Thời điểm', 'Trước Tết', 'AI', 'cao'],
       ['productFactIds', 'Sản phẩm quan tâm', 'Bàn thờ gỗ gụ 1m27, 1 sản phẩm khác', 'AI', 'cao'],
       ['adTitle', 'Quảng cáo', 'Bàn thờ gỗ gụ ưu đãi Tết', 'AI', 'cao'],
@@ -305,11 +427,27 @@ describe('crmIdentityView', () => {
   it('hides low-confidence fields and a family value without the customer\'s words', () => {
     const view = crmIdentityView({
       ...EMPTY_IDENTITY,
+      consent: GRANTED,
       persona: { ...field<'P1'>('P1', { confidence: 'low' }), summary: 'x' },
       ageBand: field<Array<'55+'>>(['55+'], { confidence: 'low' }),
       family: field<{ recipient: 'gift' }>({ recipient: 'gift' }, { evidence: [{ source: 'izzi', at: AT, quote: null }] }),
     }, PRODUCTS)!;
-    expect(view).toEqual({ consent: null, lines: [], age: null });
+    expect(view).toEqual({ consent: { label: 'Đồng ý', tone: 'granted' }, lines: [], age: null });
+  });
+
+  it('shows family only with a quote whose source is the customer; a page or izzi quote never counts', () => {
+    const family = (evidence: CustomerCareCrmIdField<unknown>['evidence']) => crmIdentityView({
+      ...EMPTY_IDENTITY,
+      consent: GRANTED,
+      family: field<{ recipient: 'parents' }>({ recipient: 'parents' }, { evidence }),
+    }, PRODUCTS)!.lines.find((line) => line.key === 'family') ?? null;
+    expect(family([{ source: 'izzi', at: AT, quote: 'Shop: chị mua cho bố mẹ ạ' }])).toBeNull();
+    expect(family([{ source: 'page', at: AT, quote: 'mua cho bố mẹ' }])).toBeNull();
+    expect(family([{ source: 'customer', at: AT, quote: '   ' }])).toBeNull();
+    expect(family([
+      { source: 'page', at: AT, quote: 'Shop: chị mua cho bố mẹ ạ' },
+      { source: 'customer', at: AT, quote: 'em mua cho bố mẹ ạ' },
+    ])?.quote).toBe('em mua cho bố mẹ ạ');
   });
 
   it('names every consent state with one of the four chips', () => {
@@ -323,7 +461,7 @@ describe('crmIdentityView', () => {
 
   it('shows one age band or two adjacent ones, nothing else', () => {
     const age = (bands: string[]) => crmIdentityView({
-      ...EMPTY_IDENTITY, ageBand: field(bands as Array<'18-24'>, { confidence: 'medium' }),
+      ...EMPTY_IDENTITY, consent: GRANTED, ageBand: field(bands as Array<'18-24'>, { confidence: 'medium' }),
     }, PRODUCTS)?.age?.value ?? null;
     expect(age(['18-24'])).toBe('18–24');
     expect(age(['55+'])).toBe('55+');

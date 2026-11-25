@@ -6,10 +6,15 @@ import { CRM_STAGE_OPTIONS, type CrmProductOption } from './customer-crm-flow';
 import {
   CRM_GRAPH_KIND_COLORS,
   CRM_GRAPH_KIND_LABELS,
+  CRM_NO_SELECTION,
   CRM_STAGE_COLORS,
+  crmGraphReuse,
   crmGraphSearch,
-  crmRowsToGraph,
   crmSelectedRow,
+  crmSelectionOnClick,
+  crmSelectionOnClose,
+  crmSelectionOnSearch,
+  type CrmGraphEntry,
   type CrmGraphLink,
   type CrmGraphNode,
 } from './customer-crm-graph';
@@ -57,12 +62,21 @@ function truncate(text: string, max: number): string {
  * opens the read-only card.
  */
 export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onCopy, onOpenProfile }: CustomerCrmGraphProps) {
-  const graph = useMemo(() => crmRowsToGraph(rows, products, assignees), [rows, products, assignees]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
+  // restart; the 60 s tick hands over new row arrays every time.
+  const lastGraphRef = useRef<CrmGraphEntry | null>(null);
+  const entry = useMemo(() => crmGraphReuse(lastGraphRef.current, rows, products, assignees), [rows, products, assignees]);
+  useEffect(() => {
+    lastGraphRef.current = entry;
+  }, [entry]);
+  const { graph } = entry;
+  const [selection, setSelection] = useState(CRM_NO_SELECTION);
+  const selectedId = selection.nodeId;
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [size, setSize] = useState({ width: 0, height: 0 });
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLElement | null>(null);
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink> | undefined>(undefined);
   const lastDataRef = useRef<{ nodes: GraphNode[]; links: GraphLink[] } | null>(null);
@@ -128,7 +142,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
     [focusId, neighbors],
   );
 
-  // The card takes keyboard focus when a customer is chosen, so it can be read and closed without the mouse.
+  // The card takes focus when a customer is chosen (node click or search), so it can be read and closed by keyboard.
   const selectedLeadId = selectedRow?.leadId ?? null;
   useEffect(() => {
     if (selectedLeadId !== null) cardRef.current?.focus({ preventScroll: true });
@@ -137,7 +151,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
   const results = useMemo(() => crmGraphSearch(graph, query), [graph, query]);
 
   const chooseFromSearch = (node: CrmGraphNode) => {
-    setSelectedId(node.id);
+    setSelection(crmSelectionOnSearch(node.id));
     const placed = graphData.nodes.find((item) => item.id === node.id);
     if (placed?.x !== undefined && placed.y !== undefined) {
       graphRef.current?.centerAt(placed.x, placed.y, CENTER_MS);
@@ -152,10 +166,18 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
     }
   };
 
+  /** Escape or ✕: the card closes and focus goes back to the search box or the canvas it was opened from. */
+  const closeCard = () => {
+    const { next, focus: target } = crmSelectionOnClose(selection);
+    setSelection(next);
+    if (target === 'search') searchRef.current?.focus();
+    else if (target === 'stage') stageRef.current?.focus();
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape' && selectedId !== null) {
       event.stopPropagation();
-      setSelectedId(null);
+      closeCard();
     }
   };
 
@@ -254,7 +276,14 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
 
   return (
     <div className="v2-crm-graph" onKeyDown={onKeyDown}>
-      <div className="v2-crm-graph__stage" ref={stageRef} role="group" aria-label="Sơ đồ CRM" aria-describedby="v2-crm-graph-summary">
+      <div
+        className="v2-crm-graph__stage"
+        ref={stageRef}
+        role="group"
+        aria-label="Sơ đồ CRM"
+        aria-describedby="v2-crm-graph-summary"
+        tabIndex={-1}
+      >
         <p id="v2-crm-graph-summary" className="v2-visually-hidden">
           {`Sơ đồ có ${customerCount} khách. Bấm vào một khách để mở thẻ, hoặc tìm khách bằng ô Tìm khách. Chế độ Bảng có đủ mọi thông tin.`}
         </p>
@@ -272,9 +301,9 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
             linkColor={linkColor}
             linkWidth={linkWidth}
             onRenderFramePre={drawField}
-            onNodeClick={(node) => setSelectedId((current) => (current === node.id && node.kind !== 'customer' ? null : node.id))}
+            onNodeClick={(node) => setSelection((current) => crmSelectionOnClick(current, node))}
             onNodeHover={(node) => setHoveredId(node?.id ?? null)}
-            onBackgroundClick={() => setSelectedId(null)}
+            onBackgroundClick={() => setSelection(CRM_NO_SELECTION)}
             cooldownTicks={200}
             warmupTicks={30}
             d3VelocityDecay={0.3}
@@ -288,6 +317,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
           <label className="v2-visually-hidden" htmlFor="v2-crm-graph-search">Tìm khách trên sơ đồ</label>
           <input
             id="v2-crm-graph-search"
+            ref={searchRef}
             className="v2-field__input"
             type="search"
             placeholder="Tìm khách…"
@@ -343,7 +373,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
           products={products}
           onCopy={() => onCopy(selectedRow)}
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
-          onClose={() => setSelectedId(null)}
+          onClose={closeCard}
         />
       ) : (
         <p className="v2-crm-graph__hint v2-crm__hint">Bấm vào một khách trên sơ đồ để xem thẻ nhận diện.</p>

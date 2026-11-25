@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareCrmAssignee,
   CustomerCareCrmListInput,
@@ -50,13 +50,9 @@ import {
 } from './customer-crm-flow';
 import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
 import { CrmSaveQueue } from './customer-crm-save-queue';
+import { CustomerCrmGraphSlot } from './CustomerCrmGraphSlot';
 import { CustomerCrmRow } from './CustomerCrmRow';
 import '../styles/v2/customer-crm.css';
-
-// "Sơ đồ" draws the rows below with the graph engine and colors of the Memory tab. The packaged MyGraphView is not
-// reused: it is an editor bound to the aibase graph (its node click opens its own edit panel, and its toolbar can
-// add, link and delete nodes and export JSON/PNG files), with no hook for the customer card. Loaded on first use.
-const CustomerCrmGraph = lazy(() => import('./CustomerCrmGraph'));
 
 const DISPLAYS: ReadonlyArray<{ id: CrmDisplay; label: string }> = [
   { id: 'table', label: 'Bảng' },
@@ -596,16 +592,14 @@ export function CustomerCrmPanel() {
                 <p>Không có khách nào khớp bộ lọc.</p>
               </div>
             ) : (
-              <Suspense fallback={<p className="v2-crm__hint" role="status">Đang mở sơ đồ…</p>}>
-                <CustomerCrmGraph
-                  rows={graphRows}
-                  products={products}
-                  assignees={meta?.assignees ?? NO_ASSIGNEES}
-                  nowMs={now}
-                  onCopy={(row) => { void copyPhone(row); }}
-                  onOpenProfile={openProfile}
-                />
-              </Suspense>
+              <CustomerCrmGraphSlot
+                rows={graphRows}
+                products={products}
+                assignees={meta?.assignees ?? NO_ASSIGNEES}
+                nowMs={now}
+                onCopy={(row) => { void copyPhone(row); }}
+                onOpenProfile={openProfile}
+              />
             )
           ) : shown.length === 0 ? (
             <div className="v2-empty">

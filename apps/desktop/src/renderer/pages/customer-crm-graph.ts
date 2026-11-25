@@ -96,28 +96,33 @@ const MAX_SHARED_LINKS = 3;
 // marks) except the zero-width joiner that multi-part emoji need.
 const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 const FORMAT_EXCEPT_JOINER = /(?!\u200D)\p{Cf}/gu;
-// A phone-like run: seven or more digits, with a space, dot or dash allowed between them.
-const PHONE_RUN = /\+?\d(?:[\s.-]?\d){6,}/g;
+// A phone-like run: nine or more digits of any script, with up to three separators (space . - / _ ,) between
+// any two. Text is NFKC-normalised first, so full-width digits are plain digits. Privacy wins over a long price
+// or a list of numbers, which is masked too.
+const PHONE_RUN = /\+?\p{Nd}(?:[\s._/,-]{0,3}\p{Nd}){8,}/gu;
 const PHONE_MASK = '•••';
 
-function cleanText(text: string, max: number): string {
-  const cleaned = text.replace(FORMAT_EXCEPT_JOINER, '').replace(UNSAFE_TEXT, ' ').replace(/\s+/g, ' ').trim();
-  return Array.from(cleaned).slice(0, max).join('');
+function cleanText(text: string): string {
+  return text.normalize('NFKC').replace(FORMAT_EXCEPT_JOINER, '').replace(UNSAFE_TEXT, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function truncateChars(text: string, max: number): string {
+  return Array.from(text).slice(0, max).join('');
 }
 
 function hasPhoneRun(text: string): boolean {
   return text.search(PHONE_RUN) !== -1;
 }
 
-/** Display text from any source, cleaned, with phone-like digit runs masked. */
+/** Display text from any source: cleaned, phone-like runs masked, then cut (so a cut never leaves half a phone). */
 function safeLabel(text: string, max = LABEL_MAX): string {
-  return cleanText(text, max).replace(PHONE_RUN, PHONE_MASK);
+  return truncateChars(cleanText(text).replace(PHONE_RUN, PHONE_MASK), max);
 }
 
 /** The customer's name, or "Khách ·" and the last three digits; a name holding a phone number is not used. */
 export function crmCustomerLabel(row: Pick<CustomerCareCrmRow, 'customerName' | 'phone'>): string {
-  const name = row.customerName === null ? '' : cleanText(row.customerName, LABEL_MAX);
-  if (name !== '' && !hasPhoneRun(name)) return name;
+  const name = row.customerName === null ? '' : cleanText(row.customerName);
+  if (name !== '' && !hasPhoneRun(name)) return truncateChars(name, LABEL_MAX);
   return `Khách ·${row.phone.slice(-3)}`;
 }
 
@@ -141,6 +146,14 @@ function shownField(field: unknown): field is CustomerCareCrmIdField<unknown> {
 
 function shownEnum<T extends string>(field: unknown, values: readonly T[]): T | null {
   return shownField(field) && oneOf(values, field.value) ? field.value : null;
+}
+
+/**
+ * The profile layer (form of address, age, family, interests, persona) is shown only after the customer tapped
+ * "Đồng ý". The server already withholds it; this is the second guard. The order layer needs no consent.
+ */
+function profileLayerAllowed(identity: CustomerCareCrmIdentity | null | undefined): boolean {
+  return identity?.consent?.state === 'granted';
 }
 
 function interestsOf(identity: CustomerCareCrmIdentity | null | undefined): Record<string, unknown> {
@@ -184,9 +197,9 @@ function sharedLinksOf(identity: CustomerCareCrmIdentity | null | undefined): Sh
 // ---------------------------------------------------------------------------
 
 /**
- * Customers linked to their stage, approved products, occasion and owner and, once rows carry identity, their
- * persona (P1–P4), source ad and the domains of links they shared. Low-confidence identity is left out. Age,
- * family, form of address and budget stay on the card and never become nodes.
+ * Customers linked to their stage, approved products, occasion and owner and, once rows carry identity and the
+ * customer agreed, their persona (P1–P4), source ad and the domains of links they shared. Low-confidence identity
+ * is left out. Age, family, form of address and budget stay on the card and never become nodes.
  */
 export function crmRowsToGraph(
   rows: readonly CustomerCareCrmRow[],
@@ -228,6 +241,8 @@ export function crmRowsToGraph(
       const label = safeLabel(crmAssigneeLabel(assignees, ownerUserId));
       link(customer, hub(`owner:${ownerUserId}`, 'owner', label, CRM_GRAPH_KIND_COLORS.owner));
     }
+    // Persona, source ad and shared links are profile-layer data: drawn only for a customer who agreed.
+    if (!profileLayerAllowed(row.identity)) continue;
     const persona = shownEnum(row.identity?.persona, CUSTOMER_CARE_CRM_PERSONAS);
     if (persona !== null) link(customer, hub(`persona:${persona}`, 'persona', `Chân dung ${persona}`, CRM_GRAPH_KIND_COLORS.persona));
     const ad = adTitleOf(row.identity);
@@ -238,6 +253,45 @@ export function crmRowsToGraph(
     }
   }
   return { nodes: [...nodes.values()], links: [...links.values()] };
+}
+
+export interface CrmGraphEntry {
+  key: string;
+  graph: CrmGraph;
+}
+
+/**
+ * What the graph is drawn from: each lead, its saved version (`updatedAt`), its identity version and consent, its
+ * name, and the product and owner labels. Messages and times are left out, so a refresh that only brought those
+ * gives the same key.
+ */
+function crmGraphKey(
+  rows: readonly CustomerCareCrmRow[],
+  products: readonly CrmProductOption[],
+  assignees: readonly CustomerCareCrmAssignee[],
+): string {
+  return JSON.stringify([
+    rows.map((row) => [
+      row.leadId, row.profile.updatedAt, row.customerName,
+      row.identity?.version ?? null, row.identity?.consent?.state ?? null,
+    ]),
+    products.map((product) => [product.id, product.label]),
+    assignees.map((assignee) => [assignee.userId, assignee.label]),
+  ]);
+}
+
+/**
+ * The previous graph when nothing it is drawn from changed, so a 60 s refresh does not restart the layout;
+ * otherwise a new one.
+ */
+export function crmGraphReuse(
+  previous: CrmGraphEntry | null,
+  rows: readonly CustomerCareCrmRow[],
+  products: readonly CrmProductOption[],
+  assignees: readonly CustomerCareCrmAssignee[],
+): CrmGraphEntry {
+  const key = crmGraphKey(rows, products, assignees);
+  return previous !== null && previous.key === key ? previous : { key, graph: crmRowsToGraph(rows, products, assignees) };
 }
 
 function searchKey(text: string): string {
@@ -267,9 +321,36 @@ export function crmSelectedRow<T extends CustomerCareCrmRow>(rows: readonly T[],
   return leadId === null ? null : rows.find((row) => row.leadId === leadId) ?? null;
 }
 
-/** "Mở hồ sơ": back to the table with that customer's editor open and brought into view. */
+/**
+ * "Mở hồ sơ": back to the table with that customer's editor open and brought into view. The open row is pinned
+ * (`crmVisibleRows`), so it shows even when "Cần gọi hôm nay" or the stage filter would leave it out.
+ */
 export function crmOpenProfile(leadId: string): { display: 'table'; expandedId: string; revealId: string } {
   return { display: 'table', expandedId: leadId, revealId: leadId };
+}
+
+/** The selected node and where it was chosen, so closing the card can give focus back there. */
+export interface CrmGraphSelection {
+  nodeId: string | null;
+  from: 'canvas' | 'search' | null;
+}
+
+export const CRM_NO_SELECTION: CrmGraphSelection = { nodeId: null, from: null };
+
+/** A node click selects it; clicking the selected hub again clears it (a customer stays, its card open). */
+export function crmSelectionOnClick(current: CrmGraphSelection, node: Pick<CrmGraphNode, 'id' | 'kind'>): CrmGraphSelection {
+  if (current.nodeId === node.id) return node.kind === 'customer' ? current : CRM_NO_SELECTION;
+  return { nodeId: node.id, from: 'canvas' };
+}
+
+export function crmSelectionOnSearch(nodeId: string): CrmGraphSelection {
+  return { nodeId, from: 'search' };
+}
+
+/** Closing the card (Escape or ✕): focus goes back to the search box or the canvas the customer was chosen from. */
+export function crmSelectionOnClose(current: CrmGraphSelection): { next: CrmGraphSelection; focus: 'search' | 'stage' | null } {
+  const focus = current.from === 'search' ? 'search' : current.from === 'canvas' ? 'stage' : null;
+  return { next: CRM_NO_SELECTION, focus };
 }
 
 // ---------------------------------------------------------------------------
@@ -338,15 +419,15 @@ function line(key: string, label: string, field: CustomerCareCrmIdField<unknown>
   };
 }
 
-/** The first customer quote among the evidence, cleaned. */
-function quoteOf(field: CustomerCareCrmIdField<unknown>): string | null {
+/** The first quote whose source is the customer, cleaned. A page, izzi or note quote is not the customer's words. */
+function customerQuoteOf(field: CustomerCareCrmIdField<unknown>): string | null {
   if (!Array.isArray(field.evidence)) return null;
   for (const evidence of field.evidence as unknown[]) {
-    const quote = typeof evidence === 'object' && evidence !== null ? (evidence as Record<string, unknown>).quote : null;
-    if (typeof quote === 'string') {
-      const text = safeLabel(quote, QUOTE_MAX);
-      if (text !== '') return text;
-    }
+    if (typeof evidence !== 'object' || evidence === null) continue;
+    const { source, quote } = evidence as Record<string, unknown>;
+    if (source !== 'customer' || typeof quote !== 'string') continue;
+    const text = safeLabel(quote, QUOTE_MAX);
+    if (text !== '') return text;
   }
   return null;
 }
@@ -364,21 +445,16 @@ function ageText(field: unknown): string | null {
   return last === '55+' ? `${low}+` : `${low}–${last.split('-')[1]}`;
 }
 
-/** What the card shows of a row's identity, in a fixed order; null when the row has none. */
-export function crmIdentityView(
-  identity: CustomerCareCrmIdentity | null | undefined,
-  products: readonly CrmProductOption[],
-): CrmIdentityView | null {
-  if (typeof identity !== 'object' || identity === null) return null;
-  const lines: CrmIdentityLine[] = [];
-  const consentState = identity.consent?.state;
-  const consent = oneOf(Object.keys(CONSENT_LABELS) as CustomerCareCrmConsentState[], consentState)
-    ? {
-      label: CONSENT_LABELS[consentState],
-      tone: consentState === 'granted' ? 'granted' as const : consentState === 'declined' || consentState === 'withdrawn' ? 'refused' as const : 'neutral' as const,
-    }
-    : null;
+function consentChip(identity: CustomerCareCrmIdentity): CrmIdentityView['consent'] {
+  const state = identity.consent?.state;
+  if (!oneOf(Object.keys(CONSENT_LABELS) as CustomerCareCrmConsentState[], state)) return null;
+  const tone = state === 'granted' ? 'granted' : state === 'declined' || state === 'withdrawn' ? 'refused' : 'neutral';
+  return { label: CONSENT_LABELS[state], tone };
+}
 
+/** Persona, form of address and family: profile layer. Family needs the customer's own words. */
+function personLines(identity: CustomerCareCrmIdentity): CrmIdentityLine[] {
+  const lines: CrmIdentityLine[] = [];
   const persona = shownEnum(identity.persona, CUSTOMER_CARE_CRM_PERSONAS);
   if (persona !== null && identity.persona) {
     const summary = typeof identity.persona.summary === 'string' ? safeLabel(identity.persona.summary, SUMMARY_MAX) : '';
@@ -392,17 +468,17 @@ export function crmIdentityView(
   const family = identity.family;
   if (shownField(family) && typeof family.value === 'object' && family.value !== null) {
     const recipient = (family.value as Record<string, unknown>).recipient;
-    const quote = quoteOf(family);
-    // Family is shown only with the customer's own words.
+    const quote = customerQuoteOf(family);
     if (oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, recipient) && quote !== null) {
       lines.push(line('family', 'Gia đình', family, RECIPIENT_LABELS[recipient], quote));
     }
   }
-  const occasion = shownEnum(identity.occasion, CUSTOMER_CARE_CRM_OCCASIONS);
-  if (occasion !== null && identity.occasion) {
-    const label = CRM_OCCASION_OPTIONS.find((option) => option.value === occasion)?.label ?? occasion;
-    lines.push(line('occasion', 'Dịp mua', identity.occasion, label));
-  }
+  return lines;
+}
+
+/** Timeline and products: order layer, shown without consent. The occasion has its own row on the card. */
+function orderLines(identity: CustomerCareCrmIdentity, products: readonly CrmProductOption[]): CrmIdentityLine[] {
+  const lines: CrmIdentityLine[] = [];
   const timeline = shownEnum(identity.timeline, CUSTOMER_CARE_CRM_TIMELINES);
   if (timeline !== null && identity.timeline) lines.push(line('timeline', 'Thời điểm', identity.timeline, TIMELINE_LABELS[timeline]));
   const productField = identity.productFactIds;
@@ -413,6 +489,12 @@ export function crmIdentityView(
     const parts = others > 0 ? [...known, `${others} sản phẩm khác`] : known;
     if (parts.length > 0) lines.push(line('productFactIds', 'Sản phẩm quan tâm', productField, parts.join(', ')));
   }
+  return lines;
+}
+
+/** Source ad, shared links and budget: profile layer. */
+function interestLines(identity: CustomerCareCrmIdentity): CrmIdentityLine[] {
+  const lines: CrmIdentityLine[] = [];
   const ad = adTitleOf(identity);
   if (ad !== null) lines.push(line('adTitle', 'Quảng cáo', ad.field, ad.title));
   sharedLinksOf(identity).forEach((shared, index) => {
@@ -422,11 +504,40 @@ export function crmIdentityView(
   const budgetField = interestsOf(identity).budgetBand;
   const budget = shownEnum(budgetField, CUSTOMER_CARE_CRM_BUDGET_BANDS);
   if (budget !== null && shownField(budgetField)) lines.push(line('budgetBand', 'Ngân sách', budgetField, BUDGET_LABELS[budget]));
+  return lines;
+}
 
-  const age = ageText(identity.ageBand);
+/**
+ * What the card shows of a row's identity, in a fixed order; null when the row has none. Without the customer's
+ * "Đồng ý" only the consent chip and the order layer (timeline, products) are shown.
+ */
+export function crmIdentityView(
+  identity: CustomerCareCrmIdentity | null | undefined,
+  products: readonly CrmProductOption[],
+): CrmIdentityView | null {
+  if (typeof identity !== 'object' || identity === null) return null;
+  const allowed = profileLayerAllowed(identity);
+  const age = allowed ? ageText(identity.ageBand) : null;
   return {
-    consent,
-    lines,
+    consent: consentChip(identity),
+    lines: [
+      ...(allowed ? personLines(identity) : []),
+      ...orderLines(identity, products),
+      ...(allowed ? interestLines(identity) : []),
+    ],
     age: age !== null && identity.ageBand ? line('ageBand', 'Độ tuổi (ước tính)', identity.ageBand, age) : null,
   };
+}
+
+/**
+ * The card's single "Dịp mua": the staff value wins; the AI value (order layer, medium or high confidence) fills
+ * an empty one, marked "AI gợi ý" until staff confirm it.
+ */
+export function crmCardOccasion(row: CustomerCareCrmRow): { label: string; badge: 'AI gợi ý' | 'Đã duyệt' | null } | null {
+  const occasionLabel = (value: string) => CRM_OCCASION_OPTIONS.find((option) => option.value === value)?.label ?? value;
+  if (row.profile.occasion !== null) return { label: occasionLabel(row.profile.occasion), badge: null };
+  const field = row.identity?.occasion;
+  const suggested = shownEnum(field, CUSTOMER_CARE_CRM_OCCASIONS);
+  if (suggested === null || !field) return null;
+  return { label: occasionLabel(suggested), badge: field.status === 'suggested' ? 'AI gợi ý' : 'Đã duyệt' };
 }

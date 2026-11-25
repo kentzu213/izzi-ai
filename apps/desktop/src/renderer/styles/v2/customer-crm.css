@@ -423,6 +423,7 @@
 }
 
 .izzi-v2 .v2-crm-graph__results button:focus-visible,
+.izzi-v2 .v2-crm-graph__stage:focus-visible,
 .izzi-v2 .v2-crm-graph__fit:focus-visible,
 .izzi-v2 .v2-crm-card:focus-visible,
 .izzi-v2 .v2-crm-card .v2-button:focus-visible {

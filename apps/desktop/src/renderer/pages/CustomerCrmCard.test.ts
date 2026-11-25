@@ -46,8 +46,8 @@ function field<T>(value: T, extra: Partial<CustomerCareCrmIdField<T>> = {}): Cus
 const IDENTITY: CustomerCareCrmIdentity = {
   version: 'v1',
   lastRunAt: AT,
-  consent: { state: 'asked', at: AT, noMarketing: false, canAsk: false },
-  occasion: null,
+  consent: { state: 'granted', at: AT, noMarketing: false, canAsk: false },
+  occasion: field<'tet'>('tet', { confidence: 'medium', kind: 'inferred' }),
   timeline: null,
   productFactIds: null,
   addressForm: field<'chi'>('chi', { status: 'confirmed', source: 'staff' }),
@@ -110,7 +110,7 @@ describe('CustomerCrmCard (thẻ nhận diện khách)', () => {
     const row: CustomerCareCrmRow = { ...ROW, identity: IDENTITY };
     const html = render({ row });
     expect(html).toContain('Nhận diện');
-    expect(html).toContain('v2-crm-card__consent is-neutral"><span class="v2-visually-hidden">Xin phép lưu hồ sơ: </span>Đã hỏi</span>');
+    expect(html).toContain('v2-crm-card__consent is-granted"><span class="v2-visually-hidden">Xin phép lưu hồ sơ: </span>Đồng ý</span>');
     expect(html).toContain('P2 · Mua cho nhà mới');
     expect(html).toContain('Mua cho bố mẹ');
     expect(html).toContain('<q class="v2-crm-card__quote">em mua cho bố mẹ ạ</q>');
@@ -126,6 +126,34 @@ describe('CustomerCrmCard (thẻ nhận diện khách)', () => {
   it('shows no identity section when every field is hidden and no consent came', () => {
     const hidden: CustomerCareCrmIdentity = { ...IDENTITY, consent: null, addressForm: null, ageBand: null, family: null, persona: null };
     expect(render({ row: { ...ROW, identity: hidden } })).not.toContain('Nhận diện');
+  });
+
+  it('shows the consent chip but no profile layer for a customer who has not agreed', () => {
+    for (const [state, chip] of [['asked', 'Đã hỏi'], ['unknown', 'Chưa hỏi'], ['declined', 'Từ chối'], ['withdrawn', 'Từ chối']] as const) {
+      const identity: CustomerCareCrmIdentity = { ...IDENTITY, consent: { state, at: AT, noMarketing: false, canAsk: true } };
+      const html = render({ row: { ...ROW, identity } });
+      expect(html, state).toContain(`</span>${chip}</span>`);
+      for (const secret of ['P2', 'Xưng hô', 'bố mẹ', 'Độ tuổi', '35']) expect(html, `${state}: ${secret}`).not.toContain(secret);
+    }
+  });
+
+  it('shows "Dịp mua" once: the staff value wins, the AI value only fills an empty one, marked "AI gợi ý"', () => {
+    const count = (html: string) => html.split('Dịp mua').length - 1;
+    const staff = render({ row: { ...ROW, identity: IDENTITY } });
+    expect(count(staff)).toBe(1);
+    expect(staff).toContain('Nhà mới');
+    expect(staff).not.toContain('Tết');
+    expect(staff).not.toContain('AI gợi ý');
+    const empty = render({ row: { ...ROW, identity: IDENTITY, profile: { ...ROW.profile, occasion: null } } });
+    expect(count(empty)).toBe(1);
+    expect(empty).toContain('Tết');
+    expect(empty).toContain('AI gợi ý');
+  });
+
+  it('renders a customer name holding markup as plain text', () => {
+    const html = render({ row: { ...ROW, customerName: '<img src=x onerror=alert(1)>' } });
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toMatch(/<img\b/);
   });
 
   it('says when the details could not be opened', () => {

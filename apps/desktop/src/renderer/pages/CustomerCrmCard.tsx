@@ -2,7 +2,6 @@ import type { Ref } from 'react';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
 import { formatLeadPhone } from './customer-care-leads-flow';
 import {
-  CRM_OCCASION_OPTIONS,
   crmAssigneeLabel,
   crmDue,
   crmRowReadOnly,
@@ -11,7 +10,7 @@ import {
   formatCrmDue,
   type CrmProductOption,
 } from './customer-crm-flow';
-import { CRM_STAGE_COLORS, crmCustomerLabel, crmIdentityView, type CrmIdentityLine } from './customer-crm-graph';
+import { CRM_STAGE_COLORS, crmCardOccasion, crmCustomerLabel, crmIdentityView, type CrmIdentityLine } from './customer-crm-graph';
 
 export interface CustomerCrmCardProps {
   row: CustomerCareCrmRow;
@@ -51,7 +50,8 @@ export function CustomerCrmCard({
   const due = crmDue(profile, nowMs);
   const known = products.filter((product) => profile.productFactIds.includes(product.id));
   const otherProducts = profile.productFactIds.length - known.length;
-  const occasion = CRM_OCCASION_OPTIONS.find((option) => option.value === profile.occasion)?.label ?? null;
+  // One "Dịp mua": the staff value, or the AI suggestion when staff left it empty.
+  const occasion = crmCardOccasion(row);
   const identity = crmIdentityView(row.identity, products);
   const identityId = `crm-card-identity-${row.leadId}`;
 
@@ -109,7 +109,10 @@ export function CustomerCrmCard({
           <div>
             <dt>Dịp mua</dt>
             <dd>
-              {occasion ?? '—'}
+              {occasion?.label ?? '—'}
+              {occasion?.badge && (
+                <span className={`v2-crm-card__badge${occasion.badge === 'AI gợi ý' ? ' is-ai' : ' is-reviewed'}`}>{occasion.badge}</span>
+              )}
               {profile.neededBy !== null && <span className="v2-crm__meta">{` · cần trước ${formatCrmDay(profile.neededBy)}`}</span>}
             </dd>
           </div>

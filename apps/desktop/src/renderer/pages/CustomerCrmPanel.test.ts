@@ -180,7 +180,24 @@ describe('CustomerCrmDisplaySwitch ("Bảng | Sơ đồ")', () => {
 });
 
 describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
-  const graphFiles = ['./CustomerCrmGraph.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts'];
+  const graphFiles = ['./CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts'];
+
+  it('keeps drafts across "Bảng | Sơ đồ": rows hold no state, the switch only sets the view, the draft renders again', () => {
+    // Switching to the graph unmounts the table rows. A draft survives because it lives in the panel's edits, not
+    // in the row; the row only renders the draft it is given.
+    expect(read('./CustomerCrmRow.tsx')).not.toMatch(/\buse(State|Reducer|Ref|Effect)\b/);
+    const panel = read('./CustomerCrmPanel.tsx');
+    expect(panel).toContain('<CustomerCrmDisplaySwitch display={display} onChange={setDisplay} />');
+    expect(panel).toContain('profile={edit?.draft ?? profileFromRow(row)}');
+    expect(panel.match(/setDisplay\(/g)).toHaveLength(1);
+    const draft = { ...PROFILE, note: 'Khách hẹn chiều mai qua xem' };
+    const edit: CrmRowEdit = { draft, rejected: null, error: '', baseUpdatedAt: ROW.profile.updatedAt };
+    const before = render({ profile: draft, edit });
+    const afterSwitchBack = render({ profile: draft, edit });
+    expect(afterSwitchBack).toBe(before);
+    expect(afterSwitchBack).toContain('Khách hẹn chiều mai qua xem');
+    expect(afterSwitchBack).toContain('Chưa lưu');
+  });
 
   it('calls only the CRM routes the table already used', () => {
     const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
@@ -209,7 +226,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
 describe('CRM data never reaches storage, graph nodes or the logger', () => {
   const renderer = [
     './CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
-    './CustomerCrmGraph.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
+    './CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
   ];
   const main = ['../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts'];
 
