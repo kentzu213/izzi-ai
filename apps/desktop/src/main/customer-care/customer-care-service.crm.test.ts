@@ -6,15 +6,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCareAuthority,
+  CustomerCareCrmBulkAssignInput,
   CustomerCareCrmIdentity,
   CustomerCareCrmIdentityActionInput,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
   CustomerCareCrmSaveInput,
+  CustomerCareCrmTeamSaveInput,
 } from '../../shared/customer-care-types';
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
 import type { CareFacebookResult } from './care-facebook-client';
-import type { CareCrmGateway, CareCrmPage, CareCrmSaveOutcome } from './care-crm';
+import type {
+  CareCrmBulkAssignOutcome,
+  CareCrmGateway,
+  CareCrmPage,
+  CareCrmSaveOutcome,
+  CareCrmTeamSaveOutcome,
+} from './care-crm';
 import type { CareCrmIdentityOutcome, CareCrmRefreshOutcome } from './care-crm-identity';
 
 const NOW = new Date('2026-11-24T08:00:00.000Z');
@@ -125,6 +133,20 @@ class FakeCrm implements CareCrmGateway {
   }
   async refreshIdentity(workspaceId: string, leadId: string) {
     this.calls.push(['refreshIdentity', workspaceId, leadId]); this.during(); return this.refreshResult;
+  }
+  teamResult: CareFacebookResult<CareCrmTeamSaveOutcome> = {
+    ok: true,
+    value: { kind: 'saved', revision: 1, salers: [], routing: { mode: 'by_page', protectZaloAndWon: true } },
+  };
+  bulkResult: CareFacebookResult<CareCrmBulkAssignOutcome> = {
+    ok: true,
+    value: { assignedCount: 1, conflictCount: 0, skippedCount: 0, updated: [] },
+  };
+  async saveTeam(workspaceId: string, input: CustomerCareCrmTeamSaveInput) {
+    this.calls.push(['saveTeam', workspaceId, input]); this.during(); return this.teamResult;
+  }
+  async bulkAssign(workspaceId: string, input: CustomerCareCrmBulkAssignInput) {
+    this.calls.push(['bulkAssign', workspaceId, input]); this.during(); return this.bulkResult;
   }
 }
 
@@ -459,5 +481,51 @@ describe('CRM data stays out of SQLite, graph_nodes and the logger', () => {
     expect(onCareChanged).not.toHaveBeenCalled();
     expect(onFacebookInboxChanged).not.toHaveBeenCalled();
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerCareService.saveCrmTeam & bulkAssignCrm', () => {
+  const SALER = {
+    id: '10000000-0000-4000-8000-000000000001',
+    name: 'Tuấn Thần Đèn',
+    color: 'blue' as const,
+    active: true,
+    assignedPageIds: ['105252511858057'],
+    memberUserId: OWNER_ID,
+  };
+  const TEAM_INPUT: CustomerCareCrmTeamSaveInput = {
+    expectedRevision: 0,
+    salers: [SALER],
+    routing: { mode: 'by_page', protectZaloAndWon: true },
+  };
+  const BULK_INPUT: CustomerCareCrmBulkAssignInput = {
+    assignments: [{ leadId: LEAD_ID, expectedUpdatedAt: null, salerId: SALER.id, ownerUserId: OWNER_ID }],
+  };
+
+  it('allows owner/manager and forbids editor/viewer/reviewer for saveCrmTeam and bulkAssignCrm', async () => {
+    for (const role of ['owner', 'manager'] as const) {
+      const f = fixture({ authority: as(role) });
+      f.crm.teamResult = { ok: true, value: { kind: 'saved', revision: 1, salers: [SALER], routing: TEAM_INPUT.routing } };
+      expect(await f.service.saveCrmTeam(TEAM_INPUT)).toEqual({
+        ok: true, workspaceId: WORKSPACE_A, revision: 1, salers: [SALER], routing: TEAM_INPUT.routing,
+      });
+      expect(await f.service.bulkAssignCrm(BULK_INPUT)).toMatchObject({ ok: true, workspaceId: WORKSPACE_A, assignedCount: 1 });
+    }
+    for (const role of ['editor', 'viewer', 'reviewer'] as const) {
+      const f = fixture({ authority: as(role) });
+      expect(await f.service.saveCrmTeam(TEAM_INPUT)).toEqual({ ok: false, error: 'forbidden' });
+      expect(await f.service.bulkAssignCrm(BULK_INPUT)).toEqual({ ok: false, error: 'forbidden' });
+      expect(f.crm.calls).toEqual([]);
+    }
+  });
+
+  it('returns team_conflict cleanly and rejects invalid inputs before reaching gateway', async () => {
+    const f = fixture();
+    f.crm.teamResult = { ok: true, value: { kind: 'conflict', revision: 2, salers: [SALER], routing: TEAM_INPUT.routing } };
+    expect(await f.service.saveCrmTeam(TEAM_INPUT)).toEqual({
+      ok: false, error: 'team_conflict', workspaceId: WORKSPACE_A, revision: 2, salers: [SALER], routing: TEAM_INPUT.routing,
+    });
+    expect(await f.service.saveCrmTeam({ ...TEAM_INPUT, workspaceId: WORKSPACE_B })).toEqual({ ok: false, error: 'invalid_input' });
+    expect(await f.service.bulkAssignCrm({ assignments: [] })).toEqual({ ok: false, error: 'invalid_input' });
   });
 });

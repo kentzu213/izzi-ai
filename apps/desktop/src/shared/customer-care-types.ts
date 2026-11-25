@@ -133,6 +133,8 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   'provider_rejected',
   'provider_timeout',
   'provider_unavailable',
+  // Saler team config revision conflict (409).
+  'team_conflict',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -434,6 +436,35 @@ export type CustomerCareCrmLostReason = (typeof CUSTOMER_CARE_CRM_LOST_REASONS)[
 export const CUSTOMER_CARE_CRM_ROLES = ['owner', 'manager', 'editor'] as const;
 export type CustomerCareCrmRole = (typeof CUSTOMER_CARE_CRM_ROLES)[number];
 
+/** Saler auto-routing & 3-step inline care enums (closed). */
+export const CUSTOMER_CARE_CRM_SALER_COLORS = [
+  'maroon', 'crimson', 'orange', 'amber', 'green', 'emerald', 'teal',
+  'sky', 'blue', 'indigo', 'purple', 'pink', 'brown', 'slate',
+] as const;
+export type CustomerCareCrmSalerColor = (typeof CUSTOMER_CARE_CRM_SALER_COLORS)[number];
+
+export const CUSTOMER_CARE_CRM_CARE_STEPS = [
+  'step1_uncalled', 'step1_bad_phone', 'step2_no_answer', 'step2_called', 'step3_zalo',
+] as const;
+export type CustomerCareCrmCareStep = (typeof CUSTOMER_CARE_CRM_CARE_STEPS)[number];
+
+export const CUSTOMER_CARE_CRM_SALER_ROUTING_MODES = ['round_robin', 'by_page'] as const;
+export type CustomerCareCrmSalerRoutingMode = (typeof CUSTOMER_CARE_CRM_SALER_ROUTING_MODES)[number];
+
+export interface CustomerCareCrmSalerMember {
+  id: string;
+  name: string;
+  color: CustomerCareCrmSalerColor;
+  active: boolean;
+  assignedPageIds: string[];
+  memberUserId: string | null;
+}
+
+export interface CustomerCareCrmSalerRoutingConfig {
+  mode: CustomerCareCrmSalerRoutingMode;
+  protectZaloAndWon: boolean;
+}
+
 /** The editable profile: a full replace on every save, never a patch. */
 export interface CustomerCareCrmProfileInput {
   stage: CustomerCareCrmStage;
@@ -452,6 +483,12 @@ export interface CustomerCareCrmProfileInput {
   /** `YYYY-MM-DD`, only when `stage` is `deposit` or `delivered`. */
   purchasedAt: string | null;
   note: string | null;
+  /** Saler roster member id; optional for backward compatibility with 11-key inputs. */
+  salerId?: string | null;
+  /** 3-step inline care step; optional for backward compatibility with 11-key inputs. */
+  careStep?: CustomerCareCrmCareStep | null;
+  /** Number of call attempts (`0..9`); optional for backward compatibility with 11-key inputs. */
+  callTries?: number;
 }
 
 export interface CustomerCareCrmProfile extends CustomerCareCrmProfileInput {
@@ -507,6 +544,9 @@ export type CustomerCareCrmListResult =
     nextCursor: string | null;
     assignees: CustomerCareCrmAssignee[];
     pages?: CustomerCareCrmPageSource[];
+    salers?: CustomerCareCrmSalerMember[];
+    salerRouting?: CustomerCareCrmSalerRoutingConfig;
+    salerTeamRevision?: number;
     /**
      * Care CRM S3: whether the AI customer profile is on for this workspace; null when the server sent no identity
      * at all (a server without S3), so the rows carry none.
@@ -519,6 +559,63 @@ export type CustomerCareCrmListResult =
     identityUnavailable: boolean;
     /** Care CRM S3: the exact consent question "Xin phép khách" would send now; null while asks are off. */
     consentAsk: CustomerCareCrmConsentAsk | null;
+  }
+  | CustomerCareFacebookFailure;
+
+/** Save saler roster and routing config (`POST /crm/team`). */
+export interface CustomerCareCrmTeamSaveInput {
+  expectedRevision: number;
+  salers: CustomerCareCrmSalerMember[];
+  routing: CustomerCareCrmSalerRoutingConfig;
+}
+
+export type CustomerCareCrmTeamSaveResult =
+  | {
+    ok: true;
+    workspaceId: string;
+    revision: number;
+    salers: CustomerCareCrmSalerMember[];
+    routing: CustomerCareCrmSalerRoutingConfig;
+  }
+  | {
+    ok: false;
+    error: 'team_conflict';
+    workspaceId: string;
+    revision?: number;
+    salers?: CustomerCareCrmSalerMember[];
+    routing?: CustomerCareCrmSalerRoutingConfig;
+  }
+  | CustomerCareFacebookFailure;
+
+/** Bulk saler assignment (`POST /crm/bulk-assign`, chunked <= 500 per request). */
+export interface CustomerCareCrmBulkAssignmentItem {
+  leadId: string;
+  expectedUpdatedAt: string | null;
+  salerId: string | null;
+  ownerUserId: string | null;
+}
+
+export interface CustomerCareCrmBulkAssignInput {
+  assignments: CustomerCareCrmBulkAssignmentItem[];
+}
+
+export interface CustomerCareCrmBulkAssignUpdatedItem {
+  leadId: string;
+  salerId: string | null;
+  ownerUserId: string | null;
+  careStep: CustomerCareCrmCareStep | null;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export type CustomerCareCrmBulkAssignResult =
+  | {
+    ok: true;
+    workspaceId: string;
+    assignedCount: number;
+    conflictCount: number;
+    skippedCount: number;
+    updated: CustomerCareCrmBulkAssignUpdatedItem[];
   }
   | CustomerCareFacebookFailure;
 

@@ -6,6 +6,8 @@
 import type {
   CustomerCareCrmAddressForm,
   CustomerCareCrmAssignee,
+  CustomerCareCrmBulkAssignUpdatedItem,
+  CustomerCareCrmCareStep,
   CustomerCareCrmConsentAsk,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
@@ -17,6 +19,8 @@ import type {
   CustomerCareCrmProfileInput,
   CustomerCareCrmRole,
   CustomerCareCrmRow,
+  CustomerCareCrmSalerMember,
+  CustomerCareCrmSalerRoutingConfig,
   CustomerCareCrmSaveInput,
   CustomerCareCrmSaveResult,
   CustomerCareCrmStage,
@@ -29,6 +33,11 @@ import {
   extractEditableFreeNote,
   normalizeCrmNoteTags,
 } from '../../shared/customer-crm-enterprise';
+import {
+  isStaleUncalledRow,
+  isWonStage,
+  resolveEffectiveCareStep,
+} from '../../shared/customer-crm-saler-routing';
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
 export const CRM_REFRESH_MS = 60_000;
@@ -107,6 +116,30 @@ export function crmAssigneeLabel(assignees: readonly CustomerCareCrmAssignee[], 
   return assignee.label ?? 'Thành viên chưa có tên';
 }
 
+export function resolveCrmRowSaler(
+  salers: readonly CustomerCareCrmSalerMember[],
+  profile: Pick<CustomerCareCrmProfileInput, 'salerId' | 'ownerUserId'>,
+): CustomerCareCrmSalerMember | null {
+  if (profile.salerId) {
+    const direct = salers.find((item) => item.id === profile.salerId);
+    if (direct) return direct;
+  }
+  if (profile.ownerUserId) {
+    return salers.find((item) => item.memberUserId === profile.ownerUserId) ?? null;
+  }
+  return null;
+}
+
+export function crmSalerDisplayLabel(
+  salers: readonly CustomerCareCrmSalerMember[],
+  assignees: readonly CustomerCareCrmAssignee[],
+  profile: Pick<CustomerCareCrmProfileInput, 'salerId' | 'ownerUserId'>,
+): string {
+  const saler = resolveCrmRowSaler(salers, profile);
+  if (saler) return saler.name;
+  return crmAssigneeLabel(assignees, profile.ownerUserId);
+}
+
 // ---------------------------------------------------------------------------
 // Dates and times (local calendar, the way staff read them)
 // ---------------------------------------------------------------------------
@@ -173,12 +206,16 @@ export function formatCrmDay(day: string | null): string {
 export type CrmDue = 'overdue' | 'today' | 'later' | 'none';
 export type CrmView = 'today' | 'all';
 export type CrmPersonaFilter = CustomerCareCrmPersona | 'any' | 'unclassified';
+export type CrmStepFilter = 'any' | 'unassigned' | CustomerCareCrmCareStep | 'won';
 
 export interface CrmFilter {
   view: CrmView;
   stage: CustomerCareCrmStage | 'any';
   pageId?: string | 'any';
   persona?: CrmPersonaFilter;
+  salerId?: string | 'unassigned' | 'any';
+  careStep?: CrmStepFilter;
+  staleOnly?: boolean;
   query?: string;
 }
 
@@ -357,14 +394,52 @@ export function crmRowPersona(row: CustomerCareCrmRow): CustomerCareCrmPersona |
   return crmConsentedPersona(row);
 }
 
+function matchesSalerAndStepFilter(
+  row: CustomerCareCrmRow,
+  filter: Pick<CrmFilter, 'salerId' | 'careStep' | 'staleOnly'>,
+  salers: readonly CustomerCareCrmSalerMember[],
+  nowMs: number,
+): boolean {
+  const salerFilter = filter.salerId ?? 'any';
+  const stepFilter = filter.careStep ?? 'any';
+  const assignedSaler = resolveCrmRowSaler(salers, row.profile);
+  const isUnassigned = (row.profile.salerId ?? null) === null && row.profile.ownerUserId === null;
+
+  if (salerFilter !== 'any') {
+    if (salerFilter === 'unassigned') {
+      if (!isUnassigned) return false;
+    } else if (row.profile.salerId !== salerFilter && assignedSaler?.id !== salerFilter) {
+      return false;
+    }
+  }
+
+  if (stepFilter !== 'any') {
+    if (stepFilter === 'unassigned') {
+      if (!isUnassigned) return false;
+    } else if (stepFilter === 'won') {
+      if (!isWonStage(row.profile.stage)) return false;
+    } else if (resolveEffectiveCareStep(row) !== stepFilter) {
+      return false;
+    }
+  }
+
+  if (filter.staleOnly && !isStaleUncalledRow(row, nowMs)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function crmFilterRows<T extends CustomerCareCrmRow>(
   rows: readonly T[],
-  filter: Pick<CrmFilter, 'stage' | 'pageId' | 'persona' | 'query'>,
-  options: { ignoreStage?: boolean } = {},
+  filter: Pick<CrmFilter, 'stage' | 'pageId' | 'persona' | 'salerId' | 'careStep' | 'staleOnly' | 'query'>,
+  options: { ignoreStage?: boolean; salers?: readonly CustomerCareCrmSalerMember[]; nowMs?: number } = {},
 ): T[] {
   const pageFilter = filter.pageId ?? 'any';
   const personaFilter = filter.persona ?? 'any';
   const stageFilter = options.ignoreStage ? 'any' : filter.stage;
+  const salers = options.salers ?? [];
+  const nowMs = options.nowMs ?? Date.now();
   return rows.filter((row) => {
     if (pageFilter !== 'any' && row.pageId !== pageFilter) return false;
     if (stageFilter !== 'any' && row.profile.stage !== stageFilter) return false;
@@ -372,6 +447,7 @@ export function crmFilterRows<T extends CustomerCareCrmRow>(
       const persona = crmRowPersona(row);
       if (personaFilter === 'unclassified' ? persona !== null : persona !== personaFilter) return false;
     }
+    if (!matchesSalerAndStepFilter(row, filter, salers, nowMs)) return false;
     return crmMatchesQuery(row, filter.query);
   });
 }
@@ -419,6 +495,7 @@ export function crmVisibleRows(
   filter: CrmFilter,
   nowMs: number,
   pinnedId: string | null = null,
+  salers: readonly CustomerCareCrmSalerMember[] = [],
 ): CustomerCareCrmRow[] {
   const pageFilter = filter.pageId ?? 'any';
   const personaFilter = filter.persona ?? 'any';
@@ -431,6 +508,7 @@ export function crmVisibleRows(
       const persona = crmRowPersona(row);
       if (personaFilter === 'unclassified' ? persona !== null : persona !== personaFilter) return false;
     }
+    if (!matchesSalerAndStepFilter(row, filter, salers, nowMs)) return false;
     return crmMatchesQuery(row, filter.query);
   }), nowMs);
 }
@@ -520,6 +598,9 @@ export function crmProfilesEqual(a: CustomerCareCrmProfileInput, b: CustomerCare
   return a.stage === b.stage && a.ownerUserId === b.ownerUserId && a.addressForm === b.addressForm
     && a.occasion === b.occasion && a.neededBy === b.neededBy && a.nextStep === b.nextStep
     && a.nextStepDueAt === b.nextStepDueAt && a.lostReason === b.lostReason && a.purchasedAt === b.purchasedAt
+    && (a.salerId ?? null) === (b.salerId ?? null)
+    && (a.careStep ?? null) === (b.careStep ?? null)
+    && (a.callTries ?? 0) === (b.callTries ?? 0)
     && normalizeCrmNoteTags(a.note) === normalizeCrmNoteTags(b.note) && a.productFactIds.length === b.productFactIds.length
     && a.productFactIds.every((id, index) => id === b.productFactIds[index]);
 }
@@ -770,6 +851,31 @@ export function crmRowsOnRemove(rows: readonly CustomerCareCrmRow[], leadId: str
   return rows.filter((row) => row.leadId !== leadId);
 }
 
+/** Applies a `POST /crm/bulk-assign` updated batch onto the in-memory rows. */
+export function crmRowsOnBulkAssigned(
+  rows: readonly CustomerCareCrmRow[],
+  updated: readonly CustomerCareCrmBulkAssignUpdatedItem[],
+): CustomerCareCrmRow[] {
+  if (updated.length === 0) return [...rows];
+  const byLead = new Map(updated.map((item) => [item.leadId, item]));
+  return rows.map((row) => {
+    const patch = byLead.get(row.leadId);
+    if (!patch) return row;
+    return {
+      ...row,
+      profile: {
+        ...row.profile,
+        productFactIds: [...row.profile.productFactIds],
+        salerId: patch.salerId,
+        ownerUserId: patch.ownerUserId,
+        ...(patch.careStep !== null ? { careStep: patch.careStep } : {}),
+        updatedAt: patch.updatedAt,
+        updatedBy: patch.updatedBy,
+      },
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Paging
 // ---------------------------------------------------------------------------
@@ -783,6 +889,9 @@ export type CrmLoadResult =
     rows: CustomerCareCrmRow[];
     assignees: CustomerCareCrmAssignee[];
     pageSources: CustomerCareCrmPageSource[];
+    salers: CustomerCareCrmSalerMember[];
+    salerRouting: CustomerCareCrmSalerRoutingConfig;
+    salerTeamRevision: number;
     /** Pages read by this load. */
     pages: number;
     /** The last page was reached (no cursor left). */
@@ -799,6 +908,11 @@ export type CrmLoadResult =
     consentAsk: CustomerCareCrmConsentAsk | null;
   }
   | CustomerCareFacebookFailure;
+
+const DEFAULT_SALER_ROUTING: CustomerCareCrmSalerRoutingConfig = {
+  mode: 'by_page',
+  protectZaloAndWon: true,
+};
 
 /**
  * Reads up to `maxPages` pages (`50 * 100 = 5,000` customers). Page 1 failure, lost access (`auth` / `forbidden` /
@@ -857,6 +971,9 @@ export async function loadCrmPages(
     rows,
     assignees: first.assignees,
     pageSources,
+    salers: first.salers ?? [],
+    salerRouting: first.salerRouting ?? { ...DEFAULT_SALER_ROUTING },
+    salerTeamRevision: first.salerTeamRevision ?? 0,
     pages,
     complete: cursor === null && !partialFailure,
     truncated: Boolean(partialFailure) || (cursor !== null && pages >= maxPages),
@@ -978,3 +1095,6 @@ export function crmSaveFailureView(failure: CustomerCareFacebookFailure): { mess
   }
   return crmFailureView(failure);
 }
+
+export const CRM_TEAM_CONFLICT_MESSAGE =
+  'Danh sách Saler vừa được người khác cập nhật trên máy chủ. Đã tải bản mới nhất, hãy kiểm tra lại trước khi lưu.';

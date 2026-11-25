@@ -1,10 +1,12 @@
 import type {
   CustomerCareCrmAddressForm,
   CustomerCareCrmAssignee,
+  CustomerCareCrmCareStep,
   CustomerCareCrmLostReason,
   CustomerCareCrmOccasion,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
+  CustomerCareCrmSalerMember,
   CustomerCareCrmStage,
 } from '../../shared/customer-care-types';
 import {
@@ -16,6 +18,14 @@ import {
   replaceEditableFreeNote,
   splitCrmNote,
 } from '../../shared/customer-crm-enterprise';
+import {
+  CRM_CARE_STEP_META,
+  CRM_CARE_STEP_ORDER,
+  CRM_SALER_COLOR_PALETTE,
+  applyCareStepTransition,
+  resolveEffectiveCareStepFromProfile,
+  type CrmCareStepAction,
+} from '../../shared/customer-crm-saler-routing';
 import { formatLeadAbsoluteTime, formatLeadPhone, formatLeadTime, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_ADDRESS_FORM_OPTIONS,
@@ -31,11 +41,13 @@ import {
   crmFieldVisibility,
   crmProfilesEqual,
   crmRowReadOnly,
+  crmStageLabel,
   formatCrmDue,
   isoToLocalInput,
   localInputToIso,
   normalizeCrmProfile,
   profileFromRow,
+  resolveCrmRowSaler,
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
@@ -50,6 +62,7 @@ export interface CustomerCrmRowProps {
   expanded: boolean;
   nowMs: number;
   assignees: readonly CustomerCareCrmAssignee[];
+  salers?: readonly CustomerCareCrmSalerMember[];
   /** The shop's approved product facts on this machine; empty hides the picker. */
   products: readonly CrmProductOption[];
   /** Display hint from the server and the live role; main and the server re-check the purge. */
@@ -76,6 +89,97 @@ const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
 
 function nullable<T extends string>(value: string): T | null {
   return value === '' ? null : value as T;
+}
+
+interface QuickStepButton {
+  action: CrmCareStepAction;
+  label: string;
+  tone?: 'primary' | 'warn' | 'danger' | 'success';
+}
+
+function quickStepButtonsFor(profile: CustomerCareCrmProfileInput, step: CustomerCareCrmCareStep): QuickStepButton[] {
+  if (profile.stage === 'deposit') {
+    return [
+      { action: 'lost', label: 'Không mua', tone: 'danger' },
+    ];
+  }
+  if (profile.stage === 'delivered' || profile.stage === 'do_not_contact') {
+    return [];
+  }
+  if (profile.stage === 'lost' || step === 'step1_bad_phone') {
+    return [{ action: 'step1_uncalled', label: 'Mở lại B1' }];
+  }
+  switch (step) {
+    case 'step1_uncalled':
+      return [
+        { action: 'step2_called', label: 'Đã gọi', tone: 'primary' },
+        { action: 'step2_no_answer', label: 'Chưa nghe', tone: 'warn' },
+        { action: 'step1_bad_phone', label: 'Sai số', tone: 'danger' },
+      ];
+    case 'step2_no_answer':
+      return [
+        { action: 'step2_called', label: 'Đã gọi', tone: 'primary' },
+        { action: 'step3_zalo', label: 'Đã KB Zalo', tone: 'success' },
+        { action: 'step1_bad_phone', label: 'Sai số', tone: 'danger' },
+      ];
+    case 'step2_called':
+      return [
+        { action: 'step3_zalo', label: 'Đã KB Zalo', tone: 'success' },
+        { action: 'won', label: 'Đã cọc', tone: 'primary' },
+        { action: 'step2_no_answer', label: 'Chưa nghe', tone: 'warn' },
+      ];
+    case 'step3_zalo':
+      return [
+        { action: 'won', label: 'Đã cọc', tone: 'success' },
+        { action: 'lost', label: 'Không mua', tone: 'danger' },
+      ];
+  }
+}
+
+function resolveStepBadge(profile: CustomerCareCrmProfileInput): {
+  label: string;
+  bg: string;
+  border: string;
+  text: string;
+  step: CustomerCareCrmCareStep;
+} {
+  const step = resolveEffectiveCareStepFromProfile(profile);
+  if (profile.stage === 'deposit' || profile.stage === 'delivered') {
+    return {
+      step,
+      label: crmStageLabel(profile.stage),
+      bg: '#047857',
+      border: '#059669',
+      text: '#ffffff',
+    };
+  }
+  if (profile.stage === 'lost' && step !== 'step1_bad_phone') {
+    return {
+      step,
+      label: 'Không mua',
+      bg: '#475569',
+      border: '#64748b',
+      text: '#ffffff',
+    };
+  }
+  if (profile.stage === 'do_not_contact') {
+    return {
+      step,
+      label: 'Không liên hệ',
+      bg: '#991b1b',
+      border: '#dc2626',
+      text: '#ffffff',
+    };
+  }
+  const meta = CRM_CARE_STEP_META[step];
+  const triesSuffix = step === 'step2_no_answer' && (profile.callTries ?? 0) > 0 ? ` L${profile.callTries}` : '';
+  return {
+    step,
+    label: `${meta.label}${triesSuffix}`,
+    bg: meta.bg,
+    border: meta.border,
+    text: meta.text,
+  };
 }
 
 function resolveOccasionChip(row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput): string | null {
@@ -107,6 +211,7 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
     expanded,
     nowMs,
     assignees,
+    salers = [],
     onToggle,
     onCopy,
     pageLabel,
@@ -117,10 +222,16 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
   const due = crmDue(profile, nowMs);
   const editorId = `crm-editor-${row.leadId}`;
   const stageId = `crm-stage-${row.leadId}`;
+  const inlineOwnerId = `crm-inline-owner-${row.leadId}`;
   const readOnly = crmRowReadOnly(row);
   const dirty = edit !== null && !crmProfilesEqual(normalizeCrmProfile(edit.draft), profileFromRow(row));
   const status = saving ? 'Đang lưu…' : edit?.rejected ? 'Cần xem lại' : edit?.error ? 'Chưa lưu được' : dirty ? 'Chưa lưu' : '';
   const isOpen = selected ?? expanded;
+
+  const stepBadge = resolveStepBadge(profile);
+  const quickButtons = readOnly ? [] : quickStepButtonsFor(profile, stepBadge.step);
+  const activeSaler = resolveCrmRowSaler(salers, profile);
+  const salerPalette = activeSaler ? CRM_SALER_COLOR_PALETTE[activeSaler.color] : null;
 
   const persona = showSegmentColumn ? crmConsentedPersona(row) : null;
   const occasionChip = showSegmentColumn ? resolveOccasionChip(row, profile) : null;
@@ -131,6 +242,25 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
     && crmProfileLayerAllowed(row)
     && serverIdentity?.consent?.noMarketing !== true
     && profile.stage !== 'do_not_contact';
+
+  const handleInlineSalerChange = (value: string) => {
+    if (salers.length > 0) {
+      if (value === '') {
+        props.onChange({ ...profile, salerId: null, ownerUserId: null });
+        return;
+      }
+      const chosen = salers.find((s) => s.id === value);
+      if (chosen) {
+        props.onChange({ ...profile, salerId: chosen.id, ownerUserId: chosen.memberUserId });
+        return;
+      }
+    }
+    props.onChange({ ...profile, salerId: null, ownerUserId: nullable<string>(value) });
+  };
+
+  const ownerSelectValue = salers.length > 0
+    ? (activeSaler?.id ?? (profile.ownerUserId ? `__user:${profile.ownerUserId}` : ''))
+    : (profile.ownerUserId ?? '');
 
   return (
     <>
@@ -158,18 +288,67 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
           </td>
         )}
         <td>
-          <label className="v2-visually-hidden" htmlFor={stageId}>{`Giai đoạn của ${name}`}</label>
+          <div className="v2-crm-step-cell">
+            <div className="v2-crm-step-cell__head">
+              <span
+                className="v2-crm-step-badge"
+                style={{ background: stepBadge.bg, borderColor: stepBadge.border, color: stepBadge.text }}
+              >
+                {stepBadge.label}
+              </span>
+              <label className="v2-visually-hidden" htmlFor={stageId}>{`Giai đoạn của ${name}`}</label>
+              <select
+                id={stageId}
+                className="v2-field__select v2-crm-step-cell__select"
+                value={profile.stage}
+                disabled={readOnly}
+                onChange={(event) => props.onChange({ ...profile, stage: event.currentTarget.value as CustomerCareCrmStage })}
+              >
+                {CRM_STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            {quickButtons.length > 0 && (
+              <div className="v2-crm-step-cell__actions" role="group" aria-label={`Chuyển bước nhanh cho ${name}`}>
+                {quickButtons.map((btn) => (
+                  <button
+                    key={btn.action}
+                    type="button"
+                    className={`v2-crm-quick-btn${btn.tone ? ` is-${btn.tone}` : ''}`}
+                    onClick={() => props.onChange(applyCareStepTransition(profile, btn.action, nowMs))}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </td>
+        <td className="v2-crm__owner">
+          <label className="v2-visually-hidden" htmlFor={inlineOwnerId}>{`Phụ trách của ${name}`}</label>
           <select
-            id={stageId}
-            className="v2-field__select"
-            value={profile.stage}
+            id={inlineOwnerId}
+            className={`v2-crm-owner-pill-select${salerPalette ? ' has-color' : ''}`}
             disabled={readOnly}
-            onChange={(event) => props.onChange({ ...profile, stage: event.currentTarget.value as CustomerCareCrmStage })}
+            value={ownerSelectValue}
+            style={salerPalette ? { background: salerPalette.bg, borderColor: salerPalette.border, color: salerPalette.text } : undefined}
+            onChange={(event) => {
+              const raw = event.currentTarget.value;
+              if (raw.startsWith('__user:')) return;
+              handleInlineSalerChange(raw);
+            }}
           >
-            {CRM_STAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            <option value="">Chưa giao</option>
+            {salers.map((saler) => (
+              <option key={saler.id} value={saler.id}>{saler.name}</option>
+            ))}
+            {salers.length === 0 && assignees.map((assignee) => (
+              <option key={assignee.userId} value={assignee.userId}>{crmAssigneeLabel(assignees, assignee.userId)}</option>
+            ))}
+            {salers.length > 0 && !activeSaler && profile.ownerUserId && (
+              <option value={`__user:${profile.ownerUserId}`}>{crmAssigneeLabel(assignees, profile.ownerUserId)}</option>
+            )}
           </select>
         </td>
-        <td className="v2-crm__owner">{crmAssigneeLabel(assignees, profile.ownerUserId)}</td>
         <td>
           <div className="v2-crm__next">
             {due === 'overdue' || due === 'today' ? (
@@ -213,7 +392,7 @@ interface CrmEditorProps extends CustomerCrmRowProps {
 }
 
 function CrmEditor({
-  row, profile, edit, saving, nowMs, assignees, products, canDelete, purging,
+  row, profile, edit, saving, nowMs, assignees, salers = [], products, canDelete, purging,
   onChange, onSave, onPurge, onReapply, onDiscard, onToggle, name, editorId, dirty, identityHandlers,
 }: CrmEditorProps) {
   const id = (field: string) => `crm-${field}-${row.leadId}`;
@@ -283,6 +462,44 @@ function CrmEditor({
               <option key={assignee.userId} value={assignee.userId}>{crmAssigneeLabel(assignees, assignee.userId)}</option>
             ))}
             {!ownerKnown && <option value={profile.ownerUserId ?? ''}>Người đã rời dự án</option>}
+          </select>
+        </label>
+
+        {salers.length > 0 && (
+          <label className="v2-field" htmlFor={id('saler')}>
+            <span className="v2-field__label">Saler phụ trách</span>
+            <select
+              id={id('saler')}
+              className="v2-field__select"
+              disabled={readOnly}
+              value={profile.salerId ?? ''}
+              onChange={(event) => {
+                const sid = nullable<string>(event.currentTarget.value);
+                const chosen = sid ? salers.find((s) => s.id === sid) : null;
+                set({ salerId: sid, ownerUserId: chosen ? chosen.memberUserId : profile.ownerUserId });
+              }}
+            >
+              <option value="">Chưa giao Saler</option>
+              {salers.map((saler) => (
+                <option key={saler.id} value={saler.id}>{saler.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className="v2-field" htmlFor={id('care-step')}>
+          <span className="v2-field__label">Bước chăm sóc</span>
+          <select
+            id={id('care-step')}
+            className="v2-field__select"
+            disabled={readOnly}
+            value={profile.careStep ?? ''}
+            onChange={(event) => set({ careStep: nullable<CustomerCareCrmCareStep>(event.currentTarget.value) })}
+          >
+            <option value="">Tự động theo giai đoạn</option>
+            {CRM_CARE_STEP_ORDER.map((step) => (
+              <option key={step} value={step}>{CRM_CARE_STEP_META[step].label}</option>
+            ))}
           </select>
         </label>
 

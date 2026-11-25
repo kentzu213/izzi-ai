@@ -12,6 +12,9 @@ import { CustomerCrmDrawer, type CustomerCrmDrawerProps } from './CustomerCrmDra
 import { CrmEnterpriseKpiStrip, CrmSalerWorkspace } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow, type CustomerCrmRowProps } from './CustomerCrmRow';
 import { CustomerCrmDisplaySwitch, CustomerCrmPanel, CustomerCrmTableSection } from './CustomerCrmPanel';
+import { CustomerCrmSalerBar } from './CustomerCrmSalerBar';
+import CustomerCrmSalerModal from './CustomerCrmSalerModal';
+import { buildDefaultDaiLongSalerPreset } from '../../shared/customer-crm-saler-routing';
 import {
   CRM_CONFLICT_MESSAGE,
   CRM_SAVE_INVALID_MESSAGE,
@@ -211,9 +214,11 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect(afterSwitchBack).toContain('Chưa lưu');
   });
 
-  it('calls only the CRM routes: the table\'s, plus the two Care CRM S3 identity routes', () => {
+  it('calls only the CRM routes: the table\'s, S3 identity routes, and Saler team/bulk-assign routes', () => {
     const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
-    expect([...calls].sort()).toEqual(['getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile']);
+    expect([...calls].sort()).toEqual([
+      'bulkAssignCrm', 'getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile', 'saveCrmTeam',
+    ]);
   });
 
   it('discards list reads in flight when an identity answer lands, and reloads page 1 when the answer asks for it', () => {
@@ -242,7 +247,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
       "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'", "'getBackfillStatus'",
       "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
       "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
-      "'identityAction'", "'refreshIdentity'",
+      "'saveCrmTeam'", "'bulkAssignCrm'", "'identityAction'", "'refreshIdentity'",
     ]);
   });
 
@@ -260,6 +265,7 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
     './CustomerCrmPanel.tsx', './CustomerCrmDrawer.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
     './CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
     './CustomerCrmIdentity.tsx', './customer-crm-identity.ts', './customer-crm-ads-export.ts',
+    './CustomerCrmSalerBar.tsx', './CustomerCrmSalerModal.tsx', '../../shared/customer-crm-saler-routing.ts',
   ];
   const main = [
     '../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts', '../../main/customer-care/care-crm-identity.ts',
@@ -518,5 +524,76 @@ describe('Compact Enterprise CRM v3 — Dense Multi-Page Row & Slide-Over Drawer
     expect(salerHtml).toContain('Đang hiển thị 100 / 831 khách hàng');
     expect(salerHtml).toContain('Hiện thêm 100 khách');
     expect(salerHtml).toContain('Hiện tất cả');
+  });
+
+  it('renders inline 3-step controls, colored Saler pill select, Color Tag Rail 2.0, Supervision Matrix, and Auto-Routing Modal', () => {
+    const salers = buildDefaultDaiLongSalerPreset([
+      { pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: '741891669999824', pageName: 'Đồ Đồng Đại Long' },
+    ]);
+    const staleUncalled: CustomerCareCrmRow = {
+      ...ROW,
+      phoneCapturedAt: vn(24, 10),
+      profile: {
+        ...PROFILE,
+        stage: 'has_phone',
+        salerId: salers[0]!.id,
+        careStep: 'step1_uncalled',
+        callTries: 0,
+        updatedAt: '2026-11-21T09:30:00.000Z',
+        updatedBy: OWNER_ID,
+      },
+    };
+    const rowHtml = render({
+      expanded: false,
+      row: staleUncalled,
+      profile: profileFromRow(staleUncalled),
+      salers,
+    });
+    expect(rowHtml).toContain('B1 · Chưa gọi');
+    expect(rowHtml).toContain('Đã gọi');
+    expect(rowHtml).toContain('Chưa nghe');
+    expect(rowHtml).toContain('Sai số');
+    expect(rowHtml).toContain('Tuấn Thần Đèn');
+
+    const barHtml = renderToStaticMarkup(createElement(CustomerCrmSalerBar, {
+      rows: [staleUncalled, { ...ROW, leadId: '55555555-5555-4555-8555-555555555555', profile: { ...ROW.profile, ownerUserId: null, salerId: null } }],
+      salers,
+      filter: { view: 'all', stage: 'any', salerId: 'any', careStep: 'any' },
+      nowMs: NOW,
+      canManageTeam: true,
+      showMatrix: true,
+      mySalerId: null,
+      onSelectMySalerId: noop,
+      onChangeFilter: noop,
+      onOpenTeamModal: noop,
+      onOpenRescueModal: noop,
+    }));
+    expect(barHtml).toContain('👤 Của tôi');
+    expect(barHtml).toContain('⚙ Đội Saler');
+    expect(barHtml).toContain('⚠ 1 &gt;2h');
+    expect(barHtml).toContain('Rút số ngâm');
+    expect(barHtml).toContain('B3 Đã KB Zalo (%)');
+
+    const modalHtml = renderToStaticMarkup(createElement(CustomerCrmSalerModal, {
+      open: true,
+      initialTab: 'distribute',
+      rows: [staleUncalled, { ...ROW, leadId: '55555555-5555-4555-8555-555555555555', profile: { ...ROW.profile, stage: 'has_phone', ownerUserId: null, salerId: null } }],
+      filteredRows: [staleUncalled],
+      salers,
+      routing: { mode: 'by_page', protectZaloAndWon: true },
+      teamRevision: 1,
+      pageOptions: [{ pageId: '105252511858057', label: 'Đồng Thờ Hồng Hưng', count: 2 }],
+      assignees: [{ userId: OWNER_ID, label: 'Lan' }],
+      nowMs: NOW,
+      busy: false,
+      modalError: '',
+      onClose: noop,
+      onBulkAssign: async () => true,
+      onSaveTeam: async () => true,
+    }));
+    expect(modalHtml).toContain('Xem trước kết quả chia số (Dry-Run)');
+    expect(modalHtml).toContain('⚡ Phân bổ ngay 1 khách');
+    expect(modalHtml).toContain('Đội Saler &amp; Phân Page (8)');
   });
 });

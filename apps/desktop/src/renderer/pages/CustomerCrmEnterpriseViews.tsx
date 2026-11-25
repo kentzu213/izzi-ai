@@ -3,6 +3,7 @@ import type {
   CustomerCareCrmAssignee,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
+  CustomerCareCrmSalerMember,
 } from '../../shared/customer-care-types';
 import {
   buildCustomerPortrait,
@@ -20,6 +21,12 @@ import {
   type CrmMetaAudienceTarget,
   type CrmSalerPriorityBand,
 } from '../../shared/customer-crm-enterprise';
+import {
+  CRM_CARE_STEP_META,
+  CRM_SALER_COLOR_PALETTE,
+  applyCareStepTransition,
+  resolveEffectiveCareStep,
+} from '../../shared/customer-crm-saler-routing';
 import { formatLeadPhone, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_CONFLICT_MESSAGE,
@@ -33,6 +40,7 @@ import {
   formatCrmDay,
   formatCrmDue,
   profileFromRow,
+  resolveCrmRowSaler,
   type CrmRowEdit,
 } from './customer-crm-flow';
 import type { CrmAdsExportOutcome } from './customer-crm-ads-export';
@@ -254,6 +262,7 @@ export interface CrmSalerWorkspaceProps {
   rows: readonly CustomerCareCrmRow[];
   products: readonly CrmEnterpriseProduct[];
   assignees: readonly CustomerCareCrmAssignee[];
+  salers?: readonly CustomerCareCrmSalerMember[];
   savingIds: ReadonlySet<string>;
   edits?: Readonly<Record<string, CrmRowEdit>>;
   nowMs: number;
@@ -272,6 +281,7 @@ export function CrmSalerWorkspace({
   rows,
   products,
   assignees,
+  salers = [],
   savingIds,
   edits,
   nowMs,
@@ -398,8 +408,32 @@ export function CrmSalerWorkspace({
                     </button>
                   </div>
                   <div className="v2-crm-saler-card__meta">
-                    <span className="v2-crm-chip">{crmStageLabel(row.profile.stage)}</span>
-                    <span className="v2-crm__meta">{crmAssigneeLabel(assignees, row.profile.ownerUserId)}</span>
+                    {(() => {
+                      const stepMeta = CRM_CARE_STEP_META[resolveEffectiveCareStep(row)];
+                      const saler = resolveCrmRowSaler(salers, row.profile);
+                      const pal = saler ? CRM_SALER_COLOR_PALETTE[saler.color] : null;
+                      return (
+                        <>
+                          <span
+                            className="v2-crm-step-badge"
+                            style={{ background: stepMeta.bg, borderColor: stepMeta.border, color: stepMeta.text }}
+                          >
+                            {stepMeta.label}
+                          </span>
+                          <span className="v2-crm-chip">{crmStageLabel(row.profile.stage)}</span>
+                          {saler && pal ? (
+                            <span
+                              className="v2-crm-saler-chip"
+                              style={{ background: pal.bg, borderColor: pal.border, color: pal.text }}
+                            >
+                              {saler.name}
+                            </span>
+                          ) : (
+                            <span className="v2-crm__meta">{crmAssigneeLabel(assignees, row.profile.ownerUserId)}</span>
+                          )}
+                        </>
+                      );
+                    })()}
                     {savingIds.has(row.leadId) && <span className="v2-crm__meta">Đang lưu…</span>}
                   </div>
                 </header>
@@ -456,6 +490,24 @@ export function CrmSalerWorkspace({
                     </span>
                   </div>
                   <div className="v2-crm__buttons">
+                    {!readOnly && playbook.canContact && (
+                      <>
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          onClick={() => onChangeProfile(row, applyCareStepTransition(profile, 'step2_called', nowMs))}
+                        >
+                          Đã gọi
+                        </button>
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          onClick={() => onChangeProfile(row, applyCareStepTransition(profile, 'step3_zalo', nowMs))}
+                        >
+                          Đã KB Zalo
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="v2-button v2-button--primary"

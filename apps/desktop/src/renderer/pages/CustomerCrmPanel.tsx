@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareCrmAssignee,
+  CustomerCareCrmBulkAssignInput,
+  CustomerCareCrmBulkAssignResult,
   CustomerCareCrmIdentityActionInput,
   CustomerCareCrmIdentityActionResult,
   CustomerCareCrmIdentityRefreshInput,
@@ -9,15 +11,21 @@ import type {
   CustomerCareCrmListResult,
   CustomerCareCrmPageSource,
   CustomerCareCrmProfileInput,
+  CustomerCareCrmRole,
   CustomerCareCrmRow,
+  CustomerCareCrmSalerMember,
+  CustomerCareCrmSalerRoutingConfig,
   CustomerCareCrmSaveInput,
   CustomerCareCrmSaveResult,
   CustomerCareCrmStage,
+  CustomerCareCrmTeamSaveInput,
+  CustomerCareCrmTeamSaveResult,
   CustomerCareLeadPurgeInput,
   CustomerCareLeadPurgeResult,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
 import { CRM_PERSONA_OPTIONS, type CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
+import type { CrmAutoDistributionMode } from '../../shared/customer-crm-saler-routing';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
 import { CRM_BACKFILL_UPDATED_EVENT } from './customer-care-page-flow';
@@ -27,6 +35,7 @@ import {
   CRM_MAX_PAGES,
   CRM_REFRESH_MS,
   CRM_STAGE_OPTIONS,
+  CRM_TEAM_CONFLICT_MESSAGE,
   PAGE_RENDER_STEP,
   crmCallTodayCount,
   crmEditAfterSaved,
@@ -43,6 +52,7 @@ import {
   crmProfilesEqual,
   crmReloadAfterSave,
   crmRowReadOnly,
+  crmRowsOnBulkAssigned,
   crmRowsOnFirstPage,
   crmRowsOnRefresh,
   crmRowsOnRemove,
@@ -73,6 +83,8 @@ import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 import { CrmSaveQueue } from './customer-crm-save-queue';
 import { CustomerCrmDrawer, type CrmDrawerTab } from './CustomerCrmDrawer';
 import { CustomerCrmGraphSlot } from './CustomerCrmGraphSlot';
+import { CustomerCrmSalerBar } from './CustomerCrmSalerBar';
+import type { CrmSalerModalTab } from './CustomerCrmSalerModal';
 import {
   CrmAdsWorkspace,
   CrmEnterpriseKpiStrip,
@@ -82,6 +94,8 @@ import {
 } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow } from './CustomerCrmRow';
 import '../styles/v2/customer-crm.css';
+
+const CustomerCrmSalerModal = lazy(() => import('./CustomerCrmSalerModal'));
 
 const DISPLAYS: ReadonlyArray<{ id: CrmDisplay; label: string }> = [
   { id: 'table', label: 'Bảng' },
@@ -114,6 +128,8 @@ type CrmApi = {
   getSnapshot: () => Promise<CustomerCareSnapshot>;
   listCrm: (input: CustomerCareCrmListInput) => Promise<CustomerCareCrmListResult>;
   saveCrmProfile: (input: CustomerCareCrmSaveInput) => Promise<CustomerCareCrmSaveResult>;
+  saveCrmTeam?: (input: CustomerCareCrmTeamSaveInput) => Promise<CustomerCareCrmTeamSaveResult>;
+  bulkAssignCrm?: (input: CustomerCareCrmBulkAssignInput) => Promise<CustomerCareCrmBulkAssignResult>;
   /** Absent on an older preload, which hides the purge action. */
   purgeLead?: (input: CustomerCareLeadPurgeInput) => Promise<CustomerCareLeadPurgeResult>;
   /** Care CRM S3; absent on an older preload, which shows the identity without actions. */
@@ -125,9 +141,13 @@ type Edits = Readonly<Record<string, CrmRowEdit>>;
 type Phase = { state: 'loading' } | { state: 'blocked'; message: string } | { state: 'ready' };
 
 interface CrmMeta {
+  role: CustomerCareCrmRole;
   canDelete: boolean;
   assignees: CustomerCareCrmAssignee[];
   pageSources: CustomerCareCrmPageSource[];
+  salers: CustomerCareCrmSalerMember[];
+  salerRouting: CustomerCareCrmSalerRoutingConfig;
+  salerTeamRevision: number;
   truncated: boolean;
   partial: boolean;
   /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
@@ -147,6 +167,7 @@ export interface CustomerCrmTableSectionProps {
   purgingId: string | null;
   nowMs: number;
   assignees: readonly CustomerCareCrmAssignee[];
+  salers?: readonly CustomerCareCrmSalerMember[];
   products: readonly CrmProductOption[];
   canDelete: boolean;
   identityHandlers: CrmIdentityHandlers | null;
@@ -171,6 +192,7 @@ export function CustomerCrmTableSection({
   purgingId,
   nowMs,
   assignees,
+  salers = NO_SALERS,
   products,
   canDelete,
   identityHandlers,
@@ -199,7 +221,7 @@ export function CustomerCrmTableSection({
             <tr>
               <th scope="col">Khách &amp; Page</th>
               <th scope="col">Phân khúc</th>
-              <th scope="col">Giai đoạn</th>
+              <th scope="col">Tiến độ 3 bước</th>
               <th scope="col">Phụ trách</th>
               <th scope="col">Việc tiếp theo</th>
               <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
@@ -222,6 +244,7 @@ export function CustomerCrmTableSection({
                   showSegmentColumn
                   nowMs={nowMs}
                   assignees={[...assignees]}
+                  salers={[...salers]}
                   products={[...products]}
                   canDelete={canDelete}
                   purging={purgingId === row.leadId}
@@ -255,11 +278,16 @@ const REFRESH_RESTING_NOTE = 'Vừa tải xong. Có thể làm mới lại sau 1
 const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
 const NO_ASSIGNEES: CustomerCareCrmAssignee[] = [];
 const NO_PAGE_SOURCES: CustomerCareCrmPageSource[] = [];
+const NO_SALERS: CustomerCareCrmSalerMember[] = [];
+const DEFAULT_SALER_ROUTING: CustomerCareCrmSalerRoutingConfig = { mode: 'by_page', protectZaloAndWon: true };
 const INITIAL_FILTER: CrmFilter = {
   view: 'all',
   stage: 'any',
   pageId: 'any',
   persona: 'any',
+  salerId: 'any',
+  careStep: 'any',
+  staleOnly: false,
   query: '',
 };
 
@@ -314,6 +342,16 @@ export function CustomerCrmPanel() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [showSalerMatrix, setShowSalerMatrix] = useState(false);
+  const [mySalerId, setMySalerId] = useState<string | null>(null);
+  const [salerModal, setSalerModal] = useState<{
+    open: boolean;
+    tab: CrmSalerModalTab;
+    mode?: CrmAutoDistributionMode;
+    rescueSalerId?: string | null;
+  }>({ open: false, tab: 'distribute' });
+  const [salerModalBusy, setSalerModalBusy] = useState(false);
+  const [salerModalError, setSalerModalError] = useState('');
 
   const mountedRef = useRef(true);
   const displayRef = useRef<CrmDisplay>('table');
@@ -474,6 +512,7 @@ export function CustomerCrmPanel() {
       setDrawerId((current) => (current !== null && present.has(current) ? current : null));
       if (result.partialFailure && crmShouldSkipNextTick(result.partialFailure)) skipTicksRef.current = 1;
       setMeta((current) => ({
+        role: result.role,
         canDelete: result.canDelete,
         assignees: result.assignees,
         pageSources: switched
@@ -482,6 +521,9 @@ export function CustomerCrmPanel() {
             mode === 'full' && !result.partialFailure ? result.pageSources : (current?.pageSources ?? NO_PAGE_SOURCES),
             result.pageSources,
           ),
+        salers: result.salers,
+        salerRouting: result.salerRouting,
+        salerTeamRevision: result.salerTeamRevision,
         // Only an every-page load knows whether more than 5,000 customers exist or a later page hit a transient error.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
         partial: mode === 'full' ? Boolean(result.partialFailure) : (current?.partial ?? false),
@@ -812,6 +854,126 @@ export function CustomerCrmPanel() {
   };
 
   const canPurge = Boolean(meta?.canDelete && getCrmApi()?.purgeLead);
+  const salers = meta?.salers ?? NO_SALERS;
+  const salerRouting = meta?.salerRouting ?? DEFAULT_SALER_ROUTING;
+  const salerTeamRevision = meta?.salerTeamRevision ?? 0;
+  const canManageSalerTeam = meta?.role === 'owner' || meta?.role === 'manager';
+
+  const handleSaveTeam = useCallback(async (input: CustomerCareCrmTeamSaveInput): Promise<boolean> => {
+    const api = getCrmApi();
+    if (!api?.saveCrmTeam) {
+      setSalerModalError('Máy chủ hoặc phiên bản ứng dụng chưa hỗ trợ lưu Đội Saler.');
+      return false;
+    }
+    setSalerModalBusy(true);
+    setSalerModalError('');
+    try {
+      const result = await api.saveCrmTeam(input);
+      if (!mountedRef.current) return false;
+      if (!result.ok) {
+        if (result.error === 'team_conflict') {
+          if (result.workspaceId === scopeRef.current && result.salers && result.routing && result.revision !== undefined) {
+            setMeta((current) => (current ? {
+              ...current,
+              salers: result.salers!,
+              salerRouting: result.routing!,
+              salerTeamRevision: result.revision!,
+            } : current));
+          }
+          setSalerModalError(CRM_TEAM_CONFLICT_MESSAGE);
+          void loadRef.current('full');
+          return false;
+        }
+        const view = crmFailureView(result);
+        if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
+        if (view.dropRows) {
+          setSalerModal((c) => ({ ...c, open: false }));
+          dropAll(view.message);
+        } else {
+          setSalerModalError(view.message);
+        }
+        return false;
+      }
+      if (result.workspaceId !== scopeRef.current) return false;
+      setMeta((current) => (current ? {
+        ...current,
+        salers: result.salers,
+        salerRouting: result.routing,
+        salerTeamRevision: result.revision,
+      } : current));
+      setNotice(`Đã lưu đội Saler (${result.salers.length} nhân viên).`);
+      return true;
+    } catch {
+      if (mountedRef.current) setSalerModalError('Chưa lưu được đội Saler. Thử lại sau ít phút.');
+      return false;
+    } finally {
+      if (mountedRef.current) setSalerModalBusy(false);
+    }
+  }, [dropAll]);
+
+  const handleBulkAssign = useCallback(async (input: CustomerCareCrmBulkAssignInput): Promise<boolean> => {
+    const api = getCrmApi();
+    if (!api?.bulkAssignCrm) {
+      setSalerModalError('Máy chủ hoặc phiên bản ứng dụng chưa hỗ trợ phân bổ tự động.');
+      return false;
+    }
+    setSalerModalBusy(true);
+    setSalerModalError('');
+    try {
+      const result = await api.bulkAssignCrm(input);
+      if (!mountedRef.current) return false;
+      if (!result.ok) {
+        const view = crmFailureView(result);
+        if (crmShouldSkipNextTick(result)) skipTicksRef.current = 1;
+        if (view.dropRows) {
+          setSalerModal((c) => ({ ...c, open: false }));
+          dropAll(view.message);
+        } else {
+          setSalerModalError(view.message);
+        }
+        return false;
+      }
+      if (result.workspaceId !== scopeRef.current) return false;
+      updateRows((current) => crmRowsOnBulkAssigned(current, result.updated));
+      if (result.updated.length > 0) {
+        const byLead = new Map(result.updated.map((item) => [item.leadId, item]));
+        updateEdits((current) => {
+          let changed = false;
+          const next: Record<string, CrmRowEdit> = { ...current };
+          for (const [leadId, edit] of Object.entries(current)) {
+            const patch = byLead.get(leadId);
+            if (!patch) continue;
+            changed = true;
+            next[leadId] = {
+              ...edit,
+              baseUpdatedAt: patch.updatedAt,
+              draft: {
+                ...edit.draft,
+                salerId: patch.salerId,
+                ownerUserId: patch.ownerUserId,
+                ...(patch.careStep !== null ? { careStep: patch.careStep } : {}),
+              },
+            };
+          }
+          return changed ? next : current;
+        });
+      }
+      setSalerModal((c) => ({ ...c, open: false }));
+      setNotice(
+        `Đã phân bổ ${result.assignedCount} khách`
+        + `${result.conflictCount > 0 ? ` (${result.conflictCount} xung đột)` : ''}`
+        + `${result.skippedCount > 0 ? ` · bỏ qua ${result.skippedCount}` : ''}.`,
+      );
+      if (result.conflictCount > 0) void loadRef.current('full');
+      return true;
+    } catch {
+      if (mountedRef.current) setSalerModalError('Chưa phân bổ được. Thử lại sau ít phút.');
+      return false;
+    } finally {
+      if (mountedRef.current) setSalerModalBusy(false);
+    }
+  }, [dropAll, updateEdits, updateRows]);
+
   const pageSources = meta?.pageSources ?? NO_PAGE_SOURCES;
   const fallbackPage = snapshotPages[0] ?? null;
   const allPageSources = useMemo(
@@ -827,9 +989,14 @@ export function CustomerCrmPanel() {
     [allPageSources, fallbackPage],
   );
 
-  const shown = crmVisibleRows(rows, filter, now, drawerId);
+  const unassignedCount = useMemo(
+    () => rows.filter((row) => (row.profile.salerId ?? null) === null && row.profile.ownerUserId === null).length,
+    [rows],
+  );
+
+  const shown = crmVisibleRows(rows, filter, now, drawerId, salers);
   const todayCount = crmCallTodayCount(rows, now);
-  const filterResetKey = `${filter.view}\n${filter.stage}\n${filter.pageId ?? 'any'}\n${filter.persona ?? 'any'}\n${filter.query ?? ''}`;
+  const filterResetKey = `${filter.view}\n${filter.stage}\n${filter.pageId ?? 'any'}\n${filter.persona ?? 'any'}\n${filter.salerId ?? 'any'}\n${filter.careStep ?? 'any'}\n${filter.staleOnly ? '1' : '0'}\n${filter.query ?? ''}`;
   const [tablePager, setTablePager] = useState<{ key: string; limit: number }>(() => ({
     key: filterResetKey,
     limit: PAGE_RENDER_STEP,
@@ -852,13 +1019,13 @@ export function CustomerCrmPanel() {
   );
 
   const stageFilteredLiveRows = useMemo(
-    () => crmFilterRows(liveRows, filter),
-    [liveRows, filter],
+    () => crmFilterRows(liveRows, filter, { salers, nowMs: now }),
+    [liveRows, filter, salers, now],
   );
 
   const lifecycleLiveRows = useMemo(
-    () => crmFilterRows(liveRows, filter, { ignoreStage: true }),
-    [liveRows, filter],
+    () => crmFilterRows(liveRows, filter, { ignoreStage: true, salers, nowMs: now }),
+    [liveRows, filter, salers, now],
   );
 
   const troubledRow = useMemo(
@@ -878,6 +1045,9 @@ export function CustomerCrmPanel() {
   const hasActiveFilters = (filter.pageId ?? 'any') !== 'any'
     || filter.stage !== 'any'
     || (filter.persona ?? 'any') !== 'any'
+    || (filter.salerId ?? 'any') !== 'any'
+    || (filter.careStep ?? 'any') !== 'any'
+    || Boolean(filter.staleOnly)
     || (filter.query?.trim() ?? '') !== '';
 
   return (
@@ -891,6 +1061,27 @@ export function CustomerCrmPanel() {
         </div>
         {phase.state === 'ready' && (
           <div className="v2-crm__refresh">
+            {canManageSalerTeam && (
+              <button
+                type="button"
+                className="v2-button v2-button--primary"
+                onClick={() => {
+                  setSalerModalError('');
+                  setSalerModal({ open: true, tab: 'distribute', mode: salerRouting.mode, rescueSalerId: null });
+                }}
+              >
+                <span>⚡ Phân bổ Saler tự động</span>
+                {unassignedCount > 0 && <span className="v2-crm__badge-count">{unassignedCount}</span>}
+              </button>
+            )}
+            <button
+              type="button"
+              className={`v2-button v2-button--ghost${showSalerMatrix ? ' is-selected' : ''}`}
+              aria-pressed={showSalerMatrix}
+              onClick={() => setShowSalerMatrix((current) => !current)}
+            >
+              📊 Bao quát Saler
+            </button>
             {refreshResting && !refreshing && <span className="v2-crm__meta" id="v2-crm-refresh-note">Vừa tải xong</span>}
             <button
               type="button"
@@ -1075,6 +1266,9 @@ export function CustomerCrmPanel() {
                       stage: 'any',
                       pageId: 'any',
                       persona: 'any',
+                      salerId: 'any',
+                      careStep: 'any',
+                      staleOnly: false,
                       query: '',
                     }))}
                   >
@@ -1084,6 +1278,28 @@ export function CustomerCrmPanel() {
               </div>
             )}
           </div>
+
+          {display !== 'ads' && (rows.length > 0 || salers.length > 0 || showSalerMatrix) && (
+            <CustomerCrmSalerBar
+              rows={liveRows}
+              salers={salers}
+              filter={filter}
+              nowMs={now}
+              canManageTeam={canManageSalerTeam}
+              showMatrix={showSalerMatrix}
+              mySalerId={mySalerId}
+              onSelectMySalerId={setMySalerId}
+              onChangeFilter={(patch) => setFilter((current) => ({ ...current, ...patch }))}
+              onOpenTeamModal={() => {
+                setSalerModalError('');
+                setSalerModal({ open: true, tab: 'team' });
+              }}
+              onOpenRescueModal={(rescueSalerId) => {
+                setSalerModalError('');
+                setSalerModal({ open: true, tab: 'distribute', mode: 'rescue_stale', rescueSalerId });
+              }}
+            />
+          )}
 
           {rows.length === 0 ? (
             <div className="v2-empty">
@@ -1117,6 +1333,7 @@ export function CustomerCrmPanel() {
                 rows={stageFilteredLiveRows}
                 products={products}
                 assignees={meta?.assignees ?? NO_ASSIGNEES}
+                salers={salers}
                 savingIds={savingIds}
                 edits={edits}
                 nowMs={now}
@@ -1171,6 +1388,7 @@ export function CustomerCrmPanel() {
                 purgingId={purgingId}
                 nowMs={now}
                 assignees={meta?.assignees ?? NO_ASSIGNEES}
+                salers={salers}
                 products={products}
                 canDelete={canPurge}
                 identityHandlers={identityHandlers}
@@ -1198,6 +1416,7 @@ export function CustomerCrmPanel() {
                   nowMs={now}
                   pageLabel={pageLabelOf(drawerRow.pageId)}
                   assignees={meta?.assignees ?? NO_ASSIGNEES}
+                  salers={salers}
                   products={products}
                   canDelete={canPurge}
                   purging={purgingId === drawerRow.leadId}
@@ -1240,6 +1459,30 @@ export function CustomerCrmPanel() {
           ) : meta?.truncated ? (
             <p className="v2-crm__hint">Đang hiện 5.000 khách mới nhất.</p>
           ) : null}
+
+          {salerModal.open && (
+            <Suspense fallback={null}>
+              <CustomerCrmSalerModal
+                open={salerModal.open}
+                initialTab={salerModal.tab}
+                initialMode={salerModal.mode}
+                initialRescueSalerId={salerModal.rescueSalerId}
+                rows={liveRows}
+                filteredRows={stageFilteredLiveRows}
+                salers={salers}
+                routing={salerRouting}
+                teamRevision={salerTeamRevision}
+                pageOptions={pageOptions}
+                assignees={meta?.assignees ?? NO_ASSIGNEES}
+                nowMs={now}
+                busy={salerModalBusy}
+                modalError={salerModalError}
+                onClose={() => { if (!salerModalBusy) setSalerModal((c) => ({ ...c, open: false })); }}
+                onBulkAssign={handleBulkAssign}
+                onSaveTeam={handleSaveTeam}
+              />
+            </Suspense>
+          )}
         </>
       )}
     </section>

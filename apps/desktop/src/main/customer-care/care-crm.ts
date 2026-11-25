@@ -8,11 +8,18 @@
 import { ISO_PATTERN } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_CRM_ADDRESS_FORMS,
+  CUSTOMER_CARE_CRM_CARE_STEPS,
   CUSTOMER_CARE_CRM_LOST_REASONS,
   CUSTOMER_CARE_CRM_OCCASIONS,
   CUSTOMER_CARE_CRM_ROLES,
+  CUSTOMER_CARE_CRM_SALER_COLORS,
+  CUSTOMER_CARE_CRM_SALER_ROUTING_MODES,
   CUSTOMER_CARE_CRM_STAGES,
   type CustomerCareCrmAssignee,
+  type CustomerCareCrmBulkAssignInput,
+  type CustomerCareCrmBulkAssignUpdatedItem,
+  type CustomerCareCrmBulkAssignmentItem,
+  type CustomerCareCrmCareStep,
   type CustomerCareCrmConsentAsk,
   type CustomerCareCrmIdentityActionInput,
   type CustomerCareCrmListInput,
@@ -21,8 +28,11 @@ import {
   type CustomerCareCrmProfileInput,
   type CustomerCareCrmRole,
   type CustomerCareCrmRow,
+  type CustomerCareCrmSalerMember,
+  type CustomerCareCrmSalerRoutingConfig,
   type CustomerCareCrmSaveInput,
   type CustomerCareCrmStage,
+  type CustomerCareCrmTeamSaveInput,
   type CustomerCareLeadMessage,
   type CustomerCareRole,
 } from '../../shared/customer-care-types';
@@ -52,7 +62,13 @@ export const CARE_CRM_MAX_PRODUCTS = 8;
 export const CARE_CRM_MAX_NEXT_STEP = 200;
 export const CARE_CRM_MAX_NOTE = 1_000;
 export const CARE_CRM_MAX_ASSIGNEES = 200;
+export const CARE_CRM_MAX_SALERS = 50;
+export const CARE_CRM_MAX_SALER_NAME = 80;
+export const CARE_CRM_BULK_ASSIGN_CHUNK = 500;
+export const CARE_CRM_MAX_BULK_ASSIGN = 5_000;
+export const CARE_CRM_MAX_CALL_TRIES = 9;
 const PRODUCT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
+const SALER_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_WINDOW_YEARS = 2;
 // The server's text rule (backend 58d8ea0), checked before trimming: no control character (a note keeps its
@@ -64,10 +80,12 @@ const FORMAT_OR_SEPARATOR = /(?!\u200D)[\p{Cf}\u2028\u2029]/u;
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 // What the server accepts in a request: a zone is required, at most 6 fractional digits.
 const REQUEST_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-const PROFILE_INPUT_KEYS = [
+const PROFILE_INPUT_KEYS_11 = [
   'stage', 'ownerUserId', 'addressForm', 'occasion', 'neededBy', 'productFactIds',
   'nextStep', 'nextStepDueAt', 'lostReason', 'purchasedAt', 'note',
 ] as const;
+const PROFILE_SALER_KEYS = ['salerId', 'careStep', 'callTries'] as const;
+const PROFILE_INPUT_KEYS_14 = [...PROFILE_INPUT_KEYS_11, ...PROFILE_SALER_KEYS] as const;
 const PURCHASE_STAGES: readonly CustomerCareCrmStage[] = ['deposit', 'delivered'];
 
 /** One page of CRM rows, newest phone first, with the people a row may be assigned to and optional source Pages. */
@@ -78,6 +96,9 @@ export interface CareCrmPage {
   nextCursor: string | null;
   assignees: CustomerCareCrmAssignee[];
   pages?: CustomerCareCrmPageSource[];
+  salers?: CustomerCareCrmSalerMember[];
+  salerRouting?: CustomerCareCrmSalerRoutingConfig;
+  salerTeamRevision?: number;
   /** Care CRM S3: the server's `identityEnabled`; null when it answered without identity (no S3 there). */
   identityEnabled: boolean | null;
   /** Care CRM S3: the identity could not be loaded for this page; the rows are shown without it. */
@@ -93,6 +114,17 @@ export interface CareCrmPage {
 export type CareCrmSaveOutcome =
   | { kind: 'saved'; leadId: string; profile: CustomerCareCrmProfile }
   | { kind: 'conflict'; leadId: string; profile: CustomerCareCrmProfile };
+
+export type CareCrmTeamSaveOutcome =
+  | { kind: 'saved'; revision: number; salers: CustomerCareCrmSalerMember[]; routing: CustomerCareCrmSalerRoutingConfig }
+  | { kind: 'conflict'; revision?: number; salers?: CustomerCareCrmSalerMember[]; routing?: CustomerCareCrmSalerRoutingConfig };
+
+export interface CareCrmBulkAssignOutcome {
+  assignedCount: number;
+  conflictCount: number;
+  skippedCount: number;
+  updated: CustomerCareCrmBulkAssignUpdatedItem[];
+}
 
 /**
  * Care CRM S3, how a list read treats the identity: `scope` names the live account and workspace (the identity pause
@@ -112,6 +144,8 @@ export interface CareCrmGateway {
   identityAction(workspaceId: string, input: CustomerCareCrmIdentityActionInput): Promise<CareFacebookResult<CareCrmIdentityOutcome>>;
   /** Care CRM S3: one identity run now, waited for up to 45 s. */
   refreshIdentity(workspaceId: string, leadId: string): Promise<CareFacebookResult<CareCrmRefreshOutcome>>;
+  saveTeam?(workspaceId: string, input: CustomerCareCrmTeamSaveInput): Promise<CareFacebookResult<CareCrmTeamSaveOutcome>>;
+  bulkAssign?(workspaceId: string, input: CustomerCareCrmBulkAssignInput): Promise<CareFacebookResult<CareCrmBulkAssignOutcome>>;
 }
 
 /** Mirrors the backend: owner, manager and editor read and edit profiles; a viewer or reviewer never does. */
@@ -226,13 +260,31 @@ export function parseCareCrmListInput(input: unknown): CustomerCareCrmListInput 
   return isCareLeadsCursor(record.cursor) ? { cursor: record.cursor } : null;
 }
 
+function isSalerId(value: unknown): value is string {
+  return typeof value === 'string' && SALER_ID_PATTERN.test(value);
+}
+
+function isSalerIdOrNull(value: unknown): value is string | null {
+  return value === null || isSalerId(value);
+}
+
+function isCallTries(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= CARE_CRM_MAX_CALL_TRIES;
+}
+
+function isNonNegInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 /**
  * One full profile, checked against every contract rule: known values only, real calendar dates within two
  * years of `now`, bounded text without control characters (a note keeps line breaks), at most 8 unique
  * product ids, a lost reason only when lost and a purchase date only for a deposit or a delivery.
+ * Accepts both the 11-key legacy shape and the 14-key shape with `salerId`, `careStep`, `callTries`.
  */
 export function parseCareCrmProfileInput(value: unknown, now: Date): CustomerCareCrmProfileInput | null {
-  const profile = exactRecord(value, PROFILE_INPUT_KEYS);
+  const hasSalerFields = PROFILE_SALER_KEYS.some((key) => hasOwn(value, key));
+  const profile = exactRecord(value, hasSalerFields ? PROFILE_INPUT_KEYS_14 : PROFILE_INPUT_KEYS_11);
   if (!profile) return null;
   const { stage, ownerUserId, addressForm, occasion, neededBy, nextStepDueAt, lostReason, purchasedAt } = profile;
   if (!oneOf(CUSTOMER_CARE_CRM_STAGES, stage) || !isUuidOrNull(ownerUserId)) return null;
@@ -248,6 +300,11 @@ export function parseCareCrmProfileInput(value: unknown, now: Date): CustomerCar
   const nextStep = nullableText(profile.nextStep, CARE_CRM_MAX_NEXT_STEP, UNSAFE_LINE);
   const note = nullableText(profile.note, CARE_CRM_MAX_NOTE, UNSAFE_NOTE);
   if (!productFactIds || nextStep === undefined || note === undefined) return null;
+  if (hasSalerFields) {
+    if (!isSalerIdOrNull(profile.salerId)) return null;
+    if (!nullableOneOf(CUSTOMER_CARE_CRM_CARE_STEPS, profile.careStep)) return null;
+    if (!isCallTries(profile.callTries)) return null;
+  }
   return {
     stage,
     ownerUserId,
@@ -260,6 +317,13 @@ export function parseCareCrmProfileInput(value: unknown, now: Date): CustomerCar
     lostReason,
     purchasedAt: purchasedAt as string | null,
     note,
+    ...(hasSalerFields
+      ? {
+        salerId: profile.salerId as string | null,
+        careStep: profile.careStep as CustomerCareCrmCareStep | null,
+        callTries: profile.callTries as number,
+      }
+      : {}),
   };
 }
 
@@ -273,19 +337,100 @@ export function parseCareCrmSaveInput(input: unknown, now: Date): CustomerCareCr
   return profile ? { leadId: record.leadId, expectedUpdatedAt: record.expectedUpdatedAt, profile } : null;
 }
 
+function parseSalerMember(raw: unknown): CustomerCareCrmSalerMember | null {
+  const item = exactRecord(raw, ['id', 'name', 'color', 'active', 'assignedPageIds', 'memberUserId']);
+  if (!item || !isSalerId(item.id)) return null;
+  const name = boundedText(item.name, CARE_CRM_MAX_SALER_NAME, UNSAFE_LINE);
+  if (!name) return null;
+  if (!oneOf(CUSTOMER_CARE_CRM_SALER_COLORS, item.color)) return null;
+  if (typeof item.active !== 'boolean') return null;
+  if (!Array.isArray(item.assignedPageIds) || item.assignedPageIds.length > CARE_CRM_MAX_ASSIGNEES) return null;
+  const pageIds: string[] = [];
+  const seenPages = new Set<string>();
+  for (const pid of item.assignedPageIds as unknown[]) {
+    if (!isCareFacebookPageId(pid) || seenPages.has(pid)) return null;
+    seenPages.add(pid);
+    pageIds.push(pid);
+  }
+  if (!isUuidOrNull(item.memberUserId)) return null;
+  return {
+    id: item.id,
+    name,
+    color: item.color,
+    active: item.active,
+    assignedPageIds: pageIds,
+    memberUserId: item.memberUserId,
+  };
+}
+
+function parseSalers(value: unknown): CustomerCareCrmSalerMember[] | null {
+  if (!Array.isArray(value) || value.length > CARE_CRM_MAX_SALERS) return null;
+  const salers: CustomerCareCrmSalerMember[] = [];
+  const seen = new Set<string>();
+  for (const raw of value as unknown[]) {
+    const member = parseSalerMember(raw);
+    if (!member || seen.has(member.id)) return null;
+    seen.add(member.id);
+    salers.push(member);
+  }
+  return salers;
+}
+
+function parseSalerRouting(value: unknown): CustomerCareCrmSalerRoutingConfig | null {
+  const record = exactRecord(value, ['mode', 'protectZaloAndWon']);
+  if (!record) return null;
+  if (!oneOf(CUSTOMER_CARE_CRM_SALER_ROUTING_MODES, record.mode)) return null;
+  if (typeof record.protectZaloAndWon !== 'boolean') return null;
+  return { mode: record.mode, protectZaloAndWon: record.protectZaloAndWon };
+}
+
+/** IPC argument guard for `POST /crm/team`: `{ expectedRevision, salers, routing }`. */
+export function parseCareCrmTeamSaveInput(input: unknown): CustomerCareCrmTeamSaveInput | null {
+  const record = exactRecord(input, ['expectedRevision', 'salers', 'routing']);
+  if (!record || !isNonNegInt(record.expectedRevision)) return null;
+  const salers = parseSalers(record.salers);
+  const routing = parseSalerRouting(record.routing);
+  if (!salers || !routing) return null;
+  return { expectedRevision: record.expectedRevision, salers, routing };
+}
+
+/** IPC argument guard for `POST /crm/bulk-assign`: `{ assignments: [{ leadId, expectedUpdatedAt, salerId, ownerUserId }] }`. */
+export function parseCareCrmBulkAssignInput(input: unknown): CustomerCareCrmBulkAssignInput | null {
+  const record = exactRecord(input, ['assignments']);
+  if (!record || !Array.isArray(record.assignments)) return null;
+  if (record.assignments.length < 1 || record.assignments.length > CARE_CRM_MAX_BULK_ASSIGN) return null;
+  const assignments: CustomerCareCrmBulkAssignmentItem[] = [];
+  const seenLeads = new Set<string>();
+  for (const raw of record.assignments as unknown[]) {
+    const item = exactRecord(raw, ['leadId', 'expectedUpdatedAt', 'salerId', 'ownerUserId']);
+    if (!item || !isCareFacebookChoiceId(item.leadId) || seenLeads.has(item.leadId)) return null;
+    if (item.expectedUpdatedAt !== null && !isRequestTimestamp(item.expectedUpdatedAt)) return null;
+    if (!isSalerIdOrNull(item.salerId) || !isUuidOrNull(item.ownerUserId)) return null;
+    seenLeads.add(item.leadId);
+    assignments.push({
+      leadId: item.leadId,
+      expectedUpdatedAt: item.expectedUpdatedAt,
+      salerId: item.salerId,
+      ownerUserId: item.ownerUserId,
+    });
+  }
+  return { assignments };
+}
+
 // ---------------------------------------------------------------------------
 // Route answers
 // ---------------------------------------------------------------------------
 
 /**
- * A stored profile. The server checked the cross-field and date-window rules when it was saved, so only the
- * shape is checked here; the renderer re-applies the stage rules before the next save.
+ * A stored profile. Accepts both the 13-key legacy shape and the 16-key shape carrying
+ * `salerId`, `careStep`, `callTries` (defaulting missing saler fields to `null, null, 0`).
  */
 function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
-  // `detailsUnreadable` is the only optional key, and the server sends it only as `true`.
-  const keys = [...PROFILE_INPUT_KEYS, 'updatedAt', 'updatedBy'];
+  // `detailsUnreadable` is the only optional flag key, and the server sends it only as `true`.
+  const hasSalerFields = PROFILE_SALER_KEYS.some((key) => hasOwn(value, key));
+  const baseKeys = [...(hasSalerFields ? PROFILE_INPUT_KEYS_14 : PROFILE_INPUT_KEYS_11), 'updatedAt', 'updatedBy'];
   const flagged = typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'detailsUnreadable');
-  const profile = exactRecord(value, flagged ? [...keys, 'detailsUnreadable'] : keys);
+  const profile = exactRecord(value, flagged ? [...baseKeys, 'detailsUnreadable'] : baseKeys);
   if (!profile || (flagged && profile.detailsUnreadable !== true)) return null;
   const { stage, ownerUserId, addressForm, occasion, neededBy, nextStepDueAt, lostReason, purchasedAt } = profile;
   if (!oneOf(CUSTOMER_CARE_CRM_STAGES, stage) || !isUuidOrNull(ownerUserId)) return null;
@@ -303,6 +448,11 @@ function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
   if (!productFactIds || nextStep === undefined || note === undefined) return null;
   // Stored text is already trimmed; a value that changes when trimmed is not what the server stored.
   if ((nextStep !== null && nextStep !== profile.nextStep) || (note !== null && note !== profile.note)) return null;
+  if (hasSalerFields) {
+    if (!isSalerIdOrNull(profile.salerId)) return null;
+    if (!nullableOneOf(CUSTOMER_CARE_CRM_CARE_STEPS, profile.careStep)) return null;
+    if (!isCallTries(profile.callTries)) return null;
+  }
   return {
     stage,
     ownerUserId,
@@ -315,6 +465,9 @@ function parseCareCrmProfile(value: unknown): CustomerCareCrmProfile | null {
     lostReason,
     purchasedAt: purchasedAt as string | null,
     note,
+    salerId: hasSalerFields ? (profile.salerId as string | null) : null,
+    careStep: hasSalerFields ? (profile.careStep as CustomerCareCrmCareStep | null) : null,
+    callTries: hasSalerFields ? (profile.callTries as number) : 0,
     updatedAt: profile.updatedAt as string | null,
     updatedBy: profile.updatedBy,
     ...(profile.detailsUnreadable === true ? { detailsUnreadable: true as const } : {}),
@@ -406,14 +559,12 @@ function parsePageSources(value: unknown): CustomerCareCrmPageSource[] | null {
 }
 
 const ENVELOPE_KEYS = ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees'];
-/** Care CRM S3 + Multi-Page source keys: optional in the envelope. */
-const OPTIONAL_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk', 'pages'];
+/** Care CRM S3 + Multi-Page + Saler team keys: optional in the envelope. */
+const OPTIONAL_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk', 'pages', 'salers', 'salerRouting', 'salerTeamRevision'];
 
 /**
  * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. The Care
- * CRM S3 parts and `pages` (`include=identity,pages`) are optional: a server without S3 sends none of them; an unreadable
- * `identityEnabled` (or row identities without it) shows the table without identity (`identityUnavailable`); an
- * unreadable row identity drops only that identity; an unreadable `consentAsk` is null (asking stays off).
+ * CRM S3 parts, `pages`, and `salers`/`salerRouting`/`salerTeamRevision` are optional.
  */
 export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCrmPage | null {
   const envelope = exactRecord(body, [...ENVELOPE_KEYS, ...OPTIONAL_ENVELOPE_KEYS.filter((key) => hasOwn(body, key))]);
@@ -435,6 +586,15 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
   const hasPages = 'pages' in envelope;
   const pages = hasPages ? parsePageSources(envelope.pages) : undefined;
   if (hasPages && !pages) return null;
+  const hasSalers = 'salers' in envelope;
+  const salers = hasSalers ? parseSalers(envelope.salers) : undefined;
+  if (hasSalers && !salers) return null;
+  const hasRouting = 'salerRouting' in envelope;
+  const salerRouting = hasRouting ? parseSalerRouting(envelope.salerRouting) : undefined;
+  if (hasRouting && !salerRouting) return null;
+  const hasRevision = 'salerTeamRevision' in envelope;
+  const salerTeamRevision = hasRevision ? (isNonNegInt(envelope.salerTeamRevision) ? envelope.salerTeamRevision : null) : undefined;
+  if (hasRevision && salerTeamRevision === null) return null;
   const unreadable = !withIdentity
     && ('identityEnabled' in envelope || (envelope.rows as unknown[]).some((raw) => hasOwn(raw, 'identity')));
   return {
@@ -444,6 +604,9 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
     nextCursor: envelope.nextCursor,
     assignees,
     ...(pages ? { pages } : {}),
+    ...(salers ? { salers } : {}),
+    ...(salerRouting ? { salerRouting } : {}),
+    ...(salerTeamRevision !== undefined && salerTeamRevision !== null ? { salerTeamRevision } : {}),
     identityEnabled: withIdentity ? envelope.identityEnabled as boolean : null,
     identityUnavailable: unreadable,
     consentAsk: withIdentity ? parseCareCrmConsentAsk(envelope.consentAsk) : null,
@@ -485,6 +648,88 @@ export function parseCareCrmConflictBody(body: unknown, workspaceId: string, lea
   if (envelope.success !== false || envelope.reason !== 'profile_conflict') return null;
   if ('workspaceId' in envelope && envelope.workspaceId !== workspaceId) return null;
   return parseSavedRowProfile(envelope.row, leadId);
+}
+
+/** `POST /crm/team` 200 success envelope: exact 5 keys `{ success, workspaceId, revision, salers, routing }`. */
+export function parseCareCrmTeamSaveBody(
+  body: unknown,
+  workspaceId: string,
+): { revision: number; salers: CustomerCareCrmSalerMember[]; routing: CustomerCareCrmSalerRoutingConfig } | null {
+  const envelope = exactRecord(body, ['success', 'workspaceId', 'revision', 'salers', 'routing']);
+  if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
+  if (!isNonNegInt(envelope.revision)) return null;
+  const salers = parseSalers(envelope.salers);
+  const routing = parseSalerRouting(envelope.routing);
+  if (!salers || !routing) return null;
+  return { revision: envelope.revision, salers, routing };
+}
+
+/** `POST /crm/team` 409 `team_conflict` envelope: carries optional current `revision`, `salers`, `routing`. */
+export function parseCareCrmTeamConflictBody(
+  body: unknown,
+  workspaceId: string,
+): { revision?: number; salers?: CustomerCareCrmSalerMember[]; routing?: CustomerCareCrmSalerRoutingConfig } | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
+  const allowed = ['success', 'error', 'reason', 'workspaceId', 'revision', 'salers', 'routing'];
+  if (!Object.keys(body).every((key) => allowed.includes(key))) return null;
+  const envelope = body as Record<string, unknown>;
+  if (envelope.success !== false || envelope.reason !== 'team_conflict') return null;
+  if ('workspaceId' in envelope && envelope.workspaceId !== workspaceId) return null;
+  const revision = 'revision' in envelope ? (isNonNegInt(envelope.revision) ? envelope.revision : null) : undefined;
+  if ('revision' in envelope && revision === null) return null;
+  const salers = 'salers' in envelope ? parseSalers(envelope.salers) : undefined;
+  if ('salers' in envelope && !salers) return null;
+  const routing = 'routing' in envelope ? parseSalerRouting(envelope.routing) : undefined;
+  if ('routing' in envelope && !routing) return null;
+  return {
+    ...(revision !== undefined && revision !== null ? { revision } : {}),
+    ...(salers ? { salers } : {}),
+    ...(routing ? { routing } : {}),
+  };
+}
+
+/** `POST /crm/bulk-assign` 200 success envelope: exact 6 keys. */
+export function parseCareCrmBulkAssignBody(body: unknown, workspaceId: string): CareCrmBulkAssignOutcome | null {
+  const envelope = exactRecord(body, ['success', 'workspaceId', 'assignedCount', 'conflictCount', 'skippedCount', 'updated']);
+  if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
+  if (!isNonNegInt(envelope.assignedCount) || !isNonNegInt(envelope.conflictCount) || !isNonNegInt(envelope.skippedCount)) {
+    return null;
+  }
+  if (!Array.isArray(envelope.updated) || envelope.updated.length > CARE_CRM_BULK_ASSIGN_CHUNK) return null;
+  const updated: CustomerCareCrmBulkAssignUpdatedItem[] = [];
+  const seen = new Set<string>();
+  for (const raw of envelope.updated as unknown[]) {
+    const item = exactRecord(raw, ['leadId', 'salerId', 'ownerUserId', 'careStep', 'updatedAt', 'updatedBy']);
+    if (!item || !isCareFacebookChoiceId(item.leadId) || seen.has(item.leadId)) return null;
+    if (!isSalerIdOrNull(item.salerId) || !isUuidOrNull(item.ownerUserId)) return null;
+    if (!nullableOneOf(CUSTOMER_CARE_CRM_CARE_STEPS, item.careStep)) return null;
+    if (!isIso(item.updatedAt) || !isUuidOrNull(item.updatedBy)) return null;
+    seen.add(item.leadId);
+    updated.push({
+      leadId: item.leadId,
+      salerId: item.salerId,
+      ownerUserId: item.ownerUserId,
+      careStep: item.careStep,
+      updatedAt: item.updatedAt,
+      updatedBy: item.updatedBy,
+    });
+  }
+  return {
+    assignedCount: envelope.assignedCount,
+    conflictCount: envelope.conflictCount,
+    skippedCount: envelope.skippedCount,
+    updated,
+  };
+}
+
+/** A fresh copy of a Saler member for IPC. */
+export function copyCareCrmSaler(saler: CustomerCareCrmSalerMember): CustomerCareCrmSalerMember {
+  return { ...saler, assignedPageIds: [...saler.assignedPageIds] };
+}
+
+/** A fresh copy of a Saler routing config for IPC. */
+export function copyCareCrmSalerRouting(routing: CustomerCareCrmSalerRoutingConfig): CustomerCareCrmSalerRoutingConfig {
+  return { ...routing };
 }
 
 /** A fresh copy of a profile for IPC. */

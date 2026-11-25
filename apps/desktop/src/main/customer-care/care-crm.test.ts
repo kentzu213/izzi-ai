@@ -9,6 +9,8 @@ import {
   CARE_CRM_MAX_PRODUCTS,
   canUseCareCrm,
   copyCareCrmRow,
+  parseCareCrmBulkAssignBody,
+  parseCareCrmBulkAssignInput,
   parseCareCrmConflictBody,
   parseCareCrmListBody,
   parseCareCrmListInput,
@@ -16,6 +18,9 @@ import {
   parseCareCrmRow,
   parseCareCrmSaveBody,
   parseCareCrmSaveInput,
+  parseCareCrmTeamConflictBody,
+  parseCareCrmTeamSaveBody,
+  parseCareCrmTeamSaveInput,
 } from './care-crm';
 
 const NOW = new Date('2026-11-24T08:00:00.000Z');
@@ -64,7 +69,7 @@ const ROW = {
   phoneCapturedAt: ISO,
   lastMessageAt: ISO,
   recentMessages: [{ text: 'Số em 0901234567', at: ISO }],
-  profile: { ...PROFILE, updatedAt: '2026-11-21T09:30:00.123456+00:00', updatedBy: OWNER_ID },
+  profile: { ...PROFILE, salerId: null, careStep: null, callTries: 0, updatedAt: '2026-11-21T09:30:00.123456+00:00', updatedBy: OWNER_ID },
 };
 
 const LIST_BODY = {
@@ -432,5 +437,104 @@ describe('save and conflict answers', () => {
     expect(copy.profile).not.toBe(row.profile);
     expect(copy.profile.productFactIds).not.toBe(row.profile.productFactIds);
     expect(copy.recentMessages[0]).not.toBe(row.recentMessages[0]);
+  });
+
+  it('accepts both 13-key legacy profiles (defaulting saler fields) and 16-key profiles', () => {
+    const { salerId: _s, careStep: _c, callTries: _t, ...legacy13 } = ROW.profile;
+    const parsedLegacy = parseCareCrmRow({ ...ROW, profile: legacy13 });
+    expect(parsedLegacy?.profile).toEqual(ROW.profile);
+
+    const withSaler16 = {
+      ...ROW,
+      profile: { ...ROW.profile, salerId: OWNER_ID, careStep: 'step2_called' as const, callTries: 2 },
+    };
+    expect(parseCareCrmRow(withSaler16)?.profile).toEqual(withSaler16.profile);
+    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, callTries: 10 } })).toBeNull();
+    expect(parseCareCrmRow({ ...ROW, profile: { ...ROW.profile, careStep: 'step4_bad' } })).toBeNull();
+  });
+});
+
+describe('Saler team & bulk-assign parsers', () => {
+  const SALER_ID = '10000000-0000-4000-8000-000000000001';
+  const SALERS = [
+    {
+      id: SALER_ID,
+      name: 'Tuấn Thần Đèn',
+      color: 'blue' as const,
+      active: true,
+      assignedPageIds: ['105252511858057'],
+      memberUserId: OWNER_ID,
+    },
+  ];
+  const ROUTING = { mode: 'by_page' as const, protectZaloAndWon: true };
+
+  it('parses 14-key profile inputs including salerId, careStep and callTries', () => {
+    const parsed = parseCareCrmProfileInput({
+      ...PROFILE,
+      salerId: SALER_ID,
+      careStep: 'step3_zalo',
+      callTries: 3,
+    }, NOW);
+    expect(parsed).toMatchObject({ salerId: SALER_ID, careStep: 'step3_zalo', callTries: 3 });
+    expect(parseCareCrmProfileInput({ ...PROFILE, salerId: null, careStep: null, callTries: 10 }, NOW)).toBeNull();
+    expect(parseCareCrmProfileInput({ ...PROFILE, salerId: 'bad space', careStep: null, callTries: 0 }, NOW)).toBeNull();
+  });
+
+  it('parses GET /crm envelope with salers, salerRouting and salerTeamRevision', () => {
+    const page = parseCareCrmListBody({
+      ...LIST_BODY,
+      salers: SALERS,
+      salerRouting: ROUTING,
+      salerTeamRevision: 4,
+    }, WORKSPACE);
+    expect(page?.salers).toEqual(SALERS);
+    expect(page?.salerRouting).toEqual(ROUTING);
+    expect(page?.salerTeamRevision).toBe(4);
+  });
+
+  it('parses POST /crm/team input, 200 envelope and 409 team_conflict', () => {
+    const input = { expectedRevision: 2, salers: SALERS, routing: ROUTING };
+    expect(parseCareCrmTeamSaveInput(input)).toEqual(input);
+    expect(parseCareCrmTeamSaveInput({ ...input, expectedRevision: -1 })).toBeNull();
+    expect(parseCareCrmTeamSaveInput({ ...input, workspaceId: WORKSPACE })).toBeNull();
+
+    const body200 = { success: true, workspaceId: WORKSPACE, revision: 3, salers: SALERS, routing: ROUTING };
+    expect(parseCareCrmTeamSaveBody(body200, WORKSPACE)).toEqual({ revision: 3, salers: SALERS, routing: ROUTING });
+    expect(parseCareCrmTeamSaveBody({ ...body200, extra: 1 }, WORKSPACE)).toBeNull();
+
+    expect(parseCareCrmTeamConflictBody({ success: false, error: 'Conflict', reason: 'team_conflict' }, WORKSPACE)).toEqual({});
+    expect(parseCareCrmTeamConflictBody({
+      success: false, reason: 'team_conflict', workspaceId: WORKSPACE, revision: 5, salers: SALERS, routing: ROUTING,
+    }, WORKSPACE)).toEqual({ revision: 5, salers: SALERS, routing: ROUTING });
+  });
+
+  it('parses POST /crm/bulk-assign input and 200 envelope', () => {
+    const input = {
+      assignments: [{ leadId: LEAD_ID, expectedUpdatedAt: null, salerId: SALER_ID, ownerUserId: OWNER_ID }],
+    };
+    expect(parseCareCrmBulkAssignInput(input)).toEqual(input);
+    expect(parseCareCrmBulkAssignInput({ assignments: [] })).toBeNull();
+
+    const body200 = {
+      success: true,
+      workspaceId: WORKSPACE,
+      assignedCount: 1,
+      conflictCount: 0,
+      skippedCount: 0,
+      updated: [{
+        leadId: LEAD_ID,
+        salerId: SALER_ID,
+        ownerUserId: OWNER_ID,
+        careStep: 'step1_uncalled' as const,
+        updatedAt: ISO,
+        updatedBy: OWNER_ID,
+      }],
+    };
+    expect(parseCareCrmBulkAssignBody(body200, WORKSPACE)).toEqual({
+      assignedCount: 1,
+      conflictCount: 0,
+      skippedCount: 0,
+      updated: body200.updated,
+    });
   });
 });
