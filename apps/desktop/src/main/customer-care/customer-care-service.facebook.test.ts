@@ -405,6 +405,62 @@ describe('CustomerCareService Facebook Page actions', () => {
     expect(result.ok && result.snapshot.pageConnection).toEqual({ state: 'not_connected' });
   });
 
+  it('tracks crmPages across getStatus, selectPage, backfillCurrent, and clears them on disconnect', async () => {
+    const { service, facebook } = fixture();
+    const crmPages = [
+      { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: NOW },
+      { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', verifiedAt: NOW },
+    ];
+    facebook.statusResult = {
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE_A, requiredScopes: [], connection: CONNECTION, crmPages },
+    };
+    const initialSnapshot = await service.getSnapshot();
+    expect(initialSnapshot.pageConnection).toEqual({
+      state: 'connected',
+      pageId: PAGE,
+      pageName: 'Đồ Đồng Hồng Hưng',
+      status: 'active',
+      missingScopes: [],
+      verifiedAt: NOW,
+      crmPages,
+    });
+    expect(initialSnapshot.crmPages).toEqual(crmPages);
+
+    // Select importOnly updates crmPages and forwards skippedPages without leaking crmPages into backfill summary
+    const updatedCrmPages = [crmPages[0]];
+    const skippedPages = [{ pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', reason: 'permission_missing' as const }];
+    facebook.selectResult = {
+      ok: true,
+      value: {
+        connection: CONNECTION,
+        backfill: { pagesProcessed: 2, conversationsScanned: 50, leadsImported: 12, messagesStored: 30, namesSealed: 11, skippedPages },
+        crmPages: updatedCrmPages,
+      },
+    };
+    const selectRes = await service.selectFacebookPage({
+      choiceId: CHOICE,
+      pageId: PAGE,
+      backfillPageIds: [PAGE, '631891669999823', '741891669999824'],
+      importOnly: true,
+    });
+    expect(selectRes.ok).toBe(true);
+    if (selectRes.ok) {
+      expect(selectRes.snapshot.pageConnection).toMatchObject({ state: 'connected', crmPages: updatedCrmPages });
+      expect(selectRes.snapshot.crmPages).toEqual(updatedCrmPages);
+      expect(selectRes.backfill?.skippedPages).toEqual(skippedPages);
+      expect('crmPages' in (selectRes.backfill ?? {})).toBe(false);
+    }
+
+    // Disconnect clears crmPages completely
+    const disconnected = await service.disconnectFacebookPage();
+    expect(disconnected.ok).toBe(true);
+    if (disconnected.ok) {
+      expect(disconnected.snapshot.pageConnection).toEqual({ state: 'not_connected' });
+      expect(disconnected.snapshot.crmPages).toBeUndefined();
+    }
+  });
+
   it('maps a throwing gateway to unavailable without leaking its message', async () => {
     const { service, facebook } = fixture();
     facebook.during = () => { throw new Error('token EAAB-private'); };

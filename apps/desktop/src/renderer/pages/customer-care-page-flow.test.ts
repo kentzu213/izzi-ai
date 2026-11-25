@@ -76,12 +76,13 @@ describe('Care Page flow: Facebook outcome', () => {
     expect(step).toMatchObject({ error: '', notice: '' });
   });
 
-  it('does not preselect when several Pages are eligible', () => {
+  it('does not preselect when several Pages are eligible unless connectedPageId matches an eligible Page', () => {
     const several = { ...CHOICES_EVENT, pages: [
       { pageId: PAGE, name: 'A', eligible: true, reason: 'eligible' },
       { pageId: '1234567890', name: 'B', eligible: true, reason: 'eligible' },
     ] } as CustomerCareFacebookChoicesEvent;
     expect(pageFlowOnChoices(INITIAL_PAGE_FLOW, several).flow.selectedPageId).toBe('');
+    expect(pageFlowOnChoices(INITIAL_PAGE_FLOW, several, PAGE).flow.selectedPageId).toBe(PAGE);
   });
 
   it('clears the waiting notice and shows the error when a failure arrives', () => {
@@ -147,6 +148,32 @@ describe('Care Page flow: select and disconnect results', () => {
     expect(withBackfill.notice).toBe(
       'Đã đồng bộ 3 Page (quét 90 hội thoại): cập nhật 24 khách có SĐT, 21 tên khách hàng vào CRM.',
     );
+    expect(withBackfill.noticeTone).toBeUndefined();
+
+    const withSkipped = pageFlowOnActionResult(busyWithChoices(), {
+      ok: true,
+      snapshot: next,
+      backfill: {
+        pagesProcessed: 1,
+        conversationsScanned: 115,
+        leadsImported: 12,
+        messagesStored: 30,
+        namesSealed: 12,
+        skippedPages: [
+          { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', reason: 'permission_missing' },
+          { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', reason: 'token_invalid' },
+          { pageId: '851891669999825', pageName: 'Page Khác', reason: 'bound_elsewhere' },
+          { pageId: '961891669999826', pageName: null, reason: 'provider_error' },
+        ],
+      },
+    }, WORKSPACE, '');
+    expect(withSkipped.noticeTone).toBe('warning');
+    expect(withSkipped.notice).toContain('Cảnh báo — có 4 Page bị bỏ qua chưa đồng bộ được:');
+    expect(withSkipped.notice).toContain('Xưởng tranh đồng Đại Long (chưa được tích cấp quyền Tin nhắn trên Facebook)');
+    expect(withSkipped.notice).toContain('Đồ đồng Đại Long (phiên quyền hết hạn, cần kết nối lại)');
+    expect(withSkipped.notice).toContain('Page Khác (đang gắn ở dự án khác)');
+    expect(withSkipped.notice).toContain('Page 961891669999826 (lỗi tạm thời từ Facebook)');
+    expect(withSkipped.notice).toContain('Chỉnh sửa cài đặt trước đó');
   });
 
   it('keeps the Page list after an unavailable error so the same choice can be retried', () => {

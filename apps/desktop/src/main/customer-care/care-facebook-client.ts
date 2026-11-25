@@ -19,11 +19,15 @@ import {
 } from '../marketing/native-marketing-client';
 import {
   CUSTOMER_CARE_AUTO_REPLY_PROBLEMS,
+  CUSTOMER_CARE_BACKFILL_SKIP_REASONS,
   CUSTOMER_CARE_FACEBOOK_REJECT_REASONS,
   CUSTOMER_CARE_LEAD_STATUSES,
   type CustomerCareAutoReplyProblem,
   type CustomerCareAutoReplyState,
+  type CustomerCareBackfillSkipReason,
+  type CustomerCareBackfillSkippedPage,
   type CustomerCareBackfillSummary,
+  type CustomerCareCrmSyncedPage,
   type CustomerCareFactTopic,
   type CustomerCareFacebookPageChoice,
   type CustomerCareFacebookRejectReason,
@@ -51,6 +55,7 @@ const CHOICE_REASONS: readonly CustomerCareFacebookPageChoice['reason'][] = [
   'eligible',
   'missing_moderate_task',
   'missing_page_token',
+  'missing_messaging_scope',
 ];
 // Phase B1 bounds, from the backend contract.
 export const CARE_LEADS_PAGE_SIZE = 50;
@@ -116,6 +121,7 @@ export interface CareFacebookStatus {
   workspaceId: string;
   requiredScopes: string[];
   connection: CareFacebookConnection | null;
+  crmPages?: CustomerCareCrmSyncedPage[];
 }
 
 /** One page of leads, newest `phoneCapturedAt` first. */
@@ -132,7 +138,12 @@ export interface CareFacebookSelectOptions {
 export interface CareFacebookSelectWithBackfill {
   connection: CareFacebookConnection | null;
   backfill: CustomerCareBackfillSummary;
+  crmPages?: CustomerCareCrmSyncedPage[];
 }
+
+export type CareFacebookBackfillResult = CustomerCareBackfillSummary & {
+  crmPages?: CustomerCareCrmSyncedPage[];
+};
 
 /** The surface `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export type CareFacebookGateway = Pick<
@@ -326,10 +337,57 @@ export function parseBackfillPageIds(value: unknown): string[] | null {
   return [...value] as string[];
 }
 
+function hasOwn(value: unknown, key: string): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+export function parseCrmSyncedPages(value: unknown): CustomerCareCrmSyncedPage[] | null {
+  if (!Array.isArray(value) || value.length > CARE_FACEBOOK_MAX_PAGES) return null;
+  const pages: CustomerCareCrmSyncedPage[] = [];
+  const seen = new Set<string>();
+  for (const raw of value as unknown[]) {
+    const item = exactRecord(raw, ['pageId', 'pageName', 'verifiedAt']);
+    if (!item || !isCareFacebookPageId(item.pageId) || seen.has(item.pageId) || !isIso(item.verifiedAt)) {
+      return null;
+    }
+    const pageName = parseName(item.pageName);
+    if (pageName === undefined) return null;
+    seen.add(item.pageId);
+    pages.push({ pageId: item.pageId, pageName, verifiedAt: item.verifiedAt });
+  }
+  return pages;
+}
+
+function parseSkippedPages(value: unknown): CustomerCareBackfillSkippedPage[] | null {
+  if (!Array.isArray(value) || value.length > CARE_FACEBOOK_MAX_PAGES) return null;
+  const skipped: CustomerCareBackfillSkippedPage[] = [];
+  const seen = new Set<string>();
+  for (const raw of value as unknown[]) {
+    const item = exactRecord(raw, ['pageId', 'pageName', 'reason']);
+    if (!item || !isCareFacebookPageId(item.pageId) || seen.has(item.pageId)) return null;
+    if (
+      typeof item.reason !== 'string'
+      || !(CUSTOMER_CARE_BACKFILL_SKIP_REASONS as readonly string[]).includes(item.reason)
+    ) {
+      return null;
+    }
+    const pageName = parseName(item.pageName);
+    if (pageName === undefined) return null;
+    seen.add(item.pageId);
+    skipped.push({
+      pageId: item.pageId,
+      pageName,
+      reason: item.reason as CustomerCareBackfillSkipReason,
+    });
+  }
+  return skipped;
+}
+
 export function parseCareBackfillSummary(value: unknown): CustomerCareBackfillSummary | null {
-  const summary = exactRecord(value, [
-    'pagesProcessed', 'conversationsScanned', 'leadsImported', 'messagesStored', 'namesSealed',
-  ]);
+  const baseKeys = ['pagesProcessed', 'conversationsScanned', 'leadsImported', 'messagesStored', 'namesSealed'] as const;
+  const withSkipped = hasOwn(value, 'skippedPages');
+  const summary = exactRecord(value, withSkipped ? [...baseKeys, 'skippedPages'] : baseKeys);
   if (
     !summary
     || !isCount(summary.pagesProcessed)
@@ -338,13 +396,63 @@ export function parseCareBackfillSummary(value: unknown): CustomerCareBackfillSu
     || !isCount(summary.messagesStored)
     || !isCount(summary.namesSealed)
   ) return null;
+  const skippedPages = withSkipped ? parseSkippedPages(summary.skippedPages) : undefined;
+  if (withSkipped && !skippedPages) return null;
   return {
     pagesProcessed: summary.pagesProcessed,
     conversationsScanned: summary.conversationsScanned,
     leadsImported: summary.leadsImported,
     messagesStored: summary.messagesStored,
     namesSealed: summary.namesSealed,
+    ...(skippedPages ? { skippedPages } : {}),
   };
+}
+
+function parseCallbackBody(body: unknown, workspaceId: string): CareFacebookCallbackResult | null {
+  const hasWorkspace = hasOwn(body, 'workspaceId');
+  const hasGrantedScopes = hasOwn(body, 'grantedScopes');
+  const expectedKeys = [
+    'success',
+    ...(hasWorkspace ? ['workspaceId'] : []),
+    'choiceId',
+    'expiresAt',
+    ...(hasGrantedScopes ? ['grantedScopes'] : []),
+    'missingScopes',
+    'pages',
+  ];
+  const envelope = exactRecord(body, expectedKeys);
+  if (!envelope || envelope.success !== true) return null;
+  if (hasWorkspace && envelope.workspaceId !== workspaceId) return null;
+  if (!isCareFacebookChoiceId(envelope.choiceId) || !isIso(envelope.expiresAt)) return null;
+  const grantedScopes = hasGrantedScopes ? parseScopes(envelope.grantedScopes) : [];
+  const missingScopes = parseScopes(envelope.missingScopes);
+  const pages = parsePageChoices(envelope.pages);
+  if (!grantedScopes || !missingScopes || !pages) return null;
+  return {
+    success: true,
+    workspaceId,
+    choiceId: envelope.choiceId,
+    expiresAt: envelope.expiresAt,
+    grantedScopes,
+    missingScopes,
+    pages,
+  };
+}
+
+function parseStatusBody(body: unknown, workspaceId: string, allowCrmPages = true): CareFacebookStatus | null {
+  const withCrmPages = allowCrmPages && hasOwn(body, 'crmPages');
+  const envelope = parseSuccessEnvelope(
+    body,
+    withCrmPages ? ['requiredScopes', 'connection', 'crmPages'] : ['requiredScopes', 'connection'],
+    workspaceId,
+  );
+  if (!envelope) return null;
+  const requiredScopes = parseScopes(envelope.requiredScopes);
+  const connection = envelope.connection === null ? null : parseCareFacebookConnection(envelope.connection);
+  if (!requiredScopes || (envelope.connection !== null && !connection)) return null;
+  const crmPages = withCrmPages ? parseCrmSyncedPages(envelope.crmPages) : [];
+  if (!crmPages) return null;
+  return { success: true, workspaceId, requiredScopes, connection, crmPages };
 }
 
 /** Phase C state, rebuilt from an exact allowlist; an unknown problem code is kept as `unknown`. */
@@ -516,32 +624,12 @@ export class CareFacebookClient {
     const result = await this.request(
       'callback',
       '/callback',
-      { method: 'POST', body: JSON.stringify({ workspaceId, state, code }) },
+      { method: 'POST', body: JSON.stringify({ workspaceId, code, state, clientVersion: 2 }) },
       Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
     );
     if (!result.ok) return result;
-    const envelope = parseSuccessEnvelope(
-      result.body,
-      ['choiceId', 'expiresAt', 'grantedScopes', 'missingScopes', 'pages'],
-      workspaceId,
-    );
-    if (!envelope || !isCareFacebookChoiceId(envelope.choiceId) || !isIso(envelope.expiresAt)) return INVALID_RESPONSE;
-    const grantedScopes = parseScopes(envelope.grantedScopes);
-    const missingScopes = parseScopes(envelope.missingScopes);
-    const pages = parsePageChoices(envelope.pages);
-    if (!grantedScopes || !missingScopes || !pages) return INVALID_RESPONSE;
-    return {
-      ok: true,
-      value: {
-        success: true,
-        workspaceId,
-        choiceId: envelope.choiceId,
-        expiresAt: envelope.expiresAt,
-        grantedScopes,
-        missingScopes,
-        pages,
-      },
-    };
+    const parsed = parseCallbackBody(result.body, workspaceId);
+    return parsed ? { ok: true, value: parsed } : INVALID_RESPONSE;
   }
 
   /** POST /select — bind the chosen Page (and/or backfill multi-Page history into CRM) after backend verification. */
@@ -593,50 +681,77 @@ export class CareFacebookClient {
           pageId,
           ...(backfillPageIds ? { backfillPageIds } : {}),
           ...(importOnly ? { importOnly: true } : {}),
+          includeCrmPages: true,
         }),
       },
       Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
     );
     if (!result.ok) return result;
-    const envelope = parseSuccessEnvelope(result.body, ['connection', 'backfill'], workspaceId);
+    const withCrmPages = hasOwn(result.body, 'crmPages');
+    const envelope = parseSuccessEnvelope(
+      result.body,
+      withCrmPages ? ['connection', 'backfill', 'crmPages'] : ['connection', 'backfill'],
+      workspaceId,
+    );
     if (!envelope) return INVALID_RESPONSE;
     const backfill = parseCareBackfillSummary(envelope.backfill);
     if (!backfill) return INVALID_RESPONSE;
+    const crmPages = withCrmPages ? parseCrmSyncedPages(envelope.crmPages) : undefined;
+    if (withCrmPages && !crmPages) return INVALID_RESPONSE;
     if (importOnly) {
       const connection = envelope.connection === null ? null : parseCareFacebookConnection(envelope.connection);
       if (envelope.connection !== null && !connection) return INVALID_RESPONSE;
-      return { ok: true, value: { connection, backfill } };
+      return { ok: true, value: { connection, backfill, ...(crmPages ? { crmPages } : {}) } };
     }
     const connection = parseCareFacebookConnection(envelope.connection);
-    return connection && connection.pageId === pageId ? { ok: true, value: { connection, backfill } } : INVALID_RESPONSE;
+    return connection && connection.pageId === pageId
+      ? { ok: true, value: { connection, backfill, ...(crmPages ? { crmPages } : {}) } }
+      : INVALID_RESPONSE;
   }
 
-  /** POST /backfill — scan 90-day Messenger history of the workspace's bound Page into CRM. */
-  async backfillBoundPage(workspaceId: string): Promise<CareFacebookResult<CustomerCareBackfillSummary>> {
+  /** POST /backfill — scan 90-day Messenger history of the workspace's bound & CRM Pages into CRM. */
+  async backfillBoundPage(workspaceId: string): Promise<CareFacebookResult<CareFacebookBackfillResult>> {
     if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
     const result = await this.request(
       'backfill',
       '/backfill',
-      { method: 'POST', body: JSON.stringify({ workspaceId }) },
+      { method: 'POST', body: JSON.stringify({ workspaceId, includeCrmPages: true }) },
       Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS),
     );
     if (!result.ok) return result;
-    const envelope = parseSuccessEnvelope(result.body, ['backfill'], workspaceId);
-    const backfill = envelope ? parseCareBackfillSummary(envelope.backfill) : null;
-    return backfill ? { ok: true, value: backfill } : INVALID_RESPONSE;
+    const withCrmPages = hasOwn(result.body, 'crmPages');
+    const envelope = parseSuccessEnvelope(
+      result.body,
+      withCrmPages ? ['backfill', 'crmPages'] : ['backfill'],
+      workspaceId,
+    );
+    if (!envelope) return INVALID_RESPONSE;
+    const backfill = parseCareBackfillSummary(envelope.backfill);
+    if (!backfill) return INVALID_RESPONSE;
+    const crmPages = withCrmPages ? parseCrmSyncedPages(envelope.crmPages) : undefined;
+    if (withCrmPages && !crmPages) return INVALID_RESPONSE;
+    return { ok: true, value: crmPages ? { ...backfill, crmPages } : backfill };
   }
 
-  /** GET /status — the verified connection, or null. */
+  /** GET /status — the verified connection, plus CRM-synced Pages (falling back cleanly on older servers). */
   async getStatus(workspaceId: string): Promise<CareFacebookResult<CareFacebookStatus>> {
     if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
-    const result = await this.request('status', `/status?workspaceId=${encodeURIComponent(workspaceId)}`);
-    if (!result.ok) return result;
-    const envelope = parseSuccessEnvelope(result.body, ['requiredScopes', 'connection'], workspaceId);
-    if (!envelope) return INVALID_RESPONSE;
-    const requiredScopes = parseScopes(envelope.requiredScopes);
-    const connection = envelope.connection === null ? null : parseCareFacebookConnection(envelope.connection);
-    if (!requiredScopes || (envelope.connection !== null && !connection)) return INVALID_RESPONSE;
-    return { ok: true, value: { success: true, workspaceId, requiredScopes, connection } };
+    const encoded = encodeURIComponent(workspaceId);
+    const first = await this.request('status', `/status?workspaceId=${encoded}&include=crmPages`);
+    if (first.ok) {
+      const parsed = parseStatusBody(first.body, workspaceId, true);
+      if (parsed) return { ok: true, value: parsed };
+      if (!hasOwn(first.body, 'crmPages')) return INVALID_RESPONSE;
+    } else if (
+      first.error !== 'invalid-response'
+      && !(first.error === 'rejected' && (first.reason === undefined || first.reason === 'invalid_request'))
+    ) {
+      return first;
+    }
+    const retry = await this.request('status', `/status?workspaceId=${encoded}`);
+    if (!retry.ok) return retry;
+    const fallback = parseStatusBody(retry.body, workspaceId, false);
+    return fallback ? { ok: true, value: fallback } : INVALID_RESPONSE;
   }
 
   /** DELETE / — disconnect the Page; the backend clears the stored token. */

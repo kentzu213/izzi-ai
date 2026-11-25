@@ -4,6 +4,7 @@
  * here so it can be tested without a DOM.
  */
 import type {
+  CustomerCareBackfillSkipReason,
   CustomerCareBackfillSummary,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
@@ -17,7 +18,15 @@ import { facebookErrorMessage, setupForSave, type CustomerCareFacebookPageChoice
 export const CARE_FACEBOOK_WAIT_MS = 15 * 60_000;
 
 const SCOPE_MISMATCH = 'Phạm vi chăm sóc khách hàng không khớp workspace hiện tại. Hãy tải lại workspace.';
-const BROWSER_OPENED = 'Đã mở Facebook trong trình duyệt. Hãy đăng nhập, cấp quyền rồi quay lại izzi để chọn Page.';
+const BROWSER_OPENED =
+  "Đã mở Facebook trong trình duyệt. Quan trọng trên cửa sổ Facebook: Đừng bấm ngay 'Tiếp tục dưới tên...' — hãy bấm 'Chỉnh sửa cài đặt trước đó' (hoặc 'Chỉnh sửa quyền truy cập') rồi tích chọn thêm các Page cần lấy data (như Xưởng tranh đồng Đại Long, Đồ đồng Đại Long) trước khi bấm Tiếp tục.";
+
+export const BACKFILL_SKIP_REASON_LABELS: Record<CustomerCareBackfillSkipReason, string> = {
+  permission_missing: 'chưa được tích cấp quyền Tin nhắn trên Facebook',
+  token_invalid: 'phiên quyền hết hạn, cần kết nối lại',
+  bound_elsewhere: 'đang gắn ở dự án khác',
+  provider_error: 'lỗi tạm thời từ Facebook',
+};
 
 export interface CarePageFlowState {
   busy: boolean;
@@ -33,6 +42,7 @@ export interface CarePageFlowStep {
   /** `''` clears the alert; undefined leaves it as is. */
   error?: string;
   notice?: string;
+  noticeTone?: 'success' | 'warning';
   snapshot?: CustomerCareSnapshot;
 }
 
@@ -42,6 +52,7 @@ export const INITIAL_PAGE_FLOW: CarePageFlowState = { busy: false, waitingUntil:
 export function pageFlowOnChoices(
   flow: CarePageFlowState,
   event: CustomerCareFacebookChoicesEvent | null,
+  connectedPageId?: string | null,
 ): CarePageFlowStep {
   if (!event) return { flow };
   if (!event.ok) {
@@ -52,6 +63,9 @@ export function pageFlowOnChoices(
     };
   }
   const eligible = event.pages.filter((page) => page.eligible);
+  const selectedPageId = connectedPageId && eligible.some((page) => page.pageId === connectedPageId)
+    ? connectedPageId
+    : (eligible.length === 1 ? eligible[0].pageId : '');
   return {
     flow: {
       ...flow,
@@ -62,7 +76,7 @@ export function pageFlowOnChoices(
         pages: event.pages,
         missingScopes: event.missingScopes,
       },
-      selectedPageId: eligible.length === 1 ? eligible[0].pageId : '',
+      selectedPageId,
     },
     error: '',
     notice: '',
@@ -95,7 +109,19 @@ export function pageFlowOnWaitTimeout(flow: CarePageFlowState, now: number): Car
 }
 
 export function formatBackfillSummaryNotice(backfill: CustomerCareBackfillSummary): string {
-  return `Đã đồng bộ ${backfill.pagesProcessed} Page (quét ${backfill.conversationsScanned} hội thoại): cập nhật ${backfill.leadsImported} khách có SĐT, ${backfill.namesSealed} tên khách hàng vào CRM.`;
+  const base = `Đã đồng bộ ${backfill.pagesProcessed} Page (quét ${backfill.conversationsScanned} hội thoại): cập nhật ${backfill.leadsImported} khách có SĐT, ${backfill.namesSealed} tên khách hàng vào CRM.`;
+  const skipped = backfill.skippedPages ?? [];
+  if (skipped.length === 0) return base;
+  const details = skipped
+    .map((page) => {
+      const name = page.pageName?.trim() ? page.pageName.trim() : `Page ${page.pageId}`;
+      return `${name} (${BACKFILL_SKIP_REASON_LABELS[page.reason]})`;
+    })
+    .join('; ');
+  const actionHint = skipped.some((page) => page.reason === 'permission_missing')
+    ? " Hãy bấm 'Kết nối lại / Thêm Page CRM' → chọn 'Chỉnh sửa cài đặt trước đó' trên Facebook để tích cấp quyền cho các Page này."
+    : '';
+  return `${base} Cảnh báo — có ${skipped.length} Page bị bỏ qua chưa đồng bộ được: ${details}.${actionHint}`;
 }
 
 /**
@@ -115,11 +141,17 @@ export function pageFlowOnActionResult(
       : { flow: { ...INITIAL_PAGE_FLOW, waitingUntil: flow.waitingUntil }, error };
   }
   if (response.snapshot.workspaceId !== scopeKey) return { flow: INITIAL_PAGE_FLOW, error: SCOPE_MISMATCH };
+  const hasSkipped = (response.backfill?.skippedPages?.length ?? 0) > 0;
   const backfillText = response.backfill ? formatBackfillSummaryNotice(response.backfill) : '';
   const notice = backfillText
     ? (success ? `${success} ${backfillText}` : backfillText)
     : success;
-  return { flow: INITIAL_PAGE_FLOW, snapshot: response.snapshot, notice };
+  return {
+    flow: INITIAL_PAGE_FLOW,
+    snapshot: response.snapshot,
+    notice,
+    ...(hasSkipped ? { noticeTone: 'warning' as const } : {}),
+  };
 }
 
 /** A thrown IPC call is treated as transient: the Page list stays so the operator can retry. */

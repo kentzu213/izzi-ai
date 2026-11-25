@@ -15,6 +15,7 @@ import type {
   CustomerCareSnapshot,
   CustomerCareAutoReplyResult,
   CustomerCareAutoReplyState,
+  CustomerCareBackfillSummary,
   CustomerCareCrmIdentityActionResult,
   CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListResult,
@@ -71,10 +72,11 @@ import {
   parseCareCrmIdentityRefreshInput,
 } from './care-crm-identity';
 import {
+  CarePageConnectionCoordinator,
   connectedPage,
+  copyCrmSyncedPages,
   deriveCareMode,
   derivePageBlockers,
-  toCustomerCarePageConnection,
 } from './care-page-connection';
 import { carePageState, countCareFacts, type CareCrmSegmentSummary, type CareGraphSnapshot } from './care-graph-digest';
 import { summarizeCareCrmSegments } from '../../shared/customer-crm-enterprise';
@@ -717,6 +719,7 @@ export class CustomerCareService {
   private readonly autoReply?: CareAutoReplyGateway;
   private readonly onCareChanged?: () => void;
   private readonly crm?: CareCrmGateway;
+  private readonly pageConnections = new CarePageConnectionCoordinator();
 
   constructor(options: CustomerCareServiceOptions) {
     this.store = options.store;
@@ -993,11 +996,14 @@ export class CustomerCareService {
         () => facebook.backfillBoundPage!(authority.workspaceId),
       );
       if (!result.ok) return result;
+      if (result.value.crmPages !== undefined) {
+        this.pageConnections.setCrmPages(authority.workspaceId, result.value.crmPages);
+      }
       const connection = await this.readPageConnection(authority);
       return {
         ok: true,
         snapshot: this.buildSnapshot(authority, connection),
-        backfill: { ...result.value },
+        backfill: copyBackfillSummary(result.value),
       };
     }
 
@@ -1032,16 +1038,25 @@ export class CustomerCareService {
     );
     if (!result.ok) return result;
     if ('backfill' in result.value) {
+      if (result.value.crmPages !== undefined) {
+        this.pageConnections.setCrmPages(authority.workspaceId, result.value.crmPages);
+      }
       const pageConn = result.value.connection
-        ? connectedPage(result.value.connection)
+        ? connectedPage(result.value.connection, this.pageConnections.getCrmPages(authority.workspaceId))
         : await this.readPageConnection(authority);
       return {
         ok: true,
         snapshot: this.buildSnapshot(authority, pageConn),
-        backfill: { ...result.value.backfill },
+        backfill: copyBackfillSummary(result.value.backfill),
       };
     }
-    return { ok: true, snapshot: this.buildSnapshot(authority, connectedPage(result.value)) };
+    return {
+      ok: true,
+      snapshot: this.buildSnapshot(
+        authority,
+        connectedPage(result.value, this.pageConnections.getCrmPages(authority.workspaceId)),
+      ),
+    };
   }
 
   async disconnectFacebookPage(): Promise<CustomerCareFacebookActionResult> {
@@ -1050,6 +1065,7 @@ export class CustomerCareService {
     const { authority, facebook } = gate;
     const result = await this.runFacebookCall(authority, () => facebook.disconnect(authority.workspaceId));
     if (!result.ok) return result;
+    this.pageConnections.clearWorkspace(authority.workspaceId);
     return { ok: true, snapshot: this.buildSnapshot(authority, { state: 'not_connected' }) };
   }
 
@@ -1297,7 +1313,7 @@ export class CustomerCareService {
           timer = setTimeout(() => reject(new Error('care-status-timeout')), FACEBOOK_STATUS_TIMEOUT_MS);
         }),
       ]);
-      return toCustomerCarePageConnection(result);
+      return this.pageConnections.applyStatus(authority.workspaceId, result);
     } catch {
       return { state: 'unavailable' };
     } finally {
@@ -1552,11 +1568,17 @@ export class CustomerCareService {
     }
 
     const careMode = deriveCareMode({ pageConnection });
+    const crmPages = pageConnection.state === 'connected'
+      ? copyCrmSyncedPages(pageConnection.crmPages, pageConnection.pageId)
+      : (pageConnection.state === 'not_connected'
+        ? this.pageConnections.getCrmPages(authority.workspaceId)
+        : []);
     return {
       workspaceId: authority.workspaceId,
       setup: setup ? cloneSetup(setup) : null,
       blockers,
       pageConnection,
+      ...(crmPages.length > 0 ? { crmPages } : {}),
       canManagePage: MUTATION_ROLES.includes(authority.role),
       mode: careMode.mode,
       modeReasons: careMode.reasons,
@@ -1564,6 +1586,19 @@ export class CustomerCareService {
       encryptedStorageAvailable: loaded.encryptionAvailable,
     };
   }
+}
+
+function copyBackfillSummary(summary: CustomerCareBackfillSummary): CustomerCareBackfillSummary {
+  return {
+    pagesProcessed: summary.pagesProcessed,
+    conversationsScanned: summary.conversationsScanned,
+    leadsImported: summary.leadsImported,
+    messagesStored: summary.messagesStored,
+    namesSealed: summary.namesSealed,
+    ...(summary.skippedPages
+      ? { skippedPages: summary.skippedPages.map((page) => ({ ...page })) }
+      : {}),
+  };
 }
 
 function facebookFailure(result: CareFacebookFailure): CustomerCareFacebookFailure {
