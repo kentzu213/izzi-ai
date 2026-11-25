@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import { colorWithAlpha, drawGraphViewCanvasField, mixTagColors } from '@kentzu213/graph-view';
 import type { CustomerCareCrmAssignee, CustomerCareCrmRow } from '../../shared/customer-care-types';
@@ -17,9 +17,9 @@ import {
   type CrmGraphEntry,
   type CrmGraphLink,
   type CrmGraphNode,
-  type CrmGraphRow,
 } from './customer-crm-graph';
 import { CustomerCrmCard } from './CustomerCrmCard';
+import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 
 export interface CustomerCrmGraphProps {
   /** The rows the table holds (stage filter applied). The graph never loads or stores anything itself. */
@@ -29,7 +29,12 @@ export interface CustomerCrmGraphProps {
   nowMs: number;
   onCopy: (row: CustomerCareCrmRow) => void;
   onOpenProfile: (leadId: string) => void;
-  renderExtraCard?: (row: CrmGraphRow) => ReactNode;
+  /** Care CRM S3 staff actions on the card's identity; absent shows it read-only. */
+  identityHandlers?: CrmIdentityHandlers | null;
+  /** Owner or manager with the purge available. */
+  canDelete?: boolean;
+  /** The existing purge, for a customer's erase request. */
+  onPurge?: (row: CustomerCareCrmRow) => void;
 }
 
 /** The engine adds positions and speeds to these copies; pill sizes are kept for hit-testing. */
@@ -61,10 +66,10 @@ function truncate(text: string, max: number): string {
 /**
  * MyGraph → CRM → "Sơ đồ": customers and what links them (stage, products, occasion, owner and, once rows carry
  * identity, persona, source ad and shared-link domains), drawn in the Memory graph's style. Clicking a customer
- * opens the read-only card.
+ * opens the card: the staff profile read-only, the AI identity with its staff actions.
  */
 export default function CustomerCrmGraph({
-  rows, products, assignees, nowMs, onCopy, onOpenProfile, renderExtraCard,
+  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null, canDelete = false, onPurge,
 }: CustomerCrmGraphProps) {
   // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
   // restart; the 60 s tick hands over new row arrays every time.
@@ -370,15 +375,19 @@ export default function CustomerCrmGraph({
 
       {selectedRow ? (
         <CustomerCrmCard
+          // A card per customer: its identity state (the version it opened with) never carries over to another.
+          key={selectedRow.leadId}
           cardRef={cardRef}
           row={selectedRow}
           nowMs={nowMs}
           assignees={assignees}
           products={products}
-          extraSection={renderExtraCard ? renderExtraCard(selectedRow) : undefined}
           onCopy={() => onCopy(selectedRow)}
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
           onClose={closeCard}
+          identityHandlers={identityHandlers}
+          canDelete={canDelete}
+          onPurge={onPurge ? () => onPurge(selectedRow) : undefined}
         />
       ) : (
         <p className="v2-crm-graph__hint v2-crm__hint">Bấm vào một khách trên sơ đồ để xem thẻ nhận diện.</p>

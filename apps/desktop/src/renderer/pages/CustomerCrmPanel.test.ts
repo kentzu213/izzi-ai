@@ -199,18 +199,38 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect(afterSwitchBack).toContain('Chưa lưu');
   });
 
-  it('calls only the CRM routes the table already used', () => {
+  it('calls only the CRM routes: the table\'s, plus the two Care CRM S3 identity routes', () => {
     const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
-    expect([...calls].sort()).toEqual(['getSnapshot', 'listCrm', 'purgeLead', 'saveCrmProfile']);
+    expect([...calls].sort()).toEqual(['getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile']);
   });
 
-  it('keeps the customerCare IPC channels exactly as they were', () => {
+  it('discards list reads in flight when an identity answer lands, and reloads page 1 when the answer asks for it', () => {
+    // Review of a694110, HIGH 1 and LOW 5. The merge itself is covered in customer-crm-flow.test.ts.
+    const panel = read('./CustomerCrmPanel.tsx');
+    const apply = panel.slice(panel.indexOf('const applyIdentityOutcome'), panel.indexOf('const identityAct'));
+    expect(apply).toContain('sequenceRef.current.invalidate()');
+    // A full reload in flight is started again rather than lost (re-review of a394761, LOW 3).
+    expect(apply).toContain("loadRef.current('full')");
+    expect(apply).toContain("loadRef.current('page1')");
+    expect(panel).toContain('AI hồ sơ khách tạm không tải được.');
+    // "Làm mới" and "Thử lại" ask main to try the identity again, past its 5-minute pause (LOW 2).
+    expect(panel.split("void load('full', true);")).toHaveLength(3);
+  });
+
+  it('never carries its own copy of the consent question: the dialog shows the server\'s text (review MEDIUM 3)', () => {
+    for (const file of ['./CustomerCrmPanel.tsx', './CustomerCrmIdentity.tsx', './customer-crm-identity.ts']) {
+      expect(read(file), file).not.toMatch(/xin phép lưu thông tin|trợ lý tự động của/);
+    }
+  });
+
+  it('keeps the customerCare IPC channels exactly as they were, plus the two Care CRM S3 identity channels', () => {
     const ipc = read('../../main/customer-care/customer-care-ipc.ts');
     const methods = ipc.slice(ipc.indexOf('const METHODS = ['), ipc.indexOf('] as const;')).match(/'(\w+)'/g);
     expect(methods).toEqual([
       "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'",
       "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
       "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
+      "'identityAction'", "'refreshIdentity'",
     ]);
   });
 
@@ -227,8 +247,11 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
   const renderer = [
     './CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
     './CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
+    './CustomerCrmIdentity.tsx', './customer-crm-identity.ts',
   ];
-  const main = ['../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts'];
+  const main = [
+    '../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts', '../../main/customer-care/care-crm-identity.ts',
+  ];
 
   it('keeps the renderer CRM files free of storage, graph and logging APIs', () => {
     for (const file of renderer) {
@@ -246,6 +269,7 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
       expect(source, file).not.toMatch(/node:fs|writeFile|appendFile|electron-store/);
     }
     expect(read(main[0])).not.toMatch(/console\./);
+    expect(read(main[2])).not.toMatch(/console\./);
     expect(read(main[1]).match(/console\.\w+/g)).toEqual(['console.warn']);
   });
 

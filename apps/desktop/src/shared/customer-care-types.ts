@@ -106,6 +106,21 @@ export const CUSTOMER_CARE_FACEBOOK_REJECT_REASONS = [
   'rate_limited',
   // Care CRM S2, 403 on a save: the chosen owner is no longer an active owner, manager or editor.
   'owner_not_eligible',
+  // Care CRM S3, the identity card (backend bae6259). 422: the customer did not agree, the 24-hour window
+  // closed, or the shop already asked twice; 409 an identity run is in progress.
+  'consent_required',
+  'outside_window',
+  'ask_limit',
+  'identity_running',
+  // 429 on a refresh: the workspace used today's identity runs.
+  'daily_cap',
+  // 503: the AI customer profile is off for this workspace.
+  'profile_ai_off',
+  // 502: the model did not answer, or Facebook refused / did not take the consent question.
+  'ai_unavailable',
+  'provider_rejected',
+  'provider_timeout',
+  'provider_unavailable',
 ] as const;
 export type CustomerCareFacebookRejectReason = (typeof CUSTOMER_CARE_FACEBOOK_REJECT_REASONS)[number];
 
@@ -386,8 +401,10 @@ export interface CustomerCareCrmRow {
   /** Up to 3 customer messages, oldest first, plain text. */
   recentMessages: CustomerCareLeadMessage[];
   profile: CustomerCareCrmProfile;
-  /** Care CRM S3, only with `include=identity` (slice I4); absent from every row until then. */
+  /** Care CRM S3: present on every row when the server answered `include=identity`; absent from an older server. */
   identity?: CustomerCareCrmIdentity;
+  /** Care CRM S3: the server sent this row's identity but it could not be read; the row itself is shown as usual. */
+  identityUnavailable?: true;
 }
 
 /** An active owner, manager or editor of the workspace; `label` is null when no safe name could be shown. */
@@ -406,6 +423,18 @@ export type CustomerCareCrmListResult =
     rows: CustomerCareCrmRow[];
     nextCursor: string | null;
     assignees: CustomerCareCrmAssignee[];
+    /**
+     * Care CRM S3: whether the AI customer profile is on for this workspace; null when the server sent no identity
+     * at all (a server without S3), so the rows carry none.
+     */
+    identityEnabled: boolean | null;
+    /**
+     * Care CRM S3: the identity could not be loaded for this page (the identity read failed and the list was read
+     * without it, or the answer's identity part was unreadable); the table is shown without it.
+     */
+    identityUnavailable: boolean;
+    /** Care CRM S3: the exact consent question "Xin phép khách" would send now; null while asks are off. */
+    consentAsk: CustomerCareCrmConsentAsk | null;
   }
   | CustomerCareFacebookFailure;
 
@@ -428,9 +457,9 @@ export type CustomerCareCrmSaveResult =
   | CustomerCareCrmConflict
   | CustomerCareFacebookFailure;
 
-// Care CRM S3 identity (spec 2026-11-25, section 5). `GET /crm` returns it per row only when the client asks with
-// `include=identity` (slice I4); this build still asks without it and main's exact row parser keeps no such key,
-// so no row carries it yet. The MyGraph CRM graph and card already read it when present. Every field may be null.
+// Care CRM S3 identity (spec 2026-11-25, section 5; backend bae6259). Main asks `GET /crm` with `include=identity`
+// and parses the block exactly; an older server answers without it, and the rows then carry none. Like every CRM
+// row it lives in renderer memory for display only. Every field may be null.
 
 export const CUSTOMER_CARE_CRM_ID_CONFIDENCES = ['low', 'medium', 'high'] as const;
 /** Server-computed: said directly = high, two or more signals = medium, one signal = low (never shown). */
@@ -467,6 +496,17 @@ export interface CustomerCareCrmConsent {
   at: string | null;
   noMarketing: boolean;
   canAsk: boolean;
+  /**
+   * When the customer sent "XOÁ" without having been told about it: nothing was purged and staff decide. Absent
+   * from a server older than CRM S3 round 3.
+   */
+  eraseRequestedAt?: string | null;
+}
+
+/** The consent question exactly as the server would send it (disclosure, consent line, privacy link). */
+export interface CustomerCareCrmConsentAsk {
+  text: string;
+  copyVersion: number;
 }
 
 export const CUSTOMER_CARE_CRM_TIMELINES = ['this_week', 'this_month', 'before_tet', 'later'] as const;
@@ -514,6 +554,8 @@ export interface CustomerCareCrmIdentity {
 /** Renderer inputs; the workspace always comes from main's live authority. */
 export interface CustomerCareCrmListInput {
   cursor: string | null;
+  /** Care CRM S3, first page of "Làm mới" only: try the identity read again even while main has paused it. */
+  retryIdentity?: true;
 }
 
 export interface CustomerCareCrmSaveInput {
@@ -522,3 +564,54 @@ export interface CustomerCareCrmSaveInput {
   expectedUpdatedAt: string | null;
   profile: CustomerCareCrmProfileInput;
 }
+
+// Care CRM S3 staff actions on the identity card (`POST /crm/identity`, `POST /crm/identity/refresh`). Every
+// action is started by a person; nothing here polls. The workspace always comes from main's live authority.
+
+/** The identity fields a staff action names. `adTitle` is never one: it comes from the ad. */
+export const CUSTOMER_CARE_CRM_IDENTITY_FIELDS = [
+  'occasion', 'timeline', 'productFactIds', 'addressForm', 'ageBand', 'family', 'persona', 'budgetBand', 'sharedLink',
+] as const;
+export type CustomerCareCrmIdentityField = (typeof CUSTOMER_CARE_CRM_IDENTITY_FIELDS)[number];
+
+/** Allowed before the customer agreed; every other field is the profile layer. */
+export const CUSTOMER_CARE_CRM_ORDER_FIELDS: readonly CustomerCareCrmIdentityField[] = ['occasion', 'timeline', 'productFactIds'];
+
+// clear_erase_request (owner/manager): the customer changed their mind about a pending "XOÁ" (backend 79e14f9).
+export const CUSTOMER_CARE_CRM_IDENTITY_ACTIONS = [
+  'confirm', 'correct', 'reject', 'ask_consent', 'withdraw_consent', 'clear_erase_request',
+] as const;
+export type CustomerCareCrmIdentityAction = (typeof CUSTOMER_CARE_CRM_IDENTITY_ACTIONS)[number];
+
+/**
+ * confirm / correct / reject carry `field` and `expectedVersion` (the identity `version` the card opened with);
+ * `correct` adds `value` (the field's type), `sharedLink` adds `index` (0–2). ask_consent, withdraw_consent and
+ * clear_erase_request carry only `leadId` and `action`. Main checks the exact key set for each action.
+ */
+export interface CustomerCareCrmIdentityActionInput {
+  leadId: string;
+  action: CustomerCareCrmIdentityAction;
+  field?: CustomerCareCrmIdentityField;
+  value?: unknown;
+  index?: number;
+  expectedVersion?: string | null;
+}
+
+export interface CustomerCareCrmIdentityRefreshInput {
+  leadId: string;
+}
+
+/**
+ * The identity after the action. `identity_conflict`: someone (or an AI run) changed it first; nothing was written
+ * and `identity` is the current one.
+ */
+export type CustomerCareCrmIdentityActionResult =
+  | { ok: true; workspaceId: string; leadId: string; identity: CustomerCareCrmIdentity }
+  | { ok: false; error: 'identity_conflict'; workspaceId: string; leadId: string; identity: CustomerCareCrmIdentity }
+  | CustomerCareFacebookFailure;
+
+/** `refresh_too_soon`: one refresh per customer every 10 minutes; `retryAfterSec` says when the next one may run. */
+export type CustomerCareCrmIdentityRefreshResult =
+  | { ok: true; workspaceId: string; leadId: string; identity: CustomerCareCrmIdentity; outcome: 'updated' | 'no_change' }
+  | { ok: false; error: 'refresh_too_soon'; workspaceId: string; leadId: string; retryAfterSec: number }
+  | CustomerCareFacebookFailure;

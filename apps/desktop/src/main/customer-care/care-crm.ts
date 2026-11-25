@@ -13,6 +13,8 @@ import {
   CUSTOMER_CARE_CRM_ROLES,
   CUSTOMER_CARE_CRM_STAGES,
   type CustomerCareCrmAssignee,
+  type CustomerCareCrmConsentAsk,
+  type CustomerCareCrmIdentityActionInput,
   type CustomerCareCrmListInput,
   type CustomerCareCrmProfile,
   type CustomerCareCrmProfileInput,
@@ -34,6 +36,13 @@ import {
   parseLeadMessage,
   type CareFacebookResult,
 } from './care-facebook-client';
+import {
+  copyCareCrmIdentity,
+  parseCareCrmConsentAsk,
+  parseCareCrmIdentity,
+  type CareCrmIdentityOutcome,
+  type CareCrmRefreshOutcome,
+} from './care-crm-identity';
 
 export const CARE_CRM_PAGE_SIZE = 50;
 export const CARE_CRM_MAX_PRODUCTS = 8;
@@ -65,6 +74,12 @@ export interface CareCrmPage {
   rows: CustomerCareCrmRow[];
   nextCursor: string | null;
   assignees: CustomerCareCrmAssignee[];
+  /** Care CRM S3: the server's `identityEnabled`; null when it answered without identity (no S3 there). */
+  identityEnabled: boolean | null;
+  /** Care CRM S3: the identity could not be loaded for this page; the rows are shown without it. */
+  identityUnavailable: boolean;
+  /** Care CRM S3: the exact consent question the server would send; null while asks are off. */
+  consentAsk: CustomerCareCrmConsentAsk | null;
 }
 
 /**
@@ -75,10 +90,24 @@ export type CareCrmSaveOutcome =
   | { kind: 'saved'; leadId: string; profile: CustomerCareCrmProfile }
   | { kind: 'conflict'; leadId: string; profile: CustomerCareCrmProfile };
 
-/** The two CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
+/**
+ * Care CRM S3, how a list read treats the identity: `scope` names the live account and workspace (the identity pause
+ * after a failed read belongs to it, so a switch starts afresh); `retryIdentity` ("Làm mới") tries the identity read
+ * again even while it is paused.
+ */
+export interface CareCrmListOptions {
+  scope?: string;
+  retryIdentity?: boolean;
+}
+
+/** The CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export interface CareCrmGateway {
-  listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>>;
+  listCrm(workspaceId: string, cursor: string | null, options?: CareCrmListOptions): Promise<CareFacebookResult<CareCrmPage>>;
   saveCrmProfile(workspaceId: string, input: CustomerCareCrmSaveInput): Promise<CareFacebookResult<CareCrmSaveOutcome>>;
+  /** Care CRM S3: a staff action on the identity card; the caller has already parsed `input`. */
+  identityAction(workspaceId: string, input: CustomerCareCrmIdentityActionInput): Promise<CareFacebookResult<CareCrmIdentityOutcome>>;
+  /** Care CRM S3: one identity run now, waited for up to 45 s. */
+  refreshIdentity(workspaceId: string, leadId: string): Promise<CareFacebookResult<CareCrmRefreshOutcome>>;
 }
 
 /** Mirrors the backend: owner, manager and editor read and edit profiles; a viewer or reviewer never does. */
@@ -178,8 +207,15 @@ function parseProductIds(value: unknown, unique: boolean): string[] | null {
 // Renderer input (the IPC argument guard)
 // ---------------------------------------------------------------------------
 
-/** `{ cursor }`: null for the first page, otherwise the opaque `nextCursor` main handed out. */
+/**
+ * `{ cursor }`: null for the first page, otherwise the opaque `nextCursor` main handed out. Care CRM S3: the first
+ * page of "Làm mới" may add `retryIdentity: true` (and only `true`).
+ */
 export function parseCareCrmListInput(input: unknown): CustomerCareCrmListInput | null {
+  if (hasOwn(input, 'retryIdentity')) {
+    const retry = exactRecord(input, ['cursor', 'retryIdentity']);
+    return retry && retry.cursor === null && retry.retryIdentity === true ? { cursor: null, retryIdentity: true } : null;
+  }
   const record = exactRecord(input, ['cursor']);
   if (!record) return null;
   if (record.cursor === null) return { cursor: null };
@@ -292,12 +328,23 @@ function parseMessages(value: unknown): CustomerCareLeadMessage[] | null {
   return messages;
 }
 
-/** One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. */
-export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
-  const row = exactRecord(value, [
-    'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
-    'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
-  ]);
+const ROW_KEYS = [
+  'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
+  'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
+];
+
+function hasOwn(value: unknown, key: string): boolean {
+  return typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+/**
+ * One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. The Care
+ * CRM S3 `identity` key is optional and never fails the row: with `withIdentity` (the envelope carried a valid
+ * `identityEnabled`) an identity that is missing or does not parse is dropped and the row marked
+ * `identityUnavailable`; without it any identity is ignored.
+ */
+export function parseCareCrmRow(value: unknown, withIdentity = false): CustomerCareCrmRow | null {
+  const row = exactRecord(value, hasOwn(value, 'identity') ? [...ROW_KEYS, 'identity'] : ROW_KEYS);
   if (!row || !isCareFacebookChoiceId(row.leadId) || !isCareFacebookPageId(row.pageId)) return null;
   if (typeof row.phone !== 'string' || !CARE_LEAD_PHONE_PATTERN.test(row.phone)) return null;
   if (typeof row.zaloMentioned !== 'boolean' || !isCareLeadStatus(row.leadStatus)) return null;
@@ -306,6 +353,7 @@ export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
   const recentMessages = parseMessages(row.recentMessages);
   const profile = parseCareCrmProfile(row.profile);
   if (customerName === undefined || !recentMessages || !profile) return null;
+  const identity = withIdentity && 'identity' in row ? parseCareCrmIdentity(row.identity) : null;
   return {
     leadId: row.leadId,
     pageId: row.pageId,
@@ -317,6 +365,7 @@ export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
     lastMessageAt: row.lastMessageAt,
     recentMessages,
     profile,
+    ...(identity ? { identity } : withIdentity ? { identityUnavailable: true as const } : {}),
   };
 }
 
@@ -337,30 +386,46 @@ function parseAssignees(value: unknown): CustomerCareCrmAssignee[] | null {
   return assignees;
 }
 
-/** `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. */
+const ENVELOPE_KEYS = ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees'];
+/** Care CRM S3 envelope keys: optional, and never a reason to reject the page. */
+const IDENTITY_ENVELOPE_KEYS = ['identityEnabled', 'consentAsk'];
+
+/**
+ * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. The Care
+ * CRM S3 parts are optional and never take the CRM down: a server without S3 sends none of them; an unreadable
+ * `identityEnabled` (or row identities without it) shows the table without identity (`identityUnavailable`); an
+ * unreadable row identity drops only that identity; an unreadable `consentAsk` is null (asking stays off).
+ */
 export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCrmPage | null {
-  const envelope = exactRecord(body, ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees']);
+  const envelope = exactRecord(body, [...ENVELOPE_KEYS, ...IDENTITY_ENVELOPE_KEYS.filter((key) => hasOwn(body, key))]);
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_ROLES, envelope.role) || typeof envelope.canDelete !== 'boolean') return null;
   if (envelope.nextCursor !== null && !isCareLeadsCursor(envelope.nextCursor)) return null;
   if (!Array.isArray(envelope.rows) || envelope.rows.length > CARE_CRM_PAGE_SIZE) return null;
+  const withIdentity = typeof envelope.identityEnabled === 'boolean';
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (const raw of envelope.rows as unknown[]) {
-    const row = parseCareCrmRow(raw);
+    const row = parseCareCrmRow(raw, withIdentity);
     if (!row || seen.has(row.leadId)) return null;
     seen.add(row.leadId);
     rows.push(row);
   }
   const assignees = parseAssignees(envelope.assignees);
   if (!assignees) return null;
-  return { role: envelope.role, canDelete: envelope.canDelete, rows, nextCursor: envelope.nextCursor, assignees };
+  const unreadable = !withIdentity
+    && ('identityEnabled' in envelope || (envelope.rows as unknown[]).some((raw) => hasOwn(raw, 'identity')));
+  return {
+    role: envelope.role,
+    canDelete: envelope.canDelete,
+    rows,
+    nextCursor: envelope.nextCursor,
+    assignees,
+    identityEnabled: withIdentity ? envelope.identityEnabled as boolean : null,
+    identityUnavailable: unreadable,
+    consentAsk: withIdentity ? parseCareCrmConsentAsk(envelope.consentAsk) : null,
+  };
 }
-
-const ROW_KEYS = [
-  'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
-  'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
-];
 
 /**
  * The profile of a row in a save answer (200 or 409). After the database step the server may fail to present
@@ -410,5 +475,6 @@ export function copyCareCrmRow(row: CustomerCareCrmRow): CustomerCareCrmRow {
     ...row,
     recentMessages: row.recentMessages.map((message) => ({ ...message })),
     profile: copyCareCrmProfile(row.profile),
+    ...(row.identity ? { identity: copyCareCrmIdentity(row.identity) } : {}),
   };
 }

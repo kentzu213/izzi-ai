@@ -274,6 +274,10 @@ describe('parseCareCrmRow and the list answer', () => {
       rows: [ROW],
       nextCursor: LIST_BODY.nextCursor,
       assignees: [{ userId: OWNER_ID, label: 'Lan' }],
+      // An answer without the S3 identity block (identity is covered in care-crm-identity.test.ts).
+      identityEnabled: null,
+      identityUnavailable: false,
+      consentAsk: null,
     });
   });
 

@@ -12,6 +12,7 @@ describe('customer care IPC boundary', () => {
     selectFacebookPage: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
     purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
+    identityAction: vi.fn(), refreshIdentity: vi.fn(),
   };
   const facebook = { connect: vi.fn(), takeChoices: vi.fn() };
   const invoke = (channel: string, ...args: unknown[]) => handlers.get(`customerCare:${channel}`)!({}, ...args);
@@ -32,6 +33,8 @@ describe('customer care IPC boundary', () => {
     ['setAutoReply', service.setAutoReply],
     ['listCrm', service.listCrm],
     ['saveCrmProfile', service.saveCrmProfile],
+    ['identityAction', service.identityAction],
+    ['refreshIdentity', service.refreshIdentity],
   ] as const;
 
   beforeEach(() => {
@@ -95,6 +98,16 @@ describe('customer care IPC boundary', () => {
     const save = { leadId: 'l', expectedUpdatedAt: null, profile: {} };
     expect(await invoke('saveCrmProfile', save, 'extra')).toEqual({ ok: false, error: 'forbidden' });
     expect(service.saveCrmProfile).toHaveBeenCalledWith(save);
+  });
+  it('registers the CRM identity channels and forwards only their opaque input, never extra arguments', async () => {
+    service.identityAction.mockResolvedValue({ ok: false, error: 'invalid_input' });
+    service.refreshIdentity.mockResolvedValue({ ok: false, error: 'forbidden' });
+    const action = { leadId: 'l', action: 'ask_consent' };
+    expect(await invoke('identityAction', action, { workspaceId: 'injected' })).toEqual({ ok: false, error: 'invalid_input' });
+    expect(service.identityAction).toHaveBeenCalledWith(action);
+    const refresh = { leadId: 'l' };
+    expect(await invoke('refreshIdentity', refresh, 'extra')).toEqual({ ok: false, error: 'forbidden' });
+    expect(service.refreshIdentity).toHaveBeenCalledWith(refresh);
   });
   it('hands the buffered Page choices out without any renderer input', async () => {
     const choices = { ok: true, choiceId: 'c', expiresAt: 'e', pages: [], missingScopes: [] };

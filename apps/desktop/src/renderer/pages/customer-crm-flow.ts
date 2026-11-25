@@ -6,6 +6,7 @@
 import type {
   CustomerCareCrmAddressForm,
   CustomerCareCrmAssignee,
+  CustomerCareCrmConsentAsk,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
   CustomerCareCrmLostReason,
@@ -20,6 +21,7 @@ import type {
   CustomerCareFacebookFailure,
   CustomerCareFact,
 } from '../../shared/customer-care-types';
+import { normalizeCrmNoteTags } from '../../shared/customer-crm-enterprise';
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
 export const CRM_REFRESH_MS = 60_000;
@@ -266,7 +268,8 @@ export function normalizeCrmProfile(draft: CustomerCareCrmProfileInput): Custome
     ...draft,
     productFactIds: [...new Set(draft.productFactIds)],
     nextStep: cleanText(draft.nextStep, LINE_UNSAFE),
-    note: cleanText(draft.note, NOTE_UNSAFE),
+    // Through the codec on every save: a tag beta.121 left in the note loses its profile-layer keys (Care CRM S3).
+    note: normalizeCrmNoteTags(cleanText(draft.note, NOTE_UNSAFE)),
     lostReason: visible.lostReason ? draft.lostReason : null,
     purchasedAt: visible.purchasedAt ? draft.purchasedAt : null,
   };
@@ -295,11 +298,12 @@ export function validateCrmProfile(profile: CustomerCareCrmProfileInput, nowMs: 
   return null;
 }
 
+/** Notes compare as the codec writes them: a row is never saved only to clean an old tag, but is once it changes. */
 export function crmProfilesEqual(a: CustomerCareCrmProfileInput, b: CustomerCareCrmProfileInput): boolean {
   return a.stage === b.stage && a.ownerUserId === b.ownerUserId && a.addressForm === b.addressForm
     && a.occasion === b.occasion && a.neededBy === b.neededBy && a.nextStep === b.nextStep
     && a.nextStepDueAt === b.nextStepDueAt && a.lostReason === b.lostReason && a.purchasedAt === b.purchasedAt
-    && a.note === b.note && a.productFactIds.length === b.productFactIds.length
+    && normalizeCrmNoteTags(a.note) === normalizeCrmNoteTags(b.note) && a.productFactIds.length === b.productFactIds.length
     && a.productFactIds.every((id, index) => id === b.productFactIds[index]);
 }
 
@@ -445,9 +449,38 @@ function isNewer(a: string | null, b: string | null): boolean {
   return Date.parse(a) > Date.parse(b);
 }
 
+type CrmIdentity = NonNullable<CustomerCareCrmRow['identity']>;
+
+/** The customer refused, withdrew, or asked for their data to be erased: the AI identity is already wiped. */
+function refusedOrErasing(identity: CrmIdentity): boolean {
+  const consent = identity.consent;
+  return consent?.state === 'declined' || consent?.state === 'withdrawn' || (consent?.eraseRequestedAt ?? null) !== null;
+}
+
+/**
+ * Care CRM S3: the identity has its own version (`identity_updated_at`, which staff and AI writes move forward, to the
+ * millisecond). A refresh does not put an older identity over a newer one on screen. The server's answer always wins
+ * when it has no version (a wipe can delete the identity row) or carries a refusal or an erase request, so those show
+ * at once; reads that predate a staff action never get here, because the action's answer drops them
+ * (`CrmLoadSequence.invalidate`). An equal or newer identity follows the server (a consent change keeps the version),
+ * and so does none at all (the list was read without identity).
+ */
+function newerIdentity(mine: CrmIdentity | undefined, fresh: CrmIdentity | undefined): CrmIdentity | undefined {
+  if (!fresh || !mine || mine.version === null) return fresh;
+  if (fresh.version === null || refusedOrErasing(fresh)) return fresh;
+  return Date.parse(mine.version) > Date.parse(fresh.version) ? mine : fresh;
+}
+
+function rowWithIdentity(row: CustomerCareCrmRow, identity: CrmIdentity | undefined, unavailable: boolean): CustomerCareCrmRow {
+  const { identity: _identity, identityUnavailable: _unavailable, ...rest } = row;
+  if (identity) return { ...rest, identity };
+  return unavailable ? { ...rest, identityUnavailable: true } : rest;
+}
+
 /**
  * A refresh follows the server's rows and order, but never brings back a row deleted here and never undoes
- * a save that finished after the refresh started (a newer local `updatedAt` wins).
+ * a save that finished after the refresh started (a newer local `updatedAt` wins). The identity is merged on its
+ * own version, apart from the profile.
  */
 export function crmRowsOnRefresh(
   current: readonly CustomerCareCrmRow[],
@@ -459,7 +492,12 @@ export function crmRowsOnRefresh(
     .filter((row) => !removed.has(row.leadId))
     .map((row) => {
       const mine = local.get(row.leadId);
-      return mine && isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
+      if (!mine) return row;
+      const base = isNewer(mine.profile.updatedAt, row.profile.updatedAt) ? mine : row;
+      const identity = newerIdentity(mine.identity, row.identity);
+      const unavailable = identity === undefined && row.identityUnavailable === true;
+      if (identity === base.identity && unavailable === (base.identityUnavailable === true)) return base;
+      return rowWithIdentity(base, identity, unavailable);
     });
 }
 
@@ -518,23 +556,35 @@ export type CrmLoadResult =
     complete: boolean;
     /** The page cap of this load was hit with pages left; for a full load, only the newest 500 are shown. */
     truncated: boolean;
+    /** Care CRM S3, from the first page: the AI profile is on; null when the server sent no identity. */
+    identityEnabled: boolean | null;
+    /** Care CRM S3: some page was read without its identity (the identity read failed). */
+    identityUnavailable: boolean;
+    /** Care CRM S3, from the first page: the exact consent question; null while asks are off. */
+    consentAsk: CustomerCareCrmConsentAsk | null;
   }
   | CustomerCareFacebookFailure;
 
-/** Reads up to `maxPages` pages; one failed page, or a page for another workspace, fails the whole load. */
+/**
+ * Reads up to `maxPages` pages; one failed page, or a page for another workspace, fails the whole load.
+ * `retryIdentity` ("Làm mới"): main tries the identity read again on the first page even while it is paused.
+ */
 export async function loadCrmPages(
   list: (input: CustomerCareCrmListInput) => Promise<CustomerCareCrmListResult>,
   maxPages: number = CRM_MAX_PAGES,
+  options: { retryIdentity?: boolean } = {},
 ): Promise<CrmLoadResult> {
   let cursor: string | null = null;
   let first: Extract<CustomerCareCrmListResult, { ok: true }> | null = null;
   let pages = 0;
+  let identityUnavailable = false;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (let page = 0; page < maxPages; page += 1) {
-    const result = await list({ cursor });
+    const result = await list(page === 0 && options.retryIdentity ? { cursor: null, retryIdentity: true } : { cursor });
     if (!result.ok) return result;
     pages += 1;
+    identityUnavailable ||= result.identityUnavailable;
     if (first && result.workspaceId !== first.workspaceId) return { ok: false, error: 'access_changed' };
     first ??= result;
     for (const row of result.rows) {
@@ -556,7 +606,44 @@ export async function loadCrmPages(
     pages,
     complete: cursor === null,
     truncated: cursor !== null && pages >= maxPages,
+    identityEnabled: first.identityEnabled,
+    identityUnavailable,
+    consentAsk: first.consentAsk,
   };
+}
+
+/**
+ * Which list read is current. Each read gets a number and an answer that is no longer the latest is dropped. An
+ * identity answer (Care CRM S3) makes every read in flight stale, since it may predate the staff action; a full
+ * reload ("Làm mới", the tab opening) caught that way is started again instead of being lost.
+ */
+export class CrmLoadSequence {
+  private latest = 0;
+  /** The full reload the "Làm mới" spinner shows, while it runs. */
+  private full: number | null = null;
+
+  start(mode: 'full' | 'page1'): number {
+    this.latest += 1;
+    if (mode === 'full') this.full = this.latest;
+    return this.latest;
+  }
+
+  isCurrent(seq: number): boolean {
+    return seq === this.latest;
+  }
+
+  /** A read ended; true when it was the full reload the spinner shows, which then stops. */
+  finish(seq: number): boolean {
+    if (this.full !== seq) return false;
+    this.full = null;
+    return true;
+  }
+
+  /** Drops every read in flight; true when a full reload was among them, so the caller starts it again. */
+  invalidate(): boolean {
+    this.latest += 1;
+    return this.full !== null;
+  }
 }
 
 /** "Làm mới" rests this long after a full reload, so repeated clicks cannot pile up every-page reads. */

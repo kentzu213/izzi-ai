@@ -14,6 +14,7 @@ import {
   CRM_REFRESH_COOLDOWN_MS,
   CRM_REFRESH_MS,
   CRM_SAVE_INVALID_MESSAGE,
+  CrmLoadSequence,
   crmChangedFields,
   crmDateBounds,
   crmDue,
@@ -384,6 +385,69 @@ describe('refresh merge', () => {
     expect(crmRowsOnRefresh([a], [b], new Set())).toEqual([b]);
   });
 
+  describe('identity (Care CRM S3): merged by its own version, apart from the profile (review HIGH 1)', () => {
+    const identity = (version: string | null, state: 'unknown' | 'granted' = 'granted') => ({
+      version, lastRunAt: null, consent: { state, at: null, noMarketing: false, canAsk: false },
+      occasion: null, timeline: null, productFactIds: null, addressForm: null, ageBand: null, family: null,
+      interests: { adTitle: null, sharedLinks: [], budgetBand: null }, persona: null,
+    });
+    const V1 = '2026-11-25T01:02:03.456Z';
+    const V2 = '2026-11-25T01:02:03.457Z';
+
+    it('keeps a newer local identity over an older incoming one, to the millisecond', () => {
+      const local = row({}, { identity: identity(V2) });
+      const incoming = { ...local, identity: identity(V1) };
+      expect(crmRowsOnRefresh([local], [incoming], new Set())[0].identity?.version).toBe(V2);
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity('2026-11-25T01:02:03.457+00:00') }], new Set())[0].identity?.version)
+        .toBe('2026-11-25T01:02:03.457+00:00');
+    });
+
+    it('takes the incoming identity when it is as new or newer (a consent change keeps the version)', () => {
+      const local = row({}, { identity: identity(V1, 'unknown') });
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity(V1, 'granted') }], new Set())[0].identity?.consent?.state).toBe('granted');
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: identity(V2) }], new Set())[0].identity?.version).toBe(V2);
+      expect(crmRowsOnRefresh([row({}, { identity: identity(null) })], [{ ...local, identity: identity(V1) }], new Set())[0].identity?.version)
+        .toBe(V1);
+    });
+
+    it('keeps a newer local identity even when the incoming profile wins, and the other way round', () => {
+      const local = row({}, { identity: identity(V2) });
+      const incoming = { ...local, profile: { ...local.profile, stage: 'deposit' as const, updatedAt: T2 }, identity: identity(V1) };
+      const merged = crmRowsOnRefresh([local], [incoming], new Set())[0];
+      expect(merged.profile.stage).toBe('deposit');
+      expect(merged.identity?.version).toBe(V2);
+      const newerProfile = { ...local, profile: { ...local.profile, updatedAt: T2 } };
+      const keptProfile = crmRowsOnRefresh([newerProfile], [{ ...newerProfile, profile: { ...local.profile, updatedAt: T1 }, identity: identity(V2) }], new Set())[0];
+      expect(keptProfile.profile.updatedAt).toBe(T2);
+    });
+
+    // Re-review of a394761: a wipe can delete the identity row (version null), and a refusal or an erase request must
+    // show at once; reads that predate a staff action are dropped by the load sequence instead.
+    it('takes an incoming identity with no version (wiped) over a newer local one, erase request included', () => {
+      const local = row({}, { identity: identity(V2, 'granted') });
+      const wiped = { ...identity(null, 'granted'), consent: { state: 'granted' as const, at: null, noMarketing: true, canAsk: false, eraseRequestedAt: V2 } };
+      const merged = crmRowsOnRefresh([local], [{ ...local, identity: wiped }], new Set())[0];
+      expect(merged.identity?.version).toBeNull();
+      expect(merged.identity?.consent?.eraseRequestedAt).toBe(V2);
+    });
+
+    it('takes an incoming refusal or erase request even when its version is older', () => {
+      const local = row({}, { identity: identity(V2, 'granted') });
+      for (const state of ['declined', 'withdrawn'] as const) {
+        const refused = { ...identity(V1), consent: { state, at: null, noMarketing: true, canAsk: false } };
+        expect(crmRowsOnRefresh([local], [{ ...local, identity: refused }], new Set())[0].identity?.consent?.state, state).toBe(state);
+      }
+      const erasing = { ...identity(V1), consent: { state: 'granted' as const, at: null, noMarketing: true, canAsk: false, eraseRequestedAt: V1 } };
+      expect(crmRowsOnRefresh([local], [{ ...local, identity: erasing }], new Set())[0].identity?.consent?.eraseRequestedAt).toBe(V1);
+    });
+
+    it('follows the server when it sends no identity this time (read without it)', () => {
+      const local = row({}, { identity: identity(V2) });
+      const plain = { ...local, identity: undefined };
+      expect(crmRowsOnRefresh([local], [plain], new Set())[0].identity).toBeUndefined();
+    });
+  });
+
   describe('periodic refresh: page 1 merged into the loaded rows by leadId', () => {
     const captured = (day: number) => ({ phoneCapturedAt: at(day, 9) });
 
@@ -468,8 +532,38 @@ describe('a profile whose sealed details could not be opened', () => {
 });
 
 describe('paging', () => {
-  const ok = (rows: CustomerCareCrmRow[], nextCursor: string | null, workspaceId = WORKSPACE): CustomerCareCrmListResult => ({
-    ok: true, workspaceId, role: 'editor', canDelete: false, rows, nextCursor, assignees: [],
+  const ok = (
+    rows: CustomerCareCrmRow[],
+    nextCursor: string | null,
+    workspaceId = WORKSPACE,
+    identityEnabled: boolean | null = null,
+    extra: { identityUnavailable?: boolean; consentAsk?: { text: string; copyVersion: number } | null } = {},
+  ): CustomerCareCrmListResult => ({
+    ok: true, workspaceId, role: 'editor', canDelete: false, rows, nextCursor, assignees: [], identityEnabled,
+    identityUnavailable: extra.identityUnavailable ?? false, consentAsk: extra.consentAsk ?? null,
+  });
+
+  it('takes identityEnabled and the consent question (Care CRM S3) from the first page', async () => {
+    const ask = { text: 'Dạ em là trợ lý tự động của shop ạ.', copyVersion: 1 };
+    const pages = [ok([row()], 'c1', WORKSPACE, true, { consentAsk: ask }), ok([row()], null, WORKSPACE, true)];
+    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityEnabled: true, consentAsk: ask });
+    expect(await loadCrmPages(async () => ok([row()], null))).toMatchObject({ ok: true, identityEnabled: null, consentAsk: null });
+  });
+
+  it('asks main to try the identity again on the first page only when the user pressed "Làm mới"', async () => {
+    const inputs: unknown[] = [];
+    const pages = [ok([row()], 'c1'), ok([row()], null)];
+    await loadCrmPages(async (input) => { inputs.push(input); return pages.shift()!; }, CRM_MAX_PAGES, { retryIdentity: true });
+    expect(inputs).toEqual([{ cursor: null, retryIdentity: true }, { cursor: 'c1' }]);
+    const plain: unknown[] = [];
+    await loadCrmPages(async (input) => { plain.push(input); return ok([row()], null); });
+    expect(plain).toEqual([{ cursor: null }]);
+  });
+
+  it('reports the identity unavailable when any page was read without it', async () => {
+    const pages = [ok([row()], 'c1', WORKSPACE, true), ok([row()], null, WORKSPACE, null, { identityUnavailable: true })];
+    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityUnavailable: true });
+    expect(await loadCrmPages(async () => ok([row()], null, WORKSPACE, true))).toMatchObject({ ok: true, identityUnavailable: false });
   });
 
   it('loads at most 10 pages and reports the list as cut off', async () => {
@@ -540,5 +634,65 @@ describe('product picker', () => {
     expect(options.map((option) => option.id)).toEqual(['ban-127', 'gia-127', 'dai']);
     expect(options[2].label.length).toBeLessThanOrEqual(80);
     expect(crmProductOptions(undefined, NOW)).toEqual([]);
+  });
+});
+
+describe('CrmLoadSequence: which list read is current (re-review of a394761, LOW 3)', () => {
+  it('drops a read that a later read started after, and stops the spinner with the full reload it belongs to', () => {
+    const sequence = new CrmLoadSequence();
+    const full = sequence.start('full');
+    const tick = sequence.start('page1');
+    expect(sequence.isCurrent(full)).toBe(false);
+    expect(sequence.isCurrent(tick)).toBe(true);
+    expect(sequence.finish(tick)).toBe(false);
+    expect(sequence.finish(full)).toBe(true);
+  });
+
+  it('an identity answer drops every read in flight; a full reload in flight is started again, not lost', () => {
+    const sequence = new CrmLoadSequence();
+    const full = sequence.start('full');
+    expect(sequence.invalidate()).toBe(true);
+    expect(sequence.isCurrent(full)).toBe(false);
+    const again = sequence.start('full');
+    // The dropped reload ends first: the spinner keeps going for the one started again.
+    expect(sequence.finish(full)).toBe(false);
+    expect(sequence.isCurrent(again)).toBe(true);
+    expect(sequence.finish(again)).toBe(true);
+  });
+
+  it('an identity answer during a tick only drops the tick', () => {
+    const sequence = new CrmLoadSequence();
+    const tick = sequence.start('page1');
+    expect(sequence.invalidate()).toBe(false);
+    expect(sequence.isCurrent(tick)).toBe(false);
+    expect(sequence.invalidate()).toBe(false);
+  });
+});
+
+describe('saves clear the [izzi-ctx] keys beta.121 wrote (persona, age, recipient, budget, ad, domain, consent=granted)', () => {
+  const STALE = 'Khách hỏi thước Lỗ Ban\n[izzi-ctx: v=1; persona=P2; age=35-44; recipient=parents; timeline=before_tet; budget=5m_15m; consent=granted; ad=QC Tết; domain=shopee.vn]';
+  const CLEAN = 'Khách hỏi thước Lỗ Ban\n[izzi-ctx: v=1; timeline=before_tet]';
+
+  it('sends the note through the codec on a change to any other field, even though the note text did not change', () => {
+    const base = row({ stage: 'consulting', note: STALE });
+    const edit = crmEditOnChange(undefined, { ...profileFromRow(base), stage: 'deposit' }, base);
+    const decision = crmSaveDecision(edit, base, NOW);
+    expect(decision).toEqual({
+      kind: 'save',
+      input: { leadId: base.leadId, expectedUpdatedAt: T1, profile: { ...profileFromRow(base), stage: 'deposit', note: CLEAN } },
+    });
+    if (decision.kind !== 'save') throw new Error('expected a save');
+    expect(validateCrmProfile(decision.input.profile, NOW)).toBeNull();
+    expect(normalizeCrmProfile({ ...EMPTY, note: '[izzi-ctx: v=1; persona=P1; consent=granted]' }).note).toBeNull();
+  });
+
+  it('does not save a row only for its old tag, and an edit is done once the cleaned note is stored', () => {
+    const base = row({ stage: 'consulting', note: STALE });
+    expect(crmSaveDecision(crmEditOnChange(undefined, profileFromRow(base), base), base, NOW)).toEqual({ kind: 'skip' });
+
+    const edit = crmEditOnChange(undefined, { ...profileFromRow(base), stage: 'deposit' }, base);
+    const saved = refreshed(base, { stage: 'deposit', note: CLEAN });
+    expect(crmEditAfterSaved(edit, saved)).toBeNull();
+    expect(crmEditOnDiscard(edit, refreshed(base, { stage: 'deposit' }))).toBeNull();
   });
 });

@@ -9,6 +9,14 @@ Liên quan: `CARE-FACEBOOK-PHASE-B1-LEADS.md` (kế hoạch B1 và B1b), `CARE-F
 
 > **Cập nhật 2026-11-18 (Phase C):** izzi giờ **gửi** tin trả lời tự động cho khách qua Send API. Mọi đoạn trước đây nói "izzi không gửi tin nào cho khách" đã được thay bằng mô tả việc gửi. Screencast phải quay cả cảnh izzi tự trả lời (mục 3, bước 7–9).
 >
+> **Cập nhật 2026-11-25 (Care CRM S3, thẻ nhận diện AI):** sau khi bật (cờ `CUSTOMER_CARE_PROFILE_AI_ENABLED`, chỉ cho workspace trong danh sách), izzi:
+> - **hỏi khách có đồng ý cho lưu hồ sơ không**, bằng một tin kèm câu báo "trợ lý tự động" và 2 nút trả lời nhanh [Đồng ý] [Không], chỉ trong cửa sổ 24 giờ, tối đa 2 lần mỗi khách, cách nhau 7 ngày, không hỏi lại khách đã từ chối trong 24 tháng;
+> - dùng AI đọc hội thoại **trên chính Page** để ghi dịp mua, thời điểm cần và sản phẩm quan tâm; chỉ sau khi khách bấm Đồng ý mới ghi thêm cách xưng hô, **nhóm tuổi ước tính**, người được mua cho (kèm nguyên văn lời khách), quảng cáo khách đã bấm, link khách gửi và mức ngân sách. Không có giới tính, tôn giáo, sức khoẻ;
+> - **giữ tiêu đề và tên miền của bài/link khách gửi vào hộp thư** (Meta gửi sẵn trong webhook), không bao giờ mở link; link tới mạng xã hội chỉ giữ tên miền;
+> - khách bấm Không hoặc nhắn KHÔNG: xoá các thông tin AI, không gửi ưu đãi; nhắn XOÁ: xoá toàn bộ dữ liệu của khách.
+>
+> Các đoạn ở mục 2.3, 5, 6 và 7 đã thêm phần này. Chỉ đúng sau khi migration `20261126`, backend I2 và bản desktop I4 lên production và cờ được bật; xem `CARE-CRM-S3-IDENTITY.md`. Trước khi bật cho người ngoài danh sách thử, phải khai báo phạm vi xử lý mới này trong App Review (Platform Terms 3.a).
+>
 > **Cập nhật 2026-11-24 (Care CRM S1):** tên khách không còn lưu dạng chữ thường. Tên được mã hoá (AES-256-GCM, gắn với đúng workspace và đúng khách) và xoá cùng khách. Hồ sơ CRM do nhân viên tự nhập (kể cả ghi chú) cũng được mã hoá trên máy chủ izzi, giữ cùng khách (90 ngày kể từ tin nhắn cuối) và xoá cùng khách. Các đoạn về tên ở mục 2.4 và mục chính sách đã sửa theo. Điều này chỉ đúng sau khi migration `20261125` và backend S1 lên production; xem `CARE-CRM-S1-S2.md`.
 
 ---
@@ -94,6 +102,8 @@ Receiving: customer messages arrive through the webhook (fields "messages" and "
 Answering: only after the shop owner or manager turns on "Automatic replies" (Tự động trả lời khách, off by default), izzi replies to a customer's new messages with the Send API (POST /{page-id}/messages, messaging_type=RESPONSE), always within 23 hours of the customer's latest message. Each reply is built only from fixed courteous phrases and facts the shop approved in izzi (prices, delivery and return policies, store address); customer text is never repeated and no AI writes free text. The reply answers what it can and asks whether the customer would like to leave a phone number or Zalo so a sales person can advise them. izzi sends at most 3 automatic replies per customer in 24 hours and stops for that customer as soon as they leave a phone number (after one short confirmation), decline to be contacted, or a person or another inbox app answers from the Page (detected through message echoes). Messages arriving as "standby" (another app controls the conversation) are never answered.
 
 Data: messages and izzi's replies are stored encrypted (AES-256-GCM) for 30 days, leads for 90 days after the last message, then deleted automatically. A shop owner/manager can delete any single customer's data, including the replies izzi sent, at any time ("Delete customer data" / Xoá dữ liệu khách).
+
+Asking for consent (customer profile): before izzi keeps anything about a customer beyond their order (occasion, timing, products asked about), it asks them in Messenger, in a message that says it comes from an automated assistant, with two quick replies [Đồng ý] (Agree) and [Không] (No). The question is sent within the 24-hour window only (messaging_type=RESPONSE), at most twice per customer and 7 days apart, never again to someone who refused in the last 24 months, either together with an automatic reply or when a staff member presses "Ask the customer" (Xin phép khách). Only after "Đồng ý" does izzi keep the form of address, an estimated age band, who the purchase is for (with the customer's own words), the ad they came from, the titles and domains of links they sent, and a budget band. "Không", or a later "KHÔNG", deletes that data and stops offers; "XOÁ" deletes everything izzi holds about the customer. izzi never reads a person's Facebook profile and never opens the links customers send: it keeps the title and domain that arrive in the webhook, and only the domain for links to social networks.
 ```
 
 ### 2.4 Business Asset User Profile Access
@@ -166,6 +176,7 @@ The screencast shows the complete flow with English captions.
 | Retention | Messages and izzi's automatic replies 30 days, leads 90 days after the customer's last message, the shop's approved reply facts until the shop replaces them, Page token until the Page is disconnected. |
 | Deletion | Data deletion callback (Section 1), in-app "Delete customer data", disconnecting the Page, or email support@izziapi.com. |
 | Who can access | Only the shop's izzi workspace members with owner, manager or editor roles; viewers never see phone numbers. |
+| Customer profile (CRM S3) | Built only from the customer's conversation with the shop's own Page. The profile part is kept only after the customer tapped "Đồng ý" (logged with a keyed hash of the customer, the time and the copy version); it is encrypted, kept with the lead (90 days after the last message), and deleted on "Không"/"KHÔNG" (AI fields) or "XOÁ" (everything). No profile reading, no link fetching, no gender, religion or health field; never used for pricing or for ad targeting by age or family. The AI model provider receives masked conversation text only (no name, PSID, phone or ids). |
 
 > Hai thông tin cần bạn xác nhận lại trước khi nộp: **vùng lưu trữ** của Supabase và nhà cung cấp server.
 
@@ -184,6 +195,8 @@ Khi bạn kết nối một Fanpage với tính năng Chăm sóc khách hàng c�
 - số điện thoại khách tự gửi trong tin nhắn, tên Facebook của khách (tên được mã hoá; giữ 90 ngày kể từ tin nhắn cuối);
 - hồ sơ khách do nhân viên của bạn tự nhập trong CRM (giai đoạn, người phụ trách, ngày hẹn, sản phẩm quan tâm, việc tiếp theo, ghi chú): mã hoá trên máy chủ izzi, giữ cùng khách (90 ngày kể từ tin nhắn cuối) và xoá cùng khách.
 izzi đọc tin nhắn để liệt kê khách để lại số cho nhân viên của bạn. Khi bạn bật "Tự động trả lời khách", izzi gửi thay Page tối đa 3 tin trả lời mỗi khách trong 24 giờ, chỉ dùng thông tin bạn đã duyệt, để xin số điện thoại hoặc Zalo; các tin đó được mã hoá và giữ 30 ngày. izzi không bán hay chia sẻ dữ liệu này.
+
+(Thêm khi bật thẻ nhận diện AI, CRM S3; chủ shop duyệt câu chữ trước:) izzi hỏi khách qua Messenger có đồng ý cho shop lưu thông tin không. Chỉ khi khách bấm Đồng ý, izzi mới dùng AI ghi lại từ hội thoại với Page: cách xưng hô, nhóm tuổi ước tính, người được mua cho (theo lời khách), quảng cáo khách đã bấm, tiêu đề và tên miền của link khách gửi, mức ngân sách. izzi không xem trang cá nhân, không mở link, không ghi giới tính, tôn giáo hay sức khoẻ. Khách nhắn KHÔNG để rút đồng ý, XOÁ để xoá toàn bộ dữ liệu.
 
 Xoá dữ liệu: chủ shop có thể xoá dữ liệu của từng khách ngay trong app (nút "Xoá dữ liệu khách"), ngắt kết nối Page, hoặc gỡ ứng dụng trong Cài đặt Facebook → Ứng dụng và trang web → Gửi yêu cầu xoá. Bạn cũng có thể email support@izziapi.com.
 
@@ -231,6 +244,12 @@ Deletion: shop owners can delete any customer's data in the app ("Delete custome
   - Phiên chọn Page chưa hết hạn (tối đa 15 phút) vẫn giữ token đã niêm phong của người đó. Token này Facebook đã thu hồi khi người dùng gỡ app.
 
 ---
+
+- **CRM S3 (thẻ nhận diện AI):**
+  - Lớp đơn hàng (dịp mua, thời điểm, sản phẩm) được ghi trước khi khách trả lời. Nếu luật sư coi đó là lập hồ sơ (Platform Terms 3.a), tắt phần này.
+  - izzi chỉ hỏi xin phép khi đã đặt `CUSTOMER_CARE_PROFILE_PRIVACY_URL`: câu hỏi luôn kèm đường dẫn "(chi tiết: …)", chưa đặt thì nút "Xin phép khách" không hiện. Trang chính sách phải nói thời hạn lưu khớp với 90 ngày của lead.
+  - Khách nhắn "XOÁ" khi chưa được báo trước: izzi không tự xoá, thẻ khách hiện "Khách yêu cầu xoá dữ liệu" để chủ shop hoặc quản lý xoá bằng "Xoá dữ liệu khách".
+  - Mở rộng ra ngoài danh sách workspace thử cần khai báo trong App Review trước.
 
 - **Phase C (tự trả lời):**
   - Không có câu báo "trợ lý tự động" trong tin (quyết định của chủ shop, 18/11). Chính sách Meta chỉ bắt buộc ở nơi luật yêu cầu (ví dụ người dùng ở California, Đức) và khuyến nghị ở mọi nơi. Nếu người duyệt hỏi, trả lời rằng shop bán cho khách ở Việt Nam và có thể bật câu báo sau.

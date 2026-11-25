@@ -36,6 +36,7 @@ import {
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
+import { CustomerCrmIdentity, type CrmIdentityHandlers } from './CustomerCrmIdentity';
 
 export interface CustomerCrmRowProps {
   row: CustomerCareCrmRow;
@@ -58,7 +59,8 @@ export interface CustomerCrmRowProps {
   onPurge: () => void;
   onReapply: () => void;
   onDiscard: () => void;
-  onInspectPortrait?: () => void;
+  /** Care CRM S3: the AI identity card in the editor; absent shows it read-only. */
+  identityHandlers?: CrmIdentityHandlers | null;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
@@ -123,16 +125,6 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
         </td>
         <td className="v2-crm__status" aria-live="polite">{status}</td>
         <td className="v2-crm__actions">
-          {props.onInspectPortrait && (
-            <button
-              type="button"
-              className="v2-button v2-button--ghost"
-              aria-label={`Chân dung của ${name}`}
-              onClick={props.onInspectPortrait}
-            >
-              Chân dung
-            </button>
-          )}
           <button type="button" className="v2-button v2-button--ghost" aria-label={`Sao chép số của ${name}`} onClick={onCopy}>
             Sao chép
           </button>
@@ -166,7 +158,7 @@ interface CrmEditorProps extends CustomerCrmRowProps {
 
 function CrmEditor({
   row, profile, edit, saving, nowMs, assignees, products, canDelete, purging,
-  onChange, onSave, onPurge, onReapply, onDiscard, onToggle, name, editorId, dirty,
+  onChange, onSave, onPurge, onReapply, onDiscard, onToggle, name, editorId, dirty, identityHandlers,
 }: CrmEditorProps) {
   const id = (field: string) => `crm-${field}-${row.leadId}`;
   // Sealed details could not be opened: plain fields only, read-only, never saved.
@@ -379,6 +371,15 @@ function CrmEditor({
         />
       </label>
       )}
+
+      <CustomerCrmIdentity
+        row={row}
+        products={products}
+        handlers={identityHandlers}
+        place="editor"
+        canDelete={canDelete}
+        onPurge={purging ? undefined : onPurge}
+      />
 
       {row.recentMessages.length > 0 && (
         <div className="v2-crm__messages">

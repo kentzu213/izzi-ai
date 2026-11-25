@@ -2,8 +2,8 @@
  * Enterprise CRM intelligence & workflow engine (pure TypeScript, runtime-agnostic).
  *
  * Runs identically in Renderer (Chromium) and Main (Node) without `node:crypto` or network I/O:
- * - A1: `[izzi-ctx: v=1; ...]` codec inside `profile.note` (100% compatible with `POST /crm/profile` <= 1000 chars)
- * - A2: 5-Layer Customer Portrait reasoning chain (`buildCustomerPortrait`) + `effectiveCrmIdentity`
+ * - A1: `[izzi-ctx: v=1; ...]` codec inside `profile.note`: only a timeline and a recorded refusal (never consent)
+ * - A2: 5-layer customer portrait (`buildCustomerPortrait`): server identity first, profile layer only after consent
  * - A3: Saler Playbook, Ads Audience Segmentation & SHA-256 Meta CSV export, and Lifecycle / Remarketing planner
  * - B1: Zero-PII CRM segment aggregation (`summarizeCareCrmSegments`) for `MyGraph → Memory doanh nghiệp`
  */
@@ -12,7 +12,6 @@ import {
   CUSTOMER_CARE_CRM_ADDRESS_FORMS,
   CUSTOMER_CARE_CRM_AGE_BANDS,
   CUSTOMER_CARE_CRM_BUDGET_BANDS,
-  CUSTOMER_CARE_CRM_CONSENT_STATES,
   CUSTOMER_CARE_CRM_ID_KINDS,
   CUSTOMER_CARE_CRM_ID_SOURCES,
   CUSTOMER_CARE_CRM_ID_STATUSES,
@@ -24,14 +23,12 @@ import {
   type CustomerCareCrmAddressForm,
   type CustomerCareCrmAgeBand,
   type CustomerCareCrmBudgetBand,
-  type CustomerCareCrmConsent,
-  type CustomerCareCrmConsentState,
-  type CustomerCareCrmEvidence,
   type CustomerCareCrmIdConfidence,
   type CustomerCareCrmIdField,
   type CustomerCareCrmIdentity,
   type CustomerCareCrmOccasion,
   type CustomerCareCrmPersona,
+  type CustomerCareCrmProfileInput,
   type CustomerCareCrmRecipient,
   type CustomerCareCrmRow,
   type CustomerCareCrmSharedLink,
@@ -60,26 +57,23 @@ export interface CrmEnterpriseProduct {
   label: string;
 }
 
+/** A refusal staff recorded in the note (beta.121). It only ever withholds; a note can never grant consent. */
+export type CrmStaffRefusal = 'declined' | 'withdrawn';
+const CRM_STAFF_REFUSALS: readonly CrmStaffRefusal[] = ['declined', 'withdrawn'];
+
+/**
+ * What the `[izzi-ctx]` tag may still carry: an order-layer timeline and a refusal. beta.121 also wrote profile-layer
+ * keys (persona, age, recipient, budget, ad, domain) and `consent=granted` without the customer's consent; those are
+ * ignored when read and dropped on the next save of the note.
+ */
 export interface CrmStaffContext {
-  persona: CustomerCareCrmPersona | null;
-  ageBand: CustomerCareCrmAgeBand | null;
-  recipient: CustomerCareCrmRecipient | null;
   timeline: CustomerCareCrmTimeline | null;
-  budgetBand: CustomerCareCrmBudgetBand | null;
-  consent: CustomerCareCrmConsentState | null;
-  adTitle: string | null;
-  sharedDomain: string | null;
+  consent: CrmStaffRefusal | null;
 }
 
 export const EMPTY_CRM_STAFF_CONTEXT: Readonly<CrmStaffContext> = {
-  persona: null,
-  ageBand: null,
-  recipient: null,
   timeline: null,
-  budgetBand: null,
   consent: null,
-  adTitle: null,
-  sharedDomain: null,
 };
 
 export const CRM_PERSONA_OPTIONS: ReadonlyArray<{
@@ -112,45 +106,6 @@ export const CRM_PERSONA_OPTIONS: ReadonlyArray<{
     shortLabel: 'Khảo giá & Ngân sách',
     description: 'Đang tham khảo mức giá, so sánh chất liệu hoặc ngân sách tiết kiệm.',
   },
-];
-
-export const CRM_AGE_BAND_OPTIONS: ReadonlyArray<{ value: CustomerCareCrmAgeBand; label: string }> = [
-  { value: '18-24', label: '18–24 tuổi' },
-  { value: '25-34', label: '25–34 tuổi' },
-  { value: '35-44', label: '35–44 tuổi' },
-  { value: '45-54', label: '45–54 tuổi' },
-  { value: '55+', label: '55+ tuổi' },
-];
-
-export const CRM_RECIPIENT_OPTIONS: ReadonlyArray<{ value: CustomerCareCrmRecipient; label: string }> = [
-  { value: 'self', label: 'Mua cá nhân' },
-  { value: 'spouse', label: 'Mua cùng vợ/chồng' },
-  { value: 'parents', label: 'Mua biếu bố mẹ' },
-  { value: 'children', label: 'Mua cho con' },
-  { value: 'household', label: 'Sắm cho gia đình' },
-  { value: 'gift', label: 'Mua làm quà biếu' },
-];
-
-export const CRM_TIMELINE_OPTIONS: ReadonlyArray<{ value: CustomerCareCrmTimeline; label: string }> = [
-  { value: 'this_week', label: 'Trong tuần này' },
-  { value: 'this_month', label: 'Trong tháng này' },
-  { value: 'before_tet', label: 'Trước Tết' },
-  { value: 'later', label: 'Chưa gấp' },
-];
-
-export const CRM_BUDGET_BAND_OPTIONS: ReadonlyArray<{ value: CustomerCareCrmBudgetBand; label: string }> = [
-  { value: 'under_5m', label: 'Dưới 5 triệu' },
-  { value: '5m_15m', label: '5–15 triệu' },
-  { value: '15m_30m', label: '15–30 triệu' },
-  { value: '30m_plus', label: 'Trên 30 triệu' },
-];
-
-export const CRM_CONSENT_OPTIONS: ReadonlyArray<{ value: CustomerCareCrmConsentState; label: string }> = [
-  { value: 'unknown', label: 'Chưa hỏi' },
-  { value: 'asked', label: 'Đã hỏi' },
-  { value: 'granted', label: 'Đồng ý nhận tin' },
-  { value: 'declined', label: 'Từ chối' },
-  { value: 'withdrawn', label: 'Rút lại đồng ý' },
 ];
 
 const OCCASION_LABELS: Readonly<Record<CustomerCareCrmOccasion, string>> = {
@@ -197,7 +152,6 @@ const PHONE_MASK = '•••';
 const DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
 const CTX_LINE_PATTERN = /^\[izzi-ctx:\s*([^\]]*)\]$/i;
 const CTX_ANY_LINE_PATTERN = /^\s*\[izzi-ctx:(?:[^\]]*\]\s*$|$)/i;
-const MAX_EXTRACT_URL_LENGTH = 2_048;
 
 function oneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -282,14 +236,8 @@ export function sanitizeCtxDomain(raw: string | null | undefined): string | null
 export function sanitizeStaffContext(ctx: Partial<CrmStaffContext> | null | undefined): CrmStaffContext {
   if (!ctx || typeof ctx !== 'object') return { ...EMPTY_CRM_STAFF_CONTEXT };
   return {
-    persona: oneOf(CUSTOMER_CARE_CRM_PERSONAS, ctx.persona) ? ctx.persona : null,
-    ageBand: oneOf(CUSTOMER_CARE_CRM_AGE_BANDS, ctx.ageBand) ? ctx.ageBand : null,
-    recipient: oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, ctx.recipient) ? ctx.recipient : null,
     timeline: oneOf(CUSTOMER_CARE_CRM_TIMELINES, ctx.timeline) ? ctx.timeline : null,
-    budgetBand: oneOf(CUSTOMER_CARE_CRM_BUDGET_BANDS, ctx.budgetBand) ? ctx.budgetBand : null,
-    consent: oneOf(CUSTOMER_CARE_CRM_CONSENT_STATES, ctx.consent) ? ctx.consent : null,
-    adTitle: sanitizeCtxAdTitle(ctx.adTitle),
-    sharedDomain: sanitizeCtxDomain(ctx.sharedDomain),
+    consent: oneOf(CRM_STAFF_REFUSALS, ctx.consent) ? ctx.consent : null,
   };
 }
 
@@ -297,6 +245,7 @@ export function sanitizeStaffContext(ctx: Partial<CrmStaffContext> | null | unde
 // A1. `[izzi-ctx]` Codec on `profile.note`
 // ---------------------------------------------------------------------------
 
+/** Reads `timeline` and a refusal; every other key (beta.121 profile-layer keys, `consent=granted`) is ignored. */
 function parseStaffContextTagBody(body: string): CrmStaffContext {
   const draft: Partial<CrmStaffContext> = {};
   const entries = body.split(';').map((part) => part.trim()).filter(Boolean);
@@ -310,34 +259,12 @@ function parseStaffContextTagBody(body: string): CrmStaffContext {
       case 'v':
         if (rawValue !== '1') return { ...EMPTY_CRM_STAFF_CONTEXT };
         break;
-      case 'persona':
-        if (oneOf(CUSTOMER_CARE_CRM_PERSONAS, rawValue)) draft.persona = rawValue;
-        break;
-      case 'age':
-        if (oneOf(CUSTOMER_CARE_CRM_AGE_BANDS, rawValue)) draft.ageBand = rawValue;
-        break;
-      case 'recipient':
-        if (oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, rawValue)) draft.recipient = rawValue;
-        break;
       case 'timeline':
         if (oneOf(CUSTOMER_CARE_CRM_TIMELINES, rawValue)) draft.timeline = rawValue;
         break;
-      case 'budget':
-        if (oneOf(CUSTOMER_CARE_CRM_BUDGET_BANDS, rawValue)) draft.budgetBand = rawValue;
-        break;
       case 'consent':
-        if (oneOf(CUSTOMER_CARE_CRM_CONSENT_STATES, rawValue)) draft.consent = rawValue;
+        if (oneOf(CRM_STAFF_REFUSALS, rawValue)) draft.consent = rawValue;
         break;
-      case 'ad': {
-        const cleanAd = sanitizeCtxAdTitle(rawValue);
-        if (cleanAd) draft.adTitle = cleanAd;
-        break;
-      }
-      case 'domain': {
-        const cleanDomain = sanitizeCtxDomain(rawValue);
-        if (cleanDomain) draft.sharedDomain = cleanDomain;
-        break;
-      }
       default:
         break;
     }
@@ -348,21 +275,16 @@ function parseStaffContextTagBody(body: string): CrmStaffContext {
 export function formatStaffContextTag(rawCtx: CrmStaffContext): string | null {
   const ctx = sanitizeStaffContext(rawCtx);
   const parts: string[] = [];
-  if (ctx.persona !== null) parts.push(`persona=${ctx.persona}`);
-  if (ctx.ageBand !== null) parts.push(`age=${ctx.ageBand}`);
-  if (ctx.recipient !== null) parts.push(`recipient=${ctx.recipient}`);
   if (ctx.timeline !== null) parts.push(`timeline=${ctx.timeline}`);
-  if (ctx.budgetBand !== null) parts.push(`budget=${ctx.budgetBand}`);
   if (ctx.consent !== null) parts.push(`consent=${ctx.consent}`);
-  if (ctx.adTitle !== null) parts.push(`ad=${ctx.adTitle}`);
-  if (ctx.sharedDomain !== null) parts.push(`domain=${ctx.sharedDomain}`);
   if (parts.length === 0) return null;
   return `[izzi-ctx: v=1; ${parts.join('; ')}]`;
 }
 
 /**
  * Splits `profile.note` into clean staff-visible `freeNote` (with all `[izzi-ctx: ...]` lines removed anywhere)
- * and validated `ctx` from the last `[izzi-ctx: ...]` tag line.
+ * and validated `ctx`: the timeline from the last `[izzi-ctx: ...]` tag line, and a refusal from any of them (a later
+ * tag never cancels a refusal).
  */
 export function splitCrmNote(note: string | null): { freeNote: string; ctx: CrmStaffContext } {
   if (note === null || typeof note !== 'string') {
@@ -374,6 +296,7 @@ export function splitCrmNote(note: string | null): { freeNote: string; ctx: CrmS
   }
   const lines = normalized.split('\n');
   let ctx: CrmStaffContext = { ...EMPTY_CRM_STAFF_CONTEXT };
+  let refusal: CrmStaffRefusal | null = null;
   const keptLines: string[] = [];
 
   for (const line of lines) {
@@ -381,6 +304,7 @@ export function splitCrmNote(note: string | null): { freeNote: string; ctx: CrmS
     const match = CTX_LINE_PATTERN.exec(trimmed);
     if (match) {
       ctx = parseStaffContextTagBody(match[1] ?? '');
+      refusal = ctx.consent ?? refusal;
       continue;
     }
     if (CTX_ANY_LINE_PATTERN.test(trimmed)) {
@@ -390,7 +314,7 @@ export function splitCrmNote(note: string | null): { freeNote: string; ctx: CrmS
   }
 
   const freeNote = keptLines.join('\n').trim();
-  return { freeNote, ctx };
+  return { freeNote, ctx: { ...ctx, consent: refusal } };
 }
 
 /**
@@ -457,6 +381,17 @@ export function replaceEditableFreeNote(note: string | null, nextFreeNote: strin
   const maxFree = maxFreeNoteLength(ctx);
   const sliced = stripCtxLines(sliceCodePoints(withoutTags, maxFree));
   return sliced.trim() === '' ? tag : `${sliced}\n${tag}`;
+}
+
+/**
+ * A note on its way to the server. When it carries an `[izzi-ctx]` line the tag is written again from what the codec
+ * reads (a timeline and a refusal), so the keys beta.121 left behind (persona, age, recipient, budget, ad, domain,
+ * `consent=granted`) are dropped; a note without one is returned exactly as it is.
+ */
+export function normalizeCrmNoteTags(note: string | null): string | null {
+  if (note === null) return null;
+  const tagged = note.replace(/\r\n?/g, '\n').split('\n').some((line) => CTX_ANY_LINE_PATTERN.test(line.trim()));
+  return tagged ? replaceEditableFreeNote(note, extractEditableFreeNote(note)) : note;
 }
 
 // ---------------------------------------------------------------------------
@@ -533,10 +468,18 @@ function splitSentences(row: CustomerCareCrmRow, freeNote: string): TextSegment[
 }
 
 // ---------------------------------------------------------------------------
-// A2. 5-Layer Customer Portrait (`buildCustomerPortrait`) & `effectiveCrmIdentity`
+// A2. Customer portrait (`buildCustomerPortrait`): the server identity first, behind the consent gate
 // ---------------------------------------------------------------------------
+//
+// Care CRM S3 (docs/CARE-CRM-S3-IDENTITY.md): the server's identity is the one source of truth. While the AI profile
+// is on, the order layer (products, occasion, timeline) is the server's and this file's chat guesses fill only what
+// it left empty; while it is off, or for a row without identity, the order layer is guessed from the chat. Those
+// guesses need no consent. The profile layer (age band, who the purchase is for, interests, persona) exists only
+// after the customer tapped "Đồng ý", so it is never guessed here: there is no gender, an age is a band labelled
+// "ước tính", "who it is for" stands only with a quote of the customer's own words, and a social-network link keeps
+// its domain.
 
-export type CrmReasoningSource = 'staff' | 'identity' | 'chat' | 'note' | 'name' | 'none';
+export type CrmReasoningSource = 'staff' | 'identity' | 'chat' | 'note' | 'none';
 
 export interface CrmPortraitLayerBase {
   step: 1 | 2 | 3 | 4 | 5;
@@ -550,22 +493,20 @@ export interface CrmPortraitLayerBase {
 
 export interface CrmPortraitLayer1Age extends CrmPortraitLayerBase {
   step: 1;
+  /** One band or two adjacent ones, from the server, after consent; always shown as an estimate. */
   ageBands: CustomerCareCrmAgeBand[];
-  ageBand: CustomerCareCrmAgeBand | null;
-  exactAge: number | null;
 }
 
 export interface CrmPortraitLayer2Demographic extends CrmPortraitLayerBase {
   step: 2;
   addressForm: CustomerCareCrmAddressForm | null;
-  inferredGender: 'male' | 'female' | 'unknown';
   salutation: string;
 }
 
 export interface CrmPortraitLayer3Household extends CrmPortraitLayerBase {
   step: 3;
+  /** Who the purchase is for, only with a quote of the customer's own words. Never marital status. */
   recipient: CustomerCareCrmRecipient | null;
-  sensitiveFiltered: boolean;
 }
 
 export interface CrmPortraitLayer4Interests extends CrmPortraitLayerBase {
@@ -586,10 +527,6 @@ export interface CrmPortraitLayer4Interests extends CrmPortraitLayerBase {
 export interface CrmPortraitLayer5Persona extends CrmPortraitLayerBase {
   step: 5;
   persona: CustomerCareCrmPersona | null;
-  completenessPct: number;
-  filledDimensions: number;
-  missingDimensions: string[];
-  summary: string;
   missingPrompts: string[];
 }
 
@@ -599,9 +536,50 @@ export interface CrmCustomerPortrait {
   layer_3_household: CrmPortraitLayer3Household;
   layer_4_interests: CrmPortraitLayer4Interests;
   layer_5_persona: CrmPortraitLayer5Persona;
-  completenessPct: number;
-  summary: string;
+  /** Whether the profile layer could be used for this row (see `crmProfileLayerAllowed`). */
+  profileAllowed: boolean;
   missingPrompts: string[];
+}
+
+const PROFILE_LOCKED_LABEL = 'Chỉ có khi khách đồng ý';
+const PROFILE_LOCKED_REASON = 'Phần hồ sơ này chỉ có sau khi khách bấm "Đồng ý".';
+
+const SALUTATIONS: Readonly<Record<CustomerCareCrmAddressForm, string>> = {
+  anh: 'Anh',
+  chi: 'Chị',
+  co: 'Cô',
+  chu: 'Chú',
+  ban: 'Bạn',
+};
+
+const RECIPIENT_LABELS: Readonly<Record<CustomerCareCrmRecipient, string>> = {
+  self: 'Mua cho mình',
+  spouse: 'Mua cùng vợ/chồng',
+  parents: 'Mua biếu bố mẹ',
+  children: 'Mua cho con',
+  household: 'Sắm cho gia đình',
+  gift: 'Mua làm quà biếu',
+};
+
+/**
+ * Social networks: any link there may lead to a person, so it keeps its domain only, never a title. Every subdomain
+ * counts. Mirrors the server (backend 84c2523).
+ */
+const CRM_SOCIAL_DOMAINS = ['facebook.com', 'fb.com', 'fb.me', 'fb.watch', 'm.me', 'instagram.com', 'threads.net', 'zalo.me', 'tiktok.com'];
+
+export function isCrmSocialDomain(domain: string): boolean {
+  return CRM_SOCIAL_DOMAINS.some((social) => domain === social || domain.endsWith(`.${social}`));
+}
+
+/** The row's identity as the server sent it; null when it sent none or the identity could not be read. */
+export function crmServerIdentity(row: CustomerCareCrmRow): CustomerCareCrmIdentity | null {
+  return row.identityUnavailable === true ? null : row.identity ?? null;
+}
+
+/** The profile layer may be shown and used: the server says the customer agreed and asked for nothing to be erased. */
+export function crmProfileLayerAllowed(row: CustomerCareCrmRow): boolean {
+  const consent = crmServerIdentity(row)?.consent;
+  return consent?.state === 'granted' && (consent.eraseRequestedAt ?? null) === null;
 }
 
 function isShownField<T>(field: CustomerCareCrmIdField<T> | null | undefined): field is CustomerCareCrmIdField<T> {
@@ -612,682 +590,154 @@ function isShownField<T>(field: CustomerCareCrmIdField<T> | null | undefined): f
     && oneOf(CUSTOMER_CARE_CRM_ID_STATUSES, field.status);
 }
 
-function firstFieldQuote(field: CustomerCareCrmIdField<unknown> | null | undefined): string | null {
-  if (!field || !Array.isArray(field.evidence)) return null;
+/** The persona P1–P4 from the server, only after consent; never guessed on the desktop. */
+export function crmConsentedPersona(row: CustomerCareCrmRow): CustomerCareCrmPersona | null {
+  if (!crmProfileLayerAllowed(row)) return null;
+  const field = crmServerIdentity(row)?.persona;
+  return isShownField(field) && oneOf(CUSTOMER_CARE_CRM_PERSONAS, field.value) ? field.value : null;
+}
+
+function fieldSource(field: CustomerCareCrmIdField<unknown>): CrmReasoningSource {
+  return field.source === 'staff' ? 'staff' : 'identity';
+}
+
+function firstFieldQuote(field: CustomerCareCrmIdField<unknown>): string | null {
   for (const ev of field.evidence) {
-    if (ev && typeof ev.quote === 'string') {
-      const cleaned = safeQuote(ev.quote);
-      if (cleaned) return cleaned;
-    }
+    const cleaned = ev && typeof ev.quote === 'string' ? safeQuote(ev.quote) : null;
+    if (cleaned) return cleaned;
   }
   return null;
 }
 
-function ageToBand(age: number): CustomerCareCrmAgeBand {
-  if (age <= 24) return '18-24';
-  if (age <= 34) return '25-34';
-  if (age <= 44) return '35-44';
-  if (age <= 54) return '45-54';
-  return '55+';
+/** A quote of the customer's own words (evidence from the customer), masked and free of sensitive terms. */
+function customerQuote(field: CustomerCareCrmIdField<unknown>): string | null {
+  for (const ev of field.evidence) {
+    const cleaned = ev && ev.source === 'customer' && typeof ev.quote === 'string' ? safeQuote(ev.quote) : null;
+    if (cleaned) return cleaned;
+  }
+  return null;
 }
 
-function formatAgeBandsLabel(bands: readonly CustomerCareCrmAgeBand[], exactAge: number | null = null): string {
-  if (bands.length === 0) return 'Chưa rõ độ tuổi';
+function formatAgeBandsLabel(bands: readonly CustomerCareCrmAgeBand[]): string {
   const first = bands[0]!;
   const last = bands[bands.length - 1]!;
   const rangeText = bands.length === 1
     ? (first === '55+' ? '55+ tuổi' : `${first.replace('-', '–')} tuổi`)
     : (last === '55+' ? `${first.split('-')[0]}+ tuổi` : `${first.split('-')[0]}–${last.split('-')[1]} tuổi`);
-  return exactAge !== null ? `${exactAge} tuổi · Nhóm ${rangeText}` : `${rangeText} (ước tính)`;
-}
-
-function vietnamYear(nowMs: number): number {
-  return new Date(nowMs + VIETNAM_OFFSET_MS).getUTCFullYear();
+  return `${rangeText} (ước tính)`;
 }
 
 function vietnamDateKey(ms: number): string {
   return new Date(ms + VIETNAM_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-function inferLayer1Age(
-  row: CustomerCareCrmRow,
-  ctx: CrmStaffContext,
-  segments: readonly TextSegment[],
-  nowMs: number,
-): CrmPortraitLayer1Age {
-  const idAge = row.identity?.ageBand;
-  if (isShownField(idAge) && Array.isArray(idAge.value)) {
-    const valid = idAge.value.filter((b): b is CustomerCareCrmAgeBand => oneOf(CUSTOMER_CARE_CRM_AGE_BANDS, b)).slice(0, 2);
-    if (valid.length > 0) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: valid,
-        ageBand: valid[0]!,
-        exactAge: null,
-        label: formatAgeBandsLabel(valid),
-        confidence: idAge.confidence,
-        source: idAge.source === 'staff' ? 'staff' : 'identity',
-        quote: firstFieldQuote(idAge),
-        reasoning: idAge.source === 'staff' ? 'Nhân viên đã xác nhận nhóm tuổi.' : 'Tổng hợp từ hồ sơ định danh khách hàng.',
-      };
-    }
-  }
-
-  if (ctx.ageBand !== null) {
+function buildLayer1Age(identity: CustomerCareCrmIdentity | null, allowed: boolean): CrmPortraitLayer1Age {
+  const title = 'Tầng 1 · Độ tuổi (ước tính)';
+  const field = allowed ? identity?.ageBand : null;
+  const bands = isShownField(field) && Array.isArray(field.value)
+    ? field.value.filter((band): band is CustomerCareCrmAgeBand => oneOf(CUSTOMER_CARE_CRM_AGE_BANDS, band)).slice(0, 2)
+    : [];
+  if (!isShownField(field) || bands.length === 0) {
     return {
       step: 1,
-      title: 'Tầng 1 · Độ tuổi ước tính',
-      ageBands: [ctx.ageBand],
-      ageBand: ctx.ageBand,
-      exactAge: null,
-      label: formatAgeBandsLabel([ctx.ageBand]),
-      confidence: 'high',
-      source: 'staff',
+      title,
+      ageBands: [],
+      label: allowed ? 'Chưa rõ' : PROFILE_LOCKED_LABEL,
+      confidence: null,
+      source: 'none',
       quote: null,
-      reasoning: 'Nhân viên gắn thẻ nhóm tuổi trong ngữ cảnh hồ sơ.',
+      reasoning: allowed ? 'AI chưa ước tính được nhóm tuổi.' : PROFILE_LOCKED_REASON,
     };
   }
-
-  const currentYear = vietnamYear(nowMs);
-  for (const seg of segments) {
-    // Birth year: "sn 1988", "sinh năm 1985"
-    const birthMatch = /(?:^|[^\p{L}\p{N}])(?:sinh\s+năm|sn)\s*(19[3-9]\d|200\d)(?=$|[^\p{L}\p{N}])/iu.exec(seg.text);
-    if (birthMatch) {
-      const birthYear = Number(birthMatch[1]);
-      const age = currentYear - birthYear;
-      if (age >= 18 && age <= 95) {
-        const band = ageToBand(age);
-        return {
-          step: 1,
-          title: 'Tầng 1 · Độ tuổi ước tính',
-          ageBands: [band],
-          ageBand: band,
-          exactAge: age,
-          label: formatAgeBandsLabel([band], age),
-          confidence: 'high',
-          source: seg.origin,
-          quote: safeQuote(seg.text),
-          reasoning: `Khách nêu năm sinh ${birthYear} (~${age} tuổi).`,
-        };
-      }
-    }
-
-    // Explicit age: "38 tuổi", "năm nay 42 tuổi" (ignoring child references right before the number)
-    const ageIter = /(?:^|[^\p{L}\p{N}])(\d{2})\s*tuổi(?=$|[^\p{L}\p{N}])/giu;
-    let ageMatch: RegExpExecArray | null;
-    while ((ageMatch = ageIter.exec(seg.text)) !== null) {
-      const prefix = seg.text.slice(Math.max(0, ageMatch.index - 20), ageMatch.index);
-      if (/(?:bé|con|con\s+trai|con\s+gái|cháu\s+nhỏ)\s*$/iu.test(prefix)) continue;
-      const age = Number(ageMatch[1]);
-      if (age >= 18 && age <= 95) {
-        const band = ageToBand(age);
-        return {
-          step: 1,
-          title: 'Tầng 1 · Độ tuổi ước tính',
-          ageBands: [band],
-          ageBand: band,
-          exactAge: age,
-          label: formatAgeBandsLabel([band], age),
-          confidence: 'high',
-          source: seg.origin,
-          quote: safeQuote(seg.text),
-          reasoning: `Khách tự nêu độ tuổi (${age} tuổi).`,
-        };
-      }
-    }
-  }
-
-  // Contextual & pronoun signals
-  if (row.profile.addressForm === 'co' || row.profile.addressForm === 'chu') {
-    return {
-      step: 1,
-      title: 'Tầng 1 · Độ tuổi ước tính',
-      ageBands: ['55+'],
-      ageBand: '55+',
-      exactAge: null,
-      label: formatAgeBandsLabel(['55+']),
-      confidence: 'medium',
-      source: 'staff',
-      quote: null,
-      reasoning: `Hồ sơ xưng hô "${row.profile.addressForm === 'co' ? 'Cô' : 'Chú'}" gợi ý nhóm tuổi trung niên/cao niên.`,
-    };
-  }
-
-  for (const seg of segments) {
-    if (/(?:^|[^\p{L}])(?:cô\s+(?:mua|muốn|đặt|tìm|hỏi|cần)|chú\s+(?:mua|muốn|đặt|tìm|hỏi|cần)|bác\s+(?:mua|muốn|tìm|hỏi)|nhà\s+(?:cô|chú|bác)|cho\s+(?:cô|chú|bác)\s+(?:hỏi|xem)|cháu\s+nội|cháu\s+ngoại|về\s+hưu)(?=$|[^\p{L}])/iu.test(seg.text)) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['55+'],
-        ageBand: '55+',
-        exactAge: null,
-        label: formatAgeBandsLabel(['55+']),
-        confidence: 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        reasoning: 'Tín hiệu xưng hô cô/chú/bác hoặc nhắc tới cháu nội/ngoại.',
-      };
-    }
-  }
-
-  for (const seg of segments) {
-    if (/(?:từ\s+đường|nhà\s+thờ\s+họ|trưởng\s+họ)/iu.test(seg.text)) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['45-54'],
-        ageBand: '45-54',
-        exactAge: null,
-        label: formatAgeBandsLabel(['45-54']),
-        confidence: 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        reasoning: 'Quan tâm hạng mục từ đường / nhà thờ họ (thường nhóm 45–54 tuổi).',
-      };
-    }
-    if (/(?:mua\s+cho\s+bố\s+mẹ|biếu\s+bố\s+mẹ|cho\s+ba\s+má|biếu\s+ba\s+má)/iu.test(seg.text)) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['35-44', '45-54'],
-        ageBand: '35-44',
-        exactAge: null,
-        label: formatAgeBandsLabel(['35-44', '45-54']),
-        confidence: 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        reasoning: 'Khách sắm sửa/biếu bố mẹ, phổ biến ở nhóm 35–54 tuổi đã ổn định tài chính.',
-      };
-    }
-  }
-
-  const hasAdultAddress = row.profile.addressForm === 'anh'
-    || row.profile.addressForm === 'chi'
-    || segments.some((s) => /(?:^|[^\p{L}])(?:anh|chị)(?=$|[^\p{L}])/iu.test(s.text));
-
-  for (const seg of segments) {
-    if (hasAdultAddress && /(?:nhập\s+trạch|lỗ\s+ban|kích\s+thước\s+lỗ\s+ban|nhà\s+mới|nhà\s+phố|biệt\s+thự)/iu.test(seg.text)) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['35-44'],
-        ageBand: '35-44',
-        exactAge: null,
-        label: formatAgeBandsLabel(['35-44']),
-        confidence: 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        reasoning: 'Xưng anh/chị kèm nhu cầu nhập trạch / đo thước Lỗ Ban nhà mới.',
-      };
-    }
-  }
-
-  for (const seg of segments) {
-    if (/(?:vợ\s+chồng\s+em|hai\s+vợ\s+chồng|2\s+vợ\s+chồng|chung\s+cư|căn\s+hộ|mới\s+cưới|ra\s+ở\s+riêng)/iu.test(seg.text)) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['25-34'],
-        ageBand: '25-34',
-        exactAge: null,
-        label: formatAgeBandsLabel(['25-34']),
-        confidence: 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        reasoning: 'Ngữ cảnh vợ chồng trẻ / căn hộ chung cư / mới cưới.',
-      };
-    }
-  }
-
-  for (const seg of segments) {
-    if (
-      seg.origin === 'chat'
-      && (
-        /(?:^|[^\p{L}])(?:cháu\s+(?:hỏi|muốn|mua|tìm)|con\s+(?:hỏi|muốn|mua|tìm))(?=$|[^\p{L}])/iu.test(seg.text)
-        || /(?:^|[^\p{L}])(?:ko|dc|đc|bnhiu|ib\s+mk|mik)(?=$|[^\p{L}])/iu.test(seg.text)
-      )
-    ) {
-      return {
-        step: 1,
-        title: 'Tầng 1 · Độ tuổi ước tính',
-        ageBands: ['18-24'],
-        ageBand: '18-24',
-        exactAge: null,
-        label: formatAgeBandsLabel(['18-24']),
-        confidence: 'medium',
-        source: 'chat',
-        quote: safeQuote(seg.text),
-        reasoning: 'Xưng cháu/con hoặc dùng cách viết tắt trẻ trung trong tin nhắn.',
-      };
-    }
-  }
-
   return {
     step: 1,
-    title: 'Tầng 1 · Độ tuổi ước tính',
-    ageBands: [],
-    ageBand: null,
-    exactAge: null,
-    label: 'Chưa rõ độ tuổi',
-    confidence: null,
-    source: 'none',
-    quote: null,
-    reasoning: 'Chưa có thông tin tuổi hoặc tín hiệu ngữ cảnh rõ ràng.',
+    title,
+    ageBands: bands,
+    label: formatAgeBandsLabel(bands),
+    confidence: field.confidence,
+    source: fieldSource(field),
+    quote: firstFieldQuote(field),
+    reasoning: 'Nhóm tuổi ước tính từ hồ sơ AI đã được khách đồng ý.',
   };
 }
 
-// Vietnamese demographic name dictionaries
-const VN_SURNAMES = new Set([
-  'nguyễn', 'trần', 'lê', 'phạm', 'hoàng', 'huỳnh', 'phan', 'vũ', 'võ', 'đặng',
-  'bùi', 'đỗ', 'hồ', 'ngô', 'dương', 'lý', 'đinh', 'đoàn', 'lương', 'trương', 'trịnh',
-]);
-
-const VN_MALE_MIDDLE = new Set(['văn', 'đức', 'mạnh', 'quốc', 'đình', 'bá', 'trọng', 'công', 'hữu']);
-const VN_FEMALE_MIDDLE = new Set(['thị', 'diệu', 'mỹ', 'thục', 'đoan']);
-
-const VN_MALE_GIVEN = new Set([
-  'văn', 'đức', 'hùng', 'tuấn', 'mạnh', 'nghĩa', 'quốc', 'sơn', 'tùng', 'hưng',
-  'long', 'dũng', 'cường', 'thắng', 'đạt', 'kiên', 'phong', 'nam', 'hải', 'hiếu',
-  'huy', 'khải', 'khôi', 'lâm', 'lộc', 'quân', 'quang', 'tài', 'thịnh', 'tiến',
-  'toàn', 'trung', 'trường', 'việt', 'vinh', 'vương', 'bách', 'khang', 'phát', 'thành',
-]);
-
-const VN_FEMALE_GIVEN = new Set([
-  'thị', 'hương', 'lan', 'thảo', 'trang', 'huyền', 'phương', 'ngọc', 'thu', 'mai',
-  'hoa', 'yến', 'nhung', 'hạnh', 'hiền', 'nga', 'oanh', 'quỳnh', 'thúy', 'thủy',
-  'trâm', 'trinh', 'tuyết', 'vân', 'vy', 'xuân', 'ánh', 'bích', 'chi', 'diệp',
-  'đào', 'hằng', 'huệ', 'kiều', 'liên', 'ly', 'my', 'ngân', 'nhi', 'phượng', 'thơ', 'thư', 'uyên',
-]);
-
-const VN_UNISEX_GIVEN = new Set(['anh', 'bình', 'châu', 'giang', 'hà', 'khánh', 'minh', 'nhân', 'an', 'linh', 'tâm', 'thanh']);
-
-const BUSINESS_NAME_NOISE = /(?:shop|store|công\s*ty|cty|tnhh|doanh\s*nghiệp|nội\s*thất|đồ\s*thờ|phong\s*thủy|official|fanpage|admin|khách\s*hàng|facebook)/iu;
-
-function addressFormToMeta(
-  form: CustomerCareCrmAddressForm,
-  isSuggestion: boolean,
-): { inferredGender: 'male' | 'female' | 'unknown'; salutation: string; label: string } {
-  const verb = isSuggestion ? 'Gợi ý' : 'Xưng';
-  switch (form) {
-    case 'anh':
-      return { inferredGender: 'male', salutation: 'Anh', label: `Nam · ${verb} Anh` };
-    case 'chu':
-      return { inferredGender: 'male', salutation: 'Chú', label: `Nam · ${verb} Chú` };
-    case 'chi':
-      return { inferredGender: 'female', salutation: 'Chị', label: `Nữ · ${verb} Chị` };
-    case 'co':
-      return { inferredGender: 'female', salutation: 'Cô', label: `Nữ · ${verb} Cô` };
-    case 'ban':
-      return { inferredGender: 'unknown', salutation: 'Bạn', label: `Chưa xác định · ${verb} Bạn` };
-  }
-}
-
-function inferGenderFromVietnameseName(rawName: string | null): 'male' | 'female' | null {
-  if (!rawName) return null;
-  const cleaned = rawName.normalize('NFC').trim();
-  if (cleaned === '' || PHONE_RUN.test(cleaned) || BUSINESS_NAME_NOISE.test(cleaned)) return null;
-  const tokens = (cleaned.match(/\p{L}+/gu) ?? []).map((t) => t.toLowerCase());
-  if (tokens.length === 0 || tokens.length > 6) return null;
-
-  if (tokens.length === 1) {
-    const single = tokens[0]!;
-    if (VN_UNISEX_GIVEN.has(single) || VN_SURNAMES.has(single)) return null;
-    if (VN_MALE_GIVEN.has(single)) return 'male';
-    if (VN_FEMALE_GIVEN.has(single)) return 'female';
-    return null;
-  }
-
-  // Handle "Tuấn Nguyễn" (Given + Surname) vs standard "Nguyễn Văn Tuấn" (Surname + Middle + Given)
-  const lastIsSurname = VN_SURNAMES.has(tokens[tokens.length - 1]!) && !VN_SURNAMES.has(tokens[0]!);
-  const given = lastIsSurname ? tokens[0]! : tokens[tokens.length - 1]!;
-  const middles = lastIsSurname ? tokens.slice(1, -1) : tokens.slice(1, -1);
-
-  if (middles.some((m) => VN_FEMALE_MIDDLE.has(m))) return 'female';
-  if (middles.some((m) => VN_MALE_MIDDLE.has(m))) return 'male';
-
-  if (VN_UNISEX_GIVEN.has(given)) return null;
-  if (VN_FEMALE_GIVEN.has(given)) return 'female';
-  if (VN_MALE_GIVEN.has(given)) return 'male';
-
-  // Two-word name like "Văn Minh" or "Thu Hà" where first token is middle name
-  if (tokens.length === 2 && !lastIsSurname) {
-    const first = tokens[0]!;
-    if (VN_FEMALE_MIDDLE.has(first) || (VN_FEMALE_GIVEN.has(first) && !VN_SURNAMES.has(first))) return 'female';
-    if (VN_MALE_MIDDLE.has(first) || (VN_MALE_GIVEN.has(first) && !VN_SURNAMES.has(first))) return 'male';
-  }
-  return null;
-}
-
-function inferLayer2Demographic(
+function buildLayer2AddressForm(
   row: CustomerCareCrmRow,
-  layer1: CrmPortraitLayer1Age,
+  identity: CustomerCareCrmIdentity | null,
+  allowed: boolean,
 ): CrmPortraitLayer2Demographic {
+  const title = 'Tầng 2 · Xưng hô';
   if (row.profile.addressForm !== null) {
-    const meta = addressFormToMeta(row.profile.addressForm, false);
+    const salutation = SALUTATIONS[row.profile.addressForm];
     return {
       step: 2,
-      title: 'Tầng 2 · Giới tính & Xưng hô',
+      title,
       addressForm: row.profile.addressForm,
-      ...meta,
+      salutation,
+      label: `Xưng ${salutation}`,
       confidence: 'high',
       source: 'staff',
       quote: null,
-      reasoning: 'Nhân viên đã chọn cách xưng hô chính thức trên hồ sơ.',
+      reasoning: 'Nhân viên đã chọn cách xưng hô trên hồ sơ.',
     };
   }
-
-  const idForm = row.identity?.addressForm;
-  if (isShownField(idForm) && oneOf(CUSTOMER_CARE_CRM_ADDRESS_FORMS, idForm.value)) {
-    const meta = addressFormToMeta(idForm.value, idForm.status === 'suggested');
+  const field = allowed ? identity?.addressForm : null;
+  if (isShownField(field) && oneOf(CUSTOMER_CARE_CRM_ADDRESS_FORMS, field.value)) {
+    const salutation = SALUTATIONS[field.value];
     return {
       step: 2,
-      title: 'Tầng 2 · Giới tính & Xưng hô',
-      addressForm: idForm.value,
-      ...meta,
-      confidence: idForm.confidence,
-      source: idForm.source === 'staff' ? 'staff' : 'identity',
-      quote: firstFieldQuote(idForm),
-      reasoning: 'Tổng hợp từ trường xưng hô của hồ sơ định danh.',
+      title,
+      addressForm: field.value,
+      salutation,
+      label: `${field.status === 'suggested' ? 'Gợi ý' : 'Xưng'} ${salutation}`,
+      confidence: field.confidence,
+      source: fieldSource(field),
+      quote: firstFieldQuote(field),
+      reasoning: 'Cách xưng hô trong hồ sơ AI đã được khách đồng ý.',
     };
   }
-
-  // Self-reference in customer chat messages
-  for (const msg of row.recentMessages) {
-    const text = msg.text.normalize('NFC');
-    const matchForm = (pattern: RegExp, form: CustomerCareCrmAddressForm): CrmPortraitLayer2Demographic | null => {
-      if (!pattern.test(text)) return null;
-      const meta = addressFormToMeta(form, false);
-      return {
-        step: 2,
-        title: 'Tầng 2 · Giới tính & Xưng hô',
-        addressForm: form,
-        ...meta,
-        confidence: 'high',
-        source: 'chat',
-        quote: safeQuote(text),
-        reasoning: `Khách tự xưng "${meta.salutation}" trực tiếp trong tin nhắn.`,
-      };
-    };
-
-    const hit = matchForm(/(?:^|[^\p{L}])(?:cô\s+(?:mua|muốn|đặt|tìm|hỏi|cần|xem|đang|ở|sn|sinh\s+năm|năm\s+nay)|cho\s+cô\s+(?:hỏi|xem)|báo\s+giá\s+cho\s+cô|nhà\s+cô)(?=$|[^\p{L}])/iu, 'co')
-      ?? matchForm(/(?:^|[^\p{L}])(?:chú\s+(?:mua|muốn|đặt|tìm|hỏi|cần|xem|đang|ở|sn|sinh\s+năm|năm\s+nay)|cho\s+chú\s+(?:hỏi|xem)|báo\s+giá\s+cho\s+chú|nhà\s+chú)(?=$|[^\p{L}])/iu, 'chu')
-      ?? matchForm(/(?:^|[^\p{L}])(?:anh\s+(?:mua|muốn|đặt|tìm|hỏi|cần|xem|lấy|đang|ở|sn|sinh\s+năm|năm\s+nay|nhắn|chốt)|cho\s+anh\s+(?:hỏi|xem)|tư\s+vấn\s+cho\s+anh|báo\s+giá\s+cho\s+anh|gửi\s+anh|số\s+anh|zalo\s+anh|vợ\s+chồng\s+anh|bà\s+xã|vợ\s+anh)(?=$|[^\p{L}])/iu, 'anh')
-      ?? matchForm(/(?:^|[^\p{L}])(?:chị\s+(?:mua|muốn|đặt|tìm|hỏi|cần|xem|lấy|đang|ở|sn|sinh\s+năm|năm\s+nay|nhắn|chốt)|cho\s+chị\s+(?:hỏi|xem)|tư\s+vấn\s+cho\s+chị|báo\s+giá\s+cho\s+chị|gửi\s+chị|số\s+chị|zalo\s+chị|vợ\s+chồng\s+chị|ông\s+xã|chồng\s+chị|chồng\s+em)(?=$|[^\p{L}])/iu, 'chi');
-    if (hit) return hit;
-  }
-
-  // Vietnamese name dictionary heuristic
-  const nameGender = inferGenderFromVietnameseName(row.customerName);
-  if (nameGender !== null) {
-    const senior = layer1.ageBand === '55+';
-    const form: CustomerCareCrmAddressForm = nameGender === 'male'
-      ? (senior ? 'chu' : 'anh')
-      : (senior ? 'co' : 'chi');
-    const meta = addressFormToMeta(form, true);
-    return {
-      step: 2,
-      title: 'Tầng 2 · Giới tính & Xưng hô',
-      addressForm: form,
-      ...meta,
-      confidence: 'medium',
-      source: 'name',
-      quote: null,
-      reasoning: `Phân tích tên hiển thị tiếng Việt để gợi ý xưng hô ${meta.salutation}.`,
-    };
-  }
-
   return {
     step: 2,
-    title: 'Tầng 2 · Giới tính & Xưng hô',
+    title,
     addressForm: null,
-    inferredGender: 'unknown',
     salutation: 'Anh/Chị',
-    label: 'Chưa xác định · Tạm xưng Anh/Chị',
+    label: 'Chưa rõ · Tạm xưng Anh/Chị',
     confidence: null,
     source: 'none',
     quote: null,
-    reasoning: 'Chưa có xưng hô tự nêu và tên hiển thị trung tính/chưa đủ căn cứ.',
+    reasoning: 'Chưa có cách xưng hô do nhân viên chọn.',
   };
 }
 
-const STAFF_RECIPIENT_LABELS: Readonly<Record<CustomerCareCrmRecipient, string>> = {
-  spouse: 'Đã lập gia đình · Mua cùng vợ/chồng',
-  parents: 'Gia đình đa thế hệ · Mua biếu bố mẹ',
-  children: 'Đã lập gia đình · Mua cho con',
-  household: 'Đã lập gia đình · Sắm cho gia đình',
-  self: 'Mua cá nhân',
-  gift: 'Mua làm quà biếu',
-};
-
-function inferLayer3Household(
-  row: CustomerCareCrmRow,
-  ctx: CrmStaffContext,
-  allSegments: readonly TextSegment[],
-): CrmPortraitLayer3Household {
-  const sensitiveFiltered = allSegments.some((seg) => containsSensitiveHouseholdTerm(seg.text));
-  const cleanSegments = allSegments.filter((seg) => !containsSensitiveHouseholdTerm(seg.text));
-
-  if (ctx.recipient !== null) {
+function buildLayer3Recipient(identity: CustomerCareCrmIdentity | null, allowed: boolean): CrmPortraitLayer3Household {
+  const title = 'Tầng 3 · Mua cho ai';
+  const field = allowed ? identity?.family : null;
+  const recipient = isShownField(field) && field.value && oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, field.value.recipient)
+    ? field.value.recipient
+    : null;
+  const quote = recipient !== null && isShownField(field) ? customerQuote(field) : null;
+  if (recipient === null || quote === null || !isShownField(field)) {
     return {
       step: 3,
-      title: 'Tầng 3 · Tình trạng hôn nhân & Gia đình',
-      recipient: ctx.recipient,
-      label: STAFF_RECIPIENT_LABELS[ctx.recipient],
-      confidence: 'high',
-      source: 'staff',
+      title,
+      recipient: null,
+      label: allowed ? 'Khách chưa nói mua cho ai' : PROFILE_LOCKED_LABEL,
+      confidence: null,
+      source: 'none',
       quote: null,
-      sensitiveFiltered,
-      reasoning: 'Nhân viên đã xác nhận đối tượng thụ hưởng trên hồ sơ.',
+      reasoning: allowed ? 'Chỉ ghi khi khách tự nói, kèm lời của khách.' : PROFILE_LOCKED_REASON,
     };
   }
-
-  const idFamily = row.identity?.family;
-  if (isShownField(idFamily) && idFamily.value && oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, idFamily.value.recipient)) {
-    const rawQuote = firstFieldQuote(idFamily);
-    if (rawQuote && !containsSensitiveHouseholdTerm(rawQuote)) {
-      return {
-        step: 3,
-        title: 'Tầng 3 · Tình trạng hôn nhân & Gia đình',
-        recipient: idFamily.value.recipient,
-        label: STAFF_RECIPIENT_LABELS[idFamily.value.recipient],
-        confidence: idFamily.confidence,
-        source: idFamily.source === 'staff' ? 'staff' : 'identity',
-        quote: rawQuote,
-        sensitiveFiltered,
-        reasoning: 'Trích xuất từ thông tin đối tượng mua hàng đã xác thực.',
-      };
-    }
-  }
-
-  for (const seg of cleanSegments) {
-    const matchRule = (
-      pattern: RegExp,
-      recipient: CustomerCareCrmRecipient,
-      label: string,
-      reason: string,
-    ): CrmPortraitLayer3Household | null => {
-      if (!pattern.test(seg.text)) return null;
-      return {
-        step: 3,
-        title: 'Tầng 3 · Tình trạng hôn nhân & Gia đình',
-        recipient,
-        label,
-        confidence: seg.origin === 'chat' ? 'high' : 'medium',
-        source: seg.origin,
-        quote: safeQuote(seg.text),
-        sensitiveFiltered,
-        reasoning: reason,
-      };
-    };
-
-    const hit = matchRule(
-      /(?:hai\s+vợ\s+chồng|2\s+vợ\s+chồng|vợ\s+chồng\s+(?:em|anh|chị|mình)|bà\s+xã|ông\s+xã|hỏi\s+ý\s+kiến\s+(?:vợ|chồng)|bàn\s+với\s+(?:vợ|chồng)|mới\s+cưới)/iu,
-      'spouse',
-      'Đã lập gia đình · Vợ chồng',
-      'Khách nhắc tới vợ/chồng cùng tham gia quyết định mua sắm.',
-    )
-      ?? matchRule(
-        /(?:biếu\s+bố\s+mẹ|mua\s+cho\s+bố\s+mẹ|cho\s+bố\s+mẹ|cho\s+ba\s+má|biếu\s+ba\s+má|ông\s+bà|nhà\s+bố\s+mẹ)/iu,
-        'parents',
-        'Gia đình · Mua cho bố mẹ',
-        'Khách nêu nhu cầu mua sắm / biếu tặng bố mẹ, ông bà.',
-      )
-      ?? matchRule(
-        /(?:cho\s+con\s+trai|cho\s+con\s+gái|vợ\s+chồng\s+con|cho\s+con\s+ra\s+riêng|mua\s+cho\s+con)/iu,
-        'children',
-        'Đã có con',
-        'Khách mua sắm cho con cái.',
-      )
-      ?? matchRule(
-        /(?:làm\s+quà\s+biếu|quà\s+tân\s+gia|tặng\s+tân\s+gia|biếu\s+sếp|mua\s+tặng|quà\s+tặng)/iu,
-        'gift',
-        'Mua làm quà biếu',
-        'Khách mua sản phẩm để làm quà tặng / biếu.',
-      )
-      ?? matchRule(
-        /(?:gia\s+đình\s+mình|nhà\s+(?:anh|chị|em|mình)|cả\s+nhà|từ\s+đường|nhà\s+thờ\s+họ)/iu,
-        'household',
-        'Gia đình riêng',
-        'Khách mua sắm cho không gian sinh hoạt/thờ tự của gia đình.',
-      );
-
-    if (hit) return hit;
-  }
-
   return {
     step: 3,
-    title: 'Tầng 3 · Tình trạng hôn nhân & Gia đình',
-    recipient: null,
-    label: 'Chưa rõ thông tin gia đình',
-    confidence: null,
-    source: 'none',
-    quote: null,
-    sensitiveFiltered,
-    reasoning: sensitiveFiltered
-      ? 'Đã lọc bỏ câu chứa thông tin nhạy cảm riêng tư theo quy tắc an toàn.'
-      : 'Khách chưa đề cập người thụ hưởng hoặc bối cảnh gia đình.',
+    title,
+    recipient,
+    label: RECIPIENT_LABELS[recipient],
+    confidence: field.confidence,
+    source: fieldSource(field),
+    quote,
+    reasoning: 'Theo lời khách nói, trong hồ sơ AI đã được khách đồng ý.',
   };
-}
-
-// URL extraction without network calls
-const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]}]+/gi;
-const FB_CONTENT_PATH = /\/(?:posts|videos|reel|reels|share|permalink)\b|\/(?:permalink|story|watch)\.php\b/i;
-
-export function extractSafeSharedLink(rawUrl: string): CustomerCareCrmSharedLink | null {
-  if (typeof rawUrl !== 'string' || rawUrl.length === 0 || rawUrl.length > MAX_EXTRACT_URL_LENGTH) {
-    return null;
-  }
-  const trimmed = rawUrl.trim().replace(/[.,;:!?)]+$/, '');
-  if (trimmed.length === 0 || trimmed.length > MAX_EXTRACT_URL_LENGTH) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-
-  let host = parsed.hostname.toLowerCase().replace(/^(?:www|m|web|touch)\./, '');
-  if ((host === 'l.facebook.com' || host === 'lm.facebook.com') && parsed.pathname.startsWith('/l.php')) {
-    const inner = parsed.searchParams.get('u');
-    if (!inner || inner.length > MAX_EXTRACT_URL_LENGTH) return null;
-    let unwrapped: URL;
-    try {
-      unwrapped = new URL(inner);
-    } catch {
-      return null;
-    }
-    if (unwrapped.protocol !== 'http:' && unwrapped.protocol !== 'https:') {
-      return null;
-    }
-    parsed = unwrapped;
-    host = parsed.hostname.toLowerCase().replace(/^(?:www|m|web|touch)\./, '');
-  }
-
-  const domain = sanitizeCtxDomain(host);
-  if (!domain) return null;
-
-  if (domain === 'facebook.com' || domain.endsWith('.facebook.com')) {
-    // Personal Facebook profile `facebook.com/<username>` or `profile.php` => keep ONLY `facebook.com`, title = null
-    if (!FB_CONTENT_PATH.test(parsed.pathname)) {
-      return { domain: 'facebook.com', title: null };
-    }
-    const lowerPath = parsed.pathname.toLowerCase();
-    let title = 'Nội dung chia sẻ Facebook';
-    if (lowerPath.includes('/reel')) title = 'Reels Facebook';
-    else if (lowerPath.includes('/video') || lowerPath.includes('/watch')) title = 'Video Facebook';
-    else if (lowerPath.includes('/post')) title = 'Bài viết Facebook';
-    return { domain: 'facebook.com', title };
-  }
-
-  if (domain === 'fb.watch') {
-    return { domain: 'facebook.com', title: 'Video Facebook' };
-  }
-
-  return { domain, title: null };
-}
-
-function parseVietnameseBudget(text: string): CustomerCareCrmBudgetBand | null {
-  const norm = text.normalize('NFC').toLowerCase();
-
-  // Explicit "dưới X tr / triệu / củ" or "trên X tr / triệu / củ"
-  const underMatch = /(?:dưới|tối\s+đa|không\s+quá|đổ\s+lại)\s*(\d{1,3})(?:[.,](\d))?\s*(?:tr|triệu|củ)\b/u.exec(norm);
-  if (underMatch) {
-    const millions = Number(underMatch[1]) + (underMatch[2] ? Number(underMatch[2]) / 10 : 0);
-    if (millions <= 5) return 'under_5m';
-    if (millions <= 15) return '5m_15m';
-    if (millions <= 30) return '15m_30m';
-    return '30m_plus';
-  }
-
-  const overMatch = /(?:trên|hơn|từ)\s*(\d{1,3})(?:[.,](\d))?\s*(?:tr|triệu|củ)\s*(?:trở\s+lên)?\b/u.exec(norm);
-  if (overMatch && !/(?:đến|tới|-|–)/u.test(norm.slice(overMatch.index, overMatch.index + 32))) {
-    const millions = Number(overMatch[1]) + (overMatch[2] ? Number(overMatch[2]) / 10 : 0);
-    if (millions >= 30) return '30m_plus';
-    if (millions >= 15) return '15m_30m';
-    if (millions >= 5) return '5m_15m';
-  }
-
-  // Range like "5-10tr", "10 đến 15 triệu"
-  const rangeMatch = /\b(\d{1,3})\s*(?:-|–|đến|tới)\s*(\d{1,3})\s*(?:tr|triệu|củ)\b/u.exec(norm);
-  if (rangeMatch) {
-    const avg = (Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2;
-    if (avg < 5) return 'under_5m';
-    if (avg <= 15) return '5m_15m';
-    if (avg <= 30) return '15m_30m';
-    return '30m_plus';
-  }
-
-  // Single million amount: "tầm 8 triệu", "20 củ", "4tr5", "12,5 triệu"
-  const millionMatch = /\b(\d{1,3})(?:(?:[.,](\d))\s*(?:tr|triệu|củ)|(?:\s*(?:tr|triệu|củ)\s*(\d)?))\b/u.exec(norm);
-  if (millionMatch) {
-    const dec = millionMatch[2] ?? millionMatch[3];
-    const millions = Number(millionMatch[1]) + (dec ? Number(dec) / 10 : 0);
-    if (millions > 0 && millions < 5) return 'under_5m';
-    if (millions >= 5 && millions <= 15) return '5m_15m';
-    if (millions > 15 && millions <= 30) return '15m_30m';
-    if (millions > 30) return '30m_plus';
-  }
-
-  // Thousands: "500k", "800 nghìn"
-  const thousandMatch = /\b(\d{2,4})\s*(?:k|nghìn|ngàn)\b/u.exec(norm);
-  if (thousandMatch) {
-    const thousands = Number(thousandMatch[1]);
-    if (thousands >= 50 && thousands < 5000) return 'under_5m';
-  }
-
-  // Formatted VND with .000.000: "12.500.000đ"
-  const vndMatch = /(?:^|[^\d])([1-9]\d{0,2})\.(\d{3})\.000\s*(?:đ|đồng|vnd)?(?=$|[^\d])/u.exec(norm);
-  if (vndMatch) {
-    const millions = Number(vndMatch[1]) + Number(vndMatch[2]) / 1000;
-    if (millions < 5) return 'under_5m';
-    if (millions <= 15) return '5m_15m';
-    if (millions <= 30) return '15m_30m';
-    return '30m_plus';
-  }
-
-  return null;
 }
 
 function normalizeMatchTokens(text: string): string[] {
@@ -1298,7 +748,7 @@ function normalizeMatchTokens(text: string): string[] {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\p{M}/gu, '')
     .replace(/đ/g, 'd')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
@@ -1321,163 +771,145 @@ const DOMAIN_PRODUCT_KEYWORDS: ReadonlyArray<{ pattern: RegExp; label: string }>
   { pattern: /đồng\s+đỏ|đồng\s+catut/iu, label: 'Đồng đỏ / Catut' },
 ];
 
-function inferTimelineFromText(segments: readonly TextSegment[]): { timeline: CustomerCareCrmTimeline; quote: string | null; origin: 'chat' | 'note' } | null {
+function inferTimelineFromText(segments: readonly TextSegment[]): CustomerCareCrmTimeline | null {
   for (const seg of segments) {
-    if (/(?:trước\s+tết|kịp\s+tết|đón\s+tết|sắm\s+tết|dịp\s+tết|cuối\s+năm)/iu.test(seg.text)) {
-      return { timeline: 'before_tet', quote: safeQuote(seg.text), origin: seg.origin };
-    }
-    if (/(?:trong\s+tuần\s+này|cuối\s+tuần\s+này|ngày\s+mai|giao\s+ngay|cần\s+gấp)/iu.test(seg.text)) {
-      return { timeline: 'this_week', quote: safeQuote(seg.text), origin: seg.origin };
-    }
-    if (/(?:trong\s+tháng\s+này|cuối\s+tháng|tháng\s+tới|tháng\s+sau)/iu.test(seg.text)) {
-      return { timeline: 'this_month', quote: safeQuote(seg.text), origin: seg.origin };
-    }
-    if (/(?:chưa\s+gấp|tham\s+khảo\s+trước|xem\s+trước|khi\s+nào\s+xong\s+nhà)/iu.test(seg.text)) {
-      return { timeline: 'later', quote: safeQuote(seg.text), origin: seg.origin };
-    }
+    if (/(?:trước\s+tết|kịp\s+tết|đón\s+tết|sắm\s+tết|dịp\s+tết|cuối\s+năm)/iu.test(seg.text)) return 'before_tet';
+    if (/(?:trong\s+tuần\s+này|cuối\s+tuần\s+này|ngày\s+mai|giao\s+ngay|cần\s+gấp)/iu.test(seg.text)) return 'this_week';
+    if (/(?:trong\s+tháng\s+này|cuối\s+tháng|tháng\s+tới|tháng\s+sau)/iu.test(seg.text)) return 'this_month';
+    if (/(?:chưa\s+gấp|tham\s+khảo\s+trước|xem\s+trước|khi\s+nào\s+xong\s+nhà)/iu.test(seg.text)) return 'later';
   }
   return null;
 }
 
-function inferLayer4Interests(
+/** The #85 occasion cues, in its order (gift, new home or replacement, Tết, giỗ). */
+const OCCASION_CUES: ReadonlyArray<{ pattern: RegExp; occasion: CustomerCareCrmOccasion }> = [
+  { pattern: /(?:hộp\s+quà|quà\s+tân\s+gia|tặng\s+tân\s+gia|biếu\s+sếp|làm\s+quà|quà\s+tặng|mua\s+tặng)/iu, occasion: 'gift' },
+  { pattern: /(?:nhập\s+trạch|nhà\s+mới|căn\s+hộ\s+mới|chung\s+cư\s+mới|phòng\s+thờ\s+mới)/iu, occasion: 'new_home' },
+  { pattern: /(?:thay\s+bàn\s+thờ|thay\s+đồ\s+thờ)/iu, occasion: 'replacement' },
+  { pattern: /(?:sắm\s+tết|dịp\s+tết|đón\s+tết|kịp\s+tết|trước\s+tết)/iu, occasion: 'tet' },
+  { pattern: /(?:cúng\s+giỗ|đám\s+giỗ|ngày\s+giỗ|làm\s+giỗ)/iu, occasion: 'anniversary' },
+];
+
+/** An occasion guessed from plain order talk. A sentence with a sensitive term (a death, an illness...) is never read. */
+function inferOccasionFromText(segments: readonly TextSegment[]): CustomerCareCrmOccasion | null {
+  for (const seg of segments) {
+    if (containsSensitiveHouseholdTerm(seg.text)) continue;
+    const cue = OCCASION_CUES.find((item) => item.pattern.test(seg.text));
+    if (cue) return cue.occasion;
+  }
+  return null;
+}
+
+function timelineFromNeededBy(neededBy: string | null, occasion: CustomerCareCrmOccasion | null, nowMs: number): CustomerCareCrmTimeline | null {
+  if (neededBy === null) return occasion === 'tet' ? 'before_tet' : null;
+  const dueMs = Date.parse(`${neededBy}T23:59:59+07:00`);
+  if (!Number.isFinite(dueMs)) return null;
+  const diffDays = (dueMs - nowMs) / DAY_MS;
+  if (diffDays <= 7) return 'this_week';
+  if (diffDays <= 31) return 'this_month';
+  return occasion === 'tet' ? 'before_tet' : 'later';
+}
+
+/**
+ * Products the customer asked about: the staff's picks, plus the server's while the AI profile is on, or a match on
+ * the chat when the server has none to give. `guessed` says the chat was used.
+ */
+function orderLayerProducts(
   row: CustomerCareCrmRow,
+  orderIdentity: CustomerCareCrmIdentity | null,
+  segments: readonly TextSegment[],
+  products: readonly CrmEnterpriseProduct[],
+): { matched: CrmEnterpriseProduct[]; guessed: boolean } {
+  const known = new Set(products.map((product) => product.id));
+  const matched = new Set(row.profile.productFactIds.filter((id) => known.has(id)));
+  const field = orderIdentity?.productFactIds;
+  const server = isShownField(field) && Array.isArray(field.value)
+    ? field.value.filter((id): id is string => typeof id === 'string' && known.has(id))
+    : [];
+  const guessed = server.length === 0;
+  if (guessed) {
+    const corpusTokens = new Set(normalizeMatchTokens(segments.map((seg) => seg.text).join('\n')));
+    for (const product of products) {
+      const tokens = normalizeMatchTokens(product.label);
+      const overlap = tokens.filter((token) => corpusTokens.has(token)).length;
+      if ((tokens.length === 1 && overlap === 1) || overlap >= 2) matched.add(product.id);
+    }
+  } else {
+    for (const id of server) matched.add(id);
+  }
+  return { matched: products.filter((product) => matched.has(product.id)), guessed };
+}
+
+/** The source ad, links the customer shared and a budget band: profile layer, from the server, after consent. */
+function profileInterests(identity: CustomerCareCrmIdentity | null, allowed: boolean): {
+  adTitle: string | null;
+  sharedLinks: CustomerCareCrmSharedLink[];
+  budgetBand: CustomerCareCrmBudgetBand | null;
+  budgetQuote: string | null;
+} {
+  const interests = allowed ? identity?.interests ?? null : null;
+  if (interests === null) return { adTitle: null, sharedLinks: [], budgetBand: null, budgetQuote: null };
+  const adTitle = isShownField(interests.adTitle) ? sanitizeCtxAdTitle(interests.adTitle.value) : null;
+  const sharedLinks: CustomerCareCrmSharedLink[] = [];
+  for (const field of Array.isArray(interests.sharedLinks) ? interests.sharedLinks : []) {
+    if (sharedLinks.length >= 3) break;
+    if (!isShownField(field) || !field.value) continue;
+    const domain = sanitizeCtxDomain(field.value.domain);
+    if (domain === null) continue;
+    const title = isCrmSocialDomain(domain) || !field.value.title ? null : sanitizeCtxAdTitle(field.value.title);
+    sharedLinks.push({ domain, title });
+  }
+  const budget = interests.budgetBand;
+  const budgetBand = isShownField(budget) && oneOf(CUSTOMER_CARE_CRM_BUDGET_BANDS, budget.value) ? budget.value : null;
+  return { adTitle, sharedLinks, budgetBand, budgetQuote: budgetBand !== null && isShownField(budget) ? firstFieldQuote(budget) : null };
+}
+
+function buildLayer4Interests(
+  row: CustomerCareCrmRow,
+  identity: CustomerCareCrmIdentity | null,
+  orderIdentity: CustomerCareCrmIdentity | null,
+  allowed: boolean,
   ctx: CrmStaffContext,
   segments: readonly TextSegment[],
   products: readonly CrmEnterpriseProduct[],
   nowMs: number,
 ): CrmPortraitLayer4Interests {
-  // 1. Shared links (identity + ctx.sharedDomain + URLs in chat/note, max 3)
-  const sharedLinks: CustomerCareCrmSharedLink[] = [];
-  const addLink = (link: CustomerCareCrmSharedLink | null) => {
-    if (!link || sharedLinks.length >= 3) return;
-    const key = `${link.domain}|${link.title ?? ''}`;
-    if (sharedLinks.some((item) => `${item.domain}|${item.title ?? ''}` === key)) return;
-    // Upgrade existing domain-only entry if a newer source has a title
-    const sameDomainIdx = sharedLinks.findIndex((item) => item.domain === link.domain && item.title === null && link.title !== null);
-    if (sameDomainIdx >= 0) {
-      sharedLinks[sameDomainIdx] = link;
-      return;
-    }
-    if (sharedLinks.some((item) => item.domain === link.domain && link.title === null)) return;
-    sharedLinks.push(link);
-  };
+  // Order layer (no consent needed): staff first, then the server while the AI profile is on, then a chat guess.
+  const { matched: matchedProducts, guessed: productsGuessed } = orderLayerProducts(row, orderIdentity, segments, products);
+  const corpus = segments.map((seg) => seg.text).join('\n');
+  const topicKeywords = productsGuessed
+    ? DOMAIN_PRODUCT_KEYWORDS.filter((item) => item.pattern.test(corpus)).map((item) => item.label)
+    : [];
 
-  for (const field of row.identity?.interests?.sharedLinks ?? []) {
-    if (isShownField(field) && field.value) {
-      const domain = sanitizeCtxDomain(field.value.domain);
-      const title = field.value.title ? sanitizeCtxAdTitle(field.value.title) : null;
-      if (domain) addLink({ domain, title });
-    }
-  }
-  if (ctx.sharedDomain) {
-    addLink({ domain: ctx.sharedDomain, title: null });
-  }
-  for (const seg of segments) {
-    const rawUrls = seg.text.match(URL_IN_TEXT) ?? [];
-    for (const rawUrl of rawUrls) {
-      addLink(extractSafeSharedLink(rawUrl));
-    }
-  }
+  const idOccasion = orderIdentity?.occasion;
+  const serverOccasion = isShownField(idOccasion) && oneOf(CUSTOMER_CARE_CRM_OCCASIONS, idOccasion.value) ? idOccasion.value : null;
+  const occasion = row.profile.occasion ?? serverOccasion ?? inferOccasionFromText(segments);
 
-  // 2. Source Ad
-  const idAd = row.identity?.interests?.adTitle;
-  const adTitle = (isShownField(idAd) ? sanitizeCtxAdTitle(idAd.value) : null) ?? ctx.adTitle;
+  const idTimeline = orderIdentity?.timeline;
+  const serverTimeline = isShownField(idTimeline) && oneOf(CUSTOMER_CARE_CRM_TIMELINES, idTimeline.value) ? idTimeline.value : null;
+  const timeline = serverTimeline
+    ?? ctx.timeline
+    ?? timelineFromNeededBy(row.profile.neededBy, occasion, nowMs)
+    ?? inferTimelineFromText(segments);
 
-  // 3. Matched shop products + domain keywords
-  const byId = new Map(products.map((p) => [p.id, p]));
-  const matchedIds = new Set<string>();
-  for (const id of row.profile.productFactIds) {
-    if (byId.has(id)) matchedIds.add(id);
-  }
-  const idProducts = row.identity?.productFactIds;
-  if (isShownField(idProducts) && Array.isArray(idProducts.value)) {
-    for (const id of idProducts.value) {
-      if (typeof id === 'string' && byId.has(id)) matchedIds.add(id);
-    }
-  }
+  const { adTitle, sharedLinks, budgetBand, budgetQuote } = profileInterests(identity, allowed);
 
-  const combinedCorpus = segments.map((s) => s.text).join('\n');
-  const corpusTokens = new Set(normalizeMatchTokens(combinedCorpus));
-  for (const product of products) {
-    if (matchedIds.has(product.id)) continue;
-    const prodTokens = normalizeMatchTokens(product.label);
-    if (prodTokens.length === 0) continue;
-    const overlap = prodTokens.filter((t) => corpusTokens.has(t)).length;
-    if ((prodTokens.length === 1 && overlap === 1) || overlap >= 2) {
-      matchedIds.add(product.id);
-    }
-  }
-  const matchedProducts = products.filter((p) => matchedIds.has(p.id));
-  const topicKeywords = DOMAIN_PRODUCT_KEYWORDS
-    .filter((item) => item.pattern.test(combinedCorpus))
-    .map((item) => item.label);
-
-  // 4. Budget & Timeline
-  let budgetBand: CustomerCareCrmBudgetBand | null = null;
-  let budgetQuote: string | null = null;
-  let budgetSource: CrmReasoningSource = 'none';
-  const idBudget = row.identity?.interests?.budgetBand;
-  if (isShownField(idBudget) && oneOf(CUSTOMER_CARE_CRM_BUDGET_BANDS, idBudget.value)) {
-    budgetBand = idBudget.value;
-    budgetQuote = firstFieldQuote(idBudget);
-    budgetSource = idBudget.source === 'staff' ? 'staff' : 'identity';
-  } else if (ctx.budgetBand !== null) {
-    budgetBand = ctx.budgetBand;
-    budgetSource = 'staff';
-  } else {
-    for (const seg of segments) {
-      const parsedBudget = parseVietnameseBudget(seg.text);
-      if (parsedBudget) {
-        budgetBand = parsedBudget;
-        budgetQuote = safeQuote(seg.text);
-        budgetSource = seg.origin;
-        break;
-      }
-    }
-  }
-
-  const idOccasion = row.identity?.occasion;
-  const occasion: CustomerCareCrmOccasion | null = row.profile.occasion
-    ?? (isShownField(idOccasion) && oneOf(CUSTOMER_CARE_CRM_OCCASIONS, idOccasion.value) ? idOccasion.value : null);
-
-  let timeline: CustomerCareCrmTimeline | null = null;
-  const idTimeline = row.identity?.timeline;
-  if (isShownField(idTimeline) && oneOf(CUSTOMER_CARE_CRM_TIMELINES, idTimeline.value)) {
-    timeline = idTimeline.value;
-  } else if (ctx.timeline !== null) {
-    timeline = ctx.timeline;
-  } else if (row.profile.neededBy !== null) {
-    const dueMs = Date.parse(`${row.profile.neededBy}T23:59:59+07:00`);
-    if (Number.isFinite(dueMs)) {
-      const diffDays = (dueMs - nowMs) / DAY_MS;
-      if (diffDays <= 7) timeline = 'this_week';
-      else if (diffDays <= 31) timeline = 'this_month';
-      else if (occasion === 'tet') timeline = 'before_tet';
-      else timeline = 'later';
-    }
-  } else if (occasion === 'tet') {
-    timeline = 'before_tet';
-  } else {
-    timeline = inferTimelineFromText(segments)?.timeline ?? null;
-  }
-
-  const summaryParts: string[] = [];
+  const parts: string[] = [];
   if (matchedProducts.length > 0) {
-    summaryParts.push(`Sản phẩm: ${matchedProducts.map((p) => cleanSingleLine(maskCrmPhones(p.label), 48)).join(', ')}`);
+    parts.push(`Sản phẩm: ${matchedProducts.map((product) => cleanSingleLine(maskCrmPhones(product.label), 48)).join(', ')}`);
   } else if (topicKeywords.length > 0) {
-    summaryParts.push(`Quan tâm: ${topicKeywords.slice(0, 3).join(', ')}`);
+    parts.push(`Quan tâm: ${topicKeywords.slice(0, 3).join(', ')}`);
   }
-  if (adTitle) summaryParts.push(`QC: ${adTitle}`);
-  if (sharedLinks.length > 0) {
-    summaryParts.push(`Link: ${sharedLinks.map((l) => (l.title ? `${l.title} (${l.domain})` : l.domain)).join(', ')}`);
-  }
-  if (budgetBand) summaryParts.push(`Ngân sách: ${BUDGET_LABELS[budgetBand]}`);
-  if (timeline) summaryParts.push(`Thời hạn: ${TIMELINE_LABELS[timeline]}`);
+  if (adTitle) parts.push(`QC: ${adTitle}`);
+  if (sharedLinks.length > 0) parts.push(`Link: ${sharedLinks.map((link) => (link.title ? `${link.title} (${link.domain})` : link.domain)).join(', ')}`);
+  if (budgetBand) parts.push(`Ngân sách: ${BUDGET_LABELS[budgetBand]}`);
+  if (timeline) parts.push(`Thời hạn: ${TIMELINE_LABELS[timeline]}`);
 
-  const hasAny = summaryParts.length > 0 || row.profile.neededBy !== null || occasion !== null;
-  const source: CrmReasoningSource = (row.profile.productFactIds.length > 0 || ctx.adTitle !== null || ctx.sharedDomain !== null || ctx.budgetBand !== null || ctx.timeline !== null)
-    ? 'staff'
-    : (budgetSource !== 'none' ? budgetSource : (hasAny ? 'chat' : 'none'));
+  const staffSet = row.profile.productFactIds.length > 0 || row.profile.occasion !== null || row.profile.neededBy !== null || ctx.timeline !== null;
+  const serverSet = serverOccasion !== null || serverTimeline !== null || !productsGuessed
+    || adTitle !== null || sharedLinks.length > 0 || budgetBand !== null;
+  const hasAny = parts.length > 0 || occasion !== null;
+  const source: CrmReasoningSource = staffSet ? 'staff' : serverSet ? 'identity' : hasAny ? 'chat' : 'none';
 
   return {
     step: 4,
@@ -1493,217 +925,90 @@ function inferLayer4Interests(
     neededBy: row.profile.neededBy,
     occasion,
     occasionLabel: occasion ? OCCASION_LABELS[occasion] : null,
-    label: summaryParts.length > 0 ? summaryParts.join(' · ') : 'Chưa ghi nhận sản phẩm, link hoặc ngân sách cụ thể',
+    label: parts.length > 0 ? parts.join(' · ') : 'Chưa ghi nhận sản phẩm hoặc thời hạn cụ thể',
     confidence: hasAny ? (source === 'staff' ? 'high' : 'medium') : null,
     source,
     quote: budgetQuote,
     reasoning: hasAny
-      ? 'Tổng hợp từ sản phẩm đã chọn, quảng cáo nguồn, link chia sẻ và ngân sách/thời hạn trong hội thoại.'
-      : 'Cần khai thác thêm mẫu mã, ngân sách và thời điểm khách cần nhận hàng.',
+      ? 'Từ sản phẩm, dịp và thời hạn trên hồ sơ; quảng cáo, link và ngân sách chỉ khi khách đã đồng ý.'
+      : 'Cần hỏi thêm mẫu khách quan tâm và thời điểm cần nhận hàng.',
   };
 }
 
-function buildPersonaSummary(
-  persona: CustomerCareCrmPersona | null,
-  layer1: CrmPortraitLayer1Age,
-  layer2: CrmPortraitLayer2Demographic,
-  layer3: CrmPortraitLayer3Household,
-  layer4: CrmPortraitLayer4Interests,
-): string {
-  const parts: string[] = [];
-  const who = layer2.addressForm !== null
-    ? `Khách ${layer2.inferredGender === 'male' ? 'nam' : layer2.inferredGender === 'female' ? 'nữ' : ''} (${layer2.salutation}${layer1.ageBands.length > 0 ? `, ${formatAgeBandsLabel(layer1.ageBands, layer1.exactAge)}` : ''})`.replace(/\s+/g, ' ')
-    : (layer1.ageBands.length > 0 ? `Khách (${formatAgeBandsLabel(layer1.ageBands, layer1.exactAge)})` : 'Khách tiềm năng');
-  parts.push(who);
-
-  if (persona !== null) {
-    parts.push(`thuộc nhóm ${persona} (${PERSONA_SHORT_LABELS[persona]})`);
-  }
-  if (layer3.recipient !== null) {
-    parts.push(STAFF_RECIPIENT_LABELS[layer3.recipient].toLowerCase());
-  }
-  if (layer4.matchedProducts.length > 0) {
-    const firstProd = cleanSingleLine(maskCrmPhones(layer4.matchedProducts[0]!.label), 48);
-    parts.push(`đang quan tâm ${firstProd}`);
-  } else if (layer4.topicKeywords.length > 0) {
-    parts.push(`đang tìm hiểu ${layer4.topicKeywords.slice(0, 2).join(', ')}`);
-  }
-  if (layer4.budgetLabel) {
-    parts.push(`ngân sách ${layer4.budgetLabel.toLowerCase()}`);
-  }
-  if (layer4.timelineLabel) {
-    parts.push(`cần ${layer4.timelineLabel.toLowerCase()}`);
-  }
-
-  if (parts.length <= 1 && persona === null) {
-    return 'Khách mới để lại thông tin liên hệ, cần hỏi thêm sản phẩm quan tâm, dịp mua và ngân sách dự kiến.';
-  }
-  return `${parts.join(', ')}.`;
-}
-
-function buildMissingPrompts(
-  salutation: string,
-  missingDimensions: readonly string[],
-): string[] {
-  const sal = salutation === 'Anh/Chị' ? 'anh/chị' : salutation.toLowerCase();
+/** Order-layer questions only: the desktop never prompts staff to collect profile data the customer has not agreed to. */
+function buildMissingPrompts(layer2: CrmPortraitLayer2Demographic, layer4: CrmPortraitLayer4Interests): string[] {
+  const sal = layer2.salutation === 'Anh/Chị' ? 'anh/chị' : layer2.salutation.toLowerCase();
   const prompts: string[] = [];
-  for (const dim of missingDimensions) {
-    switch (dim) {
-      case 'Sản phẩm/Link quan tâm':
-        prompts.push(`Dạ ${sal} đang quan tâm mẫu nào hoặc kích thước khoảng bao nhiêu để em gửi ảnh thực tế ạ?`);
-        break;
-      case 'Dịp/Thời hạn':
-        prompts.push(`Dạ ${sal} dự kiến sắm cho dịp nào (nhập trạch, lễ Tết hay biếu tặng) và cần nhận trước ngày nào ạ?`);
-        break;
-      case 'Ngân sách':
-        prompts.push(`Dạ ${sal} đang dự trù tầm ngân sách khoảng bao nhiêu để em chọn chất liệu phù hợp nhất ạ?`);
-        break;
-      case 'Gia đình':
-        prompts.push(`Dạ mình sắm cho không gian gia đình mình hay mua biếu người thân để em tư vấn quy cách chuẩn nhất ạ?`);
-        break;
-      case 'Xưng hô':
-        prompts.push('Dạ em xin phép hỏi mình tiện xưng hô là Anh hay Chị để em lưu hồ sơ hỗ trợ chu đáo ạ?');
-        break;
-      case 'Độ tuổi':
-        prompts.push(`Dạ ${sal} thích phong cách truyền thống chạm khắc kỹ hay tối giản hiện đại cho hợp gu không gian nhà mình ạ?`);
-        break;
-      default:
-        break;
-    }
+  if (layer4.matchedProducts.length === 0 && layer4.topicKeywords.length === 0) {
+    prompts.push(`Dạ ${sal} đang quan tâm mẫu nào hoặc kích thước khoảng bao nhiêu để em gửi ảnh thực tế ạ?`);
+  }
+  if (layer4.occasion === null && layer4.timeline === null && layer4.neededBy === null) {
+    prompts.push(`Dạ ${sal} dự kiến sắm cho dịp nào và cần nhận trước ngày nào ạ?`);
+  }
+  if (layer2.addressForm === null) {
+    prompts.push('Dạ em xin phép hỏi mình tiện xưng hô là Anh hay Chị để em hỗ trợ chu đáo ạ?');
   }
   return prompts;
 }
 
-function inferLayer5Persona(
-  row: CustomerCareCrmRow,
-  ctx: CrmStaffContext,
-  segments: readonly TextSegment[],
-  layer1: CrmPortraitLayer1Age,
-  layer2: CrmPortraitLayer2Demographic,
-  layer3: CrmPortraitLayer3Household,
-  layer4: CrmPortraitLayer4Interests,
-): CrmPortraitLayer5Persona {
-  let persona: CustomerCareCrmPersona | null = null;
-  let confidence: CustomerCareCrmIdConfidence | null = null;
-  let source: CrmReasoningSource = 'none';
-  let reasoning = 'Chưa đủ tín hiệu dịp mua, đối tượng hoặc ngân sách để xếp nhóm chân dung P1–P4.';
-
-  const idPersona = row.identity?.persona;
-  const corpus = segments.map((s) => s.text).join('\n');
-
-  if (isShownField(idPersona) && oneOf(CUSTOMER_CARE_CRM_PERSONAS, idPersona.value)) {
-    persona = idPersona.value;
-    confidence = idPersona.confidence;
-    source = idPersona.source === 'staff' ? 'staff' : 'identity';
-    reasoning = 'Tổng hợp từ chân dung định danh đã lưu.';
-  } else if (ctx.persona !== null) {
-    persona = ctx.persona;
-    confidence = 'high';
-    source = 'staff';
-    reasoning = 'Nhân viên đã gắn trực tiếp nhóm chân dung khách hàng.';
-  } else if (
-    layer4.occasion === 'gift'
-    || layer3.recipient === 'gift'
-    || /(?:hộp\s+quà|thiệp|quà\s+tân\s+gia|tặng\s+tân\s+gia|biếu\s+sếp|giao\s+kịp\s+dịp\s+tặng|làm\s+quà)/iu.test(corpus)
-  ) {
-    persona = 'P3';
-    confidence = layer4.occasion === 'gift' || layer3.source === 'staff' ? 'high' : 'medium';
-    source = layer4.occasion === 'gift' ? 'staff' : 'chat';
-    reasoning = 'Khách mua làm quà biếu/tri ân, ưu tiên hình thức trang trọng và giao đúng hẹn.';
-  } else if (
-    layer4.occasion === 'new_home'
-    || layer4.occasion === 'replacement'
-    || /(?:nhập\s+trạch|lỗ\s+ban|chung\s+cư|căn\s+hộ|nhà\s+mới|phòng\s+thờ\s+mới|thay\s+bàn\s+thờ)/iu.test(corpus)
-  ) {
-    persona = 'P1';
-    confidence = layer4.occasion !== null ? 'high' : 'medium';
-    source = layer4.occasion !== null ? 'staff' : 'chat';
-    reasoning = 'Khách sắm chính cho nhà mới / thay mới không gian thờ, quan tâm kích thước Lỗ Ban & chất liệu.';
-  } else if (
-    layer4.occasion === 'tet'
-    || layer4.occasion === 'anniversary'
-    || layer3.recipient === 'parents'
-    || layer4.timeline === 'before_tet'
-    || /(?:gia\s+tiên|lư\s+hương|đồng\s+đỏ|ngũ\s+sự|từ\s+đường|nhà\s+thờ\s+họ|sắm\s+tết|cúng\s+giỗ)/iu.test(corpus)
-  ) {
-    persona = 'P2';
-    confidence = layer4.occasion !== null || layer3.source === 'staff' ? 'high' : 'medium';
-    source = layer4.occasion !== null ? 'staff' : 'chat';
-    reasoning = 'Khách chú trọng giá trị truyền thống, lễ Tết, giỗ chạp hoặc hiếu kính bố mẹ.';
-  } else if (
-    layer4.budgetBand === 'under_5m'
-    || row.profile.lostReason === 'price'
-    || (layer4.occasion === null && /(?:giá\s+bn|giá\s+bao\s+nhiêu|bao\s+nhiêu\s+tiền|bnhiu|rẻ\s+hơn\s+không|xin\s+giá|báo\s+giá)/iu.test(corpus))
-  ) {
-    persona = 'P4';
-    confidence = row.profile.lostReason === 'price' ? 'high' : 'medium';
-    source = row.profile.lostReason === 'price' ? 'staff' : 'chat';
-    reasoning = 'Khách đang tập trung khảo giá, so sánh chi phí hoặc cân nhắc ngân sách dưới 5 triệu.';
+function buildLayer5Persona(row: CustomerCareCrmRow, allowed: boolean, missingPrompts: string[]): CrmPortraitLayer5Persona {
+  const title = 'Tầng 5 · Chân dung (P1–P4)';
+  const persona = crmConsentedPersona(row);
+  const field = crmServerIdentity(row)?.persona;
+  if (persona === null || !isShownField(field)) {
+    return {
+      step: 5,
+      title,
+      persona: null,
+      label: allowed ? 'Chưa xếp nhóm P1–P4' : PROFILE_LOCKED_LABEL,
+      confidence: null,
+      source: 'none',
+      quote: null,
+      reasoning: allowed ? 'AI chưa đủ tín hiệu để xếp nhóm.' : PROFILE_LOCKED_REASON,
+      missingPrompts,
+    };
   }
-
-  // 6 completeness dimensions
-  const dimensions: ReadonlyArray<{ name: string; filled: boolean }> = [
-    { name: 'Xưng hô', filled: layer2.addressForm !== null },
-    { name: 'Độ tuổi', filled: layer1.ageBands.length > 0 },
-    { name: 'Gia đình', filled: layer3.recipient !== null },
-    {
-      name: 'Sản phẩm/Link quan tâm',
-      filled: layer4.matchedProducts.length > 0 || layer4.sharedLinks.length > 0 || layer4.adTitle !== null || layer4.topicKeywords.length > 0,
-    },
-    { name: 'Ngân sách', filled: layer4.budgetBand !== null },
-    {
-      name: 'Dịp/Thời hạn',
-      filled: layer4.occasion !== null || layer4.timeline !== null || row.profile.neededBy !== null,
-    },
-  ];
-
-  const filledDimensions = dimensions.filter((d) => d.filled).length;
-  const missingDimensions = dimensions.filter((d) => !d.filled).map((d) => d.name);
-  const completenessPct = Math.round((filledDimensions / dimensions.length) * 100);
-  const summary = buildPersonaSummary(persona, layer1, layer2, layer3, layer4);
-  const missingPrompts = buildMissingPrompts(layer2.salutation, missingDimensions);
-
   return {
     step: 5,
-    title: 'Tầng 5 · Chân dung khách hàng tổng hợp',
+    title,
     persona,
-    label: persona !== null ? `${persona} · ${PERSONA_SHORT_LABELS[persona]}` : 'Chưa phân loại chân dung (P1–P4)',
-    confidence,
-    source,
+    label: `${persona} · ${PERSONA_SHORT_LABELS[persona]}`,
+    confidence: field.confidence,
+    source: fieldSource(field),
     quote: null,
-    reasoning,
-    completenessPct,
-    filledDimensions,
-    missingDimensions,
-    summary,
+    reasoning: 'Nhóm chân dung trong hồ sơ AI đã được khách đồng ý.',
     missingPrompts,
   };
 }
 
+export interface CrmPortraitOptions {
+  /** The list answer's `identityEnabled`. Unless it is true, the order layer is guessed from the chat. */
+  identityEnabled?: boolean | null;
+}
+
 /**
- * Builds the ordered 5-Layer Customer Portrait reasoning chain (`layer_1_age` → `layer_5_persona`).
+ * The five portrait layers that drive the Saler scripts, the lifecycle messages and the Ads counts. The server's
+ * order layer while the AI profile is on, with chat guesses for what it left empty (and for everything while it is
+ * off); the profile layer only from the server, after consent.
  */
 export function buildCustomerPortrait(
   row: CustomerCareCrmRow,
   products: readonly CrmEnterpriseProduct[] = [],
   nowMs: number = Date.now(),
+  options: CrmPortraitOptions = {},
 ): CrmCustomerPortrait {
+  const identity = crmServerIdentity(row);
+  const allowed = crmProfileLayerAllowed(row);
+  const orderIdentity = options.identityEnabled === true ? identity : null;
   const { freeNote, ctx } = splitCrmNote(row.profile.note);
   const segments = splitSentences(row, freeNote);
 
-  const layer_1_age = inferLayer1Age(row, ctx, segments, nowMs);
-  const layer_2_demographic = inferLayer2Demographic(row, layer_1_age);
-  const layer_3_household = inferLayer3Household(row, ctx, segments);
-  const layer_4_interests = inferLayer4Interests(row, ctx, segments, products, nowMs);
-  const layer_5_persona = inferLayer5Persona(
-    row,
-    ctx,
-    segments,
-    layer_1_age,
-    layer_2_demographic,
-    layer_3_household,
-    layer_4_interests,
-  );
+  const layer_1_age = buildLayer1Age(identity, allowed);
+  const layer_2_demographic = buildLayer2AddressForm(row, identity, allowed);
+  const layer_3_household = buildLayer3Recipient(identity, allowed);
+  const layer_4_interests = buildLayer4Interests(row, identity, orderIdentity, allowed, ctx, segments, products, nowMs);
+  const missingPrompts = buildMissingPrompts(layer_2_demographic, layer_4_interests);
+  const layer_5_persona = buildLayer5Persona(row, allowed, missingPrompts);
 
   return {
     layer_1_age,
@@ -1711,248 +1016,8 @@ export function buildCustomerPortrait(
     layer_3_household,
     layer_4_interests,
     layer_5_persona,
-    completenessPct: layer_5_persona.completenessPct,
-    summary: layer_5_persona.summary,
-    missingPrompts: layer_5_persona.missingPrompts,
-  };
-}
-
-function sanitizeEvidenceList(evidence: readonly CustomerCareCrmEvidence[] | undefined): CustomerCareCrmEvidence[] {
-  if (!Array.isArray(evidence)) return [];
-  const cleaned: CustomerCareCrmEvidence[] = [];
-  for (const item of evidence) {
-    if (!item || typeof item !== 'object') continue;
-    if (item.quote === null) {
-      cleaned.push({ ...item, quote: null });
-      continue;
-    }
-    const safe = safeQuote(item.quote);
-    if (safe !== null) {
-      cleaned.push({ ...item, quote: safe });
-    }
-  }
-  return cleaned;
-}
-
-function cleanBaseField<T>(field: CustomerCareCrmIdField<T> | null | undefined): CustomerCareCrmIdField<T> | null {
-  if (!isShownField(field)) return null;
-  return { ...field, evidence: sanitizeEvidenceList(field.evidence) };
-}
-
-function makeIdField<T>(
-  value: T,
-  sourceOrigin: CrmReasoningSource,
-  confidence: CustomerCareCrmIdConfidence,
-  updatedAt: string,
-  quote: string | null = null,
-): CustomerCareCrmIdField<T> {
-  const isStaff = sourceOrigin === 'staff';
-  const safe = safeQuote(quote);
-  const evidence: CustomerCareCrmEvidence[] = safe
-    ? [{ source: sourceOrigin === 'note' ? 'note' : 'customer', at: updatedAt, quote: safe }]
-    : [];
-  return {
-    value,
-    confidence,
-    kind: isStaff || sourceOrigin === 'chat' ? 'stated' : 'inferred',
-    source: isStaff ? 'staff' : 'ai',
-    status: isStaff ? 'confirmed' : 'suggested',
-    updatedAt,
-    evidence,
-  };
-}
-
-/**
- * Merges `row.identity` (when present) with `[izzi-ctx]` staff tags and `medium|high` portrait inferences.
- * Enforces the `c5898f6` consent gate: profile-layer fields (`persona`, `ageBand`, `addressForm`, `family`,
- * `interests`) are populated ONLY when `consent === 'granted'`; before consent, only order-layer fields
- * (`occasion`, `timeline`, `productFactIds`) are exposed. Unreadable rows return all-null fields.
- */
-export function effectiveCrmIdentity(
-  row: CustomerCareCrmRow,
-  products: readonly CrmEnterpriseProduct[] = [],
-  nowMs: number = Date.now(),
-): CustomerCareCrmIdentity {
-  const updatedAt = row.profile.updatedAt ?? row.lastMessageAt;
-  if (row.profile.detailsUnreadable === true) {
-    return {
-      version: null,
-      lastRunAt: null,
-      consent: null,
-      occasion: null,
-      timeline: null,
-      productFactIds: null,
-      addressForm: null,
-      ageBand: null,
-      family: null,
-      interests: null,
-      persona: null,
-    };
-  }
-
-  const base = row.identity ?? null;
-  const { ctx } = splitCrmNote(row.profile.note);
-  const portrait = buildCustomerPortrait(row, products, nowMs);
-
-  // Consent merge: any explicit decline/withdrawal or DNC overrides softer states
-  let consent: CustomerCareCrmConsent | null = base?.consent ? { ...base.consent } : null;
-  if (ctx.consent !== null) {
-    const refused = ctx.consent === 'declined' || ctx.consent === 'withdrawn' || base?.consent?.noMarketing === true;
-    // Never overwrite a server-recorded refusal with a softer state
-    if (!(base?.consent && (base.consent.state === 'declined' || base.consent.state === 'withdrawn'))) {
-      consent = {
-        state: ctx.consent,
-        at: base?.consent?.at ?? updatedAt,
-        noMarketing: refused || row.profile.stage === 'do_not_contact',
-        canAsk: ctx.consent === 'unknown',
-      };
-    }
-  } else if (!consent && row.profile.stage === 'do_not_contact') {
-    consent = { state: 'declined', at: updatedAt, noMarketing: true, canAsk: false };
-  }
-
-  const occasion = cleanBaseField(base?.occasion)
-    ?? (portrait.layer_4_interests.occasion && portrait.layer_4_interests.confidence
-      ? makeIdField(portrait.layer_4_interests.occasion, portrait.layer_4_interests.source, portrait.layer_4_interests.confidence, updatedAt)
-      : null);
-
-  const timeline = cleanBaseField(base?.timeline)
-    ?? (portrait.layer_4_interests.timeline && portrait.layer_4_interests.confidence
-      ? makeIdField(portrait.layer_4_interests.timeline, ctx.timeline ? 'staff' : portrait.layer_4_interests.source, ctx.timeline ? 'high' : 'medium', updatedAt)
-      : null);
-
-  const mergedProdIds = [...new Set([
-    ...row.profile.productFactIds,
-    ...portrait.layer_4_interests.matchedProducts.map((p) => p.id),
-  ])].slice(0, 8);
-  const productFactIds = cleanBaseField(base?.productFactIds)
-    ?? (mergedProdIds.length > 0
-      ? makeIdField(mergedProdIds, row.profile.productFactIds.length > 0 ? 'staff' : 'chat', row.profile.productFactIds.length > 0 ? 'high' : 'medium', updatedAt)
-      : null);
-
-  // Consent gate (matches c5898f6): profile-layer fields require explicit `consent === 'granted'` and non-suppressed status
-  const profileLayerGranted = !isCrmRowAdsSuppressed(row) && hasExplicitMarketingConsent(row) && consent?.state === 'granted';
-  if (!profileLayerGranted) {
-    return {
-      version: base?.version ?? 'izzi-enterprise-v1',
-      lastRunAt: base?.lastRunAt ?? updatedAt,
-      consent,
-      occasion,
-      timeline,
-      productFactIds,
-      addressForm: null,
-      ageBand: null,
-      family: null,
-      interests: null,
-      persona: null,
-    };
-  }
-
-  const addressForm = cleanBaseField(base?.addressForm)
-    ?? (portrait.layer_2_demographic.addressForm && portrait.layer_2_demographic.confidence && portrait.layer_2_demographic.confidence !== 'low'
-      ? makeIdField(
-        portrait.layer_2_demographic.addressForm,
-        portrait.layer_2_demographic.source,
-        portrait.layer_2_demographic.confidence,
-        updatedAt,
-        portrait.layer_2_demographic.quote,
-      )
-      : null);
-
-  const ageBand = cleanBaseField(base?.ageBand)
-    ?? (portrait.layer_1_age.ageBands.length > 0 && portrait.layer_1_age.confidence && portrait.layer_1_age.confidence !== 'low'
-      ? makeIdField(
-        portrait.layer_1_age.ageBands,
-        portrait.layer_1_age.source,
-        portrait.layer_1_age.confidence,
-        updatedAt,
-        portrait.layer_1_age.quote,
-      )
-      : null);
-
-  const cleanedBaseFamily = cleanBaseField(base?.family);
-  const validBaseFamily = cleanedBaseFamily
-    && cleanedBaseFamily.evidence.some((ev) => ev.source === 'customer' && ev.quote !== null)
-    ? cleanedBaseFamily
-    : null;
-  const family = validBaseFamily
-    ?? (portrait.layer_3_household.recipient && portrait.layer_3_household.confidence && portrait.layer_3_household.confidence !== 'low'
-      ? makeIdField(
-        { recipient: portrait.layer_3_household.recipient },
-        portrait.layer_3_household.source,
-        portrait.layer_3_household.confidence,
-        updatedAt,
-        portrait.layer_3_household.quote,
-      )
-      : null);
-
-  const adTitleField = cleanBaseField(base?.interests?.adTitle)
-    ?? (portrait.layer_4_interests.adTitle
-      ? {
-        ...makeIdField(portrait.layer_4_interests.adTitle, 'staff', 'high', updatedAt),
-        source: ctx.adTitle ? ('staff' as const) : ('ad' as const),
-      }
-      : null);
-
-  const existingSharedLinks = (base?.interests?.sharedLinks ?? [])
-    .map((item) => cleanBaseField(item))
-    .filter((item): item is CustomerCareCrmIdField<CustomerCareCrmSharedLink> => item !== null);
-  const seenDomains = new Set(existingSharedLinks.map((item) => item.value.domain.toLowerCase()));
-  const extraSharedLinks: CustomerCareCrmIdField<CustomerCareCrmSharedLink>[] = [];
-  for (const link of portrait.layer_4_interests.sharedLinks) {
-    if (seenDomains.has(link.domain.toLowerCase())) continue;
-    seenDomains.add(link.domain.toLowerCase());
-    const isStaffDomain = ctx.sharedDomain === link.domain;
-    extraSharedLinks.push(makeIdField(link, isStaffDomain ? 'staff' : 'chat', isStaffDomain ? 'high' : 'medium', updatedAt));
-  }
-  const sharedLinks = [...existingSharedLinks, ...extraSharedLinks].slice(0, 3);
-
-  const budgetBand = cleanBaseField(base?.interests?.budgetBand)
-    ?? (portrait.layer_4_interests.budgetBand
-      ? makeIdField(
-        portrait.layer_4_interests.budgetBand,
-        ctx.budgetBand ? 'staff' : 'chat',
-        ctx.budgetBand ? 'high' : 'medium',
-        updatedAt,
-        portrait.layer_4_interests.quote,
-      )
-      : null);
-
-  const cleanedBasePersona = isShownField(base?.persona)
-    ? {
-      ...base!.persona,
-      evidence: sanitizeEvidenceList(base!.persona.evidence),
-      summary: containsSensitiveHouseholdTerm(base!.persona.summary ?? '') ? '' : cleanSingleLine(maskCrmPhones(base!.persona.summary ?? ''), 120),
-    }
-    : null;
-
-  const persona = cleanedBasePersona
-    ?? (portrait.layer_5_persona.persona && portrait.layer_5_persona.confidence && portrait.layer_5_persona.confidence !== 'low'
-      ? {
-        ...makeIdField(
-          portrait.layer_5_persona.persona,
-          portrait.layer_5_persona.source,
-          portrait.layer_5_persona.confidence,
-          updatedAt,
-        ),
-        summary: cleanSingleLine(portrait.summary, 120),
-      }
-      : null);
-
-  return {
-    version: base?.version ?? 'izzi-enterprise-v1',
-    lastRunAt: base?.lastRunAt ?? updatedAt,
-    consent,
-    occasion,
-    timeline,
-    productFactIds,
-    addressForm,
-    ageBand,
-    family,
-    interests: (adTitleField || sharedLinks.length > 0 || budgetBand)
-      ? { adTitle: adTitleField, sharedLinks, budgetBand }
-      : null,
-    persona,
+    profileAllowed: allowed,
+    missingPrompts,
   };
 }
 
@@ -2207,23 +1272,44 @@ export interface CrmAdsAudienceSummary {
   unclassifiedCount: number;
 }
 
+/** Any sign the customer must not be marketed to; every refusal counts, wherever it was recorded. */
 export function isCrmRowAdsSuppressed(row: CustomerCareCrmRow): boolean {
   if (row.profile.detailsUnreadable === true) return true;
   if (row.profile.stage === 'do_not_contact') return true;
   if (row.profile.lostReason === 'bought_elsewhere' || row.profile.lostReason === 'not_needed') return true;
-  if (row.identity?.consent?.noMarketing === true) return true;
-  const idState = row.identity?.consent?.state;
-  if (idState === 'declined' || idState === 'withdrawn') return true;
-  const { ctx } = splitCrmNote(row.profile.note);
-  if (ctx.consent === 'declined' || ctx.consent === 'withdrawn') return true;
-  return false;
+  const consent = row.identity?.consent;
+  if (consent?.noMarketing === true) return true;
+  if (consent?.state === 'declined' || consent?.state === 'withdrawn') return true;
+  if (consent?.eraseRequestedAt !== undefined && consent.eraseRequestedAt !== null) return true;
+  return splitCrmNote(row.profile.note).ctx.consent !== null;
 }
 
+/**
+ * The customer agreed, as the server recorded it: consent `granted`, offers not refused and no erase request pending.
+ * Nothing on the desktop (a note tag, a heuristic) can grant it.
+ */
 export function hasExplicitMarketingConsent(row: CustomerCareCrmRow): boolean {
   if (isCrmRowAdsSuppressed(row)) return false;
-  if (row.identity?.consent?.state === 'granted') return true;
-  const { ctx } = splitCrmNote(row.profile.note);
-  return ctx.consent === 'granted';
+  const consent = crmServerIdentity(row)?.consent;
+  return consent?.state === 'granted' && consent.noMarketing === false && (consent.eraseRequestedAt ?? null) === null;
+}
+
+/** The page-level identity state an Ads export needs (the CRM list answer's `identityEnabled` / `identityUnavailable`). */
+export interface CrmAdsIdentityState {
+  identityEnabled: boolean | null;
+  identityUnavailable: boolean;
+}
+
+export type CrmAdsExportBlock = 'identity_off' | 'identity_unavailable';
+
+/**
+ * Fails closed: with the AI customer profile off (or a server without it) nobody has agreed through izzi, and while the
+ * identity could not be loaded nobody's consent can be checked, so nothing may be exported or counted as eligible.
+ */
+export function crmAdsExportBlock(state: CrmAdsIdentityState): CrmAdsExportBlock | null {
+  if (state.identityUnavailable) return 'identity_unavailable';
+  if (state.identityEnabled !== true) return 'identity_off';
+  return null;
 }
 
 export function classifyCrmAdsBucket(row: CustomerCareCrmRow): CrmAdsBucket {
@@ -2312,11 +1398,15 @@ const PERSONA_AD_ANGLES: Readonly<Record<CustomerCareCrmPersona, CrmAdAngle[]>> 
   ],
 };
 
+/**
+ * Ads buckets and P1–P4 groups. A persona is counted only from the server, after consent; "consented" counts are the
+ * customers an export would include, so they are 0 while `crmAdsExportBlock` blocks the export.
+ */
 export function summarizeAdsAudiences(
   rows: readonly CustomerCareCrmRow[],
-  products: readonly CrmEnterpriseProduct[] = [],
-  nowMs: number = Date.now(),
+  identityState: CrmAdsIdentityState,
 ): CrmAdsAudienceSummary {
+  const exportBlocked = crmAdsExportBlock(identityState) !== null;
   const buckets: Record<CrmAdsBucket, CrmAdsBucketSummary> = {
     high_intent: {
       bucket: 'high_intent',
@@ -2368,7 +1458,7 @@ export function summarizeAdsAudiences(
 
   for (const row of rows) {
     const bucket = classifyCrmAdsBucket(row);
-    const consented = hasExplicitMarketingConsent(row);
+    const consented = !exportBlocked && hasExplicitMarketingConsent(row);
     buckets[bucket].count += 1;
     buckets[bucket].leadIds.push(row.leadId);
     if (consented) {
@@ -2377,8 +1467,7 @@ export function summarizeAdsAudiences(
     }
 
     if (bucket !== 'suppressed') {
-      const portrait = buildCustomerPortrait(row, products, nowMs);
-      const persona = portrait.layer_5_persona.persona;
+      const persona = crmConsentedPersona(row);
       if (persona !== null) {
         byPersona[persona].count += 1;
         byPersona[persona].leadIds.push(row.leadId);
@@ -2399,24 +1488,25 @@ export function summarizeAdsAudiences(
   };
 }
 
-export interface CrmMetaAudienceFilterObject {
-  bucket?: Exclude<CrmAdsBucket, 'suppressed'> | 'suppressed' | 'all';
-  persona?: CustomerCareCrmPersona | 'any';
-  products?: readonly CrmEnterpriseProduct[];
-  nowMs?: number;
+/** Who to export: everyone eligible, one bucket, or one persona (the server's, after consent). */
+export type CrmMetaAudienceTarget = 'all' | Exclude<CrmAdsBucket, 'suppressed'> | CustomerCareCrmPersona;
+
+export interface CrmMetaAudienceSelection {
+  /** Why nothing may be exported now; null when the export is open. */
+  blockedReason: CrmAdsExportBlock | null;
+  /** The eligible customers' phones as `84xxxxxxxxx`, de-duplicated, in row order. */
+  phones: string[];
+  excludedNoConsent: number;
+  excludedSuppressed: number;
 }
 
-export type CrmMetaAudienceFilter =
-  | CrmAdsBucket
-  | CustomerCareCrmPersona
-  | 'all'
-  | CrmMetaAudienceFilterObject;
-
 export interface CrmMetaCustomAudienceCsvResult {
+  /** One column, `phone`: lowercase SHA-256 hex only. Never a name, an age, family, a persona or a note. */
   csv: string;
   includedCount: number;
   excludedNoConsent: number;
   excludedSuppressed: number;
+  blockedReason: CrmAdsExportBlock | null;
 }
 
 /** Normalizes Vietnamese mobile (`0xxxxxxxxx` / `+84xxxxxxxxx` / `84xxxxxxxxx`) to `84xxxxxxxxx` for Meta hashing. */
@@ -2437,74 +1527,63 @@ async function sha256HexLower(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** An unsaved draft can only withhold a customer ("Không liên hệ" typed but not saved yet), never add one. */
+function draftSuppresses(row: CustomerCareCrmRow, draft: CustomerCareCrmProfileInput | undefined): boolean {
+  return draft !== undefined && isCrmRowAdsSuppressed({ ...row, profile: { ...row.profile, ...draft } });
+}
+
 /**
- * Exports a Meta Custom Audience CSV (`phone` column with lowercase SHA-256 hex of `84xxxxxxxxx`).
- * Fail-closed: unconditionally requires `!isCrmRowAdsSuppressed(row)` and `hasExplicitMarketingConsent(row)`
- * on 100% of calls, with no option to bypass explicit consent.
+ * The one selection both the export and its preview use. Fails closed (see `crmAdsExportBlock`); otherwise a customer
+ * is included only when not suppressed and `hasExplicitMarketingConsent` (server consent `granted`, `noMarketing`
+ * false, no erase request pending). There is no option to bypass it.
  */
-export async function buildMetaCustomAudienceCsv(
+export function selectMetaAudience(
   rows: readonly CustomerCareCrmRow[],
-  filterBucketOrPersona: CrmMetaAudienceFilter = 'all',
-  options?: {
-    products?: readonly CrmEnterpriseProduct[];
-    nowMs?: number;
-  },
-): Promise<CrmMetaCustomAudienceCsvResult> {
-  let targetBucket: CrmAdsBucket | 'all' = 'all';
-  let targetPersona: CustomerCareCrmPersona | 'any' = 'any';
-  const products = options?.products ?? (typeof filterBucketOrPersona === 'object' ? filterBucketOrPersona.products : undefined) ?? [];
-  const nowMs = options?.nowMs ?? (typeof filterBucketOrPersona === 'object' ? filterBucketOrPersona.nowMs : undefined) ?? Date.now();
+  target: CrmMetaAudienceTarget,
+  identityState: CrmAdsIdentityState,
+  drafts: Readonly<Record<string, CustomerCareCrmProfileInput>> = {},
+): CrmMetaAudienceSelection {
+  const blockedReason = crmAdsExportBlock(identityState);
+  if (blockedReason !== null) return { blockedReason, phones: [], excludedNoConsent: 0, excludedSuppressed: 0 };
 
-  if (typeof filterBucketOrPersona === 'string') {
-    if (filterBucketOrPersona === 'all') {
-      targetBucket = 'all';
-    } else if (oneOf(CRM_ADS_BUCKETS, filterBucketOrPersona)) {
-      targetBucket = filterBucketOrPersona;
-    } else if (oneOf(CUSTOMER_CARE_CRM_PERSONAS, filterBucketOrPersona)) {
-      targetPersona = filterBucketOrPersona;
-    }
-  } else if (filterBucketOrPersona && typeof filterBucketOrPersona === 'object') {
-    if (filterBucketOrPersona.bucket) targetBucket = filterBucketOrPersona.bucket;
-    if (filterBucketOrPersona.persona) targetPersona = filterBucketOrPersona.persona;
-  }
-
+  const personaTarget = oneOf(CUSTOMER_CARE_CRM_PERSONAS, target);
   let excludedSuppressed = 0;
   let excludedNoConsent = 0;
-  const seenNormalizedPhones = new Set<string>();
-  const hashes: string[] = [];
-
+  const phones: string[] = [];
   for (const row of rows) {
-    if (targetPersona !== 'any') {
-      const portrait = buildCustomerPortrait(row, products, nowMs);
-      if (portrait.layer_5_persona.persona !== targetPersona) continue;
-    }
-
+    if (personaTarget && crmConsentedPersona(row) !== target) continue;
     const bucket = classifyCrmAdsBucket(row);
-    if (bucket === 'suppressed' || targetBucket === 'suppressed' || isCrmRowAdsSuppressed(row)) {
+    if (bucket === 'suppressed' || draftSuppresses(row, drafts[row.leadId])) {
       excludedSuppressed += 1;
       continue;
     }
-
-    if (targetBucket !== 'all' && bucket !== targetBucket) {
-      continue;
-    }
-
+    if (!personaTarget && target !== 'all' && bucket !== target) continue;
     if (!hasExplicitMarketingConsent(row)) {
       excludedNoConsent += 1;
       continue;
     }
-
-    const normalizedPhone = normalizeVietnamPhoneForMeta(row.phone);
-    if (!normalizedPhone || seenNormalizedPhones.has(normalizedPhone)) continue;
-    seenNormalizedPhones.add(normalizedPhone);
-    hashes.push(await sha256HexLower(normalizedPhone));
+    const phone = normalizeVietnamPhoneForMeta(row.phone);
+    if (phone !== null && !phones.includes(phone)) phones.push(phone);
   }
+  return { blockedReason: null, phones, excludedNoConsent, excludedSuppressed };
+}
 
+/** Exports a Meta Custom Audience CSV: a `phone` column of lowercase SHA-256 hex of `84xxxxxxxxx`, nothing else. */
+export async function buildMetaCustomAudienceCsv(
+  rows: readonly CustomerCareCrmRow[],
+  target: CrmMetaAudienceTarget,
+  identityState: CrmAdsIdentityState,
+  drafts: Readonly<Record<string, CustomerCareCrmProfileInput>> = {},
+): Promise<CrmMetaCustomAudienceCsvResult> {
+  const selection = selectMetaAudience(rows, target, identityState, drafts);
+  const hashes: string[] = [];
+  for (const phone of selection.phones) hashes.push(await sha256HexLower(phone));
   return {
     csv: ['phone', ...hashes].join('\n'),
     includedCount: hashes.length,
-    excludedNoConsent,
-    excludedSuppressed,
+    excludedNoConsent: selection.excludedNoConsent,
+    excludedSuppressed: selection.excludedSuppressed,
+    blockedReason: selection.blockedReason,
   };
 }
 
@@ -2551,13 +1630,14 @@ export function buildLifecyclePlan(
   rows: readonly CustomerCareCrmRow[],
   products: readonly CrmEnterpriseProduct[] = [],
   nowMs: number = Date.now(),
+  options: CrmPortraitOptions = {},
 ): CrmLifecycleItem[] {
   const items: CrmLifecycleItem[] = [];
 
   for (const row of rows) {
     if (isCrmRowAdsSuppressed(row)) continue;
 
-    const portrait = buildCustomerPortrait(row, products, nowMs);
+    const portrait = buildCustomerPortrait(row, products, nowMs, options);
     const sal = portrait.layer_2_demographic.salutation;
     const salLower = sal === 'Anh/Chị' ? 'anh/chị' : sal.toLowerCase();
     const firstProd = cleanSingleLine(
@@ -2697,11 +1777,12 @@ export interface CareCrmSegmentSummary {
 
 /**
  * Pure counts-only summary of CRM rows for MyGraph business memory.
- * Never carries phones, names, chat text, notes, urls, leadIds or workspaceIds.
+ * Never carries phones, names, chat text, notes, urls, leadIds or workspaceIds. Personas are the server's, counted
+ * only after consent; `consented` follows the Ads export gate.
  */
 export function summarizeCareCrmSegments(
   rows: readonly CustomerCareCrmRow[],
-  products: readonly CrmEnterpriseProduct[] = [],
+  identityState: CrmAdsIdentityState,
   nowMs: number = Date.now(),
   leadsCapped = false,
 ): CareCrmSegmentSummary {
@@ -2719,7 +1800,7 @@ export function summarizeCareCrmSegments(
     }
   }
 
-  const ads = summarizeAdsAudiences(rows, products, nowMs);
+  const ads = summarizeAdsAudiences(rows, identityState);
   const byPersona: Record<CustomerCareCrmPersona | 'unclassified', number> = {
     P1: ads.byPersona.P1.count,
     P2: ads.byPersona.P2.count,
@@ -2730,7 +1811,7 @@ export function summarizeCareCrmSegments(
 
   // Include suppressed rows' personas? No — keeping suppressed leads out of active P1–P4 marketing counts
   // (and counting only actionable lifecycle items due now or within 48 hours) keeps Director numbers clean.
-  const plan = buildLifecyclePlan(rows, products, nowMs);
+  const plan = buildLifecyclePlan(rows, [], nowMs, { identityEnabled: identityState.identityEnabled });
   const todayKey = vietnamDateKey(nowMs);
   const tomorrowKey = vietnamDateKey(nowMs + DAY_MS);
 

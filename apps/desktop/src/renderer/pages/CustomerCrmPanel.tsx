@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareCrmAssignee,
+  CustomerCareCrmIdentityActionInput,
+  CustomerCareCrmIdentityActionResult,
+  CustomerCareCrmIdentityRefreshInput,
+  CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
   CustomerCareCrmProfileInput,
@@ -12,7 +16,7 @@ import type {
   CustomerCareLeadPurgeResult,
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
-import { effectiveCrmIdentity } from '../../shared/customer-crm-enterprise';
+import type { CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
 import {
@@ -43,6 +47,7 @@ import {
   crmShouldLoadOnShow,
   crmShouldSkipNextTick,
   crmVisibleRows,
+  CrmLoadSequence,
   loadCrmPages,
   normalizeCrmProfile,
   profileFromRow,
@@ -50,14 +55,16 @@ import {
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
+import { crmDraftProfiles, crmFreshAdsExport } from './customer-crm-ads-export';
 import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
+import { crmIdentityActionView, crmIdentityRefreshView, crmRowsWithIdentity, type CrmIdentityOutcomeView } from './customer-crm-identity';
+import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 import { CrmSaveQueue } from './customer-crm-save-queue';
 import { CustomerCrmGraphSlot } from './CustomerCrmGraphSlot';
 import {
   CrmAdsWorkspace,
   CrmEnterpriseKpiStrip,
   CrmLifecycleWorkspace,
-  CrmPortraitInspector,
   CrmSalerWorkspace,
 } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow } from './CustomerCrmRow';
@@ -96,6 +103,9 @@ type CrmApi = {
   saveCrmProfile: (input: CustomerCareCrmSaveInput) => Promise<CustomerCareCrmSaveResult>;
   /** Absent on an older preload, which hides the purge action. */
   purgeLead?: (input: CustomerCareLeadPurgeInput) => Promise<CustomerCareLeadPurgeResult>;
+  /** Care CRM S3; absent on an older preload, which shows the identity without actions. */
+  identityAction?: (input: CustomerCareCrmIdentityActionInput) => Promise<CustomerCareCrmIdentityActionResult>;
+  refreshIdentity?: (input: CustomerCareCrmIdentityRefreshInput) => Promise<CustomerCareCrmIdentityRefreshResult>;
 };
 
 type Edits = Readonly<Record<string, CrmRowEdit>>;
@@ -105,6 +115,12 @@ interface CrmMeta {
   canDelete: boolean;
   assignees: CustomerCareCrmAssignee[];
   truncated: boolean;
+  /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
+  identityEnabled: boolean | null;
+  /** Care CRM S3: the identity could not be loaded; the table is shown without it. */
+  identityUnavailable: boolean;
+  /** Care CRM S3: the exact consent question the server would send; null while asks are off. */
+  consentAsk: string | null;
 }
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
@@ -153,7 +169,6 @@ export function CustomerCrmPanel() {
   const [filter, setFilter] = useState<CrmFilter>({ view: 'today', stage: 'any' });
   const [display, setDisplay] = useState<CrmDisplay>('table');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [inspectedId, setInspectedId] = useState<string | null>(null);
   /** The row "Mở hồ sơ" opened: scrolled into view and focused once the table shows it. */
   const [revealId, setRevealId] = useState<string | null>(null);
   const [purgingId, setPurgingId] = useState<string | null>(null);
@@ -172,13 +187,14 @@ export function CustomerCrmPanel() {
   const scopeRef = useRef<string | null>(null);
   /** Rows deleted here: a refresh that started before the delete must not bring them back. */
   const removedRef = useRef<Set<string>>(new Set());
-  const loadSeqRef = useRef(0);
+  /** Which list read is current; an identity answer drops the reads in flight (Care CRM S3). */
+  const sequenceRef = useRef(new CrmLoadSequence());
   /** When the last every-page load started, so reopening the tab does not reload every page again at once. */
   const lastFullLoadAtRef = useRef<number | null>(null);
   /** Refresh ticks to skip after a 429 or a 503, instead of adding load. */
   const skipTicksRef = useRef(0);
   const queueRef = useRef<CrmSaveQueue | null>(null);
-  const loadRef = useRef<(mode: 'full' | 'page1') => Promise<void>>(async () => undefined);
+  const loadRef = useRef<(mode: 'full' | 'page1', retryIdentity?: boolean) => Promise<void>>(async () => undefined);
   const restTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runSaveRef = useRef<(leadId: string, mode: 'auto' | 'explicit') => Promise<'done' | 'again'>>(
     async () => 'done',
@@ -213,7 +229,6 @@ export function CustomerCrmPanel() {
     setMeta(null);
     setProducts([]);
     setExpandedId(null);
-    setInspectedId(null);
     setNotice('');
     setError('');
     setPhase({ state: 'blocked', message });
@@ -225,7 +240,6 @@ export function CustomerCrmPanel() {
     updateRows((current) => crmRowsOnRemove(current, leadId));
     updateEdits((current) => withoutKey(current, leadId));
     setExpandedId((current) => (current === leadId ? null : current));
-    setInspectedId((current) => (current === leadId ? null : current));
   }, [updateRows, updateEdits]);
 
   const loadProducts = useCallback(async (api: CrmApi, workspaceId: string) => {
@@ -241,9 +255,10 @@ export function CustomerCrmPanel() {
 
   /**
    * `full` reads up to `CRM_MAX_PAGES` pages: when the tab opens, on "Làm mới", after a 409 and after a
-   * workspace change. `page1` is the 60 s tick: it reads page 1 only and merges it by `leadId`.
+   * workspace change. `page1` is the 60 s tick: it reads page 1 only and merges it by `leadId`. `retryIdentity`
+   * ("Làm mới", "Thử lại"): main tries the identity read again even while it is paused after a failure.
    */
-  const load = useCallback(async (requested: 'full' | 'page1') => {
+  const load = useCallback(async (requested: 'full' | 'page1', retryIdentity = false) => {
     const api = getCrmApi();
     if (!api) {
       setPhase({ state: 'blocked', message: NO_APP_MESSAGE });
@@ -251,7 +266,7 @@ export function CustomerCrmPanel() {
     }
     // Nothing is loaded yet, so there is nothing for page 1 to merge into.
     const mode = scopeRef.current === null ? 'full' : requested;
-    const seq = ++loadSeqRef.current;
+    const seq = sequenceRef.current.start(mode);
     if (mode === 'full') {
       lastFullLoadAtRef.current = Date.now();
       setRefreshing(true);
@@ -263,8 +278,10 @@ export function CustomerCrmPanel() {
       }, crmRefreshCooldownLeft(lastFullLoadAtRef.current, Date.now()));
     }
     try {
-      const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1);
-      if (!mountedRef.current || seq !== loadSeqRef.current) return;
+      const result = await loadCrmPages((input) => api.listCrm(input), mode === 'full' ? CRM_MAX_PAGES : 1, {
+        retryIdentity: retryIdentity && mode === 'full',
+      });
+      if (!mountedRef.current || !sequenceRef.current.isCurrent(seq)) return;
       setNow(Date.now());
       if (!result.ok) {
         const view = crmFailureView(result);
@@ -282,7 +299,6 @@ export function CustomerCrmPanel() {
         updateRows(() => []);
         updateEdits(() => ({}));
         setExpandedId(null);
-        setInspectedId(null);
         if (mode === 'page1') {
           // Page 1 of another workspace is not enough: read all of it.
           scopeRef.current = null;
@@ -300,23 +316,26 @@ export function CustomerCrmPanel() {
       }
       updateEdits((current) => Object.fromEntries(Object.entries(current).filter(([leadId]) => present.has(leadId))));
       setExpandedId((current) => (current !== null && present.has(current) ? current : null));
-      setInspectedId((current) => (current !== null && present.has(current) ? current : null));
       setMeta((current) => ({
         canDelete: result.canDelete,
         assignees: result.assignees,
         // Only an every-page load knows whether more than 500 customers exist.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
+        identityEnabled: result.identityEnabled,
+        identityUnavailable: result.identityUnavailable,
+        consentAsk: result.consentAsk?.text ?? null,
       }));
       setPhase({ state: 'ready' });
       setError('');
       if (switched) void loadProducts(api, result.workspaceId);
     } catch {
-      if (!mountedRef.current || seq !== loadSeqRef.current) return;
+      if (!mountedRef.current || !sequenceRef.current.isCurrent(seq)) return;
       skipTicksRef.current = 1;
       if (scopeRef.current === null) setPhase({ state: 'blocked', message: GENERIC_LOAD_ERROR });
       else setError(GENERIC_LOAD_ERROR);
     } finally {
-      if (mountedRef.current && mode === 'full') setRefreshing(false);
+      // The spinner belongs to the latest full reload; one dropped and started again keeps it going.
+      if (sequenceRef.current.finish(seq) && mountedRef.current) setRefreshing(false);
     }
   }, [dropAll, loadProducts, updateEdits, updateRows]);
 
@@ -392,6 +411,86 @@ export function CustomerCrmPanel() {
       markSaving(leadId, false);
     }
   };
+
+  /**
+   * An identity answer (Care CRM S3): the row takes the identity it returned (a 409 included), a customer who is
+   * gone leaves, lost access drops every row, and a server problem rests the next tick. Requests are started by a
+   * person only; nothing here polls.
+   */
+  const applyIdentityOutcome = useCallback((leadId: string, view: CrmIdentityOutcomeView) => {
+    if (view.skipTick) skipTicksRef.current = 1;
+    if (view.dropRows) {
+      dropAll(view.message);
+      return;
+    }
+    if (view.removeRow) {
+      removeRow(leadId);
+      setNotice(view.message);
+      return;
+    }
+    const { identity } = view;
+    if (identity && view.workspaceId === scopeRef.current) {
+      // A list read still in flight may predate this answer: it is dropped, so it cannot put the older identity back.
+      // A full reload ("Làm mới") caught that way is started again rather than lost.
+      const rerunFull = sequenceRef.current.invalidate();
+      updateRows((current) => crmRowsWithIdentity(current, leadId, identity));
+      if (rerunFull && mountedRef.current) void loadRef.current('full');
+    }
+    // The customer's consent or the AI switch changed on the server: read page 1 again now, once.
+    if (view.reloadList && mountedRef.current) void loadRef.current('page1');
+  }, [dropAll, removeRow, updateRows]);
+
+  const identityAct = useCallback(async (input: CustomerCareCrmIdentityActionInput): Promise<CrmIdentityOutcomeView> => {
+    const api = getCrmApi();
+    if (!api?.identityAction) return crmIdentityActionView(input.action, { ok: false, error: 'unsupported' });
+    let view: CrmIdentityOutcomeView;
+    try {
+      view = crmIdentityActionView(input.action, await api.identityAction(input));
+    } catch {
+      view = crmIdentityActionView(input.action, { ok: false, error: 'unavailable' });
+    }
+    applyIdentityOutcome(input.leadId, view);
+    return view;
+  }, [applyIdentityOutcome]);
+
+  /** "Cập nhật hồ sơ": main waits up to 45 s for the run, so the card shows its spinner that long at most. */
+  const identityRefresh = useCallback(async (leadId: string): Promise<CrmIdentityOutcomeView> => {
+    const api = getCrmApi();
+    if (!api?.refreshIdentity) return crmIdentityRefreshView({ ok: false, error: 'unsupported' });
+    let view: CrmIdentityOutcomeView;
+    try {
+      view = crmIdentityRefreshView(await api.refreshIdentity({ leadId }));
+    } catch {
+      view = crmIdentityRefreshView({ ok: false, error: 'unavailable' });
+    }
+    applyIdentityOutcome(leadId, view);
+    return view;
+  }, [applyIdentityOutcome]);
+
+  const identityEnabled = meta?.identityEnabled ?? null;
+  const consentAsk = meta?.consentAsk ?? null;
+  const identityHandlers = useMemo<CrmIdentityHandlers | null>(() => {
+    const api = getCrmApi();
+    if (!api?.identityAction || !api.refreshIdentity) return null;
+    return { enabled: identityEnabled, consentAsk, act: identityAct, refresh: identityRefresh };
+  }, [identityEnabled, consentAsk, identityAct, identityRefresh]);
+  // The Ads export and its counts fail closed on this (Care CRM S3): no export while the AI profile is off or unread.
+  const identityUnavailable = meta?.identityUnavailable ?? false;
+  const adsIdentityState = useMemo(
+    () => ({ identityEnabled, identityUnavailable }),
+    [identityEnabled, identityUnavailable],
+  );
+  // Unsaved drafts can only withhold a customer from the Ads preview and export (an unsaved "Không liên hệ").
+  const adsDrafts = useMemo(() => crmDraftProfiles(edits), [edits]);
+  // "Xuất CSV" never uses the rows on screen: pages 2–10 keep the identities of the last full load.
+  const exportAds = useCallback(async (target: CrmMetaAudienceTarget) => {
+    const api = getCrmApi();
+    if (!api) return { ok: false as const, message: NO_APP_MESSAGE };
+    return crmFreshAdsExport((input) => api.listCrm(input), target, {
+      workspaceId: () => scopeRef.current,
+      drafts: () => crmDraftProfiles(editsRef.current),
+    });
+  }, []);
 
   // The queue calls the latest save, so it always reads the current rows, edits and workspace.
   useEffect(() => {
@@ -526,29 +625,24 @@ export function CustomerCrmPanel() {
   const shown = crmVisibleRows(rows, filter, now, expandedId);
   const todayCount = crmCallTodayCount(rows, now);
 
-  /** Live rows with unsaved drafts overlaid + 5-layer `effectiveCrmIdentity` so Graph hubs and workspaces react immediately. */
+  /**
+   * Live rows with unsaved drafts overlaid, so Graph hubs and workspaces react immediately. The identity stays the
+   * server's (Care CRM S3): the identity card shows it and its staff actions are sent against its version, so a
+   * locally composed identity must never replace it.
+   */
   const liveRows = useMemo(
     () => rows.map((row) => {
       const draft = edits[row.leadId]?.draft;
-      const withDraft: CustomerCareCrmRow = draft && !crmRowReadOnly(row)
+      return draft && !crmRowReadOnly(row)
         ? { ...row, profile: { ...row.profile, ...draft, productFactIds: [...draft.productFactIds] } }
         : row;
-      return {
-        ...withDraft,
-        identity: effectiveCrmIdentity(withDraft, products, now),
-      };
     }),
-    [rows, edits, products, now],
+    [rows, edits],
   );
 
   const stageFilteredLiveRows = useMemo(
     () => crmGraphRows(liveRows, filter.stage),
     [liveRows, filter.stage],
-  );
-
-  const inspectedBaseRow = useMemo(
-    () => (inspectedId === null ? null : rows.find((item) => item.leadId === inspectedId) ?? null),
-    [rows, inspectedId],
   );
 
   const troubledRow = useMemo(
@@ -563,7 +657,7 @@ export function CustomerCrmPanel() {
         <div>
           <h2 id="v2-crm-title" className="v2-crm__title">Khách để lại số</h2>
           <p className="v2-crm__lead">
-            Hệ thống chân dung khách hàng 5 tầng tư duy — phục vụ Saler, tối ưu Ads, chăm sóc hậu bán &amp; đồng bộ phân khúc ẩn danh lên MyGraph.
+            Hồ sơ khách và chân dung AI (chỉ khi khách đồng ý) — phục vụ Saler, tối ưu Ads, chăm sóc hậu bán &amp; đồng bộ số liệu ẩn danh lên MyGraph.
           </p>
         </div>
         {phase.state === 'ready' && (
@@ -575,7 +669,7 @@ export function CustomerCrmPanel() {
               disabled={refreshing || refreshResting}
               title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
               aria-describedby={refreshResting && !refreshing ? 'v2-crm-refresh-note' : undefined}
-              onClick={() => { void load('full'); }}
+              onClick={() => { void load('full', true); }}
             >
               {refreshing ? 'Đang tải…' : 'Làm mới'}
             </button>
@@ -594,7 +688,7 @@ export function CustomerCrmPanel() {
               className="v2-button"
               disabled={refreshing || refreshResting}
               title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
-              onClick={() => { void load('full'); }}
+              onClick={() => { void load('full', true); }}
             >
               Thử lại
             </button>
@@ -621,6 +715,7 @@ export function CustomerCrmPanel() {
             </div>
           )}
           {notice && <p className="v2-crm__notice" role="status">{notice}</p>}
+          {meta?.identityUnavailable && <p className="v2-crm__hint" role="status">AI hồ sơ khách tạm không tải được.</p>}
 
           {rows.length > 0 && (
             <CrmEnterpriseKpiStrip
@@ -628,6 +723,7 @@ export function CustomerCrmPanel() {
               savedRows={rows}
               products={products}
               nowMs={now}
+              identityState={adsIdentityState}
               display={display}
               onSelectDisplay={setDisplay}
             />
@@ -693,25 +789,9 @@ export function CustomerCrmPanel() {
                 nowMs={now}
                 onCopy={(row) => { void copyPhone(row); }}
                 onOpenProfile={openProfile}
-                renderExtraCard={(selected) => {
-                  const baseRow = rows.find((item) => item.leadId === selected.leadId) ?? selected;
-                  const rowEdit = edits[selected.leadId];
-                  const draftProfile = rowEdit?.draft ?? profileFromRow(baseRow);
-                  return (
-                    <CrmPortraitInspector
-                      variant="card"
-                      row={baseRow}
-                      profile={draftProfile}
-                      products={products}
-                      nowMs={now}
-                      saving={savingIds.has(selected.leadId)}
-                      rowError={rowEdit?.error || null}
-                      hasConflict={Boolean(rowEdit?.rejected)}
-                      onResolveConflict={() => openProfile(selected.leadId)}
-                      onChangeProfile={(next) => change(baseRow, next)}
-                    />
-                  );
-                }}
+                identityHandlers={identityHandlers}
+                canDelete={canPurge}
+                onPurge={(row) => { void purge(row); }}
               />
             )
           ) : display === 'saler' ? (
@@ -727,6 +807,7 @@ export function CustomerCrmPanel() {
                 savingIds={savingIds}
                 edits={edits}
                 nowMs={now}
+                identityEnabled={identityEnabled}
                 onChangeProfile={change}
                 onCopyText={(text, msg) => { void copyText(text, msg); }}
                 onOpenProfile={openProfile}
@@ -735,8 +816,9 @@ export function CustomerCrmPanel() {
           ) : display === 'ads' ? (
             <CrmAdsWorkspace
               rows={rows}
-              products={products}
-              nowMs={now}
+              identityState={adsIdentityState}
+              drafts={adsDrafts}
+              onExport={exportAds}
               onNotify={(kind, msg) => {
                 if (kind === 'error') {
                   setNotice('');
@@ -752,6 +834,7 @@ export function CustomerCrmPanel() {
               rows={liveRows}
               products={products}
               nowMs={now}
+              identityEnabled={identityEnabled}
               onChangeProfile={change}
               onCopyText={(text, msg) => { void copyText(text, msg); }}
               onOpenProfile={openProfile}
@@ -761,69 +844,50 @@ export function CustomerCrmPanel() {
               <p>{filter.view === 'today' && filter.stage === 'any' ? 'Hôm nay chưa có khách cần gọi.' : 'Không có khách nào khớp bộ lọc.'}</p>
             </div>
           ) : (
-            <div className={`v2-crm__table-split${inspectedBaseRow ? ' has-inspector' : ''}`}>
-              <div className="v2-crm__table-wrap">
-                <table className="v2-crm__table">
-                  <caption className="v2-visually-hidden">
-                    Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Khách</th>
-                      <th scope="col">Giai đoạn</th>
-                      <th scope="col">Phụ trách</th>
-                      <th scope="col">Việc tiếp theo</th>
-                      <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
-                      <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((row) => {
-                      const edit = edits[row.leadId] ?? null;
-                      return (
-                        <CustomerCrmRow
-                          key={row.leadId}
-                          row={row}
-                          profile={edit?.draft ?? profileFromRow(row)}
-                          edit={edit}
-                          saving={savingIds.has(row.leadId)}
-                          expanded={expandedId === row.leadId}
-                          nowMs={now}
-                          assignees={meta?.assignees ?? []}
-                          products={products}
-                          canDelete={canPurge}
-                          purging={purgingId === row.leadId}
-                          onChange={(profile) => change(row, profile)}
-                          onToggle={() => setExpandedId((current) => (current === row.leadId ? null : row.leadId))}
-                          onSave={() => queueRef.current?.saveNow(row.leadId)}
-                          onCopy={() => { void copyPhone(row); }}
-                          onPurge={() => { void purge(row); }}
-                          onReapply={() => reapply(row)}
-                          onDiscard={() => discard(row)}
-                          onInspectPortrait={() => setInspectedId((current) => (current === row.leadId ? null : row.leadId))}
-                        />
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {inspectedBaseRow && (
-                <CrmPortraitInspector
-                  variant="panel"
-                  row={inspectedBaseRow}
-                  profile={edits[inspectedBaseRow.leadId]?.draft ?? profileFromRow(inspectedBaseRow)}
-                  products={products}
-                  nowMs={now}
-                  saving={savingIds.has(inspectedBaseRow.leadId)}
-                  rowError={edits[inspectedBaseRow.leadId]?.error || null}
-                  hasConflict={Boolean(edits[inspectedBaseRow.leadId]?.rejected)}
-                  onResolveConflict={() => openProfile(inspectedBaseRow.leadId)}
-                  onChangeProfile={(next) => change(inspectedBaseRow, next)}
-                  onClose={() => setInspectedId(null)}
-                  onOpenProfile={() => openProfile(inspectedBaseRow.leadId)}
-                />
-              )}
+            <div className="v2-crm__table-wrap">
+              <table className="v2-crm__table">
+                <caption className="v2-visually-hidden">
+                  Khách để lại số: quá hạn trước, rồi đến hạn hôm nay, rồi theo giai đoạn.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Khách</th>
+                    <th scope="col">Giai đoạn</th>
+                    <th scope="col">Phụ trách</th>
+                    <th scope="col">Việc tiếp theo</th>
+                    <th scope="col"><span className="v2-visually-hidden">Trạng thái lưu</span></th>
+                    <th scope="col"><span className="v2-visually-hidden">Thao tác</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((row) => {
+                    const edit = edits[row.leadId] ?? null;
+                    return (
+                      <CustomerCrmRow
+                        key={row.leadId}
+                        row={row}
+                        profile={edit?.draft ?? profileFromRow(row)}
+                        edit={edit}
+                        saving={savingIds.has(row.leadId)}
+                        expanded={expandedId === row.leadId}
+                        nowMs={now}
+                        assignees={meta?.assignees ?? []}
+                        products={products}
+                        canDelete={canPurge}
+                        purging={purgingId === row.leadId}
+                        onChange={(profile) => change(row, profile)}
+                        onToggle={() => setExpandedId((current) => (current === row.leadId ? null : row.leadId))}
+                        onSave={() => queueRef.current?.saveNow(row.leadId)}
+                        onCopy={() => { void copyPhone(row); }}
+                        onPurge={() => { void purge(row); }}
+                        onReapply={() => reapply(row)}
+                        onDiscard={() => discard(row)}
+                        identityHandlers={identityHandlers}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 
