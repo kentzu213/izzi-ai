@@ -15,6 +15,8 @@ import type {
   CustomerCareSnapshot,
   CustomerCareAutoReplyResult,
   CustomerCareAutoReplyState,
+  CustomerCareCrmIdentityActionResult,
+  CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListResult,
   CustomerCareCrmSaveResult,
   CustomerCareFacebookActionResult,
@@ -61,6 +63,11 @@ import {
   parseCareCrmSaveInput,
   type CareCrmGateway,
 } from './care-crm';
+import {
+  copyCareCrmIdentity,
+  parseCareCrmIdentityActionInput,
+  parseCareCrmIdentityRefreshInput,
+} from './care-crm-identity';
 import {
   connectedPage,
   deriveCareMode,
@@ -1062,6 +1069,7 @@ export class CustomerCareService {
       rows: page.rows.map(copyCareCrmRow),
       nextCursor: page.nextCursor,
       assignees: page.assignees.map((assignee) => ({ ...assignee })),
+      identityEnabled: page.identityEnabled,
     };
   }
 
@@ -1080,6 +1088,48 @@ export class CustomerCareService {
       return { ok: false, error: 'profile_conflict', workspaceId: authority.workspaceId, leadId, profile };
     }
     return { ok: true, workspaceId: authority.workspaceId, leadId, profile };
+  }
+
+  /**
+   * Care CRM S3: a staff action on the identity card. Renderer input is `{ leadId, action, ... }` with exactly the
+   * keys of the action; the workspace comes from the live authority. A conflict hands back the current identity.
+   */
+  async identityAction(input: unknown): Promise<CustomerCareCrmIdentityActionResult> {
+    const parsed = parseCareCrmIdentityActionInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    const result = await this.runFacebookCall(authority, () => crm.identityAction(authority.workspaceId, parsed));
+    if (!result.ok) return result;
+    const { leadId } = result.value;
+    const identity = copyCareCrmIdentity(result.value.identity);
+    if (result.value.kind === 'conflict') {
+      return { ok: false, error: 'identity_conflict', workspaceId: authority.workspaceId, leadId, identity };
+    }
+    return { ok: true, workspaceId: authority.workspaceId, leadId, identity };
+  }
+
+  /** Care CRM S3: one identity run now ("Cập nhật hồ sơ"); renderer input is only `{ leadId }`. */
+  async refreshIdentity(input: unknown): Promise<CustomerCareCrmIdentityRefreshResult> {
+    const parsed = parseCareCrmIdentityRefreshInput(input);
+    if (!parsed) return { ok: false, error: 'invalid_input' };
+    const gate = await this.crmAuthority();
+    if (!gate.ok) return gate;
+    const { authority, crm } = gate;
+    const result = await this.runFacebookCall(authority, () => crm.refreshIdentity(authority.workspaceId, parsed.leadId));
+    if (!result.ok) return result;
+    const outcome = result.value;
+    if (outcome.kind === 'too_soon') {
+      return { ok: false, error: 'refresh_too_soon', workspaceId: authority.workspaceId, leadId: outcome.leadId, retryAfterSec: outcome.retryAfterSec };
+    }
+    return {
+      ok: true,
+      workspaceId: authority.workspaceId,
+      leadId: outcome.leadId,
+      identity: copyCareCrmIdentity(outcome.identity),
+      outcome: outcome.outcome,
+    };
   }
 
   /** Fresh authority for a CRM call: signed in, owner/manager/editor, and the CRM backend present. */

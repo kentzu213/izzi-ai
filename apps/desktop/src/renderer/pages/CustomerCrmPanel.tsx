@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareCrmAssignee,
+  CustomerCareCrmIdentityActionInput,
+  CustomerCareCrmIdentityActionResult,
+  CustomerCareCrmIdentityRefreshInput,
+  CustomerCareCrmIdentityRefreshResult,
   CustomerCareCrmListInput,
   CustomerCareCrmListResult,
   CustomerCareCrmProfileInput,
@@ -49,6 +53,8 @@ import {
   type CrmRowEdit,
 } from './customer-crm-flow';
 import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
+import { crmIdentityActionView, crmIdentityRefreshView, crmRowsWithIdentity, type CrmIdentityOutcomeView } from './customer-crm-identity';
+import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 import { CrmSaveQueue } from './customer-crm-save-queue';
 import { CustomerCrmGraphSlot } from './CustomerCrmGraphSlot';
 import { CustomerCrmRow } from './CustomerCrmRow';
@@ -84,6 +90,9 @@ type CrmApi = {
   saveCrmProfile: (input: CustomerCareCrmSaveInput) => Promise<CustomerCareCrmSaveResult>;
   /** Absent on an older preload, which hides the purge action. */
   purgeLead?: (input: CustomerCareLeadPurgeInput) => Promise<CustomerCareLeadPurgeResult>;
+  /** Care CRM S3; absent on an older preload, which shows the identity without actions. */
+  identityAction?: (input: CustomerCareCrmIdentityActionInput) => Promise<CustomerCareCrmIdentityActionResult>;
+  refreshIdentity?: (input: CustomerCareCrmIdentityRefreshInput) => Promise<CustomerCareCrmIdentityRefreshResult>;
 };
 
 type Edits = Readonly<Record<string, CrmRowEdit>>;
@@ -93,6 +102,8 @@ interface CrmMeta {
   canDelete: boolean;
   assignees: CustomerCareCrmAssignee[];
   truncated: boolean;
+  /** Care CRM S3: the AI profile is on for the workspace; null when the server sent no identity. */
+  identityEnabled: boolean | null;
 }
 
 const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.';
@@ -137,6 +148,8 @@ export function CustomerCrmPanel() {
   const [edits, setEdits] = useState<Edits>({});
   const [meta, setMeta] = useState<CrmMeta | null>(null);
   const [products, setProducts] = useState<CrmProductOption[]>([]);
+  /** The connected Page's name, for the exact consent text shown before "Xin phép khách". */
+  const [pageName, setPageName] = useState<string | null>(null);
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState<CrmFilter>({ view: 'today', stage: 'any' });
   const [display, setDisplay] = useState<CrmDisplay>('table');
@@ -198,6 +211,7 @@ export function CustomerCrmPanel() {
     updateEdits(() => ({}));
     setMeta(null);
     setProducts([]);
+    setPageName(null);
     setExpandedId(null);
     setNotice('');
     setError('');
@@ -217,9 +231,13 @@ export function CustomerCrmPanel() {
       const snapshot = await api.getSnapshot();
       if (!mountedRef.current || scopeRef.current !== workspaceId) return;
       // Facts saved for another workspace on this machine never become this workspace's products.
-      setProducts(snapshot.workspaceId === workspaceId ? crmProductOptions(snapshot.setup?.facts, Date.now()) : []);
+      const same = snapshot.workspaceId === workspaceId;
+      setProducts(same ? crmProductOptions(snapshot.setup?.facts, Date.now()) : []);
+      setPageName(same && snapshot.pageConnection.state === 'connected' ? snapshot.pageConnection.pageName : null);
     } catch {
-      if (mountedRef.current) setProducts([]);
+      if (!mountedRef.current) return;
+      setProducts([]);
+      setPageName(null);
     }
   }, []);
 
@@ -288,6 +306,7 @@ export function CustomerCrmPanel() {
         assignees: result.assignees,
         // Only an every-page load knows whether more than 500 customers exist.
         truncated: mode === 'full' ? result.truncated : (current?.truncated ?? false),
+        identityEnabled: result.identityEnabled,
       }));
       setPhase({ state: 'ready' });
       setError('');
@@ -370,6 +389,60 @@ export function CustomerCrmPanel() {
       markSaving(leadId, false);
     }
   };
+
+  /**
+   * An identity answer (Care CRM S3): the row takes the identity it returned (a 409 included), a customer who is
+   * gone leaves, lost access drops every row, and a server problem rests the next tick. Requests are started by a
+   * person only; nothing here polls.
+   */
+  const applyIdentityOutcome = useCallback((leadId: string, view: CrmIdentityOutcomeView) => {
+    if (view.skipTick) skipTicksRef.current = 1;
+    if (view.dropRows) {
+      dropAll(view.message);
+      return;
+    }
+    if (view.removeRow) {
+      removeRow(leadId);
+      setNotice(view.message);
+      return;
+    }
+    const { identity } = view;
+    if (identity && view.workspaceId === scopeRef.current) updateRows((current) => crmRowsWithIdentity(current, leadId, identity));
+  }, [dropAll, removeRow, updateRows]);
+
+  const identityAct = useCallback(async (input: CustomerCareCrmIdentityActionInput): Promise<CrmIdentityOutcomeView> => {
+    const api = getCrmApi();
+    if (!api?.identityAction) return crmIdentityActionView(input.action, { ok: false, error: 'unsupported' });
+    let view: CrmIdentityOutcomeView;
+    try {
+      view = crmIdentityActionView(input.action, await api.identityAction(input));
+    } catch {
+      view = crmIdentityActionView(input.action, { ok: false, error: 'unavailable' });
+    }
+    applyIdentityOutcome(input.leadId, view);
+    return view;
+  }, [applyIdentityOutcome]);
+
+  /** "Cập nhật hồ sơ": main waits up to 45 s for the run, so the card shows its spinner that long at most. */
+  const identityRefresh = useCallback(async (leadId: string): Promise<CrmIdentityOutcomeView> => {
+    const api = getCrmApi();
+    if (!api?.refreshIdentity) return crmIdentityRefreshView({ ok: false, error: 'unsupported' });
+    let view: CrmIdentityOutcomeView;
+    try {
+      view = crmIdentityRefreshView(await api.refreshIdentity({ leadId }));
+    } catch {
+      view = crmIdentityRefreshView({ ok: false, error: 'unavailable' });
+    }
+    applyIdentityOutcome(leadId, view);
+    return view;
+  }, [applyIdentityOutcome]);
+
+  const identityEnabled = meta?.identityEnabled ?? null;
+  const identityHandlers = useMemo<CrmIdentityHandlers | null>(() => {
+    const api = getCrmApi();
+    if (!api?.identityAction || !api.refreshIdentity) return null;
+    return { enabled: identityEnabled, pageName, act: identityAct, refresh: identityRefresh };
+  }, [identityEnabled, pageName, identityAct, identityRefresh]);
 
   // The queue calls the latest save, so it always reads the current rows, edits and workspace.
   useEffect(() => {
@@ -599,6 +672,7 @@ export function CustomerCrmPanel() {
                 nowMs={now}
                 onCopy={(row) => { void copyPhone(row); }}
                 onOpenProfile={openProfile}
+                identityHandlers={identityHandlers}
               />
             )
           ) : shown.length === 0 ? (
@@ -644,6 +718,7 @@ export function CustomerCrmPanel() {
                         onPurge={() => { void purge(row); }}
                         onReapply={() => reapply(row)}
                         onDiscard={() => discard(row)}
+                        identityHandlers={identityHandlers}
                       />
                     );
                   })}

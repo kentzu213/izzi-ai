@@ -13,6 +13,7 @@ import {
   CUSTOMER_CARE_CRM_ROLES,
   CUSTOMER_CARE_CRM_STAGES,
   type CustomerCareCrmAssignee,
+  type CustomerCareCrmIdentityActionInput,
   type CustomerCareCrmListInput,
   type CustomerCareCrmProfile,
   type CustomerCareCrmProfileInput,
@@ -34,6 +35,12 @@ import {
   parseLeadMessage,
   type CareFacebookResult,
 } from './care-facebook-client';
+import {
+  copyCareCrmIdentity,
+  parseCareCrmIdentity,
+  type CareCrmIdentityOutcome,
+  type CareCrmRefreshOutcome,
+} from './care-crm-identity';
 
 export const CARE_CRM_PAGE_SIZE = 50;
 export const CARE_CRM_MAX_PRODUCTS = 8;
@@ -65,6 +72,8 @@ export interface CareCrmPage {
   rows: CustomerCareCrmRow[];
   nextCursor: string | null;
   assignees: CustomerCareCrmAssignee[];
+  /** Care CRM S3: the server's `identityEnabled`; null when it answered without identity (no S3 there). */
+  identityEnabled: boolean | null;
 }
 
 /**
@@ -75,10 +84,14 @@ export type CareCrmSaveOutcome =
   | { kind: 'saved'; leadId: string; profile: CustomerCareCrmProfile }
   | { kind: 'conflict'; leadId: string; profile: CustomerCareCrmProfile };
 
-/** The two CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
+/** The CRM routes `CustomerCareService` depends on; tests substitute an in-memory fake. */
 export interface CareCrmGateway {
   listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>>;
   saveCrmProfile(workspaceId: string, input: CustomerCareCrmSaveInput): Promise<CareFacebookResult<CareCrmSaveOutcome>>;
+  /** Care CRM S3: a staff action on the identity card; the caller has already parsed `input`. */
+  identityAction(workspaceId: string, input: CustomerCareCrmIdentityActionInput): Promise<CareFacebookResult<CareCrmIdentityOutcome>>;
+  /** Care CRM S3: one identity run now, waited for up to 45 s. */
+  refreshIdentity(workspaceId: string, leadId: string): Promise<CareFacebookResult<CareCrmRefreshOutcome>>;
 }
 
 /** Mirrors the backend: owner, manager and editor read and edit profiles; a viewer or reviewer never does. */
@@ -292,12 +305,17 @@ function parseMessages(value: unknown): CustomerCareLeadMessage[] | null {
   return messages;
 }
 
-/** One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. */
-export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
-  const row = exactRecord(value, [
-    'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
-    'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
-  ]);
+const ROW_KEYS = [
+  'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
+  'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
+];
+
+/**
+ * One CRM row, rebuilt from the exact contract fields. The phone must be a normalized Vietnamese mobile. With
+ * `withIdentity` (the envelope carried `identityEnabled`) the row must also carry a valid `identity`.
+ */
+export function parseCareCrmRow(value: unknown, withIdentity = false): CustomerCareCrmRow | null {
+  const row = exactRecord(value, withIdentity ? [...ROW_KEYS, 'identity'] : ROW_KEYS);
   if (!row || !isCareFacebookChoiceId(row.leadId) || !isCareFacebookPageId(row.pageId)) return null;
   if (typeof row.phone !== 'string' || !CARE_LEAD_PHONE_PATTERN.test(row.phone)) return null;
   if (typeof row.zaloMentioned !== 'boolean' || !isCareLeadStatus(row.leadStatus)) return null;
@@ -306,6 +324,8 @@ export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
   const recentMessages = parseMessages(row.recentMessages);
   const profile = parseCareCrmProfile(row.profile);
   if (customerName === undefined || !recentMessages || !profile) return null;
+  const identity = withIdentity ? parseCareCrmIdentity(row.identity) : null;
+  if (withIdentity && !identity) return null;
   return {
     leadId: row.leadId,
     pageId: row.pageId,
@@ -317,6 +337,7 @@ export function parseCareCrmRow(value: unknown): CustomerCareCrmRow | null {
     lastMessageAt: row.lastMessageAt,
     recentMessages,
     profile,
+    ...(identity ? { identity } : {}),
   };
 }
 
@@ -337,30 +358,40 @@ function parseAssignees(value: unknown): CustomerCareCrmAssignee[] | null {
   return assignees;
 }
 
-/** `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. */
+const ENVELOPE_KEYS = ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees'];
+
+/**
+ * `GET /crm` envelope for `workspaceId`; any extra field, a duplicate or one invalid row rejects the page. Care CRM
+ * S3: the answer either carries `identityEnabled` and an `identity` on every row, or neither (a server without
+ * S3, which ignores `include=identity`); a mix is rejected.
+ */
 export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCrmPage | null {
-  const envelope = exactRecord(body, ['success', 'workspaceId', 'role', 'canDelete', 'rows', 'nextCursor', 'assignees']);
+  const withIdentity = typeof body === 'object' && body !== null && Object.prototype.hasOwnProperty.call(body, 'identityEnabled');
+  const envelope = exactRecord(body, withIdentity ? [...ENVELOPE_KEYS, 'identityEnabled'] : ENVELOPE_KEYS);
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_ROLES, envelope.role) || typeof envelope.canDelete !== 'boolean') return null;
+  if (withIdentity && typeof envelope.identityEnabled !== 'boolean') return null;
   if (envelope.nextCursor !== null && !isCareLeadsCursor(envelope.nextCursor)) return null;
   if (!Array.isArray(envelope.rows) || envelope.rows.length > CARE_CRM_PAGE_SIZE) return null;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   for (const raw of envelope.rows as unknown[]) {
-    const row = parseCareCrmRow(raw);
+    const row = parseCareCrmRow(raw, withIdentity);
     if (!row || seen.has(row.leadId)) return null;
     seen.add(row.leadId);
     rows.push(row);
   }
   const assignees = parseAssignees(envelope.assignees);
   if (!assignees) return null;
-  return { role: envelope.role, canDelete: envelope.canDelete, rows, nextCursor: envelope.nextCursor, assignees };
+  return {
+    role: envelope.role,
+    canDelete: envelope.canDelete,
+    rows,
+    nextCursor: envelope.nextCursor,
+    assignees,
+    identityEnabled: withIdentity ? envelope.identityEnabled as boolean : null,
+  };
 }
-
-const ROW_KEYS = [
-  'leadId', 'pageId', 'customerName', 'phone', 'zaloMentioned', 'leadStatus',
-  'phoneCapturedAt', 'lastMessageAt', 'recentMessages', 'profile',
-];
 
 /**
  * The profile of a row in a save answer (200 or 409). After the database step the server may fail to present
@@ -410,5 +441,6 @@ export function copyCareCrmRow(row: CustomerCareCrmRow): CustomerCareCrmRow {
     ...row,
     recentMessages: row.recentMessages.map((message) => ({ ...message })),
     profile: copyCareCrmProfile(row.profile),
+    ...(row.identity ? { identity: copyCareCrmIdentity(row.identity) } : {}),
   };
 }

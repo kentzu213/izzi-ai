@@ -669,6 +669,93 @@
   justify-content: flex-end;
 }
 
+/* Care CRM S3: staff actions on the identity card (Duyệt / Sửa / Bỏ, consent, "Cập nhật hồ sơ"). */
+.izzi-v2 .v2-crm-card__field-actions,
+.izzi-v2 .v2-crm-card__identity-actions,
+.izzi-v2 .v2-crm-card__edit-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-1);
+}
+
+.izzi-v2 .v2-crm-card__identity-actions {
+  display: flex;
+  padding-top: var(--v2-space-1);
+}
+
+/* On the value's line, at its end; the evidence quote wraps below. */
+.izzi-v2 .v2-crm-card__field-actions {
+  margin-left: auto;
+}
+
+.izzi-v2 .v2-crm-card__act {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v2-space-1);
+  min-height: 28px;
+  padding: 0 var(--v2-space-2);
+  font-size: var(--v2-text-label-size);
+}
+
+/* Small ghost buttons in a dense list keep a hairline so they read as buttons, not text. */
+.izzi-v2 .v2-button--ghost.v2-crm-card__act {
+  border-color: var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-card__edit {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-2);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+}
+
+.izzi-v2 .v2-crm-card__edit .v2-field__select,
+.izzi-v2 .v2-crm-card__edit .v2-field__input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.izzi-v2 .v2-crm-card__edit-products {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.izzi-v2 .v2-crm-card__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: izzi-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .izzi-v2 .v2-crm-card__spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
+
+/* Always present, so screen readers announce each answer; it takes no room while empty. */
+.izzi-v2 .v2-crm-card__identity-message {
+  margin: 0;
+}
+
+.izzi-v2 .v2-crm-card__identity-message:empty {
+  padding: 0;
+  border: 0;
+}
+
 @media (max-width: 720px) {
   .izzi-v2 .v2-crm {
     padding: var(--v2-space-3) var(--v2-space-2);

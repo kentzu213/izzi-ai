@@ -468,8 +468,19 @@ describe('a profile whose sealed details could not be opened', () => {
 });
 
 describe('paging', () => {
-  const ok = (rows: CustomerCareCrmRow[], nextCursor: string | null, workspaceId = WORKSPACE): CustomerCareCrmListResult => ({
-    ok: true, workspaceId, role: 'editor', canDelete: false, rows, nextCursor, assignees: [],
+  const ok = (
+    rows: CustomerCareCrmRow[],
+    nextCursor: string | null,
+    workspaceId = WORKSPACE,
+    identityEnabled: boolean | null = null,
+  ): CustomerCareCrmListResult => ({
+    ok: true, workspaceId, role: 'editor', canDelete: false, rows, nextCursor, assignees: [], identityEnabled,
+  });
+
+  it('takes identityEnabled (Care CRM S3) from the first page', async () => {
+    const pages = [ok([row()], 'c1', WORKSPACE, true), ok([row()], null, WORKSPACE, true)];
+    expect(await loadCrmPages(async () => pages.shift()!)).toMatchObject({ ok: true, identityEnabled: true });
+    expect(await loadCrmPages(async () => ok([row()], null))).toMatchObject({ ok: true, identityEnabled: null });
   });
 
   it('loads at most 10 pages and reports the list as cut off', async () => {

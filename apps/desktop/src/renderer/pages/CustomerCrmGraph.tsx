@@ -19,6 +19,7 @@ import {
   type CrmGraphNode,
 } from './customer-crm-graph';
 import { CustomerCrmCard } from './CustomerCrmCard';
+import type { CrmIdentityHandlers } from './CustomerCrmIdentity';
 
 export interface CustomerCrmGraphProps {
   /** The rows the table holds (stage filter applied). The graph never loads or stores anything itself. */
@@ -28,6 +29,8 @@ export interface CustomerCrmGraphProps {
   nowMs: number;
   onCopy: (row: CustomerCareCrmRow) => void;
   onOpenProfile: (leadId: string) => void;
+  /** Care CRM S3 staff actions on the card's identity; absent shows it read-only. */
+  identityHandlers?: CrmIdentityHandlers | null;
 }
 
 /** The engine adds positions and speeds to these copies; pill sizes are kept for hit-testing. */
@@ -59,9 +62,11 @@ function truncate(text: string, max: number): string {
 /**
  * MyGraph → CRM → "Sơ đồ": customers and what links them (stage, products, occasion, owner and, once rows carry
  * identity, persona, source ad and shared-link domains), drawn in the Memory graph's style. Clicking a customer
- * opens the read-only card.
+ * opens the card: the staff profile read-only, the AI identity with its staff actions.
  */
-export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onCopy, onOpenProfile }: CustomerCrmGraphProps) {
+export default function CustomerCrmGraph({
+  rows, products, assignees, nowMs, onCopy, onOpenProfile, identityHandlers = null,
+}: CustomerCrmGraphProps) {
   // A refresh that changed nothing the graph is drawn from keeps the same graph object, so the layout does not
   // restart; the 60 s tick hands over new row arrays every time.
   const lastGraphRef = useRef<CrmGraphEntry | null>(null);
@@ -366,6 +371,8 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
 
       {selectedRow ? (
         <CustomerCrmCard
+          // A card per customer: its identity state (the version it opened with) never carries over to another.
+          key={selectedRow.leadId}
           cardRef={cardRef}
           row={selectedRow}
           nowMs={nowMs}
@@ -374,6 +381,7 @@ export default function CustomerCrmGraph({ rows, products, assignees, nowMs, onC
           onCopy={() => onCopy(selectedRow)}
           onOpenProfile={() => onOpenProfile(selectedRow.leadId)}
           onClose={closeCard}
+          identityHandlers={identityHandlers}
         />
       ) : (
         <p className="v2-crm-graph__hint v2-crm__hint">Bấm vào một khách trên sơ đồ để xem thẻ nhận diện.</p>

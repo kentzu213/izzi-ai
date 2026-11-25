@@ -518,6 +518,8 @@ export type CrmLoadResult =
     complete: boolean;
     /** The page cap of this load was hit with pages left; for a full load, only the newest 500 are shown. */
     truncated: boolean;
+    /** Care CRM S3, from the first page: the AI profile is on; null when the server sent no identity. */
+    identityEnabled: boolean | null;
   }
   | CustomerCareFacebookFailure;
 
@@ -556,6 +558,7 @@ export async function loadCrmPages(
     pages,
     complete: cursor === null,
     truncated: cursor !== null && pages >= maxPages,
+    identityEnabled: first.identityEnabled,
   };
 }
 

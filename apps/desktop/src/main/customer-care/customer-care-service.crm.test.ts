@@ -6,6 +6,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   CustomerCareAuthority,
+  CustomerCareCrmIdentity,
+  CustomerCareCrmIdentityActionInput,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRow,
   CustomerCareCrmSaveInput,
@@ -13,6 +15,7 @@ import type {
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
 import type { CareFacebookResult } from './care-facebook-client';
 import type { CareCrmGateway, CareCrmPage, CareCrmSaveOutcome } from './care-crm';
+import type { CareCrmIdentityOutcome, CareCrmRefreshOutcome } from './care-crm-identity';
 
 const NOW = new Date('2026-11-24T08:00:00.000Z');
 const IDENTITY_A = 'user-aaaa-1111';
@@ -57,12 +60,32 @@ const ROW: CustomerCareCrmRow = {
   profile: { ...PROFILE, updatedAt: UPDATED, updatedBy: OWNER_ID },
 };
 
+const QUOTE = 'em mua cho bố mẹ ạ';
+const VERSION = '2026-11-25T01:02:03.456Z';
+const IDENTITY: CustomerCareCrmIdentity = {
+  version: VERSION,
+  lastRunAt: VERSION,
+  consent: { state: 'granted', at: VERSION, noMarketing: false, canAsk: false },
+  occasion: null,
+  timeline: null,
+  productFactIds: { value: ['ban-tho-127'], confidence: 'high', kind: 'stated', source: 'ai', status: 'suggested', updatedAt: VERSION, evidence: [] },
+  addressForm: null,
+  ageBand: { value: ['25-34', '35-44'], confidence: 'medium', kind: 'inferred', source: 'ai', status: 'suggested', updatedAt: VERSION, evidence: [] },
+  family: {
+    value: { recipient: 'parents' }, confidence: 'high', kind: 'stated', source: 'ai', status: 'suggested', updatedAt: VERSION,
+    evidence: [{ source: 'customer', at: VERSION, quote: QUOTE }],
+  },
+  interests: { adTitle: null, sharedLinks: [], budgetBand: null },
+  persona: null,
+};
+
 const PAGE: CareCrmPage = {
   role: 'owner',
   canDelete: true,
   rows: [ROW],
   nextCursor: 'crm-next-1',
   assignees: [{ userId: OWNER_ID, label: 'Lan' }],
+  identityEnabled: null,
 };
 
 const SAVE: CustomerCareCrmSaveInput = { leadId: LEAD_ID, expectedUpdatedAt: UPDATED, profile: PROFILE };
@@ -89,6 +112,16 @@ class FakeCrm implements CareCrmGateway {
   }
   async saveCrmProfile(workspaceId: string, input: CustomerCareCrmSaveInput) {
     this.calls.push(['saveCrmProfile', workspaceId, input]); this.during(); return this.saveResult;
+  }
+  identityResult: CareFacebookResult<CareCrmIdentityOutcome> = { ok: true, value: { kind: 'applied', leadId: LEAD_ID, identity: IDENTITY } };
+  refreshResult: CareFacebookResult<CareCrmRefreshOutcome> = {
+    ok: true, value: { kind: 'refreshed', leadId: LEAD_ID, identity: IDENTITY, outcome: 'updated' },
+  };
+  async identityAction(workspaceId: string, input: CustomerCareCrmIdentityActionInput) {
+    this.calls.push(['identityAction', workspaceId, input]); this.during(); return this.identityResult;
+  }
+  async refreshIdentity(workspaceId: string, leadId: string) {
+    this.calls.push(['refreshIdentity', workspaceId, leadId]); this.during(); return this.refreshResult;
   }
 }
 
@@ -242,6 +275,104 @@ describe('CustomerCareService.saveCrmProfile', () => {
   });
 });
 
+const CONFIRM = { leadId: LEAD_ID, action: 'confirm', field: 'family', expectedVersion: VERSION } as const;
+
+describe('CustomerCareService.listCrm with identity (Care CRM S3)', () => {
+  it('passes identityEnabled and hands out identity copies', async () => {
+    const crm = new FakeCrm();
+    crm.listResult = { ok: true, value: { ...PAGE, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] } };
+    const result = await fixture({ crm }).service.listCrm({ cursor: null });
+    if (!result.ok) throw new Error('expected rows');
+    expect(result.identityEnabled).toBe(true);
+    expect(result.rows[0].identity).toEqual(IDENTITY);
+    expect(result.rows[0].identity).not.toBe(IDENTITY);
+    expect(result.rows[0].identity?.family?.evidence[0]).not.toBe(IDENTITY.family?.evidence[0]);
+  });
+});
+
+describe('CustomerCareService.identityAction (Care CRM S3)', () => {
+  it('acts for the live workspace and returns the identity after the action', async () => {
+    const { service, crm } = fixture({ authority: as('editor') });
+    const result = await service.identityAction(CONFIRM);
+    expect(result).toEqual({ ok: true, workspaceId: WORKSPACE_A, leadId: LEAD_ID, identity: IDENTITY });
+    if (!result.ok) throw new Error('expected an identity');
+    expect(result.identity).not.toBe(IDENTITY);
+    expect(crm.calls).toEqual([['identityAction', WORKSPACE_A, CONFIRM]]);
+  });
+
+  it('returns the current identity on a conflict, so the card reloads instead of overwriting', async () => {
+    const { service, crm } = fixture();
+    const newer = { ...IDENTITY, version: '2026-11-25T02:00:00.000Z' };
+    crm.identityResult = { ok: true, value: { kind: 'conflict', leadId: LEAD_ID, identity: newer } };
+    expect(await service.identityAction(CONFIRM)).toEqual({
+      ok: false, error: 'identity_conflict', workspaceId: WORKSPACE_A, leadId: LEAD_ID, identity: newer,
+    });
+  });
+
+  it('rejects invalid input, including a workspace from the renderer, before reaching the server', async () => {
+    const { service, crm } = fixture();
+    for (const input of [
+      undefined, {}, { ...CONFIRM, workspaceId: WORKSPACE_B }, { ...CONFIRM, action: 'delete' }, { ...CONFIRM, field: 'gender' },
+      { leadId: LEAD_ID, action: 'ask_consent', expectedVersion: null },
+    ]) {
+      expect(await service.identityAction(input)).toEqual({ ok: false, error: 'invalid_input' });
+    }
+    expect(crm.calls).toEqual([]);
+  });
+
+  it('forbids a viewer or reviewer without a request, and forwards every server reason', async () => {
+    for (const role of ['viewer', 'reviewer'] as const) {
+      const { service, crm } = fixture({ authority: as(role) });
+      expect(await service.identityAction(CONFIRM)).toEqual({ ok: false, error: 'forbidden' });
+      expect(crm.calls).toEqual([]);
+    }
+    const { service, crm } = fixture();
+    for (const reason of ['consent_required', 'outside_window', 'ask_limit', 'profile_ai_off', 'provider_rejected'] as const) {
+      crm.identityResult = { ok: false, error: 'rejected', reason };
+      expect(await service.identityAction({ leadId: LEAD_ID, action: 'ask_consent' })).toEqual({ ok: false, error: 'rejected', reason });
+    }
+  });
+
+  it('discards the answer when the account or workspace changes during the call', async () => {
+    const { service, crm, switchTo } = fixture();
+    crm.during = () => switchTo({ ...OWNER, workspaceId: WORKSPACE_B });
+    expect(await service.identityAction(CONFIRM)).toEqual({ ok: false, error: 'access_changed' });
+  });
+});
+
+describe('CustomerCareService.refreshIdentity (Care CRM S3)', () => {
+  it('runs for the live workspace and returns the identity with its outcome', async () => {
+    const { service, crm } = fixture();
+    expect(await service.refreshIdentity({ leadId: LEAD_ID })).toEqual({
+      ok: true, workspaceId: WORKSPACE_A, leadId: LEAD_ID, identity: IDENTITY, outcome: 'updated',
+    });
+    expect(crm.calls).toEqual([['refreshIdentity', WORKSPACE_A, LEAD_ID]]);
+  });
+
+  it('says when the next refresh may run, and forwards daily_cap and ai_unavailable', async () => {
+    const { service, crm } = fixture();
+    crm.refreshResult = { ok: true, value: { kind: 'too_soon', leadId: LEAD_ID, retryAfterSec: 420 } };
+    expect(await service.refreshIdentity({ leadId: LEAD_ID })).toEqual({
+      ok: false, error: 'refresh_too_soon', workspaceId: WORKSPACE_A, leadId: LEAD_ID, retryAfterSec: 420,
+    });
+    crm.refreshResult = { ok: false, error: 'rejected', reason: 'daily_cap' };
+    expect(await service.refreshIdentity({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'rejected', reason: 'daily_cap' });
+    crm.refreshResult = { ok: false, error: 'unavailable', reason: 'ai_unavailable' };
+    expect(await service.refreshIdentity({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'unavailable', reason: 'ai_unavailable' });
+  });
+
+  it('rejects invalid input and a viewer without a request', async () => {
+    const { service, crm } = fixture();
+    for (const input of [undefined, {}, { leadId: 'x' }, { leadId: LEAD_ID, workspaceId: WORKSPACE_B }]) {
+      expect(await service.refreshIdentity(input)).toEqual({ ok: false, error: 'invalid_input' });
+    }
+    expect(crm.calls).toEqual([]);
+    const viewer = fixture({ authority: as('viewer') });
+    expect(await viewer.service.refreshIdentity({ leadId: LEAD_ID })).toEqual({ ok: false, error: 'forbidden' });
+    expect(viewer.crm.calls).toEqual([]);
+  });
+});
+
 describe('CRM data stays out of SQLite, graph_nodes and the logger', () => {
   it('never writes the settings store, never asks for a Care graph refresh and never logs', async () => {
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const)
@@ -257,6 +388,20 @@ describe('CRM data stays out of SQLite, graph_nodes and the logger', () => {
     crm.saveCrmProfile = async () => { throw new Error(`${PHONE} ${NAME} ${NOTE}`); };
     await service.saveCrmProfile(SAVE);
     await service.saveCrmProfile({ ...SAVE, profile: { ...PROFILE, note: `bad\u0000${NOTE}` } });
+    // Care CRM S3: the identity card (ages, family quotes, consent) is never stored or logged either.
+    crm.listResult = { ok: true, value: { ...PAGE, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] } };
+    await service.listCrm({ cursor: null });
+    await service.identityAction(CONFIRM);
+    crm.identityResult = { ok: true, value: { kind: 'conflict', leadId: LEAD_ID, identity: IDENTITY } };
+    await service.identityAction(CONFIRM);
+    await service.identityAction({ ...CONFIRM, field: 'ageBand', action: 'correct', value: ['55+'] });
+    await service.refreshIdentity({ leadId: LEAD_ID });
+    crm.refreshResult = { ok: true, value: { kind: 'too_soon', leadId: LEAD_ID, retryAfterSec: 60 } };
+    await service.refreshIdentity({ leadId: LEAD_ID });
+    crm.identityAction = async () => { throw new Error(`${QUOTE} ${NAME}`); };
+    crm.refreshIdentity = async () => { throw new Error(`${QUOTE} ${PHONE}`); };
+    await service.identityAction(CONFIRM);
+    await service.refreshIdentity({ leadId: LEAD_ID });
     crm.during = () => switchTo(null);
     await service.listCrm({ cursor: null });
 

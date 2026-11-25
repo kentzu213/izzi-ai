@@ -173,6 +173,19 @@ interface SharedLinkView {
   field: CustomerCareCrmIdField<unknown>;
   domain: string;
   title: string;
+  /** The position in the server list, which a staff action names (a hidden link before it keeps its slot). */
+  index: number;
+}
+
+/**
+ * Social networks (backend 84c2523): any link there may lead to a person, so it is shown as its domain only, never
+ * with a title, whatever the title says. Every subdomain counts. A YouTube video keeps its title (only a channel
+ * link, which the server already sends without one, is a person's page).
+ */
+const SOCIAL_DOMAINS = ['facebook.com', 'fb.com', 'fb.me', 'fb.watch', 'm.me', 'instagram.com', 'threads.net', 'zalo.me', 'tiktok.com'];
+
+export function crmIsSocialDomain(domain: string): boolean {
+  return SOCIAL_DOMAINS.some((social) => domain === social || domain.endsWith(`.${social}`));
 }
 
 /** Links the customer shared, as a domain and a title only (never an address), at most three. */
@@ -180,13 +193,13 @@ function sharedLinksOf(identity: CustomerCareCrmIdentity | null | undefined): Sh
   const links = interestsOf(identity).sharedLinks;
   if (!Array.isArray(links)) return [];
   const shown: SharedLinkView[] = [];
-  for (const field of links as unknown[]) {
+  for (const [index, field] of (links as unknown[]).entries()) {
     if (!shownField(field) || typeof field.value !== 'object' || field.value === null) continue;
     const { domain, title } = field.value as Record<string, unknown>;
     const cleanDomain = typeof domain === 'string' ? safeLabel(domain).toLowerCase() : '';
-    const cleanTitle = typeof title === 'string' ? safeLabel(title) : '';
+    const cleanTitle = typeof title === 'string' && !crmIsSocialDomain(cleanDomain) ? safeLabel(title) : '';
     if (cleanDomain === '' && cleanTitle === '') continue;
-    shown.push({ field, domain: cleanDomain, title: cleanTitle });
+    shown.push({ field, domain: cleanDomain, title: cleanTitle, index });
     if (shown.length === MAX_SHARED_LINKS) break;
   }
   return shown;
@@ -361,8 +374,10 @@ export interface CrmIdentityLine {
   key: string;
   label: string;
   value: string;
-  /** The customer's own words; always present for `family`, which is hidden without one. */
+  /** A short evidence quote: the customer's own words first (always, and only, for `family`, hidden without one). */
   quote: string | null;
+  /** Who the quote is from when it is not the customer ("Shop", "izzi", ...); null for the customer's words. */
+  quoteBy: string | null;
   /** "AI" for a suggestion nobody reviewed yet; "Đã duyệt" once staff confirmed or corrected it. */
   badge: 'AI' | 'Đã duyệt';
   confidence: 'cao' | 'vừa';
@@ -385,14 +400,14 @@ const CONSENT_LABELS: Readonly<Record<CustomerCareCrmConsentState, string>> = {
   withdrawn: 'Từ chối',
 };
 
-const TIMELINE_LABELS: Readonly<Record<CustomerCareCrmTimeline, string>> = {
+export const TIMELINE_LABELS: Readonly<Record<CustomerCareCrmTimeline, string>> = {
   this_week: 'Trong tuần này',
   this_month: 'Trong tháng này',
   before_tet: 'Trước Tết',
   later: 'Chưa gấp',
 };
 
-const RECIPIENT_LABELS: Readonly<Record<CustomerCareCrmRecipient, string>> = {
+export const RECIPIENT_LABELS: Readonly<Record<CustomerCareCrmRecipient, string>> = {
   self: 'Mua cho mình',
   spouse: 'Mua cho vợ hoặc chồng',
   parents: 'Mua cho bố mẹ',
@@ -401,19 +416,44 @@ const RECIPIENT_LABELS: Readonly<Record<CustomerCareCrmRecipient, string>> = {
   gift: 'Mua làm quà',
 };
 
-const BUDGET_LABELS: Readonly<Record<CustomerCareCrmBudgetBand, string>> = {
+export const BUDGET_LABELS: Readonly<Record<CustomerCareCrmBudgetBand, string>> = {
   under_5m: 'Dưới 5 triệu',
   '5m_15m': '5–15 triệu',
   '15m_30m': '15–30 triệu',
   '30m_plus': 'Trên 30 triệu',
 };
 
-function line(key: string, label: string, field: CustomerCareCrmIdField<unknown>, value: string, quote: string | null = null): CrmIdentityLine {
+const QUOTE_SOURCES: Readonly<Record<Exclude<CustomerCareCrmIdField<unknown>['evidence'][number]['source'], 'customer'>, string>> = {
+  page: 'Shop',
+  izzi: 'izzi',
+  ad: 'Quảng cáo',
+  link: 'Liên kết',
+  note: 'Ghi chú',
+};
+
+/** The first quote of another source than the customer, cleaned, with who it is from. */
+function otherQuoteOf(field: CustomerCareCrmIdField<unknown>): { quote: string; by: string } | null {
+  if (!Array.isArray(field.evidence)) return null;
+  for (const evidence of field.evidence as unknown[]) {
+    if (typeof evidence !== 'object' || evidence === null) continue;
+    const { source, quote } = evidence as Record<string, unknown>;
+    if (typeof quote !== 'string' || !oneOf(Object.keys(QUOTE_SOURCES) as Array<keyof typeof QUOTE_SOURCES>, source)) continue;
+    const text = safeLabel(quote, QUOTE_MAX);
+    if (text !== '') return { quote: text, by: QUOTE_SOURCES[source] };
+  }
+  return null;
+}
+
+/** Family shows only the customer's words; any other field the customer's words first, else another quote. */
+function line(key: string, label: string, field: CustomerCareCrmIdField<unknown>, value: string): CrmIdentityLine {
+  const own = customerQuoteOf(field);
+  const other = own === null && key !== 'family' ? otherQuoteOf(field) : null;
   return {
     key,
     label,
     value,
-    quote,
+    quote: own ?? other?.quote ?? null,
+    quoteBy: other?.by ?? null,
     badge: field.status === 'suggested' ? 'AI' : 'Đã duyệt',
     confidence: field.confidence === 'high' ? 'cao' : 'vừa',
   };
@@ -470,7 +510,7 @@ function personLines(identity: CustomerCareCrmIdentity): CrmIdentityLine[] {
     const recipient = (family.value as Record<string, unknown>).recipient;
     const quote = customerQuoteOf(family);
     if (oneOf(CUSTOMER_CARE_CRM_RECIPIENTS, recipient) && quote !== null) {
-      lines.push(line('family', 'Gia đình', family, RECIPIENT_LABELS[recipient], quote));
+      lines.push(line('family', 'Gia đình', family, RECIPIENT_LABELS[recipient]));
     }
   }
   return lines;
@@ -497,10 +537,10 @@ function interestLines(identity: CustomerCareCrmIdentity): CrmIdentityLine[] {
   const lines: CrmIdentityLine[] = [];
   const ad = adTitleOf(identity);
   if (ad !== null) lines.push(line('adTitle', 'Quảng cáo', ad.field, ad.title));
-  sharedLinksOf(identity).forEach((shared, index) => {
+  for (const shared of sharedLinksOf(identity)) {
     const value = shared.title && shared.domain ? `${shared.title} · ${shared.domain}` : shared.domain || shared.title;
-    lines.push(line(`sharedLink:${index}`, 'Liên kết khách gửi', shared.field, value));
-  });
+    lines.push(line(`sharedLink:${shared.index}`, 'Liên kết khách gửi', shared.field, value));
+  }
   const budgetField = interestsOf(identity).budgetBand;
   const budget = shownEnum(budgetField, CUSTOMER_CARE_CRM_BUDGET_BANDS);
   if (budget !== null && shownField(budgetField)) lines.push(line('budgetBand', 'Ngân sách', budgetField, BUDGET_LABELS[budget]));
@@ -527,6 +567,15 @@ export function crmIdentityView(
     ],
     age: age !== null && identity.ageBand ? line('ageBand', 'Độ tuổi (ước tính)', identity.ageBand, age) : null,
   };
+}
+
+/** The AI occasion as a card line (with its badge and actions), only when staff left "Dịp mua" empty. */
+export function crmIdentityOccasionLine(row: CustomerCareCrmRow): CrmIdentityLine | null {
+  if (row.profile.occasion !== null) return null;
+  const field = row.identity?.occasion;
+  const value = shownEnum(field, CUSTOMER_CARE_CRM_OCCASIONS);
+  if (value === null || !field) return null;
+  return line('occasion', 'Dịp mua', field, CRM_OCCASION_OPTIONS.find((option) => option.value === value)?.label ?? value);
 }
 
 /**

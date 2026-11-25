@@ -199,18 +199,19 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect(afterSwitchBack).toContain('Chưa lưu');
   });
 
-  it('calls only the CRM routes the table already used', () => {
+  it('calls only the CRM routes: the table\'s, plus the two Care CRM S3 identity routes', () => {
     const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
-    expect([...calls].sort()).toEqual(['getSnapshot', 'listCrm', 'purgeLead', 'saveCrmProfile']);
+    expect([...calls].sort()).toEqual(['getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile']);
   });
 
-  it('keeps the customerCare IPC channels exactly as they were', () => {
+  it('keeps the customerCare IPC channels exactly as they were, plus the two Care CRM S3 identity channels', () => {
     const ipc = read('../../main/customer-care/customer-care-ipc.ts');
     const methods = ipc.slice(ipc.indexOf('const METHODS = ['), ipc.indexOf('] as const;')).match(/'(\w+)'/g);
     expect(methods).toEqual([
       "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'",
       "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
       "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
+      "'identityAction'", "'refreshIdentity'",
     ]);
   });
 
@@ -227,8 +228,11 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
   const renderer = [
     './CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
     './CustomerCrmGraph.tsx', './CustomerCrmGraphSlot.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
+    './CustomerCrmIdentity.tsx', './customer-crm-identity.ts',
   ];
-  const main = ['../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts'];
+  const main = [
+    '../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts', '../../main/customer-care/care-crm-identity.ts',
+  ];
 
   it('keeps the renderer CRM files free of storage, graph and logging APIs', () => {
     for (const file of renderer) {
@@ -246,6 +250,7 @@ describe('CRM data never reaches storage, graph nodes or the logger', () => {
       expect(source, file).not.toMatch(/node:fs|writeFile|appendFile|electron-store/);
     }
     expect(read(main[0])).not.toMatch(/console\./);
+    expect(read(main[2])).not.toMatch(/console\./);
     expect(read(main[1]).match(/console\.\w+/g)).toEqual(['console.warn']);
   });
 

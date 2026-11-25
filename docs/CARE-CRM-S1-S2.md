@@ -11,7 +11,9 @@ Related: `CARE-FACEBOOK-PHASE-B1-API.md` (the lead routes this builds on) and `C
 
 ## Non-goals (later slices)
 
-AI extraction; consent capture; hashed-phone or CSV export; remarketing queues; MyGraph segment nodes for the Director; purge by PSID for customers without a lead; retention past the lead's 90 days; keeping post or link attachments; graph filtering or grouping in the Memory tab. Age, marital status, religion and AI-inferred gender are never collected, in any slice.
+AI extraction; consent capture; hashed-phone or CSV export; remarketing queues; MyGraph segment nodes for the Director; purge by PSID for customers without a lead; retention past the lead's 90 days; keeping post or link attachments; graph filtering or grouping in the Memory tab. Marital status, religion, health and AI-inferred gender are never collected, in any slice.
+
+> **Superseded in part by Care CRM S3 (2026-11-25), see `CARE-CRM-S3-IDENTITY.md`:** AI extraction, consent capture and link capture are now built. S3 keeps an AI-estimated age band (never an exact age, always labelled "ước tính") and who a purchase is for, in the customer's own quoted words, and only after the customer agreed. There is still no gender, marital-status, religion or health field, and no profile is ever read.
 
 ## Fixed decisions
 

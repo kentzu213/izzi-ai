@@ -10,7 +10,9 @@ import {
   formatCrmDue,
   type CrmProductOption,
 } from './customer-crm-flow';
-import { CRM_STAGE_COLORS, crmCardOccasion, crmCustomerLabel, crmIdentityView, type CrmIdentityLine } from './customer-crm-graph';
+import { CRM_STAGE_COLORS, crmCardOccasion, crmCustomerLabel, crmIdentityOccasionLine } from './customer-crm-graph';
+import { crmIdentityPermissions } from './customer-crm-identity';
+import { CrmIdentityFieldActions, CustomerCrmIdentity, useCrmIdentityController, type CrmIdentityHandlers } from './CustomerCrmIdentity';
 
 export interface CustomerCrmCardProps {
   row: CustomerCareCrmRow;
@@ -23,26 +25,19 @@ export interface CustomerCrmCardProps {
   onClose: () => void;
   /** Focus moves here when the card opens. */
   cardRef?: Ref<HTMLElement>;
+  /** Care CRM S3 staff actions on the identity; absent shows the identity read-only. */
+  identityHandlers?: CrmIdentityHandlers | null;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
 
-/** Whether staff reviewed the value, and how sure the server is (low confidence is never shown). */
-function IdentityMarks({ line }: { line: CrmIdentityLine }) {
-  return (
-    <>
-      <span className={`v2-crm-card__badge${line.badge === 'AI' ? ' is-ai' : ' is-reviewed'}`}>{line.badge}</span>
-      <span className="v2-crm__meta">{`tin cậy ${line.confidence}`}</span>
-    </>
-  );
-}
-
 /**
- * "Thẻ nhận diện khách": the customer clicked in the graph, read-only, from the saved row the table shows.
- * Editing stays in the table ("Mở hồ sơ").
+ * "Thẻ nhận diện khách": the customer clicked in the graph, from the saved row the table shows. The staff profile
+ * is read-only here (editing stays in the table, "Mở hồ sơ"); the AI identity takes Duyệt / Sửa / Bỏ, the consent
+ * question and "Cập nhật hồ sơ".
  */
 export function CustomerCrmCard({
-  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef,
+  row, nowMs, assignees, products, onCopy, onOpenProfile, onClose, cardRef, identityHandlers = null,
 }: CustomerCrmCardProps) {
   const { profile } = row;
   const name = crmCustomerLabel(row);
@@ -52,8 +47,11 @@ export function CustomerCrmCard({
   const otherProducts = profile.productFactIds.length - known.length;
   // One "Dịp mua": the staff value, or the AI suggestion when staff left it empty.
   const occasion = crmCardOccasion(row);
-  const identity = crmIdentityView(row.identity, products);
-  const identityId = `crm-card-identity-${row.leadId}`;
+  // The AI occasion is acted on in that same row, through the controller the identity section uses.
+  const identityControl = useCrmIdentityController(row, identityHandlers);
+  const aiOccasion = crmIdentityOccasionLine(row);
+  const occasionActions = row.identity && aiOccasion
+    && crmIdentityPermissions(row.identity, identityHandlers?.enabled ?? null, identityHandlers !== null).fieldActions;
 
   return (
     <aside ref={cardRef} className="v2-crm-card" aria-labelledby={headingId} tabIndex={-1}>
@@ -114,6 +112,9 @@ export function CustomerCrmCard({
                 <span className={`v2-crm-card__badge${occasion.badge === 'AI gợi ý' ? ' is-ai' : ' is-reviewed'}`}>{occasion.badge}</span>
               )}
               {profile.neededBy !== null && <span className="v2-crm__meta">{` · cần trước ${formatCrmDay(profile.neededBy)}`}</span>}
+              {occasionActions && row.identity && aiOccasion && (
+                <CrmIdentityFieldActions row={row} identity={row.identity} line={aiOccasion} products={products} controller={identityControl} />
+              )}
             </dd>
           </div>
         )}
@@ -121,37 +122,7 @@ export function CustomerCrmCard({
 
       {crmRowReadOnly(row) && <p className="v2-crm__hint">Không đọc được chi tiết khách này.</p>}
 
-      {identity && (identity.consent !== null || identity.lines.length > 0 || identity.age !== null) && (
-        <section className="v2-crm-card__identity" aria-labelledby={identityId}>
-          <div className="v2-crm-card__identity-head">
-            <h4 id={identityId} className="v2-crm-card__section">Nhận diện</h4>
-            {identity.consent && (
-              <span className={`v2-crm-card__consent is-${identity.consent.tone}`}>
-                <span className="v2-visually-hidden">Xin phép lưu hồ sơ: </span>
-                {identity.consent.label}
-              </span>
-            )}
-          </div>
-          {identity.lines.length > 0 && (
-            <ul className="v2-crm-card__layers">
-              {identity.lines.map((line) => (
-                <li key={line.key}>
-                  <span className="v2-crm-card__layer-label">{line.label}</span>
-                  <span className="v2-crm-card__layer-value">{line.value}</span>
-                  <IdentityMarks line={line} />
-                  {line.quote && <q className="v2-crm-card__quote">{line.quote}</q>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {identity.age && (
-            <p className="v2-crm-card__age">
-              <span>{`${identity.age.label}: ${identity.age.value}`}</span>
-              <IdentityMarks line={identity.age} />
-            </p>
-          )}
-        </section>
-      )}
+      <CustomerCrmIdentity row={row} products={products} handlers={identityHandlers} showOccasion={false} controller={identityControl} />
 
       <div className="v2-crm-card__actions">
         <button type="button" className="v2-button v2-button--primary" onClick={onOpenProfile}>Mở hồ sơ</button>

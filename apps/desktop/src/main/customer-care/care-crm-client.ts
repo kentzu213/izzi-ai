@@ -1,5 +1,6 @@
 /**
- * Care CRM S2 client over IzziAPI `GET /crm` and `POST /crm/profile`, under the Care Facebook router.
+ * Care CRM S2 client over IzziAPI `GET /crm` and `POST /crm/profile`, under the Care Facebook router, plus the
+ * Care CRM S3 identity routes `POST /crm/identity` and `POST /crm/identity/refresh`.
  *
  * Mirrors `CareFacebookClient`: the Supabase access token is read inside main and referenced only in the
  * Authorization header; the origin comes from `resolveNativeMarketingBaseUrl` (reviewed https only). Every
@@ -14,7 +15,11 @@ import {
   type NativeMarketingClientOptions,
   type NativeMarketingTokenProvider,
 } from '../marketing/native-marketing-client';
-import type { CustomerCareCrmProfileInput, CustomerCareCrmSaveInput } from '../../shared/customer-care-types';
+import type {
+  CustomerCareCrmIdentityActionInput,
+  CustomerCareCrmProfileInput,
+  CustomerCareCrmSaveInput,
+} from '../../shared/customer-care-types';
 import {
   CARE_FACEBOOK_ROOT,
   careFacebookFailure,
@@ -31,6 +36,17 @@ import {
   type CareCrmPage,
   type CareCrmSaveOutcome,
 } from './care-crm';
+import {
+  CARE_CRM_IDENTITY_REFRESH_TIMEOUT_MS,
+  careCrmIdentityFailure,
+  careCrmIdentityRequestBody,
+  parseCareCrmIdentityActionBody,
+  parseCareCrmIdentityConflictBody,
+  parseCareCrmIdentityRefreshBody,
+  parseCareCrmRefreshTooSoonBody,
+  type CareCrmIdentityOutcome,
+  type CareCrmRefreshOutcome,
+} from './care-crm-identity';
 
 const INVALID_REQUEST: CareFacebookFailure = { ok: false, error: 'rejected', reason: 'invalid_request' };
 const INVALID_RESPONSE: CareFacebookFailure = { ok: false, error: 'invalid-response' };
@@ -42,6 +58,15 @@ const CONFLICT_STATUS = 409;
 const RATE_LIMIT_STATUS = 429;
 
 type CrmResponse = { ok: true; status: number; body: unknown } | CareFacebookFailure;
+
+/**
+ * `raw`: every answer with a status comes back to the caller (an unreadable error body as null), which maps it
+ * itself; the identity routes read 409 and 429 by `reason`. `timeoutMs` overrides the client's timeout.
+ */
+interface RequestOptions {
+  raw?: boolean;
+  timeoutMs?: number;
+}
 
 /** The 11 editable keys only: `updatedAt`, `updatedBy` or `detailsUnreadable` in a POST answer 400. */
 function editableProfile(profile: CustomerCareCrmProfileInput): CustomerCareCrmProfileInput {
@@ -80,11 +105,14 @@ export class CareCrmClient implements CareCrmGateway {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  /** GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`. */
+  /**
+   * GET /crm — one page of rows, newest phone first; `cursor` is the previous page's opaque `nextCursor`. Asks for
+   * the Care CRM S3 identity block; a server without S3 ignores the parameter and answers without it.
+   */
   async listCrm(workspaceId: string, cursor: string | null): Promise<CareFacebookResult<CareCrmPage>> {
     if (!isCareFacebookChoiceId(workspaceId) || (cursor !== null && !isCareLeadsCursor(cursor))) return INVALID_REQUEST;
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
-    const result = await this.request('crm', `/crm?workspaceId=${encodeURIComponent(workspaceId)}${query}`);
+    const result = await this.request('crm', `/crm?workspaceId=${encodeURIComponent(workspaceId)}&include=identity${query}`);
     if (!result.ok) return result;
     if (result.status === CONFLICT_STATUS) return INVALID_RESPONSE;
     const page = parseCareCrmListBody(result.body, workspaceId);
@@ -121,16 +149,64 @@ export class CareCrmClient implements CareCrmGateway {
   }
 
   /**
-   * One authed request. The token is attached here and nowhere else. A 2xx or a 409 hands back the parsed
-   * body for the caller's allowlist; any other status is reduced to a bounded failure.
+   * POST /crm/identity — Care CRM S3 confirm, correct, reject, ask_consent or withdraw_consent. The caller has
+   * already parsed `input`. A 409 `identity_conflict` returns the current identity; nothing was written.
    */
-  private async request(label: string, path: string, init: RequestInit = {}): Promise<CrmResponse> {
+  async identityAction(
+    workspaceId: string,
+    input: CustomerCareCrmIdentityActionInput,
+  ): Promise<CareFacebookResult<CareCrmIdentityOutcome>> {
+    if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(input.leadId)) return INVALID_REQUEST;
+    const { leadId } = input;
+    const result = await this.request('crm-identity', '/crm/identity', {
+      method: 'POST',
+      body: JSON.stringify(careCrmIdentityRequestBody(workspaceId, input)),
+    }, { raw: true });
+    if (!result.ok) return result;
+    if (result.status >= 200 && result.status < 300) {
+      const identity = parseCareCrmIdentityActionBody(result.body, workspaceId, leadId);
+      return identity ? { ok: true, value: { kind: 'applied', leadId, identity } } : INVALID_RESPONSE;
+    }
+    if (result.status === CONFLICT_STATUS && rejectReasonOf(result.body) === 'identity_conflict') {
+      const identity = parseCareCrmIdentityConflictBody(result.body, workspaceId, leadId);
+      return identity ? { ok: true, value: { kind: 'conflict', leadId, identity } } : INVALID_RESPONSE;
+    }
+    return careCrmIdentityFailure(result.status, result.body);
+  }
+
+  /**
+   * POST /crm/identity/refresh — one identity run now. The server runs the model synchronously (about 30 s at
+   * most), so this waits up to 45 s. A 429 `refresh_too_soon` carries when the next run may start.
+   */
+  async refreshIdentity(workspaceId: string, leadId: string): Promise<CareFacebookResult<CareCrmRefreshOutcome>> {
+    if (!isCareFacebookChoiceId(workspaceId) || !isCareFacebookChoiceId(leadId)) return INVALID_REQUEST;
+    const result = await this.request('crm-identity-refresh', '/crm/identity/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId, leadId }),
+    }, { raw: true, timeoutMs: Math.max(this.timeoutMs, CARE_CRM_IDENTITY_REFRESH_TIMEOUT_MS) });
+    if (!result.ok) return result;
+    if (result.status >= 200 && result.status < 300) {
+      const refreshed = parseCareCrmIdentityRefreshBody(result.body, workspaceId, leadId);
+      return refreshed ? { ok: true, value: { kind: 'refreshed', leadId, ...refreshed } } : INVALID_RESPONSE;
+    }
+    if (result.status === RATE_LIMIT_STATUS && rejectReasonOf(result.body) === 'refresh_too_soon') {
+      const retryAfterSec = parseCareCrmRefreshTooSoonBody(result.body);
+      return retryAfterSec === null ? INVALID_RESPONSE : { ok: true, value: { kind: 'too_soon', leadId, retryAfterSec } };
+    }
+    return careCrmIdentityFailure(result.status, result.body);
+  }
+
+  /**
+   * One authed request. The token is attached here and nowhere else. A 2xx or a 409 hands back the parsed
+   * body for the caller's allowlist; any other status is reduced to a bounded failure, unless `raw`.
+   */
+  private async request(label: string, path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<CrmResponse> {
     if (!this.baseUrl) return { ok: false, error: 'not_configured' };
     const token = await this.auth.getAccessToken().catch(() => null);
     if (!token) return { ok: false, error: 'auth' };
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? this.timeoutMs);
     try {
       const response = await this.fetchImpl(`${this.baseUrl}${CARE_FACEBOOK_ROOT}${path}`, {
         ...init,
@@ -150,6 +226,10 @@ export class CareCrmClient implements CareCrmGateway {
         readable = false;
       }
       if (!response.ok) logFailure(label, response.status);
+      if (options.raw) {
+        if (response.ok) return readable ? { ok: true, status: response.status, body } : INVALID_RESPONSE;
+        return { ok: true, status: response.status, body: readable ? body : null };
+      }
       // Read by status, so a 429 without `reason: "rate_limited"` is still the rate limit.
       if (response.status === RATE_LIMIT_STATUS) return RATE_LIMITED;
       // A chosen owner who left is a field to fix, not lost access (a viewer's 403 stays `forbidden`).
