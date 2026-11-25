@@ -316,4 +316,58 @@ describe('CustomerCareFacebookPage helpers', () => {
     expect(notice).toContain('Xưởng tranh đồng Đại Long (chưa được tích cấp quyền Tin nhắn trên Facebook)');
     expect(notice).toContain('Đồ đồng Đại Long (chưa được tích cấp quyền Tin nhắn trên Facebook)');
   });
+
+  it('renders the prominent async backfill progress bar while backfillJob is running and clears it when completed', () => {
+    const multiConnected: CustomerCarePageConnection = {
+      ...CONNECTED,
+      pageName: 'Đồng Thờ Hồng Hưng',
+      crmPages: [
+        { pageId: '631891669999823', pageName: 'Xưởng Tranh Đồng Đại Long Nam Định', verifiedAt: '2026-11-17T00:00:00.000Z' },
+        { pageId: '741891669999824', pageName: 'Đồ Đồng Đại Long', verifiedAt: '2026-11-17T00:00:00.000Z' },
+      ],
+    };
+    const runningHtml = render({
+      connection: multiConnected,
+      choices: null,
+      backfillJob: {
+        status: 'running',
+        startedAt: '2026-11-25T10:00:00.000Z',
+        updatedAt: '2026-11-25T10:00:12.000Z',
+        completedAt: null,
+        pagesTotal: 3,
+        pagesProcessed: 1,
+        conversationsScanned: 1840,
+        leadsImported: 504,
+        messagesStored: 1210,
+        namesSealed: 502,
+        skippedPages: [],
+      },
+    });
+    expect(runningHtml).toContain(
+      'Đang quét lịch sử 90 ngày (Page 2/3): đã quét 1840 hội thoại · trích xuất 504 khách có SĐT...',
+    );
+    expect(runningHtml).toContain('ccw__backfill-progress');
+    expect(button(runningHtml, 'Đồng bộ khách cũ \\(3 Page · 90 ngày\\)')).toMatch(/disabled/);
+
+    // Once completed, the progress bar disappears and the sync button is enabled again
+    const completedHtml = render({
+      connection: multiConnected,
+      choices: null,
+      backfillJob: {
+        status: 'completed',
+        startedAt: '2026-11-25T10:00:00.000Z',
+        updatedAt: '2026-11-25T10:00:45.000Z',
+        completedAt: '2026-11-25T10:00:45.000Z',
+        pagesTotal: 3,
+        pagesProcessed: 3,
+        conversationsScanned: 4256,
+        leadsImported: 831,
+        messagesStored: 2490,
+        namesSealed: 829,
+        skippedPages: [],
+      },
+    });
+    expect(completedHtml).not.toContain('ccw__backfill-progress');
+    expect(button(completedHtml, 'Đồng bộ khách cũ \\(3 Page · 90 ngày\\)')).not.toMatch(/disabled/);
+  });
 });

@@ -46,6 +46,8 @@ import {
 } from './care-crm-identity';
 
 export const CARE_CRM_PAGE_SIZE = 50;
+export const CARE_CRM_REQUEST_PAGE_SIZE = 100;
+export const CARE_CRM_MAX_PAGE_SIZE = 100;
 export const CARE_CRM_MAX_PRODUCTS = 8;
 export const CARE_CRM_MAX_NEXT_STEP = 200;
 export const CARE_CRM_MAX_NOTE = 1_000;
@@ -418,7 +420,7 @@ export function parseCareCrmListBody(body: unknown, workspaceId: string): CareCr
   if (!envelope || envelope.success !== true || envelope.workspaceId !== workspaceId) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_ROLES, envelope.role) || typeof envelope.canDelete !== 'boolean') return null;
   if (envelope.nextCursor !== null && !isCareLeadsCursor(envelope.nextCursor)) return null;
-  if (!Array.isArray(envelope.rows) || envelope.rows.length > CARE_CRM_PAGE_SIZE) return null;
+  if (!Array.isArray(envelope.rows) || envelope.rows.length > CARE_CRM_MAX_PAGE_SIZE) return null;
   const withIdentity = typeof envelope.identityEnabled === 'boolean';
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();

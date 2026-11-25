@@ -147,6 +147,14 @@
   min-width: 0;
 }
 
+.izzi-v2 .v2-crm__table-col {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+}
+
 /* The wrap is the size container, so an open editor can match the visible width while the table scrolls. */
 .izzi-v2 .v2-crm__table-wrap {
   flex: 1 1 0%;
@@ -156,6 +164,27 @@
   border: 1px solid var(--v2-border-default);
   border-radius: var(--v2-radius-card);
   background: var(--v2-bg-panel);
+}
+
+.izzi-v2 .v2-crm__render-pager,
+.izzi-v2 .v2-crm__partial-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+  padding: var(--v2-space-2) var(--v2-space-3);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-control);
+  background: var(--v2-bg-subtle);
+}
+
+.izzi-v2 .v2-crm__partial-warning {
+  border-color: color-mix(in srgb, var(--v2-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--v2-warning) 10%, var(--v2-bg-panel));
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
 }
 
 .izzi-v2 .v2-crm__table {

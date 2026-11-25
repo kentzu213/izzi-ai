@@ -7,8 +7,11 @@ import type {
 } from '../../shared/customer-care-types';
 import { facebookErrorMessage } from './CustomerCareFacebookPage';
 import {
+  CARE_BACKFILL_POLL_MS,
   CARE_FACEBOOK_WAIT_MS,
   INITIAL_PAGE_FLOW,
+  backfillPollStep,
+  formatBackfillProgressText,
   isSaveDisabled,
   pageFlowOnActionResult,
   pageFlowOnChoices,
@@ -207,6 +210,75 @@ describe('Care Page flow: select and disconnect results', () => {
     expect(step.snapshot).toBeUndefined();
     expect(step.error).toContain('không khớp workspace');
     expect(step.flow.busy).toBe(false);
+  });
+
+  it('closes PagePicker immediately when backfillJob is running, updates progress on 2.5s polls, and emits final summary on completion or failure', () => {
+    expect(CARE_BACKFILL_POLL_MS).toBe(2_500);
+    const runningJob = {
+      status: 'running' as const,
+      startedAt: '2026-11-25T10:00:00.000Z',
+      updatedAt: '2026-11-25T10:00:02.000Z',
+      completedAt: null,
+      pagesTotal: 3,
+      pagesProcessed: 0,
+      conversationsScanned: 120,
+      leadsImported: 32,
+      messagesStored: 90,
+      namesSealed: 31,
+      skippedPages: [],
+    };
+    const started = pageFlowOnActionResult(busyWithChoices(), {
+      ok: true,
+      snapshot: snapshot(),
+      backfill: { pagesProcessed: 0, conversationsScanned: 0, leadsImported: 0, messagesStored: 0, namesSealed: 0 },
+      backfillJob: runningJob,
+    }, WORKSPACE, '');
+    expect(started.flow).toEqual(INITIAL_PAGE_FLOW);
+    expect(started.flow.choices).toBeNull();
+    expect(started.notice).toBe('');
+    expect(started.snapshot?.backfillJob).toEqual(runningJob);
+    expect(formatBackfillProgressText(runningJob)).toBe(
+      'Đang quét lịch sử 90 ngày (Page 1/3): đã quét 120 hội thoại · trích xuất 32 khách có SĐT...',
+    );
+
+    const midPoll = backfillPollStep(started.snapshot!, {
+      ...runningJob,
+      pagesProcessed: 2,
+      conversationsScanned: 3100,
+      leadsImported: 804,
+    });
+    expect(midPoll.completed).toBe(false);
+    expect(formatBackfillProgressText(midPoll.snapshot!.backfillJob!)).toBe(
+      'Đang quét lịch sử 90 ngày (Page 3/3): đã quét 3100 hội thoại · trích xuất 804 khách có SĐT...',
+    );
+
+    const donePoll = backfillPollStep(midPoll.snapshot!, {
+      ...runningJob,
+      status: 'completed',
+      completedAt: '2026-11-25T10:00:45.000Z',
+      pagesProcessed: 3,
+      conversationsScanned: 4256,
+      leadsImported: 831,
+      messagesStored: 2400,
+      namesSealed: 829,
+      skippedPages: [{ pageId: '741891669999824', pageName: 'Đồ Đồng Đại Long', reason: 'provider_error' }],
+    });
+    expect(donePoll.completed).toBe(true);
+    expect(donePoll.snapshot?.backfillJob).toBeUndefined();
+    expect(donePoll.noticeTone).toBe('warning');
+    expect(donePoll.notice).toContain('Đã đồng bộ 3 Page (quét 4256 hội thoại): cập nhật 831 khách có SĐT');
+    expect(donePoll.notice).toContain('Đồ Đồng Đại Long (lỗi tạm thời từ Facebook)');
+
+    const failedPoll = backfillPollStep(started.snapshot!, {
+      ...runningJob,
+      status: 'failed',
+      completedAt: '2026-11-25T10:00:30.000Z',
+      conversationsScanned: 900,
+      leadsImported: 157,
+    });
+    expect(failedPoll.completed).toBe(true);
+    expect(failedPoll.snapshot?.backfillJob).toBeUndefined();
+    expect(failedPoll.error).toContain('157 khách có SĐT');
   });
 });
 

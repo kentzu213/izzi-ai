@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CustomerCareCrmProfileInput } from '../../shared/customer-care-types';
 import {
+  CARE_CRM_MAX_PAGE_SIZE,
   CARE_CRM_MAX_PRODUCTS,
   canUseCareCrm,
   copyCareCrmRow,
@@ -329,7 +330,7 @@ describe('parseCareCrmRow and the list answer', () => {
     ['another workspace', { ...LIST_BODY, workspaceId: OTHER_WORKSPACE }],
     ['an unknown role', { ...LIST_BODY, role: 'viewer' }],
     ['a canDelete that is not boolean', { ...LIST_BODY, canDelete: 'yes' }],
-    ['more than 50 rows', { ...LIST_BODY, rows: Array.from({ length: 51 }, () => ROW) }],
+    ['more than 100 rows', { ...LIST_BODY, rows: Array.from({ length: CARE_CRM_MAX_PAGE_SIZE + 1 }, () => ROW) }],
     ['a duplicated lead', { ...LIST_BODY, rows: [ROW, ROW] }],
     ['one invalid row', { ...LIST_BODY, rows: [ROW, { ...ROW, leadId: LEAD_ID_2, phone: '12345' }] }],
     ['a bad cursor', { ...LIST_BODY, nextCursor: 'has space' }],
@@ -361,6 +362,22 @@ describe('parseCareCrmRow and the list answer', () => {
     }, WORKSPACE);
     expect(s3WithPages?.identityEnabled).toBe(false);
     expect(s3WithPages?.pages).toEqual([{ pageId: '105252511858057', pageName: 'Xưởng tranh đồng Đại Long' }]);
+  });
+
+  it('accepts a full 100-row page (limit=100) and rejects 101 unique rows', () => {
+    const hundredRows = Array.from({ length: 100 }, (_, idx) => ({
+      ...ROW,
+      leadId: `44444444-4444-4444-8444-44444444${String(1000 + idx)}`,
+      phone: `090123${String(1000 + idx)}`,
+    }));
+    const okPage = parseCareCrmListBody({ ...LIST_BODY, rows: hundredRows }, WORKSPACE);
+    expect(okPage?.rows).toHaveLength(100);
+
+    const tooManyRows = [
+      ...hundredRows,
+      { ...ROW, leadId: '44444444-4444-4444-8444-444444442999', phone: '0901239999' },
+    ];
+    expect(parseCareCrmListBody({ ...LIST_BODY, rows: tooManyRows }, WORKSPACE)).toBeNull();
   });
 });
 

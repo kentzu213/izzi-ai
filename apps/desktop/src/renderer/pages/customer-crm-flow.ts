@@ -32,8 +32,10 @@ import {
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
 export const CRM_REFRESH_MS = 60_000;
-/** 10 pages of 50: the newest 500 customers. */
-export const CRM_MAX_PAGES = 10;
+/** 50 pages of up to 100: the newest 5,000 customers. */
+export const CRM_MAX_PAGES = 50;
+/** Default DOM batch size in table and card lists so 5,000 loaded customers render at 60fps. */
+export const PAGE_RENDER_STEP = 100;
 /** The server allows 30 requests a minute per user, so a save waits for a pause in typing. */
 export const CRM_SAVE_DEBOUNCE_MS = 1_500;
 export const CRM_MAX_PRODUCTS = 8;
@@ -190,29 +192,72 @@ export function crmPageShortId(pageId: string): string {
   return pageId.length > 6 ? `…${pageId.slice(-6)}` : pageId;
 }
 
-/** Fallback Page source derived from the workspace snapshot when `GET /crm` did not return `pages`. */
-export function snapshotPageFallback(
-  snapshot: Pick<CustomerCareSnapshot, 'setup' | 'pageConnection'> | null | undefined,
-): CustomerCareCrmPageSource | null {
-  if (!snapshot) return null;
+/** Merges Page sources across `GET /crm` pages, previous loads and the workspace snapshot, upgrading null names. */
+export function mergeCrmPageSources(
+  ...lists: ReadonlyArray<readonly CustomerCareCrmPageSource[] | undefined>
+): CustomerCareCrmPageSource[] {
+  const byId = new Map<string, string | null>();
+  const order: string[] = [];
+  for (const list of lists) {
+    if (!list) continue;
+    for (const item of list) {
+      const pageId = item.pageId.trim();
+      if (!pageId) continue;
+      const cleanName = item.pageName?.trim() || null;
+      if (!byId.has(pageId)) {
+        order.push(pageId);
+        byId.set(pageId, cleanName);
+      } else if (byId.get(pageId) === null && cleanName !== null) {
+        byId.set(pageId, cleanName);
+      }
+    }
+  }
+  return order.map((pageId) => ({ pageId, pageName: byId.get(pageId) ?? null }));
+}
+
+/** All verified Page sources (primary + secondary CRM-synced Pages) known from the workspace snapshot. */
+export function snapshotPageSources(
+  snapshot: (Pick<CustomerCareSnapshot, 'setup' | 'pageConnection'> & Partial<Pick<CustomerCareSnapshot, 'crmPages'>>) | null | undefined,
+): CustomerCareCrmPageSource[] {
+  if (!snapshot) return [];
+  const raw: CustomerCareCrmPageSource[] = [];
   if (snapshot.pageConnection.state === 'connected') {
     const connName = snapshot.pageConnection.pageName?.trim() || null;
     const setupMatch = snapshot.setup?.pageId === snapshot.pageConnection.pageId
       ? snapshot.setup.pageName.trim() || null
       : null;
-    return {
+    raw.push({
       pageId: snapshot.pageConnection.pageId,
       pageName: connName ?? setupMatch,
-    };
+    });
+    if (snapshot.pageConnection.crmPages) {
+      for (const page of snapshot.pageConnection.crmPages) {
+        raw.push({ pageId: page.pageId, pageName: page.pageName?.trim() || null });
+      }
+    }
   }
-  const setupPageId = snapshot.setup?.pageId.trim() ?? '';
-  if (setupPageId) {
-    return {
-      pageId: setupPageId,
-      pageName: snapshot.setup?.pageName.trim() || null,
-    };
+  if (snapshot.crmPages) {
+    for (const page of snapshot.crmPages) {
+      raw.push({ pageId: page.pageId, pageName: page.pageName?.trim() || null });
+    }
   }
-  return null;
+  if (raw.length === 0) {
+    const setupPageId = snapshot.setup?.pageId.trim() ?? '';
+    if (setupPageId) {
+      raw.push({
+        pageId: setupPageId,
+        pageName: snapshot.setup?.pageName.trim() || null,
+      });
+    }
+  }
+  return mergeCrmPageSources(raw);
+}
+
+/** Fallback Page source derived from the workspace snapshot when `GET /crm` did not return `pages`. */
+export function snapshotPageFallback(
+  snapshot: (Pick<CustomerCareSnapshot, 'setup' | 'pageConnection'> & Partial<Pick<CustomerCareSnapshot, 'crmPages'>>) | null | undefined,
+): CustomerCareCrmPageSource | null {
+  return snapshotPageSources(snapshot)[0] ?? null;
 }
 
 /** Resolves a human-friendly Page label (`Đồng Thờ Hồng Hưng`, `Xưởng tranh đồng Đại Long`, or `Page …58057`). */
@@ -231,7 +276,7 @@ export function resolveCrmPageLabel(
   return `Page ${crmPageShortId(pageId)}`;
 }
 
-/** Builds Page filter options from loaded rows and `GET /crm?include=identity,pages` sources. */
+/** Builds Page filter options from loaded rows, `GET /crm?include=identity,pages` sources, and workspace snapshot Pages. */
 export function crmPageOptions(
   rows: readonly CustomerCareCrmRow[],
   sources: readonly CustomerCareCrmPageSource[],
@@ -255,11 +300,29 @@ export function crmPageOptions(
       orderedIds.push(pageId);
     }
   }
+  if (fallback && !seen.has(fallback.pageId) && orderedIds.length > 0) {
+    seen.add(fallback.pageId);
+    orderedIds.push(fallback.pageId);
+  }
   return orderedIds.map((pageId) => ({
     pageId,
     label: resolveCrmPageLabel(pageId, sources, fallback),
     count: counts.get(pageId) ?? 0,
   }));
+}
+
+/** Bounded DOM slice count (>= `PAGE_RENDER_STEP`), automatically expanded if a Drawer-pinned row sits past the limit. */
+export function effectiveCrmRenderLimit(
+  totalCount: number,
+  renderLimit: number,
+  pinnedIndex = -1,
+): number {
+  if (totalCount <= 0) return 0;
+  const base = Math.max(PAGE_RENDER_STEP, renderLimit);
+  const requiredForPinned = pinnedIndex >= 0
+    ? Math.ceil((pinnedIndex + 1) / PAGE_RENDER_STEP) * PAGE_RENDER_STEP
+    : base;
+  return Math.min(totalCount, Math.max(base, requiredForPinned));
 }
 
 function foldCrmSearch(text: string): string {
@@ -676,6 +739,21 @@ export function crmRowsOnFirstPage(
   return [...fresh, ...rest];
 }
 
+/**
+ * True when a periodic `page1` read has `nextCursor !== null` (`!complete`) and does not overlap `current` at all
+ * (e.g. a multi-Page backfill just imported >100 leads), so pages 2..N must be loaded to avoid a gap.
+ */
+export function crmPage1NeedsFullReload(
+  current: readonly CustomerCareCrmRow[],
+  page1Rows: readonly CustomerCareCrmRow[],
+  complete: boolean,
+): boolean {
+  if (complete || page1Rows.length === 0) return false;
+  if (current.length === 0) return true;
+  const known = new Set(current.map((row) => row.leadId));
+  return page1Rows.every((row) => !known.has(row.leadId));
+}
+
 export function crmRowsOnSaved(rows: readonly CustomerCareCrmRow[], saved: CustomerCareCrmRow): CustomerCareCrmRow[] {
   return rows.map((row) => (row.leadId === saved.leadId ? saved : row));
 }
@@ -709,8 +787,10 @@ export type CrmLoadResult =
     pages: number;
     /** The last page was reached (no cursor left). */
     complete: boolean;
-    /** The page cap of this load was hit with pages left; for a full load, only the newest 500 are shown. */
+    /** The page cap of this load was hit with pages left, or a later page failed transiently; for a full load, at most 5,000 are shown. */
     truncated: boolean;
+    /** Set when page 1 succeeded and a later page (`page > 0`) hit a transient failure; rows already loaded are preserved. */
+    partialFailure?: CustomerCareFacebookFailure;
     /** Care CRM S3, from the first page: the AI profile is on; null when the server sent no identity. */
     identityEnabled: boolean | null;
     /** Care CRM S3: some page was read without its identity (the identity read failed). */
@@ -721,25 +801,33 @@ export type CrmLoadResult =
   | CustomerCareFacebookFailure;
 
 /**
- * Reads up to `maxPages` pages; one failed page, or a page for another workspace, fails the whole load.
+ * Reads up to `maxPages` pages (`50 * 100 = 5,000` customers). Page 1 failure, lost access (`auth` / `forbidden` /
+ * `access_changed`), or a page for another workspace fails the whole load. When `strictAllPages` is not set, a
+ * transient failure on `page > 0` keeps the rows already loaded and marks `truncated: true` + `partialFailure`.
  * `retryIdentity` ("Làm mới"): main tries the identity read again on the first page even while it is paused.
  */
 export async function loadCrmPages(
   list: (input: CustomerCareCrmListInput) => Promise<CustomerCareCrmListResult>,
   maxPages: number = CRM_MAX_PAGES,
-  options: { retryIdentity?: boolean } = {},
+  options: { retryIdentity?: boolean; strictAllPages?: boolean } = {},
 ): Promise<CrmLoadResult> {
   let cursor: string | null = null;
   let first: Extract<CustomerCareCrmListResult, { ok: true }> | null = null;
   let pages = 0;
   let identityUnavailable = false;
+  let partialFailure: CustomerCareFacebookFailure | undefined;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
   const pageSources: CustomerCareCrmPageSource[] = [];
   const seenPages = new Set<string>();
   for (let page = 0; page < maxPages; page += 1) {
     const result = await list(page === 0 && options.retryIdentity ? { cursor: null, retryIdentity: true } : { cursor });
-    if (!result.ok) return result;
+    if (!result.ok) {
+      const accessLost = result.error === 'auth' || result.error === 'forbidden' || result.error === 'access_changed';
+      if (page === 0 || accessLost || options.strictAllPages === true) return result;
+      partialFailure = result;
+      break;
+    }
     pages += 1;
     identityUnavailable ||= result.identityUnavailable;
     if (first && result.workspaceId !== first.workspaceId) return { ok: false, error: 'access_changed' };
@@ -770,8 +858,9 @@ export async function loadCrmPages(
     assignees: first.assignees,
     pageSources,
     pages,
-    complete: cursor === null,
-    truncated: cursor !== null && pages >= maxPages,
+    complete: cursor === null && !partialFailure,
+    truncated: Boolean(partialFailure) || (cursor !== null && pages >= maxPages),
+    ...(partialFailure ? { partialFailure } : {}),
     identityEnabled: first.identityEnabled,
     identityUnavailable,
     consentAsk: first.consentAsk,

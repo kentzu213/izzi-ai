@@ -72,6 +72,8 @@ export interface CustomerCareSnapshot {
   pageConnection: CustomerCarePageConnection;
   /** Secondary CRM-synced Pages when verified on the backend. */
   crmPages?: CustomerCareCrmSyncedPage[];
+  /** Active async 90-day backfill job when running in this workspace. */
+  backfillJob?: CustomerCareBackfillJobSnapshot;
   /** Display hint only: whether the caller's role may connect, select or disconnect the Page. Main re-checks. */
   canManagePage: boolean;
   mode: 'shadow';
@@ -185,6 +187,29 @@ export interface CustomerCareBackfillSkippedPage {
   reason: CustomerCareBackfillSkipReason;
 }
 
+export const CUSTOMER_CARE_BACKFILL_JOB_STATUSES = [
+  'idle',
+  'running',
+  'completed',
+  'failed',
+] as const;
+export type CustomerCareBackfillJobStatus = (typeof CUSTOMER_CARE_BACKFILL_JOB_STATUSES)[number];
+
+/** Async 90-day Messenger backfill progress snapshot (`GET /backfill` & `POST /select|/backfill` v3, exact 11 keys). */
+export interface CustomerCareBackfillJobSnapshot {
+  status: CustomerCareBackfillJobStatus;
+  startedAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  pagesTotal: number;
+  pagesProcessed: number;
+  conversationsScanned: number;
+  leadsImported: number;
+  messagesStored: number;
+  namesSealed: number;
+  skippedPages: CustomerCareBackfillSkippedPage[];
+}
+
 /** Summary returned after backfilling recent Messenger history (up to 90 days) from one or more Pages into CRM. */
 export interface CustomerCareBackfillSummary {
   pagesProcessed: number;
@@ -196,7 +221,16 @@ export interface CustomerCareBackfillSummary {
 }
 
 export type CustomerCareSelectPageResult =
-  | { ok: true; snapshot: CustomerCareSnapshot; backfill?: CustomerCareBackfillSummary }
+  | {
+    ok: true;
+    snapshot: CustomerCareSnapshot;
+    backfill?: CustomerCareBackfillSummary;
+    backfillJob?: CustomerCareBackfillJobSnapshot;
+  }
+  | CustomerCareFacebookFailure;
+
+export type CustomerCareBackfillStatusResult =
+  | { ok: true; workspaceId: string; job: CustomerCareBackfillJobSnapshot }
   | CustomerCareFacebookFailure;
 
 export type CustomerCareFacebookActionResult = CustomerCareSelectPageResult;

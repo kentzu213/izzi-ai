@@ -440,6 +440,7 @@ describe('CareFacebookClient strict response parsing', () => {
       backfillPageIds: [PAGE, page2, page3],
       importOnly: true,
       includeCrmPages: true,
+      async: true,
     });
 
     // Also accepts 4-key response without crmPages for backwards compatibility
@@ -501,7 +502,7 @@ describe('CareFacebookClient strict response parsing', () => {
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${ROOT}/backfill`);
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE, includeCrmPages: true });
+    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE, includeCrmPages: true, async: true });
 
     // 3-key backward-compatible envelope
     const threeKey = client(json({ success: true, workspaceId: WORKSPACE, backfill }));
@@ -511,5 +512,118 @@ describe('CareFacebookClient strict response parsing', () => {
       .toEqual({ ok: false, error: 'rejected', reason: 'invalid_request' });
     expect(await client(json({ success: true, workspaceId: WORKSPACE, backfill: { ...backfill, extra: 1 } })).instance.backfillBoundPage(WORKSPACE))
       .toEqual({ ok: false, error: 'invalid-response' });
+  });
+
+  it('supports Contract v3 async backfillJob on POST /select, POST /backfill, GET /backfill, and legacy 400 fallback', async () => {
+    const runningJob = {
+      status: 'running' as const,
+      startedAt: ISO,
+      updatedAt: ISO,
+      completedAt: null,
+      pagesTotal: 3,
+      pagesProcessed: 1,
+      conversationsScanned: 512,
+      leadsImported: 157,
+      messagesStored: 410,
+      namesSealed: 155,
+      skippedPages: [],
+    };
+    const completedJob = {
+      status: 'completed' as const,
+      startedAt: ISO,
+      updatedAt: ISO,
+      completedAt: ISO,
+      pagesTotal: 3,
+      pagesProcessed: 3,
+      conversationsScanned: 4256,
+      leadsImported: 831,
+      messagesStored: 2180,
+      namesSealed: 829,
+      skippedPages: [
+        { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', reason: 'provider_error' as const },
+      ],
+    };
+    const crmPages = [
+      { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long Nam Định', verifiedAt: ISO },
+      { pageId: '741891669999824', pageName: 'Đồ Đồng Đại Long', verifiedAt: ISO },
+    ];
+    const zeroBackfill = { pagesProcessed: 0, conversationsScanned: 0, leadsImported: 0, messagesStored: 0, namesSealed: 0 };
+
+    // 6-key v3 POST /select response with backfillJob
+    const selectV3 = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      connection: CONNECTION,
+      backfill: zeroBackfill,
+      crmPages,
+      backfillJob: runningJob,
+    }));
+    expect(await selectV3.instance.selectPage(WORKSPACE, CHOICE, PAGE, {
+      backfillPageIds: [PAGE, '631891669999823', '741891669999824'],
+      importOnly: true,
+    })).toEqual({
+      ok: true,
+      value: { connection: CONNECTION, backfill: zeroBackfill, crmPages, backfillJob: runningJob },
+    });
+
+    // 5-key v3 POST /backfill response with backfillJob
+    const backfillV3 = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      backfill: zeroBackfill,
+      crmPages,
+      backfillJob: runningJob,
+    }));
+    expect(await backfillV3.instance.backfillBoundPage(WORKSPACE)).toEqual({
+      ok: true,
+      value: { ...zeroBackfill, crmPages, backfillJob: runningJob },
+    });
+
+    // 3-key v3 GET /backfill polling response
+    const pollV3 = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      job: completedJob,
+    }));
+    expect(await pollV3.instance.getBackfillStatus(WORKSPACE)).toEqual({ ok: true, value: completedJob });
+    expect(pollV3.fetchImpl.mock.calls[0][0]).toBe(`${ROOT}/backfill?workspaceId=${WORKSPACE}`);
+    expect((pollV3.fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].method ?? 'GET').toBe('GET');
+
+    // Rejects malformed GET /backfill inputs or extra/invalid keys
+    expect(await pollV3.instance.getBackfillStatus('bad-uuid')).toEqual({
+      ok: false,
+      error: 'rejected',
+      reason: 'invalid_request',
+    });
+    expect(await client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      job: { ...completedJob, rawToken: 'EAAB' },
+    })).instance.getBackfillStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
+    expect(await client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      job: { ...completedJob, status: 'queued' },
+    })).instance.getBackfillStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
+    expect(await client(json({
+      success: true,
+      workspaceId: OTHER_WORKSPACE,
+      job: completedJob,
+    })).instance.getBackfillStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
+
+    // Legacy pre-v3 server rejecting async: true with 400 invalid_request falls back cleanly without async: true
+    const legacyBackfillFetch = vi.fn()
+      .mockResolvedValueOnce(json({ success: false, error: 'Unknown key async', reason: 'invalid_request' }, 400))
+      .mockResolvedValueOnce(json({ success: true, workspaceId: WORKSPACE, backfill: zeroBackfill, crmPages }));
+    const legacyBackfillClient = new CareFacebookClient(tokens(), { fetchImpl: legacyBackfillFetch as unknown as typeof fetch });
+    expect(await legacyBackfillClient.backfillBoundPage(WORKSPACE)).toEqual({
+      ok: true,
+      value: { ...zeroBackfill, crmPages },
+    });
+    expect(legacyBackfillFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String((legacyBackfillFetch.mock.calls[1] as unknown as [string, RequestInit])[1].body))).toEqual({
+      workspaceId: WORKSPACE,
+      includeCrmPages: true,
+    });
   });
 });

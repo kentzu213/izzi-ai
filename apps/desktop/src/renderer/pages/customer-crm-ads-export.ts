@@ -1,5 +1,5 @@
 /**
- * "Xuất CSV" (Ads): the file is built from a fresh full read with identity, never from the rows on screen. Pages 2–10
+ * "Xuất CSV" (Ads): the file is built from a fresh full read with identity, never from the rows on screen. Pages 2–50
  * on screen keep the identities of the last full load, so a customer who refused since then would still look eligible
  * there. Unsaved drafts can only withhold a customer.
  */
@@ -41,8 +41,8 @@ export async function crmFreshAdsExport(
 ): Promise<CrmAdsExportOutcome> {
   let loaded: Awaited<ReturnType<typeof loadCrmPages>>;
   try {
-    // `retryIdentity`: main reads the identity even while it paused it after a failure.
-    loaded = await loadCrmPages(list, CRM_MAX_PAGES, { retryIdentity: true });
+    // `retryIdentity` + `strictAllPages`: main reads every page's latest identity and fails closed if any page fails.
+    loaded = await loadCrmPages(list, CRM_MAX_PAGES, { retryIdentity: true, strictAllPages: true });
   } catch {
     return { ok: false, message: CRM_EXPORT_REREAD_FAILED };
   }

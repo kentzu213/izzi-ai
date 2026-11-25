@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   CustomerCareAssistInput,
   CustomerCareAssistResult,
+  CustomerCareBackfillStatusResult,
   CustomerCareFact,
   CustomerCareFacebookActionResult,
   CustomerCareFacebookChoicesEvent,
@@ -22,7 +23,10 @@ import { CustomerCareLeadsPanel } from './CustomerCareLeadsPanel';
 import { CustomerCareAutoReplyPanel } from './CustomerCareAutoReplyPanel';
 import { autoReplyScriptNotice } from './customer-care-auto-reply-flow';
 import {
+  CARE_BACKFILL_POLL_MS,
+  CRM_BACKFILL_UPDATED_EVENT,
   INITIAL_PAGE_FLOW,
+  backfillPollStep,
   isSaveDisabled,
   pageFlowOnActionResult,
   pageFlowOnChoices,
@@ -42,6 +46,7 @@ type CustomerCareApi = {
   assist: (input: CustomerCareAssistInput) => Promise<CustomerCareAssistResult>;
   connectFacebookPage: () => Promise<CustomerCareFacebookConnectResult>;
   selectFacebookPage: (input: CustomerCareFacebookSelectInput) => Promise<CustomerCareFacebookActionResult>;
+  getBackfillStatus?: () => Promise<CustomerCareBackfillStatusResult>;
   disconnectFacebookPage: () => Promise<CustomerCareFacebookActionResult>;
   takeFacebookPageChoices: () => Promise<CustomerCareFacebookChoicesEvent | null>;
   onFacebookPageChoices: (listener: (event: CustomerCareFacebookChoicesEvent) => void) => () => void;
@@ -73,6 +78,12 @@ function getCustomerCareApi(): CustomerCareApi | null {
     customerCare?: CustomerCareApi;
   };
   return electronApi.customerCare ?? null;
+}
+
+function notifyCrmBackfillUpdated(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(CRM_BACKFILL_UPDATED_EVENT));
+  }
 }
 
 export function publicError(reason: unknown, fallback: string): string {
@@ -148,6 +159,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   // Mirrors pageFlow and snapshot so async callbacks and the IPC listener always transition from the latest state.
   const pageFlowRef = useRef<CarePageFlowState>(INITIAL_PAGE_FLOW);
   const snapshotRef = useRef<CustomerCareSnapshot | null>(null);
+  const lastPolledLeadsRef = useRef(0);
   const operationRef = useRef(0);
   const shadowSafe = snapshot?.mode === 'shadow' && snapshot.outboundEnabled === false;
 
@@ -275,6 +287,61 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     return () => clearTimeout(timer);
   }, [pageFlow.waitingUntil, applyPageStep]);
 
+  const backfillRunning = snapshot?.backfillJob?.status === 'running';
+  useEffect(() => {
+    if (!backfillRunning) {
+      lastPolledLeadsRef.current = 0;
+      return undefined;
+    }
+    const api = getCustomerCareApi();
+    if (!api?.getBackfillStatus) return undefined;
+    lastPolledLeadsRef.current = snapshotRef.current?.backfillJob?.leadsImported ?? 0;
+    let active = true;
+    let inFlight = false;
+    const poll = async () => {
+      if (!active || inFlight) return;
+      inFlight = true;
+      try {
+        const res = await api.getBackfillStatus!();
+        if (!active) return;
+        if (!res.ok) {
+          if (res.error === 'auth' || res.error === 'forbidden' || res.error === 'access_changed') {
+            const current = snapshotRef.current;
+            if (current) {
+              const { backfillJob: _cleared, ...clean } = current;
+              snapshotRef.current = clean;
+              setSnapshot(clean);
+            }
+            setError(facebookErrorMessage(res.error, res.reason));
+          }
+          return;
+        }
+        if (res.workspaceId !== scopeKey || !snapshotRef.current) return;
+        if (res.job.leadsImported > lastPolledLeadsRef.current) {
+          lastPolledLeadsRef.current = res.job.leadsImported;
+          setLeadsRefresh((value) => value + 1);
+          notifyCrmBackfillUpdated();
+        }
+        const step = backfillPollStep(snapshotRef.current, res.job);
+        applyPageStep(step);
+        if (step.completed) {
+          lastPolledLeadsRef.current = 0;
+          setLeadsRefresh((value) => value + 1);
+          notifyCrmBackfillUpdated();
+        }
+      } catch {
+        // Transient IPC/network hiccups during 2.5s polling wait for the next tick cleanly.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = setInterval(() => { void poll(); }, CARE_BACKFILL_POLL_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [backfillRunning, scopeKey, applyPageStep]);
+
   const failPageAction = (operation: number, reason: unknown) => {
     if (operation !== operationRef.current) return;
     applyPageStep(pageFlowOnFailure(pageFlowRef.current, publicError(reason, facebookErrorMessage('unavailable'))));
@@ -320,7 +387,10 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
           scopeKey,
           importOnly ? '' : PAGE_SELECTED_NOTICE,
         ));
-        if (response.ok && response.backfill) setLeadsRefresh((value) => value + 1);
+        if (response.ok && response.backfill && response.backfillJob?.status !== 'running') {
+          setLeadsRefresh((value) => value + 1);
+          notifyCrmBackfillUpdated();
+        }
       }
     } catch (reason) {
       failPageAction(operation, reason);
@@ -340,7 +410,10 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
       });
       if (operation === operationRef.current) {
         applyPageStep(pageFlowOnActionResult(pageFlowRef.current, response, scopeKey, ''));
-        if (response.ok && response.backfill) setLeadsRefresh((value) => value + 1);
+        if (response.ok && response.backfill && response.backfillJob?.status !== 'running') {
+          setLeadsRefresh((value) => value + 1);
+          notifyCrmBackfillUpdated();
+        }
       }
     } catch (reason) {
       failPageAction(operation, reason);
@@ -543,6 +616,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               waitingForFacebook={pageFlow.waitingUntil !== null}
               choices={pageFlow.choices}
               selectedPageId={pageFlow.selectedPageId}
+              backfillJob={snapshot.backfillJob ?? null}
               onConnect={() => { void connectPage(); }}
               onDisconnect={() => { void disconnectPage(); }}
               onSelectPage={(pageId) => applyPageStep({ flow: { ...pageFlowRef.current, selectedPageId: pageId } })}

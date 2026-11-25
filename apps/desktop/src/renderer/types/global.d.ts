@@ -1,6 +1,6 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../../shared/agent-profile-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../../shared/customer-care-types';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -631,6 +631,7 @@ declare global {
       assist(input: CustomerCareAssistInput): Promise<CustomerCareAssistResult>;
       connectFacebookPage(): Promise<CustomerCareFacebookConnectResult>;
       selectFacebookPage(input: CustomerCareFacebookSelectInput): Promise<CustomerCareFacebookActionResult>;
+      getBackfillStatus(): Promise<CustomerCareBackfillStatusResult>;
       disconnectFacebookPage(): Promise<CustomerCareFacebookActionResult>;
       takeFacebookPageChoices(): Promise<CustomerCareFacebookChoicesEvent | null>;
       onFacebookPageChoices(listener: (event: CustomerCareFacebookChoicesEvent) => void): () => void;

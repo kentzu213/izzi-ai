@@ -3,6 +3,7 @@
  * and the Care mode. Phase A never leaves shadow mode, whatever the connection state.
  */
 import type {
+  CustomerCareBackfillJobSnapshot,
   CustomerCareCrmSyncedPage,
   CustomerCarePageConnection,
   CustomerCareSetup,
@@ -78,9 +79,26 @@ export function toCustomerCarePageConnection(
   return result.value.connection ? connectedPage(result.value.connection, crmPages) : { state: 'not_connected' };
 }
 
-/** Keeps per-workspace verified CRM Pages synchronized across status, select, backfill and disconnect. */
+export function copyBackfillJobSnapshot(job: CustomerCareBackfillJobSnapshot): CustomerCareBackfillJobSnapshot {
+  return {
+    status: job.status,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    completedAt: job.completedAt,
+    pagesTotal: job.pagesTotal,
+    pagesProcessed: job.pagesProcessed,
+    conversationsScanned: job.conversationsScanned,
+    leadsImported: job.leadsImported,
+    messagesStored: job.messagesStored,
+    namesSealed: job.namesSealed,
+    skippedPages: job.skippedPages.map((page) => ({ ...page })),
+  };
+}
+
+/** Keeps per-workspace verified CRM Pages and active async backfill jobs synchronized across Care calls. */
 export class CarePageConnectionCoordinator {
   private readonly crmPagesByWorkspace = new Map<string, CustomerCareCrmSyncedPage[]>();
+  private readonly backfillJobsByWorkspace = new Map<string, CustomerCareBackfillJobSnapshot>();
 
   getCrmPages(workspaceId: string, excludePrimaryPageId?: string): CustomerCareCrmSyncedPage[] {
     return copyCrmSyncedPages(this.crmPagesByWorkspace.get(workspaceId), excludePrimaryPageId);
@@ -92,8 +110,22 @@ export class CarePageConnectionCoordinator {
     else this.crmPagesByWorkspace.delete(workspaceId);
   }
 
+  getRunningBackfillJob(workspaceId: string): CustomerCareBackfillJobSnapshot | undefined {
+    const job = this.backfillJobsByWorkspace.get(workspaceId);
+    return job && job.status === 'running' ? copyBackfillJobSnapshot(job) : undefined;
+  }
+
+  setBackfillJob(workspaceId: string, job: CustomerCareBackfillJobSnapshot | undefined): void {
+    if (job && job.status === 'running') {
+      this.backfillJobsByWorkspace.set(workspaceId, copyBackfillJobSnapshot(job));
+    } else {
+      this.backfillJobsByWorkspace.delete(workspaceId);
+    }
+  }
+
   clearWorkspace(workspaceId: string): void {
     this.crmPagesByWorkspace.delete(workspaceId);
+    this.backfillJobsByWorkspace.delete(workspaceId);
   }
 
   applyStatus(workspaceId: string, result: CareFacebookResult<CareFacebookStatus>): CustomerCarePageConnection {

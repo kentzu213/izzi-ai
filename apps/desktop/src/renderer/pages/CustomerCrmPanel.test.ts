@@ -9,9 +9,19 @@ import type {
   CustomerCareCrmRow,
 } from '../../shared/customer-care-types';
 import { CustomerCrmDrawer, type CustomerCrmDrawerProps } from './CustomerCrmDrawer';
+import { CrmEnterpriseKpiStrip, CrmSalerWorkspace } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow, type CustomerCrmRowProps } from './CustomerCrmRow';
-import { CustomerCrmDisplaySwitch, CustomerCrmPanel } from './CustomerCrmPanel';
-import { CRM_CONFLICT_MESSAGE, CRM_SAVE_INVALID_MESSAGE, profileFromRow, type CrmRowEdit } from './customer-crm-flow';
+import { CustomerCrmDisplaySwitch, CustomerCrmPanel, CustomerCrmTableSection } from './CustomerCrmPanel';
+import {
+  CRM_CONFLICT_MESSAGE,
+  CRM_SAVE_INVALID_MESSAGE,
+  PAGE_RENDER_STEP,
+  crmPageOptions,
+  mergeCrmPageSources,
+  profileFromRow,
+  snapshotPageSources,
+  type CrmRowEdit,
+} from './customer-crm-flow';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
 /** Wall-clock time in Vietnam (UTC+7), whatever zone this PC is in. */
@@ -229,7 +239,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     const ipc = read('../../main/customer-care/customer-care-ipc.ts');
     const methods = ipc.slice(ipc.indexOf('const METHODS = ['), ipc.indexOf('] as const;')).match(/'(\w+)'/g);
     expect(methods).toEqual([
-      "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'",
+      "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'", "'getBackfillStatus'",
       "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
       "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
       "'identityAction'", "'refreshIdentity'",
@@ -404,5 +414,109 @@ describe('Compact Enterprise CRM v3 — Dense Multi-Page Row & Slide-Over Drawer
     const forcedTab1 = renderDrawer({ tab: 'identity', edit: conflict });
     expect(forcedTab1).toContain('Dùng lại thay đổi của tôi');
     expect(forcedTab1).toContain('Cọc 5 triệu');
+  });
+
+  it('renders 831–850 multi-Page leads with accurate 3 Page nguồn KPI and 100-row DOM pagination ("Hiện thêm 100 khách" & "Hiện tất cả")', () => {
+    const PAGE_DO_DONG = '741891669999824';
+    const PAGE_TRANH_DONG = '631891669999823';
+    const PAGE_HONG_HUNG = '105252511858057';
+
+    // Build 831 real-distribution rows (504 Đồ Đồng Đại Long + 300 Xưởng Tranh Đồng + 27 Đồng Thờ Hồng Hưng)
+    const rows831: CustomerCareCrmRow[] = Array.from({ length: 831 }, (_, idx) => {
+      const pageId = idx < 504 ? PAGE_DO_DONG : (idx < 804 ? PAGE_TRANH_DONG : PAGE_HONG_HUNG);
+      const n = 1000 + idx;
+      return {
+        ...ROW,
+        leadId: `44444444-4444-4444-8444-44444444${String(n)}`,
+        pageId,
+        customerName: `Khách ${idx + 1}`,
+        phone: `091234${String(n)}`,
+      };
+    });
+
+    const snapSources = snapshotPageSources({
+      setup: null,
+      pageConnection: {
+        state: 'connected',
+        pageId: PAGE_HONG_HUNG,
+        pageName: 'Đồng Thờ Hồng Hưng',
+        status: 'active',
+        missingScopes: [],
+        verifiedAt: '2026-11-25T00:00:00.000Z',
+        crmPages: [
+          { pageId: PAGE_DO_DONG, pageName: 'Đồ Đồng Đại Long', verifiedAt: '2026-11-25T00:00:00.000Z' },
+          { pageId: PAGE_TRANH_DONG, pageName: 'Xưởng Tranh Đồng Đại Long Nam Định', verifiedAt: '2026-11-25T00:00:00.000Z' },
+        ],
+      },
+    });
+    const allSources = mergeCrmPageSources([], snapSources);
+    const pageOpts = crmPageOptions(rows831, allSources);
+    expect(pageOpts).toEqual([
+      { pageId: PAGE_HONG_HUNG, label: 'Đồng Thờ Hồng Hưng', count: 27 },
+      { pageId: PAGE_DO_DONG, label: 'Đồ Đồng Đại Long', count: 504 },
+      { pageId: PAGE_TRANH_DONG, label: 'Xưởng Tranh Đồng Đại Long Nam Định', count: 300 },
+    ]);
+
+    const kpiHtml = renderToStaticMarkup(createElement(CrmEnterpriseKpiStrip, {
+      rows: rows831,
+      savedRows: rows831,
+      products: [],
+      nowMs: NOW,
+      pageCount: pageOpts.length,
+      identityState: { identityEnabled: true, identityUnavailable: false },
+      display: 'table',
+      onSelectDisplay: noop,
+    }));
+    expect(kpiHtml).toContain('>831<');
+    expect(kpiHtml).toContain('3 Page nguồn');
+
+    // Table DOM pagination: renders only 100 <tr> rows initially, with "Đang hiển thị 100 / 831 khách hàng" + both buttons
+    const tableHtml = renderToStaticMarkup(createElement(CustomerCrmTableSection, {
+      shown: rows831,
+      renderLimit: PAGE_RENDER_STEP,
+      drawerId: null,
+      edits: {},
+      savingIds: new Set<string>(),
+      purgingId: null,
+      nowMs: NOW,
+      assignees: [],
+      products: [],
+      canDelete: false,
+      identityHandlers: null,
+      resolvePageLabel: (id) => pageOpts.find((o) => o.pageId === id)?.label ?? id,
+      onChange: noop,
+      onToggle: noop,
+      onSave: noop,
+      onCopy: noop,
+      onPurge: noop,
+      onReapply: noop,
+      onDiscard: noop,
+      onShowMore: noop,
+      onShowAll: noop,
+    }));
+    expect((tableHtml.match(/<tr class="v2-crm__row/g) ?? [])).toHaveLength(100);
+    expect(tableHtml).toContain('Đang hiển thị 100 / 831 khách hàng');
+    expect(tableHtml).toContain('Hiện thêm 100 khách');
+    expect(tableHtml).toContain('Hiện tất cả');
+    expect(tableHtml).toContain('Khách 100');
+    expect(tableHtml).not.toContain('Khách 101');
+
+    // Saler workspace also computes counts on all 831 rows while rendering only 100 cards in DOM
+    const salerHtml = renderToStaticMarkup(createElement(CrmSalerWorkspace, {
+      rows: rows831,
+      products: [],
+      assignees: [],
+      savingIds: new Set<string>(),
+      nowMs: NOW,
+      identityEnabled: true,
+      onChangeProfile: noop,
+      onCopyText: noop,
+      onOpenProfile: noop,
+    }));
+    expect(salerHtml).toContain('Tất cả (831)');
+    expect((salerHtml.match(/<article class="v2-crm-saler-card"/g) ?? [])).toHaveLength(100);
+    expect(salerHtml).toContain('Đang hiển thị 100 / 831 khách hàng');
+    expect(salerHtml).toContain('Hiện thêm 100 khách');
+    expect(salerHtml).toContain('Hiện tất cả');
   });
 });
