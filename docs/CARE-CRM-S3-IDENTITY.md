@@ -72,6 +72,16 @@ Errors are read by `reason` and shown in short Vietnamese:
 - **AI profile off** (`identityEnabled: false`): "AI hồ sơ khách chưa bật"; the values stay visible read-only and only "Khách rút đồng ý" remains.
 - **Nothing is persisted:** identities live in the panel's memory with the rows. They never reach SQLite, settings, `graph_nodes`, files or logs; the client logs only a route label and a status.
 
+## Enterprise views (#85) under the identity
+
+beta.121 added the Saler, Ads and Hậu mãi views and an engine (`shared/customer-crm-enterprise.ts`). Merged with I4 for beta.122 under these rules:
+
+- **One portrait per customer:** the identity card above. The #85 portrait inspector (table drawer, graph card section, Saler "Bổ sung ngữ cảnh AI") is gone: it wrote persona, age, family, budget and consent into the sealed note, outside the consent log, the denylist and the staff actions.
+- **Engine:** the server identity is the source. A row's AI fields come from it; the chat heuristics run only for a row without identity, and then only for the order layer (products, occasion, timeline). The profile layer (age band, who it is for, ad, links, budget, persona) is used only after consent, never guessed: no gender, age as a band labelled "ước tính", "who it is for" only with the customer's own quote, social links as a domain only. The Saler discovery questions ask about products, occasion and the form of address only.
+- **`[izzi-ctx]` note tag:** reads only `timeline` and a refusal (`consent=declined|withdrawn`, from any tag line). The profile-layer keys and `consent=granted` that beta.121 could write are ignored and dropped the next time the note is saved. A note never grants consent.
+- **Meta Custom Audience CSV:** one column, `phone`, lowercase SHA-256 of `84…`. A customer is included only when the server says consent `granted`, `noMarketing` false and no erase request, and not suppressed (do-not-contact, bought elsewhere, not needed, any refusal). The export and its counts are closed while `identityEnabled` is not true or the identity could not be loaded. A persona filter uses the consented server persona. The preview and the KPI run the same selection as the export.
+- **MyGraph segments:** counts only (stage, persona, Ads buckets, lifecycle due). Persona counts come from the consented server persona; "consented" follows the export gate.
+
 ## Open items
 
 - A `daily_cap` answer carries no `retryAfterSec`; the desktop says "mai thử lại".

@@ -217,9 +217,33 @@ describe('CustomerCareService.readGraphSnapshot', () => {
         nextStepDueAt: '2026-11-19T08:00:00.000Z',
         lostReason: null,
         purchasedAt: null,
-        note: 'Khách thiện chí ở Quận 7\n[izzi-ctx: v=1; consent=granted]',
+        // A beta.121 note tag: it can no longer grant consent or set a persona.
+        note: 'Khách thiện chí ở Quận 7\n[izzi-ctx: v=1; consent=granted; persona=P3]',
         updatedAt: '2026-11-19T03:00:00.000Z',
         updatedBy: null,
+      },
+      // The server's identity after "Đồng ý": the only source of the persona and of consent.
+      identity: {
+        version: '2026-11-19T02:30:00.000Z',
+        lastRunAt: '2026-11-19T02:30:00.000Z',
+        consent: { state: 'granted', at: '2026-11-19T02:10:00.000Z', noMarketing: false, canAsk: false, eraseRequestedAt: null },
+        occasion: null,
+        timeline: null,
+        productFactIds: null,
+        addressForm: null,
+        ageBand: null,
+        family: null,
+        interests: null,
+        persona: {
+          value: 'P1',
+          confidence: 'high',
+          kind: 'inferred',
+          source: 'ai',
+          status: 'suggested',
+          updatedAt: '2026-11-19T02:30:00.000Z',
+          evidence: [{ source: 'customer', at: '2026-11-19T02:00:00.000Z', quote: 'cần mua bộ đồ thờ cho nhà mới' }],
+          summary: 'Khách sắm cho nhà mới',
+        },
       },
     };
     const crmPage: CareCrmPage = {
@@ -228,6 +252,9 @@ describe('CustomerCareService.readGraphSnapshot', () => {
       rows: [row],
       nextCursor: 'next-page-token',
       assignees: [],
+      identityEnabled: true,
+      identityUnavailable: false,
+      consentAsk: null,
     };
     const okCrm: CareCrmGateway = {
       listCrm: async () => ({ ok: true, value: crmPage }),
@@ -263,10 +290,21 @@ describe('CustomerCareService.readGraphSnapshot', () => {
       '44444444-4444-4444-8444-444444444444',
       WORKSPACE,
       PAGE_ID,
+      'cần mua bộ đồ thờ',
+      'Khách sắm cho nhà mới',
     ]) {
       expect(serializedNodes).not.toContain(secret);
     }
     expect(serializedNodes).not.toMatch(/\d{8,}/);
+
+    // With the AI profile off, the "consented" count follows the closed Ads export gate.
+    const offCrm: CareCrmGateway = {
+      listCrm: async () => ({ ok: true, value: { ...crmPage, identityEnabled: false } }),
+      saveCrmProfile: async () => ({ ok: false, error: 'unsupported' }),
+    };
+    const withOffCrm = fixture(OWNER, offCrm);
+    await withOffCrm.service.saveSetup(SETUP);
+    expect((await withOffCrm.service.readGraphSnapshot())?.source.crmSegments?.adsBuckets.consented).toBe(0);
 
     const withDownCrm = fixture(OWNER, failingCrm);
     await withDownCrm.service.saveSetup(SETUP);

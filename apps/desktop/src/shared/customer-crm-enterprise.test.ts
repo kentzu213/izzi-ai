@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import type { CustomerCareCrmIdentity, CustomerCareCrmProfile, CustomerCareCrmRow } from './customer-care-types';
+import type {
+  CustomerCareCrmConsent,
+  CustomerCareCrmIdField,
+  CustomerCareCrmIdentity,
+  CustomerCareCrmProfile,
+  CustomerCareCrmRow,
+} from './customer-care-types';
 import { parseCareCrmProfileInput } from '../main/customer-care/care-crm';
 import {
   CARE_CRM_MAX_NOTE,
@@ -11,23 +17,31 @@ import {
   buildSalerPlaybook,
   composeCrmNote,
   containsSensitiveHouseholdTerm,
-  effectiveCrmIdentity,
-  extractSafeSharedLink,
+  crmAdsExportBlock,
+  crmConsentedPersona,
+  crmProfileLayerAllowed,
+  hasExplicitMarketingConsent,
   isCrmRowAdsSuppressed,
+  isCrmSocialDomain,
   maxFreeNoteLength,
   normalizeVietnamPhoneForMeta,
+  replaceEditableFreeNote,
   sanitizeCtxDomain,
+  selectMetaAudience,
   splitCrmNote,
   summarizeAdsAudiences,
   summarizeCareCrmSegments,
   wouldTruncateFreeNote,
+  type CrmAdsIdentityState,
+  type CrmCustomerPortrait,
   type CrmEnterpriseProduct,
-  type CrmStaffContext,
 } from './customer-crm-enterprise';
 
 const NOW_ISO = '2026-11-25T02:00:00.000Z';
 const NOW_MS = Date.parse(NOW_ISO);
 const HOUR_MS = 60 * 60 * 1000;
+
+const IDENTITY_ON: CrmAdsIdentityState = { identityEnabled: true, identityUnavailable: false };
 
 const PRODUCTS: readonly CrmEnterpriseProduct[] = [
   { id: 'ban-tho-gu', label: 'Bàn thờ gỗ gụ chạm sen 1m97' },
@@ -70,91 +84,127 @@ function makeRow(overrides: Partial<CustomerCareCrmRow> = {}, profileOverrides: 
   };
 }
 
-describe('A1 · [izzi-ctx] codec on profile.note', () => {
-  it('round-trips a full staff context tag cleanly while keeping freeNote separate', () => {
-    const rawNote = [
-      'Khách hẹn cuối tuần qua xem mẫu gỗ gụ.',
-      'Cần kiểm tra chiều ngang phòng thờ.',
+function idField<T>(value: T, overrides: Partial<CustomerCareCrmIdField<T>> = {}): CustomerCareCrmIdField<T> {
+  return {
+    value,
+    confidence: 'high',
+    kind: 'stated',
+    source: 'ai',
+    status: 'suggested',
+    updatedAt: NOW_ISO,
+    evidence: [],
+    ...overrides,
+  };
+}
+
+function makeIdentity(
+  overrides: Partial<CustomerCareCrmIdentity> = {},
+  consent: Partial<CustomerCareCrmConsent> = {},
+): CustomerCareCrmIdentity {
+  return {
+    version: '2026-11-25T01:00:00.000Z',
+    lastRunAt: NOW_ISO,
+    consent: { state: 'granted', at: NOW_ISO, noMarketing: false, canAsk: false, eraseRequestedAt: null, ...consent },
+    occasion: null,
+    timeline: null,
+    productFactIds: null,
+    addressForm: null,
+    ageBand: null,
+    family: null,
+    interests: null,
+    persona: null,
+    ...overrides,
+  };
+}
+
+/** A full profile layer, as a server would send it after "Đồng ý". */
+function fullProfileIdentity(consent: Partial<CustomerCareCrmConsent> = {}): CustomerCareCrmIdentity {
+  return makeIdentity(
+    {
+      occasion: idField('tet' as const),
+      timeline: idField('before_tet' as const),
+      productFactIds: idField(['ngu-su-dong']),
+      addressForm: idField('chi' as const),
+      ageBand: idField(['25-34', '35-44'] as Array<'25-34' | '35-44'>, { kind: 'inferred' }),
+      family: idField({ recipient: 'parents' as const }, {
+        evidence: [{ source: 'customer', at: NOW_ISO, quote: 'Chị mua biếu bố mẹ dịp Tết' }],
+      }),
+      interests: {
+        adTitle: idField('Bàn thờ gia tiên Tết', { source: 'ad' }),
+        sharedLinks: [
+          idField({ domain: 'facebook.com', title: 'Nhà chị Mai' }),
+          idField({ domain: 'shopee.vn', title: 'Bộ ngũ sự 60cm' }),
+          idField({ domain: 'm.facebook.com', title: 'Trang cá nhân' }),
+        ],
+        budgetBand: idField('5m_15m' as const, { evidence: [{ source: 'customer', at: NOW_ISO, quote: 'tầm 10 triệu' }] }),
+      },
+      persona: { ...idField('P2' as const, { kind: 'inferred' }), summary: 'Khách sắm Tết' },
+    },
+    consent,
+  );
+}
+
+const PROFILE_LABELS = (portrait: CrmCustomerPortrait) => [
+  portrait.layer_1_age.label,
+  portrait.layer_2_demographic.label,
+  portrait.layer_3_household.label,
+  portrait.layer_4_interests.label,
+  portrait.layer_5_persona.label,
+].join(' | ');
+
+describe('A1 · [izzi-ctx] codec on profile.note: a timeline and a refusal only, never consent', () => {
+  it('round-trips a timeline and a refusal while keeping the free note separate', () => {
+    const note = composeCrmNote('Khách hẹn cuối tuần qua xem mẫu gỗ gụ.', { timeline: 'before_tet', consent: 'declined' });
+    expect(note).toBe('Khách hẹn cuối tuần qua xem mẫu gỗ gụ.\n[izzi-ctx: v=1; timeline=before_tet; consent=declined]');
+    expect(splitCrmNote(note)).toEqual({
+      freeNote: 'Khách hẹn cuối tuần qua xem mẫu gỗ gụ.',
+      ctx: { timeline: 'before_tet', consent: 'declined' },
+    });
+  });
+
+  it('ignores the profile-layer keys and consent=granted that beta.121 wrote, and drops them on the next save', () => {
+    const legacy = [
+      'Khách hỏi kỹ thước Lỗ Ban',
       '[izzi-ctx: v=1; persona=P2; age=35-44; recipient=parents; timeline=before_tet; budget=5m_15m; consent=granted; ad=Ban tho go gu; domain=shopee.vn]',
     ].join('\n');
 
-    const { freeNote, ctx } = splitCrmNote(rawNote);
-    expect(freeNote).toBe('Khách hẹn cuối tuần qua xem mẫu gỗ gụ.\nCần kiểm tra chiều ngang phòng thờ.');
-    expect(ctx).toEqual({
-      persona: 'P2',
-      ageBand: '35-44',
-      recipient: 'parents',
-      timeline: 'before_tet',
-      budgetBand: '5m_15m',
-      consent: 'granted',
-      adTitle: 'Ban tho go gu',
-      sharedDomain: 'shopee.vn',
-    });
+    const { freeNote, ctx } = splitCrmNote(legacy);
+    expect(freeNote).toBe('Khách hỏi kỹ thước Lỗ Ban');
+    expect(ctx).toEqual({ timeline: 'before_tet', consent: null });
 
-    const recomposed = composeCrmNote(freeNote, ctx);
-    expect(recomposed).toBe(rawNote);
+    // The table's note editor rewrites the tag from what it read: the profile-layer keys are gone.
+    const resaved = replaceEditableFreeNote(legacy, 'Khách hẹn thứ Bảy');
+    expect(resaved).toBe('Khách hẹn thứ Bảy\n[izzi-ctx: v=1; timeline=before_tet]');
+    expect(resaved).not.toMatch(/persona|age=|recipient|budget|granted|ad=|domain=/);
+    expect(composeCrmNote(freeNote, ctx)).toBe('Khách hỏi kỹ thước Lỗ Ban\n[izzi-ctx: v=1; timeline=before_tet]');
   });
 
-  it('validates enums strictly, masks phones in adTitle, strips delimiters, and validates lowercase domain', () => {
-    const dirtyTag = '[izzi-ctx: v=1; persona=P99; age=10-15; recipient=boss; timeline=tomorrow; budget=million; consent=yes; ad=Quảng cáo 0912 345 678 cực đẹp; domain=WWW.Shopee.VN]';
-    const parsed = splitCrmNote(dirtyTag);
-    expect(parsed.freeNote).toBe('');
-    expect(parsed.ctx).toEqual({
-      ...EMPTY_CRM_STAFF_CONTEXT,
-      adTitle: 'Quảng cáo ••• cực đẹp',
-      sharedDomain: 'shopee.vn',
-    });
+  it('keeps a refusal from any tag line, and a later tag never cancels it', () => {
+    const parsed = splitCrmNote('Dòng 1\n[izzi-ctx: v=1; consent=withdrawn]\nDòng 2\n[izzi-ctx: v=1; timeline=this_week; consent=granted]');
+    expect(parsed.freeNote).toBe('Dòng 1\nDòng 2');
+    expect(parsed.ctx).toEqual({ timeline: 'this_week', consent: 'withdrawn' });
   });
 
-  it('sanitizes adTitle (<=48 chars, masks phone, drops ; ] \\n) and rejects invalid domains', () => {
-    const ctx: CrmStaffContext = {
-      ...EMPTY_CRM_STAFF_CONTEXT,
-      persona: 'P1',
-      adTitle: `Bộ bàn thờ 0987.654.321; giảm giá]\n${'A'.repeat(60)}`,
-      sharedDomain: 'WWW.DongThoHongHung.VN',
-    };
-    const composed = composeCrmNote('Ghi chú nhân viên\r\nDòng hai\t\u200B', ctx);
-    expect(composed).not.toBeNull();
-    expect(composed).not.toContain('0987.654.321');
-    expect(composed).toContain('•••');
-
-    const round = splitCrmNote(composed);
-    expect(round.freeNote).toBe('Ghi chú nhân viên\nDòng hai');
-    expect(round.ctx.persona).toBe('P1');
-    expect(round.ctx.adTitle).not.toBeNull();
-    expect(Array.from(round.ctx.adTitle!).length).toBeLessThanOrEqual(48);
-    expect(round.ctx.sharedDomain).toBe('dongthohonghung.vn');
-
-    const badDomain = splitCrmNote('[izzi-ctx: v=1; domain=https://evil.example/path]');
-    expect(badDomain.ctx.sharedDomain).toBeNull();
-
-    const wrongVersion = splitCrmNote('Ghi chú\n[izzi-ctx: v=2; persona=P1]');
-    expect(wrongVersion.freeNote).toBe('Ghi chú');
-    expect(wrongVersion.ctx).toEqual(EMPTY_CRM_STAFF_CONTEXT);
+  it('validates values strictly and rejects a wrong version', () => {
+    expect(splitCrmNote('[izzi-ctx: v=1; timeline=tomorrow; consent=yes]').ctx).toEqual(EMPTY_CRM_STAFF_CONTEXT);
+    expect(splitCrmNote('[izzi-ctx: v=1; consent=granted]').ctx).toEqual(EMPTY_CRM_STAFF_CONTEXT);
+    expect(splitCrmNote('Ghi chú\n[izzi-ctx: v=2; timeline=later]')).toEqual({ freeNote: 'Ghi chú', ctx: EMPTY_CRM_STAFF_CONTEXT });
+    expect(composeCrmNote('   ', EMPTY_CRM_STAFF_CONTEXT)).toBeNull();
   });
 
-  it('caps composed note at <= 1000 code points and passes care-crm server profile validation', () => {
-    const fullCtx: CrmStaffContext = {
-      persona: 'P2',
-      ageBand: '45-54',
-      recipient: 'parents',
-      timeline: 'before_tet',
-      budgetBand: '15m_30m',
-      consent: 'granted',
-      adTitle: 'Bàn thờ gia tiên gỗ gụ Lào cao cấp chuẩn Lỗ Ban',
-      sharedDomain: 'dongthohonghung.vn',
-    };
-    const maxLen = maxFreeNoteLength(fullCtx);
-    expect(maxLen).toBeGreaterThan(700);
+  it('caps the composed note at 1000 code points and passes the CRM profile validator', () => {
+    const ctx = { timeline: 'before_tet' as const, consent: 'declined' as const };
+    const maxLen = maxFreeNoteLength(ctx);
+    expect(maxLen).toBeGreaterThan(900);
     expect(maxLen).toBeLessThan(CARE_CRM_MAX_NOTE);
+    expect(wouldTruncateFreeNote('G'.repeat(990), ctx)).toBe(true);
+    expect(wouldTruncateFreeNote('G'.repeat(900), ctx)).toBe(false);
 
-    const hugeFreeNote = `👨‍👩‍👧 ${'Gỗ gụ chuẩn xưởng '.repeat(80)}\u2028\u200B`;
-    const composed = composeCrmNote(hugeFreeNote, fullCtx);
+    const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469);
+    const composed = composeCrmNote(`${family} ${'Gỗ gụ chuẩn xưởng '.repeat(80)}`, ctx);
     expect(composed).not.toBeNull();
     expect(Array.from(composed!).length).toBeLessThanOrEqual(CARE_CRM_MAX_NOTE);
-
-    // Must pass strict IPC/server validator in care-crm.ts!
-    const validProfile = parseCareCrmProfileInput(
+    const valid = parseCareCrmProfileInput(
       {
         stage: 'consulting',
         ownerUserId: null,
@@ -170,415 +220,303 @@ describe('A1 · [izzi-ctx] codec on profile.note', () => {
       },
       new Date(NOW_MS),
     );
-    expect(validProfile).not.toBeNull();
-    expect(splitCrmNote(composed).ctx).toEqual(fullCtx);
-    expect(composeCrmNote('   ', EMPTY_CRM_STAFF_CONTEXT)).toBeNull();
+    expect(valid).not.toBeNull();
+    expect(splitCrmNote(composed).ctx).toEqual(ctx);
+  });
+
+  it('rejects phone-like and malformed domains', () => {
+    expect(sanitizeCtxDomain('WWW.Shopee.VN')).toBe('shopee.vn');
+    expect(sanitizeCtxDomain('https://evil.example/path')).toBeNull();
+    expect(sanitizeCtxDomain('0901234567.vn')).toBeNull();
+    expect(sanitizeCtxDomain('0901-234-567.com')).toBeNull();
   });
 });
 
-describe('A2 · 5-Layer Customer Portrait & effectiveCrmIdentity', () => {
-  it('returns the exact 5 ordered reasoning layers and calculates birth-year age against nowMs', () => {
-    const row = makeRow(
-      {
-        customerName: 'Nguyễn Văn Hùng',
-        recentMessages: [
-          { text: 'Chào shop, anh sn 1988, hai vợ chồng đang hoàn thiện nhà mới cần tìm bàn thờ gỗ gụ tầm 12 triệu', at: NOW_ISO },
-          { text: 'Em xem mẫu giống link https://l.facebook.com/l.php?u=https%3A%2F%2Fshopee.vn%2Fban-tho-197 này nhé, kịp trước Tết không?', at: NOW_ISO },
-        ],
-      },
-      { note: composeCrmNote('Khách thiện chí', { ...EMPTY_CRM_STAFF_CONTEXT, adTitle: 'QC Bàn Thờ Gỗ Gụ' }) },
-    );
+describe('A2 · portrait: server identity first, profile layer only after consent', () => {
+  const chattyRow = makeRow({
+    customerName: 'Nguyễn Văn Hùng',
+    recentMessages: [
+      { text: 'Chào shop, anh sn 1988, hai vợ chồng đang hoàn thiện nhà mới cần tìm bàn thờ gỗ gụ chạm sen tầm 12 triệu', at: NOW_ISO },
+      { text: 'Em xem mẫu giống link https://shopee.vn/ban-tho-197 này nhé, kịp trước Tết không?', at: NOW_ISO },
+    ],
+  });
 
-    const portrait = buildCustomerPortrait(row, PRODUCTS, NOW_MS);
-    expect(Object.keys(portrait).slice(0, 5)).toEqual([
-      'layer_1_age',
-      'layer_2_demographic',
-      'layer_3_household',
-      'layer_4_interests',
-      'layer_5_persona',
-    ]);
+  it('without any identity uses the chat for the order layer only: no age, family, budget, links, persona or gender', () => {
+    const portrait = buildCustomerPortrait(chattyRow, PRODUCTS, NOW_MS);
 
-    expect(portrait.layer_1_age.exactAge).toBe(38);
-    expect(portrait.layer_1_age.ageBands).toEqual(['35-44']);
-    expect(portrait.layer_1_age.confidence).toBe('high');
-    expect(portrait.layer_1_age.quote).toContain('sn 1988');
-
-    expect(portrait.layer_2_demographic.addressForm).toBe('anh');
-    expect(portrait.layer_2_demographic.label).toBe('Nam · Xưng Anh');
-
-    expect(portrait.layer_3_household.recipient).toBe('spouse');
-    expect(portrait.layer_3_household.label).toBe('Đã lập gia đình · Vợ chồng');
-
-    expect(portrait.layer_4_interests.sharedLinks).toEqual([{ domain: 'shopee.vn', title: null }]);
-    expect(portrait.layer_4_interests.adTitle).toBe('QC Bàn Thờ Gỗ Gụ');
-    expect(portrait.layer_4_interests.matchedProducts.map((p) => p.id)).toContain('ban-tho-gu');
-    expect(portrait.layer_4_interests.budgetBand).toBe('5m_15m');
+    expect(portrait.profileAllowed).toBe(false);
+    expect(portrait.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ban-tho-gu']);
+    expect(portrait.layer_4_interests.topicKeywords).toContain('Bàn thờ');
     expect(portrait.layer_4_interests.timeline).toBe('before_tet');
 
-    expect(portrait.layer_5_persona.persona).toBe('P1');
-    expect(portrait.completenessPct).toBe(100);
-    expect(portrait.missingPrompts).toEqual([]);
-  });
-
-  it('infers contextual age bands and Vietnamese name gender while skipping unisex and business names', () => {
-    const youngRow = makeRow({
-      customerName: 'Trần Thị Hương',
-      recentMessages: [{ text: 'Shop ơi mẫu này giá bnhiu, ship liền dc ko ạ?', at: NOW_ISO }],
-    });
-    const youngPortrait = buildCustomerPortrait(youngRow, PRODUCTS, NOW_MS);
-    expect(youngPortrait.layer_1_age.ageBand).toBe('18-24');
-    expect(youngPortrait.layer_2_demographic.label).toBe('Nữ · Gợi ý Chị');
-    expect(youngPortrait.layer_5_persona.persona).toBe('P4');
-
-    const seniorRow = makeRow(
-      { customerName: 'Đồ Thờ Phong Thủy Tâm An', recentMessages: [{ text: 'Cô mua bộ ngũ sự tặng vợ chồng cháu nội', at: NOW_ISO }] },
-      { addressForm: null },
-    );
-    const seniorPortrait = buildCustomerPortrait(seniorRow, PRODUCTS, NOW_MS);
-    expect(seniorPortrait.layer_1_age.ageBand).toBe('55+');
-    expect(seniorPortrait.layer_2_demographic.addressForm).toBe('co');
-
-    const unisexShopRow = makeRow({ customerName: 'Hoàng Minh An', recentMessages: [{ text: 'Xin thông tin kích thước ạ', at: NOW_ISO }] });
-    const unisexPortrait = buildCustomerPortrait(unisexShopRow, PRODUCTS, NOW_MS);
-    expect(unisexPortrait.layer_2_demographic.addressForm).toBeNull();
-    expect(unisexPortrait.layer_2_demographic.salutation).toBe('Anh/Chị');
-  });
-
-  it('enforces the sensitive household denylist without blocking worship/altar product names', () => {
-    expect(containsSensitiveHouseholdTerm('Gia đình có người mới qua đời, 49 ngày')).toBe(true);
-    expect(containsSensitiveHouseholdTerm('Chị đơn thân mới ly hôn muốn mua đồ')).toBe(true);
-    expect(containsSensitiveHouseholdTerm('Ông đang nằm bệnh viện vì tai biến')).toBe(true);
-    expect(containsSensitiveHouseholdTerm('Nhà chị là phật tử hay đi lễ chùa')).toBe(true);
-
-    // Must NEVER block product names!
-    expect(containsSensitiveHouseholdTerm('Muốn mua một bộ bàn thờ gỗ gụ, tranh Quan Âm, lư hương và bộ ngũ sự')).toBe(false);
-
-    const bereavementRow = makeRow({
-      recentMessages: [
-        { text: 'Bố anh mới mất gần 49 ngày, hai vợ chồng em muốn tìm bộ bàn thờ mới.', at: NOW_ISO },
-      ],
-    });
-    const p1 = buildCustomerPortrait(bereavementRow, PRODUCTS, NOW_MS);
-    expect(p1.layer_3_household.sensitiveFiltered).toBe(true);
-    expect(p1.layer_3_household.recipient).toBeNull();
-    expect(p1.layer_3_household.quote).toBeNull();
-
-    const productRow = makeRow({
-      recentMessages: [
-        { text: 'Hai vợ chồng em mua bàn thờ, tranh Quan Âm, ngũ sự số 0909111222.', at: NOW_ISO },
-      ],
-    });
-    const p2 = buildCustomerPortrait(productRow, PRODUCTS, NOW_MS);
-    expect(p2.layer_3_household.sensitiveFiltered).toBe(false);
-    expect(p2.layer_3_household.recipient).toBe('spouse');
-    expect(p2.layer_3_household.quote).toContain('•••');
-    expect(p2.layer_3_household.quote).not.toContain('0909111222');
-  });
-
-  it('strips personal Facebook profile usernames while keeping post/video/reel safe labels', () => {
-    expect(extractSafeSharedLink('https://www.facebook.com/nguyenvana.1988?mibextid=abc')).toEqual({
-      domain: 'facebook.com',
-      title: null,
-    });
-    expect(extractSafeSharedLink('https://facebook.com/dongthohonghung/posts/123456789')).toEqual({
-      domain: 'facebook.com',
-      title: 'Bài viết Facebook',
-    });
-    expect(extractSafeSharedLink('https://m.facebook.com/reel/99887766')).toEqual({
-      domain: 'facebook.com',
-      title: 'Reels Facebook',
-    });
-  });
-
-  it('synthesizes effectiveCrmIdentity for graph hubs and preserves server identity fields when present', () => {
-    const row = makeRow(
-      {
-        recentMessages: [{ text: 'Anh mua làm quà tân gia hộp quà sang trọng tầm 20 củ https://shopee.vn/qua-tang', at: NOW_ISO }],
-      },
-      {
-        occasion: 'gift',
-        note: composeCrmNote('', { ...EMPTY_CRM_STAFF_CONTEXT, adTitle: 'Quà Tân Gia Cao Cấp', consent: 'granted' }),
-      },
-    );
-
-    const synthesized = effectiveCrmIdentity(row, PRODUCTS, NOW_MS);
-    expect(synthesized.persona?.value).toBe('P3');
-    expect(synthesized.interests?.adTitle?.value).toBe('Quà Tân Gia Cao Cấp');
-    expect(synthesized.interests?.sharedLinks[0]?.value.domain).toBe('shopee.vn');
-    expect(synthesized.interests?.budgetBand?.value).toBe('15m_30m');
-    expect(synthesized.consent?.state).toBe('granted');
-
-    const serverGranted: CustomerCareCrmIdentity = {
-      version: 's3-prod',
-      lastRunAt: NOW_ISO,
-      consent: { state: 'granted', at: NOW_ISO, noMarketing: false, canAsk: false },
-      occasion: null,
-      timeline: null,
-      productFactIds: null,
-      addressForm: null,
-      ageBand: null,
-      family: null,
-      interests: null,
-      persona: {
-        value: 'P2',
-        confidence: 'high',
-        kind: 'inferred',
-        source: 'ai',
-        status: 'confirmed',
-        updatedAt: NOW_ISO,
-        evidence: [{ source: 'customer', at: NOW_ISO, quote: 'Nhà anh có người mới mất nên sắm lại' }],
-        summary: 'Khách truyền thống từ server',
-      },
-    };
-    const mergedGranted = effectiveCrmIdentity({ ...row, identity: serverGranted }, PRODUCTS, NOW_MS);
-    expect(mergedGranted.persona?.value).toBe('P2');
-    // Sensitive evidence quotes on base server identity must also be stripped
-    expect(mergedGranted.persona?.evidence).toEqual([]);
-    expect(mergedGranted.interests?.adTitle?.value).toBe('Quà Tân Gia Cao Cấp');
-
-    // Server refusal must never be overridden by a staff tag, and c5898f6 consent gate withholds all profile-layer fields
-    const serverDeclined: CustomerCareCrmIdentity = {
-      ...serverGranted,
-      consent: { state: 'declined', at: NOW_ISO, noMarketing: true, canAsk: false },
-    };
-    const mergedDeclined = effectiveCrmIdentity({ ...row, identity: serverDeclined }, PRODUCTS, NOW_MS);
-    expect(mergedDeclined.consent?.state).toBe('declined');
-    expect(mergedDeclined.occasion?.value).toBe('gift'); // order-layer stays
-    expect(mergedDeclined.persona).toBeNull();
-    expect(mergedDeclined.ageBand).toBeNull();
-    expect(mergedDeclined.addressForm).toBeNull();
-    expect(mergedDeclined.family).toBeNull();
-    expect(mergedDeclined.interests).toBeNull();
-
-    // Without consent=granted, only order-layer fields are exposed on effectiveCrmIdentity
-    const unconsentedRow = makeRow(
-      { recentMessages: [{ text: 'Anh sn 1988 muốn mua bàn thờ gỗ gụ trước Tết tầm 15 triệu', at: NOW_ISO }] },
-      { occasion: 'tet', productFactIds: ['ban-tho-gu'] },
-    );
-    const orderOnly = effectiveCrmIdentity(unconsentedRow, PRODUCTS, NOW_MS);
-    expect(orderOnly.occasion?.value).toBe('tet');
-    expect(orderOnly.timeline?.value).toBe('before_tet');
-    expect(orderOnly.productFactIds?.value).toContain('ban-tho-gu');
-    expect(orderOnly.persona).toBeNull();
-    expect(orderOnly.ageBand).toBeNull();
-    expect(orderOnly.addressForm).toBeNull();
-    expect(orderOnly.family).toBeNull();
-    expect(orderOnly.interests).toBeNull();
-  });
-
-  it('strips sensitive quotes across ALL 5 reasoning layers even when birth year and budget appear in the same clause', () => {
-    const sensitiveAllLayers = makeRow({
-      recentMessages: [
-        {
-          text: 'Anh sn 1988, gia đình mới có người qua đời gần 49 ngày nên vợ chồng anh tìm bàn thờ tầm 12 triệu',
-          at: NOW_ISO,
-        },
-      ],
-    });
-    const portrait = buildCustomerPortrait(sensitiveAllLayers, PRODUCTS, NOW_MS);
-    expect(portrait.layer_1_age.quote).toBeNull();
-    expect(portrait.layer_2_demographic.quote).toBeNull();
-    expect(portrait.layer_3_household.quote).toBeNull();
+    expect(portrait.layer_1_age.ageBands).toEqual([]);
     expect(portrait.layer_3_household.recipient).toBeNull();
-    expect(portrait.layer_4_interests.quote).toBeNull();
-    expect(portrait.layer_5_persona.quote).toBeNull();
+    expect(portrait.layer_4_interests.budgetBand).toBeNull();
+    expect(portrait.layer_4_interests.sharedLinks).toEqual([]);
+    expect(portrait.layer_4_interests.adTitle).toBeNull();
+    expect(portrait.layer_5_persona.persona).toBeNull();
+    expect(portrait.layer_1_age.label).toBe('Chỉ có khi khách đồng ý');
+    expect(PROFILE_LABELS(portrait)).not.toMatch(/Nam|Nữ|hôn nhân|lập gia đình|vợ chồng/);
+  });
+
+  it('never takes the form of address from a name; only staff or the consented server identity set it', () => {
+    const named = buildCustomerPortrait(makeRow({ customerName: 'Trần Thị Hương' }), PRODUCTS, NOW_MS);
+    expect(named.layer_2_demographic.addressForm).toBeNull();
+    expect(named.layer_2_demographic.salutation).toBe('Anh/Chị');
+    expect(named.layer_2_demographic.label).toBe('Chưa rõ · Tạm xưng Anh/Chị');
+
+    const staff = buildCustomerPortrait(makeRow({ customerName: 'Trần Thị Hương' }, { addressForm: 'chi' }), PRODUCTS, NOW_MS);
+    expect(staff.layer_2_demographic).toMatchObject({ addressForm: 'chi', salutation: 'Chị', label: 'Xưng Chị', source: 'staff' });
+  });
+
+  it('with a server identity but no consent uses the server order layer and nothing else, not the chat', () => {
+    const asked = makeIdentity(
+      {
+        occasion: idField('new_home' as const),
+        timeline: idField('this_month' as const),
+        productFactIds: idField(['ngu-su-dong']),
+        // A profile layer the server should never send before consent is still ignored here.
+        ageBand: idField(['35-44'] as Array<'35-44'>),
+        family: idField({ recipient: 'spouse' as const }, { evidence: [{ source: 'customer', at: NOW_ISO, quote: 'hai vợ chồng' }] }),
+        persona: { ...idField('P1' as const), summary: 'x' },
+      },
+      { state: 'asked' },
+    );
+    const portrait = buildCustomerPortrait({ ...chattyRow, identity: asked }, PRODUCTS, NOW_MS);
+
+    expect(portrait.profileAllowed).toBe(false);
+    expect(portrait.layer_4_interests.occasion).toBe('new_home');
+    expect(portrait.layer_4_interests.timeline).toBe('this_month');
+    expect(portrait.layer_4_interests.matchedProducts.map((p) => p.id)).toEqual(['ngu-su-dong']);
+    expect(portrait.layer_4_interests.topicKeywords).toEqual([]);
+    expect(portrait.layer_1_age.ageBands).toEqual([]);
+    expect(portrait.layer_3_household.recipient).toBeNull();
+    expect(portrait.layer_5_persona.persona).toBeNull();
+    expect(crmConsentedPersona({ ...chattyRow, identity: asked })).toBeNull();
+  });
+
+  it('after consent shows the server profile layer: age as an estimate, no gender, social links as a domain only', () => {
+    const row = makeRow({ customerName: 'Trần Thị Mai', identity: fullProfileIdentity() });
+    const portrait = buildCustomerPortrait(row, PRODUCTS, NOW_MS);
+
+    expect(crmProfileLayerAllowed(row)).toBe(true);
+    expect(portrait.layer_1_age).toMatchObject({ ageBands: ['25-34', '35-44'], label: '25–44 tuổi (ước tính)', source: 'identity' });
+    expect(portrait.layer_2_demographic).toMatchObject({ addressForm: 'chi', label: 'Gợi ý Chị' });
+    expect(portrait.layer_3_household).toMatchObject({ recipient: 'parents', label: 'Mua biếu bố mẹ', quote: 'Chị mua biếu bố mẹ dịp Tết' });
+    expect(portrait.layer_4_interests.adTitle).toBe('Bàn thờ gia tiên Tết');
+    expect(portrait.layer_4_interests.budgetBand).toBe('5m_15m');
+    expect(portrait.layer_4_interests.sharedLinks).toEqual([
+      { domain: 'facebook.com', title: null },
+      { domain: 'shopee.vn', title: 'Bộ ngũ sự 60cm' },
+      { domain: 'm.facebook.com', title: null },
+    ]);
+    expect(portrait.layer_5_persona.persona).toBe('P2');
+    expect(PROFILE_LABELS(portrait)).not.toMatch(/Nam|Nữ|hôn nhân/);
+    expect(isCrmSocialDomain('web.facebook.com')).toBe(true);
+    expect(isCrmSocialDomain('notfacebook.com')).toBe(false);
+  });
+
+  it('keeps who-it-is-for only with a quote of the customer, never a sensitive one', () => {
+    const withoutCustomerQuote = makeIdentity({
+      family: idField({ recipient: 'spouse' as const }, { evidence: [{ source: 'izzi', at: NOW_ISO, quote: 'hai vợ chồng' }] }),
+    });
+    expect(buildCustomerPortrait(makeRow({ identity: withoutCustomerQuote }), PRODUCTS, NOW_MS).layer_3_household.recipient).toBeNull();
+
+    const sensitive = makeIdentity({
+      family: idField({ recipient: 'parents' as const }, { evidence: [{ source: 'customer', at: NOW_ISO, quote: 'Bố anh mới mất gần 49 ngày' }] }),
+    });
+    const filtered = buildCustomerPortrait(makeRow({ identity: sensitive }), PRODUCTS, NOW_MS).layer_3_household;
+    expect(filtered.recipient).toBeNull();
+    expect(filtered.quote).toBeNull();
+
+    expect(containsSensitiveHouseholdTerm('Chị đơn thân mới ly hôn muốn mua đồ')).toBe(true);
+    expect(containsSensitiveHouseholdTerm('Muốn mua một bộ bàn thờ gỗ gụ, tranh Quan Âm, lư hương và bộ ngũ sự')).toBe(false);
+  });
+
+  it('locks the profile layer while an erase request is pending, for an unreadable identity and for low confidence', () => {
+    const erasing = makeRow({ identity: fullProfileIdentity({ eraseRequestedAt: '2026-11-25T01:30:00.000Z' }) });
+    expect(crmProfileLayerAllowed(erasing)).toBe(false);
+    expect(buildCustomerPortrait(erasing, PRODUCTS, NOW_MS).layer_5_persona.persona).toBeNull();
+
+    const unreadable = makeRow({ identity: fullProfileIdentity(), identityUnavailable: true });
+    expect(crmProfileLayerAllowed(unreadable)).toBe(false);
+    expect(buildCustomerPortrait(unreadable, PRODUCTS, NOW_MS).layer_1_age.ageBands).toEqual([]);
+
+    const low = makeRow({ identity: makeIdentity({ persona: { ...idField('P4' as const, { confidence: 'low' }), summary: 'x' } }) });
+    expect(crmConsentedPersona(low)).toBeNull();
+  });
+
+  it('asks only order-layer discovery questions', () => {
+    const portrait = buildCustomerPortrait(makeRow(), PRODUCTS, NOW_MS);
+    expect(portrait.missingPrompts).toHaveLength(3);
+    expect(portrait.missingPrompts.join(' ')).not.toMatch(/ngân sách|gia đình|biếu|tuổi|phong cách/i);
   });
 });
 
-describe('A3 · Saler Playbook, Ads SHA-256 CSV & Lifecycle / Remarketing', () => {
-  it('scores Saler priority accurately, zeroes closed/DNC leads, and builds actionable scripts', () => {
+describe('A3 · Saler playbook, Ads export & lifecycle', () => {
+  it('scores Saler priority, closes do-not-contact leads and builds scripts from staff data', () => {
     const hotRow = makeRow(
       {
         customerName: 'Lê Minh Tuấn',
         lastMessageAt: new Date(NOW_MS - 30 * 60 * 1000).toISOString(),
-        recentMessages: [{ text: 'Anh cần gấp bàn thờ gỗ gụ trong tuần này tầm 25 triệu', at: NOW_ISO }],
+        recentMessages: [{ text: 'Anh cần gấp bàn thờ gỗ gụ trong tuần này', at: NOW_ISO }],
       },
       { stage: 'has_phone', addressForm: 'anh', occasion: 'new_home', productFactIds: ['ban-tho-gu'] },
     );
-    const hotPortrait = buildCustomerPortrait(hotRow, PRODUCTS, NOW_MS);
-    const playbook = buildSalerPlaybook(hotRow, hotPortrait, PRODUCTS, NOW_MS);
+    const playbook = buildSalerPlaybook(hotRow, buildCustomerPortrait(hotRow, PRODUCTS, NOW_MS), PRODUCTS, NOW_MS);
     expect(playbook.priorityScore).toBeGreaterThanOrEqual(75);
     expect(playbook.priorityBand).toBe('hot');
     expect(playbook.canContact).toBe(true);
-    expect(playbook.opener).toContain('anh');
+    expect(playbook.opener).toContain('em chào anh');
     expect(playbook.discoveryQuestions.length).toBeLessThanOrEqual(3);
     expect(playbook.closingChecklist.length).toBeGreaterThanOrEqual(3);
     expect(Date.parse(playbook.suggestedDueIso)).toBeGreaterThan(NOW_MS);
 
     const dncRow = makeRow({}, { stage: 'do_not_contact' });
-    const dncPlaybook = buildSalerPlaybook(dncRow, buildCustomerPortrait(dncRow, PRODUCTS, NOW_MS), PRODUCTS, NOW_MS);
-    expect(dncPlaybook.priorityScore).toBe(0);
-    expect(dncPlaybook.priorityBand).toBe('closed');
-    expect(dncPlaybook.canContact).toBe(false);
+    const dnc = buildSalerPlaybook(dncRow, buildCustomerPortrait(dncRow, PRODUCTS, NOW_MS), PRODUCTS, NOW_MS);
+    expect(dnc).toMatchObject({ priorityScore: 0, priorityBand: 'closed', canContact: false });
   });
 
-  it('segments Ads buckets and exports SHA-256 hex CSV of 84... phones only for consented non-suppressed leads', async () => {
-    const consentedWarm = makeRow(
-      { leadId: 'lead-1', customerName: 'Nguyễn Văn Hùng', phone: '0901234567' },
-      {
-        stage: 'consulting',
-        occasion: 'new_home',
-        note: composeCrmNote('', { ...EMPTY_CRM_STAFF_CONTEXT, consent: 'granted', persona: 'P1' }),
-      },
+  describe('Meta Custom Audience export', () => {
+    const granted = makeRow({ leadId: 'lead-granted', customerName: 'Nguyễn Văn Hùng', phone: '0901234567', identity: fullProfileIdentity() });
+    const grantedAgainSamePhone = makeRow({ leadId: 'lead-dup', phone: '+84901234567', identity: makeIdentity() });
+    const noteGrantedOnly = makeRow(
+      { leadId: 'lead-note', phone: '0912345678' },
+      { note: '[izzi-ctx: v=1; consent=granted; persona=P2]' },
     );
-    const noConsentWarm = makeRow(
-      { leadId: 'lead-2', customerName: 'Trần Thị Lan', phone: '0912345678' },
-      { stage: 'has_phone', occasion: 'new_home' },
-    );
-    const dncWithConsentTag = makeRow(
-      { leadId: 'lead-3', customerName: 'Phạm Quốc Sơn', phone: '0987654321' },
-      {
-        stage: 'do_not_contact',
-        note: composeCrmNote('', { ...EMPTY_CRM_STAFF_CONTEXT, consent: 'granted' }),
-      },
-    );
-    const vipDelivered = makeRow(
-      { leadId: 'lead-4', customerName: 'Hoàng Thị Mai', phone: '0933445566' },
-      {
-        stage: 'delivered',
-        purchasedAt: '2026-11-20',
-        note: composeCrmNote('', { ...EMPTY_CRM_STAFF_CONTEXT, consent: 'granted', persona: 'P2' }),
-      },
-    );
-    const lostBoughtElsewhere = makeRow(
-      { leadId: 'lead-5', phone: '0977889900' },
-      { stage: 'lost', lostReason: 'bought_elsewhere' },
-    );
+    const noMarketing = makeRow({ leadId: 'lead-nomkt', phone: '0987654321', identity: makeIdentity({}, { noMarketing: true }) });
+    const erasing = makeRow({ leadId: 'lead-erase', phone: '0933445566', identity: makeIdentity({}, { eraseRequestedAt: NOW_ISO }) });
+    const declined = makeRow({ leadId: 'lead-declined', phone: '0977889900', identity: makeIdentity({}, { state: 'declined', noMarketing: true }) });
+    const unknown = makeRow({ leadId: 'lead-unknown', phone: '0966778899', identity: makeIdentity({}, { state: 'unknown' }) });
+    const unreadable = makeRow({ leadId: 'lead-unreadable', phone: '0955667788', identity: makeIdentity(), identityUnavailable: true });
+    const dncGranted = makeRow({ leadId: 'lead-dnc', phone: '0944556677', identity: makeIdentity() }, { stage: 'do_not_contact' });
+    const rows = [granted, grantedAgainSamePhone, noteGrantedOnly, noMarketing, erasing, declined, unknown, unreadable, dncGranted];
 
-    const rows = [consentedWarm, noConsentWarm, dncWithConsentTag, vipDelivered, lostBoughtElsewhere];
-    const summary = summarizeAdsAudiences(rows, PRODUCTS, NOW_MS);
-    expect(summary.buckets.high_intent.count).toBe(2);
-    expect(summary.buckets.vip_lookalike.count).toBe(1);
-    expect(summary.buckets.suppressed.count).toBe(2);
-    expect(summary.consentedCount).toBe(2);
-    expect(summary.byPersona.P1.adAngles.length).toBeGreaterThan(0);
+    it('includes only server-granted customers who allow offers and asked for no erasure; a note tag never counts', async () => {
+      expect(hasExplicitMarketingConsent(granted)).toBe(true);
+      expect(hasExplicitMarketingConsent(noteGrantedOnly)).toBe(false);
+      expect(isCrmRowAdsSuppressed(erasing)).toBe(true);
+      expect(isCrmRowAdsSuppressed(makeRow({}, { note: '[izzi-ctx: v=1; consent=declined]' }))).toBe(true);
 
-    expect(normalizeVietnamPhoneForMeta('0901234567')).toBe('84901234567');
-    const expectedHash1 = createHash('sha256').update('84901234567', 'utf8').digest('hex');
-    const expectedHash4 = createHash('sha256').update('84933445566', 'utf8').digest('hex');
-
-    const exported = await buildMetaCustomAudienceCsv(rows, 'all');
-    expect(exported).toEqual({
-      csv: ['phone', expectedHash1, expectedHash4].join('\n'),
-      includedCount: 2,
-      excludedNoConsent: 1,
-      excludedSuppressed: 2,
+      const hash = createHash('sha256').update('84901234567', 'utf8').digest('hex');
+      const exported = await buildMetaCustomAudienceCsv(rows, 'all', IDENTITY_ON);
+      expect(exported).toEqual({
+        csv: `phone\n${hash}`,
+        includedCount: 1,
+        excludedNoConsent: 3,
+        excludedSuppressed: 4,
+        blockedReason: null,
+      });
+      expect(exported.csv.split('\n')[0]).toBe('phone');
+      expect(exported.csv).not.toMatch(/0901234567|84901234567|Hùng|P2|35-44|parents|ước tính/);
     });
-    expect(exported.csv).not.toContain('0901234567');
-    expect(exported.csv).not.toContain('84901234567');
-    expect(exported.csv).not.toContain('Nguyễn Văn Hùng');
+
+    it('fails closed while the AI profile is off, on a server without it, or while the identity could not be loaded', async () => {
+      expect(crmAdsExportBlock({ identityEnabled: false, identityUnavailable: false })).toBe('identity_off');
+      expect(crmAdsExportBlock({ identityEnabled: null, identityUnavailable: false })).toBe('identity_off');
+      expect(crmAdsExportBlock({ identityEnabled: true, identityUnavailable: true })).toBe('identity_unavailable');
+      expect(crmAdsExportBlock(IDENTITY_ON)).toBeNull();
+
+      for (const state of [
+        { identityEnabled: false, identityUnavailable: false },
+        { identityEnabled: null, identityUnavailable: false },
+        { identityEnabled: true, identityUnavailable: true },
+      ]) {
+        const exported = await buildMetaCustomAudienceCsv(rows, 'all', state);
+        expect(exported).toMatchObject({ csv: 'phone', includedCount: 0, blockedReason: crmAdsExportBlock(state) });
+        expect(summarizeAdsAudiences(rows, state).consentedCount).toBe(0);
+      }
+    });
+
+    it('filters a persona by the server persona after consent only, and the preview matches the export', async () => {
+      const legacyTagP2 = makeRow({ leadId: 'lead-legacy', phone: '0922334455' }, { note: '[izzi-ctx: v=1; persona=P2; consent=granted]' });
+      const lowConfidenceP2 = makeRow({
+        leadId: 'lead-low',
+        phone: '0911223344',
+        identity: makeIdentity({ persona: { ...idField('P2' as const, { confidence: 'low' }), summary: 'x' } }),
+      });
+      const selection = selectMetaAudience([granted, legacyTagP2, lowConfidenceP2], 'P2', IDENTITY_ON);
+      expect(selection).toEqual({ blockedReason: null, phones: ['84901234567'], excludedNoConsent: 0, excludedSuppressed: 0 });
+      expect((await buildMetaCustomAudienceCsv([granted, legacyTagP2, lowConfidenceP2], 'P2', IDENTITY_ON)).includedCount).toBe(1);
+
+      const summary = summarizeAdsAudiences(rows, IDENTITY_ON);
+      expect(summary.consentedCount).toBe(2);
+      expect(selectMetaAudience(rows, 'all', IDENTITY_ON).phones).toHaveLength(1);
+      expect(summary.byPersona.P2.count).toBe(1);
+      expect(summary.byPersona.P1.count + summary.byPersona.P3.count + summary.byPersona.P4.count).toBe(0);
+      expect(normalizeVietnamPhoneForMeta('0901234567')).toBe('84901234567');
+    });
   });
 
   it('builds N+1 / N+7 / N+30 post-sale milestones and switches channel at the 23h Messenger boundary', () => {
     const deliveredRecentChat = makeRow(
-      {
-        leadId: 'lead-post',
-        lastMessageAt: new Date(NOW_MS - 5 * HOUR_MS).toISOString(), // < 23h -> messenger_24h
-      },
+      { leadId: 'lead-post', lastMessageAt: new Date(NOW_MS - 5 * HOUR_MS).toISOString() },
       { stage: 'delivered', addressForm: 'chi', purchasedAt: '2026-11-20', productFactIds: ['ngu-su-dong'] },
     );
     const staleConsulting = makeRow(
-      {
-        leadId: 'lead-stale',
-        lastMessageAt: new Date(NOW_MS - 60 * HOUR_MS).toISOString(), // >= 48h & >= 23h -> zalo_or_call
-      },
+      { leadId: 'lead-stale', lastMessageAt: new Date(NOW_MS - 60 * HOUR_MS).toISOString() },
       { stage: 'consulting', addressForm: 'anh', productFactIds: ['ban-tho-gu'] },
     );
     const lostPriceWithin23h = makeRow(
-      {
-        leadId: 'lead-lost-price',
-        lastMessageAt: new Date(NOW_MS - 22 * HOUR_MS).toISOString(), // < 23h -> messenger_24h
-      },
+      { leadId: 'lead-lost-price', lastMessageAt: new Date(NOW_MS - 22 * HOUR_MS).toISOString() },
       { stage: 'lost', lostReason: 'price' },
     );
     const suppressedDnc = makeRow({ leadId: 'lead-dnc' }, { stage: 'do_not_contact' });
 
-    const plan = buildLifecyclePlan(
-      [deliveredRecentChat, staleConsulting, lostPriceWithin23h, suppressedDnc],
-      PRODUCTS,
-      NOW_MS,
-    );
+    const plan = buildLifecyclePlan([deliveredRecentChat, staleConsulting, lostPriceWithin23h, suppressedDnc], PRODUCTS, NOW_MS);
 
     const postSale = plan.filter((item) => item.leadId === 'lead-post');
-    expect(postSale).toHaveLength(3);
     expect(postSale.map((item) => item.milestoneLabel)).toEqual([
       expect.stringContaining('N+1'),
       expect.stringContaining('N+7'),
       expect.stringContaining('N+30'),
     ]);
-    expect(postSale[0]!.isOverdue).toBe(true); // 2026-11-21 < 2026-11-25
-    expect(postSale[1]!.isOverdue).toBe(false); // 2026-11-27 > 2026-11-25
+    expect(postSale[0]!.isOverdue).toBe(true);
+    expect(postSale[1]!.isOverdue).toBe(false);
     expect(postSale[0]!.channel).toBe('messenger_24h');
-
-    const staleItem = plan.find((item) => item.leadId === 'lead-stale');
-    expect(staleItem?.category).toBe('remarketing');
-    expect(staleItem?.channel).toBe('zalo_or_call');
-    expect(staleItem?.isOverdue).toBe(true);
-
-    const lostItem = plan.find((item) => item.leadId === 'lead-lost-price');
-    expect(lostItem?.category).toBe('remarketing');
-    expect(lostItem?.channel).toBe('messenger_24h');
-
+    expect(plan.find((item) => item.leadId === 'lead-stale')).toMatchObject({ category: 'remarketing', channel: 'zalo_or_call', isOverdue: true });
+    expect(plan.find((item) => item.leadId === 'lead-lost-price')).toMatchObject({ category: 'remarketing', channel: 'messenger_24h' });
     expect(plan.some((item) => item.leadId === 'lead-dnc')).toBe(false);
-
-    const segments = summarizeCareCrmSegments(
-      [deliveredRecentChat, staleConsulting, lostPriceWithin23h, suppressedDnc],
-      PRODUCTS,
-      NOW_MS,
-      false,
-    );
-    expect(segments.totalLeads).toBe(4);
-    expect(JSON.stringify(segments)).not.toMatch(/\d{8,}/);
   });
 
-  it('enforces fail-closed blocking for detailsUnreadable, mid-note tag injection, /l.php non-http schemes, phone domains, and consent-mandatory CSV', async () => {
+  it('closes an unreadable row everywhere', () => {
     const unreadableRow = makeRow(
-      {
-        leadId: 'lead-unreadable',
-        lastMessageAt: new Date(NOW_MS - 72 * HOUR_MS).toISOString(),
-        recentMessages: [{ text: 'Anh muốn đặt bàn thờ', at: NOW_ISO }],
-      },
-      {
-        stage: 'delivered',
-        purchasedAt: '2026-11-20',
-        note: '[izzi-ctx: v=1; consent=granted; persona=P1]',
-        detailsUnreadable: true,
-      },
+      { leadId: 'lead-unreadable', recentMessages: [{ text: 'Anh muốn đặt bàn thờ', at: NOW_ISO }] },
+      { stage: 'delivered', purchasedAt: '2026-11-20', note: null, detailsUnreadable: true },
     );
-
     expect(isCrmRowAdsSuppressed(unreadableRow)).toBe(true);
-    const unreadablePortrait = buildCustomerPortrait(unreadableRow, PRODUCTS, NOW_MS);
-    const unreadablePlaybook = buildSalerPlaybook(unreadableRow, unreadablePortrait, PRODUCTS, NOW_MS);
-    expect(unreadablePlaybook.priorityScore).toBe(0);
-    expect(unreadablePlaybook.priorityBand).toBe('closed');
-    expect(unreadablePlaybook.canContact).toBe(false);
+    const playbook = buildSalerPlaybook(unreadableRow, buildCustomerPortrait(unreadableRow, PRODUCTS, NOW_MS), PRODUCTS, NOW_MS);
+    expect(playbook).toMatchObject({ priorityScore: 0, priorityBand: 'closed', canContact: false });
     expect(buildLifecyclePlan([unreadableRow], PRODUCTS, NOW_MS)).toEqual([]);
-    expect(effectiveCrmIdentity(unreadableRow, PRODUCTS, NOW_MS).persona).toBeNull();
+  });
+});
 
-    // CSV export has no consent-bypass flag: unconsented and unreadable rows are strictly excluded
-    const unconsentedRow = makeRow({ leadId: 'lead-no-consent', phone: '0911222333' }, { stage: 'consulting' });
-    const csvRes = await buildMetaCustomAudienceCsv([unreadableRow, unconsentedRow], 'all');
-    expect(csvRes).toEqual({
-      csv: 'phone',
-      includedCount: 0,
-      excludedNoConsent: 1,
-      excludedSuppressed: 1,
-    });
+describe('B1 · MyGraph segments: counts only', () => {
+  it('carries no phone, name, PSID, lead id, quote or note, and counts personas and consent from the server only', () => {
+    const consented = makeRow({
+      leadId: '22222222-2222-4222-8222-222222222222',
+      customerName: 'Nguyễn Văn Hùng',
+      phone: '0901234567',
+      recentMessages: [{ text: 'Chị mua biếu bố mẹ dịp Tết số 0901234567', at: NOW_ISO }],
+      identity: fullProfileIdentity(),
+    }, { note: 'Khách ở Quận 7' });
+    const legacyTag = makeRow({
+      leadId: '33333333-3333-4333-8333-333333333333',
+      pageId: '105252511858057',
+      customerName: 'Trần Thị Lan',
+      phone: '0912345678',
+    }, { stage: 'has_phone', note: '[izzi-ctx: v=1; persona=P1; consent=granted]' });
 
-    // Mid-note [izzi-ctx: ...] lines are stripped everywhere, and wouldTruncateFreeNote detects 960-char overflow
-    const midTag = splitCrmNote('Dòng 1\n[izzi-ctx: v=1; consent=declined]\nDòng 2\n[izzi-ctx: v=1; persona=P1]');
-    expect(midTag.freeNote).toBe('Dòng 1\nDòng 2');
-    expect(midTag.ctx.persona).toBe('P1');
-    expect(midTag.ctx.consent).toBeNull();
+    const segments = summarizeCareCrmSegments([consented, legacyTag], IDENTITY_ON, NOW_MS, false);
+    expect(segments.byPersona).toEqual({ P1: 0, P2: 1, P3: 0, P4: 0, unclassified: 1 });
+    expect(segments.adsBuckets.consented).toBe(1);
 
-    const longFree = 'G'.repeat(960);
-    expect(wouldTruncateFreeNote(longFree, { ...EMPTY_CRM_STAFF_CONTEXT, persona: 'P1', consent: 'granted', adTitle: 'Quảng cáo' })).toBe(true);
+    const serialized = JSON.stringify(segments);
+    for (const secret of ['0901234567', '0912345678', 'Nguyễn Văn Hùng', 'Trần Thị Lan', '22222222', '33333333', '105252511858057', 'Quận 7', 'biếu bố mẹ', 'shopee', 'facebook']) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(serialized).not.toMatch(/\d{8,}/);
 
-    // URL & domain hardening
-    expect(extractSafeSharedLink(`https://shopee.vn/${'a'.repeat(2100)}`)).toBeNull();
-    expect(extractSafeSharedLink('https://l.facebook.com/l.php?u=javascript%3Aalert(1)')).toBeNull();
-    expect(extractSafeSharedLink('https://l.facebook.com/l.php?u=data%3Atext%2Fhtml%2Chi')).toBeNull();
-    expect(sanitizeCtxDomain('0901234567.vn')).toBeNull();
-    expect(sanitizeCtxDomain('0901-234-567.com')).toBeNull();
+    expect(summarizeCareCrmSegments([consented, legacyTag], { identityEnabled: false, identityUnavailable: false }, NOW_MS).adsBuckets.consented).toBe(0);
   });
 });

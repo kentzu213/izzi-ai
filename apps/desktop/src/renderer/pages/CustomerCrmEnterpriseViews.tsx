@@ -1,47 +1,25 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { useMemo, useState } from 'react';
 import type {
-  CustomerCareCrmAgeBand,
   CustomerCareCrmAssignee,
-  CustomerCareCrmBudgetBand,
-  CustomerCareCrmConsentState,
-  CustomerCareCrmIdConfidence,
-  CustomerCareCrmPersona,
   CustomerCareCrmProfileInput,
-  CustomerCareCrmRecipient,
   CustomerCareCrmRow,
-  CustomerCareCrmTimeline,
 } from '../../shared/customer-care-types';
 import {
-  CARE_CRM_MAX_AD_TITLE,
-  CARE_CRM_MAX_NOTE,
-  CARE_CRM_MAX_SHARED_DOMAIN,
-  CRM_AGE_BAND_OPTIONS,
-  CRM_BUDGET_BAND_OPTIONS,
-  CRM_CONSENT_OPTIONS,
-  CRM_PERSONA_OPTIONS,
-  CRM_RECIPIENT_OPTIONS,
-  CRM_TIMELINE_OPTIONS,
   buildCustomerPortrait,
   buildLifecyclePlan,
   buildMetaCustomAudienceCsv,
   buildSalerPlaybook,
-  classifyCrmAdsBucket,
-  composeCrmNote,
-  hasExplicitMarketingConsent,
-  normalizeVietnamPhoneForMeta,
-  sanitizeCtxAdTitle,
-  sanitizeCtxDomain,
-  splitCrmNote,
+  crmAdsExportBlock,
+  selectMetaAudience,
   summarizeAdsAudiences,
-  wouldTruncateFreeNote,
   type CrmAdsBucket,
+  type CrmAdsExportBlock,
+  type CrmAdsIdentityState,
   type CrmEnterpriseProduct,
   type CrmLifecycleCategory,
   type CrmLifecycleItem,
-  type CrmPortraitLayerBase,
-  type CrmReasoningSource,
+  type CrmMetaAudienceTarget,
   type CrmSalerPriorityBand,
-  type CrmStaffContext,
 } from '../../shared/customer-crm-enterprise';
 import { formatLeadPhone, leadDisplayName } from './customer-care-leads-flow';
 import {
@@ -62,31 +40,6 @@ import type { CrmDisplay } from './customer-crm-graph';
 // Shared display helpers
 // ---------------------------------------------------------------------------
 
-function sourceBadgeMeta(source: CrmReasoningSource): {
-  label: 'Đã xác nhận' | 'AI suy luận' | 'Gợi ý tên' | 'Chưa rõ';
-  tone: 'confirmed' | 'ai' | 'hint' | 'empty';
-} {
-  switch (source) {
-    case 'staff':
-      return { label: 'Đã xác nhận', tone: 'confirmed' };
-    case 'name':
-      return { label: 'Gợi ý tên', tone: 'hint' };
-    case 'identity':
-    case 'chat':
-    case 'note':
-      return { label: 'AI suy luận', tone: 'ai' };
-    case 'none':
-      return { label: 'Chưa rõ', tone: 'empty' };
-  }
-}
-
-function confidenceLabel(confidence: CustomerCareCrmIdConfidence | null): string | null {
-  if (confidence === 'high') return 'Tin cậy cao';
-  if (confidence === 'medium') return 'Tin cậy vừa';
-  if (confidence === 'low') return 'Tin cậy thấp';
-  return null;
-}
-
 const PRIORITY_META: Readonly<Record<CrmSalerPriorityBand, { label: string; tone: 'hot' | 'warm' | 'normal' | 'closed' }>> = {
   hot: { label: 'Ưu tiên nóng', tone: 'hot' },
   warm: { label: 'Ấm', tone: 'warm' },
@@ -94,34 +47,7 @@ const PRIORITY_META: Readonly<Record<CrmSalerPriorityBand, { label: string; tone
   closed: { label: 'Không gọi', tone: 'closed' },
 };
 
-function nullableValue<T extends string>(raw: string): T | null {
-  return raw === '' ? null : (raw as T);
-}
-
-export function formatFreeNoteTruncationWarning(freeNote: string): string {
-  const len = Array.from(splitCrmNote(freeNote).freeNote).length;
-  return `Ghi chú đang dài ${len}/${CARE_CRM_MAX_NOTE} ký tự — hãy rút gọn ghi chú trước khi gắn thêm nhãn ngữ cảnh để không mất nội dung.`;
-}
-
-/**
- * Merges Saler AI-context tags into `profile.note` while keeping the human free-text note intact.
- * Refuses to truncate `freeNote` silently when adding context tags would exceed 1000 code points.
- */
-export function applyStaffContextPatch(
-  profile: CustomerCareCrmProfileInput,
-  patch: Partial<CrmStaffContext>,
-): CustomerCareCrmProfileInput {
-  const { freeNote, ctx } = splitCrmNote(profile.note);
-  const nextCtx: CrmStaffContext = { ...ctx, ...patch };
-  if (wouldTruncateFreeNote(freeNote, nextCtx)) {
-    return profile;
-  }
-  return { ...profile, note: composeCrmNote(freeNote, nextCtx) };
-}
-
-type AdsExportTarget = 'all' | 'high_intent' | 'vip_lookalike' | 'reengage_lost' | CustomerCareCrmPersona;
-
-const ADS_EXPORT_OPTIONS: ReadonlyArray<{ value: AdsExportTarget; label: string }> = [
+const ADS_EXPORT_OPTIONS: ReadonlyArray<{ value: CrmMetaAudienceTarget; label: string }> = [
   { value: 'all', label: 'Tất cả đủ điều kiện' },
   { value: 'high_intent', label: 'Khách ấm chưa chốt (high_intent)' },
   { value: 'vip_lookalike', label: 'VIP Lookalike 1%–3% (vip_lookalike)' },
@@ -151,49 +77,12 @@ const BUCKET_TITLES: Readonly<Record<CrmAdsBucket, { title: string; subtitle: st
   },
 };
 
-function computeAdsExportPreviewCounts(
-  rows: readonly CustomerCareCrmRow[],
-  target: AdsExportTarget,
-  products: readonly CrmEnterpriseProduct[],
-  nowMs: number,
-): { eligibleCount: number; excludedNoConsent: number; excludedSuppressed: number } {
-  let excludedSuppressed = 0;
-  let excludedNoConsent = 0;
-  const seenPhones = new Set<string>();
-
-  const isPersonaTarget = target === 'P1' || target === 'P2' || target === 'P3' || target === 'P4';
-
-  for (const row of rows) {
-    if (isPersonaTarget) {
-      const portrait = buildCustomerPortrait(row, products, nowMs);
-      if (portrait.layer_5_persona.persona !== target) continue;
-    }
-
-    const bucket = classifyCrmAdsBucket(row);
-    if (bucket === 'suppressed') {
-      excludedSuppressed += 1;
-      continue;
-    }
-
-    if (!isPersonaTarget && target !== 'all' && bucket !== target) {
-      continue;
-    }
-
-    if (!hasExplicitMarketingConsent(row)) {
-      excludedNoConsent += 1;
-      continue;
-    }
-
-    const normalized = normalizeVietnamPhoneForMeta(row.phone);
-    if (normalized) seenPhones.add(normalized);
-  }
-
-  return {
-    eligibleCount: seenPhones.size,
-    excludedNoConsent,
-    excludedSuppressed,
-  };
-}
+const ADS_EXPORT_BLOCK_NOTES: Readonly<Record<CrmAdsExportBlock, string>> = {
+  identity_off:
+    'Xuất tệp Ads đang khoá: AI hồ sơ khách chưa bật cho dự án này, nên chưa có khách nào bấm "Đồng ý" qua izzi.',
+  identity_unavailable:
+    'Xuất tệp Ads tạm khoá: AI hồ sơ khách chưa tải được nên chưa kiểm tra được khách nào đã đồng ý. Bấm "Làm mới" rồi thử lại.',
+};
 
 // ---------------------------------------------------------------------------
 // 1. Enterprise CRM KPI Strip
@@ -205,6 +94,8 @@ export interface CrmEnterpriseKpiStripProps {
   savedRows?: readonly CustomerCareCrmRow[];
   products: readonly CrmEnterpriseProduct[];
   nowMs: number;
+  /** The list answer's identity state: the Ads count follows the export gate. */
+  identityState: CrmAdsIdentityState;
   display: CrmDisplay;
   onSelectDisplay: (display: CrmDisplay) => void;
 }
@@ -214,13 +105,15 @@ export function CrmEnterpriseKpiStrip({
   savedRows,
   products,
   nowMs,
+  identityState,
   display,
   onSelectDisplay,
 }: CrmEnterpriseKpiStripProps) {
   const stats = useMemo(() => {
     const todayCount = crmCallTodayCount(rows, nowMs);
-    const liveAds = summarizeAdsAudiences(rows, products, nowMs);
-    const persistedAds = savedRows ? summarizeAdsAudiences(savedRows, products, nowMs) : liveAds;
+    const liveAds = summarizeAdsAudiences(rows, identityState);
+    const persistedRows = savedRows ?? rows;
+    const persistedAds = savedRows ? summarizeAdsAudiences(savedRows, identityState) : liveAds;
     const classifiedCount =
       liveAds.byPersona.P1.count + liveAds.byPersona.P2.count + liveAds.byPersona.P3.count + liveAds.byPersona.P4.count;
     const lifecycle = buildLifecyclePlan(rows, products, nowMs);
@@ -230,12 +123,12 @@ export function CrmEnterpriseKpiStrip({
       todayCount,
       classifiedCount,
       byPersona: liveAds.byPersona,
-      consentedAds: persistedAds.consentedCount,
+      consentedAds: selectMetaAudience(persistedRows, 'all', identityState).phones.length,
       warmLeads: persistedAds.buckets.high_intent.count,
       lifecycleTotal: lifecycle.length,
       overdueLifecycle,
     };
-  }, [rows, savedRows, products, nowMs]);
+  }, [rows, savedRows, products, nowMs, identityState]);
 
   return (
     <div className="v2-crm-kpis" role="region" aria-label="Chỉ số tổng quan Enterprise CRM">
@@ -304,409 +197,6 @@ export function CrmEnterpriseKpiStrip({
 }
 
 // ---------------------------------------------------------------------------
-// 2. 5-Layer Portrait Inspector + AI Staff Context Editor
-// ---------------------------------------------------------------------------
-
-export interface CrmPortraitInspectorProps {
-  row: CustomerCareCrmRow;
-  profile: CustomerCareCrmProfileInput;
-  products: readonly CrmEnterpriseProduct[];
-  nowMs: number;
-  saving?: boolean;
-  rowError?: string | null;
-  hasConflict?: boolean;
-  onResolveConflict?: () => void;
-  variant?: 'panel' | 'card' | 'inline';
-  onChangeProfile?: (nextProfile: CustomerCareCrmProfileInput) => void;
-  onClose?: () => void;
-  onOpenProfile?: () => void;
-}
-
-function LayerBadges({ layer }: { layer: CrmPortraitLayerBase }) {
-  const src = sourceBadgeMeta(layer.source);
-  const conf = confidenceLabel(layer.confidence);
-  return (
-    <span className="v2-crm-portrait__marks">
-      <span className={`v2-crm-portrait__badge is-${src.tone}`}>{src.label}</span>
-      {conf && <span className="v2-crm-portrait__conf">{conf}</span>}
-    </span>
-  );
-}
-
-export function CrmPortraitInspector({
-  row,
-  profile,
-  products,
-  nowMs,
-  saving = false,
-  rowError = null,
-  hasConflict = false,
-  onResolveConflict,
-  variant = 'panel',
-  onChangeProfile,
-  onClose,
-  onOpenProfile,
-}: CrmPortraitInspectorProps) {
-  const readOnly = crmRowReadOnly(row);
-  const name = leadDisplayName(row);
-  const headingId = `crm-portrait-title-${variant}-${row.leadId}`;
-
-  const effectiveRow = useMemo<CustomerCareCrmRow>(
-    () => (readOnly ? row : { ...row, profile: { ...row.profile, ...profile, productFactIds: [...profile.productFactIds] } }),
-    [readOnly, row, profile],
-  );
-
-  const portrait = useMemo(
-    () => buildCustomerPortrait(effectiveRow, products, nowMs),
-    [effectiveRow, products, nowMs],
-  );
-
-  const { freeNote, ctx } = useMemo(() => splitCrmNote(profile.note), [profile.note]);
-
-  const [contextOpen, setContextOpen] = useState(() => variant !== 'card');
-  const [adDraft, setAdDraft] = useState<string | null>(null);
-  const [domainDraft, setDomainDraft] = useState<string | null>(null);
-  const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAdDraft(null);
-    setDomainDraft(null);
-    setTruncationWarning(null);
-  }, [row.leadId]);
-
-  useEffect(() => {
-    if (truncationWarning !== null && !wouldTruncateFreeNote(freeNote, ctx)) {
-      // Clear warning once the user shortens the free note sufficiently
-      if (Array.from(freeNote).length <= 900) {
-        setTruncationWarning(null);
-      }
-    }
-  }, [freeNote, ctx, truncationWarning]);
-
-  const adInputValue = adDraft !== null && sanitizeCtxAdTitle(adDraft) === ctx.adTitle
-    ? adDraft
-    : (ctx.adTitle ?? '');
-
-  const domainInputValue = domainDraft !== null && (domainDraft === '' || sanitizeCtxDomain(domainDraft) === ctx.sharedDomain || sanitizeCtxDomain(domainDraft) === null)
-    ? domainDraft
-    : (ctx.sharedDomain ?? '');
-
-  const domainInvalid = domainDraft !== null && domainDraft.trim() !== '' && sanitizeCtxDomain(domainDraft) === null;
-
-  const updateCtx = (patch: Partial<CrmStaffContext>) => {
-    if (readOnly || !onChangeProfile) return;
-    const nextCtx: CrmStaffContext = { ...ctx, ...patch };
-    if (wouldTruncateFreeNote(freeNote, nextCtx)) {
-      setTruncationWarning(formatFreeNoteTruncationWarning(freeNote));
-      return;
-    }
-    setTruncationWarning(null);
-    onChangeProfile(applyStaffContextPatch(profile, patch));
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'Escape' && onClose) {
-      event.stopPropagation();
-      onClose();
-    }
-  };
-
-  const layers: readonly CrmPortraitLayerBase[] = [
-    portrait.layer_1_age,
-    portrait.layer_2_demographic,
-    portrait.layer_3_household,
-    portrait.layer_4_interests,
-    portrait.layer_5_persona,
-  ];
-
-  const fieldId = (field: string) => `crm-ctx-${variant}-${row.leadId}-${field}`;
-
-  return (
-    <section
-      className={`v2-crm-portrait is-${variant}`}
-      aria-labelledby={headingId}
-      onKeyDown={onKeyDown}
-    >
-      <header className="v2-crm-portrait__header">
-        <div className="v2-crm-portrait__title-group">
-          <h4 id={headingId} className="v2-crm-portrait__title">
-            {variant === 'panel' ? `Chân dung 5 tầng · ${name}` : 'Chân dung 5 tầng tư duy'}
-          </h4>
-          {saving && <span className="v2-crm__meta" aria-live="polite">Đang lưu…</span>}
-        </div>
-        <div className="v2-crm-portrait__head-actions">
-          {variant === 'panel' && onOpenProfile && (
-            <button type="button" className="v2-button v2-button--ghost" onClick={onOpenProfile}>
-              Mở hồ sơ bảng
-            </button>
-          )}
-          {onClose && (
-            <button
-              type="button"
-              className="v2-button v2-button--ghost v2-crm-portrait__close"
-              aria-label="Đóng bảng chân dung"
-              onClick={onClose}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </header>
-
-      {hasConflict ? (
-        <div className="v2-crm__conflict" role="alert">
-          <p>
-            <strong>{rowError || CRM_CONFLICT_MESSAGE}</strong>{' '}
-            Hồ sơ trên máy chủ vừa được cập nhật — hãy xem lại thay đổi trong Bảng để không ghi đè nhầm.
-          </p>
-          {(onResolveConflict ?? onOpenProfile) && (
-            <div className="v2-crm__buttons">
-              <button type="button" className="v2-button" onClick={onResolveConflict ?? onOpenProfile}>
-                Mở hồ sơ xử lý xung đột
-              </button>
-            </div>
-          )}
-        </div>
-      ) : rowError ? (
-        <p className="v2-crm__error" role="alert">{rowError}</p>
-      ) : null}
-
-      <div className="v2-crm-portrait__meter">
-        <div className="v2-crm-portrait__meter-head">
-          <span className="v2-crm-portrait__meter-label">Độ hoàn thiện chân dung</span>
-          <strong className="v2-crm-portrait__meter-pct">
-            {`${portrait.completenessPct}% (${portrait.layer_5_persona.filledDimensions}/6 chiều)`}
-          </strong>
-        </div>
-        <div
-          className="v2-crm-portrait__bar"
-          role="progressbar"
-          aria-label="Độ hoàn thiện chân dung"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={portrait.completenessPct}
-        >
-          <span className="v2-crm-portrait__bar-fill" style={{ width: `${portrait.completenessPct}%` }} />
-        </div>
-        <p className="v2-crm-portrait__summary">{portrait.summary}</p>
-      </div>
-
-      <ol className="v2-crm-portrait__layers" aria-label="Chuỗi suy luận 5 tầng tư duy">
-        {layers.map((layer) => (
-          <li key={layer.step} className="v2-crm-portrait__layer">
-            <div className="v2-crm-portrait__layer-top">
-              <span className="v2-crm-portrait__layer-title">{layer.title}</span>
-              <LayerBadges layer={layer} />
-            </div>
-            <p className="v2-crm-portrait__layer-value">
-              {layer.step === 5 && portrait.layer_5_persona.persona && (
-                <span className="v2-crm-portrait__persona-pill">{portrait.layer_5_persona.persona}</span>
-              )}
-              <span>{layer.label}</span>
-            </p>
-            {layer.step === 3 && portrait.layer_3_household.sensitiveFiltered && (
-              <span className="v2-crm-portrait__guard">Đã lọc thông tin riêng tư nhạy cảm</span>
-            )}
-            {layer.step === 4 && (
-              <div className="v2-crm-portrait__tags">
-                {portrait.layer_4_interests.adTitle && (
-                  <span className="v2-crm-portrait__tag">{`QC: ${portrait.layer_4_interests.adTitle}`}</span>
-                )}
-                {portrait.layer_4_interests.sharedLinks.map((link) => (
-                  <span key={`${link.domain}-${link.title ?? ''}`} className="v2-crm-portrait__tag">
-                    {link.title ? `${link.title} (${link.domain})` : `Link: ${link.domain}`}
-                  </span>
-                ))}
-                {portrait.layer_4_interests.budgetLabel && (
-                  <span className="v2-crm-portrait__tag">{`Ngân sách: ${portrait.layer_4_interests.budgetLabel}`}</span>
-                )}
-                {portrait.layer_4_interests.timelineLabel && (
-                  <span className="v2-crm-portrait__tag">{`Thời điểm: ${portrait.layer_4_interests.timelineLabel}`}</span>
-                )}
-              </div>
-            )}
-            {variant !== 'card' && <p className="v2-crm-portrait__reason">{layer.reasoning}</p>}
-            {layer.quote && <q className="v2-crm-portrait__quote">{layer.quote}</q>}
-          </li>
-        ))}
-      </ol>
-
-      {readOnly ? (
-        <p className="v2-crm__hint" role="note">
-          Không đọc được chi tiết khách này — phần bổ sung ngữ cảnh AI đang khóa chỉ đọc.
-        </p>
-      ) : onChangeProfile ? (
-        <div className="v2-crm-portrait__ctx">
-          {variant === 'card' ? (
-            <button
-              type="button"
-              className="v2-button v2-button--ghost v2-crm-portrait__ctx-toggle"
-              aria-expanded={contextOpen}
-              onClick={() => setContextOpen((open) => !open)}
-            >
-              {contextOpen ? 'Ẩn bổ sung ngữ cảnh AI' : 'Bổ sung ngữ cảnh cho AI'}
-            </button>
-          ) : (
-            <div className="v2-crm-portrait__ctx-head">
-              <h5 className="v2-crm-portrait__ctx-title">
-                Bổ sung ngữ cảnh cho AI (Saler ghi nhận từ hội thoại / cuộc gọi)
-              </h5>
-              <span className="v2-crm__meta">Tự động lưu vào hồ sơ CRM · Không tạo bản ghi ngoài luồng</span>
-            </div>
-          )}
-
-          {contextOpen && (
-            <>
-              {truncationWarning && (
-                <p className="v2-crm__error" role="alert">{truncationWarning}</p>
-              )}
-              <div className="v2-crm-portrait__ctx-grid" role="group" aria-label={`Bổ sung ngữ cảnh cho AI của ${name}`}>
-              <label className="v2-field" htmlFor={fieldId('age')}>
-                <span className="v2-field__label">Nhóm tuổi</span>
-                <select
-                  id={fieldId('age')}
-                  className="v2-field__select"
-                  value={ctx.ageBand ?? ''}
-                  onChange={(event) => updateCtx({ ageBand: nullableValue<CustomerCareCrmAgeBand>(event.currentTarget.value) })}
-                >
-                  <option value="">AI tự suy luận</option>
-                  {CRM_AGE_BAND_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('recipient')}>
-                <span className="v2-field__label">Mua cho ai / Gia đình</span>
-                <select
-                  id={fieldId('recipient')}
-                  className="v2-field__select"
-                  value={ctx.recipient ?? ''}
-                  onChange={(event) => updateCtx({ recipient: nullableValue<CustomerCareCrmRecipient>(event.currentTarget.value) })}
-                >
-                  <option value="">AI tự suy luận</option>
-                  {CRM_RECIPIENT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('budget')}>
-                <span className="v2-field__label">Ngân sách dự kiến</span>
-                <select
-                  id={fieldId('budget')}
-                  className="v2-field__select"
-                  value={ctx.budgetBand ?? ''}
-                  onChange={(event) => updateCtx({ budgetBand: nullableValue<CustomerCareCrmBudgetBand>(event.currentTarget.value) })}
-                >
-                  <option value="">AI tự suy luận</option>
-                  {CRM_BUDGET_BAND_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('timeline')}>
-                <span className="v2-field__label">Thời điểm cần</span>
-                <select
-                  id={fieldId('timeline')}
-                  className="v2-field__select"
-                  value={ctx.timeline ?? ''}
-                  onChange={(event) => updateCtx({ timeline: nullableValue<CustomerCareCrmTimeline>(event.currentTarget.value) })}
-                >
-                  <option value="">AI tự suy luận</option>
-                  {CRM_TIMELINE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('persona')}>
-                <span className="v2-field__label">Chân dung P1–P4</span>
-                <select
-                  id={fieldId('persona')}
-                  className="v2-field__select"
-                  value={ctx.persona ?? ''}
-                  onChange={(event) => updateCtx({ persona: nullableValue<CustomerCareCrmPersona>(event.currentTarget.value) })}
-                >
-                  <option value="">AI tự tổng hợp</option>
-                  {CRM_PERSONA_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('consent')}>
-                <span className="v2-field__label">Đồng ý nhận tin (Consent)</span>
-                <select
-                  id={fieldId('consent')}
-                  className="v2-field__select"
-                  value={ctx.consent ?? ''}
-                  onChange={(event) => updateCtx({ consent: nullableValue<CustomerCareCrmConsentState>(event.currentTarget.value) })}
-                >
-                  <option value="">Chưa gắn thẻ</option>
-                  {CRM_CONSENT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('ad')}>
-                <span className="v2-field__label">Quảng cáo nguồn</span>
-                <input
-                  id={fieldId('ad')}
-                  type="text"
-                  className="v2-field__input"
-                  maxLength={CARE_CRM_MAX_AD_TITLE}
-                  placeholder="VD: Bàn thờ gỗ gụ ưu đãi Tết"
-                  value={adInputValue}
-                  onChange={(event) => {
-                    const raw = event.currentTarget.value;
-                    setAdDraft(raw);
-                    updateCtx({ adTitle: sanitizeCtxAdTitle(raw) });
-                  }}
-                  onBlur={() => setAdDraft(null)}
-                />
-              </label>
-
-              <label className="v2-field" htmlFor={fieldId('domain')}>
-                <span className="v2-field__label">Domain link khách gửi</span>
-                <input
-                  id={fieldId('domain')}
-                  type="text"
-                  className="v2-field__input"
-                  maxLength={CARE_CRM_MAX_SHARED_DOMAIN}
-                  placeholder="VD: shopee.vn, tiktok.com"
-                  aria-invalid={domainInvalid || undefined}
-                  value={domainInputValue}
-                  onChange={(event) => {
-                    const raw = event.currentTarget.value;
-                    setDomainDraft(raw);
-                    if (raw.trim() === '') {
-                      updateCtx({ sharedDomain: null });
-                    } else {
-                      const valid = sanitizeCtxDomain(raw);
-                      if (valid !== null) updateCtx({ sharedDomain: valid });
-                    }
-                  }}
-                  onBlur={() => {
-                    if (domainInvalid) setDomainDraft(null);
-                  }}
-                />
-                {domainInvalid && (
-                  <span className="v2-crm__meta">Nhập đúng tên miền (ví dụ: shopee.vn) để lưu.</span>
-                )}
-              </label>
-              </div>
-            </>
-          )}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // 3. Enterprise View 1 — Saler Workspace ("Phục vụ Saler")
 // ---------------------------------------------------------------------------
 
@@ -736,14 +226,12 @@ export function CrmSalerWorkspace({
   onOpenProfile,
 }: CrmSalerWorkspaceProps) {
   const [bandFilter, setBandFilter] = useState<SalerBandFilter>('all');
-  const [openContextId, setOpenContextId] = useState<string | null>(null);
 
   const items = useMemo(() => {
     const built = rows.map((row) => {
-      const portrait = buildCustomerPortrait(row, products, nowMs);
-      const playbook = buildSalerPlaybook(row, portrait, products, nowMs);
+      const playbook = buildSalerPlaybook(row, buildCustomerPortrait(row, products, nowMs), products, nowMs);
       const due = crmDue(row.profile, nowMs);
-      return { row, portrait, playbook, due };
+      return { row, playbook, due };
     });
 
     return built.sort((a, b) => (
@@ -803,7 +291,7 @@ export function CrmSalerWorkspace({
           </button>
         </div>
         <span className="v2-crm__meta">
-          Sắp xếp theo điểm ưu tiên giảm dần · Kịch bản tự động khớp xưng hô & chân dung 5 tầng
+          Sắp xếp theo điểm ưu tiên giảm dần · Kịch bản theo xưng hô và nhu cầu trên hồ sơ
         </span>
       </div>
 
@@ -813,12 +301,11 @@ export function CrmSalerWorkspace({
         </div>
       ) : (
         <div className="v2-crm-saler-list">
-          {visibleItems.map(({ row, portrait, playbook, due }) => {
+          {visibleItems.map(({ row, playbook, due }) => {
             const name = leadDisplayName(row);
             const priority = PRIORITY_META[playbook.priorityBand];
             const readOnly = crmRowReadOnly(row);
             const profile = profileFromRow(row);
-            const contextExpanded = openContextId === row.leadId;
 
             return (
               <article key={row.leadId} className="v2-crm-saler-card" aria-label={`Kịch bản Saler cho ${name}`}>
@@ -842,18 +329,9 @@ export function CrmSalerWorkspace({
                   <div className="v2-crm-saler-card__meta">
                     <span className="v2-crm-chip">{crmStageLabel(row.profile.stage)}</span>
                     <span className="v2-crm__meta">{crmAssigneeLabel(assignees, row.profile.ownerUserId)}</span>
-                    <span className="v2-crm-chip">{`Chân dung ${portrait.completenessPct}%`}</span>
                     {savingIds.has(row.leadId) && <span className="v2-crm__meta">Đang lưu…</span>}
                   </div>
                 </header>
-
-                <div className="v2-crm-saler-card__portrait-strip" aria-label="Tóm tắt 5 tầng tư duy">
-                  <span className="v2-crm-mini-layer">{`T1 Tuổi: ${portrait.layer_1_age.label}`}</span>
-                  <span className="v2-crm-mini-layer">{`T2 Xưng hô: ${portrait.layer_2_demographic.label}`}</span>
-                  <span className="v2-crm-mini-layer">{`T3 Gia đình: ${portrait.layer_3_household.label}`}</span>
-                  <span className="v2-crm-mini-layer">{`T4 Quan tâm: ${portrait.layer_4_interests.label}`}</span>
-                  <span className="v2-crm-mini-layer is-persona">{`T5: ${portrait.layer_5_persona.label}`}</span>
-                </div>
 
                 <div className="v2-crm-saler-card__script">
                   <div className="v2-crm-saler-card__script-head">
@@ -918,14 +396,6 @@ export function CrmSalerWorkspace({
                     <button
                       type="button"
                       className="v2-button v2-button--ghost"
-                      aria-expanded={contextExpanded}
-                      onClick={() => setOpenContextId((cur) => (cur === row.leadId ? null : row.leadId))}
-                    >
-                      Bổ sung ngữ cảnh AI
-                    </button>
-                    <button
-                      type="button"
-                      className="v2-button v2-button--ghost"
                       onClick={() => onOpenProfile(row.leadId)}
                     >
                       Mở hồ sơ
@@ -943,22 +413,6 @@ export function CrmSalerWorkspace({
                 ) : edits?.[row.leadId]?.error ? (
                   <p className="v2-crm__error" role="alert">{edits[row.leadId]!.error}</p>
                 ) : null}
-
-                {contextExpanded && (
-                  <CrmPortraitInspector
-                    variant="inline"
-                    row={row}
-                    profile={profile}
-                    products={products}
-                    nowMs={nowMs}
-                    saving={savingIds.has(row.leadId)}
-                    rowError={edits?.[row.leadId]?.error || null}
-                    hasConflict={Boolean(edits?.[row.leadId]?.rejected)}
-                    onResolveConflict={() => onOpenProfile(row.leadId)}
-                    onChangeProfile={(next) => onChangeProfile(row, next)}
-                    onClose={() => setOpenContextId(null)}
-                  />
-                )}
               </article>
             );
           })}
@@ -974,8 +428,8 @@ export function CrmSalerWorkspace({
 
 export interface CrmAdsWorkspaceProps {
   rows: readonly CustomerCareCrmRow[];
-  products: readonly CrmEnterpriseProduct[];
-  nowMs: number;
+  /** The list answer's identity state: the export fails closed without a readable, enabled identity. */
+  identityState: CrmAdsIdentityState;
   onNotify: (kind: 'notice' | 'error', message: string) => void;
 }
 
@@ -988,30 +442,32 @@ const ORDERED_ADS_BUCKETS: readonly CrmAdsBucket[] = [
 
 export function CrmAdsWorkspace({
   rows,
-  products,
-  nowMs,
+  identityState,
   onNotify,
 }: CrmAdsWorkspaceProps) {
-  const [exportTarget, setExportTarget] = useState<AdsExportTarget>('all');
+  const [exportTarget, setExportTarget] = useState<CrmMetaAudienceTarget>('all');
   const [exporting, setExporting] = useState(false);
 
   const summary = useMemo(
-    () => summarizeAdsAudiences(rows, products, nowMs),
-    [rows, products, nowMs],
+    () => summarizeAdsAudiences(rows, identityState),
+    [rows, identityState],
   );
 
-  const previewCounts = useMemo(
-    () => computeAdsExportPreviewCounts(rows, exportTarget, products, nowMs),
-    [rows, exportTarget, products, nowMs],
+  // The preview runs the same selection as the export, so the two can never disagree.
+  const preview = useMemo(
+    () => selectMetaAudience(rows, exportTarget, identityState),
+    [rows, exportTarget, identityState],
   );
+  const exportBlock = crmAdsExportBlock(identityState);
 
   const handleCopyCsv = async () => {
     setExporting(true);
     try {
-      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, {
-        products,
-        nowMs,
-      });
+      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, identityState);
+      if (result.blockedReason !== null) {
+        onNotify('error', ADS_EXPORT_BLOCK_NOTES[result.blockedReason]);
+        return;
+      }
       if (result.includedCount === 0) {
         onNotify('error', 'Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để xuất CSV.');
         return;
@@ -1031,10 +487,11 @@ export function CrmAdsWorkspace({
   const handleDownloadCsv = async () => {
     setExporting(true);
     try {
-      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, {
-        products,
-        nowMs,
-      });
+      const result = await buildMetaCustomAudienceCsv(rows, exportTarget, identityState);
+      if (result.blockedReason !== null) {
+        onNotify('error', ADS_EXPORT_BLOCK_NOTES[result.blockedReason]);
+        return;
+      }
       if (result.includedCount === 0) {
         onNotify('error', 'Chưa có khách nào đủ điều kiện (đã đồng ý nhận tin) trong tệp này để tải CSV.');
         return;
@@ -1122,7 +579,7 @@ export function CrmAdsWorkspace({
           </h3>
           {summary.unclassifiedCount > 0 && (
             <span className="v2-crm__meta">
-              {`Còn ${summary.unclassifiedCount} khách chưa đủ tín hiệu xếp nhóm P1–P4`}
+              {`Còn ${summary.unclassifiedCount} khách chưa có nhóm P1–P4 (chỉ xếp nhóm khi khách đã đồng ý)`}
             </span>
           )}
         </div>
@@ -1172,10 +629,14 @@ export function CrmAdsWorkspace({
               Xuất tệp Custom Audience mã hóa SHA-256 chuẩn Meta
             </h3>
             <p className="v2-crm__meta">
-              Chỉ băm một chiều SHA-256 trên đầu số 84… của khách đã đồng ý nhận tin (consent = granted). 0% tên, 0% SĐT thô, 0% khách thuộc danh sách chặn.
+              Chỉ băm một chiều SHA-256 số 84… của khách đã bấm &ldquo;Đồng ý&rdquo; (máy chủ ghi nhận), không từ chối nhận tin và không yêu cầu xoá. Tệp chỉ có cột phone: không tên, tuổi, gia đình hay chân dung.
             </p>
           </div>
         </div>
+
+        {exportBlock !== null && (
+          <p className="v2-crm__hint" role="status">{ADS_EXPORT_BLOCK_NOTES[exportBlock]}</p>
+        )}
 
         <div className="v2-crm-ads-export__controls">
           <label className="v2-field v2-crm-ads-export__picker" htmlFor="v2-crm-ads-export-target">
@@ -1184,7 +645,7 @@ export function CrmAdsWorkspace({
               id="v2-crm-ads-export-target"
               className="v2-field__select"
               value={exportTarget}
-              onChange={(event) => setExportTarget(event.currentTarget.value as AdsExportTarget)}
+              onChange={(event) => setExportTarget(event.currentTarget.value as CrmMetaAudienceTarget)}
             >
               {ADS_EXPORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1194,10 +655,10 @@ export function CrmAdsWorkspace({
 
           <div className="v2-crm-ads-export__summary" role="status" aria-live="polite">
             <span className="v2-crm-chip is-granted">
-              {`Đủ điều kiện xuất: ${previewCounts.eligibleCount} khách`}
+              {`Đủ điều kiện xuất: ${preview.phones.length} khách`}
             </span>
             <span className="v2-crm-chip">
-              {`Loại bảo vệ quyền riêng tư: ${previewCounts.excludedNoConsent} chưa đồng ý · ${previewCounts.excludedSuppressed} đã chặn`}
+              {`Loại bảo vệ quyền riêng tư: ${preview.excludedNoConsent} chưa đồng ý · ${preview.excludedSuppressed} đã chặn`}
             </span>
           </div>
 
@@ -1205,7 +666,7 @@ export function CrmAdsWorkspace({
             <button
               type="button"
               className="v2-button v2-button--ghost"
-              disabled={exporting || previewCounts.eligibleCount === 0}
+              disabled={exporting || preview.phones.length === 0}
               onClick={() => { void handleCopyCsv(); }}
             >
               Sao chép CSV SHA-256
@@ -1213,7 +674,7 @@ export function CrmAdsWorkspace({
             <button
               type="button"
               className="v2-button v2-button--primary"
-              disabled={exporting || previewCounts.eligibleCount === 0}
+              disabled={exporting || preview.phones.length === 0}
               onClick={() => { void handleDownloadCsv(); }}
             >
               Tải file CSV SHA-256

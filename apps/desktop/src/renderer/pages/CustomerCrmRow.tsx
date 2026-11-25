@@ -61,7 +61,6 @@ export interface CustomerCrmRowProps {
   onDiscard: () => void;
   /** Care CRM S3: the AI identity card in the editor; absent shows it read-only. */
   identityHandlers?: CrmIdentityHandlers | null;
-  onInspectPortrait?: () => void;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
@@ -126,16 +125,6 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
         </td>
         <td className="v2-crm__status" aria-live="polite">{status}</td>
         <td className="v2-crm__actions">
-          {props.onInspectPortrait && (
-            <button
-              type="button"
-              className="v2-button v2-button--ghost"
-              aria-label={`Chân dung của ${name}`}
-              onClick={props.onInspectPortrait}
-            >
-              Chân dung
-            </button>
-          )}
           <button type="button" className="v2-button v2-button--ghost" aria-label={`Sao chép số của ${name}`} onClick={onCopy}>
             Sao chép
           </button>

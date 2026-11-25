@@ -25,6 +25,7 @@ import {
   type CustomerCareCrmStage,
   type CustomerCareCrmTimeline,
 } from '../../shared/customer-care-types';
+import { isCrmSocialDomain } from '../../shared/customer-crm-enterprise';
 import {
   CRM_ADDRESS_FORM_OPTIONS,
   CRM_OCCASION_OPTIONS,
@@ -180,13 +181,9 @@ interface SharedLinkView {
 /**
  * Social networks (backend 84c2523): any link there may lead to a person, so it is shown as its domain only, never
  * with a title, whatever the title says. Every subdomain counts. A YouTube video keeps its title (only a channel
- * link, which the server already sends without one, is a person's page).
+ * link, which the server already sends without one, is a person's page). One list, shared with the portrait engine.
  */
-const SOCIAL_DOMAINS = ['facebook.com', 'fb.com', 'fb.me', 'fb.watch', 'm.me', 'instagram.com', 'threads.net', 'zalo.me', 'tiktok.com'];
-
-export function crmIsSocialDomain(domain: string): boolean {
-  return SOCIAL_DOMAINS.some((social) => domain === social || domain.endsWith(`.${social}`));
-}
+export const crmIsSocialDomain = isCrmSocialDomain;
 
 /** Links the customer shared, as a domain and a title only (never an address), at most three. */
 function sharedLinksOf(identity: CustomerCareCrmIdentity | null | undefined): SharedLinkView[] {

@@ -889,13 +889,9 @@ export class CustomerCareService {
       if (!crmResult.ok && crmResult.error === 'access_changed') return null;
       if (crmResult.ok) {
         const page = crmResult.value;
-        const products = setup
-          ? setup.facts
-            .filter((fact) => (fact.topic === 'catalog' || fact.topic === 'price') && isActive(fact, nowMs))
-            .map((fact) => ({ id: fact.id, label: fact.text }))
-          : [];
         const capped = page.nextCursor !== null || page.rows.length >= CARE_CRM_PAGE_SIZE;
-        crmSegments = summarizeCareCrmSegments(page.rows, products, nowMs, capped);
+        // `page` carries identityEnabled / identityUnavailable: the "consented" count follows the Ads export gate.
+        crmSegments = summarizeCareCrmSegments(page.rows, page, nowMs, capped);
       }
     }
     return {
