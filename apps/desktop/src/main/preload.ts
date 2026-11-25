@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../shared/agent-profile-types';
-import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmBulkAssignInput, CustomerCareCrmBulkAssignResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareCrmTeamSaveInput, CustomerCareCrmTeamSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot } from '../shared/customer-care-types';
+import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmBulkAssignInput, CustomerCareCrmBulkAssignResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareCrmTeamSaveInput, CustomerCareCrmTeamSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot, CustomerCareSyncRecentResult } from '../shared/customer-care-types';
+import type {
+  MarketingAdsConnectResult,
+  MarketingAdsDisconnectResult,
+  MarketingAdsOAuthEvent,
+  MarketingAdsOverviewInput,
+  MarketingAdsOverviewResult,
+  MarketingAdsSaveMetaAccountsInput,
+  MarketingAdsSaveMetaAccountsResult,
+  MarketingAdsStatusResult,
+} from '../shared/marketing-ads-types';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -693,6 +703,8 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:setLeadStatus', input),
     purgeLead: (input: CustomerCareLeadPurgeInput): Promise<CustomerCareLeadPurgeResult> =>
       ipcRenderer.invoke('customerCare:purgeLead', input),
+    syncRecentLeads: (): Promise<CustomerCareSyncRecentResult> =>
+      ipcRenderer.invoke('customerCare:syncRecentLeads'),
     getAutoReply: (): Promise<CustomerCareAutoReplyResult> => ipcRenderer.invoke('customerCare:getAutoReply'),
     setAutoReply: (input: CustomerCareAutoReplyInput): Promise<CustomerCareAutoReplyResult> =>
       ipcRenderer.invoke('customerCare:setAutoReply', input),
@@ -710,6 +722,26 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:identityAction', input),
     refreshIdentity: (input: CustomerCareCrmIdentityRefreshInput): Promise<CustomerCareCrmIdentityRefreshResult> =>
       ipcRenderer.invoke('customerCare:refreshIdentity', input),
+  },
+  // Unified Multi-Platform Ads Hub (`ads_read` + campaign-to-Page attribution mapping only).
+  marketingAds: {
+    getStatus: (): Promise<MarketingAdsStatusResult> =>
+      ipcRenderer.invoke('marketingAds:getStatus'),
+    connectMetaAds: (): Promise<MarketingAdsConnectResult> =>
+      ipcRenderer.invoke('marketingAds:connectMetaAds'),
+    saveMetaAccounts: (input: MarketingAdsSaveMetaAccountsInput): Promise<MarketingAdsSaveMetaAccountsResult> =>
+      ipcRenderer.invoke('marketingAds:saveMetaAccounts', input),
+    disconnectMetaAds: (): Promise<MarketingAdsDisconnectResult> =>
+      ipcRenderer.invoke('marketingAds:disconnectMetaAds'),
+    getOverview: (input?: MarketingAdsOverviewInput): Promise<MarketingAdsOverviewResult> =>
+      ipcRenderer.invoke('marketingAds:getOverview', input),
+    takeOAuthEvent: (): Promise<MarketingAdsOAuthEvent | null> =>
+      ipcRenderer.invoke('marketingAds:takeOAuthEvent'),
+    onOAuthEvent: (listener: (event: MarketingAdsOAuthEvent) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: MarketingAdsOAuthEvent) => listener(payload);
+      ipcRenderer.on('marketingAds:oauthEvent', handler);
+      return () => { ipcRenderer.removeListener('marketingAds:oauthEvent', handler); };
+    },
   },
   // Agent profiles (MyGraph agent memory, S2): distilled on request, used only after the owner approves.
   agentProfiles: {

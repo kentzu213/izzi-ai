@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto';
 import type { CustomerCareAuthorityLookup, CustomerCareLead } from '../../shared/customer-care-types';
 import { ISO_PATTERN } from '../marketing/native-marketing-client';
-import { CARE_LEADS_PAGE_SIZE, type CareLeadsGateway } from './care-facebook-client';
+import { CARE_LEADS_PAGE_SIZE, type CareFacebookGateway, type CareLeadsGateway } from './care-facebook-client';
 import { summarizeCareLeads, type CareLeadSummary } from './care-graph-digest';
 import { canReadCareLeads } from './care-leads';
 
@@ -53,7 +53,7 @@ export interface CareLeadNotifierOptions {
    * When it no longer matches the watched one, the authority is read again at once.
    */
   currentWorkspaceId?: () => string | null;
-  gateway: Pick<CareLeadsGateway, 'getInbox' | 'listLeads'>;
+  gateway: Pick<CareLeadsGateway, 'getInbox' | 'listLeads'> & Partial<Pick<CareFacebookGateway, 'getStatus'>>;
   store: { getSetting(key: string): string | null; setSetting(key: string, value: string): void };
   notify: (notification: CareLeadNotification) => void;
   /** Fixed diagnostics only; never receives lead data. */
@@ -234,7 +234,16 @@ export class CareLeadNotifier {
     const inbox = await this.options.gateway.getInbox(authority.workspaceId).catch(() => null);
     if (!inbox || (!inbox.ok && inbox.error === 'unavailable')) return null;
     if (!inbox.ok) return unwatched;
-    return { ...unwatched, workspaceId: authority.workspaceId, watching: inbox.value?.enabled === true };
+    // Keep watching when any primary Page or CRM-synced Page is connected, even if inbox webhook is
+    // off (e.g. Pancake handles live replies while backend delta sync continues importing leads).
+    let watching = inbox.value !== null;
+    if (!watching && this.options.gateway.getStatus) {
+      const status = await this.options.gateway.getStatus(authority.workspaceId).catch(() => null);
+      if (status?.ok) {
+        watching = status.value.connection !== null || (status.value.crmPages?.length ?? 0) > 0;
+      }
+    }
+    return { ...unwatched, workspaceId: authority.workspaceId, watching };
   }
 
   /** An answer applies only to the generation, account and active workspace it was asked under. */

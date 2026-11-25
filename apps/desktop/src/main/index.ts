@@ -104,6 +104,10 @@ import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './cus
 import { CareLeadNotifier } from './customer-care/care-lead-notifier';
 import { CareGraphPublisher } from './customer-care/care-graph-publisher';
 import { careDirectorContextFromCache } from './customer-care/care-graph-reader';
+import { MarketingAdsClient } from './marketing/marketing-ads-client';
+import { MarketingAdsService } from './marketing/marketing-ads-service';
+import { MarketingAdsOAuthCoordinator } from './marketing/marketing-ads-oauth';
+import { registerMarketingAdsIpc } from './marketing/marketing-ads-ipc';
 import { CustomerMarketingService } from './customer-marketing/customer-marketing-service';
 import { MarketingScheduler } from './customer-marketing/marketing-scheduler';
 import {
@@ -228,6 +232,8 @@ const pendingNativeMarketingOAuth = new Map<string, {
 }>();
 // Owns the Care Facebook Login pending states; claims the shared Marketing OAuth deep link first.
 let careFacebookOAuth: CareFacebookOAuthCoordinator | null = null;
+// Owns the Meta Ads OAuth pending states; claims the shared Marketing OAuth deep link after Care.
+let marketingAdsOAuth: MarketingAdsOAuthCoordinator | null = null;
 // Background "new lead" notifications for Customer Care (Phase B1); never carries a phone.
 let careLeadNotifier: CareLeadNotifier | null = null;
 // Keeps the count-only Care nodes in MyGraph fresh for izzi agents (docs/CARE-GRAPH-AGENTS.md).
@@ -994,6 +1000,27 @@ function setupIPC() {
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
   });
   registerCustomerCareIpc(customerCareService, careFacebookOAuth);
+  const marketingAdsClient = new MarketingAdsClient(authManager, {
+    baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
+      ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
+    allowLoopback: DESKTOP_RUNTIME_PROFILE.customerMarketingStaging,
+  });
+  const marketingAdsService = new MarketingAdsService({
+    client: marketingAdsClient,
+    resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+  });
+  marketingAdsOAuth = new MarketingAdsOAuthCoordinator({
+    service: marketingAdsService,
+    openExternal: (url) => shell.openExternal(url),
+    notify: (event) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('marketingAds:oauthEvent', event);
+      }
+    },
+    currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
+  });
+  registerMarketingAdsIpc(marketingAdsService, marketingAdsOAuth);
   registerAgentProfileIpc(agentProfileService);
   // Care → MyGraph: three count-only nodes, written only when they change; the Director reads them back
   // from the synced node list, so the Care block costs no request at planning time.
@@ -2327,8 +2354,8 @@ function handleProtocolUrl(url: string): void {
     return;
   }
   if (url.startsWith('openclaw://marketing/oauth/callback')) {
-    // Care claims the link only when the state is one it minted; otherwise Native Marketing handles it.
-    routeMarketingOAuthCallback(url, careFacebookOAuth, handleNativeMarketingOAuthCallback);
+    // Care claims its own state first, then Meta Ads, otherwise Native Marketing handles it.
+    routeMarketingOAuthCallback(url, careFacebookOAuth, handleNativeMarketingOAuthCallback, marketingAdsOAuth);
     return;
   }
   if (!customerMarketingInvitationCoordinator) {

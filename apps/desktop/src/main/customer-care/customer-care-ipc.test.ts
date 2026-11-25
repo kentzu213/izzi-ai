@@ -11,7 +11,7 @@ describe('customer care IPC boundary', () => {
     getSnapshot: vi.fn(), saveSetup: vi.fn(), assist: vi.fn(),
     selectFacebookPage: vi.fn(), getBackfillStatus: vi.fn(), disconnectFacebookPage: vi.fn(),
     getFacebookInbox: vi.fn(), setFacebookInbox: vi.fn(), listLeads: vi.fn(), setLeadStatus: vi.fn(),
-    purgeLead: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
+    purgeLead: vi.fn(), syncRecentLeads: vi.fn(), getAutoReply: vi.fn(), setAutoReply: vi.fn(), listCrm: vi.fn(), saveCrmProfile: vi.fn(),
     saveCrmTeam: vi.fn(), bulkAssignCrm: vi.fn(),
     identityAction: vi.fn(), refreshIdentity: vi.fn(),
   };
@@ -31,6 +31,7 @@ describe('customer care IPC boundary', () => {
     ['listLeads', service.listLeads],
     ['setLeadStatus', service.setLeadStatus],
     ['purgeLead', service.purgeLead],
+    ['syncRecentLeads', service.syncRecentLeads],
     ['getAutoReply', service.getAutoReply],
     ['setAutoReply', service.setAutoReply],
     ['listCrm', service.listCrm],

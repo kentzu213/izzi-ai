@@ -137,11 +137,12 @@ describe('compose reply from a lead', () => {
 });
 
 describe('polling and access', () => {
-  it('polls only while the tab is on screen and the inbox is on', () => {
+  it('polls while the tab is on screen and either inbox is on or a Page is connected', () => {
     expect(shouldPollLeads({ active: true, documentVisible: true, inboxEnabled: true })).toBe(true);
     expect(shouldPollLeads({ active: false, documentVisible: true, inboxEnabled: true })).toBe(false);
     expect(shouldPollLeads({ active: true, documentVisible: false, inboxEnabled: true })).toBe(false);
     expect(shouldPollLeads({ active: true, documentVisible: true, inboxEnabled: false })).toBe(false);
+    expect(shouldPollLeads({ active: true, documentVisible: true, inboxEnabled: false, hasConnectedPage: true })).toBe(true);
   });
 
   it('hides the section from viewers, without B1 routes and without a live Page', () => {

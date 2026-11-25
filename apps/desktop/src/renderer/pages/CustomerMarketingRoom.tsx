@@ -1,4 +1,6 @@
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -50,7 +52,10 @@ import type {
 import { CustomerMarketingResources } from './CustomerMarketingResources';
 import { CustomerMarketingChannels } from './CustomerMarketingChannels';
 import { CustomerCareWorkspace } from './CustomerCareWorkspace';
+import { CustomerCrmPanel } from './CustomerCrmPanel';
 import { CustomerMarketingCapabilityWorkbench, type CapabilityWorkbenchOpenView } from './CustomerMarketingCapabilityWorkbenches';
+
+const CustomerAdsHubPanel = lazy(() => import('./CustomerAdsHubPanel'));
 import {
   customerPlanMeetsMinimum,
   resolveCustomerCapabilitySurface,
@@ -3614,7 +3619,13 @@ function CustomerRoom({
                 onDirectorChannelsChange={setDirectorChannels}
               />
             )}
-            care={<CustomerCareWorkspace scopeKey={snapshot.workspace.id} />}
+            care={<CustomerCareWorkspace scopeKey={snapshot.workspace.id} onOpenCrm={() => setV2Tab('crm')} />}
+            crm={<CustomerCrmPanel />}
+            ads={(
+              <Suspense fallback={<div className="v2-empty">Đang tải Quản lý Quảng cáo…</div>}>
+                <CustomerAdsHubPanel workspaceId={snapshot.workspace.id} role={snapshot.workspace.role} />
+              </Suspense>
+            )}
             plan={(
               <CampaignPlanV2
                 onboardingChannels={snapshot.onboarding?.channels ?? []}

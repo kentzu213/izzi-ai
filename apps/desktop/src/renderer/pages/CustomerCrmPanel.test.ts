@@ -214,7 +214,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect(afterSwitchBack).toContain('Chưa lưu');
   });
 
-  it('calls only the CRM routes: the table\'s, S3 identity routes, and Saler team/bulk-assign routes', () => {
+  it('calls only the CRM routes: the table\'s, S3 identity routes, syncRecentLeads, and Saler team/bulk-assign routes', () => {
     const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
     expect([...calls].sort()).toEqual([
       'bulkAssignCrm', 'getSnapshot', 'identityAction', 'listCrm', 'purgeLead', 'refreshIdentity', 'saveCrmProfile', 'saveCrmTeam',
@@ -246,7 +246,7 @@ describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
     expect(methods).toEqual([
       "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'", "'getBackfillStatus'",
       "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
-      "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
+      "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'syncRecentLeads'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
       "'saveCrmTeam'", "'bulkAssignCrm'", "'identityAction'", "'refreshIdentity'",
     ]);
   });

@@ -4,7 +4,7 @@ import type {
   CustomerCareInboxState,
   CustomerCareLead,
 } from '../../shared/customer-care-types';
-import type { CareFacebookResult, CareLeadPage } from './care-facebook-client';
+import type { CareFacebookResult, CareFacebookStatus, CareLeadPage } from './care-facebook-client';
 import {
   CARE_LEAD_CONTEXT_TTL_MS,
   CARE_LEAD_MAX_CLOCK_SKEW_MS,
@@ -50,6 +50,10 @@ function fixture(options: { role?: 'owner' | 'manager' | 'editor' | 'reviewer' |
     authority: { identityId: IDENTITY, workspaceId: WORKSPACE, role: options.role ?? 'editor' } as CustomerCareAuthorityLookup,
     inbox: { ok: true, value: { enabled: true, subscribedAt: null, lastEventAt: null } } as
       CareFacebookResult<CustomerCareInboxState | null>,
+    status: {
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null, crmPages: [] },
+    } as CareFacebookResult<CareFacebookStatus>,
     leads: [] as CustomerCareLead[],
     leadsFailure: null as null | { ok: false; error: 'forbidden' | 'unavailable' },
     /** The workspace main stores as active for this account, read locally without a request. */
@@ -60,18 +64,19 @@ function fixture(options: { role?: 'owner' | 'manager' | 'editor' | 'reviewer' |
   const store = new MemorySettings();
   const resolveAuthority = vi.fn(async () => state.authority);
   const getInbox = vi.fn(async (_workspaceId: string) => state.inbox);
+  const getStatus = vi.fn(async (_workspaceId: string) => state.status);
   const listLeads = vi.fn(async (_workspaceId: string, _cursor: string | null): Promise<CareFacebookResult<CareLeadPage>> =>
     state.leadsFailure ?? { ok: true, value: { leads: state.leads, nextCursor: null } });
   const notifier = new CareLeadNotifier({
     resolveAuthority,
     currentIdentityId: () => state.identity,
     currentWorkspaceId: () => state.activeWorkspace,
-    gateway: { getInbox, listLeads },
+    gateway: { getInbox, getStatus, listLeads },
     store,
     notify: (notification) => { notifications.push(notification); },
     now: () => state.clock,
   });
-  return { notifier, state, store, notifications, resolveAuthority, getInbox, listLeads };
+  return { notifier, state, store, notifications, resolveAuthority, getInbox, getStatus, listLeads };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -192,17 +197,51 @@ describe('CareLeadNotifier gating', () => {
     expect(listLeads).not.toHaveBeenCalled();
   });
 
-  it('sets the mark while the inbox is off, then stays quiet until it is on', async () => {
+  it('keeps watching and notifies when a Page is connected even if inbox webhook is off (Pancake active)', async () => {
     const { notifier, state, notifications, listLeads } = fixture();
     state.inbox = { ok: true, value: { enabled: false, subscribedAt: null, lastEventAt: null } };
     await notifier.tick();
-    await notifier.tick();
     expect(listLeads).toHaveBeenCalledTimes(1);
 
-    state.inbox = { ok: true, value: { enabled: true, subscribedAt: null, lastEventAt: null } };
     state.leads = [lead(1, '2026-11-17T10:00:00.000Z')];
-    notifier.refresh();
-    await vi.waitFor(() => expect(notifications).toHaveLength(1));
+    await notifier.tick();
+    expect(listLeads).toHaveBeenCalledTimes(2);
+    expect(notifications).toEqual([FIXED_NOTIFICATION]);
+  });
+
+  it('keeps watching when primary inbox is null but CRM-synced Pages are connected', async () => {
+    const { notifier, state, notifications, getStatus, listLeads } = fixture();
+    state.inbox = { ok: true, value: null };
+    state.status = {
+      ok: true,
+      value: {
+        success: true,
+        workspaceId: WORKSPACE,
+        requiredScopes: [],
+        connection: null,
+        crmPages: [{ pageId: '105252511858057', pageName: 'Đồ Đồng Đại Long', verifiedAt: '2026-11-17T08:00:00.000Z' }],
+      },
+    };
+    await notifier.tick();
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(listLeads).toHaveBeenCalledTimes(1);
+
+    state.leads = [lead(1, '2026-11-17T10:00:00.000Z')];
+    await notifier.tick();
+    expect(listLeads).toHaveBeenCalledTimes(2);
+    expect(notifications).toEqual([FIXED_NOTIFICATION]);
+  });
+
+  it('sets the mark once and stays quiet when neither primary Page nor CRM Pages are connected', async () => {
+    const { notifier, state, listLeads } = fixture();
+    state.inbox = { ok: true, value: null };
+    state.status = {
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null, crmPages: [] },
+    };
+    await notifier.tick();
+    await notifier.tick();
+    expect(listLeads).toHaveBeenCalledTimes(1);
   });
 
   it('does not read leads when the backend has no inbox routes yet', async () => {

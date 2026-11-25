@@ -65,6 +65,8 @@ function renderWorkspace(tab: AgentMarketingTab, options: {
       onTabChange: () => undefined,
       conversation: createElement('div', { id: 'slot-conversation' }, 'conversation'),
       care: createElement('div', { id: 'slot-care' }, 'care'),
+      crm: createElement('div', { id: 'slot-crm' }, 'crm'),
+      ads: createElement('div', { id: 'slot-ads' }, 'ads'),
       plan: createElement('div', { id: 'slot-plan' }, 'plan'),
       content: createElement('div', { id: 'slot-content' }, 'content'),
       analytics: createElement('div', { id: 'slot-analytics' }, 'analytics'),
@@ -81,9 +83,9 @@ function count(html: string, needle: string): number {
 }
 
 describe('Agent Marketing V2 tabs', () => {
-  it('exposes customer care beside the existing tabs and opens on the Director conversation', () => {
+  it('exposes customer care, CRM and ads beside the existing tabs and opens on the Director conversation', () => {
     expect(AGENT_MARKETING_TABS.map((item) => item.id)).toEqual([
-      'conversation', 'care', 'plan', 'content', 'analytics', 'channels', 'files',
+      'conversation', 'care', 'crm', 'ads', 'plan', 'content', 'analytics', 'channels', 'files',
     ]);
     expect(DEFAULT_AGENT_MARKETING_TAB).toBe('conversation');
   });
@@ -98,11 +100,19 @@ describe('Agent Marketing V2 tabs', () => {
     expect(html).toContain(`aria-labelledby="v2-am-tab-${tab}"`);
     expect(count(html, 'aria-selected="true"')).toBe(1);
     expect(html).toMatch(new RegExp(`id="v2-am-tab-${tab}"[^>]*aria-selected="true"`));
-    for (const other of ['conversation', 'care', 'plan', 'content', 'analytics', 'channels']) {
+    for (const other of ['conversation', 'care', 'crm', 'ads', 'plan', 'content', 'analytics', 'channels']) {
       expect(html.includes(`id="slot-${other}"`)).toBe(other === tab);
     }
-    // The inspector (approvals) stays visible on every tab.
-    expect(html).toContain('id="slot-inspector"');
+    if (tab === 'crm' || tab === 'ads') {
+      // Wide tabs collapse the right inspector by default and expose a toggle button.
+      expect(html).toContain('v2-agent-marketing--wide');
+      expect(html).toContain('Hiện thanh kiểm soát');
+      expect(html).not.toContain('id="slot-inspector"');
+    } else {
+      // The inspector (approvals) stays visible on every other tab.
+      expect(html).not.toContain('v2-agent-marketing--wide');
+      expect(html).toContain('id="slot-inspector"');
+    }
   });
 
   it('shows the external-action guard from the snapshot flag without changing it', () => {
@@ -137,6 +147,8 @@ describe('Agent Marketing V2 panel persistence', () => {
       onTabChange: () => undefined,
       conversation: null,
       care: createElement(VisibilityProbe),
+      crm: null,
+      ads: null,
       plan: null,
       content: null,
       analytics: null,

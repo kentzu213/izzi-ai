@@ -300,6 +300,24 @@ export type CustomerCareLeadPurgeResult =
   | { ok: true; workspaceId: string; leadId: string }
   | CustomerCareFacebookFailure;
 
+/** Delta sync summary returned by `POST /api/marketing/care/facebook/sync-recent`. */
+export interface CustomerCareSyncRecentSummary {
+  workspaceId: string;
+  cooldownSeconds: number;
+  syncedAt: string;
+  pagesProcessed: number;
+  conversationsScanned: number;
+  leadsImported: number;
+  messagesStored: number;
+  namesSealed: number;
+  skippedPages: CustomerCareBackfillSkippedPage[];
+}
+
+export type CustomerCareSyncRecentResult =
+  | ({ ok: true } & CustomerCareSyncRecentSummary)
+  | { ok: false; error: 'refresh_too_soon'; retryAfterSec: number; workspaceId?: string }
+  | CustomerCareFacebookFailure;
+
 /** Renderer inputs; the workspace always comes from main's live authority. */
 export interface CustomerCareInboxInput {
   enabled: boolean;

@@ -20,6 +20,7 @@ const METHODS = [
   'listLeads',
   'setLeadStatus',
   'purgeLead',
+  'syncRecentLeads',
   'getAutoReply',
   'setAutoReply',
   'listCrm',
@@ -37,7 +38,7 @@ export function registerCustomerCareIpc(
     | 'getFacebookInbox' | 'setFacebookInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
     | 'getAutoReply' | 'setAutoReply' | 'listCrm' | 'saveCrmProfile' | 'saveCrmTeam' | 'bulkAssignCrm'
     | 'identityAction' | 'refreshIdentity'
-  >,
+  > & Partial<Pick<CustomerCareService, 'syncRecentLeads'>>,
   facebook: Pick<CareFacebookOAuthCoordinator, 'connect' | 'takeChoices'>,
 ): void {
   for (const method of METHODS) {
@@ -60,6 +61,9 @@ export function registerCustomerCareIpc(
         if (method === 'setLeadStatus') return await service.setLeadStatus(input);
         // B1b: only `{ leadId }` crosses; owner/manager is re-checked in main and on the server.
         if (method === 'purgeLead') return await service.purgeLead(input);
+        if (method === 'syncRecentLeads') {
+          return service.syncRecentLeads ? await service.syncRecentLeads() : { ok: false, error: 'unsupported' };
+        }
         // Phase C: only `{ enabled }` crosses; main builds the uploaded facts from the saved setup itself.
         if (method === 'getAutoReply') return await service.getAutoReply();
         if (method === 'setAutoReply') return await service.setAutoReply(input);

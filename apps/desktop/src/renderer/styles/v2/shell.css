@@ -1092,11 +1092,33 @@
   margin-top: var(--v2-space-4);
 }
 
+.izzi-v2 .v2-agent-marketing.v2-agent-marketing--wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .izzi-v2 .v2-agent-marketing__main {
   display: flex;
   flex-direction: column;
   gap: var(--v2-space-4);
   min-width: 0;
+}
+
+.izzi-v2 .v2-agent-marketing.v2-agent-marketing--wide .v2-agent-marketing__main {
+  grid-column: 1 / -1;
+}
+
+.izzi-v2 .v2-agent-marketing__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-agent-marketing__inspector-toggle {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 6px 10px;
 }
 
 .izzi-v2 .v2-agent-marketing__inspector {

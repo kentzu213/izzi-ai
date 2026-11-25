@@ -38,6 +38,7 @@ import {
   type CustomerCareLead,
   type CustomerCareLeadMessage,
   type CustomerCareLeadStatus,
+  type CustomerCareSyncRecentSummary,
 } from '../../shared/customer-care-types';
 
 export const CARE_FACEBOOK_ROOT = '/api/marketing/care/facebook';
@@ -162,11 +163,15 @@ export interface CareLeadPurge {
   deletedMessages: number;
 }
 
+export type CareSyncRecentOutcome =
+  | { kind: 'synced'; summary: CustomerCareSyncRecentSummary }
+  | { kind: 'too_soon'; retryAfterSec: number };
+
 /** Phase B1 inbox and lead routes, plus the B1b customer purge; nothing is ever sent to a customer. */
 export type CareLeadsGateway = Pick<
   CareFacebookClient,
   'getInbox' | 'setInbox' | 'listLeads' | 'setLeadStatus' | 'purgeLead'
->;
+> & Partial<Pick<CareFacebookClient, 'syncRecentLeads'>>;
 
 /** One approved fact as the server answers with it (Phase C). Only `text` ever reaches a customer. */
 export interface CareAutoReplyScriptFact {
@@ -990,6 +995,76 @@ export class CareFacebookClient {
     return state && state.enabled === enabled ? { ok: true, value: state } : INVALID_RESPONSE;
   }
 
+  /** POST /sync-recent — trigger an immediate multi-Page incremental delta sync for this workspace. */
+  async syncRecentLeads(workspaceId: string): Promise<CareFacebookResult<CareSyncRecentOutcome>> {
+    if (!isCareFacebookChoiceId(workspaceId)) return INVALID_REQUEST;
+    const syncTimeoutMs = Math.max(this.timeoutMs, CARE_FACEBOOK_CALLBACK_TIMEOUT_MS);
+    const result = await this.request(
+      'sync-recent',
+      '/sync-recent',
+      { method: 'POST', body: JSON.stringify({ workspaceId }) },
+      syncTimeoutMs,
+      (status, body) => {
+        if (status !== 429) return null;
+        const envelope = exactRecord(body, ['success', 'error', 'reason', 'retryAfterSec']);
+        if (!envelope || envelope.success !== false || envelope.reason !== 'refresh_too_soon') return null;
+        const retryAfterSec = envelope.retryAfterSec;
+        if (typeof retryAfterSec !== 'number' || !Number.isSafeInteger(retryAfterSec) || retryAfterSec < 0) return null;
+        return { ok: true, body: { __tooSoon: true, retryAfterSec } };
+      },
+    );
+    if (!result.ok) return result;
+    const tooSoon = exactRecord(result.body, ['__tooSoon', 'retryAfterSec']);
+    if (tooSoon && tooSoon.__tooSoon === true && typeof tooSoon.retryAfterSec === 'number') {
+      return { ok: true, value: { kind: 'too_soon', retryAfterSec: tooSoon.retryAfterSec } };
+    }
+    const envelope = parseSuccessEnvelope(
+      result.body,
+      [
+        'cooldownSeconds',
+        'syncedAt',
+        'pagesProcessed',
+        'conversationsScanned',
+        'leadsImported',
+        'messagesStored',
+        'namesSealed',
+        'skippedPages',
+      ],
+      workspaceId,
+    );
+    if (
+      !envelope
+      || !isCount(envelope.cooldownSeconds)
+      || !isIso(envelope.syncedAt)
+      || !isCount(envelope.pagesProcessed)
+      || !isCount(envelope.conversationsScanned)
+      || !isCount(envelope.leadsImported)
+      || !isCount(envelope.messagesStored)
+      || !isCount(envelope.namesSealed)
+    ) {
+      return INVALID_RESPONSE;
+    }
+    const skippedPages = parseSkippedPages(envelope.skippedPages);
+    if (!skippedPages) return INVALID_RESPONSE;
+    return {
+      ok: true,
+      value: {
+        kind: 'synced',
+        summary: {
+          workspaceId,
+          cooldownSeconds: envelope.cooldownSeconds,
+          syncedAt: envelope.syncedAt,
+          pagesProcessed: envelope.pagesProcessed,
+          conversationsScanned: envelope.conversationsScanned,
+          leadsImported: envelope.leadsImported,
+          messagesStored: envelope.messagesStored,
+          namesSealed: envelope.namesSealed,
+          skippedPages,
+        },
+      },
+    };
+  }
+
   /**
    * One authed request. The token is attached here and nowhere else; only the parsed JSON body leaves
    * this method, and an error body is reduced to its bounded `reason` by `careFacebookFailure`.
@@ -999,6 +1074,7 @@ export class CareFacebookClient {
     path: string,
     init: RequestInit = {},
     timeoutMs: number = this.timeoutMs,
+    onFailure?: (status: number, body: unknown) => RequestOutcome | null,
   ): Promise<RequestOutcome> {
     if (!this.baseUrl) return { ok: false, error: 'not_configured' };
     const token = await this.auth.getAccessToken().catch(() => null);
@@ -1026,6 +1102,8 @@ export class CareFacebookClient {
       }
       if (!response.ok) {
         logFailure(label, response.status);
+        const handled = onFailure?.(response.status, body);
+        if (handled) return handled;
         return careFacebookFailure(response.status, body);
       }
       return readable ? { ok: true, body } : INVALID_RESPONSE;

@@ -16,6 +16,8 @@ import { PanelVisibleContext } from '../../lib/panel-visibility';
 export const AGENT_MARKETING_TABS = [
   { id: 'conversation', label: 'Hội thoại' },
   { id: 'care', label: 'Chăm sóc khách hàng' },
+  { id: 'crm', label: 'CRM Khách hàng' },
+  { id: 'ads', label: 'Quảng cáo Ads' },
   { id: 'plan', label: 'Kế hoạch' },
   { id: 'content', label: 'Nội dung' },
   { id: 'analytics', label: 'Phân tích' },
@@ -121,6 +123,8 @@ export interface AgentMarketingWorkspaceV2Props {
   onTabChange: (tab: AgentMarketingTab) => void;
   conversation: ReactNode;
   care: ReactNode;
+  crm: ReactNode;
+  ads: ReactNode;
   plan: ReactNode;
   content: ReactNode;
   analytics: ReactNode;
@@ -135,6 +139,8 @@ export function AgentMarketingWorkspaceV2({
   onTabChange,
   conversation,
   care,
+  crm,
+  ads,
   plan,
   content,
   analytics,
@@ -145,7 +151,10 @@ export function AgentMarketingWorkspaceV2({
 }: AgentMarketingWorkspaceV2Props) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AgentMarketingTab>>(() => new Set([tab]));
+  const [wideInspectorOpen, setWideInspectorOpen] = useState(false);
   const activeIndex = AGENT_MARKETING_TABS.findIndex((item) => item.id === tab);
+  const isWideTab = tab === 'crm' || tab === 'ads';
+  const inspectorVisible = !isWideTab || wideInspectorOpen;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const last = AGENT_MARKETING_TABS.length - 1;
@@ -167,6 +176,8 @@ export function AgentMarketingWorkspaceV2({
   const panels: Record<AgentMarketingTab, ReactNode> = {
     conversation,
     care,
+    crm,
+    ads,
     plan,
     content,
     analytics,
@@ -175,28 +186,40 @@ export function AgentMarketingWorkspaceV2({
   };
 
   return (
-    <div className="v2-agent-marketing">
+    <div className={`v2-agent-marketing${inspectorVisible ? '' : ' v2-agent-marketing--wide'}`}>
       <div className="v2-agent-marketing__main">
-        <div className="v2-project-tabs" role="tablist" aria-label="Agent Marketing" onKeyDown={onKeyDown}>
-          {AGENT_MARKETING_TABS.map((item, index) => {
-            const active = item.id === tab;
-            return (
-              <button
-                key={item.id}
-                ref={(node) => { tabRefs.current[index] = node; }}
-                type="button"
-                role="tab"
-                id={`v2-am-tab-${item.id}`}
-                className={`v2-tab${active ? ' is-active' : ''}`}
-                aria-selected={active}
-                aria-controls={`v2-am-panel-${item.id}`}
-                tabIndex={active ? 0 : -1}
-                onClick={() => onTabChange(item.id)}
-              >
-                {item.label}
-              </button>
-            );
-          })}
+        <div className="v2-agent-marketing__toolbar">
+          <div className="v2-project-tabs" role="tablist" aria-label="Agent Marketing" onKeyDown={onKeyDown}>
+            {AGENT_MARKETING_TABS.map((item, index) => {
+              const active = item.id === tab;
+              return (
+                <button
+                  key={item.id}
+                  ref={(node) => { tabRefs.current[index] = node; }}
+                  type="button"
+                  role="tab"
+                  id={`v2-am-tab-${item.id}`}
+                  className={`v2-tab${active ? ' is-active' : ''}`}
+                  aria-selected={active}
+                  aria-controls={`v2-am-panel-${item.id}`}
+                  tabIndex={active ? 0 : -1}
+                  onClick={() => onTabChange(item.id)}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          {isWideTab && (
+            <button
+              type="button"
+              className="v2-button v2-button--ghost v2-agent-marketing__inspector-toggle"
+              aria-expanded={inspectorVisible}
+              onClick={() => setWideInspectorOpen((current) => !current)}
+            >
+              {inspectorVisible ? 'Ẩn thanh kiểm soát' : 'Hiện thanh kiểm soát'}
+            </button>
+          )}
         </div>
         {AGENT_MARKETING_TABS.map((item) => (
           <div
@@ -215,12 +238,14 @@ export function AgentMarketingWorkspaceV2({
           </div>
         ))}
       </div>
-      <aside className="v2-agent-marketing__inspector" aria-label="Kiểm soát Agent Marketing">
-        <p className="v2-agent-marketing__guard">
-          Hành động bên ngoài: <strong>{externalActionsAllowed ? 'Bật' : 'Tắt'}</strong>
-        </p>
-        {inspector}
-      </aside>
+      {inspectorVisible && (
+        <aside className="v2-agent-marketing__inspector" aria-label="Kiểm soát Agent Marketing">
+          <p className="v2-agent-marketing__guard">
+            Hành động bên ngoài: <strong>{externalActionsAllowed ? 'Bật' : 'Tắt'}</strong>
+          </p>
+          {inspector}
+        </aside>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import type {
   CustomerCareLeadPurgeInput,
   CustomerCareLeadPurgeResult,
   CustomerCareSnapshot,
+  CustomerCareSyncRecentResult,
 } from '../../shared/customer-care-types';
 import { CRM_PERSONA_OPTIONS, type CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
 import {
@@ -138,6 +139,8 @@ type CrmApi = {
   /** Care CRM S3; absent on an older preload, which shows the identity without actions. */
   identityAction?: (input: CustomerCareCrmIdentityActionInput) => Promise<CustomerCareCrmIdentityActionResult>;
   refreshIdentity?: (input: CustomerCareCrmIdentityRefreshInput) => Promise<CustomerCareCrmIdentityRefreshResult>;
+  /** Delta sync; absent on an older preload. */
+  syncRecentLeads?: () => Promise<CustomerCareSyncRecentResult>;
 };
 
 type Edits = Readonly<Record<string, CrmRowEdit>>;
@@ -342,6 +345,7 @@ export function CustomerCrmPanel() {
   const [refreshing, setRefreshing] = useState(false);
   /** "Làm mới" rests for 15 s after a full reload. */
   const [refreshResting, setRefreshResting] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -535,6 +539,7 @@ export function CustomerCrmPanel() {
         consentAsk: result.consentAsk?.text ?? null,
       }));
       setPhase({ state: 'ready' });
+      setLastSyncedAt(Date.now());
       setError('');
       if (switched || mode === 'full') void loadProducts(api, result.workspaceId);
       if (needsFullAfterPage1 && mountedRef.current) void loadRef.current('full');
@@ -856,6 +861,19 @@ export function CustomerCrmPanel() {
     }
   };
 
+  const kickSyncRecent = useCallback(() => {
+    const api = getCrmApi();
+    const syncFn = api?.syncRecentLeads;
+    if (!syncFn) return;
+    void syncFn()
+      .then((res) => {
+        if (res.ok && res.leadsImported > 0 && mountedRef.current) {
+          void loadRef.current('page1');
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
   const canPurge = Boolean(meta?.canDelete && getCrmApi()?.purgeLead);
   const salers = meta?.salers ?? NO_SALERS;
   const salerRouting = meta?.salerRouting ?? DEFAULT_SALER_ROUTING;
@@ -1089,6 +1107,9 @@ export function CustomerCrmPanel() {
             >
               📊 Bao quát Saler
             </button>
+            <span className="v2-crm__meta" aria-live="polite">
+              ● Đồng bộ liên tục{lastSyncedAt !== null ? ` · Cập nhật ${new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(lastSyncedAt)}` : ''}
+            </span>
             {refreshResting && !refreshing && <span className="v2-crm__meta" id="v2-crm-refresh-note">Vừa tải xong</span>}
             <button
               type="button"
@@ -1096,7 +1117,10 @@ export function CustomerCrmPanel() {
               disabled={refreshing || refreshResting}
               title={refreshResting && !refreshing ? REFRESH_RESTING_NOTE : undefined}
               aria-describedby={refreshResting && !refreshing ? 'v2-crm-refresh-note' : undefined}
-              onClick={() => { void load('full', true); }}
+              onClick={() => {
+                kickSyncRecent();
+                void load('full', true);
+              }}
             >
               {refreshing ? 'Đang tải…' : 'Làm mới'}
             </button>

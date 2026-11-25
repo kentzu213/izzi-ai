@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareInboxInput,
   CustomerCareInboxResult,
@@ -10,6 +10,7 @@ import type {
   CustomerCareLeadStatus,
   CustomerCareLeadStatusInput,
   CustomerCareLeadStatusResult,
+  CustomerCareSyncRecentResult,
 } from '../../shared/customer-care-types';
 import {
   CARE_INBOX_ENABLE_CONFIRM,
@@ -21,6 +22,7 @@ import {
   emptyLeadsMessage,
   failureDropsLeads,
   formatLeadAbsoluteTime,
+  formatLeadClockTime,
   formatLeadPhone,
   formatLeadTime,
   inboxStatusLine,
@@ -33,10 +35,12 @@ import {
   leadListOnPurge,
   leadListOnStatus,
   purgeLeadConfirmText,
+  resolveLeadPageLabel,
   shouldPollLeads,
   type CareInboxView,
   type CareLeadListState,
 } from './customer-care-leads-flow';
+import { CRM_BACKFILL_UPDATED_EVENT } from './customer-care-page-flow';
 import { usePanelVisible } from '../lib/panel-visibility';
 
 type CareLeadsApi = {
@@ -46,6 +50,8 @@ type CareLeadsApi = {
   setLeadStatus: (input: CustomerCareLeadStatusInput) => Promise<CustomerCareLeadStatusResult>;
   /** B1b; absent on an older preload, which simply hides the purge action. */
   purgeLead?: (input: CustomerCareLeadPurgeInput) => Promise<CustomerCareLeadPurgeResult>;
+  /** Multi-page delta sync; absent on an older preload. */
+  syncRecentLeads?: () => Promise<CustomerCareSyncRecentResult>;
 };
 
 const GENERIC_ERROR = 'Chưa tải được khách để lại số. Thử lại sau ít phút.';
@@ -54,6 +60,12 @@ function getCareLeadsApi(): CareLeadsApi | null {
   const api = (window.electronAPI as typeof window.electronAPI & { customerCare?: Partial<CareLeadsApi> }).customerCare;
   if (!api?.getFacebookInbox || !api.setFacebookInbox || !api.listLeads || !api.setLeadStatus) return null;
   return api as CareLeadsApi;
+}
+
+function dispatchCrmUpdated(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(CRM_BACKFILL_UPDATED_EVENT));
+  }
 }
 
 function useDocumentVisible(): boolean {
@@ -71,18 +83,24 @@ export interface CustomerCareLeadsPanelProps {
   scopeKey: string;
   /** Puts a transcript into the existing draft panel. Nothing is sent to the customer. */
   onCompose: (transcript: string) => void;
+  /** Opens the CRM Khách hàng tab inside Agent Marketing. */
+  onOpenCrm?: () => void;
+  /** Map of connected/CRM Page IDs to display names. */
+  pageNames?: Readonly<Record<string, string>>;
 }
 
 /**
- * Phase B1 "Khách để lại số": the Page inbox switch and the list of customers who left a phone number.
- * Phones and messages live only in this component's state; they are rendered as plain text. Leads are
- * refreshed only while the Care tab is the visible tab and the window is not hidden.
+ * Phase B1 "Khách để lại số": compact 2-column Pancake-style view with continuous multi-page sync.
+ * Phones and messages live only in this component's state; they are rendered as plain text.
  */
-export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLeadsPanelProps) {
+export function CustomerCareLeadsPanel({ scopeKey, onCompose, onOpenCrm, pageNames }: CustomerCareLeadsPanelProps) {
   const active = usePanelVisible();
   const [view, setView] = useState<CareInboxView>({ state: 'loading' });
   const [list, setList] = useState<CareLeadListState>(EMPTY_LEAD_LIST);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [leadsLoaded, setLeadsLoaded] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [toggling, setToggling] = useState(false);
@@ -92,8 +110,10 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
   const [now, setNow] = useState(() => Date.now());
   const documentVisible = useDocumentVisible();
   const mountedRef = useRef(true);
+  const seenLeadIdsRef = useRef<Set<string> | null>(null);
   // Bumped by every status change or purge: a refresh that started before it must not undo it on screen.
   const mutationRef = useRef(0);
+  const hasCrmOnlyPages = Boolean(pageNames && Object.keys(pageNames).length > 0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -103,11 +123,13 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
   /** Forget every phone and message held for display. */
   const dropLeads = useCallback(() => {
     setList(EMPTY_LEAD_LIST);
+    setSelectedLeadId(null);
     setLeadsLoaded(false);
+    seenLeadIdsRef.current = null;
   }, []);
 
   // A section that turned hidden (role lowered, Page gone) or failed keeps no phones in memory.
-  const keepLeads = keepsLeadsInMemory(view);
+  const keepLeads = keepsLeadsInMemory(view) || (view.state === 'hidden' && hasCrmOnlyPages);
   useEffect(() => {
     if (!keepLeads) dropLeads();
   }, [keepLeads, dropLeads]);
@@ -137,16 +159,24 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
     try {
       const result = await api.listLeads({ cursor: null });
       if (!mountedRef.current) return;
-      setNow(Date.now());
+      const tickMs = Date.now();
+      setNow(tickMs);
       if (!result.ok) {
         if (failureDropsLeads(result)) dropLeads();
         setError(careLeadsErrorMessage(result, 'leads'));
         return;
       }
       if (result.workspaceId !== scopeKey || mutation !== mutationRef.current) return;
+      const previousSeen = seenLeadIdsRef.current;
+      const nextIds = new Set(result.leads.map((item) => item.id));
+      const hasNewLead = previousSeen !== null && result.leads.some((item) => !previousSeen.has(item.id));
+      seenLeadIdsRef.current = nextIds;
+
       setList((current) => leadListOnFirstPage(current, result));
       setLeadsLoaded(true);
+      setLastSyncedAt(tickMs);
       setError('');
+      if (hasNewLead) dispatchCrmUpdated();
     } catch {
       if (mountedRef.current) setError(GENERIC_ERROR);
     }
@@ -156,12 +186,17 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
     void loadInbox(false);
   }, [loadInbox]);
 
-  const sectionReady = view.state === 'ready';
+  const sectionReady = view.state === 'ready' || (view.state === 'hidden' && hasCrmOnlyPages);
   const inboxEnabled = view.state === 'ready' && view.inbox.enabled;
   const visible = active && documentVisible;
-  const polling = shouldPollLeads({ active, documentVisible, inboxEnabled });
+  const polling = shouldPollLeads({
+    active,
+    documentVisible,
+    inboxEnabled,
+    hasConnectedPage: view.state === 'ready' || hasCrmOnlyPages,
+  });
 
-  // Leads load whenever the section comes on screen; new ones are asked for every 30 s while it stays there.
+  // Leads load whenever the section comes on screen; new ones are polled every 60s across connected Pages.
   useEffect(() => {
     if (!sectionReady || !visible) return undefined;
     void refreshLeads();
@@ -172,6 +207,39 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
     }, CARE_LEADS_REFRESH_MS);
     return () => clearInterval(timer);
   }, [sectionReady, visible, polling, loadInbox, refreshLeads]);
+
+  const syncNow = async () => {
+    const api = getCareLeadsApi();
+    if (!api || syncing) return;
+    setSyncing(true);
+    setError('');
+    setNotice('');
+    try {
+      if (api.syncRecentLeads) {
+        const res = await api.syncRecentLeads();
+        if (!mountedRef.current) return;
+        if (!res.ok) {
+          if (res.error === 'refresh_too_soon') {
+            setNotice(`Vừa quét tin mới, thử lại sau ${res.retryAfterSec} giây.`);
+          } else {
+            setError(careLeadsErrorMessage(res, 'leads'));
+          }
+        } else if (res.workspaceId === scopeKey) {
+          setNotice(
+            res.leadsImported > 0
+              ? `Đã quét ${res.pagesProcessed} Page: cập nhật ${res.leadsImported} khách có SĐT.`
+              : `Đã quét ${res.pagesProcessed} Page (${res.conversationsScanned} hội thoại): chưa có SĐT mới.`,
+          );
+        }
+      }
+      await refreshLeads();
+      if (mountedRef.current) dispatchCrmUpdated();
+    } catch {
+      if (mountedRef.current) setError(GENERIC_ERROR);
+    } finally {
+      if (mountedRef.current) setSyncing(false);
+    }
+  };
 
   const toggleInbox = async () => {
     const api = getCareLeadsApi();
@@ -268,7 +336,6 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
         return;
       }
       if (result.workspaceId !== scopeKey) return;
-      // A refresh that read the list while the purge ran must not bring the row back.
       mutationRef.current += 1;
       setList((current) => leadListOnPurge(current, result.leadId));
       setNotice(`Đã xoá dữ liệu của ${leadDisplayName(lead)}.`);
@@ -294,17 +361,44 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
     if (text) onCompose(composeTranscript(text));
   };
 
-  if (view.state === 'loading' || view.state === 'hidden') return null;
+  const selectedLead = useMemo(() => {
+    if (list.leads.length === 0) return null;
+    if (selectedLeadId) {
+      const match = list.leads.find((item) => item.id === selectedLeadId);
+      if (match) return match;
+    }
+    return list.leads[0];
+  }, [list.leads, selectedLeadId]);
+
+  if (view.state === 'loading' || (!sectionReady && view.state === 'hidden')) return null;
 
   const canPurge = view.state === 'ready' && view.canManage && Boolean(getCareLeadsApi()?.purgeLead);
   const rowsLocked = statusBusyId !== null || purgeBusyId !== null;
+  const hasSyncRecent = Boolean(getCareLeadsApi()?.syncRecentLeads);
 
   return (
     <section className="ccw__section ccw__leads" aria-labelledby="ccw-leads-title">
-      <div className="ccw__section-heading">
+      <div className="ccw__section-heading ccw__leads-topbar">
         <div>
           <span className="cmr-eyebrow">Tin nhắn Page · Chỉ đọc</span>
-          <h3 id="ccw-leads-title">Khách để lại số</h3>
+          <h3 id="ccw-leads-title">Khách để lại số ({list.leads.length}{list.nextCursor ? '+' : ''})</h3>
+        </div>
+        <div className="ccw__sync-bar">
+          <span className="ccw__sync-pill">
+            <span className="ccw__sync-dot" aria-hidden="true">●</span> Tự động đồng bộ 60s · đa Page
+          </span>
+          {lastSyncedAt !== null && (
+            <span className="ccw__sync-time">Cập nhật {formatLeadClockTime(lastSyncedAt)}</span>
+          )}
+          <button
+            type="button"
+            className="cmr-button"
+            disabled={syncing || !hasSyncRecent}
+            title={hasSyncRecent ? undefined : 'Cần cập nhật ứng dụng để quét tin mới ngay'}
+            onClick={() => { void syncNow(); }}
+          >
+            {syncing ? 'Đang quét…' : 'Quét tin mới ngay'}
+          </button>
         </div>
       </div>
 
@@ -315,30 +409,29 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
         </div>
       ) : (
         <>
-          <div className="ccw__inbox">
-            <div className="ccw__inbox-text">
-              <strong id="ccw-inbox-label">Nhận tin nhắn từ Page</strong>
-              <span>{inboxStatusLine(view.inbox, now)}</span>
+          {view.state === 'ready' && (
+            <div className="ccw__inbox ccw__inbox--compact">
+              <div className="ccw__inbox-text">
+                <strong id="ccw-inbox-label">Nhận tin nhắn từ Page</strong>
+                <span>{inboxStatusLine(view.inbox, now)}</span>
+              </div>
+              {view.canManage ? (
+                <button
+                  type="button"
+                  role="switch"
+                  className="ccw__switch"
+                  aria-checked={view.inbox.enabled}
+                  aria-labelledby="ccw-inbox-label"
+                  disabled={toggling}
+                  onClick={() => { void toggleInbox(); }}
+                >
+                  <span className="ccw__switch-track" aria-hidden="true"><span className="ccw__switch-thumb" /></span>
+                  <span>{toggling ? 'Đang lưu…' : view.inbox.enabled ? 'Đang bật' : 'Đang tắt'}</span>
+                </button>
+              ) : (
+                <span className="ccw__inbox-state">{view.inbox.enabled ? 'Đang bật' : 'Đang tắt'}</span>
+              )}
             </div>
-            {view.canManage ? (
-              <button
-                type="button"
-                role="switch"
-                className="ccw__switch"
-                aria-checked={view.inbox.enabled}
-                aria-labelledby="ccw-inbox-label"
-                disabled={toggling}
-                onClick={() => { void toggleInbox(); }}
-              >
-                <span className="ccw__switch-track" aria-hidden="true"><span className="ccw__switch-thumb" /></span>
-                <span>{toggling ? 'Đang lưu…' : view.inbox.enabled ? 'Đang bật' : 'Đang tắt'}</span>
-              </button>
-            ) : (
-              <span className="ccw__inbox-state">{view.inbox.enabled ? 'Đang bật' : 'Đang tắt'}</span>
-            )}
-          </div>
-          {!view.canManage && (
-            <p className="ccw__hint">Chỉ chủ sở hữu và quản lý workspace được bật hoặc tắt nhận tin nhắn từ Page.</p>
           )}
 
           {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
@@ -347,32 +440,69 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
           {!leadsLoaded ? (
             !error && <p className="ccw__hint" role="status">Đang tải danh sách khách…</p>
           ) : list.leads.length === 0 ? (
-            <div className="ccw__empty">{emptyLeadsMessage(view.inbox, view.canManage)}</div>
+            <div className="ccw__empty">
+              {view.state === 'ready'
+                ? emptyLeadsMessage(view.inbox, view.canManage)
+                : 'Chưa có khách để lại số từ các Page đã kết nối.'}
+            </div>
           ) : (
-            <ul className="ccw__lead-list" aria-label="Khách để lại số, mới nhất ở trên">
-              {list.leads.map((lead) => (
-                <CareLeadRow
-                  key={lead.id}
-                  lead={lead}
+            <div className="ccw__pancake" role="region" aria-label="Danh sách khách để lại số 2 cột">
+              <div className="ccw__pancake-list">
+                <ul className="ccw__lead-compact-list" aria-label="Khách để lại số, mới nhất ở trên">
+                  {list.leads.map((lead) => {
+                    const activeRow = selectedLead?.id === lead.id;
+                    const name = leadDisplayName(lead);
+                    const pageLabel = resolveLeadPageLabel(lead.pageId, pageNames);
+                    return (
+                      <li key={lead.id}>
+                        <button
+                          type="button"
+                          className={`ccw__lead-row${activeRow ? ' is-selected' : ''}`}
+                          aria-pressed={activeRow}
+                          onClick={() => setSelectedLeadId(lead.id)}
+                        >
+                          <span className={`ccw__lead-dot ccw__lead-dot--${lead.status}`} aria-hidden="true" />
+                          <span className="ccw__lead-row-body">
+                            <span className="ccw__lead-row-top">
+                              <strong className="ccw__lead-row-name">{name}</strong>
+                              {lead.zaloMentioned && <span className="ccw__lead-row-zalo">Zalo</span>}
+                              <time dateTime={lead.phoneCapturedAt}>{formatLeadTime(lead.phoneCapturedAt, now)}</time>
+                            </span>
+                            <span className="ccw__lead-row-sub">
+                              <span className="ccw__lead-row-phone">{formatLeadPhone(lead.phone)}</span>
+                              <span className="ccw__lead-row-page">{pageLabel}</span>
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {list.nextCursor !== null && (
+                  <div className="ccw__pancake-more">
+                    <button type="button" className="cmr-button" disabled={loadingMore} onClick={() => { void loadMore(); }}>
+                      {loadingMore ? 'Đang tải…' : 'Xem thêm'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {selectedLead && (
+                <CareLeadDetailPane
+                  lead={selectedLead}
+                  pageLabel={resolveLeadPageLabel(selectedLead.pageId, pageNames)}
                   now={now}
-                  busy={statusBusyId === lead.id}
+                  busy={statusBusyId === selectedLead.id}
                   locked={rowsLocked}
                   canPurge={canPurge}
-                  purging={purgeBusyId === lead.id}
-                  onCopy={() => { void copyPhone(lead); }}
-                  onCompose={() => compose(lead)}
-                  onStatus={(status) => { void changeStatus(lead, status); }}
-                  onPurge={() => { void purgeLead(lead); }}
+                  purging={purgeBusyId === selectedLead.id}
+                  onCopy={() => { void copyPhone(selectedLead); }}
+                  onCompose={() => compose(selectedLead)}
+                  onOpenCrm={onOpenCrm}
+                  onStatus={(status) => { void changeStatus(selectedLead, status); }}
+                  onPurge={() => { void purgeLead(selectedLead); }}
                 />
-              ))}
-            </ul>
-          )}
-
-          {list.nextCursor !== null && leadsLoaded && (
-            <div className="ccw__actions ccw__actions--center">
-              <button type="button" className="cmr-button" disabled={loadingMore} onClick={() => { void loadMore(); }}>
-                {loadingMore ? 'Đang tải…' : 'Xem thêm'}
-              </button>
+              )}
             </div>
           )}
         </>
@@ -381,34 +511,48 @@ export function CustomerCareLeadsPanel({ scopeKey, onCompose }: CustomerCareLead
   );
 }
 
-interface CareLeadRowProps {
+interface CareLeadDetailPaneProps {
   lead: CustomerCareLead;
+  pageLabel: string;
   now: number;
   busy: boolean;
   locked: boolean;
-  /** Owner/manager only; a display hint, main and the server re-check the role. */
   canPurge: boolean;
   purging: boolean;
   onCopy: () => void;
   onCompose: () => void;
+  onOpenCrm?: () => void;
   onStatus: (status: CustomerCareLeadStatus) => void;
   onPurge: () => void;
 }
 
-function CareLeadRow({
-  lead, now, busy, locked, canPurge, purging, onCopy, onCompose, onStatus, onPurge,
-}: CareLeadRowProps) {
+function CareLeadDetailPane({
+  lead,
+  pageLabel,
+  now,
+  busy,
+  locked,
+  canPurge,
+  purging,
+  onCopy,
+  onCompose,
+  onOpenCrm,
+  onStatus,
+  onPurge,
+}: CareLeadDetailPaneProps) {
   const name = leadDisplayName(lead);
   const canCompose = latestCustomerText(lead) !== null;
   const statusId = `ccw-lead-status-${lead.id}`;
+
   return (
-    <li className={`ccw__lead ccw__lead--${lead.status}`}>
+    <div className={`ccw__pancake-detail ccw__lead--${lead.status}`}>
       <div className="ccw__lead-head">
         <div className="ccw__lead-who">
           <strong>{name}</strong>
+          <span className="ccw__connected-chip ccw__connected-chip--crm">{pageLabel}</span>
           {lead.zaloMentioned && <span className="ccw__badge">Có nhắc Zalo</span>}
           <time dateTime={lead.phoneCapturedAt} title={formatLeadAbsoluteTime(lead.phoneCapturedAt)}>
-            Để lại số: {formatLeadTime(lead.phoneCapturedAt, now)}
+            Để lại số: {formatLeadTime(lead.phoneCapturedAt, now)} ({formatLeadAbsoluteTime(lead.phoneCapturedAt)})
           </time>
         </div>
         <label className="ccw__lead-status" htmlFor={statusId}>
@@ -434,7 +578,7 @@ function CareLeadRow({
         </button>
       </div>
 
-      {lead.recentMessages.length > 0 && (
+      {lead.recentMessages.length > 0 ? (
         <ol className="ccw__lead-messages" aria-label={`Tin gần nhất của ${name}`}>
           {lead.recentMessages.map((message, index) => (
             <li key={`${message.at}-${index}`}>
@@ -443,6 +587,8 @@ function CareLeadRow({
             </li>
           ))}
         </ol>
+      ) : (
+        <p className="ccw__hint">Chưa có nội dung tin nhắn gần nhất.</p>
       )}
 
       <div className="ccw__lead-actions">
@@ -453,8 +599,13 @@ function CareLeadRow({
           title={canCompose ? undefined : 'Tin gần nhất chỉ có tệp đính kèm.'}
           onClick={onCompose}
         >
-          Soạn trả lời
+          Soạn trả lời nháp
         </button>
+        {onOpenCrm && (
+          <button type="button" className="cmr-button cmr-button--primary" onClick={onOpenCrm}>
+            Mở trong CRM Khách hàng →
+          </button>
+        )}
         {canPurge && (
           <button
             type="button"
@@ -468,6 +619,6 @@ function CareLeadRow({
           </button>
         )}
       </div>
-    </li>
+    </div>
   );
 }

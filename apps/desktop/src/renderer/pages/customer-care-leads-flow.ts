@@ -13,7 +13,7 @@ import type {
 import { facebookErrorMessage } from './CustomerCareFacebookPage';
 
 /** How often the visible Care tab asks for new leads. */
-export const CARE_LEADS_REFRESH_MS = 30_000;
+export const CARE_LEADS_REFRESH_MS = 60_000;
 export const CARE_LEAD_FALLBACK_NAME = 'Khách Facebook';
 /** What the backend stores for a message that only carried a file or image. */
 export const CARE_LEAD_ATTACHMENT_TEXT = '[tệp đính kèm]';
@@ -147,9 +147,26 @@ export function emptyLeadsMessage(inbox: CustomerCareInboxState, canManage: bool
     : 'Chủ sở hữu hoặc quản lý workspace cần bật “Nhận tin nhắn từ Page” để izzi liệt kê khách để lại số.';
 }
 
-/** New leads are asked for only while the Care tab is on screen and the inbox is on. */
-export function shouldPollLeads(input: { active: boolean; documentVisible: boolean; inboxEnabled: boolean }): boolean {
-  return input.active && input.documentVisible && input.inboxEnabled;
+/** New leads are asked for while the Care tab is on screen and either the inbox webhook or a Page is connected. */
+export function shouldPollLeads(input: {
+  active: boolean;
+  documentVisible: boolean;
+  inboxEnabled: boolean;
+  hasConnectedPage?: boolean;
+}): boolean {
+  return input.active && input.documentVisible && (input.inboxEnabled || Boolean(input.hasConnectedPage));
+}
+
+export function formatLeadClockTime(ms: number): string {
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function resolveLeadPageLabel(pageId: string, pageNames?: Readonly<Record<string, string>>): string {
+  const mapped = pageNames?.[pageId]?.trim();
+  if (mapped) return mapped;
+  return `Page ${pageId.slice(-6)}`;
 }
 
 export type CareInboxView =

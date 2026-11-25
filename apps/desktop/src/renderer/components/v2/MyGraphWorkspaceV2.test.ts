@@ -131,10 +131,11 @@ describe('MyGraph V2 wiring', () => {
     expect(page).toContain('export default function MyGraphPage({ v2 = false }');
   });
 
-  it('keeps the legacy scope, GraphApi adapter and in-app mode', () => {
+  it('keeps the legacy scope, GraphApi CRM-overlay adapter and in-app mode', () => {
     const legacy = page.slice(page.indexOf('if (v2) {'));
 
-    expect(page).toContain('const api = bridge as unknown as GraphApi;');
+    expect(page).toContain('const baseApi = bridge as unknown as GraphApi;');
+    expect(page).toContain('createMyGraphWithCrmApi(baseApi)');
     expect(legacy).toContain('className="graphview-scope"');
     expect(page.split('detached={false}').length - 1).toBe(2);
   });
@@ -153,10 +154,7 @@ describe('MyGraph V2 wiring', () => {
     expect(component).not.toMatch(/window\.|electronAPI|ipcRenderer|invoke\(|@kentzu213\/graph-view|aibase-api/);
   });
 
-  it('adds the CRM panel to the V2 page only, leaving the legacy page as it was', () => {
-    const v2 = page.slice(page.indexOf('if (v2) {'), page.indexOf('// `.graphview-scope` both'));
-    const legacy = page.slice(page.indexOf('// `.graphview-scope` both'));
-    expect(v2).toContain('crm={<CustomerCrmPanel />}');
-    expect(legacy).not.toContain('CustomerCrmPanel');
+  it('opens directly on Memory doanh nghiệp in MyGraph without mounting CustomerCrmPanel', () => {
+    expect(page).not.toContain('CustomerCrmPanel');
   });
 });

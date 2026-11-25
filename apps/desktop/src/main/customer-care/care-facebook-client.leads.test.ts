@@ -259,6 +259,49 @@ describe('CareFacebookClient Phase B1 failure mapping', () => {
     expect(await client(json(body, status)).instance.purgeLead(WORKSPACE, LEAD_ID)).toEqual(expected);
   });
 
+  it('triggers sync-recent with workspaceId and handles synced + 429 refresh_too_soon', async () => {
+    const okBody = {
+      success: true,
+      workspaceId: WORKSPACE,
+      cooldownSeconds: 30,
+      syncedAt: LATER,
+      pagesProcessed: 3,
+      conversationsScanned: 18,
+      leadsImported: 2,
+      messagesStored: 6,
+      namesSealed: 2,
+      skippedPages: [],
+    };
+    const synced = client(json(okBody));
+    expect(await synced.instance.syncRecentLeads(WORKSPACE)).toEqual({
+      ok: true,
+      value: {
+        kind: 'synced',
+        summary: {
+          workspaceId: WORKSPACE,
+          cooldownSeconds: 30,
+          syncedAt: LATER,
+          pagesProcessed: 3,
+          conversationsScanned: 18,
+          leadsImported: 2,
+          messagesStored: 6,
+          namesSealed: 2,
+          skippedPages: [],
+        },
+      },
+    });
+    const [url, init] = call(synced.fetchImpl);
+    expect(url).toBe(`${ROOT}/sync-recent`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE });
+
+    const tooSoon = client(json({ success: false, error: 'Too many requests', reason: 'refresh_too_soon', retryAfterSec: 12 }, 429));
+    expect(await tooSoon.instance.syncRecentLeads(WORKSPACE)).toEqual({
+      ok: true,
+      value: { kind: 'too_soon', retryAfterSec: 12 },
+    });
+  });
+
   it('logs only the route label and status, never the workspace, phone or server text', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await client(json({ success: false, error: `phone ${PHONE}`, reason: 'lead_not_found' }, 422))

@@ -41,7 +41,7 @@ import {
 } from '../../shared/customer-crm-saler-routing';
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
-export const CRM_REFRESH_MS = 60_000;
+export const CRM_REFRESH_MS = 30_000;
 /** 50 pages of up to 100: the newest 5,000 customers. */
 export const CRM_MAX_PAGES = 50;
 /** Default DOM batch size in table and card lists so 5,000 loaded customers render at 60fps. */

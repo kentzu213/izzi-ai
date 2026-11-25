@@ -160,13 +160,15 @@ export class CareFacebookOAuthCoordinator {
   }
 }
 
-/** Care claims the shared Marketing OAuth deep link first when the state is its own. */
+/** Care claims the shared Marketing OAuth deep link first when the state is its own, then Ads, then Marketing. */
 export function routeMarketingOAuthCallback(
   url: string,
   care: Pick<CareFacebookOAuthCoordinator, 'handleCallbackUrl'> | null,
   marketing: (url: string) => void,
-): 'care' | 'marketing' {
+  marketingAds?: Pick<CareFacebookOAuthCoordinator, 'handleCallbackUrl'> | null,
+): 'care' | 'marketing-ads' | 'marketing' {
   if (care?.handleCallbackUrl(url)) return 'care';
+  if (marketingAds?.handleCallbackUrl(url)) return 'marketing-ads';
   marketing(url);
   return 'marketing';
 }

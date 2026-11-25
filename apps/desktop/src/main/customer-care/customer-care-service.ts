@@ -32,6 +32,7 @@ import type {
   CustomerCareLeadPurgeResult,
   CustomerCareLeadStatusResult,
   CustomerCarePageConnection,
+  CustomerCareSyncRecentResult,
 } from '../../shared/customer-care-types';
 import {
   isCareFacebookChoiceId,
@@ -1214,6 +1215,38 @@ export class CustomerCareService {
     const result = await this.runFacebookCall(authority, () => leads.purgeLead(authority.workspaceId, parsed.leadId));
     if (!result.ok) return result;
     return { ok: true, workspaceId: authority.workspaceId, leadId: result.value.leadId };
+  }
+
+  /** Owner, manager and editor trigger an immediate Facebook delta sync for the active workspace. */
+  async syncRecentLeads(): Promise<CustomerCareSyncRecentResult> {
+    const gate = await this.leadsAuthority(CARE_LEAD_READ_ROLES);
+    if (!gate.ok) return gate;
+    const { authority, leads } = gate;
+    if (!leads.syncRecentLeads) return { ok: false, error: 'unsupported' };
+    const result = await this.runFacebookCall(authority, () => leads.syncRecentLeads!(authority.workspaceId));
+    if (!result.ok) return result;
+    if (result.value.kind === 'too_soon') {
+      return {
+        ok: false,
+        error: 'refresh_too_soon',
+        workspaceId: authority.workspaceId,
+        retryAfterSec: result.value.retryAfterSec,
+      };
+    }
+    const { summary } = result.value;
+    if (summary.leadsImported > 0) this.notifyCareChanged();
+    return {
+      ok: true,
+      workspaceId: summary.workspaceId,
+      cooldownSeconds: summary.cooldownSeconds,
+      syncedAt: summary.syncedAt,
+      pagesProcessed: summary.pagesProcessed,
+      conversationsScanned: summary.conversationsScanned,
+      leadsImported: summary.leadsImported,
+      messagesStored: summary.messagesStored,
+      namesSealed: summary.namesSealed,
+      skippedPages: summary.skippedPages.map((page) => ({ ...page })),
+    };
   }
 
   /** Care CRM S2: renderer input is only `{ cursor }`; rows leave main only in this answer. */

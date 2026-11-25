@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type {
   CustomerCareAssistInput,
   CustomerCareAssistResult,
@@ -135,9 +135,11 @@ export function parseCustomerCareTranscript(value: string): CustomerCareAssistIn
     });
 }
 
-export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
+export function CustomerCareWorkspace({ scopeKey, onOpenCrm }: { scopeKey: string; onOpenCrm?: () => void }) {
   const [snapshot, setSnapshot] = useState<CustomerCareSnapshot | null>(null);
   const [setup, setSetup] = useState<CustomerCareSetup>(EMPTY_SETUP);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [assistOpen, setAssistOpen] = useState(false);
   const [transcript, setTranscript] = useState('');
   // True once "Soạn trả lời" put a real customer message in the transcript; drafts then say so.
   const [transcriptFromLead, setTranscriptFromLead] = useState(false);
@@ -197,6 +199,9 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
       snapshotRef.current = next;
       setSnapshot(next);
       setSetup(next.setup ?? EMPTY_SETUP);
+      const hasNoFacts = (next.setup?.facts.length ?? 0) === 0;
+      setSetupOpen(hasNoFacts);
+      setAssistOpen(hasNoFacts);
       const nextConnectedPageId = next.pageConnection.state === 'connected' ? next.pageConnection.pageId : null;
       if (
         nextConnectedPageId
@@ -516,17 +521,36 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     }
   };
 
-  // "Soạn trả lời": only fills the draft input. The operator still presses "Tạo bản nháp"; nothing is sent.
+  // "Soạn trả lời nháp": only fills the draft input. The operator still presses "Tạo bản nháp"; nothing is sent.
   const composeFromLead = useCallback((leadTranscript: string) => {
     setTranscript(leadTranscript);
     setTranscriptFromLead(true);
     setResult(null);
     setError('');
+    setAssistOpen(true);
     showSuccessNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. Bản nháp không được gửi cho khách.');
-    const field = transcriptRef.current;
-    field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    field?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const field = transcriptRef.current;
+      field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      field?.focus({ preventScroll: true });
+    });
   }, [showSuccessNotice]);
+
+  const pageNames = useMemo<Readonly<Record<string, string>>>(() => {
+    const map: Record<string, string> = {};
+    if (snapshot?.pageConnection.state === 'connected' && snapshot.pageConnection.pageName) {
+      map[snapshot.pageConnection.pageId] = snapshot.pageConnection.pageName;
+    }
+    for (const page of snapshot?.crmPages ?? []) {
+      if (page.pageName) map[page.pageId] = page.pageName;
+    }
+    if (snapshot?.pageConnection.state === 'connected') {
+      for (const page of snapshot.pageConnection.crmPages ?? []) {
+        if (page.pageName && !map[page.pageId]) map[page.pageId] = page.pageName;
+      }
+    }
+    return map;
+  }, [snapshot]);
 
   const copyDraft = async () => {
     if (!result || result.status !== 'draft' || !result.text) return;
@@ -626,19 +650,36 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
             />
           )}
 
-          {snapshot?.pageConnection.state === 'connected' && (
+          {(snapshot?.pageConnection.state === 'connected' || (snapshot?.crmPages?.length ?? 0) > 0) && (
             <>
-              <CustomerCareAutoReplyPanel
-                key={`auto-${scopeKey}`}
+              {snapshot?.pageConnection.state === 'connected' && (
+                <CustomerCareAutoReplyPanel
+                  key={`auto-${scopeKey}`}
+                  scopeKey={scopeKey}
+                  refreshKey={autoReplyRefresh}
+                  onEnabledChange={setAutoReplyOn}
+                />
+              )}
+              <CustomerCareLeadsPanel
+                key={`${scopeKey}-${leadsRefresh}`}
                 scopeKey={scopeKey}
-                refreshKey={autoReplyRefresh}
-                onEnabledChange={setAutoReplyOn}
+                onCompose={composeFromLead}
+                onOpenCrm={onOpenCrm}
+                pageNames={pageNames}
               />
-              <CustomerCareLeadsPanel key={`${scopeKey}-${leadsRefresh}`} scopeKey={scopeKey} onCompose={composeFromLead} />
             </>
           )}
 
-          <form className="ccw__section" onSubmit={saveSetup}>
+          <details
+            className="ccw__details"
+            open={setupOpen}
+            onToggle={(event) => setSetupOpen(event.currentTarget.open)}
+          >
+            <summary className="ccw__details-summary">
+              <span>Thiết lập người bán &amp; Tri thức đã duyệt</span>
+              <small>{setup.facts.length > 0 ? `${setup.facts.length} thông tin đã duyệt` : 'Chưa có thông tin — mở để thiết lập'}</small>
+            </summary>
+            <form className="ccw__section ccw__section--nested" onSubmit={saveSetup}>
             <div className="ccw__section-heading">
               <div>
                 <span className="cmr-eyebrow">Thiết lập người bán</span>
@@ -723,8 +764,18 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               </button>
             </div>
           </form>
+          </details>
 
-          <form className="ccw__section" onSubmit={assist}>
+          <details
+            className="ccw__details"
+            open={assistOpen}
+            onToggle={(event) => setAssistOpen(event.currentTarget.open)}
+          >
+            <summary className="ccw__details-summary">
+              <span>Phòng thử tổng hợp · Tạo bản nháp cho Sale</span>
+              <small>{transcriptFromLead ? 'Đang có tin khách trong khung soạn' : 'Thu gọn · Bấm để mở phòng thử'}</small>
+            </summary>
+          <form className="ccw__section ccw__section--nested" onSubmit={assist}>
             <div className="ccw__section-heading">
               <div>
                 <span className="cmr-eyebrow">Phòng thử tổng hợp</span>
@@ -807,6 +858,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               </div>
             </section>
           )}
+          </details>
         </>
       )}
     </section>

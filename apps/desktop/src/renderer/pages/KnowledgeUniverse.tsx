@@ -6,13 +6,14 @@
 // fixed→absolute) and render the view inside that scope container.
 import "../styles/graph-view-scoped.css";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MyGraphView, type GraphApi } from "@kentzu213/graph-view";
 import * as bridge from "../lib/aibase-api";
 import { LiveProfilePanel } from "../components/LiveProfilePanel";
 import { MyGraphWorkspaceV2 } from "../components/v2/MyGraphWorkspaceV2";
+import { createMyGraphWithCrmApi } from "../lib/mygraph-crm-overlay";
 import { createOpenWebGuard, openMyGraphWebSafely } from "../lib/open-my-graph-web";
-import { CustomerCrmPanel } from "./CustomerCrmPanel";
+import { CRM_BACKFILL_UPDATED_EVENT } from "./customer-care-page-flow";
 
 /**
  * Desktop "Knowledge Universe" page — a thin host around the shared
@@ -31,7 +32,7 @@ import { CustomerCrmPanel } from "./CustomerCrmPanel";
  */
 
 // The bridge module's exported functions match the GraphApi surface 1:1.
-const api = bridge as unknown as GraphApi;
+const baseApi = bridge as unknown as GraphApi;
 
 const IZZI_WEB = "https://izziapi.com";
 
@@ -52,11 +53,48 @@ const OPEN_WEB_ERROR =
 export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
   const [openWebError, setOpenWebError] = useState<string | undefined>();
   const [openWebGuard] = useState(createOpenWebGuard);
+  const [graphViewKey, setGraphViewKey] = useState(0);
+  const api = useMemo(() => createMyGraphWithCrmApi(baseApi), []);
 
   useEffect(() => {
     openWebGuard.setMounted(true);
     return () => openWebGuard.setMounted(false);
   }, [openWebGuard]);
+
+  useEffect(() => () => api.dispose(), [api]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let lastScope = "";
+    const refreshIfScopeChanged = async () => {
+      try {
+        const careApi = (window.electronAPI as typeof window.electronAPI & {
+          customerCare?: { getSnapshot?: () => Promise<{ workspaceId?: string; pageConnection?: { state?: string } }> };
+        })?.customerCare;
+        const snap = await careApi?.getSnapshot?.();
+        const scope = snap?.workspaceId ?? "";
+        if (lastScope && scope !== lastScope) {
+          api.invalidateCrmOverlay();
+          setGraphViewKey((k) => k + 1);
+        }
+        lastScope = scope;
+      } catch {
+        // ignore snapshot check failures
+      }
+    };
+    const onBackfill = () => {
+      api.invalidateCrmOverlay();
+      setGraphViewKey((k) => k + 1);
+    };
+    const onFocus = () => { void refreshIfScopeChanged(); };
+    void refreshIfScopeChanged();
+    window.addEventListener(CRM_BACKFILL_UPDATED_EVENT, onBackfill);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener(CRM_BACKFILL_UPDATED_EVENT, onBackfill);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [api]);
 
   // Reuses the existing `graph:openMyGraphWeb` IPC; the web URL stays in main.
   // The helper logs a failure and resolves false, so there is no floating rejection (ledger #23).
@@ -70,9 +108,8 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
   if (v2) {
     return (
       <MyGraphWorkspaceV2
-        graph={<MyGraphView api={api} navigate={navigate} detached={false} />}
+        graph={<MyGraphView key={graphViewKey} api={api} navigate={navigate} detached={false} />}
         aside={<LiveProfilePanel />}
-        crm={<CustomerCrmPanel />}
         onOpenWeb={() => void openMyGraphWeb()}
         openWebError={openWebError}
       />
@@ -92,7 +129,7 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
         className="graphview-scope"
         style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
       >
-        <MyGraphView api={api} navigate={navigate} detached={false} />
+        <MyGraphView key={graphViewKey} api={api} navigate={navigate} detached={false} />
       </div>
       <LiveProfilePanel />
     </div>
