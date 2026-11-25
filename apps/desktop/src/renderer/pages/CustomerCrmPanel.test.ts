@@ -595,5 +595,54 @@ describe('Compact Enterprise CRM v3 — Dense Multi-Page Row & Slide-Over Drawer
     expect(modalHtml).toContain('Xem trước kết quả chia số (Dry-Run)');
     expect(modalHtml).toContain('⚡ Phân bổ ngay 1 khách');
     expect(modalHtml).toContain('Đội Saler &amp; Phân Page (8)');
+
+    // Synced modal validation: rescue_stale luôn tick protectZaloAndWon dù routing=false, team cap 40 ký tự & 50 page
+    const rescueModalHtml = renderToStaticMarkup(createElement(CustomerCrmSalerModal, {
+      open: true,
+      initialTab: 'distribute',
+      initialMode: 'rescue_stale',
+      rows: [staleUncalled],
+      filteredRows: [staleUncalled],
+      salers,
+      routing: { mode: 'by_page', protectZaloAndWon: false },
+      teamRevision: 1,
+      pageOptions: [{ pageId: '105252511858057', label: 'Đồng Thờ Hồng Hưng', count: 1 }],
+      assignees: [],
+      nowMs: NOW,
+      busy: false,
+      modalError: '',
+      onClose: noop,
+      onBulkAssign: async () => true,
+      onSaveTeam: async () => true,
+    }));
+    expect(rescueModalHtml).toContain('disabled="" checked=""');
+
+    const teamModalHtml = renderToStaticMarkup(createElement(CustomerCrmSalerModal, {
+      open: true,
+      initialTab: 'team',
+      rows: [staleUncalled],
+      filteredRows: [staleUncalled],
+      salers: [{ ...salers[0]!, assignedPageIds: Array.from({ length: 50 }, (_, i) => String(100000 + i)) }],
+      routing: { mode: 'by_page', protectZaloAndWon: true },
+      teamRevision: 1,
+      pageOptions: [{ pageId: '999999', label: 'Page 51', count: 0 }],
+      assignees: [],
+      nowMs: NOW,
+      busy: false,
+      modalError: '',
+      onClose: noop,
+      onBulkAssign: async () => true,
+      onSaveTeam: async () => true,
+    }));
+    expect(teamModalHtml).toContain('maxLength="40"');
+    expect(teamModalHtml).toContain('disabled=""');
+
+    // Clearing "Chưa giao Saler" in Drawer & Row clears ownerUserId: null and Panel reloads full on multi-chunk failure
+    const drawerSrc = read('./CustomerCrmDrawer.tsx');
+    const rowSrc = read('./CustomerCrmRow.tsx');
+    const panelSrc = read('./CustomerCrmPanel.tsx');
+    expect(drawerSrc).toContain('ownerUserId: sid === null ? null : (chosen ? chosen.memberUserId : profile.ownerUserId)');
+    expect(rowSrc).toContain('ownerUserId: sid === null ? null : (chosen ? chosen.memberUserId : profile.ownerUserId)');
+    expect(panelSrc).toContain("if (input.assignments.length > CRM_BULK_ASSIGN_CHUNK) void loadRef.current('full');");
   });
 });

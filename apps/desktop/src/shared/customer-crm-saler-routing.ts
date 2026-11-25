@@ -23,6 +23,10 @@ const DAY_MS = 24 * HOUR_MS;
 const VIETNAM_OFFSET_MS = 7 * HOUR_MS;
 export const CRM_STALE_UNCALLED_MS = 2 * HOUR_MS;
 export const CRM_MAX_QUICK_SALER_NAMES = 50;
+export const CRM_MAX_SALER_NAME = 40;
+export const CRM_MAX_SALER_PAGES = 50;
+export const CRM_BULK_ASSIGN_CHUNK = 500;
+export const CRM_SALER_ID_PATTERN = /^[a-z0-9_-]{2,36}$/;
 
 // ---------------------------------------------------------------------------
 // 1. High-contrast Pancake / HubSpot Color Palette (14 closed tokens)
@@ -136,6 +140,28 @@ export function generateSalerId(seedIndex?: number): string {
   return `a0000000-0000-4000-8000-${tail}`;
 }
 
+function sliceCodePoints(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : chars.slice(0, max).join('');
+}
+
+function buildSalerSlugId(name: string, index: number, usedIds: Set<string>): string {
+  const slug = foldVietnamese(name)
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 36);
+  const base = CRM_SALER_ID_PATTERN.test(slug) ? slug : `saler-${index + 1}`;
+  let candidate = base;
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    const tag = `-${suffix}`;
+    candidate = `${base.slice(0, 36 - tag.length)}${tag}`;
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
 /** Splits comma, semicolon, or newline-separated saler names cleanly. */
 export function parseQuickSalerNames(raw: string): string[] {
   if (typeof raw !== 'string') return [];
@@ -143,12 +169,12 @@ export function parseQuickSalerNames(raw: string): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
   for (const part of parts) {
-    const clean = part.normalize('NFC').replace(/\s+/g, ' ').trim();
+    const clean = sliceCodePoints(part.normalize('NFC').replace(/\s+/g, ' ').trim(), CRM_MAX_SALER_NAME).trim();
     if (!clean) continue;
     const key = foldVietnamese(clean);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    result.push(clean.slice(0, 80));
+    result.push(clean);
     if (result.length >= CRM_MAX_QUICK_SALER_NAMES) break;
   }
   return result;
@@ -209,7 +235,7 @@ export function buildDefaultDaiLongSalerPreset(
     name: spec.name,
     color: spec.color,
     active: true,
-    assignedPageIds: [...byGroup[spec.group]],
+    assignedPageIds: byGroup[spec.group].slice(0, CRM_MAX_SALER_PAGES),
     memberUserId: null,
   }));
 }
@@ -221,16 +247,17 @@ export function buildQuickSalersFromNames(
 ): CustomerCareCrmSalerMember[] {
   const names = parseQuickSalerNames(namesRaw);
   const existingKeys = new Set(existing.map((item) => foldVietnamese(item.name)));
+  const usedIds = new Set(existing.map((item) => item.id));
   const created: CustomerCareCrmSalerMember[] = [];
   let colorCursor = existing.length;
-  for (const name of names) {
+  for (const [index, name] of names.entries()) {
     const key = foldVietnamese(name);
     if (existingKeys.has(key)) continue;
     existingKeys.add(key);
     const color = CUSTOMER_CARE_CRM_SALER_COLORS[colorCursor % CUSTOMER_CARE_CRM_SALER_COLORS.length]!;
     colorCursor += 1;
     created.push({
-      id: generateSalerId(),
+      id: buildSalerSlugId(name, index, usedIds),
       name,
       color,
       active: true,
@@ -246,9 +273,10 @@ export function createSalerMember(
   existing: readonly CustomerCareCrmSalerMember[] = [],
 ): CustomerCareCrmSalerMember {
   const color = CUSTOMER_CARE_CRM_SALER_COLORS[existing.length % CUSTOMER_CARE_CRM_SALER_COLORS.length]!;
+  const cleanName = sliceCodePoints(name.normalize('NFC').replace(/\s+/g, ' ').trim(), CRM_MAX_SALER_NAME).trim();
   return {
     id: generateSalerId(),
-    name: name.trim() || `Saler ${existing.length + 1}`,
+    name: cleanName || `Saler ${existing.length + 1}`,
     color,
     active: true,
     assignedPageIds: [],

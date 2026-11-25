@@ -203,16 +203,16 @@ export class CareCrmClient implements CareCrmGateway {
         { raw: true },
       );
       if (!result.ok) return result;
-      if (useLimit && isInvalidRequest(result)) {
-        useLimit = false;
-        limitRejected = true;
-        result = await this.request('crm', buildIncludePath(usePages, useSalers, false), {}, { raw: true });
-        if (!result.ok) return result;
-      }
       if (useSalers && isInvalidRequest(result)) {
         useSalers = false;
         salersRejected = true;
         result = await this.request('crm', buildIncludePath(usePages, false, useLimit), {}, { raw: true });
+        if (!result.ok) return result;
+      }
+      if (useLimit && isInvalidRequest(result)) {
+        useLimit = false;
+        limitRejected = true;
+        result = await this.request('crm', buildIncludePath(usePages, useSalers, false), {}, { raw: true });
         if (!result.ok) return result;
       }
       if (usePages && isInvalidRequest(result)) {

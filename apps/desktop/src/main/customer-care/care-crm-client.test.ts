@@ -340,32 +340,10 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     return { instance, fetchImpl, urls: () => fetchImpl.mock.calls.map((args) => (args as unknown as [string])[0]) };
   }
 
-  it.each([400, 422])('falls back by dropping limit=100 on %i invalid_request while preserving include=identity,pages,salers and caching limitBackoff', async (status) => {
+  it.each([400, 422])('drops salers FIRST on %i invalid_request to preserve limit=100 against beta.125 and caches salersBackoff', async (status) => {
     const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
     const v2Body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
     const { instance, urls } = sequence(
-      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
-      json(v2Body),
-      json(v2Body),
-    );
-    const first = await instance.listCrm(WORKSPACE, 'crm-next-1');
-    expect(first.ok && first.value.identityEnabled).toBe(true);
-    expect(first.ok && first.value.pages).toEqual(pages);
-    // Next page within 5 minutes skips `limit=100` directly to `include=identity,pages,salers` without burning another 400.
-    const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
-    expect(second.ok && second.value.pages).toEqual(pages);
-    expect(urls()).toEqual([
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&cursor=crm-next-1`,
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&cursor=crm-next-2`,
-    ]);
-  });
-
-  it.each([400, 422])('falls back by dropping salers on %i invalid_request with default saler config and caches salersBackoff', async (status) => {
-    const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
-    const v2Body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
-    const { instance, urls } = sequence(
-      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
       json({ success: false, error: 'x', reason: 'invalid_request' }, status),
       json(v2Body),
       json(v2Body),
@@ -378,11 +356,33 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       salerRouting: { mode: 'by_page', protectZaloAndWon: true },
       salerTeamRevision: 0,
     });
+    // Next page within 5 minutes skips `salers` directly while keeping `limit=100` (5,000 leads).
     const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
     expect(second.ok && second.value.salers).toEqual([]);
     expect(urls()).toEqual([
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-2`,
+    ]);
+  });
+
+  it.each([400, 422])('drops limit=100 second after salers on %i invalid_request and caches limitBackoff', async (status) => {
+    const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
+    const v2Body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
+    const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
+      json(v2Body),
+      json(v2Body),
+    );
+    const first = await instance.listCrm(WORKSPACE, 'crm-next-1');
+    expect(first.ok && first.value.identityEnabled).toBe(true);
+    expect(first.ok && first.value.pages).toEqual(pages);
+    const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
+    expect(second.ok && second.value.pages).toEqual(pages);
+    expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-2`,
     ]);
@@ -401,12 +401,12 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     expect(first.ok && first.value.identityEnabled).toBe(true);
     expect(first.ok && first.value.identityUnavailable).toBe(false);
     expect(first.ok && first.value.rows[0].identity).toEqual(IDENTITY);
-    // Next page within 5 minutes skips `limit=100`, `salers` and `pages` directly to `include=identity`.
+    // Next page within 5 minutes skips `salers`, `limit=100` and `pages` directly to `include=identity`.
     const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
     expect(second.ok && second.value.identityEnabled).toBe(true);
     expect(urls()).toEqual([
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-2`,
@@ -416,7 +416,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
   it.each([
     [400, 'invalid_request'],
     [422, 'invalid_request'],
-  ])('falls back all the way to plain /crm when limit=100, salers, pages and identity return %i %s', async (status, reason) => {
+  ])('falls back all the way to plain /crm when salers, limit=100, pages and identity return %i %s', async (status, reason) => {
     const { instance, urls } = sequence(
       json({ success: false, error: 'x', reason }, status),
       json({ success: false, error: 'x', reason }, status),
@@ -435,7 +435,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     });
     expect(urls()).toEqual([
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&limit=100&cursor=crm-next-1`,
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages,salers&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&limit=100&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&cursor=crm-next-1`,

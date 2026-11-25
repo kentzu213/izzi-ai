@@ -420,7 +420,7 @@ function CrmEditor({
         <div className="v2-crm__conflict" role="alert">
           <p><strong>{edit.error}</strong> Đang hiện thông tin mới nhất. Bạn đã nhập:</p>
           <ul>
-            {crmChangedFields(edit.rejected, profile, assignees, products).map((field) => (
+            {crmChangedFields(edit.rejected, profile, assignees, products, salers).map((field) => (
               <li key={field.label}><span>{field.label}:</span> {field.value}</li>
             ))}
           </ul>
@@ -476,7 +476,7 @@ function CrmEditor({
               onChange={(event) => {
                 const sid = nullable<string>(event.currentTarget.value);
                 const chosen = sid ? salers.find((s) => s.id === sid) : null;
-                set({ salerId: sid, ownerUserId: chosen ? chosen.memberUserId : profile.ownerUserId });
+                set({ salerId: sid, ownerUserId: sid === null ? null : (chosen ? chosen.memberUserId : profile.ownerUserId) });
               }}
             >
               <option value="">Chưa giao Saler</option>

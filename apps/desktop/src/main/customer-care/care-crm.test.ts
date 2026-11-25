@@ -492,11 +492,24 @@ describe('Saler team & bulk-assign parsers', () => {
     expect(page?.salerTeamRevision).toBe(4);
   });
 
-  it('parses POST /crm/team input, 200 envelope and 409 team_conflict', () => {
+  it('parses POST /crm/team input, 200 envelope and 409 team_conflict (syncing 40-char name, 50-page cap, lowercase salerId)', () => {
     const input = { expectedRevision: 2, salers: SALERS, routing: ROUTING };
     expect(parseCareCrmTeamSaveInput(input)).toEqual(input);
     expect(parseCareCrmTeamSaveInput({ ...input, expectedRevision: -1 })).toBeNull();
     expect(parseCareCrmTeamSaveInput({ ...input, workspaceId: WORKSPACE })).toBeNull();
+    // Synced validation bounds with Backend: max 40 chars name, max 50 pages/saler, /^[a-z0-9_-]{2,36}$/ id
+    expect(parseCareCrmTeamSaveInput({ ...input, salers: [{ ...SALERS[0]!, name: 'a'.repeat(40) }] })).not.toBeNull();
+    expect(parseCareCrmTeamSaveInput({ ...input, salers: [{ ...SALERS[0]!, name: 'a'.repeat(41) }] })).toBeNull();
+    expect(parseCareCrmTeamSaveInput({ ...input, salers: [{ ...SALERS[0]!, id: 'A' }] })).toBeNull();
+    expect(parseCareCrmTeamSaveInput({ ...input, salers: [{ ...SALERS[0]!, id: 'UPPER_CASE' }] })).toBeNull();
+    expect(parseCareCrmTeamSaveInput({
+      ...input,
+      salers: [{ ...SALERS[0]!, assignedPageIds: Array.from({ length: 50 }, (_, i) => String(100000 + i)) }],
+    })).not.toBeNull();
+    expect(parseCareCrmTeamSaveInput({
+      ...input,
+      salers: [{ ...SALERS[0]!, assignedPageIds: Array.from({ length: 51 }, (_, i) => String(100000 + i)) }],
+    })).toBeNull();
 
     const body200 = { success: true, workspaceId: WORKSPACE, revision: 3, salers: SALERS, routing: ROUTING };
     expect(parseCareCrmTeamSaveBody(body200, WORKSPACE)).toEqual({ revision: 3, salers: SALERS, routing: ROUTING });

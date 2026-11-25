@@ -63,12 +63,13 @@ export const CARE_CRM_MAX_NEXT_STEP = 200;
 export const CARE_CRM_MAX_NOTE = 1_000;
 export const CARE_CRM_MAX_ASSIGNEES = 200;
 export const CARE_CRM_MAX_SALERS = 50;
-export const CARE_CRM_MAX_SALER_NAME = 80;
+export const CARE_CRM_MAX_SALER_NAME = 40;
+export const CARE_CRM_MAX_SALER_PAGES = 50;
 export const CARE_CRM_BULK_ASSIGN_CHUNK = 500;
 export const CARE_CRM_MAX_BULK_ASSIGN = 5_000;
 export const CARE_CRM_MAX_CALL_TRIES = 9;
 const PRODUCT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
-const SALER_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
+const SALER_ID_PATTERN = /^[a-z0-9_-]{2,36}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_WINDOW_YEARS = 2;
 // The server's text rule (backend 58d8ea0), checked before trimming: no control character (a note keeps its
@@ -344,7 +345,7 @@ function parseSalerMember(raw: unknown): CustomerCareCrmSalerMember | null {
   if (!name) return null;
   if (!oneOf(CUSTOMER_CARE_CRM_SALER_COLORS, item.color)) return null;
   if (typeof item.active !== 'boolean') return null;
-  if (!Array.isArray(item.assignedPageIds) || item.assignedPageIds.length > CARE_CRM_MAX_ASSIGNEES) return null;
+  if (!Array.isArray(item.assignedPageIds) || item.assignedPageIds.length > CARE_CRM_MAX_SALER_PAGES) return null;
   const pageIds: string[] = [];
   const seenPages = new Set<string>();
   for (const pid of item.assignedPageIds as unknown[]) {

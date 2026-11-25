@@ -898,4 +898,37 @@ describe('multi-Page source attribution and unified filter bar', () => {
     expect(effectiveCrmRenderLimit(831, 100, 245)).toBe(300);
     expect(effectiveCrmRenderLimit(45, 100, -1)).toBe(45);
   });
+
+  it('reports Saler and Bước chăm sóc diffs in crmChangedFields so 409 conflicts never show an empty list', () => {
+    const salers = [
+      { id: 'saler-1', name: 'Tuấn Thần Đèn', color: 'blue' as const, active: true, assignedPageIds: [], memberUserId: null },
+      { id: 'saler-2', name: 'Đại', color: 'orange' as const, active: true, assignedPageIds: [], memberUserId: null },
+    ];
+    const base = {
+      stage: 'has_phone' as const,
+      ownerUserId: null,
+      addressForm: null,
+      occasion: null,
+      neededBy: null,
+      productFactIds: [],
+      nextStep: null,
+      nextStepDueAt: null,
+      lostReason: null,
+      purchasedAt: null,
+      note: null,
+      salerId: 'saler-1',
+      careStep: 'step1_uncalled' as const,
+      callTries: 0,
+    };
+    const mine = {
+      ...base,
+      salerId: 'saler-2',
+      careStep: 'step2_no_answer' as const,
+      callTries: 2,
+    };
+    expect(crmChangedFields(mine, base, [], [], salers)).toEqual([
+      { label: 'Saler', value: 'Đại' },
+      { label: 'Bước chăm sóc', value: 'B2 · Chưa nghe (2 lần)' },
+    ]);
+  });
 });

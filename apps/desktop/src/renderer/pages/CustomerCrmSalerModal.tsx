@@ -10,6 +10,8 @@ import {
   type CustomerCareCrmTeamSaveInput,
 } from '../../shared/customer-care-types';
 import {
+  CRM_MAX_SALER_NAME,
+  CRM_MAX_SALER_PAGES,
   CRM_SALER_COLOR_PALETTE,
   buildDefaultDaiLongSalerPreset,
   buildQuickSalersFromNames,
@@ -167,6 +169,9 @@ export default function CustomerCrmSalerModal({
     setDraftSalers((current) =>
       current.map((s) => {
         if (s.id !== salerId) return s;
+        if (checked && !s.assignedPageIds.includes(pageId) && s.assignedPageIds.length >= CRM_MAX_SALER_PAGES) {
+          return s;
+        }
         const nextPages = checked
           ? (s.assignedPageIds.includes(pageId) ? s.assignedPageIds : [...s.assignedPageIds, pageId])
           : s.assignedPageIds.filter((id) => id !== pageId);
@@ -178,7 +183,11 @@ export default function CustomerCrmSalerModal({
   const handleSaveTeam = async () => {
     setLocalError('');
     const cleaned = draftSalers
-      .map((s) => ({ ...s, name: s.name.trim() }))
+      .map((s) => ({
+        ...s,
+        name: Array.from(s.name.trim()).slice(0, CRM_MAX_SALER_NAME).join('').trim(),
+        assignedPageIds: s.assignedPageIds.slice(0, CRM_MAX_SALER_PAGES),
+      }))
       .filter((s) => s.name.length > 0);
     if (cleaned.length === 0 && draftSalers.length > 0) {
       setLocalError('Tên Saler không được để trống.');
@@ -314,7 +323,7 @@ export default function CustomerCrmSalerModal({
                 <label className="v2-crm__product">
                   <input
                     type="checkbox"
-                    checked={protectZaloAndWon}
+                    checked={mode === 'rescue_stale' ? true : protectZaloAndWon}
                     disabled={mode === 'rescue_stale'}
                     onChange={(e) => setProtectZaloAndWon(e.currentTarget.checked)}
                   />
@@ -484,7 +493,7 @@ export default function CustomerCrmSalerModal({
                             type="text"
                             className="v2-field__input"
                             aria-label={`Tên Saler ${index + 1}`}
-                            maxLength={80}
+                            maxLength={CRM_MAX_SALER_NAME}
                             value={saler.name}
                             onChange={(e) => updateDraftSaler(saler.id, { name: e.currentTarget.value })}
                           />
@@ -534,16 +543,20 @@ export default function CustomerCrmSalerModal({
                           {pageOptions.length > 0 && (
                             <div className="v2-crm-team-card__pages">
                               <span className="v2-crm__meta">Phụ trách Page:</span>
-                              {pageOptions.map((page) => (
-                                <label key={page.pageId} className="v2-crm__product">
-                                  <input
-                                    type="checkbox"
-                                    checked={saler.assignedPageIds.includes(page.pageId)}
-                                    onChange={(e) => toggleSalerPage(saler.id, page.pageId, e.currentTarget.checked)}
-                                  />
-                                  <span>{page.label}</span>
-                                </label>
-                              ))}
+                              {pageOptions.map((page) => {
+                                const checked = saler.assignedPageIds.includes(page.pageId);
+                                return (
+                                  <label key={page.pageId} className="v2-crm__product">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={!checked && saler.assignedPageIds.length >= CRM_MAX_SALER_PAGES}
+                                      onChange={(e) => toggleSalerPage(saler.id, page.pageId, e.currentTarget.checked)}
+                                    />
+                                    <span>{page.label}</span>
+                                  </label>
+                                );
+                              })}
                             </div>
                           )}
 

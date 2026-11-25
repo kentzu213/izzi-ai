@@ -25,7 +25,10 @@ import type {
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
 import { CRM_PERSONA_OPTIONS, type CrmMetaAudienceTarget } from '../../shared/customer-crm-enterprise';
-import type { CrmAutoDistributionMode } from '../../shared/customer-crm-saler-routing';
+import {
+  CRM_BULK_ASSIGN_CHUNK,
+  type CrmAutoDistributionMode,
+} from '../../shared/customer-crm-saler-routing';
 import { usePanelVisible } from '../lib/panel-visibility';
 import { careLeadsErrorMessage, leadDisplayName, purgeLeadConfirmText } from './customer-care-leads-flow';
 import { CRM_BACKFILL_UPDATED_EVENT } from './customer-care-page-flow';
@@ -930,6 +933,7 @@ export function CustomerCrmPanel() {
           dropAll(view.message);
         } else {
           setSalerModalError(view.message);
+          if (input.assignments.length > CRM_BULK_ASSIGN_CHUNK) void loadRef.current('full');
         }
         return false;
       }
@@ -967,7 +971,10 @@ export function CustomerCrmPanel() {
       if (result.conflictCount > 0) void loadRef.current('full');
       return true;
     } catch {
-      if (mountedRef.current) setSalerModalError('Chưa phân bổ được. Thử lại sau ít phút.');
+      if (mountedRef.current) {
+        setSalerModalError('Chưa phân bổ được. Thử lại sau ít phút.');
+        if (input.assignments.length > CRM_BULK_ASSIGN_CHUNK) void loadRef.current('full');
+      }
       return false;
     } finally {
       if (mountedRef.current) setSalerModalBusy(false);

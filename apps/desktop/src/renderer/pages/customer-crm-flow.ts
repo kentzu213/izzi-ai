@@ -34,6 +34,7 @@ import {
   normalizeCrmNoteTags,
 } from '../../shared/customer-crm-enterprise';
 import {
+  CRM_CARE_STEP_META,
   isStaleUncalledRow,
   isWonStage,
   resolveEffectiveCareStep,
@@ -629,13 +630,28 @@ export function crmChangedFields(
   server: CustomerCareCrmProfileInput,
   assignees: readonly CustomerCareCrmAssignee[],
   products: readonly CrmProductOption[],
+  salers: readonly CustomerCareCrmSalerMember[] = [],
 ): Array<{ label: string; value: string }> {
   const productText = (ids: readonly string[]) => ids
     .map((id) => products.find((product) => product.id === id)?.label ?? 'Sản phẩm khác').join(', ');
+  const salerText = (salerId: string | null | undefined) => {
+    if (!salerId) return 'Chưa giao';
+    return salers.find((s) => s.id === salerId)?.name ?? salerId;
+  };
+  const careStepText = (step: CustomerCareCrmCareStep | null | undefined, tries: number | undefined) => {
+    const label = step ? CRM_CARE_STEP_META[step].label : 'Tự động theo giai đoạn';
+    return (tries ?? 0) > 0 ? `${label} (${tries} lần)` : label;
+  };
   // A field the user's own stage hides is never sent, so it is not a difference worth showing.
   const visible = crmFieldVisibility(mine.stage);
   const fields: Array<{ label: string; same: boolean; value: string }> = [
     { label: 'Giai đoạn', same: mine.stage === server.stage, value: crmStageLabel(mine.stage) },
+    { label: 'Saler', same: (mine.salerId ?? null) === (server.salerId ?? null), value: salerText(mine.salerId) },
+    {
+      label: 'Bước chăm sóc',
+      same: (mine.careStep ?? null) === (server.careStep ?? null) && (mine.callTries ?? 0) === (server.callTries ?? 0),
+      value: careStepText(mine.careStep, mine.callTries),
+    },
     { label: 'Người phụ trách', same: mine.ownerUserId === server.ownerUserId, value: crmAssigneeLabel(assignees, mine.ownerUserId) },
     { label: 'Xưng hô', same: mine.addressForm === server.addressForm, value: optionLabel(CRM_ADDRESS_FORM_OPTIONS, mine.addressForm) },
     { label: 'Dịp mua', same: mine.occasion === server.occasion, value: optionLabel(CRM_OCCASION_OPTIONS, mine.occasion) },

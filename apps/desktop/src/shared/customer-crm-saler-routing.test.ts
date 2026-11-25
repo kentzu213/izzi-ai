@@ -97,6 +97,28 @@ describe('CRM_SALER_COLOR_PALETTE & presets', () => {
 
     const added = buildQuickSalersFromNames('Minh, Tuấn Thần Đèn, Lan', preset);
     expect(added.map((s) => s.name)).toEqual(['Minh', 'Lan']);
+    expect(added.map((s) => s.id)).toEqual(['minh', 'lan']);
+
+    // Cắt tên 40 code points, sinh ID chuẩn /^[a-z0-9_-]{2,36}$/ và fallback saler-(i+1) khi toàn ký tự đặc biệt / <2 ký tự
+    const longName = 'Nguyễn Thị Thùy Dương Đồ Đồng Đại Long 12345';
+    const edgeSalers = buildQuickSalersFromNames(`${longName}, !!!, A`);
+    expect(Array.from(edgeSalers[0]!.name)).toHaveLength(40);
+    expect(edgeSalers.map((s) => s.id)).toEqual([
+      'nguyen-thi-thuy-duong-do-dong-dai-lo',
+      'saler-2',
+      'saler-3',
+    ]);
+    for (const saler of edgeSalers) {
+      expect(saler.id).toMatch(/^[a-z0-9_-]{2,36}$/);
+    }
+
+    // Giới hạn assignedPageIds tối đa 50 page cho mỗi Saler trong preset
+    const manyDaiLongPages = Array.from({ length: 60 }, (_, idx) => ({
+      pageId: String(900000 + idx),
+      pageName: `Đồ Đồng Đại Long ${idx}`,
+    }));
+    const cappedPreset = buildDefaultDaiLongSalerPreset(manyDaiLongPages);
+    expect(cappedPreset.find((s) => s.name === 'Tuấn Thần Đèn')?.assignedPageIds).toHaveLength(50);
   });
 });
 
