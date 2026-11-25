@@ -40,6 +40,13 @@ export interface CustomerCareAuthority {
  */
 export type CustomerCareAuthorityLookup = CustomerCareAuthority | 'unavailable' | null;
 
+/** One secondary Facebook Page verified for CRM sync/backfill in this workspace. */
+export interface CustomerCareCrmSyncedPage {
+  pageId: string;
+  pageName: string | null;
+  verifiedAt: string;
+}
+
 /**
  * The workspace's Facebook Page connection as verified by the izzi backend. `unavailable` means the
  * status could not be read; `unsupported` means the backend (or this build) has no Care Page routes.
@@ -52,6 +59,7 @@ export type CustomerCarePageConnection =
     status: 'active' | 'needs_reauth';
     missingScopes: string[];
     verifiedAt: string;
+    crmPages?: CustomerCareCrmSyncedPage[];
   }
   | { state: 'not_connected' }
   | { state: 'unavailable' }
@@ -62,6 +70,8 @@ export interface CustomerCareSnapshot {
   setup: CustomerCareSetup | null;
   blockers: string[];
   pageConnection: CustomerCarePageConnection;
+  /** Secondary CRM-synced Pages when verified on the backend. */
+  crmPages?: CustomerCareCrmSyncedPage[];
   /** Display hint only: whether the caller's role may connect, select or disconnect the Page. Main re-checks. */
   canManagePage: boolean;
   mode: 'shadow';
@@ -75,7 +85,7 @@ export interface CustomerCareFacebookPageChoice {
   pageId: string;
   name: string | null;
   eligible: boolean;
-  reason: 'eligible' | 'missing_moderate_task' | 'missing_page_token';
+  reason: 'eligible' | 'missing_moderate_task' | 'missing_page_token' | 'missing_messaging_scope';
 }
 
 /** Bounded backend reasons a 4xx Care Facebook answer may carry. */
@@ -161,6 +171,20 @@ export type CustomerCareFacebookChoicesEvent =
 
 export type CustomerCareFacebookConnectResult = { ok: true } | CustomerCareFacebookFailure;
 
+export const CUSTOMER_CARE_BACKFILL_SKIP_REASONS = [
+  'permission_missing',
+  'token_invalid',
+  'bound_elsewhere',
+  'provider_error',
+] as const;
+export type CustomerCareBackfillSkipReason = (typeof CUSTOMER_CARE_BACKFILL_SKIP_REASONS)[number];
+
+export interface CustomerCareBackfillSkippedPage {
+  pageId: string;
+  pageName: string | null;
+  reason: CustomerCareBackfillSkipReason;
+}
+
 /** Summary returned after backfilling recent Messenger history (up to 90 days) from one or more Pages into CRM. */
 export interface CustomerCareBackfillSummary {
   pagesProcessed: number;
@@ -168,6 +192,7 @@ export interface CustomerCareBackfillSummary {
   leadsImported: number;
   messagesStored: number;
   namesSealed: number;
+  skippedPages?: CustomerCareBackfillSkippedPage[];
 }
 
 export type CustomerCareSelectPageResult =

@@ -10,6 +10,7 @@ import {
   CARE_BLOCKER_PAGE_UNVERIFIED,
   CARE_MODE_REASON_PAGE,
   CARE_MODE_REASON_PHASE,
+  CarePageConnectionCoordinator,
   deriveCareMode,
   derivePageBlockers,
   toCustomerCarePageConnection,
@@ -134,5 +135,44 @@ describe('toCustomerCarePageConnection', () => {
     for (const error of ['forbidden', 'unavailable', 'not_configured', 'rejected', 'invalid-response'] as const) {
       expect(toCustomerCarePageConnection({ ok: false, error })).toEqual({ state: 'unavailable' });
     }
+  });
+
+  it('tracks secondary crmPages in CarePageConnectionCoordinator, deduplicates primary Page, and clears on disconnect', () => {
+    const coordinator = new CarePageConnectionCoordinator();
+    const crmPages = [
+      { pageId: PAGE, pageName: 'Đồ Đồng Hồng Hưng', verifiedAt: VERIFIED_AT },
+      { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: VERIFIED_AT },
+      { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', verifiedAt: VERIFIED_AT },
+    ];
+    const conn = coordinator.applyStatus('ws-1', {
+      ok: true,
+      value: {
+        success: true,
+        workspaceId: 'ws-1',
+        requiredScopes: [],
+        connection: {
+          pageId: PAGE,
+          pageName: 'Đồ Đồng Hồng Hưng',
+          status: 'active',
+          grantedScopes: [],
+          missingScopes: [],
+          verifiedAt: VERIFIED_AT,
+          tokenExpiresAt: null,
+        },
+        crmPages,
+      },
+    });
+    expect(conn).toEqual({
+      state: 'connected',
+      pageId: PAGE,
+      pageName: 'Đồ Đồng Hồng Hưng',
+      status: 'active',
+      missingScopes: [],
+      verifiedAt: VERIFIED_AT,
+      crmPages: crmPages.slice(1),
+    });
+
+    coordinator.clearWorkspace('ws-1');
+    expect(coordinator.getCrmPages('ws-1')).toEqual([]);
   });
 });

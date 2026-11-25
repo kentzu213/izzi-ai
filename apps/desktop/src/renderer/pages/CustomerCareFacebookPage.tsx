@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type {
+  CustomerCareCrmSyncedPage,
   CustomerCareFacebookError,
   CustomerCareFacebookPageChoice,
   CustomerCareFacebookRejectReason,
@@ -18,6 +19,7 @@ export interface CustomerCareFacebookPageChoices {
 }
 
 export interface CustomerCareConfirmPageOptions {
+  pageId?: string;
   backfillPageIds?: string[];
   importOnly?: boolean;
 }
@@ -71,6 +73,7 @@ const CHOICE_REASON_LABELS: Record<CustomerCareFacebookPageChoice['reason'], str
   eligible: 'Đủ điều kiện',
   missing_moderate_task: 'Tài khoản của bạn chưa có quyền quản lý tin nhắn trên Page này.',
   missing_page_token: 'Facebook không cấp quyền truy cập cho Page này.',
+  missing_messaging_scope: "Chưa tích cấp quyền Tin nhắn trên Facebook (bấm 'Chỉnh sửa cài đặt trước đó' để bật)",
 };
 
 export function facebookErrorMessage(error: CustomerCareFacebookError, reason?: CustomerCareFacebookRejectReason): string {
@@ -95,11 +98,31 @@ function pageDisplayName(pageId: string, name: string | null): string {
   return name ?? `Page ${pageId}`;
 }
 
+function extraCrmPages(connection: CustomerCarePageConnection): CustomerCareCrmSyncedPage[] {
+  if (connection.state !== 'connected' || !connection.crmPages?.length) return [];
+  const seen = new Set<string>([connection.pageId]);
+  const out: CustomerCareCrmSyncedPage[] = [];
+  for (const page of connection.crmPages) {
+    if (seen.has(page.pageId)) continue;
+    seen.add(page.pageId);
+    out.push(page);
+  }
+  return out;
+}
+
 function describeConnection(connection: CustomerCarePageConnection): string {
   switch (connection.state) {
     case 'connected': {
       const name = pageDisplayName(connection.pageId, connection.pageName);
-      return connection.status === 'active' ? `Đã kết nối: ${name}` : `Cần kết nối lại: ${name}`;
+      const crmPages = extraCrmPages(connection);
+      if (crmPages.length === 0) {
+        return connection.status === 'active' ? `Đã kết nối: ${name}` : `Cần kết nối lại: ${name}`;
+      }
+      const totalPages = 1 + crmPages.length;
+      const crmNames = crmPages.map((page) => pageDisplayName(page.pageId, page.pageName)).join(', ');
+      return connection.status === 'active'
+        ? `Đã kết nối ${totalPages} Page: ${name} (Trực trả lời) · ${crmNames} (Đồng bộ CRM)`
+        : `Cần kết nối lại (${totalPages} Page): ${name} (Trực trả lời) · ${crmNames} (Đồng bộ CRM)`;
     }
     case 'not_connected':
       return 'Chưa kết nối Page Facebook.';
@@ -146,11 +169,18 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
   const { choices, connection, selectedPageId, busy } = props;
   const connected = connection.state === 'connected';
   const eligibleIds = choices.pages.filter((page) => page.eligible).map((page) => page.pageId);
+  const missingMessagingPages = choices.pages.filter((page) => page.reason === 'missing_messaging_scope');
+  const effectiveSelectedPageId = selectedPageId
+    || (connected && eligibleIds.includes(connection.pageId) ? connection.pageId : '');
   const [filter, setFilter] = useState('');
   const [checkedIds, setCheckedIds] = useState<string[]>(() => eligibleIds.slice(0, MAX_BACKFILL_PAGES));
   const visiblePages = filterPageChoices(choices.pages, filter);
   // Only a Page the merchant can currently see may be confirmed as the primary Page.
-  const selected = visiblePages.find((page) => page.pageId === selectedPageId);
+  const selected = visiblePages.find((page) => page.pageId === effectiveSelectedPageId);
+  const sameHealthyPrimary = connected
+    && connection.status === 'active'
+    && connection.missingScopes.length === 0
+    && selected?.pageId === connection.pageId;
   const checkedSet = new Set(checkedIds);
   const validCheckedIds = choices.pages
     .filter((page) => page.eligible && checkedSet.has(page.pageId))
@@ -172,6 +202,25 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
   return (
     <fieldset className="ccw__page-picker">
       <legend>Chọn Page dùng cho Chăm sóc khách hàng</legend>
+      {missingMessagingPages.length > 0 && (
+        <div className="ccw__scope-warning" role="alert">
+          <p>
+            {`Có ${missingMessagingPages.length} Page chưa được tích cấp quyền Tin nhắn ở cửa sổ Facebook vừa rồi (Facebook giữ danh sách Page cũ khi bạn bấm 'Tiếp tục'). Hãy bấm `}
+            <strong>‘Mở lại Facebook để tích thêm Page’</strong>
+            {' → chọn '}
+            <strong>‘Chỉnh sửa cài đặt trước đó’</strong>
+            {' → tích đủ các Page cần trích xuất.'}
+          </p>
+          <button
+            type="button"
+            className="cmr-button"
+            disabled={busy}
+            onClick={props.onConnect}
+          >
+            Mở lại Facebook để tích thêm Page
+          </button>
+        </div>
+      )}
       {choices.pages.length === 0 ? (
         <p className="ccw__hint">Không có Page nào để chọn. Hãy kiểm tra tài khoản Facebook đã quản lý Page của shop.</p>
       ) : (
@@ -196,13 +245,16 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
                     type="radio"
                     name="ccw-page-choice"
                     value={page.pageId}
-                    checked={selectedPageId === page.pageId}
+                    checked={effectiveSelectedPageId === page.pageId}
                     disabled={!page.eligible || busy}
                     onChange={() => props.onSelectPage(page.pageId)}
                   />
                   <span>
                     <strong>{page.name ?? 'Page chưa có tên'}</strong>
                     <small>ID {page.pageId}</small>
+                    {connected && page.pageId === connection.pageId && (
+                      <small className="ccw__page-current">Đang trực trả lời</small>
+                    )}
                     {!page.eligible && <small className="ccw__page-reason">{CHOICE_REASON_LABELS[page.reason]}</small>}
                   </span>
                 </label>
@@ -268,8 +320,9 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
             <button
               type="button"
               className="cmr-button"
-              disabled={busy || !selected?.eligible}
+              disabled={busy || !selected?.eligible || sameHealthyPrimary}
               onClick={() => props.onConfirmPage({
+                pageId: effectiveSelectedPageId,
                 backfillPageIds: validCheckedIds.length > 0 ? validCheckedIds : undefined,
                 importOnly: false,
               })}
@@ -294,6 +347,7 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
             className="cmr-button cmr-button--primary"
             disabled={busy || !selected?.eligible}
             onClick={() => props.onConfirmPage({
+              pageId: effectiveSelectedPageId,
               backfillPageIds: validCheckedIds.length > 0 ? validCheckedIds : undefined,
               importOnly: false,
             })}
@@ -309,6 +363,8 @@ function PagePicker(props: CustomerCareFacebookPagePanelProps & { choices: Custo
 export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePanelProps) {
   const { connection, canManage, busy, waitingForFacebook, choices } = props;
   const connected = connection.state === 'connected';
+  const crmPages = extraCrmPages(connection);
+  const totalConnectedPages = connected ? 1 + crmPages.length : 0;
   return (
     <section className="ccw__section ccw__page" aria-labelledby="ccw-page-title">
       <div className="ccw__section-heading">
@@ -326,7 +382,9 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
                   disabled={busy}
                   onClick={props.onBackfillCurrent}
                 >
-                  Đồng bộ khách cũ (90 ngày)
+                  {totalConnectedPages > 1
+                    ? `Đồng bộ khách cũ (${totalConnectedPages} Page · 90 ngày)`
+                    : 'Đồng bộ khách cũ (90 ngày)'}
                 </button>
                 <button type="button" className="cmr-button" disabled={busy} onClick={props.onConnect}>
                   Kết nối lại / Thêm Page CRM
@@ -347,12 +405,32 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
         )}
       </div>
       <p className="ccw__page-status" role="status">{describeConnection(connection)}</p>
+      {connected && crmPages.length > 0 && (
+        <ul className="ccw__connected-pages" aria-label="Danh sách Page đã kết nối">
+          <li className="ccw__connected-chip ccw__connected-chip--primary">
+            {connection.status === 'active'
+              ? `🟢 ${pageDisplayName(connection.pageId, connection.pageName)} · Đang trực trả lời`
+              : `🟠 ${pageDisplayName(connection.pageId, connection.pageName)} · Cần kết nối lại`}
+          </li>
+          {crmPages.map((crmPage) => (
+            <li key={crmPage.pageId} className="ccw__connected-chip ccw__connected-chip--crm">
+              {`🟣 ${pageDisplayName(crmPage.pageId, crmPage.pageName)} · Đồng bộ CRM`}
+            </li>
+          ))}
+        </ul>
+      )}
       {connected && connection.missingScopes.length > 0 && (
         <p className="ccw__hint">Page còn thiếu quyền: {connection.missingScopes.join(', ')}.</p>
       )}
       {connected && canManage && (
-        <p className="ccw__hint">
-          Muốn gom thêm SĐT &amp; dữ liệu khách từ các Page khác (như Xưởng tranh đồng Đại Long, Đồ đồng Đại Long) mà vẫn giữ Page đang trực, hãy bấm “Kết nối lại / Thêm Page CRM”.
+        <p className="ccw__hint ccw__hint--callout">
+          <strong>Quan trọng trên cửa sổ Facebook:</strong>
+          {' '}
+          Đừng bấm ngay ‘Tiếp tục dưới tên...’ — khi bấm “Kết nối lại / Thêm Page CRM”, hãy bấm
+          {' '}
+          <strong>‘Chỉnh sửa cài đặt trước đó’ (hoặc ‘Chỉnh sửa quyền truy cập’)</strong>
+          {' '}
+          rồi tích chọn thêm các Page cần lấy data (như Xưởng tranh đồng Đại Long, Đồ đồng Đại Long) trước khi bấm Tiếp tục.
         </p>
       )}
       <p className="ccw__hint">
@@ -362,7 +440,18 @@ export function CustomerCareFacebookPagePanel(props: CustomerCareFacebookPagePan
         <p className="ccw__hint">Chỉ chủ sở hữu và quản lý workspace được kết nối hoặc thay đổi Page Facebook.</p>
       )}
       {canManage && waitingForFacebook && (
-        <p className="ccw__hint" role="status">Đang chờ bạn cấp quyền trên Facebook trong trình duyệt…</p>
+        <div className="ccw__waiting-callout" role="status">
+          <p>Đang chờ bạn cấp quyền trên Facebook trong trình duyệt…</p>
+          <p>
+            <strong>Quan trọng trên cửa sổ Facebook:</strong>
+            {' '}
+            Đừng bấm ngay ‘Tiếp tục dưới tên...’ — hãy bấm
+            {' '}
+            <strong>‘Chỉnh sửa cài đặt trước đó’ (hoặc ‘Chỉnh sửa quyền truy cập’)</strong>
+            {' '}
+            rồi tích chọn thêm các Page cần lấy data (như Xưởng tranh đồng Đại Long, Đồ đồng Đại Long) trước khi bấm Tiếp tục.
+          </p>
+        </div>
       )}
       {canManage && choices && <PagePicker key={choices.choiceId} {...props} choices={choices} />}
     </section>

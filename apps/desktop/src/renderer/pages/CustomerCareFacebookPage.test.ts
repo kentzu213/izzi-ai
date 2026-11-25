@@ -15,6 +15,7 @@ import {
   setupForSave,
   type CustomerCareFacebookPagePanelProps,
 } from './CustomerCareFacebookPage';
+import { formatBackfillSummaryNotice } from './customer-care-page-flow';
 
 const PAGE = '105252511858057';
 const CONNECTED: CustomerCarePageConnection = {
@@ -168,8 +169,13 @@ describe('CustomerCareFacebookPagePanel picker', () => {
     };
     const html = render({ connection: CONNECTED, choices: multiChoices });
     expect(html).toContain('Trích xuất SĐT &amp; lịch sử khách hàng (90 ngày) vào CRM (3/3 Page, tối đa 10 Page/lần):');
+    // Connected primary Page is automatically preselected as the radio choice so the operator cannot pick the wrong primary Page by mistake
+    expect(radio(html, PAGE)).toMatch(/checked/);
     expect(button(html, 'Trích xuất 3 Page vào CRM \\(Giữ Page đang trực\\)')).not.toMatch(/disabled/);
     expect(button(html, 'Đổi Page chính &amp; Trích xuất')).toMatch(/disabled/);
+    // Choosing a different eligible Page enables switching primary Page
+    const switchedHtml = render({ connection: CONNECTED, choices: multiChoices, selectedPageId: '631891669999823' });
+    expect(button(switchedHtml, 'Đổi Page chính &amp; Trích xuất')).not.toMatch(/disabled/);
     const checkboxes = html.match(/<input type="checkbox"[^>]*>/g) ?? [];
     expect(checkboxes).toHaveLength(3);
     for (const cb of checkboxes) expect(cb).toContain('checked=""');
@@ -187,6 +193,46 @@ describe('CustomerCareFacebookPagePanel picker', () => {
     expect(cappedCheckboxes).toHaveLength(12);
     expect(cappedCheckboxes.filter((cb) => cb.includes('checked=""'))).toHaveLength(10);
     expect(cappedCheckboxes.filter((cb) => cb.includes('disabled=""'))).toHaveLength(2);
+  });
+
+  it('renders all 3 connected Pages with primary + CRM badges, multi-Page sync CTA, and anti-1-click Facebook guidance', () => {
+    const multiConnected: CustomerCarePageConnection = {
+      ...CONNECTED,
+      pageName: 'Đồng Thờ Hồng Hưng',
+      crmPages: [
+        { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: '2026-11-17T00:00:00.000Z' },
+        { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', verifiedAt: '2026-11-17T00:00:00.000Z' },
+      ],
+    };
+    const html = render({ connection: multiConnected, waitingForFacebook: true });
+    expect(html).toContain(
+      'Đã kết nối 3 Page: Đồng Thờ Hồng Hưng (Trực trả lời) · Xưởng tranh đồng Đại Long, Đồ đồng Đại Long (Đồng bộ CRM)',
+    );
+    expect(html).toContain('🟢 Đồng Thờ Hồng Hưng · Đang trực trả lời');
+    expect(html).toContain('🟣 Xưởng tranh đồng Đại Long · Đồng bộ CRM');
+    expect(html).toContain('🟣 Đồ đồng Đại Long · Đồng bộ CRM');
+    expect(button(html, 'Đồng bộ khách cũ \\(3 Page · 90 ngày\\)')).not.toBeNull();
+    expect(html).toContain('Chỉnh sửa cài đặt trước đó');
+    expect(html).toContain('Chỉnh sửa quyền truy cập');
+  });
+
+  it('warns prominently on PagePicker when Pages lack messaging scope and offers a direct button to reopen Facebook settings', () => {
+    const partialChoices = {
+      ...CHOICES,
+      pages: [
+        { pageId: PAGE, name: 'Đồng Thờ Hồng Hưng', eligible: true, reason: 'eligible' as const },
+        { pageId: '631891669999823', name: 'Xưởng tranh đồng Đại Long', eligible: false, reason: 'missing_messaging_scope' as const },
+        { pageId: '741891669999824', name: 'Đồ đồng Đại Long', eligible: false, reason: 'missing_messaging_scope' as const },
+      ],
+    };
+    const html = render({ connection: CONNECTED, choices: partialChoices });
+    expect(html).toContain('Có 2 Page chưa được tích cấp quyền Tin nhắn ở cửa sổ Facebook vừa rồi');
+    expect(button(html, 'Mở lại Facebook để tích thêm Page')).not.toMatch(/disabled/);
+    expect(radio(html, '631891669999823')).toMatch(/disabled/);
+    expect(radio(html, '741891669999824')).toMatch(/disabled/);
+    expect(html).toContain("Chưa tích cấp quyền Tin nhắn trên Facebook (bấm &#x27;Chỉnh sửa cài đặt trước đó&#x27; để bật)");
+    // Only 1 Page is actually eligible for backfill, so the CTA says 1 Page instead of falsely claiming 3 Pages
+    expect(button(html, 'Trích xuất 1 Page vào CRM \\(Giữ Page đang trực\\)')).not.toMatch(/disabled/);
   });
 });
 
@@ -251,5 +297,23 @@ describe('CustomerCareFacebookPage helpers', () => {
       expect(setupForSave(setup, connection)).toEqual(setup);
     }
     expect(setupForSave(setup, undefined)).toEqual(setup);
+  });
+
+  it('formats backfill summary with explicit Vietnamese skippedPages warning instead of silent success', () => {
+    const notice = formatBackfillSummaryNotice({
+      pagesProcessed: 1,
+      conversationsScanned: 115,
+      leadsImported: 18,
+      messagesStored: 42,
+      namesSealed: 18,
+      skippedPages: [
+        { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', reason: 'permission_missing' },
+        { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', reason: 'permission_missing' },
+      ],
+    });
+    expect(notice).toContain('Đã đồng bộ 1 Page (quét 115 hội thoại)');
+    expect(notice).toContain('Cảnh báo — có 2 Page bị bỏ qua chưa đồng bộ được');
+    expect(notice).toContain('Xưởng tranh đồng Đại Long (chưa được tích cấp quyền Tin nhắn trên Facebook)');
+    expect(notice).toContain('Đồ đồng Đại Long (chưa được tích cấp quyền Tin nhắn trên Facebook)');
   });
 });

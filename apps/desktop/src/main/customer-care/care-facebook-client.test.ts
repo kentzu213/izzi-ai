@@ -81,7 +81,7 @@ describe('CareFacebookClient requests', () => {
     await a.completeCallback(WORKSPACE, STATE, CODE);
     expect(fa.mock.calls[0][0]).toBe(`${ROOT}/callback`);
     expect(JSON.parse(String((fa.mock.calls[0] as unknown as [string, RequestInit])[1].body)))
-      .toEqual({ workspaceId: WORKSPACE, state: STATE, code: CODE });
+      .toEqual({ workspaceId: WORKSPACE, state: STATE, code: CODE, clientVersion: 2 });
 
     const { instance: b, fetchImpl: fb } = client(json({ success: true, workspaceId: WORKSPACE, connection: CONNECTION }));
     await b.selectPage(WORKSPACE, CHOICE, PAGE);
@@ -90,10 +90,10 @@ describe('CareFacebookClient requests', () => {
       .toEqual({ workspaceId: WORKSPACE, choiceId: CHOICE, pageId: PAGE });
 
     const { instance: c, fetchImpl: fc } = client(json({
-      success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: null,
+      success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: null, crmPages: [],
     }));
     await c.getStatus(WORKSPACE);
-    expect(fc.mock.calls[0][0]).toBe(`${ROOT}/status?workspaceId=${WORKSPACE}`);
+    expect(fc.mock.calls[0][0]).toBe(`${ROOT}/status?workspaceId=${WORKSPACE}&include=crmPages`);
     expect((fc.mock.calls[0] as unknown as [string, RequestInit])[1].method ?? 'GET').toBe('GET');
 
     const { instance: d, fetchImpl: fd } = client(json({ success: true, workspaceId: WORKSPACE, connection: null }));
@@ -315,13 +315,85 @@ describe('CareFacebookClient strict response parsing', () => {
     expect(await instance.getStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
   });
 
-  it('parses status with and without a connection', async () => {
-    const connected = { success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: { ...CONNECTION, status: 'needs_reauth', tokenExpiresAt: ISO } };
-    expect(await client(json(connected)).instance.getStatus(WORKSPACE)).toEqual({ ok: true, value: connected });
+  it('parses status with and without a connection, including v2 crmPages and 400 fallback', async () => {
+    const crmPages = [
+      { pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: ISO },
+      { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', verifiedAt: ISO },
+    ];
+    const connectedV2 = {
+      success: true,
+      workspaceId: WORKSPACE,
+      requiredScopes: ['pages_messaging'],
+      connection: { ...CONNECTION, status: 'needs_reauth', tokenExpiresAt: ISO },
+      crmPages,
+    };
+    expect(await client(json(connectedV2)).instance.getStatus(WORKSPACE)).toEqual({ ok: true, value: connectedV2 });
 
-    const none = { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null };
-    expect(await client(json(none)).instance.getStatus(WORKSPACE)).toEqual({ ok: true, value: none });
-    expect(await client(json({ ...none, extra: 1 })).instance.getStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
+    // 4-key response (server ignored include=crmPages) defaults crmPages to []
+    const noneV1 = { success: true, workspaceId: WORKSPACE, requiredScopes: [], connection: null };
+    expect(await client(json(noneV1)).instance.getStatus(WORKSPACE)).toEqual({
+      ok: true,
+      value: { ...noneV1, crmPages: [] },
+    });
+    expect(await client(json({ ...noneV1, extra: 1 })).instance.getStatus(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
+
+    // Older server rejecting ?include=crmPages with HTTP 400 falls back to plain /status?workspaceId=...
+    const fallbackFetch = vi.fn()
+      .mockResolvedValueOnce(json({ success: false, error: 'Invalid query', reason: 'invalid_request' }, 400))
+      .mockResolvedValueOnce(json({ success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: CONNECTION }));
+    const fallbackClient = new CareFacebookClient(tokens(), { fetchImpl: fallbackFetch as unknown as typeof fetch });
+    expect(await fallbackClient.getStatus(WORKSPACE)).toEqual({
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: CONNECTION, crmPages: [] },
+    });
+    expect(fallbackFetch.mock.calls.map((c) => c[0])).toEqual([
+      `${ROOT}/status?workspaceId=${WORKSPACE}&include=crmPages`,
+      `${ROOT}/status?workspaceId=${WORKSPACE}`,
+    ]);
+
+    // Malformed crmPages on include=crmPages also falls back safely to plain /status, while extra token key is rejected
+    const badCrmFetch = vi.fn()
+      .mockResolvedValueOnce(json({ ...connectedV2, crmPages: [{ pageId: '631891669999823', pageName: 'X', verifiedAt: ISO, pageToken: 'EAAB' }] }))
+      .mockResolvedValueOnce(json({ success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: CONNECTION }));
+    const badCrmClient = new CareFacebookClient(tokens(), { fetchImpl: badCrmFetch as unknown as typeof fetch });
+    expect(await badCrmClient.getStatus(WORKSPACE)).toEqual({
+      ok: true,
+      value: { success: true, workspaceId: WORKSPACE, requiredScopes: ['pages_messaging'], connection: CONNECTION, crmPages: [] },
+    });
+  });
+
+  it('parses callback v2 missing_messaging_scope reason and 5-key v2 envelope', async () => {
+    const v2Pages = [
+      { pageId: PAGE, name: 'Đồng Thờ Hồng Hưng', eligible: true, reason: 'eligible' },
+      { pageId: '631891669999823', name: 'Xưởng tranh đồng Đại Long', eligible: false, reason: 'missing_messaging_scope' },
+      { pageId: '741891669999824', name: 'Đồ đồng Đại Long', eligible: false, reason: 'missing_messaging_scope' },
+    ];
+    const fiveKeyBody = {
+      success: true,
+      choiceId: CHOICE,
+      expiresAt: ISO,
+      missingScopes: [],
+      pages: v2Pages,
+    };
+    const { instance } = client(json(fiveKeyBody));
+    expect(await instance.completeCallback(WORKSPACE, STATE, CODE)).toEqual({
+      ok: true,
+      value: {
+        success: true,
+        workspaceId: WORKSPACE,
+        choiceId: CHOICE,
+        expiresAt: ISO,
+        grantedScopes: [],
+        missingScopes: [],
+        pages: v2Pages,
+      },
+    });
+
+    // Rejects eligible: true paired with missing_messaging_scope
+    expect(await client(json({
+      ...fiveKeyBody,
+      pages: [{ pageId: '631891669999823', name: 'X', eligible: true, reason: 'missing_messaging_scope' }],
+    })).instance.completeCallback(WORKSPACE, STATE, CODE)).toEqual({ ok: false, error: 'invalid-response' });
   });
 
   it('requires disconnect to answer with a null connection', async () => {
@@ -331,28 +403,34 @@ describe('CareFacebookClient strict response parsing', () => {
     expect(await stale.instance.disconnect(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
   });
 
-  it('supports multi-Page backfill on selectPage (importOnly & backfillPageIds) with 30s timeout and strict exactRecord parsing', async () => {
+  it('supports multi-Page backfill on selectPage (importOnly, backfillPageIds, includeCrmPages, skippedPages & crmPages) with 30s timeout', async () => {
+    const page2 = '631891669999823';
+    const page3 = '741891669999824';
     const backfill = {
-      pagesProcessed: 3,
+      pagesProcessed: 1,
       conversationsScanned: 84,
       leadsImported: 19,
       messagesStored: 47,
       namesSealed: 18,
+      skippedPages: [
+        { pageId: page2, pageName: 'Xưởng tranh đồng Đại Long', reason: 'permission_missing' as const },
+        { pageId: page3, pageName: 'Đồ đồng Đại Long', reason: 'token_invalid' as const },
+      ],
     };
-    const page2 = '631891669999823';
-    const page3 = '741891669999824';
+    const crmPages = [{ pageId: page2, pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: ISO }];
     const { instance, fetchImpl } = client(json({
       success: true,
       workspaceId: WORKSPACE,
       connection: CONNECTION,
       backfill,
+      crmPages,
     }));
 
     const res = await instance.selectPage(WORKSPACE, CHOICE, PAGE, {
       backfillPageIds: [PAGE, page2, page3],
       importOnly: true,
     });
-    expect(res).toEqual({ ok: true, value: { connection: CONNECTION, backfill } });
+    expect(res).toEqual({ ok: true, value: { connection: CONNECTION, backfill, crmPages } });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${ROOT}/select`);
     expect(JSON.parse(String(init.body))).toEqual({
@@ -361,9 +439,28 @@ describe('CareFacebookClient strict response parsing', () => {
       pageId: PAGE,
       backfillPageIds: [PAGE, page2, page3],
       importOnly: true,
+      includeCrmPages: true,
     });
 
-    // Rejects extra keys or negative counts in backfill summary
+    // Also accepts 4-key response without crmPages for backwards compatibility
+    const v1Select = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      connection: CONNECTION,
+      backfill: { pagesProcessed: 3, conversationsScanned: 84, leadsImported: 19, messagesStored: 47, namesSealed: 18 },
+    }));
+    expect((await v1Select.instance.selectPage(WORKSPACE, CHOICE, PAGE, { backfillPageIds: [PAGE], importOnly: true })).ok).toBe(true);
+
+    // Rejects unknown skippedPages reason or extra keys in backfill summary
+    const badSkipped = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      connection: CONNECTION,
+      backfill: { ...backfill, skippedPages: [{ pageId: page2, pageName: 'X', reason: 'unknown_reason' }] },
+    }));
+    expect(await badSkipped.instance.selectPage(WORKSPACE, CHOICE, PAGE, { backfillPageIds: [PAGE] }))
+      .toEqual({ ok: false, error: 'invalid-response' });
+
     const badExtra = client(json({
       success: true,
       workspaceId: WORKSPACE,
@@ -382,24 +479,33 @@ describe('CareFacebookClient strict response parsing', () => {
     expect(local.fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('calls POST /backfill on backfillBoundPage with 30s timeout and parses exact backfill summary', async () => {
+  it('calls POST /backfill with includeCrmPages: true and parses both 3-key and 4-key envelopes with skippedPages', async () => {
     const backfill = {
-      pagesProcessed: 1,
+      pagesProcessed: 2,
       conversationsScanned: 42,
       leadsImported: 11,
       messagesStored: 29,
       namesSealed: 11,
+      skippedPages: [
+        { pageId: '741891669999824', pageName: 'Đồ đồng Đại Long', reason: 'bound_elsewhere' as const },
+      ],
     };
+    const crmPages = [{ pageId: '631891669999823', pageName: 'Xưởng tranh đồng Đại Long', verifiedAt: ISO }];
     const { instance, fetchImpl } = client(json({
       success: true,
       workspaceId: WORKSPACE,
       backfill,
+      crmPages,
     }));
-    expect(await instance.backfillBoundPage(WORKSPACE)).toEqual({ ok: true, value: backfill });
+    expect(await instance.backfillBoundPage(WORKSPACE)).toEqual({ ok: true, value: { ...backfill, crmPages } });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${ROOT}/backfill`);
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE });
+    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE, includeCrmPages: true });
+
+    // 3-key backward-compatible envelope
+    const threeKey = client(json({ success: true, workspaceId: WORKSPACE, backfill }));
+    expect(await threeKey.instance.backfillBoundPage(WORKSPACE)).toEqual({ ok: true, value: backfill });
 
     expect(await instance.backfillBoundPage('not-a-uuid'))
       .toEqual({ ok: false, error: 'rejected', reason: 'invalid_request' });

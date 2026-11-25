@@ -138,27 +138,35 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   const [saving, setSaving] = useState(false);
   const [assisting, setAssisting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [noticeTone, setNoticeTone] = useState<'success' | 'warning'>('success');
   const [error, setError] = useState('');
   const [pageFlow, setPageFlow] = useState<CarePageFlowState>(INITIAL_PAGE_FLOW);
   // Phase C: whether the izzi server answers Page customers by itself (reported by the panel).
   const [autoReplyOn, setAutoReplyOn] = useState(false);
   const [autoReplyRefresh, setAutoReplyRefresh] = useState(0);
   const [leadsRefresh, setLeadsRefresh] = useState(0);
-  // Mirrors pageFlow so async callbacks and the IPC listener always transition from the latest state.
+  // Mirrors pageFlow and snapshot so async callbacks and the IPC listener always transition from the latest state.
   const pageFlowRef = useRef<CarePageFlowState>(INITIAL_PAGE_FLOW);
+  const snapshotRef = useRef<CustomerCareSnapshot | null>(null);
   const operationRef = useRef(0);
   const shadowSafe = snapshot?.mode === 'shadow' && snapshot.outboundEnabled === false;
+
+  const showSuccessNotice = useCallback((text: string) => {
+    setNoticeTone('success');
+    setNotice(text);
+  }, []);
 
   const loadSnapshot = useCallback(async () => {
     const operation = ++operationRef.current;
     const api = getCustomerCareApi();
     setLoading(true);
+    snapshotRef.current = null;
     setSnapshot(null);
     setSetup(EMPTY_SETUP);
     setSaving(false);
     setAssisting(false);
     setResult(null);
-    setNotice('');
+    showSuccessNotice('');
     setError('');
     pageFlowRef.current = INITIAL_PAGE_FLOW;
     setPageFlow(INITIAL_PAGE_FLOW);
@@ -174,8 +182,22 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
         setError('Phạm vi chăm sóc khách hàng không khớp workspace hiện tại. Hãy tải lại workspace.');
         return;
       }
+      snapshotRef.current = next;
       setSnapshot(next);
       setSetup(next.setup ?? EMPTY_SETUP);
+      const nextConnectedPageId = next.pageConnection.state === 'connected' ? next.pageConnection.pageId : null;
+      if (
+        nextConnectedPageId
+        && pageFlowRef.current.choices
+        && pageFlowRef.current.selectedPageId === ''
+        && pageFlowRef.current.choices.pages.some(
+          (page) => page.eligible && page.pageId === nextConnectedPageId,
+        )
+      ) {
+        const nextFlow = { ...pageFlowRef.current, selectedPageId: nextConnectedPageId };
+        pageFlowRef.current = nextFlow;
+        setPageFlow(nextFlow);
+      }
     } catch (reason) {
       if (operation === operationRef.current) {
         setError(publicError(reason, 'Không tải được cấu hình chăm sóc khách hàng.'));
@@ -183,7 +205,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     } finally {
       if (operation === operationRef.current) setLoading(false);
     }
-  }, [scopeKey]);
+  }, [scopeKey, showSuccessNotice]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -207,8 +229,14 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     pageFlowRef.current = step.flow;
     setPageFlow(step.flow);
     if (step.error !== undefined) setError(step.error);
-    if (step.notice !== undefined) setNotice(step.notice);
-    if (step.snapshot) setSnapshot(step.snapshot);
+    if (step.notice !== undefined) {
+      setNoticeTone(step.noticeTone ?? 'success');
+      setNotice(step.notice);
+    }
+    if (step.snapshot) {
+      snapshotRef.current = step.snapshot;
+      setSnapshot(step.snapshot);
+    }
   }, []);
 
   // Facebook Login finishes in the system browser. Main buffers the outcome (Page list, never tokens):
@@ -219,7 +247,12 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     let active = true;
     const take = () => {
       api.takeFacebookPageChoices().then(
-        (event) => { if (active) applyPageStep(pageFlowOnChoices(pageFlowRef.current, event)); },
+        (event) => {
+          if (!active) return;
+          const conn = snapshotRef.current?.pageConnection;
+          const connectedPageId = conn?.state === 'connected' ? conn.pageId : null;
+          applyPageStep(pageFlowOnChoices(pageFlowRef.current, event, connectedPageId));
+        },
         () => { /* Nothing could be taken; the next live push or mount takes the buffer again. */ },
       );
     };
@@ -268,7 +301,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     const importOnly = options?.importOnly === true;
     const targetPageId = importOnly && snapshot?.pageConnection.state === 'connected'
       ? snapshot.pageConnection.pageId
-      : selectedPageId;
+      : (options?.pageId || selectedPageId);
     if (!api || !choices || !targetPageId) return;
     if (importOnly && (!options?.backfillPageIds || options.backfillPageIds.length === 0)) return;
     const operation = ++operationRef.current;
@@ -345,7 +378,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     }
     const operation = ++operationRef.current;
     setSaving(true);
-    setNotice('');
+    showSuccessNotice('');
     setError('');
     try {
       const response = await api.saveSetup(savePayload(setup, snapshot));
@@ -355,12 +388,13 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
         return;
       }
       if (response.snapshot) {
+        snapshotRef.current = response.snapshot;
         setSnapshot(response.snapshot);
         setSetup(response.snapshot.setup ?? setup);
       }
       const scriptNotice = autoReplyScriptNotice(response.autoReplyScript);
       if (scriptNotice?.kind === 'error') setError(scriptNotice.text);
-      setNotice(scriptNotice?.kind === 'success'
+      showSuccessNotice(scriptNotice?.kind === 'success'
         ? `Đã lưu cấu hình bảo mật cho workspace hiện tại. ${scriptNotice.text}`
         : 'Đã lưu cấu hình bảo mật cho workspace hiện tại.');
       if (response.autoReplyScript) setAutoReplyRefresh((value) => value + 1);
@@ -388,7 +422,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     const operation = ++operationRef.current;
     setAssisting(true);
     setResult(null);
-    setNotice('');
+    showSuccessNotice('');
     setError('');
     try {
       const response = await api.assist({
@@ -415,17 +449,17 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     setTranscriptFromLead(true);
     setResult(null);
     setError('');
-    setNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. Bản nháp không được gửi cho khách.');
+    showSuccessNotice('Đã đưa tin gần nhất của khách vào khung soạn nháp. Bản nháp không được gửi cho khách.');
     const field = transcriptRef.current;
     field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     field?.focus({ preventScroll: true });
-  }, []);
+  }, [showSuccessNotice]);
 
   const copyDraft = async () => {
     if (!result || result.status !== 'draft' || !result.text) return;
     try {
       await navigator.clipboard.writeText(result.text);
-      setNotice('Đã sao chép bản nháp. Izzi chưa gửi tin nhắn nào.');
+      showSuccessNotice('Đã sao chép bản nháp. Izzi chưa gửi tin nhắn nào.');
     } catch {
       setError('Không sao chép được. Bạn vẫn có thể chọn và sao chép nội dung thủ công.');
     }
@@ -451,7 +485,14 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
       </header>
 
       {error && <div className="cmr-alert cmr-alert--error" role="alert">{error}</div>}
-      {notice && <div className="cmr-alert cmr-alert--success" role="status">{notice}</div>}
+      {notice && (
+        <div
+          className={noticeTone === 'warning' ? 'cmr-alert cmr-alert--warning' : 'cmr-alert cmr-alert--success'}
+          role={noticeTone === 'warning' ? 'alert' : 'status'}
+        >
+          {notice}
+        </div>
+      )}
 
       {loading ? (
         <div className="ccw__loading" role="status">Đang tải cấu hình theo workspace…</div>

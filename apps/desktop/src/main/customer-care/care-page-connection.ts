@@ -2,7 +2,11 @@
  * Pure Care Page-connection rules: map the backend status to the renderer view, derive Page blockers
  * and the Care mode. Phase A never leaves shadow mode, whatever the connection state.
  */
-import type { CustomerCarePageConnection, CustomerCareSetup } from '../../shared/customer-care-types';
+import type {
+  CustomerCareCrmSyncedPage,
+  CustomerCarePageConnection,
+  CustomerCareSetup,
+} from '../../shared/customer-care-types';
 import type { CareFacebookConnection, CareFacebookResult, CareFacebookStatus } from './care-facebook-client';
 
 export const CARE_BLOCKER_PAGE_NOT_CONNECTED = 'Page Facebook chưa kết nối. Chế độ thử chỉ tạo nháp, không gửi tin.';
@@ -32,7 +36,27 @@ function missingScopesBlocker(scopes: readonly string[]): string {
   return `Page Facebook còn thiếu quyền: ${scopes.join(', ')}. Hãy kết nối lại và cấp đủ quyền.`;
 }
 
-export function connectedPage(connection: CareFacebookConnection): CustomerCarePageConnection {
+export function copyCrmSyncedPages(
+  crmPages: readonly CustomerCareCrmSyncedPage[] | undefined,
+  excludePrimaryPageId?: string,
+): CustomerCareCrmSyncedPage[] {
+  if (!crmPages || crmPages.length === 0) return [];
+  const seen = new Set<string>();
+  const out: CustomerCareCrmSyncedPage[] = [];
+  for (const page of crmPages) {
+    if (excludePrimaryPageId && page.pageId === excludePrimaryPageId) continue;
+    if (seen.has(page.pageId)) continue;
+    seen.add(page.pageId);
+    out.push({ pageId: page.pageId, pageName: page.pageName, verifiedAt: page.verifiedAt });
+  }
+  return out;
+}
+
+export function connectedPage(
+  connection: CareFacebookConnection,
+  crmPages?: readonly CustomerCareCrmSyncedPage[],
+): CustomerCarePageConnection {
+  const synced = copyCrmSyncedPages(crmPages, connection.pageId);
   return {
     state: 'connected',
     pageId: connection.pageId,
@@ -40,15 +64,48 @@ export function connectedPage(connection: CareFacebookConnection): CustomerCareP
     status: connection.status,
     missingScopes: [...connection.missingScopes],
     verifiedAt: connection.verifiedAt,
+    ...(synced.length > 0 ? { crmPages: synced } : {}),
   };
 }
 
 /** 404 means the backend has no Care routes yet; every other failure is reported as unavailable. */
 export function toCustomerCarePageConnection(
   result: CareFacebookResult<CareFacebookStatus>,
+  fallbackCrmPages?: readonly CustomerCareCrmSyncedPage[],
 ): CustomerCarePageConnection {
   if (!result.ok) return { state: result.error === 'unsupported' ? 'unsupported' : 'unavailable' };
-  return result.value.connection ? connectedPage(result.value.connection) : { state: 'not_connected' };
+  const crmPages = result.value.crmPages ?? fallbackCrmPages;
+  return result.value.connection ? connectedPage(result.value.connection, crmPages) : { state: 'not_connected' };
+}
+
+/** Keeps per-workspace verified CRM Pages synchronized across status, select, backfill and disconnect. */
+export class CarePageConnectionCoordinator {
+  private readonly crmPagesByWorkspace = new Map<string, CustomerCareCrmSyncedPage[]>();
+
+  getCrmPages(workspaceId: string, excludePrimaryPageId?: string): CustomerCareCrmSyncedPage[] {
+    return copyCrmSyncedPages(this.crmPagesByWorkspace.get(workspaceId), excludePrimaryPageId);
+  }
+
+  setCrmPages(workspaceId: string, crmPages: readonly CustomerCareCrmSyncedPage[]): void {
+    const copied = copyCrmSyncedPages(crmPages);
+    if (copied.length > 0) this.crmPagesByWorkspace.set(workspaceId, copied);
+    else this.crmPagesByWorkspace.delete(workspaceId);
+  }
+
+  clearWorkspace(workspaceId: string): void {
+    this.crmPagesByWorkspace.delete(workspaceId);
+  }
+
+  applyStatus(workspaceId: string, result: CareFacebookResult<CareFacebookStatus>): CustomerCarePageConnection {
+    if (!result.ok) return { state: result.error === 'unsupported' ? 'unsupported' : 'unavailable' };
+    if (result.value.crmPages !== undefined) {
+      this.setCrmPages(workspaceId, result.value.crmPages);
+    } else if (result.value.connection === null) {
+      this.clearWorkspace(workspaceId);
+    }
+    if (!result.value.connection) return { state: 'not_connected' };
+    return connectedPage(result.value.connection, this.crmPagesByWorkspace.get(workspaceId));
+  }
 }
 
 function isReadyPage(connection: CustomerCarePageConnection): boolean {
