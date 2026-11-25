@@ -69,12 +69,14 @@ describe('CustomerCareFacebookPagePanel connection actions', () => {
     expect(button(html, 'Ngắt kết nối')).toBeNull();
   });
 
-  it('shows the verified Page with reconnect and disconnect', () => {
+  it('shows the verified Page with backfill, reconnect/add-page and disconnect', () => {
     const html = render({ connection: CONNECTED });
     expect(html).toContain('Đã kết nối: Đồ Đồng Hồng Hưng');
-    expect(button(html, 'Kết nối lại')).not.toBeNull();
+    expect(button(html, 'Đồng bộ khách cũ \\(90 ngày\\)')).not.toBeNull();
+    expect(button(html, 'Kết nối lại / Thêm Page CRM')).not.toBeNull();
     expect(button(html, 'Ngắt kết nối')).not.toBeNull();
     expect(button(html, 'Kết nối Page Facebook')).toBeNull();
+    expect(html).toContain('Xưởng tranh đồng Đại Long');
   });
 
   it('asks for re-authorization and lists missing scopes', () => {
@@ -87,7 +89,8 @@ describe('CustomerCareFacebookPagePanel connection actions', () => {
     for (const connection of [CONNECTED, { state: 'not_connected' } as const]) {
       const html = render({ connection, canManage: false, choices: CHOICES });
       expect(button(html, 'Kết nối Page Facebook')).toBeNull();
-      expect(button(html, 'Kết nối lại')).toBeNull();
+      expect(button(html, 'Đồng bộ khách cũ \\(90 ngày\\)')).toBeNull();
+      expect(button(html, 'Kết nối lại / Thêm Page CRM')).toBeNull();
       expect(button(html, 'Ngắt kết nối')).toBeNull();
       expect(html).not.toContain('ccw-page-choice');
       expect(html).toContain('Chỉ chủ sở hữu và quản lý workspace');
@@ -102,7 +105,8 @@ describe('CustomerCareFacebookPagePanel connection actions', () => {
 
   it('disables actions while busy and tells the operator it is waiting for Facebook', () => {
     const html = render({ connection: CONNECTED, busy: true, waitingForFacebook: true });
-    expect(button(html, 'Kết nối lại')).toMatch(/disabled/);
+    expect(button(html, 'Đồng bộ khách cũ \\(90 ngày\\)')).toMatch(/disabled/);
+    expect(button(html, 'Kết nối lại / Thêm Page CRM')).toMatch(/disabled/);
     expect(button(html, 'Ngắt kết nối')).toMatch(/disabled/);
     expect(html).toContain('Đang chờ bạn cấp quyền trên Facebook');
   });
@@ -150,6 +154,39 @@ describe('CustomerCareFacebookPagePanel picker', () => {
     const html = render({ choices: { ...CHOICES, pages: [], missingScopes: ['pages_messaging'] } });
     expect(html).toContain('Không có Page nào');
     expect(html).toContain('pages_messaging');
+  });
+
+  it('pre-checks eligible Pages (capped at 10) for 90-day CRM backfill and shows importOnly primary CTA when already connected', () => {
+    const multiChoices = {
+      ...CHOICES,
+      pages: [
+        { pageId: PAGE, name: 'Đồng Thờ Hồng Hưng', eligible: true, reason: 'eligible' as const },
+        { pageId: '631891669999823', name: 'Xưởng tranh đồng Đại Long', eligible: true, reason: 'eligible' as const },
+        { pageId: '741891669999824', name: 'Đồ đồng Đại Long', eligible: true, reason: 'eligible' as const },
+        { pageId: '1234567890', name: 'Page phụ', eligible: false, reason: 'missing_moderate_task' as const },
+      ],
+    };
+    const html = render({ connection: CONNECTED, choices: multiChoices });
+    expect(html).toContain('Trích xuất SĐT &amp; lịch sử khách hàng (90 ngày) vào CRM (3/3 Page, tối đa 10 Page/lần):');
+    expect(button(html, 'Trích xuất 3 Page vào CRM \\(Giữ Page đang trực\\)')).not.toMatch(/disabled/);
+    expect(button(html, 'Đổi Page chính &amp; Trích xuất')).toMatch(/disabled/);
+    const checkboxes = html.match(/<input type="checkbox"[^>]*>/g) ?? [];
+    expect(checkboxes).toHaveLength(3);
+    for (const cb of checkboxes) expect(cb).toContain('checked=""');
+
+    const twelvePages = Array.from({ length: 12 }, (_, idx) => ({
+      pageId: `1000000000${String(idx + 10)}`,
+      name: `Page ${idx + 1}`,
+      eligible: true,
+      reason: 'eligible' as const,
+    }));
+    const cappedHtml = render({ connection: CONNECTED, choices: { ...CHOICES, pages: twelvePages } });
+    expect(cappedHtml).toContain('(10/10 Page, tối đa 10 Page/lần):');
+    expect(button(cappedHtml, 'Trích xuất 10 Page vào CRM \\(Giữ Page đang trực\\)')).not.toMatch(/disabled/);
+    const cappedCheckboxes = cappedHtml.match(/<input type="checkbox"[^>]*>/g) ?? [];
+    expect(cappedCheckboxes).toHaveLength(12);
+    expect(cappedCheckboxes.filter((cb) => cb.includes('checked=""'))).toHaveLength(10);
+    expect(cappedCheckboxes.filter((cb) => cb.includes('disabled=""'))).toHaveLength(2);
   });
 });
 

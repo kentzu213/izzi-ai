@@ -109,6 +109,11 @@ export class CareCrmClient implements CareCrmGateway {
    * read without it worked. Another scope starts afresh.
    */
   private identityBackoff: { scope: string; until: number } | null = null;
+  /**
+   * When a backend supports `include=identity` but rejects `include=identity,pages` with `invalid_request`, skip
+   * asking for `pages` for 5 minutes (or until `retryIdentity` / scope change) so multi-page loads do not burn 400s.
+   */
+  private pagesBackoff: { scope: string; until: number } | null = null;
 
   constructor(
     private readonly auth: NativeMarketingTokenProvider,
@@ -133,15 +138,32 @@ export class CareCrmClient implements CareCrmGateway {
     const scope = options.scope ?? workspaceId;
     // A workspace or account switch starts afresh.
     if (this.identityBackoff !== null && this.identityBackoff.scope !== scope) this.identityBackoff = null;
-    const paused = this.identityBackoff !== null && Date.now() < this.identityBackoff.until && options.retryIdentity !== true;
+    if (this.pagesBackoff !== null && this.pagesBackoff.scope !== scope) this.pagesBackoff = null;
+    const now = Date.now();
+    const paused = this.identityBackoff !== null && now < this.identityBackoff.until && options.retryIdentity !== true;
+    const skipPages = this.pagesBackoff !== null && now < this.pagesBackoff.until && options.retryIdentity !== true;
     let identityFailed = false;
     if (!paused) {
-      const result = await this.request('crm', `${path}&include=identity${query}`, {}, { raw: true });
+      const firstInclude = skipPages ? 'identity' : 'identity,pages';
+      let result = await this.request('crm', `${path}&include=${firstInclude}${query}`, {}, { raw: true });
       if (!result.ok) return result;
+      let pagesRejected = false;
+      if (
+        firstInclude === 'identity,pages'
+        && (result.status === 400 || result.status === 422)
+        && rejectReasonOf(result.body) === 'invalid_request'
+      ) {
+        pagesRejected = true;
+        result = await this.request('crm', `${path}&include=identity${query}`, {}, { raw: true });
+        if (!result.ok) return result;
+      }
       if (result.status >= 200 && result.status < 300) {
         const page = parseCareCrmListBody(result.body, workspaceId);
         if (!page) return INVALID_RESPONSE;
         this.identityBackoff = null;
+        this.pagesBackoff = pagesRejected
+          ? { scope, until: Date.now() + IDENTITY_BACKOFF_MS }
+          : (firstInclude === 'identity,pages' ? null : this.pagesBackoff);
         return { ok: true, value: page };
       }
       if (result.status === RATE_LIMIT_STATUS) return RATE_LIMITED;

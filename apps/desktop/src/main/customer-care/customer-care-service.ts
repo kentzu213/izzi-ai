@@ -31,6 +31,7 @@ import type {
 import {
   isCareFacebookChoiceId,
   isCareFacebookPageId,
+  parseBackfillPageIds,
   type CareAutoReplyGateway,
   type CareFacebookFailure,
   type CareFacebookGateway,
@@ -967,22 +968,79 @@ export class CustomerCareService {
     };
   }
 
-  /** Renderer input is only `{ choiceId, pageId }`; the workspace always comes from the live authority. */
+  /**
+   * Select a Page, import multi-Page history (`importOnly` / `backfillPageIds`), or backfill the currently
+   * bound Page (`backfillCurrent: true`). Workspace and role always come from main's live authority.
+   */
   async selectFacebookPage(input: unknown): Promise<CustomerCareFacebookActionResult> {
-    if (!isExactPlainRecord(input, ['choiceId', 'pageId'])
-      || !isCareFacebookChoiceId(input.choiceId)
-      || !isCareFacebookPageId(input.pageId)) {
+    if (
+      !isExactPlainRecord(input, ['pageId'], ['choiceId', 'backfillPageIds', 'importOnly', 'backfillCurrent'])
+      || !isCareFacebookPageId(input.pageId)
+    ) {
       return { ok: false, error: 'invalid_input' };
     }
+
+    if (input.backfillCurrent === true) {
+      if (input.choiceId !== undefined || input.backfillPageIds !== undefined || input.importOnly !== undefined) {
+        return { ok: false, error: 'invalid_input' };
+      }
+      const gate = await this.facebookAuthority();
+      if (!gate.ok) return gate;
+      const { authority, facebook } = gate;
+      if (!facebook.backfillBoundPage) return { ok: false, error: 'unsupported' };
+      const result = await this.runFacebookCall(
+        authority,
+        () => facebook.backfillBoundPage!(authority.workspaceId),
+      );
+      if (!result.ok) return result;
+      const connection = await this.readPageConnection(authority);
+      return {
+        ok: true,
+        snapshot: this.buildSnapshot(authority, connection),
+        backfill: { ...result.value },
+      };
+    }
+
+    if (input.backfillCurrent !== undefined && input.backfillCurrent !== false) {
+      return { ok: false, error: 'invalid_input' };
+    }
+    if (!isCareFacebookChoiceId(input.choiceId)) {
+      return { ok: false, error: 'invalid_input' };
+    }
+    if (input.importOnly !== undefined && typeof input.importOnly !== 'boolean') {
+      return { ok: false, error: 'invalid_input' };
+    }
+    const hasBackfillIds = input.backfillPageIds !== undefined;
+    const backfillPageIds = hasBackfillIds ? parseBackfillPageIds(input.backfillPageIds) : undefined;
+    if (hasBackfillIds && !backfillPageIds) {
+      return { ok: false, error: 'invalid_input' };
+    }
+    const importOnly = input.importOnly === true;
     const { choiceId, pageId } = input;
+
     const gate = await this.facebookAuthority();
     if (!gate.ok) return gate;
     const { authority, facebook } = gate;
     const result = await this.runFacebookCall(
       authority,
-      () => facebook.selectPage(authority.workspaceId, choiceId, pageId),
+      () => (hasBackfillIds || importOnly
+        ? facebook.selectPage(authority.workspaceId, choiceId, pageId, {
+          ...(backfillPageIds ? { backfillPageIds } : {}),
+          ...(importOnly ? { importOnly: true } : {}),
+        })
+        : facebook.selectPage(authority.workspaceId, choiceId, pageId)),
     );
     if (!result.ok) return result;
+    if ('backfill' in result.value) {
+      const pageConn = result.value.connection
+        ? connectedPage(result.value.connection)
+        : await this.readPageConnection(authority);
+      return {
+        ok: true,
+        snapshot: this.buildSnapshot(authority, pageConn),
+        backfill: { ...result.value.backfill },
+      };
+    }
     return { ok: true, snapshot: this.buildSnapshot(authority, connectedPage(result.value)) };
   }
 
@@ -1091,6 +1149,7 @@ export class CustomerCareService {
       rows: page.rows.map(copyCareCrmRow),
       nextCursor: page.nextCursor,
       assignees: page.assignees.map((assignee) => ({ ...assignee })),
+      ...(page.pages ? { pages: page.pages.map((source) => ({ ...source })) } : {}),
       identityEnabled: page.identityEnabled,
       identityUnavailable: page.identityUnavailable,
       consentAsk: page.consentAsk === null ? null : { ...page.consentAsk },

@@ -12,7 +12,12 @@ import type {
   CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
 import { CUSTOMER_CARE_PUBLIC_ERRORS } from '../../shared/customer-care-errors';
-import { CustomerCareFacebookPagePanel, facebookErrorMessage, pageStatusLabel } from './CustomerCareFacebookPage';
+import {
+  CustomerCareFacebookPagePanel,
+  facebookErrorMessage,
+  pageStatusLabel,
+  type CustomerCareConfirmPageOptions,
+} from './CustomerCareFacebookPage';
 import { CustomerCareLeadsPanel } from './CustomerCareLeadsPanel';
 import { CustomerCareAutoReplyPanel } from './CustomerCareAutoReplyPanel';
 import { autoReplyScriptNotice } from './customer-care-auto-reply-flow';
@@ -138,6 +143,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
   // Phase C: whether the izzi server answers Page customers by itself (reported by the panel).
   const [autoReplyOn, setAutoReplyOn] = useState(false);
   const [autoReplyRefresh, setAutoReplyRefresh] = useState(0);
+  const [leadsRefresh, setLeadsRefresh] = useState(0);
   // Mirrors pageFlow so async callbacks and the IPC listener always transition from the latest state.
   const pageFlowRef = useRef<CarePageFlowState>(INITIAL_PAGE_FLOW);
   const operationRef = useRef(0);
@@ -256,16 +262,52 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
     }
   };
 
-  const confirmPage = async () => {
+  const confirmPage = async (options?: CustomerCareConfirmPageOptions) => {
     const api = getCustomerCareApi();
     const { choices, selectedPageId } = pageFlowRef.current;
-    if (!api || !choices || !selectedPageId) return;
+    const importOnly = options?.importOnly === true;
+    const targetPageId = importOnly && snapshot?.pageConnection.state === 'connected'
+      ? snapshot.pageConnection.pageId
+      : selectedPageId;
+    if (!api || !choices || !targetPageId) return;
+    if (importOnly && (!options?.backfillPageIds || options.backfillPageIds.length === 0)) return;
     const operation = ++operationRef.current;
     applyPageStep(pageFlowOnStart(pageFlowRef.current, true));
     try {
-      const response = await api.selectFacebookPage({ choiceId: choices.choiceId, pageId: selectedPageId });
+      const response = await api.selectFacebookPage({
+        choiceId: choices.choiceId,
+        pageId: targetPageId,
+        ...(options?.backfillPageIds?.length ? { backfillPageIds: options.backfillPageIds } : {}),
+        ...(importOnly ? { importOnly: true } : {}),
+      });
       if (operation === operationRef.current) {
-        applyPageStep(pageFlowOnActionResult(pageFlowRef.current, response, scopeKey, PAGE_SELECTED_NOTICE));
+        applyPageStep(pageFlowOnActionResult(
+          pageFlowRef.current,
+          response,
+          scopeKey,
+          importOnly ? '' : PAGE_SELECTED_NOTICE,
+        ));
+        if (response.ok && response.backfill) setLeadsRefresh((value) => value + 1);
+      }
+    } catch (reason) {
+      failPageAction(operation, reason);
+    }
+  };
+
+  const backfillCurrentPage = async () => {
+    const api = getCustomerCareApi();
+    if (!api || snapshot?.pageConnection.state !== 'connected') return;
+    const boundPageId = snapshot.pageConnection.pageId;
+    const operation = ++operationRef.current;
+    applyPageStep(pageFlowOnStart(pageFlowRef.current));
+    try {
+      const response = await api.selectFacebookPage({
+        pageId: boundPageId,
+        backfillCurrent: true,
+      });
+      if (operation === operationRef.current) {
+        applyPageStep(pageFlowOnActionResult(pageFlowRef.current, response, scopeKey, ''));
+        if (response.ok && response.backfill) setLeadsRefresh((value) => value + 1);
       }
     } catch (reason) {
       failPageAction(operation, reason);
@@ -463,8 +505,9 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
               onConnect={() => { void connectPage(); }}
               onDisconnect={() => { void disconnectPage(); }}
               onSelectPage={(pageId) => applyPageStep({ flow: { ...pageFlowRef.current, selectedPageId: pageId } })}
-              onConfirmPage={() => { void confirmPage(); }}
+              onConfirmPage={(options) => { void confirmPage(options); }}
               onCancelChoices={() => applyPageStep({ flow: { ...pageFlowRef.current, choices: null, selectedPageId: '' } })}
+              onBackfillCurrent={() => { void backfillCurrentPage(); }}
             />
           )}
 
@@ -476,7 +519,7 @@ export function CustomerCareWorkspace({ scopeKey }: { scopeKey: string }) {
                 refreshKey={autoReplyRefresh}
                 onEnabledChange={setAutoReplyOn}
               />
-              <CustomerCareLeadsPanel key={scopeKey} scopeKey={scopeKey} onCompose={composeFromLead} />
+              <CustomerCareLeadsPanel key={`${scopeKey}-${leadsRefresh}`} scopeKey={scopeKey} onCompose={composeFromLead} />
             </>
           )}
 

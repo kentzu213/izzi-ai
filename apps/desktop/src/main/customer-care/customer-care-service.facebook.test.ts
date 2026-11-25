@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CustomerCareAuthority, CustomerCareSetup } from '../../shared/customer-care-types';
+import type {
+  CustomerCareAuthority,
+  CustomerCareBackfillSummary,
+  CustomerCareSetup,
+} from '../../shared/customer-care-types';
 import { CustomerCareService, type CustomerCareSafeStorage } from './customer-care-service';
 import type {
   CareFacebookCallbackResult,
@@ -7,6 +11,8 @@ import type {
   CareFacebookConnection,
   CareFacebookGateway,
   CareFacebookResult,
+  CareFacebookSelectOptions,
+  CareFacebookSelectWithBackfill,
   CareFacebookStatus,
 } from './care-facebook-client';
 import {
@@ -79,7 +85,11 @@ class FakeFacebook implements CareFacebookGateway {
       pages: [{ pageId: PAGE, name: 'Đồ Đồng Hồng Hưng', eligible: true, reason: 'eligible' }],
     },
   };
-  selectResult: CareFacebookResult<CareFacebookConnection> = { ok: true, value: CONNECTION };
+  selectResult: CareFacebookResult<CareFacebookConnection | CareFacebookSelectWithBackfill> = { ok: true, value: CONNECTION };
+  backfillResult: CareFacebookResult<CustomerCareBackfillSummary> = {
+    ok: true,
+    value: { pagesProcessed: 1, conversationsScanned: 20, leadsImported: 5, messagesStored: 12, namesSealed: 5 },
+  };
   statusResult: CareFacebookResult<CareFacebookStatus> | (() => Promise<CareFacebookResult<CareFacebookStatus>>) = {
     ok: true,
     value: { success: true, workspaceId: WORKSPACE_A, requiredScopes: [], connection: null },
@@ -90,8 +100,15 @@ class FakeFacebook implements CareFacebookGateway {
   async completeCallback(workspaceId: string, state: string, code: string) {
     this.calls.push(['completeCallback', workspaceId, state, code]); this.during(); return this.callbackResult;
   }
-  async selectPage(workspaceId: string, choiceId: string, pageId: string) {
-    this.calls.push(['selectPage', workspaceId, choiceId, pageId]); this.during(); return this.selectResult;
+  async selectPage(workspaceId: string, choiceId: string, pageId: string, options?: CareFacebookSelectOptions) {
+    this.calls.push(options ? ['selectPage', workspaceId, choiceId, pageId, JSON.stringify(options)] : ['selectPage', workspaceId, choiceId, pageId]);
+    this.during();
+    return this.selectResult as CareFacebookResult<CareFacebookConnection>;
+  }
+  async backfillBoundPage(workspaceId: string) {
+    this.calls.push(['backfillBoundPage', workspaceId]);
+    this.during();
+    return this.backfillResult;
   }
   async getStatus(workspaceId: string) {
     this.calls.push(['getStatus', workspaceId]);
@@ -331,6 +348,41 @@ describe('CustomerCareService Facebook Page actions', () => {
     expect(facebook.calls).toEqual([['selectPage', WORKSPACE_A, CHOICE, PAGE]]);
     expect(result.ok && result.snapshot.pageConnection).toMatchObject({ state: 'connected', pageId: PAGE });
     expect(result.ok && result.snapshot).toMatchObject({ workspaceId: WORKSPACE_A, mode: 'shadow', outboundEnabled: false });
+  });
+
+  it('supports backfillCurrent and importOnly multi-Page backfill without overwriting setup.pageId', async () => {
+    const { service, facebook, as } = fixture();
+    facebook.statusResult = { ok: true, value: { success: true, workspaceId: WORKSPACE_A, requiredScopes: [], connection: CONNECTION } };
+    await service.saveSetup(setup(PAGE));
+    facebook.calls.length = 0;
+
+    const currentRes = await service.selectFacebookPage({ pageId: PAGE, backfillCurrent: true });
+    expect(facebook.calls).toEqual([['backfillBoundPage', WORKSPACE_A], ['getStatus', WORKSPACE_A]]);
+    expect(currentRes.ok).toBe(true);
+    if (currentRes.ok) {
+      expect(currentRes.backfill).toEqual({ pagesProcessed: 1, conversationsScanned: 20, leadsImported: 5, messagesStored: 12, namesSealed: 5 });
+      expect(currentRes.snapshot.setup?.pageId).toBe(PAGE);
+    }
+
+    as({ ...OWNER, role: 'editor' });
+    expect(await service.selectFacebookPage({ pageId: PAGE, backfillCurrent: true })).toEqual({ ok: false, error: 'forbidden' });
+    as(OWNER);
+
+    facebook.calls.length = 0;
+    const backfill = { pagesProcessed: 2, conversationsScanned: 60, leadsImported: 14, messagesStored: 35, namesSealed: 14 };
+    facebook.selectResult = { ok: true, value: { connection: CONNECTION, backfill } };
+    const importRes = await service.selectFacebookPage({
+      choiceId: CHOICE,
+      pageId: PAGE,
+      backfillPageIds: ['631891669999823', '741891669999824'],
+      importOnly: true,
+    });
+    expect(importRes.ok).toBe(true);
+    if (importRes.ok) {
+      expect(importRes.backfill).toEqual(backfill);
+      expect(importRes.snapshot.pageConnection).toMatchObject({ state: 'connected', pageId: PAGE });
+      expect(importRes.snapshot.setup?.pageId).toBe(PAGE);
+    }
   });
 
   it('passes bounded backend failures through', async () => {

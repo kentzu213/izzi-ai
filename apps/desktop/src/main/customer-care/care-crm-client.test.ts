@@ -89,7 +89,7 @@ describe('CareCrmClient GET /crm', () => {
         identityUnavailable: false, consentAsk: null },
     });
     const [url, init] = call(fetchImpl);
-    expect(url).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity`);
+    expect(url).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages`);
     expect(init.method).toBeUndefined();
     expect(init.body).toBeUndefined();
     expect(init.redirect).toBe('error');
@@ -100,7 +100,7 @@ describe('CareCrmClient GET /crm', () => {
   it('passes the opaque cursor encoded', async () => {
     const { instance, fetchImpl } = client(json(LIST_BODY));
     await instance.listCrm(WORKSPACE, 'crm_2026-11-20T10:00:00Z|abc');
-    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm_2026-11-20T10%3A00%3A00Z%7Cabc`);
+    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm_2026-11-20T10%3A00%3A00Z%7Cabc`);
   });
 
   it('rejects an answer for another workspace or with an invalid row', async () => {
@@ -295,11 +295,14 @@ const actionOk = (identity: unknown = IDENTITY) => json({ success: true, workspa
 const refreshOk = (outcome = 'updated') => json({ success: true, workspaceId: WORKSPACE, leadId: LEAD_ID, identity: IDENTITY, outcome });
 
 describe('CareCrmClient GET /crm?include=identity', () => {
-  it('asks for the identity block and takes it with identityEnabled', async () => {
-    const body = { ...LIST_BODY, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] };
-    const { instance } = client(json(body));
+  it('asks for include=identity,pages and takes both identity and pages when returned', async () => {
+    const pages = [{ pageId: '105252511858057', pageName: 'Đồng Thờ Hồng Hưng' }];
+    const body = { ...LIST_BODY, identityEnabled: true, pages, rows: [{ ...ROW, identity: IDENTITY }] };
+    const { instance, fetchImpl } = client(json(body));
     const result = await instance.listCrm(WORKSPACE, null);
+    expect(call(fetchImpl)[0]).toBe(`${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages`);
     expect(result.ok && result.value.identityEnabled).toBe(true);
+    expect(result.ok && result.value.pages).toEqual(pages);
     expect(result.ok && result.value.rows[0].identity).toEqual(IDENTITY);
   });
 
@@ -310,13 +313,56 @@ describe('CareCrmClient GET /crm?include=identity', () => {
     return { instance, fetchImpl, urls: () => fetchImpl.mock.calls.map((args) => (args as unknown as [string])[0]) };
   }
 
+  it.each([400, 422])('falls back from include=identity,pages to include=identity on %i invalid_request, preserving identity', async (status) => {
+    const identityBody = { ...LIST_BODY, identityEnabled: true, rows: [{ ...ROW, identity: IDENTITY }] };
+    const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason: 'invalid_request' }, status),
+      json(identityBody),
+      json(identityBody),
+    );
+    const first = await instance.listCrm(WORKSPACE, 'crm-next-1');
+    expect(first.ok && first.value.identityEnabled).toBe(true);
+    expect(first.ok && first.value.identityUnavailable).toBe(false);
+    expect(first.ok && first.value.rows[0].identity).toEqual(IDENTITY);
+    // Next page within 5 minutes skips `pages` directly to `include=identity` without burning another 400.
+    const second = await instance.listCrm(WORKSPACE, 'crm-next-2');
+    expect(second.ok && second.value.identityEnabled).toBe(true);
+    expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-2`,
+    ]);
+  });
+
   it.each([
     [400, 'invalid_request'],
     [422, 'invalid_request'],
+  ])('falls back all the way to plain /crm when both include=identity,pages and include=identity return %i %s', async (status, reason) => {
+    const { instance, urls } = sequence(
+      json({ success: false, error: 'x', reason }, status),
+      json({ success: false, error: 'x', reason }, status),
+      json(LIST_BODY),
+    );
+    const result = await instance.listCrm(WORKSPACE, 'crm-next-1');
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        role: 'owner', canDelete: true, rows: [ROW], nextCursor: null, assignees: LIST_BODY.assignees,
+        identityEnabled: null, identityUnavailable: true, consentAsk: null,
+      },
+    });
+    expect(urls()).toEqual([
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&cursor=crm-next-1`,
+    ]);
+  });
+
+  it.each([
     [500, undefined],
     [502, undefined],
     [503, 'not_configured'],
-  ])('reads the list again without identity after a %i on include=identity, once', async (status, reason) => {
+  ])('reads the list again without identity after a %i on include=identity,pages, once', async (status, reason) => {
     const { instance, urls } = sequence(json({ success: false, error: 'x', ...(reason ? { reason } : {}) }, status), json(LIST_BODY));
     const result = await instance.listCrm(WORKSPACE, 'crm-next-1');
     expect(result).toEqual({
@@ -327,7 +373,7 @@ describe('CareCrmClient GET /crm?include=identity', () => {
       },
     });
     expect(urls()).toEqual([
-      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity&cursor=crm-next-1`,
+      `${ROOT}/crm?workspaceId=${WORKSPACE}&include=identity,pages&cursor=crm-next-1`,
       `${ROOT}/crm?workspaceId=${WORKSPACE}&cursor=crm-next-1`,
     ]);
   });

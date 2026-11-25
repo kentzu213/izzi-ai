@@ -25,6 +25,7 @@ import {
   crmEditOnReapply,
   crmFailureView,
   crmFieldVisibility,
+  crmPageOptions,
   crmProductOptions,
   crmRefreshCooldownLeft,
   crmReloadAfterSave,
@@ -38,6 +39,8 @@ import {
   crmShouldSkipNextTick,
   crmVisibleRows,
   formatCrmDue,
+  resolveCrmPageLabel,
+  snapshotPageFallback,
   isCallToday,
   isoToLocalInput,
   loadCrmPages,
@@ -694,5 +697,108 @@ describe('saves clear the [izzi-ctx] keys beta.121 wrote (persona, age, recipien
     const saved = refreshed(base, { stage: 'deposit', note: CLEAN });
     expect(crmEditAfterSaved(edit, saved)).toBeNull();
     expect(crmEditOnDiscard(edit, refreshed(base, { stage: 'deposit' }))).toBeNull();
+  });
+});
+
+describe('multi-Page source attribution and unified filter bar', () => {
+  const PAGE_HONG_HUNG = '105252511858057';
+  const PAGE_TRANH_DAI_LONG = '206363622969168';
+  const PAGE_DO_DONG_DAI_LONG = '307474733070279';
+
+  it('resolves Page names from GET /crm pages, snapshot fallback, or short Page ID', () => {
+    const sources = [
+      { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: PAGE_TRANH_DAI_LONG, pageName: 'Xưởng tranh đồng Đại Long' },
+    ];
+    expect(resolveCrmPageLabel(PAGE_HONG_HUNG, sources)).toBe('Đồng Thờ Hồng Hưng');
+    expect(resolveCrmPageLabel(PAGE_TRANH_DAI_LONG, sources)).toBe('Xưởng tranh đồng Đại Long');
+    expect(resolveCrmPageLabel(PAGE_DO_DONG_DAI_LONG, sources, {
+      pageId: PAGE_DO_DONG_DAI_LONG,
+      pageName: 'Đồ đồng Đại Long',
+    })).toBe('Đồ đồng Đại Long');
+    expect(resolveCrmPageLabel(PAGE_DO_DONG_DAI_LONG, sources)).toBe('Page …070279');
+
+    const fallback = snapshotPageFallback({
+      setup: null,
+      pageConnection: {
+        state: 'connected',
+        pageId: PAGE_HONG_HUNG,
+        pageName: 'Đồng Thờ Hồng Hưng',
+        status: 'active',
+        missingScopes: [],
+        verifiedAt: T1,
+      },
+    });
+    expect(fallback).toEqual({ pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' });
+  });
+
+  it('filters by Page source, consented S3 persona, and accent-insensitive query while keeping pinned Drawer row', () => {
+    const r1 = row({ stage: 'consulting', note: 'Nhà mới Thủ Đức' }, {
+      pageId: PAGE_HONG_HUNG,
+      customerName: 'Nguyễn Thị Hoa',
+      phone: '0901112233',
+      identity: {
+        version: T1,
+        lastRunAt: T1,
+        consent: { state: 'granted', at: T1, noMarketing: false, canAsk: false },
+        occasion: null, timeline: null, productFactIds: null, addressForm: null, ageBand: null, family: null,
+        interests: null,
+        persona: { value: 'P1', confidence: 'high', kind: 'inferred', source: 'ai', status: 'suggested', updatedAt: T1, evidence: [], summary: 'Nhà mới' },
+      },
+    });
+    const r2 = row({ stage: 'consulting', note: 'Tranh mừng tân gia' }, {
+      pageId: PAGE_TRANH_DAI_LONG,
+      customerName: 'Trần Văn Long',
+      phone: '0988776655',
+      // Unconsented: persona must NOT match P3 filter!
+      identity: {
+        version: T1,
+        lastRunAt: T1,
+        consent: { state: 'unknown', at: null, noMarketing: false, canAsk: true },
+        occasion: null, timeline: null, productFactIds: null, addressForm: null, ageBand: null, family: null,
+        interests: null,
+        persona: { value: 'P3', confidence: 'high', kind: 'inferred', source: 'ai', status: 'suggested', updatedAt: T1, evidence: [], summary: 'Quà biếu' },
+      },
+    });
+    const options = crmPageOptions([r1, r2], [
+      { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: PAGE_TRANH_DAI_LONG, pageName: 'Xưởng tranh đồng Đại Long' },
+    ]);
+    expect(options).toEqual([
+      { pageId: PAGE_HONG_HUNG, label: 'Đồng Thờ Hồng Hưng', count: 1 },
+      { pageId: PAGE_TRANH_DAI_LONG, label: 'Xưởng tranh đồng Đại Long', count: 1 },
+    ]);
+
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', pageId: PAGE_TRANH_DAI_LONG }, NOW)).toEqual([r2]);
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', persona: 'P1' }, NOW)).toEqual([r1]);
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', persona: 'P3' }, NOW)).toEqual([]);
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', persona: 'unclassified' }, NOW)).toEqual([r2]);
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', query: 'nguyen thi hoa' }, NOW)).toEqual([r1]);
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', query: '7766' }, NOW)).toEqual([r2]);
+    // Pinned row in Drawer stays visible even when filter excludes it
+    expect(crmVisibleRows([r1, r2], { view: 'all', stage: 'any', pageId: PAGE_HONG_HUNG }, NOW, r2.leadId)).toEqual([r1, r2]);
+  });
+
+  it('collects deduplicated pageSources across loadCrmPages', async () => {
+    const pages: CustomerCareCrmListResult[] = [
+      {
+        ok: true, workspaceId: WORKSPACE, role: 'owner', canDelete: true, rows: [row()], nextCursor: 'c1', assignees: [],
+        pages: [{ pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' }],
+        identityEnabled: true, identityUnavailable: false, consentAsk: null,
+      },
+      {
+        ok: true, workspaceId: WORKSPACE, role: 'owner', canDelete: true, rows: [row()], nextCursor: null, assignees: [],
+        pages: [
+          { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
+          { pageId: PAGE_DO_DONG_DAI_LONG, pageName: 'Đồ đồng Đại Long' },
+        ],
+        identityEnabled: true, identityUnavailable: false, consentAsk: null,
+      },
+    ];
+    const res = await loadCrmPages(async () => pages.shift()!);
+    expect(res.ok && res.pageSources).toEqual([
+      { pageId: PAGE_HONG_HUNG, pageName: 'Đồng Thờ Hồng Hưng' },
+      { pageId: PAGE_DO_DONG_DAI_LONG, pageName: 'Đồ đồng Đại Long' },
+    ]);
   });
 });

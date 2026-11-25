@@ -11,6 +11,8 @@ import type {
   CustomerCareCrmListResult,
   CustomerCareCrmLostReason,
   CustomerCareCrmOccasion,
+  CustomerCareCrmPageSource,
+  CustomerCareCrmPersona,
   CustomerCareCrmProfile,
   CustomerCareCrmProfileInput,
   CustomerCareCrmRole,
@@ -20,8 +22,13 @@ import type {
   CustomerCareCrmStage,
   CustomerCareFacebookFailure,
   CustomerCareFact,
+  CustomerCareSnapshot,
 } from '../../shared/customer-care-types';
-import { normalizeCrmNoteTags } from '../../shared/customer-crm-enterprise';
+import {
+  crmConsentedPersona,
+  extractEditableFreeNote,
+  normalizeCrmNoteTags,
+} from '../../shared/customer-crm-enterprise';
 
 /** The CRM tab asks for fresh rows this often while it is on screen. */
 export const CRM_REFRESH_MS = 60_000;
@@ -163,9 +170,147 @@ export function formatCrmDay(day: string | null): string {
 
 export type CrmDue = 'overdue' | 'today' | 'later' | 'none';
 export type CrmView = 'today' | 'all';
+export type CrmPersonaFilter = CustomerCareCrmPersona | 'any' | 'unclassified';
+
 export interface CrmFilter {
   view: CrmView;
   stage: CustomerCareCrmStage | 'any';
+  pageId?: string | 'any';
+  persona?: CrmPersonaFilter;
+  query?: string;
+}
+
+export interface CrmPageOption {
+  pageId: string;
+  label: string;
+  count: number;
+}
+
+export function crmPageShortId(pageId: string): string {
+  return pageId.length > 6 ? `…${pageId.slice(-6)}` : pageId;
+}
+
+/** Fallback Page source derived from the workspace snapshot when `GET /crm` did not return `pages`. */
+export function snapshotPageFallback(
+  snapshot: Pick<CustomerCareSnapshot, 'setup' | 'pageConnection'> | null | undefined,
+): CustomerCareCrmPageSource | null {
+  if (!snapshot) return null;
+  if (snapshot.pageConnection.state === 'connected') {
+    const connName = snapshot.pageConnection.pageName?.trim() || null;
+    const setupMatch = snapshot.setup?.pageId === snapshot.pageConnection.pageId
+      ? snapshot.setup.pageName.trim() || null
+      : null;
+    return {
+      pageId: snapshot.pageConnection.pageId,
+      pageName: connName ?? setupMatch,
+    };
+  }
+  const setupPageId = snapshot.setup?.pageId.trim() ?? '';
+  if (setupPageId) {
+    return {
+      pageId: setupPageId,
+      pageName: snapshot.setup?.pageName.trim() || null,
+    };
+  }
+  return null;
+}
+
+/** Resolves a human-friendly Page label (`Đồng Thờ Hồng Hưng`, `Xưởng tranh đồng Đại Long`, or `Page …58057`). */
+export function resolveCrmPageLabel(
+  pageId: string,
+  sources: readonly CustomerCareCrmPageSource[],
+  fallback?: CustomerCareCrmPageSource | null,
+): string {
+  const matched = sources.find((item) => item.pageId === pageId);
+  if (matched?.pageName && matched.pageName.trim() !== '') {
+    return matched.pageName.trim();
+  }
+  if (fallback && fallback.pageId === pageId && fallback.pageName && fallback.pageName.trim() !== '') {
+    return fallback.pageName.trim();
+  }
+  return `Page ${crmPageShortId(pageId)}`;
+}
+
+/** Builds Page filter options from loaded rows and `GET /crm?include=identity,pages` sources. */
+export function crmPageOptions(
+  rows: readonly CustomerCareCrmRow[],
+  sources: readonly CustomerCareCrmPageSource[],
+  fallback?: CustomerCareCrmPageSource | null,
+): CrmPageOption[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.pageId, (counts.get(row.pageId) ?? 0) + 1);
+  }
+  const orderedIds: string[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    if (!seen.has(source.pageId)) {
+      seen.add(source.pageId);
+      orderedIds.push(source.pageId);
+    }
+  }
+  for (const pageId of counts.keys()) {
+    if (!seen.has(pageId)) {
+      seen.add(pageId);
+      orderedIds.push(pageId);
+    }
+  }
+  return orderedIds.map((pageId) => ({
+    pageId,
+    label: resolveCrmPageLabel(pageId, sources, fallback),
+    count: counts.get(pageId) ?? 0,
+  }));
+}
+
+function foldCrmSearch(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase();
+}
+
+export function crmMatchesQuery(row: CustomerCareCrmRow, query: string | undefined): boolean {
+  const raw = query?.trim() ?? '';
+  if (raw === '') return true;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 2 && row.phone.includes(digits)) return true;
+  const needle = foldCrmSearch(raw);
+  if (needle === '') return false;
+  const freeNote = extractEditableFreeNote(row.profile.note);
+  const haystack = [
+    row.customerName ?? '',
+    row.phone,
+    freeNote,
+    row.profile.nextStep ?? '',
+    ...row.recentMessages.map((msg) => msg.text),
+  ].map(foldCrmSearch).join(' \n ');
+  return haystack.includes(needle);
+}
+
+/** Consented server persona (`P1..P4`) only; never inferred without customer consent (Care CRM S3). */
+export function crmRowPersona(row: CustomerCareCrmRow): CustomerCareCrmPersona | null {
+  return crmConsentedPersona(row);
+}
+
+export function crmFilterRows<T extends CustomerCareCrmRow>(
+  rows: readonly T[],
+  filter: Pick<CrmFilter, 'stage' | 'pageId' | 'persona' | 'query'>,
+  options: { ignoreStage?: boolean } = {},
+): T[] {
+  const pageFilter = filter.pageId ?? 'any';
+  const personaFilter = filter.persona ?? 'any';
+  const stageFilter = options.ignoreStage ? 'any' : filter.stage;
+  return rows.filter((row) => {
+    if (pageFilter !== 'any' && row.pageId !== pageFilter) return false;
+    if (stageFilter !== 'any' && row.profile.stage !== stageFilter) return false;
+    if (personaFilter !== 'any') {
+      const persona = crmRowPersona(row);
+      if (personaFilter === 'unclassified' ? persona !== null : persona !== personaFilter) return false;
+    }
+    return crmMatchesQuery(row, filter.query);
+  });
 }
 
 type DueFields = Pick<CustomerCareCrmProfileInput, 'stage' | 'nextStep' | 'nextStepDueAt'>;
@@ -204,7 +349,7 @@ export function sortCrmRows(rows: readonly CustomerCareCrmRow[], nowMs: number):
 
 /**
  * The rows on screen, sorted. Filters read the saved values, so a row does not jump while it is typed in;
- * `pinnedId` (the row open for editing) stays on screen even after a save moves it out of the view.
+ * `pinnedId` (the row open in the drawer/editor) stays on screen even after a save moves it out of the view.
  */
 export function crmVisibleRows(
   rows: readonly CustomerCareCrmRow[],
@@ -212,10 +357,19 @@ export function crmVisibleRows(
   nowMs: number,
   pinnedId: string | null = null,
 ): CustomerCareCrmRow[] {
-  return sortCrmRows(rows.filter((row) => row.leadId === pinnedId || (
-    (filter.view === 'all' || isCallToday(row.profile, nowMs))
-    && (filter.stage === 'any' || row.profile.stage === filter.stage)
-  )), nowMs);
+  const pageFilter = filter.pageId ?? 'any';
+  const personaFilter = filter.persona ?? 'any';
+  return sortCrmRows(rows.filter((row) => {
+    if (row.leadId === pinnedId) return true;
+    if (filter.view !== 'all' && !isCallToday(row.profile, nowMs)) return false;
+    if (filter.stage !== 'any' && row.profile.stage !== filter.stage) return false;
+    if (pageFilter !== 'any' && row.pageId !== pageFilter) return false;
+    if (personaFilter !== 'any') {
+      const persona = crmRowPersona(row);
+      if (personaFilter === 'unclassified' ? persona !== null : persona !== personaFilter) return false;
+    }
+    return crmMatchesQuery(row, filter.query);
+  }), nowMs);
 }
 
 export function crmCallTodayCount(rows: readonly CustomerCareCrmRow[], nowMs: number): number {
@@ -550,6 +704,7 @@ export type CrmLoadResult =
     canDelete: boolean;
     rows: CustomerCareCrmRow[];
     assignees: CustomerCareCrmAssignee[];
+    pageSources: CustomerCareCrmPageSource[];
     /** Pages read by this load. */
     pages: number;
     /** The last page was reached (no cursor left). */
@@ -580,6 +735,8 @@ export async function loadCrmPages(
   let identityUnavailable = false;
   const rows: CustomerCareCrmRow[] = [];
   const seen = new Set<string>();
+  const pageSources: CustomerCareCrmPageSource[] = [];
+  const seenPages = new Set<string>();
   for (let page = 0; page < maxPages; page += 1) {
     const result = await list(page === 0 && options.retryIdentity ? { cursor: null, retryIdentity: true } : { cursor });
     if (!result.ok) return result;
@@ -587,6 +744,14 @@ export async function loadCrmPages(
     identityUnavailable ||= result.identityUnavailable;
     if (first && result.workspaceId !== first.workspaceId) return { ok: false, error: 'access_changed' };
     first ??= result;
+    if (result.pages) {
+      for (const source of result.pages) {
+        if (!seenPages.has(source.pageId)) {
+          seenPages.add(source.pageId);
+          pageSources.push(source);
+        }
+      }
+    }
     for (const row of result.rows) {
       if (seen.has(row.leadId)) continue;
       seen.add(row.leadId);
@@ -603,6 +768,7 @@ export async function loadCrmPages(
     canDelete: first.canDelete,
     rows,
     assignees: first.assignees,
+    pageSources,
     pages,
     complete: cursor === null,
     truncated: cursor !== null && pages >= maxPages,

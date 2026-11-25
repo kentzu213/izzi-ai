@@ -8,6 +8,9 @@ import type {
   CustomerCareCrmStage,
 } from '../../shared/customer-care-types';
 import {
+  crmConsentedPersona,
+  crmProfileLayerAllowed,
+  crmServerIdentity,
   extractEditableFreeNote,
   maxFreeNoteLength,
   replaceEditableFreeNote,
@@ -61,12 +64,29 @@ export interface CustomerCrmRowProps {
   onDiscard: () => void;
   /** Care CRM S3: the AI identity card in the editor; absent shows it read-only. */
   identityHandlers?: CrmIdentityHandlers | null;
+  /** Multi-Page source label (`Đồng Thờ Hồng Hưng`, `Xưởng tranh đồng Đại Long`, …) for the dense table. */
+  pageLabel?: string;
+  /** Renders the compact 1-line segment summary cell (`P1..P4`, occasion, Ads consent) in the dense table. */
+  showSegmentColumn?: boolean;
+  /** Highlights the row currently opened in the right-hand slide-over Drawer. */
+  selected?: boolean;
 }
 
 const DUE_BADGE = { overdue: 'Quá hạn', today: 'Hôm nay' } as const;
 
 function nullable<T extends string>(value: string): T | null {
   return value === '' ? null : value as T;
+}
+
+function resolveOccasionChip(row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput): string | null {
+  const staff = profile.occasion;
+  const identityOccasion = crmServerIdentity(row)?.occasion;
+  const ai = identityOccasion && (identityOccasion.confidence === 'high' || identityOccasion.confidence === 'medium')
+    ? identityOccasion.value
+    : null;
+  const code = staff ?? ai;
+  if (!code) return null;
+  return CRM_OCCASION_OPTIONS.find((item) => item.value === code)?.label ?? null;
 }
 
 /** Updates staff-visible free note text while preserving any `[izzi-ctx: ...]` metadata line. */
@@ -79,7 +99,20 @@ export function updateCrmRowFreeNote(
 
 /** One customer: a summary line in the call list, and the full profile form when opened. */
 export function CustomerCrmRow(props: CustomerCrmRowProps) {
-  const { row, profile, edit, saving, expanded, nowMs, assignees, onToggle, onCopy } = props;
+  const {
+    row,
+    profile,
+    edit,
+    saving,
+    expanded,
+    nowMs,
+    assignees,
+    onToggle,
+    onCopy,
+    pageLabel,
+    showSegmentColumn = false,
+    selected,
+  } = props;
   const name = leadDisplayName(row);
   const due = crmDue(profile, nowMs);
   const editorId = `crm-editor-${row.leadId}`;
@@ -87,13 +120,25 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
   const readOnly = crmRowReadOnly(row);
   const dirty = edit !== null && !crmProfilesEqual(normalizeCrmProfile(edit.draft), profileFromRow(row));
   const status = saving ? 'Đang lưu…' : edit?.rejected ? 'Cần xem lại' : edit?.error ? 'Chưa lưu được' : dirty ? 'Chưa lưu' : '';
+  const isOpen = selected ?? expanded;
+
+  const persona = showSegmentColumn ? crmConsentedPersona(row) : null;
+  const occasionChip = showSegmentColumn ? resolveOccasionChip(row, profile) : null;
+  const serverIdentity = showSegmentColumn ? crmServerIdentity(row) : null;
+  const erasePending = Boolean(serverIdentity?.consent?.eraseRequestedAt);
+  const adsConsented = showSegmentColumn
+    && !erasePending
+    && crmProfileLayerAllowed(row)
+    && serverIdentity?.consent?.noMarketing !== true
+    && profile.stage !== 'do_not_contact';
 
   return (
     <>
-      <tr className={`v2-crm__row${expanded ? ' is-open' : ''}${due === 'overdue' ? ' is-overdue' : ''}`}>
+      <tr className={`v2-crm__row${expanded ? ' is-open' : ''}${selected ? ' is-selected' : ''}${due === 'overdue' ? ' is-overdue' : ''}`}>
         <td>
           <div className="v2-crm__who">
             <strong>{name}</strong>
+            {pageLabel && <span className="v2-crm__page-tag">{pageLabel}</span>}
             {row.zaloMentioned && <span className="v2-badge">Có nhắc Zalo</span>}
             <span className="v2-crm__phone">{formatLeadPhone(row.phone)}</span>
             <time className="v2-crm__meta" dateTime={row.phoneCapturedAt} title={formatLeadAbsoluteTime(row.phoneCapturedAt)}>
@@ -101,6 +146,17 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
             </time>
           </div>
         </td>
+        {showSegmentColumn && (
+          <td className="v2-crm__segment">
+            <div className="v2-crm__segment-chips">
+              {persona && <span className="v2-crm-chip is-persona">{persona}</span>}
+              {occasionChip && <span className="v2-crm-chip">{occasionChip}</span>}
+              {erasePending && <span className="v2-crm-chip is-danger">Yêu cầu xoá</span>}
+              {adsConsented && <span className="v2-crm-chip is-granted">Đã đồng ý Ads</span>}
+              {!persona && !occasionChip && !erasePending && !adsConsented && <span className="v2-crm__meta">—</span>}
+            </div>
+          </td>
+        )}
         <td>
           <label className="v2-visually-hidden" htmlFor={stageId}>{`Giai đoạn của ${name}`}</label>
           <select
@@ -131,17 +187,17 @@ export function CustomerCrmRow(props: CustomerCrmRowProps) {
           <button
             type="button"
             className="v2-button v2-button--ghost"
-            aria-expanded={expanded}
+            aria-expanded={isOpen}
             aria-controls={editorId}
             onClick={onToggle}
           >
-            {expanded ? 'Đóng' : 'Sửa'}
+            {isOpen ? 'Đóng' : 'Sửa'}
           </button>
         </td>
       </tr>
       {expanded && (
         <tr className="v2-crm__editor-row">
-          <td colSpan={6}>
+          <td colSpan={showSegmentColumn ? 7 : 6}>
             <CrmEditor {...props} name={name} editorId={editorId} dirty={dirty} />
           </td>
         </tr>

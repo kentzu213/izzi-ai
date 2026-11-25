@@ -276,6 +276,69 @@
 .ccw__page-choice small { color: var(--cmr-muted); font-weight: 500; }
 .ccw__page-choice .ccw__page-reason { color: var(--cmr-gold); }
 
+.ccw__backfill-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 6px;
+  background: rgba(8, 13, 19, 0.55);
+}
+
+.ccw__backfill-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cmr-text);
+}
+
+.ccw__page-picker ul.ccw__backfill-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  max-height: 200px;
+  padding: 2px;
+}
+
+.ccw label.ccw__backfill-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--cmr-border);
+  border-radius: 6px;
+  color: var(--cmr-text);
+  cursor: pointer;
+}
+
+.ccw label.ccw__backfill-item:has(input:checked) {
+  border-color: var(--cmr-cyan);
+  background: var(--cmr-cyan-soft);
+}
+
+.ccw__backfill-item input {
+  width: auto;
+  min-width: 15px;
+  accent-color: var(--cmr-cyan);
+}
+
+.ccw__backfill-item span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+  overflow-wrap: anywhere;
+}
+
+.ccw__backfill-item small {
+  color: var(--cmr-muted);
+  font-size: 11px;
+}
+
 /* Phase B1: Page inbox switch and "Khách để lại số". */
 .ccw__inbox {
   display: flex;

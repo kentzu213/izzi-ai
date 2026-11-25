@@ -161,13 +161,31 @@ export type CustomerCareFacebookChoicesEvent =
 
 export type CustomerCareFacebookConnectResult = { ok: true } | CustomerCareFacebookFailure;
 
-export type CustomerCareFacebookActionResult = { ok: true; snapshot: CustomerCareSnapshot } | CustomerCareFacebookFailure;
-
-/** Renderer input for Page selection; main validates both fields before use. */
-export interface CustomerCareFacebookSelectInput {
-  choiceId: string;
-  pageId: string;
+/** Summary returned after backfilling recent Messenger history (up to 90 days) from one or more Pages into CRM. */
+export interface CustomerCareBackfillSummary {
+  pagesProcessed: number;
+  conversationsScanned: number;
+  leadsImported: number;
+  messagesStored: number;
+  namesSealed: number;
 }
+
+export type CustomerCareSelectPageResult =
+  | { ok: true; snapshot: CustomerCareSnapshot; backfill?: CustomerCareBackfillSummary }
+  | CustomerCareFacebookFailure;
+
+export type CustomerCareFacebookActionResult = CustomerCareSelectPageResult;
+
+/** Renderer input for Page selection / multi-Page CRM backfill; main validates every field strictly before use. */
+export interface CustomerCareSelectPageInput {
+  choiceId?: string;
+  pageId: string;
+  backfillPageIds?: string[];
+  importOnly?: boolean;
+  backfillCurrent?: boolean;
+}
+
+export type CustomerCareFacebookSelectInput = CustomerCareSelectPageInput;
 
 // Phase B1: izzi reads Page messages and lists customers who left a phone number. Nothing is ever sent
 // to a customer. Lead phones and messages live in memory for display only: never persisted or tracked.
@@ -413,6 +431,12 @@ export interface CustomerCareCrmAssignee {
   label: string | null;
 }
 
+/** One Facebook Page that contributed leads to this workspace's CRM (`GET /crm?include=identity,pages`). */
+export interface CustomerCareCrmPageSource {
+  pageId: string;
+  pageName: string | null;
+}
+
 /** `canDelete` is a display hint for the existing purge; main and the server re-check the role. */
 export type CustomerCareCrmListResult =
   | {
@@ -423,6 +447,7 @@ export type CustomerCareCrmListResult =
     rows: CustomerCareCrmRow[];
     nextCursor: string | null;
     assignees: CustomerCareCrmAssignee[];
+    pages?: CustomerCareCrmPageSource[];
     /**
      * Care CRM S3: whether the AI customer profile is on for this workspace; null when the server sent no identity
      * at all (a server without S3), so the rows carry none.

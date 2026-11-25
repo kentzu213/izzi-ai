@@ -330,4 +330,80 @@ describe('CareFacebookClient strict response parsing', () => {
     const stale = client(json({ success: true, workspaceId: WORKSPACE, connection: CONNECTION }));
     expect(await stale.instance.disconnect(WORKSPACE)).toEqual({ ok: false, error: 'invalid-response' });
   });
+
+  it('supports multi-Page backfill on selectPage (importOnly & backfillPageIds) with 30s timeout and strict exactRecord parsing', async () => {
+    const backfill = {
+      pagesProcessed: 3,
+      conversationsScanned: 84,
+      leadsImported: 19,
+      messagesStored: 47,
+      namesSealed: 18,
+    };
+    const page2 = '631891669999823';
+    const page3 = '741891669999824';
+    const { instance, fetchImpl } = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      connection: CONNECTION,
+      backfill,
+    }));
+
+    const res = await instance.selectPage(WORKSPACE, CHOICE, PAGE, {
+      backfillPageIds: [PAGE, page2, page3],
+      importOnly: true,
+    });
+    expect(res).toEqual({ ok: true, value: { connection: CONNECTION, backfill } });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${ROOT}/select`);
+    expect(JSON.parse(String(init.body))).toEqual({
+      workspaceId: WORKSPACE,
+      choiceId: CHOICE,
+      pageId: PAGE,
+      backfillPageIds: [PAGE, page2, page3],
+      importOnly: true,
+    });
+
+    // Rejects extra keys or negative counts in backfill summary
+    const badExtra = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      connection: CONNECTION,
+      backfill: { ...backfill, rawToken: 'EAAB' },
+    }));
+    expect(await badExtra.instance.selectPage(WORKSPACE, CHOICE, PAGE, { backfillPageIds: [PAGE] }))
+      .toEqual({ ok: false, error: 'invalid-response' });
+
+    // Rejects duplicate or empty backfillPageIds locally without sending a request
+    const local = client(json({}));
+    expect(await local.instance.selectPage(WORKSPACE, CHOICE, PAGE, { backfillPageIds: [] }))
+      .toEqual({ ok: false, error: 'rejected', reason: 'invalid_request' });
+    expect(await local.instance.selectPage(WORKSPACE, CHOICE, PAGE, { backfillPageIds: [PAGE, PAGE] }))
+      .toEqual({ ok: false, error: 'rejected', reason: 'invalid_request' });
+    expect(local.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('calls POST /backfill on backfillBoundPage with 30s timeout and parses exact backfill summary', async () => {
+    const backfill = {
+      pagesProcessed: 1,
+      conversationsScanned: 42,
+      leadsImported: 11,
+      messagesStored: 29,
+      namesSealed: 11,
+    };
+    const { instance, fetchImpl } = client(json({
+      success: true,
+      workspaceId: WORKSPACE,
+      backfill,
+    }));
+    expect(await instance.backfillBoundPage(WORKSPACE)).toEqual({ ok: true, value: backfill });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${ROOT}/backfill`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ workspaceId: WORKSPACE });
+
+    expect(await instance.backfillBoundPage('not-a-uuid'))
+      .toEqual({ ok: false, error: 'rejected', reason: 'invalid_request' });
+    expect(await client(json({ success: true, workspaceId: WORKSPACE, backfill: { ...backfill, extra: 1 } })).instance.backfillBoundPage(WORKSPACE))
+      .toEqual({ ok: false, error: 'invalid-response' });
+  });
 });

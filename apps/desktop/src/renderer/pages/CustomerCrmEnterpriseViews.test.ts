@@ -240,6 +240,19 @@ describe('CrmEnterpriseKpiStrip', () => {
       }),
     );
     expect(kpiValue(off, 'Đủ điều kiện Ads')).toBe('0');
+
+    const withPages = renderToStaticMarkup(
+      createElement(CrmEnterpriseKpiStrip, {
+        rows: ALL_ROWS,
+        products: PRODUCTS,
+        nowMs: NOW,
+        pageCount: 3,
+        identityState: IDENTITY_ON,
+        display: 'table',
+        onSelectDisplay: noop,
+      }),
+    );
+    expect(withPages).toContain('3 Page nguồn');
   });
 });
 
@@ -251,7 +264,7 @@ describe('One portrait UI per customer: the server identity card', () => {
 
     const panel = readSource('./CustomerCrmPanel.tsx');
     expect(panel).not.toMatch(/CrmPortraitInspector|renderExtraCard|onInspectPortrait|table-split/);
-    for (const file of ['./CustomerCrmCard.tsx', './CustomerCrmGraph.tsx', './CustomerCrmRow.tsx']) {
+    for (const file of ['./CustomerCrmCard.tsx', './CustomerCrmDrawer.tsx', './CustomerCrmGraph.tsx', './CustomerCrmRow.tsx']) {
       expect(readSource(file)).not.toMatch(/extraSection|renderExtraCard|onInspectPortrait/);
     }
   });
