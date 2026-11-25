@@ -8,7 +8,7 @@ import type {
   CustomerCareCrmRow,
 } from '../../shared/customer-care-types';
 import { CustomerCrmRow, type CustomerCrmRowProps } from './CustomerCrmRow';
-import { CustomerCrmPanel } from './CustomerCrmPanel';
+import { CustomerCrmDisplaySwitch, CustomerCrmPanel } from './CustomerCrmPanel';
 import { CRM_CONFLICT_MESSAGE, CRM_SAVE_INVALID_MESSAGE, profileFromRow, type CrmRowEdit } from './customer-crm-flow';
 
 const OWNER_ID = '66666666-6666-4666-8666-666666666666';
@@ -167,8 +167,50 @@ describe('CustomerCrmPanel', () => {
   });
 });
 
+describe('CustomerCrmDisplaySwitch ("Bảng | Sơ đồ")', () => {
+  it('marks the table as the pressed view by default and the graph when chosen', () => {
+    const table = renderToStaticMarkup(createElement(CustomerCrmDisplaySwitch, { display: 'table', onChange: noop }));
+    expect(table).toContain('aria-label="Kiểu xem"');
+    expect(table).toMatch(/aria-pressed="true"[^>]*>Bảng</);
+    expect(table).toMatch(/aria-pressed="false"[^>]*>Sơ đồ</);
+    const graph = renderToStaticMarkup(createElement(CustomerCrmDisplaySwitch, { display: 'graph', onChange: noop }));
+    expect(graph).toMatch(/aria-pressed="false"[^>]*>Bảng</);
+    expect(graph).toMatch(/aria-pressed="true"[^>]*>Sơ đồ</);
+  });
+});
+
+describe('the CRM graph view adds no IPC and keeps the table untouched', () => {
+  const graphFiles = ['./CustomerCrmGraph.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts'];
+
+  it('calls only the CRM routes the table already used', () => {
+    const calls = new Set(read('./CustomerCrmPanel.tsx').match(/\bapi\??\.(\w+)\(/g)?.map((call) => call.replace(/\W/g, '').replace(/^api/, '')));
+    expect([...calls].sort()).toEqual(['getSnapshot', 'listCrm', 'purgeLead', 'saveCrmProfile']);
+  });
+
+  it('keeps the customerCare IPC channels exactly as they were', () => {
+    const ipc = read('../../main/customer-care/customer-care-ipc.ts');
+    const methods = ipc.slice(ipc.indexOf('const METHODS = ['), ipc.indexOf('] as const;')).match(/'(\w+)'/g);
+    expect(methods).toEqual([
+      "'getSnapshot'", "'saveSetup'", "'assist'", "'connectFacebookPage'", "'selectFacebookPage'",
+      "'disconnectFacebookPage'", "'takeFacebookPageChoices'", "'getFacebookInbox'", "'setFacebookInbox'",
+      "'listLeads'", "'setLeadStatus'", "'purgeLead'", "'getAutoReply'", "'setAutoReply'", "'listCrm'", "'saveCrmProfile'",
+    ]);
+  });
+
+  it('draws from the rows the panel holds: no IPC, no aibase graph, no export or download', () => {
+    for (const file of graphFiles) {
+      const source = read(file);
+      expect(source, file).not.toMatch(/electronAPI|ipcRenderer|aibase|MyGraphView|fetch\(/);
+      expect(source, file).not.toMatch(/createObjectURL|toDataURL|\.download\b|showSaveFilePicker/);
+    }
+  });
+});
+
 describe('CRM data never reaches storage, graph nodes or the logger', () => {
-  const renderer = ['./CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts'];
+  const renderer = [
+    './CustomerCrmPanel.tsx', './CustomerCrmRow.tsx', './customer-crm-flow.ts', './customer-crm-save-queue.ts',
+    './CustomerCrmGraph.tsx', './CustomerCrmCard.tsx', './customer-crm-graph.ts',
+  ];
   const main = ['../../main/customer-care/care-crm.ts', '../../main/customer-care/care-crm-client.ts'];
 
   it('keeps the renderer CRM files free of storage, graph and logging APIs', () => {

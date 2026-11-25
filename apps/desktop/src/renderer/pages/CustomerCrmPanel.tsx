@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CustomerCareCrmAssignee,
   CustomerCareCrmListInput,
@@ -48,9 +48,39 @@ import {
   type CrmProductOption,
   type CrmRowEdit,
 } from './customer-crm-flow';
+import { crmGraphRows, crmOpenProfile, type CrmDisplay } from './customer-crm-graph';
 import { CrmSaveQueue } from './customer-crm-save-queue';
 import { CustomerCrmRow } from './CustomerCrmRow';
 import '../styles/v2/customer-crm.css';
+
+// "Sơ đồ" draws the rows below with the graph engine and colors of the Memory tab. The packaged MyGraphView is not
+// reused: it is an editor bound to the aibase graph (its node click opens its own edit panel, and its toolbar can
+// add, link and delete nodes and export JSON/PNG files), with no hook for the customer card. Loaded on first use.
+const CustomerCrmGraph = lazy(() => import('./CustomerCrmGraph'));
+
+const DISPLAYS: ReadonlyArray<{ id: CrmDisplay; label: string }> = [
+  { id: 'table', label: 'Bảng' },
+  { id: 'graph', label: 'Sơ đồ' },
+];
+
+/** "Bảng | Sơ đồ": the same rows as a call list or as a graph. */
+export function CustomerCrmDisplaySwitch({ display, onChange }: { display: CrmDisplay; onChange: (display: CrmDisplay) => void }) {
+  return (
+    <div className="v2-project-tabs" role="group" aria-label="Kiểu xem">
+      {DISPLAYS.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={`v2-tab${display === item.id ? ' is-active' : ''}`}
+          aria-pressed={display === item.id}
+          onClick={() => onChange(item.id)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type CrmApi = {
   getSnapshot: () => Promise<CustomerCareSnapshot>;
@@ -73,6 +103,7 @@ const GENERIC_LOAD_ERROR = 'Chưa tải được CRM. Thử lại sau ít phút.
 const GENERIC_SAVE_ERROR = 'Chưa lưu được. Thử lại sau ít phút.';
 const REFRESH_RESTING_NOTE = 'Vừa tải xong. Có thể làm mới lại sau 15 giây.';
 const NO_APP_MESSAGE = 'CRM chỉ chạy trong ứng dụng izzi.';
+const NO_ASSIGNEES: CustomerCareCrmAssignee[] = [];
 
 function getCrmApi(): CrmApi | null {
   if (typeof window === 'undefined') return null;
@@ -112,7 +143,10 @@ export function CustomerCrmPanel() {
   const [products, setProducts] = useState<CrmProductOption[]>([]);
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState<CrmFilter>({ view: 'today', stage: 'any' });
+  const [display, setDisplay] = useState<CrmDisplay>('table');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The row "Mở hồ sơ" opened: scrolled into view and focused once the table shows it. */
+  const [revealId, setRevealId] = useState<string | null>(null);
   const [purgingId, setPurgingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   /** "Làm mới" rests for 15 s after a full reload. */
@@ -380,6 +414,22 @@ export function CustomerCrmPanel() {
     return () => clearInterval(timer);
   }, [visible, load]);
 
+  useEffect(() => {
+    if (display !== 'table' || revealId === null) return;
+    // 'nearest' scrolls only the CRM panel; 'center' would also shift the shell's overflow-hidden frames.
+    document.getElementById(`crm-editor-${revealId}`)?.scrollIntoView({ block: 'nearest' });
+    document.getElementById(`crm-stage-${revealId}`)?.focus({ preventScroll: true });
+    setRevealId(null);
+  }, [display, revealId]);
+
+  /** The card's "Mở hồ sơ": back to the table with that customer's editor open. */
+  const openProfile = (leadId: string) => {
+    const next = crmOpenProfile(leadId);
+    setDisplay(next.display);
+    setExpandedId(next.expandedId);
+    setRevealId(next.revealId);
+  };
+
   const change = (row: CustomerCareCrmRow, profile: CustomerCareCrmProfileInput) => {
     // A row whose details could not be opened is never saved, so it takes no edits either.
     if (crmRowReadOnly(row)) return;
@@ -445,6 +495,7 @@ export function CustomerCrmPanel() {
   const canPurge = Boolean(meta?.canDelete && getCrmApi()?.purgeLead);
   const shown = crmVisibleRows(rows, filter, now, expandedId);
   const todayCount = crmCallTodayCount(rows, now);
+  const graphRows = useMemo(() => (display === 'graph' ? crmGraphRows(rows, filter.stage) : []), [display, rows, filter.stage]);
 
   return (
     <section className="v2-crm" aria-labelledby="v2-crm-title">
@@ -495,23 +546,28 @@ export function CustomerCrmPanel() {
           {notice && <p className="v2-crm__notice" role="status">{notice}</p>}
 
           <div className="v2-crm__toolbar">
-            <div className="v2-project-tabs" role="group" aria-label="Danh sách">
-              <button
-                type="button"
-                className={`v2-tab${filter.view === 'today' ? ' is-active' : ''}`}
-                aria-pressed={filter.view === 'today'}
-                onClick={() => setFilter((current) => ({ ...current, view: 'today' }))}
-              >
-                Cần gọi hôm nay ({todayCount})
-              </button>
-              <button
-                type="button"
-                className={`v2-tab${filter.view === 'all' ? ' is-active' : ''}`}
-                aria-pressed={filter.view === 'all'}
-                onClick={() => setFilter((current) => ({ ...current, view: 'all' }))}
-              >
-                Tất cả ({rows.length})
-              </button>
+            <div className="v2-crm__views">
+              <CustomerCrmDisplaySwitch display={display} onChange={setDisplay} />
+              {display === 'table' && (
+                <div className="v2-project-tabs" role="group" aria-label="Danh sách">
+                  <button
+                    type="button"
+                    className={`v2-tab${filter.view === 'today' ? ' is-active' : ''}`}
+                    aria-pressed={filter.view === 'today'}
+                    onClick={() => setFilter((current) => ({ ...current, view: 'today' }))}
+                  >
+                    Cần gọi hôm nay ({todayCount})
+                  </button>
+                  <button
+                    type="button"
+                    className={`v2-tab${filter.view === 'all' ? ' is-active' : ''}`}
+                    aria-pressed={filter.view === 'all'}
+                    onClick={() => setFilter((current) => ({ ...current, view: 'all' }))}
+                  >
+                    Tất cả ({rows.length})
+                  </button>
+                </div>
+              )}
             </div>
             <label className="v2-crm__filter" htmlFor="v2-crm-stage-filter">
               <span className="v2-field__label">Giai đoạn</span>
@@ -534,6 +590,23 @@ export function CustomerCrmPanel() {
             <div className="v2-empty">
               <p>Chưa có khách nào để lại số. Khi khách gửi số điện thoại qua tin nhắn Page, khách sẽ hiện ở đây.</p>
             </div>
+          ) : display === 'graph' ? (
+            graphRows.length === 0 ? (
+              <div className="v2-empty">
+                <p>Không có khách nào khớp bộ lọc.</p>
+              </div>
+            ) : (
+              <Suspense fallback={<p className="v2-crm__hint" role="status">Đang mở sơ đồ…</p>}>
+                <CustomerCrmGraph
+                  rows={graphRows}
+                  products={products}
+                  assignees={meta?.assignees ?? NO_ASSIGNEES}
+                  nowMs={now}
+                  onCopy={(row) => { void copyPhone(row); }}
+                  onOpenProfile={openProfile}
+                />
+              </Suspense>
+            )
           ) : shown.length === 0 ? (
             <div className="v2-empty">
               <p>{filter.view === 'today' && filter.stage === 'any' ? 'Hôm nay chưa có khách cần gọi.' : 'Không có khách nào khớp bộ lọc.'}</p>

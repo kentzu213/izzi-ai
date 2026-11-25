@@ -75,6 +75,13 @@
   min-width: 180px;
 }
 
+.izzi-v2 .v2-crm__views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-3);
+}
+
 /* Controls: V2 tokens over the legacy !important input skin. */
 .izzi-v2 .v2-crm .v2-field__select,
 .izzi-v2 .v2-crm .v2-field__input {
@@ -334,6 +341,333 @@
   color: var(--v2-danger);
 }
 
+/*
+ * "Sơ đồ": the canvas keeps the Memory graph's dark field in both themes; the overlays on it are dark glass, and
+ * the customer card beside it uses the V2 panel tokens.
+ */
+.izzi-v2 .v2-crm-graph {
+  display: flex;
+  align-items: stretch;
+  gap: var(--v2-space-3);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-crm-graph__stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: clamp(360px, 62vh, 760px);
+  overflow: hidden;
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  background: #020509;
+}
+
+.izzi-v2 .v2-crm-graph__search {
+  position: absolute;
+  top: var(--v2-space-3);
+  left: var(--v2-space-3);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  width: min(260px, calc(100% - 140px));
+}
+
+.izzi-v2 .v2-crm .v2-crm-graph__search .v2-field__input {
+  width: 100%;
+  padding: 0 var(--v2-space-3);
+  background: rgba(9, 16, 23, 0.88) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #f6faff !important;
+}
+
+.izzi-v2 .v2-crm-graph__results,
+.izzi-v2 .v2-crm-graph__legend {
+  margin: 0;
+  padding: var(--v2-space-1);
+  list-style: none;
+  background: rgba(9, 16, 23, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--v2-radius-control);
+  color: #f6faff !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  line-height: var(--v2-text-meta-line);
+}
+
+.izzi-v2 .v2-crm-graph__results .v2-crm__meta {
+  display: block;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  color: rgba(246, 250, 255, 0.7) !important;
+}
+
+.izzi-v2 .v2-crm-graph__results button {
+  display: flex;
+  align-items: center;
+  gap: var(--v2-space-2);
+  width: 100%;
+  padding: var(--v2-space-1) var(--v2-space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--v2-radius-control);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.izzi-v2 .v2-crm-graph__results button:hover,
+.izzi-v2 .v2-crm-graph__results button:focus-visible {
+  background: rgba(124, 77, 255, 0.24);
+}
+
+.izzi-v2 .v2-crm-graph__results button:focus-visible,
+.izzi-v2 .v2-crm-graph__fit:focus-visible,
+.izzi-v2 .v2-crm-card:focus-visible,
+.izzi-v2 .v2-crm-card .v2-button:focus-visible {
+  outline: 2px solid var(--v2-brand-primary) !important;
+  outline-offset: 2px;
+}
+
+.izzi-v2 .v2-crm .v2-crm-graph__fit {
+  position: absolute;
+  top: var(--v2-space-3);
+  right: var(--v2-space-3);
+  z-index: 2;
+  background: rgba(9, 16, 23, 0.88);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #f6faff;
+}
+
+.izzi-v2 .v2-crm-graph__legend {
+  position: absolute;
+  bottom: var(--v2-space-3);
+  left: var(--v2-space-3);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v2-space-1) var(--v2-space-3);
+  max-width: calc(100% - 2 * var(--v2-space-3));
+  padding: var(--v2-space-1) var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-graph__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v2-space-1);
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-crm-card__dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.izzi-v2 .v2-crm-card__dot.is-hub {
+  border-radius: 2px;
+}
+
+.izzi-v2 .v2-crm-graph__hint {
+  flex: 0 0 220px;
+  align-self: flex-start;
+}
+
+.izzi-v2 .v2-crm-card {
+  flex: 0 0 300px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-3);
+  box-sizing: border-box;
+  max-height: clamp(360px, 62vh, 760px);
+  overflow-y: auto;
+  padding: var(--v2-space-4);
+  background: var(--v2-bg-panel);
+  border: 1px solid var(--v2-border-default);
+  border-radius: var(--v2-radius-card);
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-size);
+  line-height: var(--v2-text-body-line);
+}
+
+.izzi-v2 .v2-crm-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-card__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--v2-space-2);
+  min-width: 0;
+}
+
+.izzi-v2 .v2-crm-card__name {
+  margin: 0;
+  color: var(--v2-text-primary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-body-strong-size);
+  line-height: var(--v2-text-body-strong-line);
+  font-weight: var(--v2-font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-card__close {
+  flex: none;
+  min-width: 32px;
+  padding: 0 var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-card__phone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-card__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  margin: 0;
+}
+
+.izzi-v2 .v2-crm-card__facts dt,
+.izzi-v2 .v2-crm-card__section,
+.izzi-v2 .v2-crm-card__layer-label {
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  line-height: var(--v2-text-label-line);
+  font-weight: var(--v2-font-weight-semibold);
+}
+
+.izzi-v2 .v2-crm-card__facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--v2-space-2);
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-card__list,
+.izzi-v2 .v2-crm-card__layers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.izzi-v2 .v2-crm-card__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v2-space-2);
+  padding-top: var(--v2-space-3);
+  border-top: 1px solid var(--v2-border-default);
+}
+
+.izzi-v2 .v2-crm-card__layers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-card__layer-label {
+  flex-basis: 100%;
+}
+
+.izzi-v2 .v2-crm-card__layer-value {
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-card__badge {
+  padding: 0 var(--v2-space-2);
+  border-radius: var(--v2-radius-pill);
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 18px;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.izzi-v2 .v2-crm-card__badge.is-ai {
+  background: color-mix(in srgb, var(--v2-brand-primary) 18%, transparent);
+  color: var(--v2-brand-primary) !important;
+}
+
+.izzi-v2 .v2-crm-card__badge.is-reviewed {
+  background: color-mix(in srgb, var(--v2-success) 16%, transparent);
+  color: var(--v2-success) !important;
+}
+
+.izzi-v2 .v2-crm-card__identity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v2-space-2);
+}
+
+.izzi-v2 .v2-crm-card__consent {
+  padding: 0 var(--v2-space-2);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-label-size);
+  font-weight: var(--v2-font-weight-semibold);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.izzi-v2 .v2-crm-card__consent.is-granted {
+  border-color: color-mix(in srgb, var(--v2-success) 50%, transparent);
+  color: var(--v2-success) !important;
+}
+
+.izzi-v2 .v2-crm-card__consent.is-refused {
+  border-color: color-mix(in srgb, var(--v2-danger) 50%, transparent);
+  color: var(--v2-danger) !important;
+}
+
+.izzi-v2 .v2-crm-card__quote {
+  flex-basis: 100%;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.izzi-v2 .v2-crm-card__age {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--v2-space-2);
+  margin: 0;
+  color: var(--v2-text-secondary) !important;
+  -webkit-text-fill-color: currentColor !important;
+  font-size: var(--v2-text-meta-size);
+}
+
+.izzi-v2 .v2-crm-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 @media (max-width: 720px) {
   .izzi-v2 .v2-crm {
     padding: var(--v2-space-3) var(--v2-space-2);
@@ -341,5 +675,25 @@
 
   .izzi-v2 .v2-crm__fields--wide {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .izzi-v2 .v2-crm-graph {
+    flex-direction: column;
+  }
+
+  .izzi-v2 .v2-crm-graph__stage {
+    flex: none;
+    height: clamp(320px, 58vh, 560px);
+  }
+
+  .izzi-v2 .v2-crm-card,
+  .izzi-v2 .v2-crm-graph__hint {
+    flex: none;
+    align-self: stretch;
+    max-height: none;
+  }
+
+  .izzi-v2 .v2-crm-graph__search {
+    width: calc(100% - 120px);
   }
 }
