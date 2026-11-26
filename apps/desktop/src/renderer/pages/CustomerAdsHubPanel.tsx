@@ -22,6 +22,7 @@ import {
   StatusIcon,
   TrendUpIcon,
 } from '../components/AppIcons';
+import '../styles/v2/customer-ads.css';
 
 export interface CustomerAdsHubPanelProps {
   workspaceId: string;

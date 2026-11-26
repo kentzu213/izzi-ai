@@ -134,6 +134,7 @@ describe('CustomerAdsHubPanel', () => {
 
   it('keeps Ads Hub strictly read-only without ad-delivery or budget mutation controls and zero em-dashes', () => {
     const source = readFileSync(fileURLToPath(new URL('./CustomerAdsHubPanel.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain("import '../styles/v2/customer-ads.css';");
     expect(source).toContain('ads_read');
     expect(source).not.toContain('—');
     expect(source).not.toMatch(/CUSTOMER_MARKETING_ACTION_GATE_EXECUTOR_ENABLED\s*=\s*true/);
