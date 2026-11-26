@@ -40,6 +40,11 @@ const VN_PHONE_PRIMARY_RE = /(?<![\d+])\(?(?:\+?84|0(?=[1-9]))\)?(?:[\s.()-]{0,2
 const VN_PHONE_SPACED_ZERO_RE =
   /(?<![\d+])\(?0\)?[\s.()-]{1,2}(?=[1-9]\d)(?:[\s.()-]{0,2}\d){9}\d?(?!\d)(?!\s?(?:đ|₫|vnđ|vnd))/gi;
 const CARD_CANDIDATE_RE = /(?<!\d)(?:\d[ -]?){13,19}(?!\d)/g;
+// Recognized payment-card IIN prefixes + lengths (Visa, Mastercard, Amex, Diners,
+// Discover, JCB, UnionPay, Maestro, and Vietnam Napas 9704) so 13-digit Unix ms
+// timestamps (16xxxxxxxxxxx–19xxxxxxxxxxx) never false-positive on Luhn 1-in-10.
+const PAYMENT_CARD_IIN_RE =
+  /^(?:4\d{12}(?:\d{3}|\d{6})?|5[1-5]\d{14}|2(?:22[1-9]|2[3-9]\d|[3-6]\d{2}|7[01]\d|720)\d{12}|3[47]\d{13}|3(?:0[0-5]|[68]\d)\d{11}|6(?:011|5\d{2}|4[4-9]\d)\d{12}|(?:2131|1800|35\d{3})\d{11}|62\d{14,17}|(?:50|5[6-9]|6\d)\d{11,17}|9704\d{12,15})$/;
 
 const SENSITIVE_QUERY_KEYS = new Set([
   'api_key',
@@ -65,6 +70,11 @@ export function isValidLuhn(digits: string): boolean {
     total += d;
   }
   return total % 10 === 0;
+}
+
+/** True only when digits match a recognized card network IIN/length AND pass Luhn. */
+export function isLikelyPaymentCard(digits: string): boolean {
+  return PAYMENT_CARD_IIN_RE.test(digits) && isValidLuhn(digits);
 }
 
 function previewMasked(line: string, matches: readonly string[]): string {
@@ -138,13 +148,13 @@ export function scanSensitiveContent(text: string): SecretFinding[] {
       });
     }
 
-    // Luhn-valid payment cards
+    // Luhn-valid payment cards (network IIN + Luhn to prevent Unix ms timestamp false positives)
     const cards: string[] = [];
     const cardRe = new RegExp(CARD_CANDIDATE_RE.source, CARD_CANDIDATE_RE.flags);
     let m: RegExpExecArray | null;
     while ((m = cardRe.exec(line)) !== null) {
       const digits = m[0].replace(/\D/g, '');
-      if (isValidLuhn(digits)) cards.push(m[0].trim());
+      if (isLikelyPaymentCard(digits)) cards.push(m[0].trim());
     }
     if (cards.length > 0) {
       const longest = cards.reduce((a, b) => (b.length > a.length ? b : a));
@@ -200,7 +210,7 @@ export function redactSensitiveText(text: string): {
   // 5. Luhn-valid card numbers.
   out = out.replace(new RegExp(CARD_CANDIDATE_RE.source, CARD_CANDIDATE_RE.flags), (raw) => {
     const digits = raw.replace(/\D/g, '');
-    return isValidLuhn(digits) ? REDACTION : raw;
+    return isLikelyPaymentCard(digits) ? REDACTION : raw;
   });
 
   return { text: out, findings, redactedCount: findings.length };

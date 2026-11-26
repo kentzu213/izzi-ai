@@ -90,4 +90,13 @@ describe('secret-pii-gate', () => {
     expect(scanSensitiveContent(benign)).toEqual([]);
     expect(redactSensitiveText(benign).text).toBe(benign);
   });
+
+  it('does not false-positive on 13-digit Unix millisecond timestamps that happen to pass Luhn', () => {
+    // 1795701751186 is a real Date.now() ms timestamp whose Luhn sum is 50 (divisible by 10).
+    expect(isValidLuhn('1795701751186')).toBe(true);
+    const benignTs = 'user://quick-capture/1795701751186 · DEEP-CAND-1795701751186';
+    expect(scanSensitiveContent(benignTs)).toEqual([]);
+    expect(containsSensitiveMaterial({ uri: benignTs })).toBe(false);
+    expect(redactSensitiveText(benignTs).text).toBe(benignTs);
+  });
 });

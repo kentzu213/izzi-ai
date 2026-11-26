@@ -67,6 +67,22 @@ export function ReviewInboxPanel({ embedded = false }: ReviewInboxPanelProps): R
     void refresh();
   }, [refresh]);
 
+  // Keep Hộp duyệt & Vault stats fresh whenever the user opens the drawer,
+  // switches back to the Inbox tab, or refocuses the window after using Mini-Window / Agent chat.
+  useEffect(() => {
+    if (open) {
+      void refresh();
+    }
+  }, [open, tab, refresh]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void refresh();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
+
   useEffect(() => {
     if (!open || tab !== 'search' || !vaultApi?.search) return;
     const trimmed = query.trim();
@@ -158,7 +174,7 @@ export function ReviewInboxPanel({ embedded = false }: ReviewInboxPanelProps): R
         title: capTitle.trim(),
         summary: capSummary.trim(),
         topicKey: (capTopic.trim() || capTitle.trim()).toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64) || 'general',
-        source: { type: 'user', uri: `user://quick-capture/${Date.now()}` },
+        source: { type: 'user', uri: `user://quick-capture/${new Date().toISOString()}` },
         author: 'user',
         evidence: 'direct',
         confidence: 1,
@@ -425,14 +441,14 @@ export function ReviewInboxPanel({ embedded = false }: ReviewInboxPanelProps): R
           <textarea
             className="ri-textarea"
             rows={4}
-            placeholder="Nội dung tri thức (tự chặn API key, email, thẻ tín dụng)…"
+            placeholder="Nội dung tri thức (tự chặn API key, SĐT, email, thẻ thanh toán)…"
             value={capSummary}
             onChange={(e) => setCapSummary(e.target.value)}
             required
           />
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#c7cdd8' }}>
             <input type="checkbox" checked={capShare} onChange={(e) => setCapShare(e.target.checked)} />
-            Cho phép đồng bộ lên Cloud MyGraph (`shareable`) — bỏ chọn để chỉ giữ trên máy này
+            Cho phép đồng bộ lên Cloud MyGraph — bỏ chọn để chỉ giữ trên máy này
           </label>
           <button type="submit" className="ri-btn ri-btn--primary" disabled={busy || !capTitle.trim() || !capSummary.trim()}>
             Lưu tri thức chuẩn lọc

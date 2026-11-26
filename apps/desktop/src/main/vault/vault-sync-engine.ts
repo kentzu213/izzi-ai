@@ -35,6 +35,7 @@ import {
   evaluateSensitivePolicy,
   scanSensitiveContent,
 } from '../../shared/secret-pii-gate';
+import { KNOWLEDGE_SCOPES } from '../../shared/knowledge-types';
 import type { KnowledgeStore } from '../knowledge/knowledge-store';
 import {
   parseVaultMarkdown,
@@ -598,7 +599,7 @@ export class VaultSyncEngine {
 
     // Prune generated canonical files (`kn-<hex>.md`) whose records were retracted or superseded.
     // Never touches user-authored markdown files with other naming patterns.
-    for (const scope of ['global', 'project', 'agent', 'session'] as const) {
+    for (const scope of KNOWLEDGE_SCOPES) {
       const scopeDir = safeChild(this.vaultDir, `knowledge/${scope}`);
       if (!fs.existsSync(scopeDir)) continue;
       const keep = activeByScope.get(scope) ?? new Set<string>();
