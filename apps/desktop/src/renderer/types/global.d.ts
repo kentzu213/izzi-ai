@@ -84,6 +84,8 @@ import type {
   CustomerWorkspaceInvitationResult,
   CustomerVoiceStudioRepairResult,
 } from '../../shared/customer-marketing-types';
+import type { SalesCoachResult } from '../../shared/sales-script-guard';
+import type { DistilledSalesLessonCandidate } from '../../shared/sales-outcome-distiller';
 import type { CampaignAddChannelInput, CampaignCellDoneInput, CampaignCellUnmarkInput } from '../../shared/customer-marketing-campaign-map';
 import type {
   CustomerMarketingCredentialListResult,
@@ -736,6 +738,24 @@ declare global {
       bulkAssignCrm(input: CustomerCareCrmBulkAssignInput): Promise<CustomerCareCrmBulkAssignResult>;
       identityAction(input: CustomerCareCrmIdentityActionInput): Promise<CustomerCareCrmIdentityActionResult>;
       refreshIdentity(input: CustomerCareCrmIdentityRefreshInput): Promise<CustomerCareCrmIdentityRefreshResult>;
+    };
+    salesCoach?: {
+      generateScript(input: {
+        row: unknown;
+        products?: unknown[];
+        identityEnabled?: boolean;
+      }): Promise<SalesCoachResult>;
+      saveLesson(input: {
+        title: string;
+        summary: string;
+        topicKey?: string;
+        kind?: 'lesson' | 'procedure' | 'pitfall';
+      }): Promise<{ ok: true; recordId: string } | { ok: false; error: string }>;
+      distillFromCrm(input: {
+        rows: unknown[];
+        products?: unknown[];
+        identityEnabled?: boolean;
+      }): Promise<{ ok: true; queuedCount: number; candidates: DistilledSalesLessonCandidate[] } | { ok: false; error: string }>;
     };
     marketingAds?: {
       getStatus(): Promise<MarketingAdsStatusResult>;

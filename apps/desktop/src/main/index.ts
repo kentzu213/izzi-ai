@@ -113,6 +113,9 @@ import { CareFacebookOAuthCoordinator, routeMarketingOAuthCallback } from './cus
 import { CareLeadNotifier } from './customer-care/care-lead-notifier';
 import { CareGraphPublisher } from './customer-care/care-graph-publisher';
 import { careDirectorContextFromCache } from './customer-care/care-graph-reader';
+import { CareSalesCoachService } from './customer-care/care-sales-coach-service';
+import { registerSalesCoachIpc } from './customer-care/care-sales-coach-ipc';
+import { AgentProfileS3Coordinator } from './agents/memory/agent-profile-s3';
 import { MarketingAdsClient } from './marketing/marketing-ads-client';
 import { MarketingAdsService } from './marketing/marketing-ads-service';
 import { MarketingAdsOAuthCoordinator } from './marketing/marketing-ads-oauth';
@@ -250,6 +253,7 @@ let careGraphPublisher: CareGraphPublisher | null = null;
 // Local-first Obsidian Markdown Vault & Quick Capture Mini-Window (Slices 2–4).
 let vaultSyncEngine: VaultSyncEngine | null = null;
 let quickCaptureMini: QuickCaptureMiniController | null = null;
+let agentProfileS3: AgentProfileS3Coordinator | null = null;
 
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
@@ -650,17 +654,24 @@ function setupIPC() {
   scheduleService = new ScheduleService(dbManager);
   registerScheduleIpc(scheduleService);
 
-  // Agent-side write/read loop (L4–L5): distill substantive turns with secret/PII
-  // redaction into POST /api/aibase/memory/session + feed Local KnowledgeStore
-  // candidates. Legacy raw transcript write to user_nodes stays OFF by default.
+  // ── Local-First Selective Knowledge Store & Obsidian Markdown Vault ──
+  const knowledgeStore = new KnowledgeStore(dbManager.getWorkDb());
+
+  // Agent-side write/read loop (L4–L5 + Local Selective Knowledge): distill substantive
+  // turns with secret/PII redaction into POST /api/aibase/memory/session + feed Local
+  // KnowledgeStore candidates. Legacy raw transcript write to user_nodes stays OFF by default.
   const distilledCapturer = new DistilledSessionCapturer(
     graphClient,
     new AgentSessionCapturer(graphClient),
     () => dbManager.getSetting('memory.loopCaptureEnabled') !== 'false',
   );
+  distilledCapturer.addCandidateHook(knowledgeStore);
+
   const recallProvider = new AgentRecallContextProvider(
     graphClient,
     () => dbManager.getSetting('memory.recallEnabled') !== 'false',
+    5 * 60 * 1000,
+    knowledgeStore,
   );
   const sessionRecorder = new SessionRecorder(new AgentSessionCapturer(graphClient), dbManager, {
     captureToGraph: () => dbManager.getSetting(AGENT_SESSION_GRAPH_CAPTURE_SETTING) === 'on',
@@ -668,15 +679,12 @@ function setupIPC() {
   });
   agentService?.setMemoryLoop({ recallProvider, sessionRecorder });
 
-  // ── Local-First Selective Knowledge Store & Obsidian Markdown Vault (Slices 2–3) ──
-  const knowledgeStore = new KnowledgeStore(dbManager.getWorkDb());
-  distilledCapturer.addCandidateHook(knowledgeStore);
-
   vaultSyncEngine = new VaultSyncEngine(dbManager.getWorkDb(), graphClient, knowledgeStore, {
     vaultDir: dbManager.getSetting('vault.dir') || undefined,
     enabled: dbManager.getSetting('vault.enabled') !== 'false',
   });
   registerKnowledgeIpc(knowledgeStore, () => {
+    recallProvider.invalidate();
     vaultSyncEngine?.projectLocalKnowledgeNow();
     void vaultSyncEngine?.syncNow();
   });
@@ -1054,6 +1062,21 @@ function setupIPC() {
     currentIdentityId: () => authManager.getCurrentUser()?.id ?? null,
   });
   registerCustomerCareIpc(customerCareService, careFacebookOAuth);
+  const careSalesCoachService = new CareSalesCoachService({
+    resolveAuthority: () => customerMarketingService.resolveCustomerCareAuthority(),
+    readApprovedFacts: async () => {
+      const snap = await customerCareService.getSnapshot();
+      return snap.setup?.facts ?? [];
+    },
+    knowledgeStore,
+    chat: (payload, signal) => izziAgent.chat(payload, undefined, { signal }),
+    onKnowledgeMutated: () => {
+      recallProvider.invalidate();
+      vaultSyncEngine?.projectLocalKnowledgeNow();
+      void vaultSyncEngine?.syncNow();
+    },
+  });
+  registerSalesCoachIpc(careSalesCoachService);
   const marketingAdsClient = new MarketingAdsClient(authManager, {
     baseUrl: DESKTOP_RUNTIME_PROFILE.marketingApiBaseUrl
       ?? process.env.IZZI_NATIVE_MARKETING_API_URL,
@@ -1142,6 +1165,23 @@ function setupIPC() {
   powerMonitor.on('resume', () => void marketingScheduler.tick());
   powerMonitor.on('unlock-screen', () => void marketingScheduler.tick());
   app.on('before-quit', () => marketingScheduler.stop());
+  // Agent profiles S3 (docs/MYGRAPH-AGENT-MEMORY.md §5): hourly auto-check (>=20h & >=5m idle)
+  // + fingerprint-guarded, 0%-PII mirror of approved profiles to Cloud MyGraph.
+  agentProfileS3 = new AgentProfileS3Coordinator({
+    profileService: agentProfileService,
+    graph: graphClient,
+    readCachedNodes: () => dbManager.getUserData('graph_nodes')[0],
+    currentOwnerId: () => authManager.getCurrentUser()?.id ?? null,
+    getSystemIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+    store: dbManager,
+    isEnabled: () => dbManager.getSetting('agentProfiles.autoSchedule') !== 'off',
+    log: (message) => console.warn('[AgentProfilesS3]', message),
+  });
+  agentProfileS3.start();
+  powerMonitor.on('resume', () => agentProfileS3?.onSystemWake());
+  powerMonitor.on('unlock-screen', () => agentProfileS3?.onSystemWake());
+  app.on('before-quit', () => agentProfileS3?.stop());
+
   // Runs in main, so new leads are still announced while the window sits in the tray.
   careLeadNotifier.start();
   app.on('before-quit', () => careLeadNotifier?.stop());

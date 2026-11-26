@@ -24,12 +24,15 @@
 
 import {
   extractWorkBlockFromTurn,
-  formatRecallBriefing,
   type CaptureSessionResult,
   type SessionMemoryWriteInput,
   type UnifiedRecallResult,
 } from '../../shared/memory-loop-types';
 import type { AgentSessionCapturer, AgentSessionInput } from './agent-session-graph';
+import {
+  assembleHybridAgentBriefing,
+  type LocalKnowledgeRecallReader,
+} from './hybrid-context-assembler';
 
 export interface MemoryLoopTransport {
   captureMemorySession(input: SessionMemoryWriteInput): Promise<CaptureSessionResult>;
@@ -132,12 +135,15 @@ export class AgentRecallContextProvider {
     private readonly transport: Pick<MemoryLoopTransport, 'recallMemory'>,
     private readonly isRecallEnabled: () => boolean = () => true,
     private readonly ttlMs = 5 * 60 * 1000,
+    private readonly localKnowledge?: LocalKnowledgeRecallReader,
   ) {}
 
   async getBriefing(opts: {
     scopeKey: string;
     queryText?: string;
     featureSpec?: string;
+    workspaceId?: string;
+    agentId?: string;
     maxChars?: number;
   }): Promise<string> {
     if (!this.isRecallEnabled()) return '';
@@ -149,19 +155,44 @@ export class AgentRecallContextProvider {
       return cached.briefing;
     }
 
+    // 1. Local Selective Knowledge (sub-2ms, works 100% offline).
+    const localRecords = this.localKnowledge
+      ? (() => {
+          try {
+            return this.localKnowledge.recall({
+              workspaceId: opts.workspaceId,
+              agent: opts.agentId,
+              query: opts.queryText || opts.featureSpec,
+              limit: 6,
+            });
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    // 2. Cloud L4–L5 Recall (best-effort; offline failure still preserves local briefing).
+    let cloudRecall: UnifiedRecallResult | null = null;
     try {
-      const recall = await this.transport.recallMemory({
+      cloudRecall = await this.transport.recallMemory({
         queryText: opts.queryText,
         featureSpec: opts.featureSpec,
         limit: 8,
         timeoutMs: 2000,
       });
-      const briefing = formatRecallBriefing(recall, { maxChars: opts.maxChars ?? 3000 });
-      this.cache.set(key, { briefing, expiresAt: now + this.ttlMs });
-      return briefing;
     } catch {
-      return '';
+      cloudRecall = null;
     }
+
+    const briefing = assembleHybridAgentBriefing({
+      localRecords,
+      cloudRecall,
+      maxChars: opts.maxChars ?? 3200,
+    });
+    if (briefing) {
+      this.cache.set(key, { briefing, expiresAt: now + this.ttlMs });
+    }
+    return briefing;
   }
 
   invalidate(scopeKey?: string): void {

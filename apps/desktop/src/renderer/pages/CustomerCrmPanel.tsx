@@ -95,6 +95,7 @@ import {
   CrmLifecycleWorkspace,
   CrmRenderPagination,
   CrmSalerWorkspace,
+  type CrmSalesCoachHandlers,
 } from './CustomerCrmEnterpriseViews';
 import { CustomerCrmRow } from './CustomerCrmRow';
 import '../styles/v2/customer-crm.css';
@@ -1014,6 +1015,38 @@ export function CustomerCrmPanel() {
     [allPageSources, fallbackPage],
   );
 
+  const salesCoachHandlers = useMemo<CrmSalesCoachHandlers>(() => ({
+    generateScript: async (input) => {
+      const coachBridge = typeof window !== 'undefined' ? window.electronAPI?.salesCoach : undefined;
+      if (!coachBridge?.generateScript) {
+        return { ok: false, error: 'unavailable', message: 'Tính năng AI Kịch bản Sale chưa sẵn sàng.' };
+      }
+      return coachBridge.generateScript({
+        row: input.row,
+        products: [...input.products],
+        identityEnabled: input.identityEnabled,
+      });
+    },
+    saveLesson: async (input) => {
+      const coachBridge = typeof window !== 'undefined' ? window.electronAPI?.salesCoach : undefined;
+      if (!coachBridge?.saveLesson) {
+        return { ok: false, error: 'Tính năng lưu kinh nghiệm chưa sẵn sàng.' };
+      }
+      return coachBridge.saveLesson(input);
+    },
+    distillFromCrm: async (input) => {
+      const coachBridge = typeof window !== 'undefined' ? window.electronAPI?.salesCoach : undefined;
+      if (!coachBridge?.distillFromCrm) {
+        return { ok: false, error: 'Tính năng chưng cất kinh nghiệm chưa sẵn sàng.' };
+      }
+      return coachBridge.distillFromCrm({
+        rows: [...input.rows],
+        products: [...input.products],
+        identityEnabled: input.identityEnabled,
+      });
+    },
+  }), []);
+
   const unassignedCount = useMemo(
     () => rows.filter((row) => (row.profile.salerId ?? null) === null && row.profile.ownerUserId === null).length,
     [rows],
@@ -1374,6 +1407,7 @@ export function CustomerCrmPanel() {
                 onChangeProfile={change}
                 onCopyText={(text, msg) => { void copyText(text, msg); }}
                 onOpenProfile={openProfile}
+                salesCoachHandlers={salesCoachHandlers}
               />
             )
           ) : display === 'ads' ? (

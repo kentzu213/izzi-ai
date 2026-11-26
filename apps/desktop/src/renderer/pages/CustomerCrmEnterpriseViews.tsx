@@ -27,6 +27,8 @@ import {
   applyCareStepTransition,
   resolveEffectiveCareStep,
 } from '../../shared/customer-crm-saler-routing';
+import { buildDailySalesTriage } from '../../shared/care-daily-triage';
+import type { SalesCoachOutput, SalesCoachResult, SalesScriptChannel } from '../../shared/sales-script-guard';
 import { formatLeadPhone, leadDisplayName } from './customer-care-leads-flow';
 import {
   CRM_CONFLICT_MESSAGE,
@@ -258,6 +260,24 @@ export function CrmEnterpriseKpiStrip({
 // 3. Enterprise View 1 — Saler Workspace ("Phục vụ Saler")
 // ---------------------------------------------------------------------------
 
+export interface CrmSalesCoachHandlers {
+  generateScript: (input: {
+    row: CustomerCareCrmRow;
+    products: readonly CrmEnterpriseProduct[];
+    identityEnabled: boolean;
+  }) => Promise<SalesCoachResult>;
+  saveLesson: (input: {
+    title: string;
+    summary: string;
+    kind?: 'lesson' | 'procedure' | 'pitfall';
+  }) => Promise<{ ok: true; recordId: string } | { ok: false; error: string }>;
+  distillFromCrm: (input: {
+    rows: readonly CustomerCareCrmRow[];
+    products: readonly CrmEnterpriseProduct[];
+    identityEnabled: boolean;
+  }) => Promise<{ ok: true; queuedCount: number } | { ok: false; error: string }>;
+}
+
 export interface CrmSalerWorkspaceProps {
   rows: readonly CustomerCareCrmRow[];
   products: readonly CrmEnterpriseProduct[];
@@ -273,6 +293,7 @@ export interface CrmSalerWorkspaceProps {
   onChangeProfile: (row: CustomerCareCrmRow, nextProfile: CustomerCareCrmProfileInput) => void;
   onCopyText: (text: string, successMessage: string) => void;
   onOpenProfile: (leadId: string) => void;
+  salesCoachHandlers?: CrmSalesCoachHandlers;
 }
 
 type SalerBandFilter = 'all' | 'hot' | 'warm' | 'normal';
@@ -291,8 +312,103 @@ export function CrmSalerWorkspace({
   onChangeProfile,
   onCopyText,
   onOpenProfile,
+  salesCoachHandlers,
 }: CrmSalerWorkspaceProps) {
   const [bandFilter, setBandFilter] = useState<SalerBandFilter>('all');
+  const [showTriage, setShowTriage] = useState(false);
+  const [distillNotice, setDistillNotice] = useState<string | null>(null);
+  const [distilling, setDistilling] = useState(false);
+  const [coachByLead, setCoachByLead] = useState<Record<string, SalesCoachOutput>>({});
+  const [coachBusyLead, setCoachBusyLead] = useState<string | null>(null);
+  const [coachErrorByLead, setCoachErrorByLead] = useState<Record<string, string>>({});
+  const [coachChannelByLead, setCoachChannelByLead] = useState<Record<string, SalesScriptChannel>>({});
+  const [lessonNoticeByLead, setLessonNoticeByLead] = useState<Record<string, string>>({});
+
+  const dailyTriage = useMemo(
+    () => (showTriage ? buildDailySalesTriage(rows, { products, salers, identityEnabled, nowMs }) : null),
+    [showTriage, rows, products, salers, identityEnabled, nowMs],
+  );
+
+  async function handleGenerateAiScript(row: CustomerCareCrmRow) {
+    if (!salesCoachHandlers?.generateScript) {
+      setCoachErrorByLead((prev) => ({ ...prev, [row.leadId]: 'Tính năng AI Kịch bản Sale chưa sẵn sàng.' }));
+      return;
+    }
+    setCoachBusyLead(row.leadId);
+    setCoachErrorByLead((prev) => {
+      const next = { ...prev };
+      delete next[row.leadId];
+      return next;
+    });
+    try {
+      const res = await salesCoachHandlers.generateScript({
+        row,
+        products,
+        identityEnabled: identityEnabled === true,
+      });
+      if (res.ok) {
+        setCoachByLead((prev) => ({ ...prev, [row.leadId]: res.data }));
+      } else {
+        setCoachErrorByLead((prev) => ({ ...prev, [row.leadId]: res.message }));
+      }
+    } catch {
+      setCoachErrorByLead((prev) => ({ ...prev, [row.leadId]: 'Không tạo được kịch bản AI lúc này. Thử lại sau.' }));
+    } finally {
+      setCoachBusyLead((cur) => (cur === row.leadId ? null : cur));
+    }
+  }
+
+  async function handleSaveLessonToVault(row: CustomerCareCrmRow, coach: SalesCoachOutput) {
+    if (!salesCoachHandlers?.saveLesson) {
+      setLessonNoticeByLead((prev) => ({ ...prev, [row.leadId]: 'Tính năng lưu kinh nghiệm chưa sẵn sàng.' }));
+      return;
+    }
+    try {
+      const res = await salesCoachHandlers.saveLesson({
+        title: `Kinh nghiệm xử lý: ${coach.buyerDiagnosis.slice(0, 90)}`,
+        summary: `${coach.objectionStrategy} · Bước tiếp: ${coach.nextBestAction}`,
+        kind: 'lesson',
+      });
+      setLessonNoticeByLead((prev) => ({
+        ...prev,
+        [row.leadId]: res.ok
+          ? 'Đã đưa kinh nghiệm sạch (0% PII) vào Hộp duyệt (Vault & Lọc).'
+          : res.error,
+      }));
+    } catch {
+      setLessonNoticeByLead((prev) => ({
+        ...prev,
+        [row.leadId]: 'Không lưu được kinh nghiệm lúc này. Thử lại sau.',
+      }));
+    }
+  }
+
+  async function handleDistillCohortLessons() {
+    if (!salesCoachHandlers?.distillFromCrm) {
+      setDistillNotice('Tính năng chưng cất kinh nghiệm chưa sẵn sàng.');
+      return;
+    }
+    setDistilling(true);
+    setDistillNotice(null);
+    try {
+      const res = await salesCoachHandlers.distillFromCrm({
+        rows,
+        products,
+        identityEnabled: identityEnabled === true,
+      });
+      if (!res.ok) {
+        setDistillNotice(res.error);
+      } else if (res.queuedCount === 0) {
+        setDistillNotice('Chưa có cụm mẫu nào đạt ngưỡng >= 3 hồ sơ mới để chưng cất vào Hộp duyệt.');
+      } else {
+        setDistillNotice(`Đã chưng cất ${res.queuedCount} kinh nghiệm bán hàng (0% PII) vào Hộp duyệt (Vault & Lọc).`);
+      }
+    } catch {
+      setDistillNotice('Không chưng cất được kinh nghiệm lúc này.');
+    } finally {
+      setDistilling(false);
+    }
+  }
   const pagerKey = `${filterResetKey}\n${bandFilter}`;
   const [pager, setPager] = useState<{ key: string; limit: number }>(() => ({
     key: pagerKey,
@@ -369,10 +485,66 @@ export function CrmSalerWorkspace({
             {`Thường (${counts.normal})`}
           </button>
         </div>
-        <span className="v2-crm__meta">
-          Sắp xếp theo điểm ưu tiên giảm dần · Kịch bản theo xưng hô và nhu cầu trên hồ sơ
-        </span>
+        <div className="v2-crm__buttons">
+          <button
+            type="button"
+            className={`v2-button ${showTriage ? 'v2-button--primary' : 'v2-button--ghost'}`}
+            onClick={() => setShowTriage((v) => !v)}
+          >
+            {showTriage ? 'Ẩn lịch việc hôm nay' : '📋 Lập việc Sale hôm nay'}
+          </button>
+          <button
+            type="button"
+            className="v2-button v2-button--ghost"
+            disabled={distilling || rows.length === 0}
+            onClick={() => void handleDistillCohortLessons()}
+          >
+            {distilling ? 'Đang chưng cất…' : '🧠 Chưng cất kinh nghiệm vào Vault'}
+          </button>
+        </div>
       </div>
+
+      {distillNotice && (
+        <p className="v2-crm__meta" role="status" style={{ margin: '0 0 8px' }}>
+          {distillNotice}
+        </p>
+      )}
+
+      {dailyTriage && (
+        <section
+          className="v2-crm-saler-card"
+          aria-label="Kế hoạch công việc Sale hôm nay"
+          style={{ marginBottom: 12 }}
+        >
+          <header className="v2-crm-saler-card__header">
+            <div className="v2-crm-saler-card__who">
+              <strong>{`Kế hoạch Sale hôm nay · ${dailyTriage.totalActiveLeads} khách hoạt động`}</strong>
+              <span className="v2-crm-priority is-hot">{`Gọi ngay: ${dailyTriage.urgentCount}`}</span>
+              <span className="v2-crm-priority is-warm">{`Bám đuổi: ${dailyTriage.followupCount}`}</span>
+              <span className="v2-crm-priority is-normal">{`Hậu mãi/Remarketing: ${dailyTriage.lifecycleCount}`}</span>
+            </div>
+            <button
+              type="button"
+              className="v2-button v2-button--ghost"
+              onClick={() => onCopyText(dailyTriage.markdownSummary, 'Đã sao chép kế hoạch Sale hôm nay (0% PII).')}
+            >
+              Sao chép tóm tắt
+            </button>
+          </header>
+          {dailyTriage.bySaler.length > 0 && (
+            <div className="v2-crm-saler-card__block">
+              <span className="v2-field__label">Phân bổ theo Saler</span>
+              <ul className="v2-crm-saler-card__questions">
+                {dailyTriage.bySaler.slice(0, 8).map((w) => (
+                  <li key={w.salerId ?? 'unassigned'}>
+                    {`${w.salerName}: ${w.urgent} gấp · ${w.followup} bám đuổi · ${w.lifecycle} hậu mãi (tổng ${w.total})`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {visibleItems.length === 0 ? (
         <div className="v2-empty">
@@ -442,17 +614,99 @@ export function CrmSalerWorkspace({
                   <div className="v2-crm-saler-card__script-head">
                     <span className="v2-field__label">Kịch bản mở lời gọi điện / Zalo</span>
                     {playbook.canContact && (
-                      <button
-                        type="button"
-                        className="v2-button v2-button--ghost"
-                        onClick={() => onCopyText(playbook.opener, `Đã sao chép kịch bản mở lời cho ${name}.`)}
-                      >
-                        Sao chép kịch bản
-                      </button>
+                      <div className="v2-crm__buttons">
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          disabled={coachBusyLead === row.leadId}
+                          onClick={() => void handleGenerateAiScript(row)}
+                        >
+                          {coachBusyLead === row.leadId ? 'Đang soạn AI…' : '✨ AI Kịch bản Sale (Vault + Facts)'}
+                        </button>
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          onClick={() => onCopyText(playbook.opener, `Đã sao chép kịch bản mở lời cho ${name}.`)}
+                        >
+                          Sao chép kịch bản
+                        </button>
+                      </div>
                     )}
                   </div>
                   <p className="v2-crm-saler-card__opener">{playbook.opener}</p>
                 </div>
+
+                {coachErrorByLead[row.leadId] && (
+                  <p className="v2-crm__error" role="alert">{coachErrorByLead[row.leadId]}</p>
+                )}
+
+                {(() => {
+                  const coach = coachByLead[row.leadId];
+                  if (!coach) return null;
+                  const ch: SalesScriptChannel = coachChannelByLead[row.leadId] ?? 'zalo';
+                  const activeScript = coach.scripts[ch];
+                  return (
+                    <div className="v2-crm-saler-card__block" role="region" aria-label={`AI Sales Coach cho ${name}`}>
+                      <div className="v2-crm-saler-card__script-head">
+                        <span className="v2-field__label">
+                          {`AI Sales Coach (${coach.source === 'ai' ? 'AI + Vault + Facts' : 'Bản dự phòng offline'})`}
+                        </span>
+                        <span className="v2-badge">
+                          {coach.factGuardPassed
+                            ? '✓ Khớp Shop Facts'
+                            : `⚠ Đã chặn ${coach.guardFindings.length} cam kết ngoài Facts`}
+                        </span>
+                      </div>
+                      <p className="v2-crm-saler-card__hint">
+                        <strong>Đọc vị:</strong> {coach.buyerDiagnosis}
+                      </p>
+                      {coach.evidenceQuotes.length > 0 && (
+                        <p className="v2-crm__meta">
+                          {`Bằng chứng: "${coach.evidenceQuotes.join('" · "')}"`}
+                        </p>
+                      )}
+                      {coach.usedKnowledgeTitles.length > 0 && (
+                        <p className="v2-crm__meta">
+                          {`Đã áp dụng kinh nghiệm Vault: ${coach.usedKnowledgeTitles.join(' · ')}`}
+                        </p>
+                      )}
+                      <div className="v2-project-tabs" role="group" aria-label="Chọn kênh kịch bản AI" style={{ margin: '6px 0' }}>
+                        {(['zalo', 'call', 'messenger'] as const).map((channelKey) => (
+                          <button
+                            key={channelKey}
+                            type="button"
+                            className={`v2-tab${ch === channelKey ? ' is-active' : ''}`}
+                            aria-pressed={ch === channelKey}
+                            onClick={() => setCoachChannelByLead((prev) => ({ ...prev, [row.leadId]: channelKey }))}
+                          >
+                            {channelKey === 'zalo' ? 'Zalo' : channelKey === 'call' ? 'Gọi điện' : 'Messenger'}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="v2-crm-saler-card__opener">{activeScript}</p>
+                      <p className="v2-crm__meta">{`Xử lý rào cản: ${coach.objectionStrategy}`}</p>
+                      <div className="v2-crm__buttons" style={{ marginTop: 6 }}>
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          onClick={() => onCopyText(activeScript, `Đã sao chép kịch bản ${ch.toUpperCase()} cho ${name}.`)}
+                        >
+                          Sao chép kịch bản AI
+                        </button>
+                        <button
+                          type="button"
+                          className="v2-button v2-button--ghost"
+                          onClick={() => void handleSaveLessonToVault(row, coach)}
+                        >
+                          + Lưu kinh nghiệm vào Hộp duyệt
+                        </button>
+                      </div>
+                      {lessonNoticeByLead[row.leadId] && (
+                        <p className="v2-crm__meta" role="status">{lessonNoticeByLead[row.leadId]}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {playbook.discoveryQuestions.length > 0 && (
                   <div className="v2-crm-saler-card__block">

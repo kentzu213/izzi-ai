@@ -52,6 +52,8 @@ import type {
   ExtractDocumentResult,
   SynthesizeTopicResult,
 } from '../shared/graph-types';
+import type { SalesCoachResult } from '../shared/sales-script-guard';
+import type { DistilledSalesLessonCandidate } from '../shared/sales-outcome-distiller';
 import type {
   LiveProfileReadResult,
   LiveProfileWriteResult,
@@ -753,6 +755,27 @@ const electronAPI = {
       ipcRenderer.invoke('customerCare:identityAction', input),
     refreshIdentity: (input: CustomerCareCrmIdentityRefreshInput): Promise<CustomerCareCrmIdentityRefreshResult> =>
       ipcRenderer.invoke('customerCare:refreshIdentity', input),
+  },
+  // Fact-Grounded AI Sales Coach & Closed-Loop Sales Lesson Distiller (Phase 2).
+  salesCoach: {
+    generateScript: (input: {
+      row: unknown;
+      products?: unknown[];
+      identityEnabled?: boolean;
+    }): Promise<SalesCoachResult> => ipcRenderer.invoke('salesCoach:generateScript', input),
+    saveLesson: (input: {
+      title: string;
+      summary: string;
+      topicKey?: string;
+      kind?: 'lesson' | 'procedure' | 'pitfall';
+    }): Promise<{ ok: true; recordId: string } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('salesCoach:saveLesson', input),
+    distillFromCrm: (input: {
+      rows: unknown[];
+      products?: unknown[];
+      identityEnabled?: boolean;
+    }): Promise<{ ok: true; queuedCount: number; candidates: DistilledSalesLessonCandidate[] } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('salesCoach:distillFromCrm', input),
   },
   // Unified Multi-Platform Ads Hub (`ads_read` + campaign-to-Page attribution mapping only).
   marketingAds: {
