@@ -313,4 +313,70 @@ describe('VaultSyncEngine (Local-First Obsidian Vault + 3-way Cloud Sync)', () =
       fx.close();
     }
   });
+
+  it('projects active knowledge .md immediately offline, preserves L4/L5 Index.md tail, and prunes retracted kn-*.md without touching custom notes', async () => {
+    const fx = makeFixture();
+    try {
+      // Seed an existing Index.md from a prior online sync containing L4/L5 links.
+      await fx.engine.syncNow();
+      expect(fs.readFileSync(path.join(fx.dir, 'Index.md'), 'utf8')).toContain('insight--1');
+
+      // Create a second engine instance (simulating restart while offline, lastRecall === null).
+      const offlineCloud: VaultCloudClient = {
+        listNodes: vi.fn(async () => { throw new Error('ENETUNREACH offline'); }),
+        listLinks: vi.fn(async () => { throw new Error('ENETUNREACH offline'); }),
+        createNode: vi.fn(async () => ({ error: 'offline' })),
+        updateNode: vi.fn(async () => ({ error: 'offline' })),
+        recallMemory: vi.fn(async () => ({ status: 'error' as const, sessions: [], insights: [], procedures: [] })),
+      };
+      const offlineEngine = new VaultSyncEngine(
+        (fx.engine as unknown as { db: WorkDb }).db,
+        offlineCloud,
+        fx.knowledge,
+        { vaultDir: fx.dir, enabled: true },
+      );
+
+      // Put a user-authored custom note in knowledge/project/ to verify it is NEVER pruned.
+      const customNotePath = path.join(fx.dir, 'knowledge', 'project', 'my-handwritten-note.md');
+      fs.mkdirSync(path.dirname(customNotePath), { recursive: true });
+      fs.writeFileSync(customNotePath, '# Ghi chú tự viết\n', 'utf8');
+
+      // Capture + promote local knowledge while 100% offline.
+      const rec = fx.knowledge.capture({
+        scope: 'project',
+        workspaceId: 'offline-ws',
+        kind: 'decision',
+        title: 'Quyết định ghi khi mất mạng',
+        summary: 'Xuất file markdown ngay lập tức không đợi cloud sync.',
+        topicKey: 'offline-first',
+        source: { type: 'user', uri: 'user://offline' },
+        author: 'user',
+        evidence: 'direct',
+        confidence: 1,
+        sensitivity: 'local',
+      });
+      fx.knowledge.promote({ id: rec.id, reviewer: 'user', basis: 'user_approval', sensitivity: 'local' });
+
+      offlineEngine.projectLocalKnowledgeNow();
+      const projectedPath = path.join(fx.dir, 'knowledge', 'project', `${rec.id}.md`);
+      expect(fs.existsSync(projectedPath)).toBe(true);
+      expect(fs.readFileSync(projectedPath, 'utf8')).toContain(`memory_id: "${rec.id}"`);
+      // Index.md includes the new active knowledge AND preserved the previous L4/L5 tail!
+      const idxText = fs.readFileSync(path.join(fx.dir, 'Index.md'), 'utf8');
+      expect(idxText).toContain(rec.id);
+      expect(idxText).toContain('insight--1');
+      expect(offlineCloud.listNodes).not.toHaveBeenCalled();
+
+      // Retracting prunes kn-*.md immediately while preserving custom user notes.
+      fx.knowledge.retract(rec.id, 'user', 'cleanup test');
+      const syncStatus = await offlineEngine.syncNow();
+      expect(syncStatus.lastError).toContain('ENETUNREACH');
+      expect(fs.existsSync(projectedPath)).toBe(false);
+      expect(fs.existsSync(customNotePath)).toBe(true);
+      expect(fs.readFileSync(path.join(fx.dir, 'Index.md'), 'utf8')).not.toContain(rec.id);
+      expect(fs.readFileSync(path.join(fx.dir, 'Index.md'), 'utf8')).toContain('insight--1');
+    } finally {
+      fx.close();
+    }
+  });
 });

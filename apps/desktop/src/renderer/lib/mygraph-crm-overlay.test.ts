@@ -428,4 +428,121 @@ describe('mygraph-crm-overlay', () => {
     expect(second.data!.nodes.some((n) => n.title.includes('Khách WS B'))).toBe(true);
     expect(second.data!.nodes.some((n) => n.title.includes('Khách WS A'))).toBe(false);
   });
+
+  it('returns cloud nodes immediately when CRM exceeds initialWaitMs, hydrates in background, and notifies onOverlayReady once', async () => {
+    const { baseApi } = makeBaseApi();
+    let resolvePage!: () => void;
+    const gate = new Promise<void>((r) => { resolvePage = r; });
+
+    const api = createMyGraphWithCrmApi(baseApi, {
+      initialWaitMs: 30,
+      getElectronApi: () => ({
+        auth: { getUser: async () => ({ id: 'user-1' }) },
+        customerCare: {
+          listCrm: async () => {
+            await gate;
+            return {
+              ok: true,
+              workspaceId: WS_A,
+              role: 'owner',
+              canDelete: true,
+              rows: [row({ customerName: 'Khách Nền' })],
+              nextCursor: null,
+              assignees: [],
+              pages: [{ pageId: PAGE_ID, pageName: 'Đồ Đồng Đại Long' }],
+              identityEnabled: false,
+              identityUnavailable: false,
+              consentAsk: null,
+            };
+          },
+        },
+      }),
+    });
+
+    const onReady = vi.fn();
+    api.onOverlayReady(onReady);
+
+    // Cold fetch returns cloud nodes promptly instead of hanging on slow CRM pages.
+    const initial = await api.fetchNodes();
+    expect(initial.data!.nodes.map((n) => n.id)).toEqual(['cloud-node-1']);
+    expect(onReady).not.toHaveBeenCalled();
+
+    // Once background CRM completes, onOverlayReady fires ONCE and warm cache serves CRM nodes.
+    resolvePage();
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
+
+    const hydrated = await api.fetchNodes();
+    expect(hydrated.data!.nodes.some((n) => n.title.includes('Khách Nền'))).toBe(true);
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts in-flight CRM hydration on dispose() without populating cache or firing onOverlayReady, and stops pagination at maxLoadMs', async () => {
+    const { baseApi } = makeBaseApi();
+    let resolvePending!: () => void;
+    const pendingGate = new Promise<void>((r) => { resolvePending = r; });
+
+    const disposedApi = createMyGraphWithCrmApi(baseApi, {
+      initialWaitMs: 20,
+      getElectronApi: () => ({
+        auth: { getUser: async () => ({ id: 'user-1' }) },
+        customerCare: {
+          listCrm: async () => {
+            await pendingGate;
+            return {
+              ok: true,
+              workspaceId: WS_A,
+              role: 'owner',
+              canDelete: true,
+              rows: [row({ customerName: 'Stale PII' })],
+              nextCursor: null,
+              assignees: [],
+              identityEnabled: false,
+              identityUnavailable: false,
+              consentAsk: null,
+            };
+          },
+        },
+      }),
+    });
+    const onReady = vi.fn();
+    disposedApi.onOverlayReady(onReady);
+
+    await disposedApi.fetchNodes();
+    disposedApi.dispose();
+    resolvePending();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onReady).not.toHaveBeenCalled();
+
+    // Pagination stops once maxLoadMs budget is exceeded (after always fetching >= 1 page).
+    let clock = 1_000;
+    let calls = 0;
+    const budgetedApi = createMyGraphWithCrmApi(baseApi, {
+      now: () => clock,
+      maxLoadMs: 5_000,
+      getElectronApi: () => ({
+        auth: { getUser: async () => ({ id: 'user-1' }) },
+        customerCare: {
+          listCrm: async ({ cursor }) => {
+            calls += 1;
+            clock += 3_000;
+            return {
+              ok: true,
+              workspaceId: WS_A,
+              role: 'owner',
+              canDelete: true,
+              rows: [row({ leadId: `lead-p-${calls}`, customerName: `Trang ${calls}` })],
+              nextCursor: cursor === 'p5' ? null : `p${calls}`,
+              assignees: [],
+              identityEnabled: false,
+              identityUnavailable: false,
+              consentAsk: null,
+            };
+          },
+        },
+      }),
+    });
+    const res = await budgetedApi.fetchNodes();
+    expect(calls).toBe(2); // Page 1 (3000ms) + Page 2 (6000ms >= 5000ms budget) -> stops cleanly.
+    expect(res.data!.nodes.some((n) => n.title.includes('Trang 2'))).toBe(true);
+  });
 });

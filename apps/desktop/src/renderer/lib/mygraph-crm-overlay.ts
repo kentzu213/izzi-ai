@@ -41,6 +41,9 @@ export const CRM_VIRTUAL_LEAD_PREFIX = 'crm-virtual:lead:';
 export const CRM_VIRTUAL_LINK_PREFIX = 'crm-virtual:link:';
 
 const CACHE_TTL_MS = 15_000;
+const DEFAULT_INITIAL_WAIT_MS = 1_200;
+const DEFAULT_WARM_VERIFY_WAIT_MS = 3_000;
+const DEFAULT_MAX_LOAD_MS = 12_000;
 export const MAX_CANVAS_LEAD_NODES = 240;
 const READONLY_ERROR = 'Node CRM chỉ đọc trong RAM — không thể sửa đổi hoặc đồng bộ lên Cloud.';
 
@@ -75,10 +78,15 @@ export interface OverlayElectronApi {
 export interface MyGraphCrmOverlayOptions {
   getElectronApi?: () => OverlayElectronApi | null | undefined;
   now?: () => number;
+  /** Max ms `fetchNodes`/`fetchLinks` wait for a cold CRM load before returning MyGraph immediately. */
+  initialWaitMs?: number;
+  /** Max ms background CRM pagination keeps fetching extra pages (always fetches at least 1 page). */
+  maxLoadMs?: number;
 }
 
 export type MyGraphWithCrmApi = GraphApi & {
   invalidateCrmOverlay(): void;
+  onOverlayReady(listener: () => void): () => void;
   dispose(): void;
 };
 
@@ -490,13 +498,34 @@ export function createMyGraphWithCrmApi(
   const getElectronApi = options.getElectronApi
     ?? (() => (typeof window !== 'undefined' ? (window as unknown as { electronAPI?: OverlayElectronApi }).electronAPI : undefined));
   const now = options.now ?? Date.now;
+  const initialWaitMs = options.initialWaitMs ?? DEFAULT_INITIAL_WAIT_MS;
+  const maxLoadMs = options.maxLoadMs ?? DEFAULT_MAX_LOAD_MS;
 
   let cache: CrmOverlayDataset | null = null;
   let inFlight: Promise<CrmOverlayDataset | null> | null = null;
+  let inFlightGen = 0;
+  let preSnapshotInFlight: Promise<CustomerCareSnapshot | null> | null = null;
+  let generation = 0;
+  let disposed = false;
+  let deferredByTimeout = false;
   const positions = new Map<string, { x?: number; y?: number }>();
+  const overlayReadyListeners = new Set<() => void>();
 
   const clearCache = () => {
     cache = null;
+    generation += 1;
+    deferredByTimeout = false;
+  };
+
+  const notifyOverlayReady = () => {
+    if (disposed) return;
+    for (const listener of [...overlayReadyListeners]) {
+      try {
+        listener();
+      } catch {
+        // Isolate subscriber errors from overlay loading.
+      }
+    }
   };
 
   const onBackfillUpdated = () => {
@@ -519,7 +548,19 @@ export function createMyGraphWithCrmApi(
     }
   }
 
+  async function readPreSnapshot(api: OverlayElectronApi): Promise<CustomerCareSnapshot | null> {
+    const getter = api.customerCare?.getSnapshot;
+    if (!getter) return null;
+    if (preSnapshotInFlight) return preSnapshotInFlight;
+    const p = getter().catch(() => null).finally(() => {
+      if (preSnapshotInFlight === p) preSnapshotInFlight = null;
+    });
+    preSnapshotInFlight = p;
+    return p;
+  }
+
   async function loadDataset(): Promise<CrmOverlayDataset | null> {
+    if (disposed) return null;
     const api = getElectronApi();
     const listCrm = api?.customerCare?.listCrm;
     if (!listCrm) {
@@ -529,13 +570,15 @@ export function createMyGraphWithCrmApi(
     }
 
     const identityId = await resolveIdentityId(api);
+    if (disposed) return null;
     if (identityId === null) {
       clearCache();
       positions.clear();
       return null;
     }
 
-    const preSnapshot = cache ? await api?.customerCare?.getSnapshot?.().catch(() => null) : null;
+    const preSnapshot = cache ? await readPreSnapshot(api) : null;
+    if (disposed) return null;
     if (cache && preSnapshot?.workspaceId && preSnapshot.workspaceId !== cache.workspaceId) {
       clearCache();
       positions.clear();
@@ -549,9 +592,13 @@ export function createMyGraphWithCrmApi(
       return cache;
     }
 
-    if (inFlight) return inFlight;
+    if (inFlight && inFlightGen === generation) return inFlight;
 
-    inFlight = (async () => {
+    const loadGen = generation;
+    inFlightGen = loadGen;
+    const startedAt = now();
+
+    const run = (async (): Promise<CrmOverlayDataset | null> => {
       try {
         const snapshotPromise = api?.customerCare?.getSnapshot?.().catch(() => null);
         const rows: CustomerCareCrmRow[] = [];
@@ -563,7 +610,10 @@ export function createMyGraphWithCrmApi(
         let salers: CustomerCareCrmSalerMember[] = [];
 
         for (let i = 0; i < CRM_MAX_PAGES; i += 1) {
+          if (disposed || loadGen !== generation) return null;
+          if (i > 0 && maxLoadMs > 0 && now() - startedAt >= maxLoadMs) break;
           const res = await listCrm({ cursor });
+          if (disposed || loadGen !== generation) return null;
           if (!res.ok) {
             if (res.error === 'forbidden' || res.error === 'auth' || res.error === 'access_changed') {
               clearCache();
@@ -600,6 +650,7 @@ export function createMyGraphWithCrmApi(
         }
 
         const snapshot = await snapshotPromise;
+        if (disposed || loadGen !== generation) return null;
         if (snapshot && workspaceId && snapshot.workspaceId === workspaceId) {
           const existing = new Map(pages.map((p) => [p.pageId, p]));
           if (snapshot.pageConnection?.state === 'connected') {
@@ -633,16 +684,44 @@ export function createMyGraphWithCrmApi(
           salers,
           positions,
         });
+        if (disposed || loadGen !== generation) return null;
         cache = dataset;
+        const shouldNotify = deferredByTimeout && dataset.nodes.length > 0;
+        deferredByTimeout = false;
+        if (shouldNotify) notifyOverlayReady();
         return dataset;
       } catch {
         return null;
       } finally {
-        inFlight = null;
+        if (inFlight === run) inFlight = null;
       }
     })();
 
-    return inFlight;
+    inFlight = run;
+    return run;
+  }
+
+  async function loadDatasetWithinBudget(budgetMs: number): Promise<CrmOverlayDataset | null> {
+    const promise = loadDataset().catch(() => null);
+    if (budgetMs <= 0 || !Number.isFinite(budgetMs)) return promise;
+    const effectiveBudget = cache !== null ? Math.max(budgetMs, DEFAULT_WARM_VERIFY_WAIT_MS) : budgetMs;
+    const TIMEOUT = Symbol('crm-overlay-timeout');
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const winner = await Promise.race([
+        promise,
+        new Promise<typeof TIMEOUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMEOUT), effectiveBudget);
+        }),
+      ]);
+      if (winner === TIMEOUT) {
+        if (!disposed && cache === null) deferredByTimeout = true;
+        return null;
+      }
+      return winner;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
   }
 
   return {
@@ -664,7 +743,10 @@ export function createMyGraphWithCrmApi(
     },
 
     async fetchNodes() {
-      const [cloudRes, dataset] = await Promise.all([baseApi.fetchNodes(), loadDataset()]);
+      const [cloudRes, dataset] = await Promise.all([
+        baseApi.fetchNodes(),
+        loadDatasetWithinBudget(initialWaitMs),
+      ]);
       if (cloudRes.error || !cloudRes.data) return cloudRes;
       const cloudNodes = cloudRes.data.nodes.map(annotateCareCloudNode);
       if (!dataset || dataset.nodes.length === 0) {
@@ -678,7 +760,10 @@ export function createMyGraphWithCrmApi(
     },
 
     async fetchLinks() {
-      const [cloudRes, dataset] = await Promise.all([baseApi.fetchLinks(), loadDataset()]);
+      const [cloudRes, dataset] = await Promise.all([
+        baseApi.fetchLinks(),
+        loadDatasetWithinBudget(initialWaitMs),
+      ]);
       if (cloudRes.error || !cloudRes.data) return cloudRes;
       if (!dataset || dataset.links.length === 0) return cloudRes;
       return {
@@ -689,7 +774,10 @@ export function createMyGraphWithCrmApi(
     },
 
     async searchNodes(q: string, limit = 10) {
-      const [cloudRes, dataset] = await Promise.all([baseApi.searchNodes(q, limit), loadDataset()]);
+      const [cloudRes, dataset] = await Promise.all([
+        baseApi.searchNodes(q, limit),
+        loadDatasetWithinBudget(Math.max(initialWaitMs, DEFAULT_WARM_VERIFY_WAIT_MS)),
+      ]);
       const trimmed = q.trim();
       if (!trimmed || !dataset || dataset.searchEntries.length === 0) return cloudRes;
 
@@ -797,9 +885,17 @@ export function createMyGraphWithCrmApi(
     },
 
     invalidateCrmOverlay: clearCache,
+    onOverlayReady(listener: () => void) {
+      overlayReadyListeners.add(listener);
+      return () => {
+        overlayReadyListeners.delete(listener);
+      };
+    },
     dispose() {
+      disposed = true;
       clearCache();
       positions.clear();
+      overlayReadyListeners.clear();
       if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
         window.removeEventListener(CRM_BACKFILL_UPDATED_EVENT, onBackfillUpdated);
       }

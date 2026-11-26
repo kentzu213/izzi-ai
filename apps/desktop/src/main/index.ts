@@ -677,6 +677,7 @@ function setupIPC() {
     enabled: dbManager.getSetting('vault.enabled') !== 'false',
   });
   registerKnowledgeIpc(knowledgeStore, () => {
+    vaultSyncEngine?.projectLocalKnowledgeNow();
     void vaultSyncEngine?.syncNow();
   });
   registerVaultIpc(vaultSyncEngine, dbManager);

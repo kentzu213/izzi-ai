@@ -64,6 +64,10 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
 
   useEffect(() => () => api.dispose(), [api]);
 
+  useEffect(() => api.onOverlayReady(() => {
+    setGraphViewKey((k) => k + 1);
+  }), [api]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     let lastScope = "";

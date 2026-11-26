@@ -152,6 +152,7 @@ export class VaultSyncEngine {
   private blockedSecrets: string[] = [];
   private watcher: fs.FSWatcher | null = null;
   private watchTimer: NodeJS.Timeout | null = null;
+  private lastRecall: UnifiedRecallResult | null = null;
 
   constructor(
     private readonly db: WorkDb,
@@ -479,13 +480,22 @@ export class VaultSyncEngine {
       }
 
       // Step 5: Project active KnowledgeStore records + L4 Insights + L5 Procedures + Index.md.
-      this.projectKnowledgeAndMemory(recall);
+      if (recall.status === 'ok') {
+        this.lastRecall = recall;
+      }
+      this.projectKnowledgeAndMemory(recall.status === 'ok' ? recall : (this.lastRecall ?? recall));
 
       manifest.lastSyncAt = new Date().toISOString();
       writeVaultManifest(this.vaultDir, manifest);
       this.lastSyncAt = manifest.lastSyncAt;
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : 'Vault sync error';
+      // Local-first guarantee: still project active KnowledgeStore records to disk when offline.
+      try {
+        this.projectLocalKnowledgeNow();
+      } catch {
+        // Ignore secondary disk error; primary sync error already recorded.
+      }
     } finally {
       this.syncing = false;
     }
@@ -565,13 +575,110 @@ export class VaultSyncEngine {
     });
   }
 
-  private projectKnowledgeAndMemory(recall: UnifiedRecallResult): void {
+  /**
+   * Synchronously project all active local KnowledgeStore records to
+   * `<vaultDir>/knowledge/<scope>/<id>.md`, prune `.md` files belonging to
+   * retracted/superseded canonical records (`kn-*.md`), and refresh `Index.md`.
+   * Works 100% offline with sub-5ms latency so Obsidian sees updates immediately.
+   */
+  projectLocalKnowledgeNow(): void {
+    if (!this.enabled) return;
+    fs.mkdirSync(this.vaultDir, { recursive: true });
     const activeRecords = this.knowledge.list({ state: 'active' });
+    const activeByScope = new Map<string, Set<string>>();
+
     for (const rec of activeRecords) {
-      const rel = `knowledge/${rec.scope}/${rec.id}.md`;
+      const fileName = `${rec.id}.md`;
+      const rel = `knowledge/${rec.scope}/${fileName}`;
       writeFileAtomic(safeChild(this.vaultDir, rel), renderKnowledgeRecordMarkdown(rec));
+      const set = activeByScope.get(rec.scope) ?? new Set<string>();
+      set.add(fileName);
+      activeByScope.set(rec.scope, set);
     }
 
+    // Prune generated canonical files (`kn-<hex>.md`) whose records were retracted or superseded.
+    // Never touches user-authored markdown files with other naming patterns.
+    for (const scope of ['global', 'project', 'agent', 'session'] as const) {
+      const scopeDir = safeChild(this.vaultDir, `knowledge/${scope}`);
+      if (!fs.existsSync(scopeDir)) continue;
+      const keep = activeByScope.get(scope) ?? new Set<string>();
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(scopeDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !/^kn-[a-f0-9]+\.md$/i.test(entry.name)) continue;
+        if (!keep.has(entry.name)) {
+          try {
+            fs.unlinkSync(safeChild(this.vaultDir, `knowledge/${scope}/${entry.name}`));
+          } catch {
+            // Ignore concurrent deletion.
+          }
+        }
+      }
+    }
+
+    this.writeIndexMarkdown(activeRecords, this.lastRecall);
+  }
+
+  private writeIndexMarkdown(
+    activeRecords: ReturnType<KnowledgeStore['list']>,
+    recall: UnifiedRecallResult | null,
+  ): void {
+    const indexPath = safeChild(this.vaultDir, 'Index.md');
+    let preservedMemoryTail: string | null = null;
+    if (!recall && fs.existsSync(indexPath)) {
+      try {
+        const existing = fs.readFileSync(indexPath, 'utf8');
+        const marker = '## Bài học đúc kết (L4 Insights)';
+        const idx = existing.indexOf(marker);
+        if (idx >= 0) {
+          preservedMemoryTail = existing.slice(idx).trimEnd();
+        }
+      } catch {
+        preservedMemoryTail = null;
+      }
+    }
+
+    const headLines = [
+      '# Izzi AI — Local-First Knowledge Vault',
+      '',
+      `Cập nhật gần nhất: ${new Date().toISOString()}`,
+      '',
+      '## Tri thức đã duyệt (Active Knowledge)',
+      ...(activeRecords.length > 0
+        ? activeRecords.map(
+            (r) => `- **${r.kind}** (${r.sensitivity}) · [[knowledge/${r.scope}/${r.id}|${r.title}]]`,
+          )
+        : ['_Chưa có tri thức active._']),
+      '',
+    ];
+
+    if (preservedMemoryTail !== null) {
+      writeFileAtomic(indexPath, `${headLines.join('\n')}\n${preservedMemoryTail}\n`);
+      return;
+    }
+
+    const insights = recall?.insights.filter((i) => i.validTo === null) ?? [];
+    const procedures = recall?.procedures.filter((p) => p.validTo === null) ?? [];
+    const tailLines = [
+      '## Bài học đúc kết (L4 Insights)',
+      ...(insights.length > 0
+        ? insights.map((i) => `- [[insights/${i.id.replace(/[^a-zA-Z0-9_-]/g, '-')}|${i.summary.slice(0, 90)}]]`)
+        : ['_Chưa có bài học L4._']),
+      '',
+      '## Quy trình đã học (L5 Procedures)',
+      ...(procedures.length > 0
+        ? procedures.map((p) => `- [[insights/${p.id.replace(/[^a-zA-Z0-9_-]/g, '-')}|${p.intent.slice(0, 90)}]]`)
+        : ['_Chưa có quy trình L5._']),
+      '',
+    ];
+    writeFileAtomic(indexPath, `${headLines.concat(tailLines).join('\n')}\n`);
+  }
+
+  private projectKnowledgeAndMemory(recall: UnifiedRecallResult): void {
     for (const ins of recall.insights.filter((i) => i.validTo === null)) {
       const rel = `insights/${ins.id.replace(/[^a-zA-Z0-9_-]/g, '-')}.md`;
       writeFileAtomic(safeChild(this.vaultDir, rel), renderInsightMarkdown(ins));
@@ -587,35 +694,7 @@ export class VaultSyncEngine {
       writeFileAtomic(safeChild(this.vaultDir, rel), renderSessionMarkdown(sess));
     }
 
-    // Build top-level Obsidian Index.md.
-    const indexLines = [
-      '# Izzi AI — Local-First Knowledge Vault',
-      '',
-      `Cập nhật gần nhất: ${new Date().toISOString()}`,
-      '',
-      '## Tri thức đã duyệt (Active Knowledge)',
-      ...(activeRecords.length > 0
-        ? activeRecords.map(
-            (r) => `- **${r.kind}** (${r.sensitivity}) · [[knowledge/${r.scope}/${r.id}|${r.title}]]`,
-          )
-        : ['_Chưa có tri thức active._']),
-      '',
-      '## Bài học đúc kết (L4 Insights)',
-      ...(recall.insights.length > 0
-        ? recall.insights
-            .filter((i) => i.validTo === null)
-            .map((i) => `- [[insights/${i.id.replace(/[^a-zA-Z0-9_-]/g, '-')}|${i.summary.slice(0, 90)}]]`)
-        : ['_Chưa có bài học L4._']),
-      '',
-      '## Quy trình đã học (L5 Procedures)',
-      ...(recall.procedures.length > 0
-        ? recall.procedures
-            .filter((p) => p.validTo === null)
-            .map((p) => `- [[insights/${p.id.replace(/[^a-zA-Z0-9_-]/g, '-')}|${p.intent.slice(0, 90)}]]`)
-        : ['_Chưa có quy trình L5._']),
-      '',
-    ];
-    writeFileAtomic(safeChild(this.vaultDir, 'Index.md'), `${indexLines.join('\n')}\n`);
+    this.projectLocalKnowledgeNow();
   }
 
   /**
