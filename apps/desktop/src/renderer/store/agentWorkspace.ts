@@ -15,6 +15,7 @@ import type {
 } from '../../main/agent/types';
 import type { DesktopUpdaterState } from '../../main/updater/types';
 import type { MemoryItemDTO } from '../../shared/graph-types';
+import type { UnifiedRecallResult } from '../../shared/memory-loop-types';
 
 function createLocalId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -83,6 +84,8 @@ interface AgentWorkspaceState {
   memories: AgentMemory[];
   /** izzi shared-brain memory (read-only mirror of /aibase/memory). */
   izziMemories: MemoryItemDTO[];
+  /** Unified L4–L5 recall layers (insights, procedures, episodic sessions). */
+  izziRecall: UnifiedRecallResult;
   izziMemoryState: 'idle' | 'loading' | 'ready' | 'signed-out' | 'error';
   /** AI-company Runs (durable blackboard; agent-company Phase 1). */
   runs: AgentRun[];
@@ -105,8 +108,10 @@ interface AgentWorkspaceState {
   refreshStatus: (sessionId?: string) => Promise<void>;
   refreshTasks: (sessionId?: string) => Promise<void>;
   refreshMemories: (sessionId?: string) => Promise<void>;
-  /** Load the izzi shared-brain memory (Phase 1: read-only). */
+  /** Load the izzi shared-brain memory (unified L4–L5 recall + session list). */
   refreshIzziMemories: () => Promise<void>;
+  /** Delete one owner-scoped L4–L5 episodic session node by `session--*` id. */
+  deleteIzziSession: (nodeId: string) => Promise<boolean>;
   /** AI-company Runs (durable blackboard). */
   refreshRuns: () => Promise<void>;
   createRun: (goal: string) => Promise<AgentRun | null>;
@@ -140,6 +145,7 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceState>((set, get) => 
   tasks: [],
   memories: [],
   izziMemories: [],
+  izziRecall: { status: 'empty', sessions: [], insights: [], procedures: [] },
   izziMemoryState: 'idle',
   runs: [],
   runtimeState: createIdleState(),
@@ -485,24 +491,48 @@ export const useAgentWorkspaceStore = create<AgentWorkspaceState>((set, get) => 
   },
   refreshIzziMemories: async () => {
     const api = window.electronAPI;
-    // Feature-detect: no bridge → treat as signed-out (can't reach the izzi brain).
+    const emptyRecall: UnifiedRecallResult = {
+      status: 'empty',
+      sessions: [],
+      insights: [],
+      procedures: [],
+    };
     if (!api?.memory?.list || !api?.auth?.isAuthenticated) {
-      set({ izziMemories: [], izziMemoryState: 'signed-out' });
+      set({ izziMemories: [], izziRecall: emptyRecall, izziMemoryState: 'signed-out' });
       return;
     }
     set({ izziMemoryState: 'loading' });
     try {
-      // Distinguish signed-out vs empty vs error from AUTH, not from an empty
-      // array (listMemory fail-closes to [] on no-auth/error) — Socrates gate.
       const authed = await api.auth.isAuthenticated();
       if (!authed) {
-        set({ izziMemories: [], izziMemoryState: 'signed-out' });
+        set({ izziMemories: [], izziRecall: emptyRecall, izziMemoryState: 'signed-out' });
         return;
       }
-      const items = await api.memory.list('', 100);
-      set({ izziMemories: Array.isArray(items) ? items : [], izziMemoryState: 'ready' });
+      const [items, recall] = await Promise.all([
+        api.memory.list('', 100),
+        api.memory.recall ? api.memory.recall({ limit: 30 }) : Promise.resolve(emptyRecall),
+      ]);
+      set({
+        izziMemories: Array.isArray(items) ? items : [],
+        izziRecall: recall ?? emptyRecall,
+        izziMemoryState: 'ready',
+      });
     } catch {
       set({ izziMemoryState: 'error' });
+    }
+  },
+  deleteIzziSession: async (nodeId: string) => {
+    const fn = window.electronAPI?.memory?.deleteSession;
+    if (!fn) return false;
+    try {
+      const res = await fn(nodeId);
+      if (res?.ok) {
+        await get().refreshIzziMemories();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
     }
   },
   refreshRuns: async () => {

@@ -196,25 +196,59 @@ export async function fetchMe(): Promise<ApiResponse<{ id: string }>> {
 }
 
 export async function fetchNodes(): Promise<ApiResponse<{ nodes: UserNode[] }>> {
+  const localVault = (
+    window as unknown as { electronAPI?: { vault?: { nodes?: () => Promise<GraphNode[]> } } }
+  ).electronAPI?.vault;
   try {
     const bridge = graph();
     const result = await bridge.readNodes?.();
-    if (result && result.data === null) return fail(result.error, result.status);
+    if (result && result.data === null) {
+      if (localVault?.nodes) {
+        const cached = await localVault.nodes().catch(() => []);
+        if (cached.length > 0) return ok({ nodes: cached.map(toUserNode) });
+      }
+      return fail(result.error, result.status);
+    }
     const nodes = result ? result.data : await bridge.list();
+    if (nodes.length === 0 && localVault?.nodes) {
+      const cached = await localVault.nodes().catch(() => []);
+      if (cached.length > 0) return ok({ nodes: cached.map(toUserNode) });
+    }
     return ok({ nodes: nodes.map(toUserNode) });
   } catch {
+    if (localVault?.nodes) {
+      const cached = await localVault.nodes().catch(() => []);
+      if (cached.length > 0) return ok({ nodes: cached.map(toUserNode) });
+    }
     return fail('Không kết nối được graph. Kiểm tra mạng rồi thử lại.', 0);
   }
 }
 
 export async function fetchLinks(): Promise<ApiResponse<{ links: UserLink[] }>> {
+  const localVault = (
+    window as unknown as { electronAPI?: { vault?: { links?: () => Promise<GraphLink[]> } } }
+  ).electronAPI?.vault;
   try {
     const bridge = graph();
     const result = await bridge.readLinks?.();
-    if (result && result.data === null) return fail(result.error, result.status);
+    if (result && result.data === null) {
+      if (localVault?.links) {
+        const cached = await localVault.links().catch(() => []);
+        if (cached.length > 0) return ok({ links: cached.map(toUserLink) });
+      }
+      return fail(result.error, result.status);
+    }
     const links = result ? result.data : await bridge.links();
+    if (links.length === 0 && localVault?.links) {
+      const cached = await localVault.links().catch(() => []);
+      if (cached.length > 0) return ok({ links: cached.map(toUserLink) });
+    }
     return ok({ links: links.map(toUserLink) });
   } catch {
+    if (localVault?.links) {
+      const cached = await localVault.links().catch(() => []);
+      if (cached.length > 0) return ok({ links: cached.map(toUserLink) });
+    }
     return fail('Không kết nối được graph. Kiểm tra mạng rồi thử lại.', 0);
   }
 }

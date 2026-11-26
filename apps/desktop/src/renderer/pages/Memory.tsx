@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAgentWorkspaceStore } from '../store/agentWorkspace';
 import type { AgentMemory } from '../../main/agent/types';
 import type { MemoryItemDTO } from '../../shared/graph-types';
+import type { UnifiedRecallResult } from '../../shared/memory-loop-types';
 import { AgentProfilesSection } from '../components/AgentProfilesSection';
 
 type MemoryScope = 'all' | 'current';
@@ -15,8 +16,10 @@ export function MemoryPage() {
   const deleteMemory = useAgentWorkspaceStore((state) => state.deleteMemory);
 
   const izziMemories = useAgentWorkspaceStore((state) => state.izziMemories);
+  const izziRecall = useAgentWorkspaceStore((state) => state.izziRecall);
   const izziMemoryState = useAgentWorkspaceStore((state) => state.izziMemoryState);
   const refreshIzziMemories = useAgentWorkspaceStore((state) => state.refreshIzziMemories);
+  const deleteIzziSession = useAgentWorkspaceStore((state) => state.deleteIzziSession);
 
   useEffect(() => {
     void refreshMemories();
@@ -64,11 +67,17 @@ export function MemoryPage() {
         </div>
       </div>
 
-      {/* Shared brain on izzi — same memory as izziapi.com/aibase/memory (read-only, Phase 1). */}
+      {/* Shared brain on izzi — unified L4 Insights, L5 Procedures & Episodic Sessions. */}
       <section className="memory-section">
         <div className="memory-section__header">
-          <h3 className="memory-section__title">Trên izzi (chung)</h3>
-          <span className="memory-section__count">{izziMemoryState === 'ready' ? izziMemories.length : ''}</span>
+          <h3 className="memory-section__title">Trên izzi (chung · L4–L5)</h3>
+          <span className="memory-section__count">
+            {izziMemoryState === 'ready'
+              ? izziRecall.insights.length +
+                izziRecall.procedures.length +
+                Math.max(izziRecall.sessions.length, izziMemories.length)
+              : ''}
+          </span>
           <button
             type="button"
             className="btn btn--ghost btn--sm"
@@ -79,7 +88,12 @@ export function MemoryPage() {
             {izziMemoryState === 'loading' ? 'Đang tải…' : '↻ Làm mới'}
           </button>
         </div>
-        <IzziMemoryList state={izziMemoryState} items={izziMemories} />
+        <IzziMemoryList
+          state={izziMemoryState}
+          items={izziMemories}
+          recall={izziRecall}
+          onDeleteSession={deleteIzziSession}
+        />
       </section>
 
       <AgentProfilesSection />
@@ -104,13 +118,16 @@ export function MemoryPage() {
   );
 }
 
-/** Read-only list of the izzi shared-brain memory, with explicit state messages. */
 function IzziMemoryList({
   state,
   items,
+  recall,
+  onDeleteSession,
 }: {
   state: 'idle' | 'loading' | 'ready' | 'signed-out' | 'error';
   items: MemoryItemDTO[];
+  recall: UnifiedRecallResult;
+  onDeleteSession: (nodeId: string) => Promise<boolean>;
 }) {
   if (state === 'loading' || state === 'idle') {
     return <div className="memory-section__empty">Đang tải bộ não izzi…</div>;
@@ -121,21 +138,110 @@ function IzziMemoryList({
   if (state === 'error') {
     return <div className="memory-section__empty">Không tải được bộ não izzi — thử lại sau.</div>;
   }
-  if (items.length === 0) {
+
+  const hasInsights = recall.insights.length > 0;
+  const hasProcedures = recall.procedures.length > 0;
+  const hasSessions = recall.sessions.length > 0 || items.length > 0;
+  if (!hasInsights && !hasProcedures && !hasSessions) {
     return <div className="memory-section__empty">Chưa có memory nào trên izzi.</div>;
   }
 
   return (
-    <div className="memory-grid">
-      {items.map((item) => (
-        <article key={item.id} className="memory-card glass-card">
-          <div className="memory-card__meta">
-            <span className="memory-card__kind">{item.source || 'izzi'}</span>
-            <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : ''}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {hasInsights && (
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.72, marginBottom: 6 }}>
+            Bài học đúc kết · L4 Insights ({recall.insights.length})
           </div>
-          <div className="memory-card__content">{item.title}</div>
-        </article>
-      ))}
+          <div className="memory-grid">
+            {recall.insights.map((ins) => (
+              <article key={ins.id} className="memory-card glass-card">
+                <div className="memory-card__meta">
+                  <span className="memory-card__kind">L4 · insight</span>
+                  <span>{ins.createdAt ? new Date(ins.createdAt).toLocaleString('vi-VN') : ''}</span>
+                </div>
+                <div className="memory-card__content">{ins.summary}</div>
+                {ins.themes.length > 0 && (
+                  <div style={{ fontSize: 11, opacity: 0.68, marginTop: 6 }}>
+                    Chủ đề: {ins.themes.join(', ')}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasProcedures && (
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.72, marginBottom: 6 }}>
+            Quy trình đã học · L5 Procedures ({recall.procedures.length})
+          </div>
+          <div className="memory-grid">
+            {recall.procedures.map((proc) => (
+              <article key={proc.id} className="memory-card glass-card">
+                <div className="memory-card__meta">
+                  <span className="memory-card__kind">L5 · procedure</span>
+                  <span>{proc.steps.length} bước</span>
+                </div>
+                <div className="memory-card__content">{proc.intent}</div>
+                {proc.steps.length > 0 && (
+                  <ol style={{ margin: '6px 0 0 16px', padding: 0, fontSize: 12, opacity: 0.82 }}>
+                    {proc.steps.slice(0, 4).map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasSessions && (
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.72, marginBottom: 6 }}>
+            Phiên làm việc · Episodic Sessions ({recall.sessions.length || items.length})
+          </div>
+          <div className="memory-grid">
+            {recall.sessions.length > 0
+              ? recall.sessions.map((s) => (
+                  <article key={s.id} className="memory-card glass-card">
+                    <div className="memory-card__meta">
+                      <span className="memory-card__kind">{s.outcome}</span>
+                      <span>{s.createdAt ? new Date(s.createdAt).toLocaleString('vi-VN') : ''}</span>
+                    </div>
+                    <div className="memory-card__content">{s.summary}</div>
+                    {s.decisions.length > 0 && (
+                      <div style={{ fontSize: 11, opacity: 0.72, marginTop: 4 }}>
+                        Quyết định: {s.decisions.slice(0, 2).join(' · ')}
+                      </div>
+                    )}
+                    {s.id.startsWith('session--') && (
+                      <div className="memory-card__actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={() => void onDeleteSession(s.id)}
+                        >
+                          Xóa phiên
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                ))
+              : items.map((item) => (
+                  <article key={item.id} className="memory-card glass-card">
+                    <div className="memory-card__meta">
+                      <span className="memory-card__kind">{item.source || 'izzi'}</span>
+                      <span>{item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : ''}</span>
+                    </div>
+                    <div className="memory-card__content">{item.title}</div>
+                  </article>
+                ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

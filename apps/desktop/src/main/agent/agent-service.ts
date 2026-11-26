@@ -13,6 +13,8 @@ import {
 } from './provider-settings-store';
 import type { ProviderTestResult } from './chat-provider';
 import { CustomOpenAIProvider } from './custom-openai-provider';
+import type { AgentRecallContextProvider } from '../agents/session-distiller';
+import type { SessionRecorder } from '../agents/agent-session-recorder';
 import type {
   AgentBootstrapPayload,
   AgentMemory,
@@ -44,6 +46,8 @@ export class AgentService extends EventEmitter {
   private settingsStore: ProviderSettingsStore;
   private resolver: ProviderResolver;
   private activeRequestId: string | null = null;
+  private recallProvider: AgentRecallContextProvider | null = null;
+  private sessionRecorder: SessionRecorder | null = null;
 
   constructor(options: { db: DatabaseManager; auth: AuthManager }) {
     super();
@@ -55,6 +59,15 @@ export class AgentService extends EventEmitter {
     this.secrets = new SecretStore(this.db);
     this.settingsStore = new ProviderSettingsStore(this.db);
     this.resolver = new ProviderResolver(this.settingsStore, this.secrets, this.provider);
+  }
+
+  /** Attach L4–L5 memory recall & distilled session capture (called in main bootstrap). */
+  setMemoryLoop(loop: {
+    recallProvider?: AgentRecallContextProvider | null;
+    sessionRecorder?: SessionRecorder | null;
+  }): void {
+    this.recallProvider = loop.recallProvider ?? null;
+    this.sessionRecorder = loop.sessionRecorder ?? null;
   }
 
   async bootstrap(): Promise<AgentBootstrapPayload> {
@@ -328,6 +341,8 @@ export class AgentService extends EventEmitter {
     assistantMessage: ChatMessage;
   }): Promise<void> {
     let receivedContent = false;
+    let assistantReplyText = '';
+    const startedAt = new Date().toISOString();
     let finalState: AgentRuntimeState['state'] = 'idle';
     let finalError: string | undefined;
 
@@ -340,6 +355,20 @@ export class AgentService extends EventEmitter {
           role: message.role,
           content: message.content,
         }));
+
+      if (this.recallProvider) {
+        try {
+          const briefing = await this.recallProvider.getBriefing({
+            scopeKey: input.sessionId,
+            queryText: input.message,
+          });
+          if (briefing) {
+            history.unshift({ role: 'system', content: briefing });
+          }
+        } catch {
+          // Best-effort L4–L5 recall; never block chat.
+        }
+      }
 
       this.emitStatus(input.requestId, input.sessionId, 'running');
 
@@ -375,6 +404,7 @@ export class AgentService extends EventEmitter {
           const delta = event.delta ?? '';
           if (delta.length > 0) {
             receivedContent = true;
+            assistantReplyText += delta;
             this.db.appendAssistantDelta(input.assistantMessage.id, delta);
           }
 
@@ -433,6 +463,17 @@ export class AgentService extends EventEmitter {
             detail: `Managed request ${input.requestId} completed`,
             meta: { sessionId: input.sessionId },
           });
+          if (this.sessionRecorder && assistantReplyText.trim().length > 0) {
+            this.sessionRecorder.record({
+              agentId: 'izzi-main',
+              agentName: 'Izzi Assistant',
+              request: input.message,
+              reply: assistantReplyText,
+              startedAt,
+              finishedAt: new Date().toISOString(),
+              turnId: input.assistantMessage.id,
+            });
+          }
           return;
         }
 
@@ -456,6 +497,17 @@ export class AgentService extends EventEmitter {
           detail: `Managed request ${input.requestId} completed without explicit done event`,
           meta: { sessionId: input.sessionId },
         });
+        if (this.sessionRecorder && assistantReplyText.trim().length > 0) {
+          this.sessionRecorder.record({
+            agentId: 'izzi-main',
+            agentName: 'Izzi Assistant',
+            request: input.message,
+            reply: assistantReplyText,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            turnId: input.assistantMessage.id,
+          });
+        }
         return;
       }
 

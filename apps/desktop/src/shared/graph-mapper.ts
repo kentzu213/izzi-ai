@@ -166,9 +166,9 @@ export function memoryNodeToItem(raw: unknown): MemoryItemDTO | null {
   if (obj === null) return null;
 
   const id = ownString(obj, 'id');
-  const title = ownString(obj, 'title');
-  const source = ownString(obj, 'nodeType');
-  const createdAt = ownString(obj, 'createdAt');
+  const title = ownString(obj, 'title') ?? ownString(obj, 'summary');
+  const source = ownString(obj, 'nodeType') ?? ownString(obj, 'type');
+  const createdAt = ownString(obj, 'createdAt') ?? ownString(obj, 'validFrom');
   if (id === undefined || title === undefined || source === undefined || createdAt === undefined) {
     return null;
   }

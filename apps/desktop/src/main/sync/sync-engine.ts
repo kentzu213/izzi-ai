@@ -196,6 +196,13 @@ export class SyncEngine {
         continue;
       }
 
+      if (survivor.target === 'memory_session') {
+        const sent = await this.flushMemorySessionOp(survivor);
+        if (!sent) return;
+        for (const seq of seqs) this.db.dequeueOp(seq);
+        continue;
+      }
+
       // Phase 1 has no link-write surface, so link ops are never enqueued; leave
       // any in place for a future link-write phase rather than dropping silently.
       if (survivor.target !== 'node') continue;
@@ -255,6 +262,21 @@ export class SyncEngine {
     const result = await this.graphClient.removeNode(id, { queueOnOffline: false });
     if (!result.ok && result.error === 'network error') return false;
     // success or 404 (already gone) → treat as done (Req 4.6)
+    return true;
+  }
+
+  /** Flush one queued L4–L5 `POST /api/aibase/memory/session` work-block op. */
+  private async flushMemorySessionOp(op: QueueOp): Promise<boolean> {
+    if (op.opType !== 'create') return true;
+    const result = await this.graphClient.captureMemorySession(
+      op.payload as unknown as Parameters<GraphClient['captureMemorySession']>[0],
+      { queueOnOffline: false },
+    );
+    if (result.status === 'error' && result.error === 'network error') return false;
+    if (result.status === 'unauthorized') return false;
+    if (result.status !== 'written' && result.status !== 'disabled') {
+      this.logQueueDrop('memory_session', result.error ?? result.status);
+    }
     return true;
   }
 

@@ -19,6 +19,7 @@
  */
 import type { GraphNode, GraphLink, GraphSearchHit } from '../../shared/graph-types';
 import type { AgentStep } from '../../shared/agent-turn-events';
+import { redactSensitiveText } from '../../shared/secret-pii-gate';
 
 /** Minimal GraphClient surface this module needs (structurally matches GraphClient). */
 export interface GraphWriter {
@@ -64,14 +65,19 @@ export function hubTitle(agentName: string): string {
 
 /** Build the work-session node payload. Pure — unit-testable. */
 export function buildSessionNode(input: AgentSessionInput): { title: string } & Partial<GraphNode> {
-  const firstLine = (input.request || '').split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
+  const safeRequest = redactSensitiveText(input.request || '').text;
+  const safeReply = redactSensitiveText(input.reply || '').text;
+  const firstLine = safeRequest.split(/\r?\n/).find((l) => l.trim().length > 0) ?? '';
   const title = clip(`${input.agentName}: ${firstLine || 'phiên làm việc'}`, MAX_TITLE);
 
   const steps = Array.isArray(input.steps) ? input.steps : [];
   const stepsText =
     steps.length > 0
       ? `\n\n### Các bước\n${steps
-          .map((s) => `- ${s.status === 'error' ? '✗' : '•'} ${s.label}${s.detail ? ` — ${s.detail}` : ''}`)
+          .map((s) => {
+            const safeDetail = s.detail ? redactSensitiveText(s.detail).text : '';
+            return `- ${s.status === 'error' ? '✗' : '•'} ${s.label}${safeDetail ? ` — ${safeDetail}` : ''}`;
+          })
           .join('\n')}`
       : '';
 
@@ -85,7 +91,7 @@ export function buildSessionNode(input: AgentSessionInput): { title: string } & 
     .join(' · ');
 
   const content = clip(
-    `${meta}\n\n### Yêu cầu\n${input.request}\n\n### Kết quả\n${input.reply}${stepsText}`,
+    `${meta}\n\n### Yêu cầu\n${safeRequest}\n\n### Kết quả\n${safeReply}${stepsText}`,
     MAX_CONTENT,
   );
 

@@ -34,6 +34,9 @@ const MarketingRoomPage = lazy(() => import('./pages/MarketingRoom').then((modul
 const loadCustomerMarketingRoom = () => import('./pages/CustomerMarketingRoom').then((module) => ({ default: module.CustomerMarketingRoomPage }));
 const CustomerMarketingRoomPage = lazy(loadCustomerMarketingRoom);
 const KnowledgeUniversePage = lazy(() => import('./pages/KnowledgeUniverse'));
+const QuickCaptureMiniPage = lazy(() =>
+  import('./pages/QuickCaptureMini').then((module) => ({ default: module.QuickCaptureMiniPage })),
+);
 const ScheduledSessionsPage = lazy(() => import('./pages/ScheduledSessions').then((module) => ({ default: module.ScheduledSessionsPage })));
 
 type Page =
@@ -88,6 +91,21 @@ function PageLoadingFallback() {
 }
 
 export function App() {
+  const isQuickCaptureMode =
+    typeof window !== 'undefined' && window.location.hash === '#quick-capture';
+  if (isQuickCaptureMode) {
+    return (
+      <ErrorBoundary fallbackTitle="Lỗi hiển thị Quick Capture">
+        <Suspense fallback={<PageLoadingFallback />}>
+          <QuickCaptureMiniPage />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState<Page>('chat');

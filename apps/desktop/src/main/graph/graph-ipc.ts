@@ -12,6 +12,7 @@
  */
 
 import { ipcMain } from 'electron';
+import { isTrustedMarketingSender as isTrustedRendererSender } from '../marketing/marketing-ipc';
 import type { GraphClient } from './graph-client';
 import type { GraphAgent } from './graph-agent';
 
@@ -46,6 +47,22 @@ export function registerGraphIpc(client: GraphClient): void {
   // parameter is currently advisory (unused) — kept to preserve the contract
   // for a future per-agent filter without reshaping the IPC surface.
   ipcMain.handle('memory:list', (_e, _agentId, limit) => client.listMemory(limit));
+  // L4–L5 unified recall, structured session capture, and owner-scoped delete.
+  ipcMain.handle('memory:recall', (e, opts) =>
+    isTrustedRendererSender(e)
+      ? client.recallMemory(opts)
+      : { status: 'unauthorized' as const, sessions: [], insights: [], procedures: [] },
+  );
+  ipcMain.handle('memory:captureSession', (e, input) =>
+    isTrustedRendererSender(e)
+      ? client.captureMemorySession(input)
+      : { status: 'unauthorized' as const, error: 'untrusted-sender' },
+  );
+  ipcMain.handle('memory:deleteSession', (e, nodeId) =>
+    isTrustedRendererSender(e)
+      ? client.deleteMemorySession(nodeId)
+      : { ok: false, error: 'untrusted-sender' },
+  );
 }
 
 /**

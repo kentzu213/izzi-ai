@@ -79,6 +79,15 @@ import { IzziAgent, registerIzziAgentIpc } from './agents/izzi-agent';
 import { IzziLlmProxy } from './agents/izzi-llm-proxy';
 import { AgentSessionCapturer } from './agents/agent-session-graph';
 import { AGENT_SESSION_GRAPH_CAPTURE_SETTING, SessionRecorder } from './agents/agent-session-recorder';
+import {
+  AgentRecallContextProvider,
+  DistilledSessionCapturer,
+} from './agents/session-distiller';
+import { KnowledgeStore } from './knowledge/knowledge-store';
+import { registerKnowledgeIpc } from './knowledge/knowledge-ipc';
+import { VaultSyncEngine } from './vault/vault-sync-engine';
+import { registerVaultIpc } from './vault/vault-ipc';
+import { QuickCaptureMiniController } from './quick-capture-window';
 import { registerMarketingIpc } from './marketing/marketing-ipc';
 import { MarketingWorkspaceService } from './marketing/marketing-workspace';
 import {
@@ -238,6 +247,9 @@ let marketingAdsOAuth: MarketingAdsOAuthCoordinator | null = null;
 let careLeadNotifier: CareLeadNotifier | null = null;
 // Keeps the count-only Care nodes in MyGraph fresh for izzi agents (docs/CARE-GRAPH-AGENTS.md).
 let careGraphPublisher: CareGraphPublisher | null = null;
+// Local-first Obsidian Markdown Vault & Quick Capture Mini-Window (Slices 2–4).
+let vaultSyncEngine: VaultSyncEngine | null = null;
+let quickCaptureMini: QuickCaptureMiniController | null = null;
 
 function getNativeMarketingClient(): NativeMarketingClient {
   if (!nativeMarketingClient) {
@@ -429,6 +441,9 @@ function createWindow(options: { show?: boolean } = {}) {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    if (process.platform !== 'darwin' && !tray) {
+      quickCaptureMini?.closeWindow();
+    }
   });
 }
 
@@ -479,6 +494,9 @@ function createTray() {
   tray.on('click', showMainWindow);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: `Mở ${APP_NAME}`, click: showMainWindow },
+    { label: 'Ghi nhanh MyGraph (Ctrl/Cmd+Shift+I)', click: () => quickCaptureMini?.show() },
+    { label: 'Đồng bộ Local Vault ↔ Cloud ngay', click: () => { void vaultSyncEngine?.syncNow(); } },
+    { type: 'separator' },
     ...(app.isPackaged
       ? [{
           label: 'Khởi động cùng máy tính',
@@ -632,11 +650,42 @@ function setupIPC() {
   scheduleService = new ScheduleService(dbManager);
   registerScheduleIpc(scheduleService);
 
-  // Agent-side write loop: record each finished agent turn into Replay tasks (daily work board).
-  // The raw my-graph transcript write is off unless the local setting turns it back on.
+  // Agent-side write/read loop (L4–L5): distill substantive turns with secret/PII
+  // redaction into POST /api/aibase/memory/session + feed Local KnowledgeStore
+  // candidates. Legacy raw transcript write to user_nodes stays OFF by default.
+  const distilledCapturer = new DistilledSessionCapturer(
+    graphClient,
+    new AgentSessionCapturer(graphClient),
+    () => dbManager.getSetting('memory.loopCaptureEnabled') !== 'false',
+  );
+  const recallProvider = new AgentRecallContextProvider(
+    graphClient,
+    () => dbManager.getSetting('memory.recallEnabled') !== 'false',
+  );
   const sessionRecorder = new SessionRecorder(new AgentSessionCapturer(graphClient), dbManager, {
     captureToGraph: () => dbManager.getSetting(AGENT_SESSION_GRAPH_CAPTURE_SETTING) === 'on',
+    distilledSink: distilledCapturer,
   });
+  agentService?.setMemoryLoop({ recallProvider, sessionRecorder });
+
+  // ── Local-First Selective Knowledge Store & Obsidian Markdown Vault (Slices 2–3) ──
+  const knowledgeStore = new KnowledgeStore(dbManager.getWorkDb());
+  distilledCapturer.addCandidateHook(knowledgeStore);
+
+  vaultSyncEngine = new VaultSyncEngine(dbManager.getWorkDb(), graphClient, knowledgeStore, {
+    vaultDir: dbManager.getSetting('vault.dir') || undefined,
+    enabled: dbManager.getSetting('vault.enabled') !== 'false',
+  });
+  registerKnowledgeIpc(knowledgeStore, () => {
+    void vaultSyncEngine?.syncNow();
+  });
+  registerVaultIpc(vaultSyncEngine, dbManager);
+  if (dbManager.getSetting('vault.watchEnabled') !== 'false') {
+    vaultSyncEngine.startWatching();
+  }
+  if (authManager.isAuthenticated()) {
+    void vaultSyncEngine?.syncNow();
+  }
 
   // Gateway chat history persistence (survives restart), scoped to the signed-in
   // account resolved here in main. No secrets are ever included (the Izzi key
@@ -669,11 +718,15 @@ function setupIPC() {
   // ── Izzi-native persona agents (Socrates, Orchestrator) — Agent Hub; key in main ──
   // Lazy tool-host adapter: resolves extensionLoader at call-time (it's initialized later
   // during app bootstrap). Lets these agents invoke installed extension commands (opt-in).
-  const izziAgent = new IzziAgent(authManager, {
-    getAllExtensions: () => (extensionLoader ? extensionLoader.getAllExtensions() : []),
-    executeCommand: (extensionId, commandId, ...args) =>
-      extensionLoader.executeCommand(extensionId, commandId, ...args),
-  });
+  const izziAgent = new IzziAgent(
+    authManager,
+    {
+      getAllExtensions: () => (extensionLoader ? extensionLoader.getAllExtensions() : []),
+      executeCommand: (extensionId, commandId, ...args) =>
+        extensionLoader.executeCommand(extensionId, commandId, ...args),
+    },
+    recallProvider,
+  );
   // Agent profiles (MyGraph agent memory, S2): on request, one short profile per agent distilled from the
   // account's own chat history and marketing outcomes, kept on this machine until the owner approves it.
   const agentProfileService = new AgentProfileService({
@@ -2427,6 +2480,25 @@ app.whenReady().then(async () => {
     process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin,
   );
   createWindow({ show: !startHidden });
+  // Slice 4: Quick Capture Mini-Window + Ctrl/Cmd+Shift+I shortcut hosted inside
+  // the single Izzi AI App binary (reusing the single host System Tray above).
+  quickCaptureMini = new QuickCaptureMiniController({
+    isDev,
+    forceProdRenderer: process.env.OPENCLAW_FORCE_PROD_RENDERER === '1',
+    preloadPath: path.join(__dirname, 'preload.js'),
+    rendererHtmlPath: path.join(__dirname, '../renderer/index.html'),
+    appIcon: getAppIcon() ?? null,
+    registerTray: false,
+    onShowMainWindow: showMainWindow,
+    onSyncNow: () => {
+      void vaultSyncEngine?.syncNow();
+    },
+    onQuit: () => {
+      isQuitting = true;
+      app.quit();
+    },
+  });
+  quickCaptureMini.init();
   const initialUrl = process.argv.find((arg) => arg.startsWith('openclaw://'));
   if (initialUrl) queueProtocolUrl(initialUrl);
   const readyWindow = mainWindow;
@@ -2501,6 +2573,12 @@ app.on('before-quit', async () => {
   }
   if (syncEngine) {
     syncEngine.destroy();
+  }
+  if (vaultSyncEngine) {
+    vaultSyncEngine.stopWatching();
+  }
+  if (quickCaptureMini) {
+    quickCaptureMini.dispose();
   }
   if (extensionLoader) {
     await extensionLoader.shutdownAll();

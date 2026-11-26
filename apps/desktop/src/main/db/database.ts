@@ -22,6 +22,7 @@ import type {
 import { runLegacyStoreMigration } from './migrations';
 import { ensureSqliteSchema } from './sqlite-schema';
 import type { QueueOp } from '../../shared/offline-queue';
+import { WorkDb, type WorkSqliteDatabase } from '../work/work-sqlite';
 
 type SqliteDatabase = Database.Database;
 
@@ -160,6 +161,7 @@ interface OfflineQueueRow {
 
 export class DatabaseManager {
   private db!: SqliteDatabase;
+  private workDb: WorkDb | null = null;
   private dbPath: string;
   private legacyStorePath: string;
 
@@ -183,6 +185,14 @@ export class DatabaseManager {
     runLegacyStoreMigration(this.db, this.legacyStorePath);
 
     console.log('[DB] Initialized SQLite store at:', this.dbPath);
+  }
+
+  /** Shared `WorkDb` wrapper over this SQLite WAL handle (for KnowledgeStore & VaultSyncEngine). */
+  getWorkDb(): WorkDb {
+    if (!this.workDb) {
+      this.workDb = new WorkDb(this.db as unknown as WorkSqliteDatabase);
+    }
+    return this.workDb;
   }
 
   getSetting(key: string): string | null {

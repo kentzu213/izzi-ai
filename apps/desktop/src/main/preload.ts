@@ -599,6 +599,37 @@ const electronAPI = {
   memory: {
     list: (agentId: string, limit?: number): Promise<MemoryItemDTO[]> =>
       ipcRenderer.invoke('memory:list', agentId, limit),
+    recall: (opts?: { queryText?: string; featureSpec?: string; limit?: number }) =>
+      ipcRenderer.invoke('memory:recall', opts),
+    captureSession: (input: unknown) => ipcRenderer.invoke('memory:captureSession', input),
+    deleteSession: (nodeId: string) => ipcRenderer.invoke('memory:deleteSession', nodeId),
+  },
+  knowledge: {
+    capture: (input: unknown) => ipcRenderer.invoke('knowledge:capture', input),
+    promote: (input: unknown) => ipcRenderer.invoke('knowledge:promote', input),
+    supersede: (input: unknown) => ipcRenderer.invoke('knowledge:supersede', input),
+    retract: (input: unknown) => ipcRenderer.invoke('knowledge:retract', input),
+    list: (filter?: unknown) => ipcRenderer.invoke('knowledge:list', filter),
+    recall: (opts?: unknown) => ipcRenderer.invoke('knowledge:recall', opts),
+    search: (query: string, limit?: number) => ipcRenderer.invoke('knowledge:search', query, limit),
+    stats: () => ipcRenderer.invoke('knowledge:stats'),
+  },
+  vault: {
+    status: () => ipcRenderer.invoke('vault:status'),
+    sync: () => ipcRenderer.invoke('vault:sync'),
+    nodes: () => ipcRenderer.invoke('vault:nodes'),
+    links: () => ipcRenderer.invoke('vault:links'),
+    search: (query: string, limit?: number) => ipcRenderer.invoke('vault:search', query, limit),
+    openFolder: () => ipcRenderer.invoke('vault:openFolder'),
+    chooseFolder: () => ipcRenderer.invoke('vault:chooseFolder'),
+    setWatch: (enabled: boolean) => ipcRenderer.invoke('vault:setWatch', enabled),
+    importMarkdownFolder: () => ipcRenderer.invoke('vault:importMarkdownFolder'),
+    importCodexExports: () => ipcRenderer.invoke('vault:importCodexExports'),
+  },
+  quickCapture: {
+    open: () => ipcRenderer.invoke('quickCapture:open'),
+    hide: () => ipcRenderer.invoke('quickCapture:hide'),
+    openMain: () => ipcRenderer.invoke('quickCapture:openMain'),
   },
   run: {
     list: (): Promise<AgentRun[]> => ipcRenderer.invoke('run:list'),

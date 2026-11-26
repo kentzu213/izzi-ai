@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MyGraphView, type GraphApi } from "@kentzu213/graph-view";
 import * as bridge from "../lib/aibase-api";
 import { LiveProfilePanel } from "../components/LiveProfilePanel";
+import { ReviewInboxPanel } from "../components/knowledge/ReviewInboxPanel";
 import { MyGraphWorkspaceV2 } from "../components/v2/MyGraphWorkspaceV2";
 import { createMyGraphWithCrmApi } from "../lib/mygraph-crm-overlay";
 import { createOpenWebGuard, openMyGraphWebSafely } from "../lib/open-my-graph-web";
@@ -109,7 +110,12 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
     return (
       <MyGraphWorkspaceV2
         graph={<MyGraphView key={graphViewKey} api={api} navigate={navigate} detached={false} />}
-        aside={<LiveProfilePanel />}
+        aside={
+          <>
+            <LiveProfilePanel />
+            <ReviewInboxPanel />
+          </>
+        }
         onOpenWeb={() => void openMyGraphWeb()}
         openWebError={openWebError}
       />
@@ -132,6 +138,7 @@ export default function MyGraphPage({ v2 = false }: { v2?: boolean } = {}) {
         <MyGraphView key={graphViewKey} api={api} navigate={navigate} detached={false} />
       </div>
       <LiveProfilePanel />
+      <ReviewInboxPanel />
     </div>
   );
 }

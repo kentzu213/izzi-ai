@@ -1,0 +1,224 @@
+/*
+ * ReviewInboxPanel + Local Vault status — explicit palette values so
+ * `.graphview-scope` cannot alter contrast or colors.
+ */
+
+.ri-launcher {
+  position: absolute;
+  left: 108px;
+  bottom: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #3a3f4b;
+  border-radius: 8px;
+  background: #1b1e25;
+  color: #e6e8ee;
+  font: 500 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ri-launcher:hover,
+.ri-launcher:focus-visible {
+  border-color: #5b8aa6;
+  background: #222731;
+  outline: 2px solid #5b8aa6;
+  outline-offset: 1px;
+}
+
+.ri-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #5b8aa6;
+  color: #0b0e14;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ri-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100% - 32px));
+  max-height: min(620px, calc(100% - 32px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #3a3f4b;
+  border-radius: 12px;
+  background: #14171d;
+  color: #e6e8ee;
+  font: 400 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 50%);
+}
+
+.ri-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ri-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ri-sub {
+  margin: 2px 0 0;
+  color: #9aa1ad;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.ri-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ri-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid #282d38;
+  padding-bottom: 8px;
+}
+
+.ri-tab {
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa1ad;
+  font: 500 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ri-tab.is-active {
+  border-color: #3a3f4b;
+  background: #1f242e;
+  color: #eef2f7;
+}
+
+.ri-btn {
+  padding: 6px 10px;
+  border: 1px solid #3a3f4b;
+  border-radius: 6px;
+  background: #1d222b;
+  color: #e6e8ee;
+  font: 500 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ri-btn:hover,
+.ri-btn:focus-visible {
+  border-color: #5b8aa6;
+  background: #252b36;
+}
+
+.ri-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ri-btn--primary {
+  border-color: #45d982;
+  background: #193528;
+  color: #c5f7d8;
+}
+
+.ri-btn--accent {
+  border-color: #5b8aa6;
+  background: #1a2d3a;
+  color: #d6ecf8;
+}
+
+.ri-btn--danger {
+  border-color: #8b3a3a;
+  background: #2c181a;
+  color: #f3b4b4;
+}
+
+.ri-card {
+  padding: 10px 12px;
+  border: 1px solid #2a2f3b;
+  border-radius: 8px;
+  background: #191d25;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ri-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #9aa1ad;
+}
+
+.ri-card__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #eef2f7;
+}
+
+.ri-card__body {
+  margin: 0;
+  font-size: 12px;
+  color: #c7cdd8;
+  white-space: pre-wrap;
+}
+
+.ri-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ri-input,
+.ri-textarea,
+.ri-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #343945;
+  border-radius: 6px;
+  background: #0f1217;
+  color: #e6e8ee;
+  font: 400 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.ri-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1d2430;
+  color: #cfd8e6;
+  font-size: 12px;
+}
+
+.ri-notice--warn {
+  background: #2f2414;
+  color: #f4c77b;
+}
+
+.ri-empty {
+  padding: 14px;
+  text-align: center;
+  color: #9aa1ad;
+  font-size: 12px;
+}

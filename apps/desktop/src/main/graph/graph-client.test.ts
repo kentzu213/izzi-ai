@@ -213,4 +213,97 @@ describe('GraphClient', () => {
 
     expect(result).toEqual({ error: 'Forbidden: not your node' });
   });
+
+  // ── L4–L5 Memory Loop: captureMemorySession / recallMemory / delete ───
+
+  it('captureMemorySession redacts secrets/PII before posting to /api/aibase/memory/session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { status: 'written', nodeId: 'session--123' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new GraphClient(fakeAuth(TOKEN), fakeDb());
+    const res = await client.captureMemorySession({
+      summary: 'Chốt cấu hình với sk-proj-1234567890abcdefghijklmno và email owner@example.com',
+      filesTouched: ['.env', 'apps/desktop/src/main/index.ts'],
+      specsTouched: ['vault-sync'],
+      decisions: ['Dùng env:API_KEY'],
+      followUps: [],
+      outcome: 'success',
+      featureSpec: 'vault-sync',
+    });
+
+    expect(res).toEqual({ status: 'written', nodeId: 'session--123' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/aibase/memory/session');
+    const bodyText = String(init.body);
+    expect(bodyText).not.toContain('sk-proj-1234567890');
+    expect(bodyText).not.toContain('owner@example.com');
+    expect(bodyText).not.toContain('".env"');
+    expect(bodyText).toContain('apps/desktop/src/main/index.ts');
+  });
+
+  it('captureMemorySession queues to offline_queue on network failure', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const enqueueOp = vi.fn();
+    const db = { appendDiagnosticEvent: vi.fn(), enqueueOp } as unknown as FakeDb;
+    const client = new GraphClient(fakeAuth(TOKEN), db);
+
+    const res = await client.captureMemorySession({
+      summary: 'Lưu phiên offline',
+      filesTouched: [],
+      specsTouched: ['vault'],
+      decisions: ['Queue retry'],
+      followUps: [],
+      outcome: 'success',
+      featureSpec: 'vault',
+    });
+
+    expect(res.status).toBe('queued');
+    expect(enqueueOp).toHaveBeenCalledTimes(1);
+    expect(enqueueOp.mock.calls[0][0].target).toBe('memory_session');
+  });
+
+  it('recallMemory falls back to /api/aibase/memory/list when /recall returns 404', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(404, { error: 'Not Found' }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          status: 'ok',
+          nodes: [
+            {
+              id: 'session--42',
+              type: 'session',
+              summary: 'Phiên cũ trên backend pre-L5',
+              outcome: 'success',
+              createdAt: '2026-11-26T00:00:00Z',
+              validFrom: '2026-11-26T00:00:00Z',
+              validTo: null,
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new GraphClient(fakeAuth(TOKEN), fakeDb());
+    const recall = await client.recallMemory({ limit: 5 });
+
+    expect(recall.status).toBe('fallback');
+    expect(recall.sessions).toHaveLength(1);
+    expect(recall.sessions[0].id).toBe('session--42');
+    expect(recall.insights).toEqual([]);
+    expect(recall.procedures).toEqual([]);
+  });
+
+  it('deleteMemorySession rejects invalid ids before any backend call', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new GraphClient(fakeAuth(TOKEN), fakeDb());
+    const res = await client.deleteMemorySession('not-a-session-id');
+
+    expect(res.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -25,7 +25,7 @@
 export interface QueueOp {
   seq: number;
   opType: 'create' | 'update' | 'delete';
-  target: 'node' | 'link';
+  target: 'node' | 'link' | 'memory_session';
   localId?: string;
   backendId?: string;
   baseUpdatedAt?: string;

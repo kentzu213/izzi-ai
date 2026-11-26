@@ -42,6 +42,15 @@ import type {
   SynthesizeTopicResult,
 } from '../../shared/graph-types';
 import { buildUniverseSeed, parseNodeDetail, type UniverseNodeDetail } from '../../shared/universe-adapter';
+import {
+  parseSessionMemoryNode,
+  parseUnifiedRecallPayload,
+  sanitizeSessionPayload,
+  type CaptureSessionResult,
+  type SessionMemoryNodeView,
+  type SessionMemoryWriteInput,
+  type UnifiedRecallResult,
+} from '../../shared/memory-loop-types';
 import { IZZI_API_BASE, IZZI_WEB_BASE } from '../config/public-config';
 
 /** Create input accepted by `createNode` — the writable node fields + a title. */
@@ -262,6 +271,180 @@ export class GraphClient {
     } catch (err) {
       this.logFailure('memory.list', undefined, shortError(err));
       return [];
+    }
+  }
+
+  /**
+   * POST /api/aibase/memory/session — persist a structured, redacted work block
+   * into the owner's L4–L5 second-brain loop (`kb_memory_nodes`, `kind='session'`).
+   * Fail-closed on no-auth / 401; enqueues into offline_queue on network error.
+   */
+  async captureMemorySession(
+    input: SessionMemoryWriteInput,
+    options: WriteOptions = {},
+  ): Promise<CaptureSessionResult> {
+    const clean = sanitizeSessionPayload(input);
+    if (!clean.summary) {
+      return { status: 'skipped', error: 'summary is required' };
+    }
+
+    const token = await this.auth.getAccessToken();
+    if (token == null) {
+      return { status: 'unauthorized', error: 'unauthorized' };
+    }
+
+    try {
+      const res = await fetch(`${IZZI_API_BASE}/api/aibase/memory/session`, {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body: JSON.stringify(clean),
+      });
+      if (res.status === 401) {
+        return { status: 'unauthorized', error: 'unauthorized' };
+      }
+      if (res.status === 429) {
+        const message = await this.readBackendError(res);
+        this.logFailure('memory.captureSession', res.status);
+        return { status: 'quota_exceeded', error: message };
+      }
+      if (!res.ok) {
+        const message = await this.readBackendError(res);
+        this.logFailure('memory.captureSession', res.status);
+        return { status: 'error', error: message };
+      }
+      const data = await res.json();
+      const status = ownValue(data, 'status');
+      const nodeId = ownValue(data, 'nodeId');
+      if (status === 'disabled') {
+        return { status: 'disabled' };
+      }
+      if (status === 'written' && typeof nodeId === 'string' && nodeId.length > 0) {
+        return { status: 'written', nodeId };
+      }
+      return { status: 'error', error: 'Invalid response' };
+    } catch (err) {
+      this.logFailure('memory.captureSession', undefined, shortError(err));
+      if (options.queueOnOffline !== false && typeof this.db.enqueueOp === 'function') {
+        this.db.enqueueOp({
+          opType: 'create',
+          target: 'memory_session',
+          localId: `memsess-${randomUUID()}`,
+          payload: clean as unknown as Record<string, unknown>,
+          createdAt: new Date().toISOString(),
+        });
+        return { status: 'queued' };
+      }
+      return { status: 'error', error: 'network error' };
+    }
+  }
+
+  /**
+   * GET /api/aibase/memory/recall — unified L5 recall across episodic sessions,
+   * L4 consolidated insights, and L5 learned procedures. Gracefully falls back
+   * to `/api/aibase/memory/list` on HTTP 404 (older backend), and bounds latency
+   * with a short timeout so recall never stalls chat.
+   */
+  async recallMemory(opts?: {
+    queryText?: string;
+    featureSpec?: string;
+    limit?: number;
+    timeoutMs?: number;
+  }): Promise<UnifiedRecallResult> {
+    const empty = (status: UnifiedRecallResult['status']): UnifiedRecallResult => ({
+      status,
+      sessions: [],
+      insights: [],
+      procedures: [],
+    });
+
+    const token = await this.auth.getAccessToken();
+    if (token == null) return empty('unauthorized');
+
+    const params = new URLSearchParams();
+    if (opts?.queryText && opts.queryText.trim()) params.set('queryText', opts.queryText.trim().slice(0, 300));
+    if (opts?.featureSpec && opts.featureSpec.trim()) params.set('featureSpec', opts.featureSpec.trim().slice(0, 80));
+    const lim =
+      typeof opts?.limit === 'number' && Number.isFinite(opts.limit) && opts.limit > 0
+        ? Math.min(Math.trunc(opts.limit), 50)
+        : 10;
+    params.set('limit', String(lim));
+
+    const controller = new AbortController();
+    const timeoutMs = Math.max(500, Math.trunc(opts?.timeoutMs ?? 2500));
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(`${IZZI_API_BASE}/api/aibase/memory/recall?${params.toString()}`, {
+        headers: this.authHeaders(token),
+        signal: controller.signal,
+      });
+      if (res.status === 401) return empty('unauthorized');
+
+      if (res.status === 404) {
+        const listRes = await fetch(`${IZZI_API_BASE}/api/aibase/memory/list?limit=${lim}`, {
+          headers: this.authHeaders(token),
+          signal: controller.signal,
+        });
+        if (listRes.status === 401) return empty('unauthorized');
+        if (!listRes.ok) {
+          this.logFailure('memory.recall.fallback', listRes.status);
+          return empty('error');
+        }
+        const listData = await listRes.json();
+        const sessions = ownArray(listData, 'nodes')
+          .map(parseSessionMemoryNode)
+          .filter((n): n is SessionMemoryNodeView => n !== null);
+        return {
+          status: sessions.length > 0 ? 'fallback' : 'empty',
+          sessions,
+          insights: [],
+          procedures: [],
+        };
+      }
+
+      if (!res.ok) {
+        this.logFailure('memory.recall', res.status);
+        return empty('error');
+      }
+
+      const data = await res.json();
+      return parseUnifiedRecallPayload(data);
+    } catch (err) {
+      this.logFailure('memory.recall', undefined, shortError(err));
+      return empty('error');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * DELETE /api/aibase/memory/session/:id — owner-scoped deletion of a captured
+   * session memory node. Enforces `session--` prefix before any network call.
+   */
+  async deleteMemorySession(nodeId: string): Promise<{ ok: boolean; error?: string }> {
+    const id = typeof nodeId === 'string' ? nodeId.trim() : '';
+    if (!id.startsWith('session--') || id.length > 128) {
+      return { ok: false, error: 'Invalid memory node id' };
+    }
+
+    const token = await this.auth.getAccessToken();
+    if (token == null) return { ok: false, error: 'unauthorized' };
+
+    try {
+      const res = await fetch(`${IZZI_API_BASE}/api/aibase/memory/session/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: this.authHeaders(token),
+      });
+      if (res.status === 401) return { ok: false, error: 'unauthorized' };
+      if (!res.ok) {
+        const message = await this.readBackendError(res);
+        this.logFailure('memory.deleteSession', res.status);
+        return { ok: false, error: message };
+      }
+      return { ok: true };
+    } catch (err) {
+      this.logFailure('memory.deleteSession', undefined, shortError(err));
+      return { ok: false, error: 'network error' };
     }
   }
 

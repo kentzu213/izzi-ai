@@ -25,6 +25,9 @@ import {
 } from './extension-tools';
 import { createStreamCollector, type AgentTurnEvent } from '../../shared/agent-turn-events';
 import type { SessionRecorder } from './agent-session-recorder';
+import type { AgentRecallContextProvider } from './session-distiller';
+import { AGENT_IDS_NOT_READING_PROFILE } from '../../shared/agent-profile-types';
+import { DIRECTOR_AGENT } from './memory/agent-profile-digest';
 import { isTrustedMarketingSender } from '../marketing/marketing-ipc';
 
 const IZZI_LLM_BASE = 'https://api.izziapi.com/v1';
@@ -318,6 +321,8 @@ export class IzziAgent {
     private readonly auth: AuthManager,
     /** Optional bridge to installed extensions; enables agent tool-calling when present. */
     private readonly toolHost?: ExtensionToolHost,
+    /** Optional L4–L5 recall provider injecting bounded read-only memory context. */
+    private readonly recallProvider?: AgentRecallContextProvider,
   ) {}
 
   /** Resolve a credential without ever exposing it outside the main process. */
@@ -355,7 +360,26 @@ export class IzziAgent {
     const key = await this.resolveKey();
     if (!key) return { reply: '', error: 'no-key' };
 
-    const system = typeof payload.systemPrompt === 'string' ? payload.systemPrompt : '';
+    const baseSystem = typeof payload.systemPrompt === 'string' ? payload.systemPrompt : '';
+    let system = baseSystem;
+    const normalizedAgentId = payload.agentId?.trim().toLowerCase() ?? '';
+    const allowRecall =
+      !normalizedAgentId ||
+      (!AGENT_IDS_NOT_READING_PROFILE.includes(normalizedAgentId) &&
+        normalizedAgentId !== DIRECTOR_AGENT.id.toLowerCase());
+    if (this.recallProvider && allowRecall) {
+      try {
+        const briefing = await this.recallProvider.getBriefing({
+          scopeKey: payload.agentId || 'izzi-agent',
+          queryText: message,
+        });
+        if (briefing) {
+          system = baseSystem ? `${baseSystem}\n\n${briefing}` : briefing;
+        }
+      } catch {
+        // Recall is strictly best-effort and must never fail a chat turn.
+      }
+    }
     // Legacy SmartRouter aliases become the gateway's canonical route; explicit ids
     // such as claude-sonnet-4.5 pass through unchanged.
     const model = normalizeIzziAgentModel(payload.model);

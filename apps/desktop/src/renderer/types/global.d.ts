@@ -1,4 +1,23 @@
 import type { GraphNode, GraphLink, MemoryItemDTO } from '../../shared/graph-types';
+import type {
+  CaptureSessionResult,
+  SessionMemoryWriteInput,
+  UnifiedRecallResult,
+} from '../../shared/memory-loop-types';
+import type {
+  KnowledgeCaptureInput,
+  KnowledgePromoteInput,
+  KnowledgeRecord,
+  KnowledgeScope,
+  KnowledgeSensitivity,
+  KnowledgeState,
+  KnowledgeStats,
+} from '../../shared/knowledge-types';
+import type {
+  VaultImportResult,
+  VaultSearchHit,
+  VaultSyncStatus,
+} from '../../shared/vault-sync-types';
 import type { AgentProfileActionInput, AgentProfilesResult } from '../../shared/agent-profile-types';
 import type { CustomerCareAssistInput, CustomerCareAssistResult, CustomerCareAutoReplyInput, CustomerCareAutoReplyResult, CustomerCareBackfillStatusResult, CustomerCareCrmBulkAssignInput, CustomerCareCrmBulkAssignResult, CustomerCareCrmIdentityActionInput, CustomerCareCrmIdentityActionResult, CustomerCareCrmIdentityRefreshInput, CustomerCareCrmIdentityRefreshResult, CustomerCareCrmListInput, CustomerCareCrmListResult, CustomerCareCrmSaveInput, CustomerCareCrmSaveResult, CustomerCareCrmTeamSaveInput, CustomerCareCrmTeamSaveResult, CustomerCareFacebookActionResult, CustomerCareFacebookChoicesEvent, CustomerCareFacebookConnectResult, CustomerCareFacebookSelectInput, CustomerCareInboxInput, CustomerCareInboxResult, CustomerCareLeadListInput, CustomerCareLeadListResult, CustomerCareLeadPurgeInput, CustomerCareLeadPurgeResult, CustomerCareLeadStatusInput, CustomerCareLeadStatusResult, CustomerCareMutationResult, CustomerCareSetup, CustomerCareSnapshot, CustomerCareSyncRecentResult } from '../../shared/customer-care-types';
 import type {
@@ -133,6 +152,64 @@ declare global {
   /** Renderer-facing memory IPC surface — mirrors the preload `memory` namespace (Req 7.2, 7.5). */
   interface ElectronMemoryApi {
     list: (agentId: string, limit?: number) => Promise<MemoryItemDTO[]>;
+    recall?: (opts?: {
+      queryText?: string;
+      featureSpec?: string;
+      limit?: number;
+    }) => Promise<UnifiedRecallResult>;
+    captureSession?: (input: SessionMemoryWriteInput) => Promise<CaptureSessionResult>;
+    deleteSession?: (nodeId: string) => Promise<{ ok: boolean; error?: string }>;
+  }
+
+  interface ElectronKnowledgeApi {
+    capture: (input: KnowledgeCaptureInput) => Promise<{ ok: boolean; record?: KnowledgeRecord; error?: string }>;
+    promote: (input: KnowledgePromoteInput) => Promise<{ ok: boolean; record?: KnowledgeRecord; error?: string }>;
+    supersede: (input: {
+      oldId: string;
+      newId: string;
+      reviewer?: string;
+      reason: string;
+    }) => Promise<{ ok: boolean; record?: KnowledgeRecord; error?: string }>;
+    retract: (input: {
+      id: string;
+      actor?: string;
+      reason: string;
+    }) => Promise<{ ok: boolean; record?: KnowledgeRecord; error?: string }>;
+    list: (filter?: {
+      state?: KnowledgeState;
+      scope?: KnowledgeScope;
+      workspaceId?: string;
+      sensitivity?: KnowledgeSensitivity;
+      includeInactive?: boolean;
+      limit?: number;
+    }) => Promise<KnowledgeRecord[]>;
+    recall: (opts?: {
+      workspaceId?: string;
+      agent?: string;
+      query?: string;
+      limit?: number;
+    }) => Promise<KnowledgeRecord[]>;
+    search: (query: string, limit?: number) => Promise<KnowledgeRecord[]>;
+    stats: () => Promise<KnowledgeStats>;
+  }
+
+  interface ElectronVaultApi {
+    status: () => Promise<VaultSyncStatus>;
+    sync: () => Promise<VaultSyncStatus>;
+    nodes: () => Promise<GraphNode[]>;
+    links: () => Promise<GraphLink[]>;
+    search: (query: string, limit?: number) => Promise<VaultSearchHit[]>;
+    openFolder: () => Promise<{ ok: boolean; path: string; error?: string }>;
+    chooseFolder: () => Promise<{ ok: boolean; canceled?: boolean; path: string; status?: VaultSyncStatus }>;
+    setWatch: (enabled: boolean) => Promise<VaultSyncStatus>;
+    importMarkdownFolder: () => Promise<VaultImportResult>;
+    importCodexExports: () => Promise<VaultImportResult>;
+  }
+
+  interface ElectronQuickCaptureApi {
+    open: () => Promise<{ ok: boolean; shortcut?: string; registered?: boolean }>;
+    hide: () => Promise<{ ok: boolean }>;
+    openMain: () => Promise<{ ok: boolean }>;
   }
 
   /**
@@ -676,6 +753,9 @@ declare global {
       discard(input: AgentProfileActionInput): Promise<AgentProfilesResult>;
       forget(input: AgentProfileActionInput): Promise<AgentProfilesResult>;
     };
+    knowledge?: ElectronKnowledgeApi;
+    vault?: ElectronVaultApi;
+    quickCapture?: ElectronQuickCaptureApi;
     customerMarketing?: ElectronCustomerMarketingApi;
     autopost?: ElectronAutopostApi;
     nativeMarketing?: ElectronNativeMarketingApi;

@@ -18,6 +18,11 @@
 import type { AgentTask } from '../agent/types';
 import type { AgentSessionInput, AgentSessionCapturer } from './agent-session-graph';
 
+/** Minimal async sink for capturing a completed turn into L4–L5 memory / local candidates. */
+export interface SessionCaptureSink {
+  capture(input: AgentSessionInput): Promise<unknown>;
+}
+
 /** Minimal DB surface for the Replay-task write (matches DatabaseManager). */
 export interface AgentTaskWriter {
   upsertAgentTask(task: AgentTask): AgentTask;
@@ -26,6 +31,8 @@ export interface AgentTaskWriter {
 export interface SessionRecorderOptions {
   /** Read at every turn; true writes the raw turn to my-graph too. A throwing reader counts as off. */
   captureToGraph?: () => boolean;
+  /** Optional L4–L5 distilled + redacted session sink (runs independently of legacy raw capture). */
+  distilledSink?: SessionCaptureSink;
 }
 
 /** Local settings key that turns the raw my-graph session write back on (value 'on'). */
@@ -71,9 +78,17 @@ export class SessionRecorder {
     private readonly options: SessionRecorderOptions = {},
   ) {}
 
-  /** Fire-and-forget: persist to Replay tasks, and to my-graph only when enabled. Never throws. */
+  /** Fire-and-forget: persist to Replay tasks, L4–L5 distilled sink, and legacy raw graph only when enabled. Never throws. */
   record(input: AgentSessionInput): void {
-    // my-graph (async, fail-closed inside the capturer), only when switched on
+    // Distilled & secret-redacted L4–L5 capture (skips trivial turns internally).
+    if (this.options.distilledSink) {
+      try {
+        void this.options.distilledSink.capture(input).catch(() => undefined);
+      } catch {
+        // best-effort — never break the turn
+      }
+    }
+    // Legacy raw my-graph (async, fail-closed inside the capturer), only when switched on
     if (this.graphCaptureEnabled()) {
       try {
         void this.capturer.capture(input).catch(() => undefined);
