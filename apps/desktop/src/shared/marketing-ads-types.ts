@@ -79,6 +79,9 @@ export interface UnifiedAdCampaign {
   lifetimeBudget: number | null;
   pageId: string | null;
   pageName: string | null;
+  currency?: string;
+  originalSpend?: number;
+  originalCostPerMessagingConversation?: number | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -116,6 +119,7 @@ export interface AdsPageBreakdown {
   pageId: string;
   pageName: string | null;
   spend: number;
+  originalSpendByCurrency?: Record<string, number>;
   impressions: number;
   clicks: number;
   messagingConversations: number;
@@ -151,6 +155,10 @@ export interface AdsBlendedKpis {
   crmPhoneLeads: number;
   costPerPhoneLead: number | null;
   phoneCaptureRate: number | null;
+  attributedCrmPhoneLeads?: number;
+  unattributedCrmPhoneLeads?: number;
+  attributedCostPerPhoneLead?: number | null;
+  attributedPhoneCaptureRate?: number | null;
   crmDeposits: number;
   costPerDeposit: number | null;
 }
@@ -161,6 +169,9 @@ export interface AdsOverviewPayload {
   platform: AdsProvider | 'all';
   accountId: string | null;
   pageId: string | null;
+  reportingCurrency?: string;
+  fxRates?: Record<string, number>;
+  hasMixedCurrencies?: boolean;
   syncedAt: string;
   cached: boolean;
   connectedProviders: AdsProvider[];

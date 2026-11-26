@@ -327,6 +327,21 @@ function parseChannelRollup(raw: unknown): UnifiedChannelRollup | null {
   };
 }
 
+const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+function parseCurrencyAmountMap(raw: unknown): Record<string, number> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const record = asRecord(raw);
+  if (!record) return undefined;
+  const out: Record<string, number> = {};
+  for (const [key, val] of Object.entries(record)) {
+    const code = key.trim().toUpperCase();
+    if (!CURRENCY_CODE_PATTERN.test(code) || !isFiniteNumber(val)) continue;
+    out[code] = val;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function parsePageBreakdown(raw: unknown): AdsPageBreakdown | null {
   const item = asRecord(raw);
   if (!item) return null;
@@ -348,10 +363,12 @@ function parsePageBreakdown(raw: unknown): AdsPageBreakdown | null {
   ) {
     return null;
   }
+  const originalSpendByCurrency = parseCurrencyAmountMap(item.originalSpendByCurrency);
   return {
     pageId: item.pageId,
     pageName,
     spend: item.spend,
+    ...(originalSpendByCurrency ? { originalSpendByCurrency } : {}),
     impressions: item.impressions,
     clicks: item.clicks,
     messagingConversations: item.messagingConversations,
@@ -408,6 +425,14 @@ function parseCampaign(raw: unknown): UnifiedAdCampaign | null {
     if (!clean) return null;
     healthReasons.push(clean);
   }
+  const currency = typeof item.currency === 'string' && CURRENCY_CODE_PATTERN.test(item.currency.trim().toUpperCase())
+    ? item.currency.trim().toUpperCase()
+    : undefined;
+  const originalSpend = isFiniteNumber(item.originalSpend) ? item.originalSpend : undefined;
+  const originalCostPerMessagingConversation =
+    item.originalCostPerMessagingConversation === null || isFiniteNumber(item.originalCostPerMessagingConversation)
+      ? item.originalCostPerMessagingConversation
+      : undefined;
   return {
     id,
     adAccountId,
@@ -421,6 +446,9 @@ function parseCampaign(raw: unknown): UnifiedAdCampaign | null {
     lifetimeBudget: item.lifetimeBudget,
     pageId,
     pageName,
+    ...(currency ? { currency } : {}),
+    ...(originalSpend !== undefined ? { originalSpend } : {}),
+    ...(originalCostPerMessagingConversation !== undefined ? { originalCostPerMessagingConversation } : {}),
     spend: item.spend,
     impressions: item.impressions,
     clicks: item.clicks,
@@ -493,6 +521,18 @@ function parseBlended(raw: unknown): AdsBlendedKpis | null {
     crmPhoneLeads: item.crmPhoneLeads,
     costPerPhoneLead: item.costPerPhoneLead,
     phoneCaptureRate: item.phoneCaptureRate,
+    ...(isFiniteNumber(item.attributedCrmPhoneLeads)
+      ? { attributedCrmPhoneLeads: item.attributedCrmPhoneLeads }
+      : {}),
+    ...(isFiniteNumber(item.unattributedCrmPhoneLeads)
+      ? { unattributedCrmPhoneLeads: item.unattributedCrmPhoneLeads }
+      : {}),
+    ...(item.attributedCostPerPhoneLead === null || isFiniteNumber(item.attributedCostPerPhoneLead)
+      ? { attributedCostPerPhoneLead: item.attributedCostPerPhoneLead }
+      : {}),
+    ...(item.attributedPhoneCaptureRate === null || isFiniteNumber(item.attributedPhoneCaptureRate)
+      ? { attributedPhoneCaptureRate: item.attributedPhoneCaptureRate }
+      : {}),
     crmDeposits: item.crmDeposits,
     costPerDeposit: item.costPerDeposit,
   };
@@ -559,12 +599,21 @@ function parseOverviewPayload(body: unknown, workspaceId: string): AdsOverviewPa
     if (!d) return null;
     daily.push(d);
   }
+  const reportingCurrency =
+    typeof envelope.reportingCurrency === 'string' && CURRENCY_CODE_PATTERN.test(envelope.reportingCurrency.trim().toUpperCase())
+      ? envelope.reportingCurrency.trim().toUpperCase()
+      : 'VND';
+  const fxRates = parseCurrencyAmountMap(envelope.fxRates);
+  const hasMixedCurrencies = typeof envelope.hasMixedCurrencies === 'boolean' ? envelope.hasMixedCurrencies : undefined;
   return {
     workspaceId,
     datePreset,
     platform,
     accountId,
     pageId,
+    reportingCurrency,
+    ...(fxRates ? { fxRates } : {}),
+    ...(hasMixedCurrencies !== undefined ? { hasMixedCurrencies } : {}),
     syncedAt: envelope.syncedAt,
     cached: envelope.cached,
     connectedProviders,

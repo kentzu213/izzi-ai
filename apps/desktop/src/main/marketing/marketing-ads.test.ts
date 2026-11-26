@@ -153,4 +153,101 @@ describe('MarketingAdsClient & MarketingAdsService & OAuth', () => {
     });
     expect(coordinator.takeOAuthEvent()).toBeNull();
   });
+
+  it('parses mixed-currency FX metadata, attributed CRM metrics, and native USD campaign spend from overview payload', async () => {
+    const overviewBody = {
+      success: true,
+      workspaceId: WORKSPACE,
+      datePreset: 'last_7d',
+      platform: 'all',
+      accountId: null,
+      pageId: null,
+      reportingCurrency: 'VND',
+      fxRates: { USD: 25450 },
+      hasMixedCurrencies: true,
+      syncedAt: '2026-11-26T08:00:00.000Z',
+      cached: false,
+      connectedProviders: ['facebook_ads'],
+      blended: {
+        spend: 6_299_678,
+        impressions: 50_000,
+        clicks: 1130,
+        reach: 28_000,
+        ctr: 2.26,
+        cpc: 5575,
+        cpm: 125_994,
+        messagingConversations: 129,
+        costPerMessagingConversation: 48_835,
+        crmPhoneLeads: 137,
+        costPerPhoneLead: 45_983,
+        phoneCaptureRate: 106.2,
+        attributedCrmPhoneLeads: 37,
+        unattributedCrmPhoneLeads: 100,
+        attributedCostPerPhoneLead: 170_262,
+        attributedPhoneCaptureRate: 28.68,
+        crmDeposits: 0,
+        costPerDeposit: null,
+      },
+      channels: [],
+      accounts: [],
+      pages: [{
+        pageId: PAGE_ID,
+        pageName: 'Xưởng Tranh Đồng',
+        spend: 2_362_778,
+        originalSpendByCurrency: { USD: 92.84 },
+        impressions: 10_000,
+        clicks: 230,
+        messagingConversations: 73,
+        costPerMessagingConversation: 32_367,
+        crmPhoneLeads: 25,
+        costPerPhoneLead: 94_511,
+        phoneCaptureRate: 34.25,
+        crmDeposits: 0,
+        costPerDeposit: null,
+        campaignsCount: 1,
+      }],
+      campaigns: [{
+        id: '120252025788250425',
+        adAccountId: ACCOUNT_ID,
+        adAccountName: 'Đồng DL',
+        provider: 'facebook_ads',
+        name: 'Camp USD',
+        status: 'ACTIVE',
+        effectiveStatus: 'ACTIVE',
+        objective: 'OUTCOME_ENGAGEMENT',
+        dailyBudget: 20,
+        lifetimeBudget: null,
+        pageId: PAGE_ID,
+        pageName: 'Xưởng Tranh Đồng',
+        currency: 'USD',
+        originalSpend: 92.84,
+        originalCostPerMessagingConversation: 1.27,
+        spend: 2_362_778,
+        impressions: 10_000,
+        clicks: 230,
+        reach: 5_500,
+        ctr: 2.3,
+        cpc: 10_180,
+        cpm: 236_278,
+        frequency: 1.82,
+        messagingConversations: 73,
+        costPerMessagingConversation: 32_367,
+        health: 'good',
+        healthReasons: [],
+      }],
+      daily: [{ date: '2026-11-24', spend: 2_362_778, impressions: 10_000, clicks: 230, messagingConversations: 73, crmPhoneLeads: 12 }],
+    };
+    const fetchImpl = vi.fn(async () => json(overviewBody));
+    const client = new MarketingAdsClient({ getAccessToken: async () => TOKEN }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+    const res = await client.getOverview(WORKSPACE, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.hasMixedCurrencies).toBe(true);
+    expect(res.value.fxRates).toEqual({ USD: 25450 });
+    expect(res.value.blended.attributedCrmPhoneLeads).toBe(37);
+    expect(res.value.blended.unattributedCrmPhoneLeads).toBe(100);
+    expect(res.value.campaigns[0]?.currency).toBe('USD');
+    expect(res.value.campaigns[0]?.originalSpend).toBe(92.84);
+    expect(res.value.pages[0]?.originalSpendByCurrency).toEqual({ USD: 92.84 });
+  });
 });
